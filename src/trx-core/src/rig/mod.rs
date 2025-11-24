@@ -1,0 +1,155 @@
+// SPDX-FileCopyrightText: 2025 Stanislaw Grams <stanislawgrams@gmail.com>
+//
+// SPDX-License-Identifier: BSD-2-Clause
+
+use std::future::Future;
+use std::pin::Pin;
+
+use serde::Serialize;
+
+use crate::radio::freq::{Band, Freq};
+use crate::{DynResult, RigMode};
+
+/// Alias to reduce type complexity in RigCat.
+pub type RigStatusFuture<'a> =
+    Pin<Box<dyn Future<Output = DynResult<(Freq, RigMode, Option<RigVfo>)>> + Send + 'a>>;
+
+pub mod command;
+pub mod request;
+pub mod response;
+pub mod state;
+
+/// How this backend communicates with the rig.
+#[derive(Debug, Clone, Serialize)]
+pub enum RigAccessMethod {
+    Serial { path: String, baud: u32 },
+    Tcp { addr: String },
+}
+
+/// Static info describing a rig backend.
+#[derive(Debug, Clone, Serialize)]
+pub struct RigInfo {
+    pub manufacturer: &'static str,
+    pub model: &'static str,
+    pub revision: &'static str,
+    pub capabilities: RigCapabilities,
+    pub access: RigAccessMethod,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct RigCapabilities {
+    pub supported_bands: Vec<Band>,
+    pub supported_modes: Vec<RigMode>,
+    pub num_vfos: usize,
+    pub lock: bool,
+    pub lockable: bool,
+    pub attenuator: bool,
+    pub preamp: bool,
+    pub rit: bool,
+    pub rpt: bool,
+    pub split: bool,
+}
+
+/// Common interface for rig backends.
+pub trait Rig {
+    fn info(&self) -> &RigInfo;
+}
+
+/// Common CAT control operations any rig backend should implement.
+pub trait RigCat: Rig + Send {
+    fn get_status<'a>(&'a mut self) -> RigStatusFuture<'a>;
+
+    fn set_freq<'a>(
+        &'a mut self,
+        freq: Freq,
+    ) -> Pin<Box<dyn Future<Output = DynResult<()>> + Send + 'a>>;
+
+    fn set_mode<'a>(
+        &'a mut self,
+        mode: RigMode,
+    ) -> Pin<Box<dyn Future<Output = DynResult<()>> + Send + 'a>>;
+
+    fn set_ptt<'a>(
+        &'a mut self,
+        ptt: bool,
+    ) -> Pin<Box<dyn Future<Output = DynResult<()>> + Send + 'a>>;
+
+    fn power_on<'a>(&'a mut self) -> Pin<Box<dyn Future<Output = DynResult<()>> + Send + 'a>>;
+
+    fn power_off<'a>(&'a mut self) -> Pin<Box<dyn Future<Output = DynResult<()>> + Send + 'a>>;
+
+    fn get_signal_strength<'a>(
+        &'a mut self,
+    ) -> Pin<Box<dyn Future<Output = DynResult<u8>> + Send + 'a>>;
+
+    fn get_tx_power<'a>(&'a mut self) -> Pin<Box<dyn Future<Output = DynResult<u8>> + Send + 'a>>;
+
+    fn get_tx_limit<'a>(&'a mut self) -> Pin<Box<dyn Future<Output = DynResult<u8>> + Send + 'a>>;
+
+    fn set_tx_limit<'a>(
+        &'a mut self,
+        limit: u8,
+    ) -> Pin<Box<dyn Future<Output = DynResult<()>> + Send + 'a>>;
+
+    fn toggle_vfo<'a>(&'a mut self) -> Pin<Box<dyn Future<Output = DynResult<()>> + Send + 'a>>;
+
+    fn lock<'a>(&'a mut self) -> Pin<Box<dyn Future<Output = DynResult<()>> + Send + 'a>>;
+
+    fn unlock<'a>(&'a mut self) -> Pin<Box<dyn Future<Output = DynResult<()>> + Send + 'a>>;
+}
+
+/// Snapshot of a rig's status that every backend can expose.
+#[derive(Debug, Clone, Serialize)]
+pub struct RigStatus {
+    pub freq: Freq,
+    pub mode: RigMode,
+    pub tx_en: bool,
+    pub vfo: Option<RigVfo>,
+    pub tx: Option<RigTxStatus>,
+    pub rx: Option<RigRxStatus>,
+    pub lock: Option<bool>,
+}
+
+/// Trait for presenting rig status in a backend-agnostic way.
+pub trait RigStatusProvider {
+    fn status(&self) -> RigStatus;
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct RigVfo {
+    pub entries: Vec<RigVfoEntry>,
+    /// Index into `entries` for the active VFO, if known.
+    pub active: Option<usize>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct RigVfoEntry {
+    pub name: String,
+    pub freq: Freq,
+    pub mode: Option<RigMode>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct RigTxStatus {
+    pub power: Option<u8>,
+    pub limit: Option<u8>,
+    pub swr: Option<f32>,
+    pub alc: Option<u8>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct RigRxStatus {
+    pub sig: Option<i32>,
+}
+
+/// Configurable control settings that can be pushed to the rig.
+#[derive(Debug, Clone, Serialize)]
+pub struct RigControl {
+    pub enabled: Option<bool>,
+    pub lock: Option<bool>,
+    pub clar_hz: Option<i32>,
+    pub clar_on: Option<bool>,
+    pub rpt_offset_hz: Option<i32>,
+    pub ctcss_hz: Option<f32>,
+    pub dcs_code: Option<u16>,
+}
