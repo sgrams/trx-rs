@@ -1,0 +1,7 @@
+# SPDX-FileCopyrightText: 2025 Stanislaw Grams <stanislawgrams@gmail.com>
+#
+# SPDX-License-Identifier: BSD-2-Clause
+
+[submodule "docs"]
+	path = docs
+	url = http://github.com/sgrams/trx-rs.wiki.git
