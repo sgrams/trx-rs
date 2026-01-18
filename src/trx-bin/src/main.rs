@@ -2,33 +2,37 @@
 //
 // SPDX-License-Identifier: BSD-2-Clause
 
-use std::net::SocketAddr;
+use std::net::{IpAddr, SocketAddr};
+use std::path::PathBuf;
+use std::time::Duration;
 
 use clap::{Parser, ValueEnum};
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
-use tokio::net::{TcpListener, TcpStream};
 use tokio::signal;
-use tokio::sync::{mpsc, oneshot, watch};
-use tokio::time::{self, Duration, Instant};
-use tracing::{debug, error, info, warn};
+use tokio::sync::{mpsc, watch};
+use tracing::info;
 
+mod config;
 mod error;
+mod plugins;
+mod remote_client;
+mod rig_task;
 
-use crate::error::is_invalid_bcd_error;
-use trx_backend::{build_rig, RigAccess, RigKind};
+use trx_backend::{
+    is_backend_registered, register_builtin_backends, registered_backends, RigAccess,
+};
 use trx_core::radio::freq::Freq;
-use trx_core::rig::command::RigCommand;
+use trx_core::rig::controller::{AdaptivePolling, ExponentialBackoff};
 use trx_core::rig::request::RigRequest;
-use trx_core::rig::state::{RigMode, RigSnapshot, RigState};
-use trx_core::rig::{RigCat, RigControl, RigRxStatus, RigStatus, RigTxStatus};
-use trx_core::{ClientCommand, ClientResponse, DynResult, RigError, RigResult};
-use trx_frontend::FrontendSpawner;
-use trx_frontend_http::server::HttpFrontend;
+use trx_core::rig::state::RigState;
+use trx_core::rig::{RigControl, RigRxStatus, RigStatus, RigTxStatus};
+use trx_core::DynResult;
+use trx_frontend::{is_frontend_registered, registered_frontends};
+use trx_frontend_http::register_frontend as register_http_frontend;
+use trx_frontend_http_json::{register_frontend as register_http_json_frontend, set_auth_tokens};
+use trx_frontend_rigctl::register_frontend as register_rigctl_frontend;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
-enum FrontendKind {
-    Http,
-}
+#[cfg(feature = "qt-frontend")]
+use trx_frontend_qt::register_frontend as register_qt_frontend;
 
 const PKG_DESCRIPTION: &str = concat!(env!("CARGO_PKG_NAME"), " - ", env!("CARGO_PKG_DESCRIPTION"));
 const PKG_LONG_ABOUT: &str = concat!(
@@ -36,6 +40,9 @@ const PKG_LONG_ABOUT: &str = concat!(
     "\nHomepage: ",
     env!("CARGO_PKG_HOMEPAGE")
 );
+const RIG_TASK_CHANNEL_BUFFER: usize = 32;
+const QT_FRONTEND_LISTEN_ADDR: ([u8; 4], u16) = ([127, 0, 0, 1], 0);
+const RETRY_MAX_DELAY_SECS: u64 = 2;
 
 #[derive(Debug, Parser)]
 #[command(
@@ -45,20 +52,44 @@ const PKG_LONG_ABOUT: &str = concat!(
     long_about = PKG_LONG_ABOUT
 )]
 struct Cli {
+    /// Path to configuration file (default: search trx-rs.toml, ~/.config/trx-rs/config.toml, /etc/trx-rs/config.toml)
+    #[arg(long = "config", short = 'C', value_name = "FILE")]
+    config: Option<PathBuf>,
+    /// Print example configuration and exit
+    #[arg(long = "print-config")]
+    print_config: bool,
     /// Rig backend to use (e.g. ft817)
-    #[arg(short = 'r', long = "rig", value_enum)]
-    rig: RigKind,
+    #[arg(short = 'r', long = "rig")]
+    rig: Option<String>,
     /// Access method to reach the rig CAT interface
-    #[arg(short = 'a', long = "access", value_enum, default_value_t = AccessKind::Serial)]
-    access: AccessKind,
-    /// Frontend to expose for control/status (e.g. http)
-    #[arg(short = 'f', long = "frontend", value_enum, default_value_t = FrontendKind::Http)]
-    frontend: FrontendKind,
+    #[arg(short = 'a', long = "access", value_enum)]
+    access: Option<AccessKind>,
+    /// Frontend(s) to expose for control/status (e.g. http,rigctl)
+    #[arg(short = 'f', long = "frontend", value_delimiter = ',', num_args = 1..)]
+    frontends: Option<Vec<String>>,
+    /// HTTP frontend listen address
+    #[arg(long = "http-listen")]
+    http_listen: Option<IpAddr>,
+    /// HTTP frontend listen port
+    #[arg(long = "http-port")]
+    http_port: Option<u16>,
+    /// rigctl frontend listen address
+    #[arg(long = "rigctl-listen")]
+    rigctl_listen: Option<IpAddr>,
+    /// rigctl frontend listen port
+    #[arg(long = "rigctl-port")]
+    rigctl_port: Option<u16>,
+    /// JSON TCP frontend listen address
+    #[arg(long = "http-json-listen")]
+    http_json_listen: Option<IpAddr>,
+    /// JSON TCP frontend listen port
+    #[arg(long = "http-json-port")]
+    http_json_port: Option<u16>,
     /// Rig CAT address:
     /// when access is serial: <path> <baud>;
     /// when access is TCP: <host>:<port>
     #[arg(value_name = "RIG_ADDR")]
-    rig_addr: String,
+    rig_addr: Option<String>,
     /// Optional callsign/owner label to show in the frontend
     #[arg(short = 'c', long = "callsign")]
     callsign: Option<String>,
@@ -68,6 +99,13 @@ struct Cli {
 enum AccessKind {
     Serial,
     Tcp,
+}
+
+fn normalize_name(name: &str) -> String {
+    name.to_ascii_lowercase()
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric())
+        .collect()
 }
 
 /// Parse a serial rig address of the form "<path> <baud>".
@@ -88,38 +126,238 @@ fn parse_serial_addr(addr: &str) -> DynResult<(String, u32)> {
     Ok((path.to_string(), baud))
 }
 
+/// Resolved configuration after merging config file and CLI arguments.
+struct ResolvedConfig {
+    rig: String,
+    access: RigAccess,
+    frontends: Vec<String>,
+    http_listen: IpAddr,
+    http_port: u16,
+    rigctl_listen: IpAddr,
+    rigctl_port: u16,
+    http_json_listen: IpAddr,
+    http_json_port: u16,
+    callsign: Option<String>,
+}
+
+impl ResolvedConfig {
+    /// Build resolved config from CLI args and config file.
+    fn from_cli_and_config(
+        cli: &Cli,
+        cfg: &config::Config,
+        qt_remote_enabled: bool,
+    ) -> DynResult<Self> {
+        // Resolve rig model: CLI > config > error
+        let rig_str = cli.rig.clone().or_else(|| cfg.rig.model.clone());
+        let rig = match rig_str.as_deref() {
+            Some(name) => normalize_name(name),
+            None if qt_remote_enabled => "remote".to_string(),
+            None => {
+                return Err(
+                    "Rig model not specified. Use --rig or set [rig].model in config.".into(),
+                )
+            }
+        };
+        if !qt_remote_enabled && !is_backend_registered(&rig) {
+            return Err(format!(
+                "Unknown rig model: {} (available: {})",
+                rig,
+                registered_backends().join(", ")
+            )
+            .into());
+        }
+
+        let access = if qt_remote_enabled {
+            RigAccess::Tcp {
+                addr: "remote".to_string(),
+            }
+        } else {
+            // Resolve access method: CLI > config > default to serial
+            let access_type = cli
+                .access
+                .as_ref()
+                .map(|a| match a {
+                    AccessKind::Serial => "serial",
+                    AccessKind::Tcp => "tcp",
+                })
+                .or(cfg.rig.access.access_type.as_deref());
+
+            match access_type {
+                Some("serial") | None => {
+                    // Try CLI rig_addr first, then config
+                    let (path, baud) = if let Some(ref addr) = cli.rig_addr {
+                        parse_serial_addr(addr)?
+                    } else if let (Some(port), Some(baud)) =
+                        (&cfg.rig.access.port, cfg.rig.access.baud)
+                    {
+                        (port.clone(), baud)
+                    } else {
+                        return Err("Serial access requires port and baud. Use '<path> <baud>' argument or set [rig.access].port and .baud in config.".into());
+                    };
+                    RigAccess::Serial { path, baud }
+                }
+                Some("tcp") => {
+                    let addr = if let Some(ref addr) = cli.rig_addr {
+                        addr.clone()
+                    } else if let (Some(host), Some(port)) =
+                        (&cfg.rig.access.host, cfg.rig.access.tcp_port)
+                    {
+                        format!("{}:{}", host, port)
+                    } else {
+                        return Err("TCP access requires host:port. Use argument or set [rig.access].host and .tcp_port in config.".into());
+                    };
+                    RigAccess::Tcp { addr }
+                }
+                Some(other) => return Err(format!("Unknown access type: {}", other).into()),
+            }
+        };
+
+        // Resolve frontends: CLI > config > default
+        let frontends = if let Some(ref fes) = cli.frontends {
+            fes.iter().map(|f| normalize_name(f)).collect()
+        } else {
+            let mut fes = Vec::new();
+            if cfg.frontends.http.enabled {
+                fes.push("http".to_string());
+            }
+            if cfg.frontends.rigctl.enabled {
+                fes.push("rigctl".to_string());
+            }
+            if cfg.frontends.http_json.enabled {
+                fes.push("httpjson".to_string());
+            }
+            if cfg.frontends.qt.enabled {
+                fes.push("qt".to_string());
+            }
+            if fes.is_empty() {
+                fes.push("http".to_string()); // Default
+            }
+            fes
+        };
+        for name in &frontends {
+            if !is_frontend_registered(name) {
+                return Err(format!(
+                    "Unknown frontend: {} (available: {})",
+                    name,
+                    registered_frontends().join(", ")
+                )
+                .into());
+            }
+        }
+
+        // Resolve HTTP settings: CLI > config
+        let http_listen = cli.http_listen.unwrap_or(cfg.frontends.http.listen);
+        let http_port = cli.http_port.unwrap_or(cfg.frontends.http.port);
+
+        // Resolve rigctl settings: CLI > config
+        let rigctl_listen = cli.rigctl_listen.unwrap_or(cfg.frontends.rigctl.listen);
+        let rigctl_port = cli.rigctl_port.unwrap_or(cfg.frontends.rigctl.port);
+
+        // Resolve JSON TCP settings: CLI > config
+        let http_json_listen = cli
+            .http_json_listen
+            .unwrap_or(cfg.frontends.http_json.listen);
+        let http_json_port = cli.http_json_port.unwrap_or(cfg.frontends.http_json.port);
+
+        // Resolve callsign: CLI > config
+        let callsign = cli
+            .callsign
+            .clone()
+            .or_else(|| cfg.general.callsign.clone());
+
+        Ok(Self {
+            rig,
+            access,
+            frontends,
+            http_listen,
+            http_port,
+            rigctl_listen,
+            rigctl_port,
+            http_json_listen,
+            http_json_port,
+            callsign,
+        })
+    }
+}
+
 #[tokio::main]
 async fn main() -> DynResult<()> {
     init_tracing();
+    register_builtin_backends();
+    let _plugin_libs = plugins::load_plugins();
+    register_http_frontend();
+    register_http_json_frontend();
+    #[cfg(feature = "qt-frontend")]
+    register_qt_frontend();
+    register_rigctl_frontend();
 
     let cli = Cli::parse();
 
-    let access = match cli.access {
-        AccessKind::Serial => {
-            let (path, baud) = parse_serial_addr(&cli.rig_addr)?;
-            info!(
-                "Starting trxd (rig: {}, access: serial {} @ {} baud)",
-                cli.rig, path, baud
-            );
-            RigAccess::Serial { path, baud }
-        }
-        AccessKind::Tcp => {
-            info!(
-                "Starting trxd (rig: {}, access: tcp {})",
-                cli.rig, cli.rig_addr
-            );
-            RigAccess::Tcp {
-                addr: cli.rig_addr.clone(),
+    // Handle --print-config
+    if cli.print_config {
+        println!("{}", config::Config::example_toml());
+        return Ok(());
+    }
+
+    // Load configuration file
+    let (cfg, config_path) = if let Some(ref path) = cli.config {
+        let cfg = config::Config::load_from_file(path)?;
+        (cfg, Some(path.clone()))
+    } else {
+        config::Config::load_from_default_paths()?
+    };
+
+    if let Some(ref path) = config_path {
+        info!("Loaded configuration from {}", path.display());
+    }
+
+    set_auth_tokens(cfg.frontends.http_json.auth.tokens.clone());
+
+    let qt_remote_enabled = cfg.frontends.qt.enabled && cfg.frontends.qt.remote.enabled;
+    if qt_remote_enabled
+        && cfg
+            .frontends
+            .qt
+            .remote
+            .url
+            .as_deref()
+            .unwrap_or("")
+            .is_empty()
+    {
+        return Err("Qt remote mode enabled but frontends.qt.remote.url is missing".into());
+    }
+
+    // Merge CLI and config
+    let resolved = ResolvedConfig::from_cli_and_config(&cli, &cfg, qt_remote_enabled)?;
+
+    // Log startup info
+    if qt_remote_enabled {
+        info!("Starting trxd in Qt remote client mode");
+    } else {
+        match &resolved.access {
+            RigAccess::Serial { path, baud } => {
+                info!(
+                    "Starting trxd (rig: {}, access: serial {} @ {} baud)",
+                    resolved.rig, path, baud
+                );
+            }
+            RigAccess::Tcp { addr } => {
+                info!(
+                    "Starting trxd (rig: {}, access: tcp {})",
+                    resolved.rig, addr
+                );
             }
         }
-    };
+    }
     // Channel used to communicate with the rig task.
-    let (tx, rx) = mpsc::channel::<RigRequest>(32);
+    let (tx, rx) = mpsc::channel::<RigRequest>(RIG_TASK_CHANNEL_BUFFER);
     let initial_state = RigState {
         rig_info: None,
         status: RigStatus {
-            freq: Freq { hz: 144_300_000 },
-            mode: RigMode::USB,
+            freq: Freq {
+                hz: cfg.rig.initial_freq_hz,
+            },
+            mode: cfg.rig.initial_mode.clone(),
             tx_en: false,
             vfo: None,
             tx: Some(RigTxStatus {
@@ -144,40 +382,61 @@ async fn main() -> DynResult<()> {
     };
     let (state_tx, state_rx) = watch::channel(initial_state.clone());
 
-    // Spawn the rig task.
-    let _rig_handle = tokio::spawn(rig_task(cli.rig, access, rx, state_tx, initial_state));
-
-    // Start TCP listener for clients.
-    let listen_addr = SocketAddr::from(([127, 0, 0, 1], 0));
-    let listener = TcpListener::bind(listen_addr).await?;
-    let actual_addr = listener.local_addr()?;
-    info!("TCP listener started on {}", actual_addr);
-
-    // Start simple HTTP status server on 127.0.0.1:8080.
-    let http_state_rx = state_rx.clone();
-    if matches!(cli.frontend, FrontendKind::Http) {
-        HttpFrontend::spawn_frontend(http_state_rx, tx.clone(), cli.callsign.clone());
+    if qt_remote_enabled {
+        let remote_addr = remote_client::parse_remote_url(
+            cfg.frontends.qt.remote.url.as_deref().unwrap_or_default(),
+        )
+        .map_err(|e| format!("Invalid Qt remote URL: {}", e))?;
+        let remote_cfg = remote_client::RemoteClientConfig {
+            addr: remote_addr,
+            token: cfg.frontends.qt.remote.auth.token.clone(),
+            poll_interval: Duration::from_millis(750),
+        };
+        let _remote_handle =
+            tokio::spawn(remote_client::run_remote_client(remote_cfg, rx, state_tx));
+    } else {
+        // Spawn the rig task (controller-based implementation).
+        let rig_task_config = rig_task::RigTaskConfig {
+            rig_model: resolved.rig,
+            access: resolved.access,
+            polling: AdaptivePolling::new(
+                Duration::from_millis(cfg.behavior.poll_interval_ms),
+                Duration::from_millis(cfg.behavior.poll_interval_tx_ms),
+            ),
+            retry: ExponentialBackoff::new(
+                cfg.behavior.max_retries.max(1),
+                Duration::from_millis(cfg.behavior.retry_base_delay_ms),
+                Duration::from_secs(RETRY_MAX_DELAY_SECS),
+            ),
+            initial_freq_hz: cfg.rig.initial_freq_hz,
+            initial_mode: cfg.rig.initial_mode.clone(),
+        };
+        let _rig_handle = tokio::spawn(rig_task::run_rig_task(rig_task_config, rx, state_tx));
     }
 
-    loop {
-        tokio::select! {
-            res = listener.accept() => {
-                let (socket, addr) = res?;
-                info!("New client connected: {}", addr);
-
-                let tx_clone = tx.clone();
-                tokio::spawn(async move {
-                    if let Err(e) = handle_client(socket, addr, tx_clone).await {
-                        error!("Client {} error: {:?}", addr, e);
-                    }
-                });
+    // Start frontends.
+    for frontend in &resolved.frontends {
+        let frontend_state_rx = state_rx.clone();
+        let addr = match frontend.as_str() {
+            "http" => SocketAddr::from((resolved.http_listen, resolved.http_port)),
+            "rigctl" => SocketAddr::from((resolved.rigctl_listen, resolved.rigctl_port)),
+            "httpjson" => SocketAddr::from((resolved.http_json_listen, resolved.http_json_port)),
+            "qt" => SocketAddr::from(QT_FRONTEND_LISTEN_ADDR),
+            other => {
+                return Err(format!("Frontend missing listen configuration: {}", other).into());
             }
-            _ = signal::ctrl_c() => {
-                info!("Ctrl+C received, shutting down");
-                break;
-            }
-        }
+        };
+        trx_frontend::spawn_frontend(
+            frontend,
+            frontend_state_rx,
+            tx.clone(),
+            resolved.callsign.clone(),
+            addr,
+        )?;
     }
+
+    signal::ctrl_c().await?;
+    info!("Ctrl+C received, shutting down");
 
     Ok(())
 }
@@ -186,572 +445,4 @@ async fn main() -> DynResult<()> {
 fn init_tracing() {
     // Uses default formatting and RUST_LOG if available.
     tracing_subscriber::fmt().with_target(false).init();
-}
-
-/// Task that owns the TRX state and talks to the serial port.
-async fn rig_task(
-    rig_kind: RigKind,
-    access: RigAccess,
-    mut rx: mpsc::Receiver<RigRequest>,
-    state_tx: watch::Sender<RigState>,
-    mut state: RigState,
-) -> DynResult<()> {
-    info!("Opening rig backend {}", rig_kind);
-    match &access {
-        RigAccess::Serial { path, baud } => info!("Serial: {} @ {} baud", path, baud),
-        RigAccess::Tcp { addr } => info!("TCP CAT: {}", addr),
-    }
-
-    let mut rig: Box<dyn RigCat> = build_rig(rig_kind, access)?;
-    info!("Rig backend ready");
-
-    let mut poll = time::interval(Duration::from_millis(250));
-    let mut poll_pause_until: Option<Instant> = None;
-    let mut last_power_on: Option<Instant> = None;
-
-    // Initial bring-up and VFO priming.
-    let rig_info = rig.info().clone();
-    state.rig_info = Some(rig_info);
-    if let Some(info) = state.rig_info.as_ref() {
-        info!(
-            "Rig info: {} {} {}",
-            info.manufacturer, info.model, info.revision
-        );
-    }
-    let _ = state_tx.send(state.clone());
-    if !state.control.enabled.unwrap_or(false) {
-        info!("Sending initial PowerOn to wake rig");
-        match rig.power_on().await {
-            Ok(()) => {
-                state.control.enabled = Some(true);
-                time::sleep(Duration::from_secs(3)).await;
-                if let Err(e) = refresh_state_with_retry(&mut rig, &mut state, 2).await {
-                    warn!(
-                        "Initial PowerOn refresh failed: {:?}; retrying once after short delay",
-                        e
-                    );
-                    time::sleep(Duration::from_millis(500)).await;
-                    if let Err(e2) = refresh_state_with_retry(&mut rig, &mut state, 1).await {
-                        warn!(
-                            "Initial PowerOn second refresh failed (continuing): {:?}",
-                            e2
-                        );
-                    }
-                }
-                info!("Rig initialized after power on sequence");
-            }
-            Err(e) => warn!("Initial PowerOn failed (continuing): {:?}", e),
-        }
-    }
-    if let Err(e) = prime_vfo_state(&mut rig, &mut state).await {
-        warn!("VFO priming failed: {:?}", e);
-    }
-    state.initialized = true;
-    let _ = state_tx.send(state.clone());
-
-    // Single-task loop: handle commands and periodic polling.
-    loop {
-        tokio::select! {
-            _ = poll.tick() => {
-                if let Some(until) = poll_pause_until {
-                    if Instant::now() < until {
-                        continue;
-                    } else {
-                        poll_pause_until = None;
-                    }
-                }
-                if matches!(state.control.enabled, Some(false)) {
-                    continue;
-                }
-                match refresh_state_with_retry(&mut rig, &mut state, 2).await {
-                    Ok(()) => { let _ = state_tx.send(state.clone()); }
-                    Err(e) => {
-                        error!("CAT polling error: {:?}", e);
-                        if let Some(last_on) = last_power_on {
-                            if Instant::now().duration_since(last_on) < Duration::from_secs(5) {
-                                poll_pause_until = Some(Instant::now() + Duration::from_millis(800));
-                                continue;
-                            }
-                        }
-                    }
-                }
-            },
-            maybe_req = rx.recv() => {
-                let Some(first_req) = maybe_req else { break; };
-                let mut batch = vec![first_req];
-                while let Ok(next) = rx.try_recv() {
-                    batch.push(next);
-                }
-                while let Some(RigRequest { cmd, respond_to }) = batch.pop() {
-                    let responders = vec![respond_to];
-                    let cmd_label = format!("{:?}", cmd);
-                    let started = Instant::now();
-
-                    let result: RigResult<RigSnapshot> = {
-                        let not_ready = !state.initialized
-                            && !matches!(cmd, RigCommand::PowerOn | RigCommand::GetSnapshot);
-                        if not_ready {
-                            Err(RigError("rig not initialized yet".into()))
-                        } else {
-                            match cmd {
-                                RigCommand::GetSnapshot => match refresh_state_with_retry(&mut rig, &mut state, 2).await {
-                                    Ok(()) => {
-                                        let _ = state_tx.send(state.clone());
-                                        snapshot_from(&state)
-                                    }
-                                    Err(e) => {
-                                        error!("Failed to read CAT status: {:?}", e);
-                                        Err(RigError(format!("CAT error: {}", e)))
-                                    }
-                                },
-                                RigCommand::SetFreq(freq) => {
-                                    info!("SetFreq requested: {} Hz", freq.hz);
-                                    if state.control.lock.unwrap_or(false) {
-                                        warn!("SetFreq blocked: panel lock is active");
-                                        Err(RigError("panel is locked".into()))
-                                    } else {
-                                        let res = time::timeout(Duration::from_secs(1), rig.set_freq(freq)).await;
-                                        match res {
-                                            Ok(Ok(())) => {
-                                                state.apply_freq(freq);
-                                                poll_pause_until = Some(Instant::now() + Duration::from_millis(200));
-                                                let _ = state_tx.send(state.clone());
-                                                snapshot_from(&state)
-                                            }
-                                            Ok(Err(e)) => {
-                                                error!("Failed to send CAT SetFreq: {:?}", e);
-                                                Err(RigError(format!("CAT error: {}", e)))
-                                            }
-                                            Err(elapsed) => {
-                                                warn!("CAT SetFreq timed out ({:?}) but proceeding with state update", elapsed);
-                                                state.apply_freq(freq);
-                                                poll_pause_until = Some(Instant::now() + Duration::from_millis(200));
-                                                let _ = state_tx.send(state.clone());
-                                                snapshot_from(&state)
-                                            }
-                                        }
-                                    }
-                                }
-                                RigCommand::SetMode(mode) => {
-                                    info!("SetMode requested: {:?}", mode);
-                                    if state.control.lock.unwrap_or(false) {
-                                        warn!("SetMode blocked: panel lock is active");
-                                        Err(RigError("panel is locked".into()))
-                                    } else {
-                                        let res = time::timeout(Duration::from_secs(1), rig.set_mode(mode.clone())).await;
-                                        match res {
-                                            Ok(Ok(())) => {
-                                                state.apply_mode(mode.clone());
-                                                poll_pause_until = Some(Instant::now() + Duration::from_millis(200));
-                                                let _ = state_tx.send(state.clone());
-                                                snapshot_from(&state)
-                                            }
-                                            Ok(Err(e)) => {
-                                                error!("Failed to send CAT SetMode: {:?}", e);
-                                                Err(RigError(format!("CAT error: {}", e)))
-                                            }
-                                            Err(elapsed) => {
-                                                warn!("CAT SetMode timed out ({:?}) but proceeding with state update", elapsed);
-                                                state.apply_mode(mode.clone());
-                                                poll_pause_until = Some(Instant::now() + Duration::from_millis(200));
-                                                let _ = state_tx.send(state.clone());
-                                                snapshot_from(&state)
-                                            }
-                                        }
-                                    }
-                                }
-                                RigCommand::SetPtt(ptt) => {
-                                    info!("SetPtt requested: {}", ptt);
-                                    if let Err(e) = rig.set_ptt(ptt).await {
-                                        error!("Failed to send CAT SetPtt: {:?}", e);
-                                        Err(RigError(format!("CAT error: {}", e)))
-                                    } else {
-                                        state.status.tx_en = ptt;
-                                        if !ptt {
-                                            if let Some(tx) = state.status.tx.as_mut() {
-                                                tx.power = Some(0);
-                                                tx.swr = Some(0.0);
-                                            }
-                                        }
-                                        state.status.lock = state.control.lock;
-                                        let _ = state_tx.send(state.clone());
-                                        snapshot_from(&state)
-                                    }
-                                }
-                                RigCommand::PowerOn => {
-                                    info!("PowerOn requested");
-                                    if let Err(e) = rig.power_on().await {
-                                        error!("Failed to send CAT PowerOn: {:?}", e);
-                                        Err(RigError(format!("CAT error: {}", e)))
-                                    } else {
-                                        state.control.enabled = Some(true);
-                                        time::sleep(Duration::from_secs(3)).await;
-                                        let now = Instant::now();
-                                        poll_pause_until = Some(now + Duration::from_secs(3));
-                                        last_power_on = Some(now);
-                                        match refresh_state_with_retry(&mut rig, &mut state, 2).await {
-                                            Ok(()) => {
-                                                let _ = state_tx.send(state.clone());
-                                                snapshot_from(&state)
-                                            }
-                                            Err(e) => {
-                                                if is_invalid_bcd_error(e.as_ref()) {
-                                                    warn!("Transient CAT decode after PowerOn (ignored): {:?}", e);
-                                                    poll_pause_until = Some(Instant::now() + Duration::from_millis(1500));
-                                                    let _ = state_tx.send(state.clone());
-                                                    snapshot_from(&state)
-                                                } else {
-                                                    error!("Failed to refresh after PowerOn: {:?}", e);
-                                                    Err(RigError(format!("CAT error: {}", e)))
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                                RigCommand::PowerOff => {
-                                    info!("PowerOff requested");
-                                    if let Err(e) = rig.power_off().await {
-                                        error!("Failed to send CAT PowerOff: {:?}", e);
-                                        Err(RigError(format!("CAT error: {}", e)))
-                                    } else {
-                                        state.control.enabled = Some(false);
-                                        state.status.tx_en = false;
-                                        let _ = state_tx.send(state.clone());
-                                        snapshot_from(&state)
-                                    }
-                                }
-                                RigCommand::ToggleVfo => {
-                                    info!("Toggle VFO requested");
-                                    if state.control.lock.unwrap_or(false) {
-                                        warn!("ToggleVfo blocked: panel lock is active");
-                                        Err(RigError("panel is locked".into()))
-                                    } else if let Err(e) = rig.toggle_vfo().await {
-                                        error!("Failed to send CAT ToggleVfo: {:?}", e);
-                                        Err(RigError(format!("CAT error: {}", e)))
-                                    } else {
-                                        time::sleep(Duration::from_millis(150)).await;
-                                        poll_pause_until = Some(Instant::now() + Duration::from_millis(300));
-                                        match refresh_state_with_retry(&mut rig, &mut state, 2).await {
-                                            Ok(()) => {
-                                                let _ = state_tx.send(state.clone());
-                                                snapshot_from(&state)
-                                            }
-                                            Err(e) => {
-                                                error!("Failed to refresh after ToggleVfo: {:?}", e);
-                                                Err(RigError(format!("CAT error: {}", e)))
-                                            }
-                                        }
-                                    }
-                                }
-                                RigCommand::GetTxLimit => match rig.get_tx_limit().await {
-                                    Ok(limit) => {
-                                        state
-                                            .status
-                                            .tx
-                                            .get_or_insert(RigTxStatus { power: None, limit: None, swr: None, alc: None })
-                                            .limit = Some(limit);
-                                        let _ = state_tx.send(state.clone());
-                                        snapshot_from(&state)
-                                    }
-                                    Err(e) => {
-                                        error!("Failed to read TX limit: {:?}", e);
-                                        Err(RigError(format!("CAT error: {}", e)))
-                                    }
-                                },
-                                RigCommand::SetTxLimit(limit) => match rig.set_tx_limit(limit).await {
-                                    Ok(()) => {
-                                        state
-                                            .status
-                                            .tx
-                                            .get_or_insert(RigTxStatus { power: None, limit: None, swr: None, alc: None })
-                                            .limit = Some(limit);
-                                        let _ = state_tx.send(state.clone());
-                                        snapshot_from(&state)
-                                    }
-                                    Err(e) => {
-                                        error!("Failed to set TX limit: {:?}", e);
-                                        Err(RigError(format!("CAT error: {}", e)))
-                                    }
-                                }
-                                RigCommand::Lock => {
-                                    info!("Lock requested");
-                                    match rig.lock().await {
-                                        Ok(()) => {
-                                            state.control.lock = Some(true);
-                                            state.status.lock = Some(true);
-                                            let _ = state_tx.send(state.clone());
-                                            snapshot_from(&state)
-                                        }
-                                        Err(e) => {
-                                            error!("Failed to send CAT Lock: {:?}", e);
-                                            Err(RigError(format!("CAT error: {}", e)))
-                                        }
-                                    }
-                                }
-                                RigCommand::Unlock => {
-                                    info!("Unlock requested");
-                                    match rig.unlock().await {
-                                        Ok(()) => {
-                                            state.control.lock = Some(false);
-                                            state.status.lock = Some(false);
-                                            let _ = state_tx.send(state.clone());
-                                            snapshot_from(&state)
-                                        }
-                                        Err(e) => {
-                                            error!("Failed to send CAT Unlock: {:?}", e);
-                                            Err(RigError(format!("CAT error: {}", e)))
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    };
-
-                    for tx in responders {
-                        let _ = tx.send(result.clone());
-                    }
-                    let elapsed = started.elapsed();
-                    if elapsed > Duration::from_millis(500) {
-                        warn!("Rig command {} took {:?}", cmd_label, elapsed);
-                    } else {
-                        debug!("Rig command {} completed in {:?}", cmd_label, elapsed);
-                    }
-                }
-            },
-        }
-    }
-
-    info!("rig_task shutting down (channel closed)");
-    Ok(())
-}
-
-async fn refresh_state_from_cat(trx: &mut Box<dyn RigCat>, state: &mut RigState) -> DynResult<()> {
-    let (freq, mode, vfo) = trx.get_status().await?;
-    state.control.enabled = Some(true);
-    state.apply_freq(freq);
-    state.apply_mode(mode);
-    state.status.vfo = vfo.clone();
-
-    if state.status.tx_en {
-        state.status.rx.get_or_insert(RigRxStatus { sig: None }).sig = Some(0);
-    } else if let Ok(meter) = trx.get_signal_strength().await {
-        let sig = map_signal_strength(&state.status.mode, meter);
-        state.status.rx.get_or_insert(RigRxStatus { sig: None }).sig = Some(sig);
-    }
-    if let Ok(limit) = trx.get_tx_limit().await {
-        state
-            .status
-            .tx
-            .get_or_insert(RigTxStatus {
-                power: None,
-                limit: None,
-                swr: None,
-                alc: None,
-            })
-            .limit = Some(limit);
-    }
-    if state.status.tx_en {
-        if let Ok(power) = trx.get_tx_power().await {
-            state
-                .status
-                .tx
-                .get_or_insert(RigTxStatus {
-                    power: None,
-                    limit: None,
-                    swr: None,
-                    alc: None,
-                })
-                .power = Some(power);
-        }
-    }
-    state.status.lock = Some(state.control.lock.unwrap_or(false));
-    Ok(())
-}
-
-async fn refresh_state_with_retry(
-    trx: &mut Box<dyn RigCat>,
-    state: &mut RigState,
-    attempts: usize,
-) -> DynResult<()> {
-    let mut last_err: Option<Box<dyn std::error::Error + Send + Sync>> = None;
-    for i in 0..attempts {
-        match refresh_state_from_cat(trx, state).await {
-            Ok(()) => return Ok(()),
-            Err(e) => {
-                let should_retry = is_invalid_bcd_error(e.as_ref());
-                last_err = Some(e);
-                if should_retry && i + 1 < attempts {
-                    warn!(
-                        "Retrying CAT state read after invalid BCD (attempt {} of {})",
-                        i + 1,
-                        attempts
-                    );
-                    time::sleep(Duration::from_millis(300)).await;
-                    continue;
-                } else {
-                    break;
-                }
-            }
-        }
-    }
-
-    Err(last_err.unwrap_or_else(|| "Unknown CAT error".into()))
-}
-
-async fn prime_vfo_state(trx: &mut Box<dyn RigCat>, state: &mut RigState) -> DynResult<()> {
-    // Ensure panel is unlocked so we can CAT-control safely.
-    let _ = trx.unlock().await;
-    time::sleep(Duration::from_millis(100)).await;
-
-    refresh_state_with_retry(trx, state, 2).await?;
-    time::sleep(Duration::from_millis(150)).await;
-
-    trx.toggle_vfo().await?;
-    time::sleep(Duration::from_millis(150)).await;
-    refresh_state_with_retry(trx, state, 2).await?;
-
-    trx.toggle_vfo().await?;
-    time::sleep(Duration::from_millis(150)).await;
-    refresh_state_with_retry(trx, state, 2).await?;
-
-    Ok(())
-}
-
-/// Handle a single TCP client.
-async fn handle_client(
-    socket: TcpStream,
-    addr: SocketAddr,
-    tx: mpsc::Sender<RigRequest>,
-) -> DynResult<()> {
-    let (reader, mut writer) = socket.into_split();
-    let mut reader = BufReader::new(reader);
-    let mut line = String::new();
-
-    loop {
-        line.clear();
-        let bytes_read = reader.read_line(&mut line).await?;
-        if bytes_read == 0 {
-            info!("Client {} disconnected", addr);
-            break;
-        }
-
-        // Simple protocol: one line = one JSON command.
-        let trimmed = line.trim();
-        if trimmed.is_empty() {
-            continue;
-        }
-
-        let cmd: ClientCommand = match serde_json::from_str(trimmed) {
-            Ok(c) => c,
-            Err(e) => {
-                error!("Invalid JSON from {}: {} / {:?}", addr, trimmed, e);
-                let resp = ClientResponse {
-                    success: false,
-                    state: None,
-                    error: Some(format!("Invalid JSON: {}", e)),
-                };
-                let resp_line = serde_json::to_string(&resp)? + "\n";
-                writer.write_all(resp_line.as_bytes()).await?;
-                writer.flush().await?;
-                continue;
-            }
-        };
-
-        // Map ClientCommand -> RigCommand.
-        let rig_cmd = match cmd {
-            ClientCommand::GetState => RigCommand::GetSnapshot,
-            ClientCommand::SetFreq { freq_hz } => RigCommand::SetFreq(Freq { hz: freq_hz }),
-            ClientCommand::SetMode { mode } => RigCommand::SetMode(parse_mode(&mode)),
-            ClientCommand::SetPtt { ptt } => RigCommand::SetPtt(ptt),
-            ClientCommand::PowerOn => RigCommand::PowerOn,
-            ClientCommand::PowerOff => RigCommand::PowerOff,
-            ClientCommand::ToggleVfo => RigCommand::ToggleVfo,
-            ClientCommand::GetTxLimit => RigCommand::GetTxLimit,
-            ClientCommand::SetTxLimit { limit } => RigCommand::SetTxLimit(limit),
-        };
-
-        let (resp_tx, resp_rx) = oneshot::channel();
-        let req = RigRequest {
-            cmd: rig_cmd,
-            respond_to: resp_tx,
-        };
-
-        if let Err(e) = tx.send(req).await {
-            error!("Failed to send request to rig_task: {:?}", e);
-            let resp = ClientResponse {
-                success: false,
-                state: None,
-                error: Some("Internal error: rig task not available".into()),
-            };
-            let resp_line = serde_json::to_string(&resp)? + "\n";
-            writer.write_all(resp_line.as_bytes()).await?;
-            writer.flush().await?;
-            continue;
-        }
-
-        match resp_rx.await {
-            Ok(Ok(snapshot)) => {
-                let resp = ClientResponse {
-                    success: true,
-                    state: Some(snapshot),
-                    error: None,
-                };
-                let resp_line = serde_json::to_string(&resp)? + "\n";
-                writer.write_all(resp_line.as_bytes()).await?;
-                writer.flush().await?;
-            }
-            Ok(Err(err)) => {
-                let resp = ClientResponse {
-                    success: false,
-                    state: None,
-                    error: Some(err.0),
-                };
-                let resp_line = serde_json::to_string(&resp)? + "\n";
-                writer.write_all(resp_line.as_bytes()).await?;
-                writer.flush().await?;
-            }
-            Err(e) => {
-                error!("Rig response oneshot recv error: {:?}", e);
-                let resp = ClientResponse {
-                    success: false,
-                    state: None,
-                    error: Some("Internal error waiting for rig response".into()),
-                };
-                let resp_line = serde_json::to_string(&resp)? + "\n";
-                writer.write_all(resp_line.as_bytes()).await?;
-                writer.flush().await?;
-            }
-        }
-    }
-
-    Ok(())
-}
-
-fn map_signal_strength(mode: &RigMode, raw: u8) -> i32 {
-    let val = raw as i32;
-    match mode {
-        RigMode::FM | RigMode::WFM => val.saturating_sub(128),
-        _ => val,
-    }
-}
-
-/// Parse mode string coming from the client into RigMode.
-fn parse_mode(s: &str) -> RigMode {
-    match s.to_uppercase().as_str() {
-        "LSB" => RigMode::LSB,
-        "USB" => RigMode::USB,
-        "CW" => RigMode::CW,
-        "CWR" => RigMode::CWR,
-        "AM" => RigMode::AM,
-        "FM" => RigMode::FM,
-        "DIG" | "DIGI" => RigMode::DIG,
-        "PKT" | "PACKET" => RigMode::PKT,
-        other => RigMode::Other(other.to_string()),
-    }
-}
-
-fn snapshot_from(state: &RigState) -> RigResult<RigSnapshot> {
-    state
-        .snapshot()
-        .ok_or_else(|| RigError("Rig info unavailable".into()))
 }
