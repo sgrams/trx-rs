@@ -2,38 +2,14 @@
 //
 // SPDX-License-Identifier: BSD-2-Clause
 
-use clap::ValueEnum;
+use std::collections::HashMap;
+use std::sync::{Mutex, OnceLock};
+
 use trx_core::rig::RigCat;
 use trx_core::DynResult;
 
 #[cfg(feature = "ft817")]
 use trx_backend_ft817::Ft817;
-
-/// Supported rig backends selectable at runtime.
-#[derive(Debug, Clone, Copy, ValueEnum)]
-pub enum RigKind {
-    #[cfg(feature = "ft817")]
-    #[value(alias = "ft-817")]
-    Ft817,
-}
-
-impl RigKind {
-    pub fn all() -> &'static [RigKind] {
-        &[
-            #[cfg(feature = "ft817")]
-            RigKind::Ft817,
-        ]
-    }
-}
-
-impl std::fmt::Display for RigKind {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            #[cfg(feature = "ft817")]
-            RigKind::Ft817 => write!(f, "ft817"),
-        }
-    }
-}
 
 /// Connection details for instantiating a rig backend.
 #[derive(Debug, Clone)]
@@ -42,21 +18,75 @@ pub enum RigAccess {
     Tcp { addr: String },
 }
 
-/// Instantiate a rig backend based on the selected kind and access method.
-pub fn build_rig(kind: RigKind, access: RigAccess) -> DynResult<Box<dyn RigCat>> {
-    match (kind, access) {
-        // Yaesu FT-817
-        #[cfg(feature = "ft817")]
-        (RigKind::Ft817, RigAccess::Serial { path, baud }) => {
-            Ok(Box::new(Ft817::new(&path, baud)?))
-        }
-        #[cfg(feature = "ft817")]
-        (RigKind::Ft817, RigAccess::Tcp { .. }) => {
-            Err("FT-817 only supports serial CAT access".into())
-        }
+type BackendFactory = fn(RigAccess) -> DynResult<Box<dyn RigCat>>;
 
-        // Fallback for unsupported combinations
-        #[allow(unreachable_patterns)]
-        _ => Err("Selected rig is not enabled/available".into()),
+struct BackendRegistry {
+    factories: HashMap<String, BackendFactory>,
+}
+
+impl BackendRegistry {
+    fn new() -> Self {
+        Self {
+            factories: HashMap::new(),
+        }
+    }
+}
+
+fn registry() -> &'static Mutex<BackendRegistry> {
+    static REGISTRY: OnceLock<Mutex<BackendRegistry>> = OnceLock::new();
+    REGISTRY.get_or_init(|| Mutex::new(BackendRegistry::new()))
+}
+
+fn normalize_name(name: &str) -> String {
+    name.to_ascii_lowercase()
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric())
+        .collect()
+}
+
+/// Register a backend factory under a stable name (e.g. "ft817").
+pub fn register_backend(name: &str, factory: BackendFactory) {
+    let key = normalize_name(name);
+    let mut reg = registry().lock().expect("backend registry mutex poisoned");
+    reg.factories.insert(key, factory);
+}
+
+/// Register all built-in backends enabled by features.
+pub fn register_builtin_backends() {
+    #[cfg(feature = "ft817")]
+    register_backend("ft817", ft817_factory);
+}
+
+/// Check whether a backend name is registered.
+pub fn is_backend_registered(name: &str) -> bool {
+    let key = normalize_name(name);
+    let reg = registry().lock().expect("backend registry mutex poisoned");
+    reg.factories.contains_key(&key)
+}
+
+/// List registered backend names.
+pub fn registered_backends() -> Vec<String> {
+    let reg = registry().lock().expect("backend registry mutex poisoned");
+    let mut names: Vec<String> = reg.factories.keys().cloned().collect();
+    names.sort();
+    names
+}
+
+/// Instantiate a rig backend based on the selected name and access method.
+pub fn build_rig(name: &str, access: RigAccess) -> DynResult<Box<dyn RigCat>> {
+    let key = normalize_name(name);
+    let reg = registry().lock().expect("backend registry mutex poisoned");
+    let factory = reg
+        .factories
+        .get(&key)
+        .ok_or_else(|| format!("Unknown rig backend: {}", name))?;
+    factory(access)
+}
+
+#[cfg(feature = "ft817")]
+fn ft817_factory(access: RigAccess) -> DynResult<Box<dyn RigCat>> {
+    match access {
+        RigAccess::Serial { path, baud } => Ok(Box::new(Ft817::new(&path, baud)?)),
+        RigAccess::Tcp { .. } => Err("FT-817 only supports serial CAT access".into()),
     }
 }

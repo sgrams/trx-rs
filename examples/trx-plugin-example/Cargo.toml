@@ -1,0 +1,18 @@
+# SPDX-FileCopyrightText: 2025 Stanislaw Grams <stanislawgrams@gmail.com>
+#
+# SPDX-License-Identifier: BSD-2-Clause
+
+[package]
+name = "trx-plugin-example"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+trx-backend = { path = "../../src/trx-backend" }
+trx-core = { path = "../../src/trx-core" }
+trx-frontend = { path = "../../src/trx-frontend" }
+tokio = { workspace = true, features = ["full"] }
+tracing = { workspace = true }
