@@ -6,5 +6,5 @@ pub mod server;
 
 pub fn register_frontend() {
     use trx_frontend::FrontendSpawner;
-    trx_frontend::register_frontend("http", server::HttpFrontend::spawn_frontend);
+    trx_frontend::register_frontend("rigctl", server::RigctlFrontend::spawn_frontend);
 }

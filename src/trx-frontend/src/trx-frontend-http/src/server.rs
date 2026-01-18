@@ -7,6 +7,8 @@ mod api;
 #[path = "status.rs"]
 pub mod status;
 
+use std::net::SocketAddr;
+
 use actix_web::dev::Server;
 use actix_web::{web, App, HttpServer};
 use tokio::signal;
@@ -26,9 +28,10 @@ impl FrontendSpawner for HttpFrontend {
         state_rx: watch::Receiver<RigState>,
         rig_tx: mpsc::Sender<RigRequest>,
         callsign: Option<String>,
+        listen_addr: SocketAddr,
     ) -> JoinHandle<()> {
         tokio::spawn(async move {
-            if let Err(e) = serve(state_rx, rig_tx, callsign).await {
+            if let Err(e) = serve(listen_addr, state_rx, rig_tx, callsign).await {
                 error!("HTTP status server error: {:?}", e);
             }
         })
@@ -36,24 +39,25 @@ impl FrontendSpawner for HttpFrontend {
 }
 
 async fn serve(
+    addr: SocketAddr,
     state_rx: watch::Receiver<RigState>,
     rig_tx: mpsc::Sender<RigRequest>,
     callsign: Option<String>,
 ) -> Result<(), actix_web::Error> {
-    let addr = ("127.0.0.1", 8080);
     let server = build_server(addr, state_rx, rig_tx, callsign)?;
     let handle = server.handle();
     tokio::spawn(async move {
         let _ = signal::ctrl_c().await;
         handle.stop(false).await;
     });
-    info!("HTTP status server on {}:{}", addr.0, addr.1);
+    info!("http frontend listening on {}", addr);
+    info!("http frontend ready (status/control)");
     server.await?;
     Ok(())
 }
 
 fn build_server(
-    addr: (&str, u16),
+    addr: SocketAddr,
     state_rx: watch::Receiver<RigState>,
     rig_tx: mpsc::Sender<RigRequest>,
     callsign: Option<String>,

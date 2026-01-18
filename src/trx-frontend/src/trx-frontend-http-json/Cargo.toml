@@ -1,0 +1,15 @@
+# SPDX-FileCopyrightText: 2025 Stanislaw Grams <stanislawgrams@gmail.com>
+#
+# SPDX-License-Identifier: BSD-2-Clause
+
+[package]
+name = "trx-frontend-http-json"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+trx-core = { path = "../../../trx-core" }
+trx-frontend = { path = "../.." }
+tokio = { workspace = true, features = ["full"] }
+serde_json = { workspace = true }
+tracing = { workspace = true }
