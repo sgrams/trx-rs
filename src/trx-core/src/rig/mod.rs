@@ -5,7 +5,7 @@
 use std::future::Future;
 use std::pin::Pin;
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::radio::freq::{Band, Freq};
 use crate::{DynResult, RigMode};
@@ -15,28 +15,29 @@ pub type RigStatusFuture<'a> =
     Pin<Box<dyn Future<Output = DynResult<(Freq, RigMode, Option<RigVfo>)>> + Send + 'a>>;
 
 pub mod command;
+pub mod controller;
 pub mod request;
 pub mod response;
 pub mod state;
 
 /// How this backend communicates with the rig.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum RigAccessMethod {
     Serial { path: String, baud: u32 },
     Tcp { addr: String },
 }
 
 /// Static info describing a rig backend.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RigInfo {
-    pub manufacturer: &'static str,
-    pub model: &'static str,
-    pub revision: &'static str,
+    pub manufacturer: String,
+    pub model: String,
+    pub revision: String,
     pub capabilities: RigCapabilities,
     pub access: RigAccessMethod,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RigCapabilities {
     pub supported_bands: Vec<Band>,
     pub supported_modes: Vec<RigMode>,
@@ -99,7 +100,7 @@ pub trait RigCat: Rig + Send {
 }
 
 /// Snapshot of a rig's status that every backend can expose.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RigStatus {
     pub freq: Freq,
     pub mode: RigMode,
@@ -115,21 +116,21 @@ pub trait RigStatusProvider {
     fn status(&self) -> RigStatus;
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RigVfo {
     pub entries: Vec<RigVfoEntry>,
     /// Index into `entries` for the active VFO, if known.
     pub active: Option<usize>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RigVfoEntry {
     pub name: String,
     pub freq: Freq,
     pub mode: Option<RigMode>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RigTxStatus {
     pub power: Option<u8>,
     pub limit: Option<u8>,
@@ -137,7 +138,7 @@ pub struct RigTxStatus {
     pub alc: Option<u8>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RigRxStatus {
     pub sig: Option<i32>,
 }

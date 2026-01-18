@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use crate::rig::state::RigSnapshot;
 
 /// Command received from network clients (JSON).
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 #[serde(tag = "cmd", rename_all = "snake_case")]
 pub enum ClientCommand {
     GetState,
@@ -17,12 +17,22 @@ pub enum ClientCommand {
     PowerOn,
     PowerOff,
     ToggleVfo,
+    Lock,
+    Unlock,
     GetTxLimit,
     SetTxLimit { limit: u8 },
 }
 
+/// Envelope for client commands with optional authentication token.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ClientEnvelope {
+    pub token: Option<String>,
+    #[serde(flatten)]
+    pub cmd: ClientCommand,
+}
+
 /// Response sent to network clients over TCP.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct ClientResponse {
     pub success: bool,
     pub state: Option<RigSnapshot>,

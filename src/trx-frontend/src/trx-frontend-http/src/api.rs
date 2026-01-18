@@ -16,8 +16,10 @@ use trx_core::{ClientResponse, RigCommand, RigMode, RigRequest, RigSnapshot, Rig
 
 use crate::server::status;
 
-const FAVICON_BYTES: &[u8] =
-    include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/assets/trx-favicon.png"));
+const FAVICON_BYTES: &[u8] = include_bytes!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/assets/trx-favicon.png"
+));
 const LOGO_BYTES: &[u8] =
     include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/assets/trx-logo.png"));
 
@@ -218,7 +220,7 @@ async fn send_command(
         Ok(Err(err)) => Ok(HttpResponse::BadRequest().json(ClientResponse {
             success: false,
             state: None,
-            error: Some(err.0),
+            error: Some(err.message),
         })),
         Err(e) => Err(actix_web::error::ErrorInternalServerError(format!(
             "rig response channel error: {e:?}"
@@ -262,9 +264,9 @@ impl Default for RigInfoPlaceholder {
 impl From<RigInfoPlaceholder> for RigInfo {
     fn from(_: RigInfoPlaceholder) -> Self {
         RigInfo {
-            manufacturer: "Unknown",
-            model: "Rig",
-            revision: "",
+            manufacturer: "Unknown".to_string(),
+            model: "Rig".to_string(),
+            revision: "".to_string(),
             capabilities: RigCapabilities {
                 supported_bands: vec![],
                 supported_modes: vec![],

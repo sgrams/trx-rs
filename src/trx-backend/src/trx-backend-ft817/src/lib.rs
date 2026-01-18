@@ -33,9 +33,9 @@ impl Ft817 {
         let builder = tokio_serial::new(path, baud);
         let port = builder.open_native_async()?;
         let info = RigInfo {
-            manufacturer: "Yaesu",
-            model: "FT-817",
-            revision: "",
+            manufacturer: "Yaesu".to_string(),
+            model: "FT-817".to_string(),
+            revision: "".to_string(),
             capabilities: RigCapabilities {
                 supported_bands: vec![
                     // Transmit-capable amateur bands

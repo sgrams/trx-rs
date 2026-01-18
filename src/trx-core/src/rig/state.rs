@@ -83,7 +83,7 @@ impl RigState {
 }
 
 /// Read-only projection of state shared with clients.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RigSnapshot {
     pub info: RigInfo,
     pub status: RigStatus,
