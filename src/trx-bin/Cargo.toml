@@ -12,10 +12,20 @@ tokio = { workspace = true, features = ["full"] }
 tokio-serial = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
+toml = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 clap = { workspace = true, features = ["derive"] }
+dirs = "6"
+libloading = "0.8"
 trx-backend = { path = "../trx-backend" }
 trx-core = { path = "../trx-core" }
 trx-frontend = { path = "../trx-frontend" }
 trx-frontend-http = { path = "../trx-frontend/src/trx-frontend-http" }
+trx-frontend-http-json = { path = "../trx-frontend/src/trx-frontend-http-json" }
+trx-frontend-qt = { path = "../trx-frontend/src/trx-frontend-qt", optional = true }
+trx-frontend-rigctl = { path = "../trx-frontend/src/trx-frontend-rigctl" }
+
+[features]
+default = []
+qt-frontend = ["trx-frontend-qt/qt"]
