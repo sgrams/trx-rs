@@ -16,7 +16,7 @@ qt = ["dep:qmetaobject"]
 
 [dependencies]
 trx-core = { path = "../../../trx-core" }
-trx-frontend = { path = "../.." }
+trx-frontend = { path = ".." }
 tokio = { workspace = true, features = ["full"] }
 tracing = { workspace = true }
 

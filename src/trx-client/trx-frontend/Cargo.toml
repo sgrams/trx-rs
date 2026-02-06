@@ -8,5 +8,5 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-trx-core = { path = "../trx-core" }
+trx-core = { path = "../../trx-core" }
 tokio = { workspace = true, features = ["sync"] }

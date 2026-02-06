@@ -12,8 +12,8 @@ default = ["ft817"]
 ft817 = ["dep:trx-backend-ft817"]
 
 [dependencies]
-trx-core = { path = "../trx-core" }
-trx-backend-ft817 = { path = "src/trx-backend-ft817", optional = true }
+trx-core = { path = "../../trx-core" }
+trx-backend-ft817 = { path = "trx-backend-ft817", optional = true }
 tokio = { workspace = true, features = ["full"] }
 tokio-serial = { workspace = true }
 serde = { workspace = true, features = ["derive"] }

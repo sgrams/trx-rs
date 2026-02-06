@@ -18,11 +18,11 @@ clap = { workspace = true, features = ["derive"] }
 dirs = "6"
 libloading = "0.8"
 trx-core = { path = "../trx-core" }
-trx-frontend = { path = "../trx-frontend" }
-trx-frontend-http = { path = "../trx-frontend/src/trx-frontend-http" }
-trx-frontend-http-json = { path = "../trx-frontend/src/trx-frontend-http-json" }
-trx-frontend-rigctl = { path = "../trx-frontend/src/trx-frontend-rigctl" }
-trx-frontend-qt = { path = "../trx-frontend/src/trx-frontend-qt", optional = true }
+trx-frontend = { path = "trx-frontend" }
+trx-frontend-http = { path = "trx-frontend/trx-frontend-http" }
+trx-frontend-http-json = { path = "trx-frontend/trx-frontend-http-json" }
+trx-frontend-rigctl = { path = "trx-frontend/trx-frontend-rigctl" }
+trx-frontend-qt = { path = "trx-frontend/trx-frontend-qt", optional = true }
 
 [features]
 default = []

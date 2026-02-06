@@ -9,7 +9,7 @@ edition = "2021"
 
 [dependencies]
 trx-core = { path = "../../../trx-core" }
-trx-frontend = { path = "../.." }
+trx-frontend = { path = ".." }
 tokio = { workspace = true, features = ["full"] }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }

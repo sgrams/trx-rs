@@ -11,4 +11,4 @@ edition = "2021"
 tokio = { workspace = true, features = ["full"] }
 tracing = { workspace = true }
 trx-core = { path = "../../../trx-core" }
-trx-frontend = { path = "../.." }
+trx-frontend = { path = ".." }

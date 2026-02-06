@@ -5,15 +5,15 @@
 [workspace]
 members = [
     "src/trx-server",
+    "src/trx-server/trx-backend",
+    "src/trx-server/trx-backend/trx-backend-ft817",
     "src/trx-client",
-    "src/trx-backend",
-    "src/trx-backend/src/trx-backend-ft817",
+    "src/trx-client/trx-frontend",
+    "src/trx-client/trx-frontend/trx-frontend-http",
+    "src/trx-client/trx-frontend/trx-frontend-http-json",
+    "src/trx-client/trx-frontend/trx-frontend-qt",
+    "src/trx-client/trx-frontend/trx-frontend-rigctl",
     "src/trx-core",
-    "src/trx-frontend",
-    "src/trx-frontend/src/trx-frontend-http",
-    "src/trx-frontend/src/trx-frontend-http-json",
-    "src/trx-frontend/src/trx-frontend-qt",
-    "src/trx-frontend/src/trx-frontend-rigctl",
 ]
 resolver = "2"
 
