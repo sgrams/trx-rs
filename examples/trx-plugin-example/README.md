@@ -16,4 +16,4 @@ mkdir -p plugins
 cp target/release/libtrx_plugin_example.* plugins/
 ```
 
-Run `trx-bin` with `TRX_PLUGIN_DIRS=./plugins` to discover the plugin.
+Run `trx-server` or `trx-client` with `TRX_PLUGIN_DIRS=./plugins` to discover the plugin.

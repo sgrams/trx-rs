@@ -11,8 +11,8 @@ edition = "2021"
 crate-type = ["cdylib"]
 
 [dependencies]
-trx-backend = { path = "../../src/trx-backend" }
+trx-backend = { path = "../../src/trx-server/trx-backend" }
 trx-core = { path = "../../src/trx-core" }
-trx-frontend = { path = "../../src/trx-frontend" }
+trx-frontend = { path = "../../src/trx-client/trx-frontend" }
 tokio = { workspace = true, features = ["full"] }
 tracing = { workspace = true }

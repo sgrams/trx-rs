@@ -15,7 +15,7 @@ use trx_frontend::{register_frontend, FrontendSpawner};
 const BACKEND_NAME: &str = "example";
 const FRONTEND_NAME: &str = "example-frontend";
 
-/// Entry point called by trx-bin when the plugin is loaded.
+/// Entry point called by trx-server/trx-client when the plugin is loaded.
 #[no_mangle]
 pub extern "C" fn trx_register() {
     register_backend(BACKEND_NAME, example_backend_factory);
