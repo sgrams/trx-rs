@@ -1,0 +1,53 @@
+# trx-client Configuration File
+#
+# Copy this file to one of:
+#   ./trx-client.toml                   (current directory)
+#   ~/.config/trx-rs/client.toml        (user config)
+#   /etc/trx-rs/client.toml             (system-wide)
+#
+# Or specify a custom path with: trx-client --config /path/to/config.toml
+#
+# CLI arguments override config file values.
+
+[general]
+# Callsign or station identifier displayed in frontends
+callsign = "N0CALL"
+
+# Log level: trace, debug, info, warn, error
+# log_level = "info"
+
+[remote]
+# Remote trx-server URL (host:port)
+url = "192.168.1.100:9000"
+
+# Poll interval in milliseconds
+poll_interval_ms = 750
+
+[remote.auth]
+# Bearer token for authenticating with the remote server
+token = "my-token"
+
+[frontends.http]
+# Enable HTTP/REST frontend with SSE for real-time updates
+enabled = true
+listen = "127.0.0.1"
+port = 8080
+
+[frontends.rigctl]
+# Enable rigctl-compatible TCP interface (hamlib compatible)
+enabled = false
+listen = "127.0.0.1"
+port = 4532
+
+[frontends.http_json]
+# Enable JSON-over-TCP control interface
+enabled = true
+listen = "127.0.0.1"
+# Set to 0 to bind an ephemeral port
+port = 0
+# List of accepted bearer tokens (empty = no auth)
+# auth.tokens = ["example-token"]
+
+[frontends.qt]
+# Enable Qt/QML GUI frontend (Linux only, requires system Qt6)
+enabled = false

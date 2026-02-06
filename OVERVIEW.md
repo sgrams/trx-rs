@@ -34,7 +34,7 @@
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────┐
-│                              trx-bin                                      │
+│                              trx-server/trx-client                                      │
 │  ┌────────────────────────────────────────────────────────────────────┐  │
 │  │                        Application                                  │  │
 │  │  ┌──────────────┐  ┌──────────────┐  ┌──────────────────────────┐  │  │
@@ -83,7 +83,8 @@
 | `trx-frontend-http-json` | JSON-over-TCP control frontend |
 | `trx-frontend-qt` | Qt/QML GUI frontend (Linux only, optional) |
 | `trx-frontend-rigctl` | Hamlib rigctl-compatible TCP interface |
-| `trx-bin` | Main executable with config file support |
+| `trx-server` | Server binary — connects to rig backend, exposes JSON TCP control |
+| `trx-client` | Client binary — connects to server, runs frontends (HTTP, rigctl, Qt) |
 
 ---
 
@@ -92,7 +93,7 @@
 trx-rs supports TOML configuration files with the following search order:
 
 1. `--config <path>` (explicit CLI argument)
-2. `./trx-rs.toml` (current directory)
+2. `./trx-server.toml` or `./trx-client.toml` (current directory)
 3. `~/.config/trx-rs/config.toml` (XDG user config)
 4. `/etc/trx-rs/config.toml` (system-wide)
 
@@ -151,7 +152,7 @@ max_retries = 3
 retry_base_delay_ms = 100
 ```
 
-Use `trx-bin --print-config` to generate an example configuration.
+Use `trx-server --print-config` or `trx-client --print-config` to generate an example configuration.
 
 ---
 
@@ -199,7 +200,7 @@ Implemented commands:
 - `ToggleVfoCommand`, `LockCommand`, `UnlockCommand`
 - `GetTxLimitCommand`, `SetTxLimitCommand`, `GetSnapshotCommand`
 
-The rig task (`trx-bin/src/rig_task.rs`) now syncs the state machine to the live `RigState`
+The rig task (`trx-server/src/rig_task.rs`) now syncs the state machine to the live `RigState`
 and emits events whenever rig status changes.
 
 ### Event Notifications (`events.rs`)
@@ -317,14 +318,17 @@ impl RigError {
 # Build
 cargo build --release
 
-# Run with CLI args
-./target/release/trx-bin -r ft817 "/dev/ttyUSB0 9600"
+# Run server with CLI args
+./target/release/trx-server -r ft817 "/dev/ttyUSB0 9600"
 
-# Run with config file
-./target/release/trx-bin --config /path/to/config.toml
+# Run server with config file
+./target/release/trx-server --config /path/to/config.toml
+
+# Run client
+./target/release/trx-client --config /path/to/client-config.toml
 
 # Print example config
-./target/release/trx-bin --print-config > trx-rs.toml
+./target/release/trx-server --print-config > trx-server.toml
 
 # Run tests
 cargo test

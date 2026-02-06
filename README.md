@@ -22,8 +22,8 @@ The rig task is now driven by the controller components (state machine, handlers
 
 ## Plugin discovery
 
-`trx-bin` can load shared-library plugins that register backends/frontends via a
-`trx_register` entrypoint. Search paths:
+`trx-server` and `trx-client` can load shared-library plugins that register backends/frontends
+via a `trx_register` entrypoint. Search paths:
 
 - `./plugins`
 - `~/.config/trx-rs/plugins`

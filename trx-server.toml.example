@@ -1,0 +1,50 @@
+# trx-server Configuration File
+#
+# Copy this file to one of:
+#   ./trx-server.toml                   (current directory)
+#   ~/.config/trx-rs/server.toml        (user config)
+#   /etc/trx-rs/server.toml             (system-wide)
+#
+# Or specify a custom path with: trx-server --config /path/to/config.toml
+#
+# CLI arguments override config file values.
+
+[general]
+# Callsign or station identifier
+callsign = "N0CALL"
+
+# Log level: trace, debug, info, warn, error
+# log_level = "info"
+
+[rig]
+# Rig model: ft817 (more models coming)
+model = "ft817"
+# Initial frequency (Hz) before first CAT read
+initial_freq_hz = 144300000
+# Initial mode before first CAT read (LSB, USB, CW, CWR, AM, WFM, FM, DIG, PKT)
+initial_mode = "USB"
+
+[rig.access]
+# Access type: "serial" or "tcp"
+type = "serial"
+
+# Serial port settings (when type = "serial")
+port = "/dev/ttyUSB0"
+baud = 9600
+
+# TCP settings (when type = "tcp")
+# host = "192.168.1.100"
+# tcp_port = 4532
+
+[behavior]
+# Polling interval when idle (milliseconds)
+poll_interval_ms = 500
+
+# Polling interval when transmitting (milliseconds)
+poll_interval_tx_ms = 100
+
+# Maximum retry attempts for transient errors
+max_retries = 3
+
+# Base delay for exponential backoff (milliseconds)
+retry_base_delay_ms = 100
