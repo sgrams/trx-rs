@@ -5,7 +5,7 @@
 - Linux-only support for the initial implementation.
 - Use system-wide Qt6 (no vendored Qt).
 - Frontend must be optional and feature-gated; default build should not require Qt.
-  - Feature name in `trx-bin`: `qt-frontend`.
+  - Feature name in `trx-client`: `qt-frontend`.
 
 ## Functional Requirements
 - Show rig status: frequency, mode, PTT state, VFO info, lock state, power state.
