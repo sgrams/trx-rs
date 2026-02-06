@@ -1,0 +1,259 @@
+// SPDX-FileCopyrightText: 2025 Stanislaw Grams <stanislawgrams@gmail.com>
+//
+// SPDX-License-Identifier: BSD-2-Clause
+
+mod config;
+mod plugins;
+mod remote_client;
+
+use std::net::{IpAddr, SocketAddr};
+use std::path::PathBuf;
+use std::time::Duration;
+
+use clap::Parser;
+use tokio::signal;
+use tokio::sync::{mpsc, watch};
+use tracing::info;
+
+use trx_core::rig::request::RigRequest;
+use trx_core::rig::state::RigState;
+use trx_core::rig::{RigControl, RigRxStatus, RigStatus, RigTxStatus};
+use trx_core::radio::freq::Freq;
+use trx_core::DynResult;
+use trx_frontend::{is_frontend_registered, registered_frontends};
+use trx_frontend_http::register_frontend as register_http_frontend;
+use trx_frontend_http_json::{register_frontend as register_http_json_frontend, set_auth_tokens};
+use trx_frontend_rigctl::register_frontend as register_rigctl_frontend;
+
+#[cfg(feature = "qt-frontend")]
+use trx_frontend_qt::register_frontend as register_qt_frontend;
+
+use config::ClientConfig;
+use remote_client::{parse_remote_url, RemoteClientConfig};
+
+const PKG_DESCRIPTION: &str = concat!(env!("CARGO_PKG_NAME"), " - remote rig client");
+const RIG_TASK_CHANNEL_BUFFER: usize = 32;
+const QT_FRONTEND_LISTEN_ADDR: ([u8; 4], u16) = ([127, 0, 0, 1], 0);
+
+#[derive(Debug, Parser)]
+#[command(
+    author = env!("CARGO_PKG_AUTHORS"),
+    version = env!("CARGO_PKG_VERSION"),
+    about = PKG_DESCRIPTION,
+)]
+struct Cli {
+    /// Path to configuration file
+    #[arg(long = "config", short = 'C', value_name = "FILE")]
+    config: Option<PathBuf>,
+    /// Print example configuration and exit
+    #[arg(long = "print-config")]
+    print_config: bool,
+    /// Remote server URL (host:port)
+    #[arg(short = 'u', long = "url")]
+    url: Option<String>,
+    /// Authentication token for the remote server
+    #[arg(long = "token")]
+    token: Option<String>,
+    /// Poll interval in milliseconds
+    #[arg(long = "poll-interval")]
+    poll_interval_ms: Option<u64>,
+    /// Frontend(s) to expose locally (e.g. http,rigctl,qt)
+    #[arg(short = 'f', long = "frontend", value_delimiter = ',', num_args = 1..)]
+    frontends: Option<Vec<String>>,
+    /// HTTP frontend listen address
+    #[arg(long = "http-listen")]
+    http_listen: Option<IpAddr>,
+    /// HTTP frontend listen port
+    #[arg(long = "http-port")]
+    http_port: Option<u16>,
+    /// rigctl frontend listen address
+    #[arg(long = "rigctl-listen")]
+    rigctl_listen: Option<IpAddr>,
+    /// rigctl frontend listen port
+    #[arg(long = "rigctl-port")]
+    rigctl_port: Option<u16>,
+    /// JSON TCP frontend listen address
+    #[arg(long = "http-json-listen")]
+    http_json_listen: Option<IpAddr>,
+    /// JSON TCP frontend listen port
+    #[arg(long = "http-json-port")]
+    http_json_port: Option<u16>,
+    /// Optional callsign/owner label to show in the frontend
+    #[arg(short = 'c', long = "callsign")]
+    callsign: Option<String>,
+}
+
+/// Normalize a rig/frontend name to lowercase alphanumeric.
+fn normalize_name(name: &str) -> String {
+    name.to_ascii_lowercase()
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric())
+        .collect()
+}
+
+#[tokio::main]
+async fn main() -> DynResult<()> {
+    tracing_subscriber::fmt().with_target(false).init();
+
+    register_http_frontend();
+    register_http_json_frontend();
+    register_rigctl_frontend();
+    #[cfg(feature = "qt-frontend")]
+    register_qt_frontend();
+    let _plugin_libs = plugins::load_plugins();
+
+    let cli = Cli::parse();
+
+    if cli.print_config {
+        println!("{}", ClientConfig::example_toml());
+        return Ok(());
+    }
+
+    let (cfg, config_path) = if let Some(ref path) = cli.config {
+        let cfg = ClientConfig::load_from_file(path)?;
+        (cfg, Some(path.clone()))
+    } else {
+        ClientConfig::load_from_default_paths()?
+    };
+
+    if let Some(ref path) = config_path {
+        info!("Loaded configuration from {}", path.display());
+    }
+
+    set_auth_tokens(cfg.frontends.http_json.auth.tokens.clone());
+
+    // Resolve remote URL: CLI > config [remote] section > error
+    let remote_url = cli
+        .url
+        .clone()
+        .or_else(|| cfg.remote.url.clone())
+        .ok_or("Remote URL not specified. Use --url or set [remote].url in config.")?;
+
+    let remote_addr =
+        parse_remote_url(&remote_url).map_err(|e| format!("Invalid remote URL: {}", e))?;
+
+    let remote_token = cli
+        .token
+        .clone()
+        .or_else(|| cfg.remote.auth.token.clone());
+
+    let poll_interval_ms = cli
+        .poll_interval_ms
+        .unwrap_or(cfg.remote.poll_interval_ms);
+
+    // Resolve frontends: CLI > config > default to http
+    let frontends = if let Some(ref fes) = cli.frontends {
+        fes.iter().map(|f| normalize_name(f)).collect()
+    } else {
+        let mut fes = Vec::new();
+        if cfg.frontends.http.enabled {
+            fes.push("http".to_string());
+        }
+        if cfg.frontends.rigctl.enabled {
+            fes.push("rigctl".to_string());
+        }
+        if cfg.frontends.http_json.enabled {
+            fes.push("httpjson".to_string());
+        }
+        if cfg.frontends.qt.enabled {
+            fes.push("qt".to_string());
+        }
+        if fes.is_empty() {
+            fes.push("http".to_string());
+        }
+        fes
+    };
+    for name in &frontends {
+        if !is_frontend_registered(name) {
+            return Err(format!(
+                "Unknown frontend: {} (available: {})",
+                name,
+                registered_frontends().join(", ")
+            )
+            .into());
+        }
+    }
+
+    let http_listen = cli.http_listen.unwrap_or(cfg.frontends.http.listen);
+    let http_port = cli.http_port.unwrap_or(cfg.frontends.http.port);
+    let rigctl_listen = cli.rigctl_listen.unwrap_or(cfg.frontends.rigctl.listen);
+    let rigctl_port = cli.rigctl_port.unwrap_or(cfg.frontends.rigctl.port);
+    let http_json_listen = cli
+        .http_json_listen
+        .unwrap_or(cfg.frontends.http_json.listen);
+    let http_json_port = cli.http_json_port.unwrap_or(cfg.frontends.http_json.port);
+    let callsign = cli
+        .callsign
+        .clone()
+        .or_else(|| cfg.general.callsign.clone());
+
+    info!(
+        "Starting trx-client (remote: {}, frontends: {})",
+        remote_addr,
+        frontends.join(", ")
+    );
+
+    let (tx, rx) = mpsc::channel::<RigRequest>(RIG_TASK_CHANNEL_BUFFER);
+
+    let initial_state = RigState {
+        rig_info: None,
+        status: RigStatus {
+            freq: Freq { hz: 144_300_000 },
+            mode: trx_core::rig::state::RigMode::USB,
+            tx_en: false,
+            vfo: None,
+            tx: Some(RigTxStatus {
+                power: None,
+                limit: None,
+                swr: None,
+                alc: None,
+            }),
+            rx: Some(RigRxStatus { sig: None }),
+            lock: Some(false),
+        },
+        initialized: false,
+        control: RigControl {
+            rpt_offset_hz: None,
+            ctcss_hz: None,
+            dcs_code: None,
+            lock: Some(false),
+            clar_hz: None,
+            clar_on: None,
+            enabled: Some(false),
+        },
+    };
+    let (state_tx, state_rx) = watch::channel(initial_state);
+
+    let remote_cfg = RemoteClientConfig {
+        addr: remote_addr,
+        token: remote_token,
+        poll_interval: Duration::from_millis(poll_interval_ms),
+    };
+    let _remote_handle =
+        tokio::spawn(remote_client::run_remote_client(remote_cfg, rx, state_tx));
+
+    // Spawn frontends
+    for frontend in &frontends {
+        let frontend_state_rx = state_rx.clone();
+        let addr = match frontend.as_str() {
+            "http" => SocketAddr::from((http_listen, http_port)),
+            "rigctl" => SocketAddr::from((rigctl_listen, rigctl_port)),
+            "httpjson" => SocketAddr::from((http_json_listen, http_json_port)),
+            "qt" => SocketAddr::from(QT_FRONTEND_LISTEN_ADDR),
+            other => {
+                return Err(format!("Frontend missing listen configuration: {}", other).into());
+            }
+        };
+        trx_frontend::spawn_frontend(
+            frontend,
+            frontend_state_rx,
+            tx.clone(),
+            callsign.clone(),
+            addr,
+        )?;
+    }
+
+    signal::ctrl_c().await?;
+    info!("Ctrl+C received, shutting down");
+    Ok(())
+}

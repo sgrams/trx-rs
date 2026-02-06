@@ -30,15 +30,15 @@ pub async fn run_remote_client(
     let mut reconnect_delay = Duration::from_secs(1);
 
     loop {
-        info!("Qt remote: connecting to {}", config.addr);
+        info!("Remote client: connecting to {}", config.addr);
         match TcpStream::connect(&config.addr).await {
             Ok(stream) => {
                 if let Err(e) = handle_connection(&config, stream, &mut rx, &state_tx).await {
-                    warn!("Qt remote connection dropped: {}", e);
+                    warn!("Remote connection dropped: {}", e);
                 }
             }
             Err(e) => {
-                warn!("Qt remote connect failed: {}", e);
+                warn!("Remote connect failed: {}", e);
             }
         }
 
@@ -66,7 +66,7 @@ async fn handle_connection(
                 }
                 last_poll = Instant::now();
                 if let Err(e) = send_command(config, &mut writer, &mut reader, ClientCommand::GetState, state_tx).await {
-                    warn!("Qt remote poll failed: {}", e);
+                    warn!("Remote poll failed: {}", e);
                 }
             }
             req = rx.recv() => {
