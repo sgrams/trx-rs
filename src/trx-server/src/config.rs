@@ -172,7 +172,7 @@ pub struct AudioConfig {
 impl Default for AudioConfig {
     fn default() -> Self {
         Self {
-            enabled: false,
+            enabled: true,
             listen: IpAddr::V4(std::net::Ipv4Addr::LOCALHOST),
             port: 4533,
             rx_enabled: true,
@@ -305,7 +305,7 @@ mod tests {
         assert!(config.listen.enabled);
         assert_eq!(config.listen.port, 4532);
         assert!(config.listen.auth.tokens.is_empty());
-        assert!(!config.audio.enabled);
+        assert!(config.audio.enabled);
         assert_eq!(config.audio.port, 4533);
         assert_eq!(config.audio.sample_rate, 48000);
     }

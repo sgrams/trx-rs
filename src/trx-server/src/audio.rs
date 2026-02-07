@@ -206,22 +206,19 @@ fn run_playback(
     stream.play()?;
     info!("Audio playback: started");
 
-    let rt = tokio::runtime::Handle::current();
     let mut pcm_buf = vec![0f32; frame_samples];
 
-    rt.block_on(async {
-        while let Some(packet) = rx.recv().await {
-            match decoder.decode_float(&packet, &mut pcm_buf, false) {
-                Ok(decoded) => {
-                    let mut ring = ring_writer.lock().unwrap();
-                    ring.extend(&pcm_buf[..decoded * channels as usize]);
-                }
-                Err(e) => {
-                    warn!("Opus decode error: {}", e);
-                }
+    while let Some(packet) = rx.blocking_recv() {
+        match decoder.decode_float(&packet, &mut pcm_buf, false) {
+            Ok(decoded) => {
+                let mut ring = ring_writer.lock().unwrap();
+                ring.extend(&pcm_buf[..decoded * channels as usize]);
+            }
+            Err(e) => {
+                warn!("Opus decode error: {}", e);
             }
         }
-    });
+    }
 
     Ok(())
 }
