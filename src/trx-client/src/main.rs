@@ -27,14 +27,14 @@ use trx_frontend_rigctl::register_frontend as register_rigctl_frontend;
 
 #[cfg(feature = "appkit-frontend")]
 use trx_frontend_appkit::register_frontend as register_appkit_frontend;
+#[cfg(feature = "appkit-frontend")]
+use trx_frontend_appkit::run_appkit_main_thread;
 
 use config::ClientConfig;
 use remote_client::{parse_remote_url, RemoteClientConfig};
 
 const PKG_DESCRIPTION: &str = concat!(env!("CARGO_PKG_NAME"), " - remote rig client");
 const RIG_TASK_CHANNEL_BUFFER: usize = 32;
-const APPKIT_FRONTEND_LISTEN_ADDR: ([u8; 4], u16) = ([127, 0, 0, 1], 0);
-
 #[derive(Debug, Parser)]
 #[command(
     author = env!("CARGO_PKG_AUTHORS"),
@@ -91,8 +91,48 @@ fn normalize_name(name: &str) -> String {
         .collect()
 }
 
-#[tokio::main]
-async fn main() -> DynResult<()> {
+fn main() -> DynResult<()> {
+    let rt = tokio::runtime::Runtime::new()?;
+
+    #[allow(unused_variables)]
+    let app_state = rt.block_on(async_init())?;
+
+    #[cfg(feature = "appkit-frontend")]
+    if app_state.has_appkit {
+        // Keep a runtime context active on the main thread so that
+        // tokio::spawn inside run_appkit_main_thread works.
+        let _guard = rt.enter();
+
+        // AppKit needs the process main thread. Spawn Ctrl+C handler on the
+        // runtime, then hand main thread to AppKit (blocks forever).
+        rt.spawn(async {
+            signal::ctrl_c().await.ok();
+            info!("Ctrl+C received, shutting down");
+            std::process::exit(0);
+        });
+        run_appkit_main_thread(app_state.state_rx, app_state.rig_tx);
+        unreachable!();
+    }
+
+    // No AppKit — block on Ctrl+C as before.
+    rt.block_on(async {
+        signal::ctrl_c().await?;
+        info!("Ctrl+C received, shutting down");
+        Ok(())
+    })
+}
+
+/// Holds the state needed after async initialization completes.
+struct AppState {
+    #[allow(dead_code)]
+    has_appkit: bool,
+    #[cfg(feature = "appkit-frontend")]
+    state_rx: watch::Receiver<RigState>,
+    #[cfg(feature = "appkit-frontend")]
+    rig_tx: mpsc::Sender<RigRequest>,
+}
+
+async fn async_init() -> DynResult<AppState> {
     tracing_subscriber::fmt().with_target(false).init();
 
     register_http_frontend();
@@ -106,7 +146,7 @@ async fn main() -> DynResult<()> {
 
     if cli.print_config {
         println!("{}", ClientConfig::example_toml());
-        return Ok(());
+        std::process::exit(0);
     }
 
     let (cfg, config_path) = if let Some(ref path) = cli.config {
@@ -142,7 +182,7 @@ async fn main() -> DynResult<()> {
         .unwrap_or(cfg.remote.poll_interval_ms);
 
     // Resolve frontends: CLI > config > default to http
-    let frontends = if let Some(ref fes) = cli.frontends {
+    let frontends: Vec<String> = if let Some(ref fes) = cli.frontends {
         fes.iter().map(|f| normalize_name(f)).collect()
     } else {
         let mut fes = Vec::new();
@@ -186,6 +226,8 @@ async fn main() -> DynResult<()> {
         .callsign
         .clone()
         .or_else(|| cfg.general.callsign.clone());
+
+    let has_appkit = frontends.iter().any(|f| f == "appkit");
 
     info!(
         "Starting trx-client (remote: {}, frontends: {})",
@@ -232,14 +274,16 @@ async fn main() -> DynResult<()> {
     let _remote_handle =
         tokio::spawn(remote_client::run_remote_client(remote_cfg, rx, state_tx));
 
-    // Spawn frontends
+    // Spawn frontends (skip appkit — it will be driven from main thread)
     for frontend in &frontends {
+        if frontend == "appkit" {
+            continue;
+        }
         let frontend_state_rx = state_rx.clone();
         let addr = match frontend.as_str() {
             "http" => SocketAddr::from((http_listen, http_port)),
             "rigctl" => SocketAddr::from((rigctl_listen, rigctl_port)),
             "httpjson" => SocketAddr::from((http_json_listen, http_json_port)),
-            "appkit" => SocketAddr::from(APPKIT_FRONTEND_LISTEN_ADDR),
             other => {
                 return Err(format!("Frontend missing listen configuration: {}", other).into());
             }
@@ -253,7 +297,11 @@ async fn main() -> DynResult<()> {
         )?;
     }
 
-    signal::ctrl_c().await?;
-    info!("Ctrl+C received, shutting down");
-    Ok(())
+    Ok(AppState {
+        has_appkit,
+        #[cfg(feature = "appkit-frontend")]
+        state_rx,
+        #[cfg(feature = "appkit-frontend")]
+        rig_tx: tx,
+    })
 }
