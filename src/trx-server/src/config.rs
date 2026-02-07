@@ -29,6 +29,8 @@ pub struct ServerConfig {
     pub behavior: BehaviorConfig,
     /// TCP listener configuration
     pub listen: ListenConfig,
+    /// Audio streaming configuration
+    pub audio: AudioConfig,
 }
 
 /// General application settings.
@@ -141,6 +143,49 @@ pub struct AuthConfig {
     pub tokens: Vec<String>,
 }
 
+/// Audio streaming configuration.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct AudioConfig {
+    /// Whether audio streaming is enabled
+    pub enabled: bool,
+    /// IP address to listen on for audio connections
+    pub listen: IpAddr,
+    /// TCP port for audio connections
+    pub port: u16,
+    /// Whether RX audio capture is enabled
+    pub rx_enabled: bool,
+    /// Whether TX audio playback is enabled
+    pub tx_enabled: bool,
+    /// Audio input device name (None = system default)
+    pub device: Option<String>,
+    /// Sample rate in Hz
+    pub sample_rate: u32,
+    /// Number of audio channels
+    pub channels: u8,
+    /// Opus frame duration in milliseconds
+    pub frame_duration_ms: u16,
+    /// Opus bitrate in bits per second
+    pub bitrate_bps: u32,
+}
+
+impl Default for AudioConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            listen: IpAddr::V4(std::net::Ipv4Addr::LOCALHOST),
+            port: 4533,
+            rx_enabled: true,
+            tx_enabled: true,
+            device: None,
+            sample_rate: 48000,
+            channels: 1,
+            frame_duration_ms: 20,
+            bitrate_bps: 24000,
+        }
+    }
+}
+
 impl ServerConfig {
     /// Load configuration from a specific file path.
     pub fn load_from_file(path: &Path) -> Result<Self, ConfigError> {
@@ -205,6 +250,7 @@ impl ServerConfig {
             },
             behavior: BehaviorConfig::default(),
             listen: ListenConfig::default(),
+            audio: AudioConfig::default(),
         };
 
         toml::to_string_pretty(&example).unwrap_or_default()
@@ -259,6 +305,9 @@ mod tests {
         assert!(config.listen.enabled);
         assert_eq!(config.listen.port, 4532);
         assert!(config.listen.auth.tokens.is_empty());
+        assert!(!config.audio.enabled);
+        assert_eq!(config.audio.port, 4533);
+        assert_eq!(config.audio.sample_rate, 48000);
     }
 
     #[test]

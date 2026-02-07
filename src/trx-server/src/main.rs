@@ -2,6 +2,7 @@
 //
 // SPDX-License-Identifier: BSD-2-Clause
 
+mod audio;
 mod config;
 mod error;
 mod listener;
@@ -13,10 +14,13 @@ use std::net::{IpAddr, SocketAddr};
 use std::path::PathBuf;
 use std::time::Duration;
 
+use bytes::Bytes;
 use clap::{Parser, ValueEnum};
 use tokio::signal;
-use tokio::sync::{mpsc, watch};
+use tokio::sync::{broadcast, mpsc, watch};
 use tracing::{error, info};
+
+use trx_core::audio::AudioStreamInfo;
 
 use trx_backend::{is_backend_registered, register_builtin_backends, registered_backends, RigAccess};
 use trx_core::radio::freq::Freq;
@@ -300,6 +304,34 @@ async fn main() -> DynResult<()> {
         tokio::spawn(async move {
             if let Err(e) = listener::run_listener(listen_addr, rig_tx, auth_tokens).await {
                 error!("Listener error: {:?}", e);
+            }
+        });
+    }
+
+    if cfg.audio.enabled {
+        let audio_listen = SocketAddr::from((cfg.audio.listen, cfg.audio.port));
+        let stream_info = AudioStreamInfo {
+            sample_rate: cfg.audio.sample_rate,
+            channels: cfg.audio.channels,
+            frame_duration_ms: cfg.audio.frame_duration_ms,
+        };
+
+        let (rx_audio_tx, _) = broadcast::channel::<Bytes>(256);
+        let (tx_audio_tx, tx_audio_rx) = mpsc::channel::<Bytes>(64);
+
+        if cfg.audio.rx_enabled {
+            let _capture_thread = audio::spawn_audio_capture(&cfg.audio, rx_audio_tx.clone());
+        }
+        if cfg.audio.tx_enabled {
+            let _playback_thread = audio::spawn_audio_playback(&cfg.audio, tx_audio_rx);
+        }
+
+        tokio::spawn(async move {
+            if let Err(e) =
+                audio::run_audio_listener(audio_listen, rx_audio_tx, tx_audio_tx, stream_info)
+                    .await
+            {
+                error!("Audio listener error: {:?}", e);
             }
         });
     }
