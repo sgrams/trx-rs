@@ -48,7 +48,7 @@ pub async fn events(state: web::Data<watch::Receiver<RigState>>) -> Result<HttpR
             .map(|json| Ok::<Bytes, Error>(Bytes::from(format!("data: {json}\n\n"))))
     });
 
-    let pings = IntervalStream::new(time::interval(Duration::from_secs(10)))
+    let pings = IntervalStream::new(time::interval(Duration::from_secs(5)))
         .map(|_| Ok::<Bytes, Error>(Bytes::from(": ping\n\n")));
 
     let stream = initial_stream.chain(select(pings, updates));

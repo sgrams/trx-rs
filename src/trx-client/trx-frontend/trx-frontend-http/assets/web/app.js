@@ -289,11 +289,11 @@ es.onmessage = (evt) => {
 
   esHeartbeat = setInterval(() => {
     const now = Date.now();
-    if (now - lastEventAt > 8000) {
+    if (now - lastEventAt > 15000) {
       es.close();
       connect();
     }
-  }, 4000);
+  }, 5000);
 }
 
 async function postPath(path) {
