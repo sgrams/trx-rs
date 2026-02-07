@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>{pkg} v{ver} status</title>
+  <link rel="icon" href="/favicon.ico" />
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+  <div class="card" id="card" style="position:relative; overflow:hidden;">
+    <div class="logo-bg"><img id="logo" src="/logo.png?v=1" alt="trx logo" onerror="console.error('logo load failed'); this.style.display='none'" /></div>
+    <div class="header" style="position:relative; z-index:2;">
+      <div>
+        <div class="title"><span id="rig-title">Rig status</span></div>
+        <div class="subtitle">{pkg} v{ver}</div>
+      </div>
+      <div id="callsign" style="color:#9aa4b5; font-weight:600; display:none;">{callsign_opt}</div>
+    </div>
+    <div id="loading" style="text-align:center; padding:2rem 0;">
+      <div id="loading-title" style="margin-bottom:0.4rem; font-size:1.1rem; font-weight:600;">Initializing (rig)…</div>
+      <div id="loading-sub" style="color:#9aa4b5;"></div>
+    </div>
+    <div id="content" style="display:none;">
+    <div class="status">
+      <div>
+        <div class="label">Frequency<span class="band-tag" id="band-label">--</span></div>
+        <div class="inline">
+          <input class="status-input" id="freq" type="text" value="--" />
+          <button id="freq-apply" type="button">Set</button>
+        </div>
+      </div>
+      <div>
+        <div class="label">Mode</div>
+        <div class="inline">
+          <select class="status-input" id="mode">
+            <option value="">--</option>
+          </select>
+          <button id="mode-apply" type="button">Set</button>
+        </div>
+      </div>
+      <div>
+        <div class="label">Transmit / VFO / Power</div>
+        <div class="inline" style="gap: 0.6rem; flex-wrap: wrap;">
+          <button id="ptt-btn" type="button" style="flex: 1 1 30%;">Toggle PTT</button>
+          <button id="vfo-btn" type="button" style="flex: 1 1 30%;">VFO</button>
+          <button id="power-btn" type="button" style="flex: 1 1 30%;">Toggle Power</button>
+          <button id="lock-btn" type="button" style="flex: 1 1 30%;">Lock</button>
+        </div>
+      </div>
+      <div style="margin-bottom: 0.9rem;">
+        <div class="label">VFO</div>
+        <div class="vfo-box" id="vfo">--</div>
+      </div>
+      <div class="full-row">
+        <div class="label">Signal</div>
+        <div class="signal" style="gap: 1rem;">
+          <div class="signal-bar"><div class="signal-bar-fill" id="signal-bar"></div></div>
+          <div class="signal-value" id="signal-value">--</div>
+        </div>
+      </div>
+      <div class="full-row" id="tx-meters" style="display:none;">
+        <div class="label">TX Meters</div>
+        <div class="meter" style="gap: 1rem; margin-bottom: 0.4rem;">
+          <div class="meter-bar"><div class="meter-fill" id="pwr-bar"></div></div>
+          <div class="meter-value" id="pwr-value">PWR --</div>
+        </div>
+        <div class="meter" style="gap: 1rem;">
+          <div class="meter-bar"><div class="meter-fill" id="swr-bar"></div></div>
+          <div class="meter-value" id="swr-value">SWR --</div>
+        </div>
+      </div>
+      <div id="tx-limit-row" style="display:none;">
+        <div class="label">TX Limit</div>
+        <div class="inline">
+          <input class="status-input" id="tx-limit" type="number" min="0" max="255" step="1" value="" placeholder="--" />
+          <button id="tx-limit-btn" type="button">Set</button>
+        </div>
+        <small>Units depend on rig (percent/watts).</small>
+      </div>
+    </div>
+    <div class="full-row" id="audio-row">
+      <div class="label">Audio</div>
+      <div class="inline" style="gap: 0.6rem; flex-wrap: wrap; align-items: center;">
+        <button id="rx-audio-btn" type="button">RX Audio</button>
+        <button id="tx-audio-btn" type="button">TX Audio</button>
+        <div id="audio-level" style="flex: 1 1 auto; height: 12px; border-radius: 999px; background: #1f2937; border: 1px solid #2d3748; overflow: hidden; min-width: 80px;">
+          <div id="audio-level-fill" style="height: 100%; width: 0%; background: linear-gradient(90deg, #00d17f, #f0ad4e); transition: width 100ms ease;"></div>
+        </div>
+        <small id="audio-status" style="min-width: 60px;">Off</small>
+      </div>
+    </div>
+    <div class="footer">
+      <div class="hint" id="power-hint">Connecting…</div>
+    </div>
+    </div>
+  </div>
+  <script src="/app.js"></script>
+</body>
+</html>

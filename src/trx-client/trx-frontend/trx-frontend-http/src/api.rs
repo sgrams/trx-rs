@@ -169,7 +169,9 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
         .service(set_tx_limit)
         .service(crate::server::audio::audio_ws)
         .service(favicon)
-        .service(logo);
+        .service(logo)
+        .service(style_css)
+        .service(app_js);
 }
 
 #[get("/")]
@@ -191,6 +193,20 @@ async fn logo() -> impl Responder {
     HttpResponse::Ok()
         .insert_header((header::CONTENT_TYPE, "image/png"))
         .body(LOGO_BYTES)
+}
+
+#[get("/style.css")]
+async fn style_css() -> impl Responder {
+    HttpResponse::Ok()
+        .insert_header((header::CONTENT_TYPE, "text/css; charset=utf-8"))
+        .body(status::STYLE_CSS)
+}
+
+#[get("/app.js")]
+async fn app_js() -> impl Responder {
+    HttpResponse::Ok()
+        .insert_header((header::CONTENT_TYPE, "application/javascript; charset=utf-8"))
+        .body(status::APP_JS)
 }
 
 async fn send_command(
