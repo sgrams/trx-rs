@@ -10,6 +10,7 @@
 //! 3. `~/.config/trx-rs/server.toml` (XDG config)
 //! 4. `/etc/trx-rs/server.toml` (system-wide)
 
+use std::net::IpAddr;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
@@ -26,6 +27,8 @@ pub struct ServerConfig {
     pub rig: RigConfig,
     /// Polling and retry behavior
     pub behavior: BehaviorConfig,
+    /// TCP listener configuration
+    pub listen: ListenConfig,
 }
 
 /// General application settings.
@@ -105,6 +108,39 @@ impl Default for BehaviorConfig {
     }
 }
 
+/// TCP listener configuration.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ListenConfig {
+    /// Whether the listener is enabled
+    pub enabled: bool,
+    /// IP address to listen on
+    pub listen: IpAddr,
+    /// TCP port to listen on
+    pub port: u16,
+    /// Authentication configuration
+    pub auth: AuthConfig,
+}
+
+impl Default for ListenConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            listen: IpAddr::V4(std::net::Ipv4Addr::LOCALHOST),
+            port: 4532,
+            auth: AuthConfig::default(),
+        }
+    }
+}
+
+/// Authentication configuration for the TCP listener.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct AuthConfig {
+    /// Valid authentication tokens (empty = no auth required)
+    pub tokens: Vec<String>,
+}
+
 impl ServerConfig {
     /// Load configuration from a specific file path.
     pub fn load_from_file(path: &Path) -> Result<Self, ConfigError> {
@@ -168,6 +204,7 @@ impl ServerConfig {
                 },
             },
             behavior: BehaviorConfig::default(),
+            listen: ListenConfig::default(),
         };
 
         toml::to_string_pretty(&example).unwrap_or_default()
@@ -219,6 +256,9 @@ mod tests {
         assert_eq!(config.rig.initial_mode, RigMode::USB);
         assert_eq!(config.behavior.poll_interval_ms, 500);
         assert_eq!(config.behavior.max_retries, 3);
+        assert!(config.listen.enabled);
+        assert_eq!(config.listen.port, 4532);
+        assert!(config.listen.auth.tokens.is_empty());
     }
 
     #[test]
@@ -261,6 +301,14 @@ poll_interval_ms = 1000
 poll_interval_tx_ms = 200
 max_retries = 5
 retry_base_delay_ms = 50
+
+[listen]
+enabled = true
+listen = "0.0.0.0"
+port = 5000
+
+[listen.auth]
+tokens = ["secret123"]
 "#;
 
         let config: ServerConfig = toml::from_str(toml_str).unwrap();
@@ -270,6 +318,13 @@ retry_base_delay_ms = 50
         assert_eq!(config.rig.initial_mode, RigMode::LSB);
         assert_eq!(config.behavior.poll_interval_ms, 1000);
         assert_eq!(config.behavior.max_retries, 5);
+        assert!(config.listen.enabled);
+        assert_eq!(
+            config.listen.listen,
+            std::net::IpAddr::V4(std::net::Ipv4Addr::new(0, 0, 0, 0))
+        );
+        assert_eq!(config.listen.port, 5000);
+        assert_eq!(config.listen.auth.tokens, vec!["secret123".to_string()]);
     }
 
     #[test]

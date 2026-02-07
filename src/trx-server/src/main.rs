@@ -4,16 +4,19 @@
 
 mod config;
 mod error;
+mod listener;
 mod plugins;
 mod rig_task;
 
+use std::collections::HashSet;
+use std::net::{IpAddr, SocketAddr};
 use std::path::PathBuf;
 use std::time::Duration;
 
 use clap::{Parser, ValueEnum};
 use tokio::signal;
 use tokio::sync::{mpsc, watch};
-use tracing::info;
+use tracing::{error, info};
 
 use trx_backend::{is_backend_registered, register_builtin_backends, registered_backends, RigAccess};
 use trx_core::radio::freq::Freq;
@@ -56,6 +59,12 @@ struct Cli {
     /// Optional callsign/owner label
     #[arg(short = 'c', long = "callsign")]
     callsign: Option<String>,
+    /// IP address for the JSON TCP listener
+    #[arg(short = 'l', long = "listen")]
+    listen: Option<IpAddr>,
+    /// Port for the JSON TCP listener
+    #[arg(short = 'p', long = "port")]
+    port: Option<u16>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
@@ -271,10 +280,31 @@ async fn main() -> DynResult<()> {
     let (state_tx, state_rx) = watch::channel(initial_state);
     // Keep receivers alive so channels don't close prematurely
     let _state_rx = state_rx;
-    let _tx = tx;
 
     let rig_task_config = build_rig_task_config(&resolved, &cfg);
     let _rig_handle = tokio::spawn(rig_task::run_rig_task(rig_task_config, rx, state_tx));
+
+    if cfg.listen.enabled {
+        let listen_ip = cli.listen.unwrap_or(cfg.listen.listen);
+        let listen_port = cli.port.unwrap_or(cfg.listen.port);
+        let listen_addr = SocketAddr::from((listen_ip, listen_port));
+        let auth_tokens: HashSet<String> = cfg
+            .listen
+            .auth
+            .tokens
+            .iter()
+            .filter(|t| !t.is_empty())
+            .cloned()
+            .collect();
+        let rig_tx = tx.clone();
+        tokio::spawn(async move {
+            if let Err(e) = listener::run_listener(listen_addr, rig_tx, auth_tokens).await {
+                error!("Listener error: {:?}", e);
+            }
+        });
+    }
+
+    let _tx = tx;
 
     signal::ctrl_c().await?;
     info!("Ctrl+C received, shutting down");

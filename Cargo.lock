@@ -2036,6 +2036,7 @@ dependencies = [
  "dirs",
  "libloading",
  "serde",
+ "serde_json",
  "tokio",
  "tokio-serial",
  "toml",
