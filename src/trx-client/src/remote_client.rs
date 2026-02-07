@@ -195,7 +195,7 @@ pub fn parse_remote_url(url: &str) -> Result<String, String> {
         .unwrap_or(trimmed);
 
     if !addr.contains(':') {
-        return Err("remote url must be host:port".into());
+        return Ok(format!("{}:4532", addr));
     }
 
     Ok(addr.to_string())
