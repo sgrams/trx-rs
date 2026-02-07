@@ -77,6 +77,8 @@ pub struct FrontendsConfig {
     pub rigctl: RigctlFrontendConfig,
     /// JSON TCP frontend settings
     pub http_json: HttpJsonFrontendConfig,
+    /// AppKit (macOS) frontend settings
+    pub appkit: AppKitFrontendConfig,
 }
 
 /// HTTP frontend configuration.
@@ -156,6 +158,14 @@ pub struct HttpJsonAuthConfig {
     pub tokens: Vec<String>,
 }
 
+/// AppKit (macOS) frontend configuration.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct AppKitFrontendConfig {
+    /// Whether AppKit frontend is enabled
+    pub enabled: bool,
+}
+
 impl ClientConfig {
     /// Load configuration from a specific file path.
     pub fn load_from_file(path: &Path) -> Result<Self, ConfigError> {
@@ -225,6 +235,7 @@ impl ClientConfig {
                     port: 4532,
                 },
                 http_json: HttpJsonFrontendConfig::default(),
+                appkit: AppKitFrontendConfig { enabled: false },
             },
         };
 

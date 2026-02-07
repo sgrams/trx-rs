@@ -47,3 +47,7 @@ listen = "127.0.0.1"
 port = 0
 # List of accepted bearer tokens (empty = no auth)
 # auth.tokens = ["example-token"]
+
+[frontends.appkit]
+# Enable AppKit GUI frontend (macOS only, requires appkit-frontend feature)
+enabled = false

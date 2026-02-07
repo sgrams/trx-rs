@@ -1,0 +1,30 @@
+# SPDX-FileCopyrightText: 2025 Stanislaw Grams <stanislawgrams@gmail.com>
+#
+# SPDX-License-Identifier: BSD-2-Clause
+
+[package]
+name = "trx-frontend-appkit"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[features]
+default = []
+appkit = ["dep:objc2", "dep:objc2-foundation", "dep:objc2-app-kit"]
+
+[dependencies]
+trx-core = { path = "../../../trx-core" }
+trx-frontend = { path = ".." }
+tokio = { workspace = true, features = ["full"] }
+tracing = { workspace = true }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = { version = "0.6", optional = true }
+objc2-foundation = { version = "0.3", optional = true, features = ["NSString", "NSThread", "NSRunLoop"] }
+objc2-app-kit = { version = "0.3", optional = true, features = [
+    "NSApplication", "NSWindow", "NSView", "NSTextField",
+    "NSButton", "NSStackView", "NSColor", "NSResponder",
+    "NSControl", "NSRunningApplication", "NSGraphics"
+] }

@@ -25,11 +25,15 @@ use trx_frontend_http::register_frontend as register_http_frontend;
 use trx_frontend_http_json::{register_frontend as register_http_json_frontend, set_auth_tokens};
 use trx_frontend_rigctl::register_frontend as register_rigctl_frontend;
 
+#[cfg(feature = "appkit-frontend")]
+use trx_frontend_appkit::register_frontend as register_appkit_frontend;
+
 use config::ClientConfig;
 use remote_client::{parse_remote_url, RemoteClientConfig};
 
 const PKG_DESCRIPTION: &str = concat!(env!("CARGO_PKG_NAME"), " - remote rig client");
 const RIG_TASK_CHANNEL_BUFFER: usize = 32;
+const APPKIT_FRONTEND_LISTEN_ADDR: ([u8; 4], u16) = ([127, 0, 0, 1], 0);
 
 #[derive(Debug, Parser)]
 #[command(
@@ -94,6 +98,8 @@ async fn main() -> DynResult<()> {
     register_http_frontend();
     register_http_json_frontend();
     register_rigctl_frontend();
+    #[cfg(feature = "appkit-frontend")]
+    register_appkit_frontend();
     let _plugin_libs = plugins::load_plugins();
 
     let cli = Cli::parse();
@@ -148,6 +154,9 @@ async fn main() -> DynResult<()> {
         }
         if cfg.frontends.http_json.enabled {
             fes.push("httpjson".to_string());
+        }
+        if cfg.frontends.appkit.enabled {
+            fes.push("appkit".to_string());
         }
         if fes.is_empty() {
             fes.push("http".to_string());
@@ -230,6 +239,7 @@ async fn main() -> DynResult<()> {
             "http" => SocketAddr::from((http_listen, http_port)),
             "rigctl" => SocketAddr::from((rigctl_listen, rigctl_port)),
             "httpjson" => SocketAddr::from((http_json_listen, http_json_port)),
+            "appkit" => SocketAddr::from(APPKIT_FRONTEND_LISTEN_ADDR),
             other => {
                 return Err(format!("Frontend missing listen configuration: {}", other).into());
             }

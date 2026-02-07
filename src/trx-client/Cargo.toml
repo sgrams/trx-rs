@@ -22,3 +22,8 @@ trx-frontend = { path = "trx-frontend" }
 trx-frontend-http = { path = "trx-frontend/trx-frontend-http" }
 trx-frontend-http-json = { path = "trx-frontend/trx-frontend-http-json" }
 trx-frontend-rigctl = { path = "trx-frontend/trx-frontend-rigctl" }
+trx-frontend-appkit = { path = "trx-frontend/trx-frontend-appkit", optional = true }
+
+[features]
+default = []
+appkit-frontend = ["trx-frontend-appkit/appkit"]
