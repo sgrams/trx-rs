@@ -67,7 +67,7 @@ pub struct RemoteAuthConfig {
     pub token: Option<String>,
 }
 
-/// Frontend configurations (client — includes Qt).
+/// Frontend configurations.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct FrontendsConfig {
@@ -77,8 +77,6 @@ pub struct FrontendsConfig {
     pub rigctl: RigctlFrontendConfig,
     /// JSON TCP frontend settings
     pub http_json: HttpJsonFrontendConfig,
-    /// Qt/QML frontend settings
-    pub qt: QtFrontendConfig,
 }
 
 /// HTTP frontend configuration.
@@ -158,14 +156,6 @@ pub struct HttpJsonAuthConfig {
     pub tokens: Vec<String>,
 }
 
-/// Qt/QML frontend configuration.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-#[serde(default)]
-pub struct QtFrontendConfig {
-    /// Whether Qt frontend is enabled
-    pub enabled: bool,
-}
-
 impl ClientConfig {
     /// Load configuration from a specific file path.
     pub fn load_from_file(path: &Path) -> Result<Self, ConfigError> {
@@ -235,7 +225,6 @@ impl ClientConfig {
                     port: 4532,
                 },
                 http_json: HttpJsonFrontendConfig::default(),
-                qt: QtFrontendConfig { enabled: false },
             },
         };
 
@@ -290,7 +279,6 @@ mod tests {
         assert_eq!(config.frontends.rigctl.port, 4532);
         assert!(config.frontends.http_json.enabled);
         assert_eq!(config.frontends.http_json.port, 0);
-        assert!(!config.frontends.qt.enabled);
         assert!(config.remote.url.is_none());
         assert_eq!(config.remote.poll_interval_ms, 750);
     }
@@ -311,8 +299,6 @@ enabled = true
 listen = "127.0.0.1"
 port = 8080
 
-[frontends.qt]
-enabled = true
 "#;
 
         let config: ClientConfig = toml::from_str(toml_str).unwrap();
@@ -321,7 +307,6 @@ enabled = true
         assert_eq!(config.remote.auth.token, Some("my-token".to_string()));
         assert_eq!(config.remote.poll_interval_ms, 500);
         assert!(config.frontends.http.enabled);
-        assert!(config.frontends.qt.enabled);
     }
 
     #[test]

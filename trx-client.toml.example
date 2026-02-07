@@ -47,7 +47,3 @@ listen = "127.0.0.1"
 port = 0
 # List of accepted bearer tokens (empty = no auth)
 # auth.tokens = ["example-token"]
-
-[frontends.qt]
-# Enable Qt/QML GUI frontend (Linux only, requires system Qt6)
-enabled = false

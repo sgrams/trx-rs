@@ -17,7 +17,6 @@ The rig task is now driven by the controller components (state machine, handlers
 
 - HTTP status/control frontend (`trx-frontend-http`)
 - JSON TCP control frontend (`trx-frontend-http-json`)
-- Qt/QML GUI frontend (`trx-frontend-qt`, Linux only, optional via `qt-frontend` feature)
 - rigctl-compatible TCP frontend (`trx-frontend-rigctl`, listens on 127.0.0.1:4532)
 
 ## Plugin discovery
@@ -30,13 +29,6 @@ via a `trx_register` entrypoint. Search paths:
 - `TRX_PLUGIN_DIRS` (path-separated)
 
 Example plugin: `examples/trx-plugin-example`
-
-## Qt remote client
-
-The Qt frontend can run as a remote client over the JSON TCP interface.
-Configure the server with `frontends.http_json.auth.tokens` and the client with
-`frontends.qt.remote.enabled`, `frontends.qt.remote.url`, and
-`frontends.qt.remote.auth.token`.
 
 ## License
 

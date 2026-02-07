@@ -20,7 +20,6 @@
 | TCP CAT transport | Partial (config wiring only) |
 | JSON TCP control (line-delimited) | Implemented (configurable frontend) |
 | Plugin registry loading | Implemented (shared libraries) |
-| Qt/QML GUI frontend | In progress (Linux only, optional) |
 | Configuration file (TOML) | Implemented |
 | Rig state machine | Implemented |
 | Command handlers | Implemented |
@@ -81,10 +80,9 @@
 | `trx-frontend` | Frontend trait (`FrontendSpawner`) |
 | `trx-frontend-http` | Web UI with REST API and SSE |
 | `trx-frontend-http-json` | JSON-over-TCP control frontend |
-| `trx-frontend-qt` | Qt/QML GUI frontend (Linux only, optional) |
 | `trx-frontend-rigctl` | Hamlib rigctl-compatible TCP interface |
 | `trx-server` | Server binary — connects to rig backend, exposes JSON TCP control |
-| `trx-client` | Client binary — connects to server, runs frontends (HTTP, rigctl, Qt) |
+| `trx-client` | Client binary — connects to server, runs frontends (HTTP, rigctl) |
 
 ---
 
@@ -102,10 +100,6 @@ CLI arguments override config file values.
 Plugin discovery:
 - Uses shared libraries with a `trx_register` entrypoint.
 - Searches `./plugins`, `~/.config/trx-rs/plugins`, and any paths in `TRX_PLUGIN_DIRS`.
-
-Qt remote client:
-- Uses JSON TCP (`frontends.http_json`) with optional bearer tokens.
-- Configure the client with `frontends.qt.remote.enabled/url/auth.token`.
 
 ### Example Configuration
 
@@ -138,12 +132,6 @@ enabled = true
 listen = "127.0.0.1"
 port = 9000
 auth.tokens = ["demo-token"]
-
-[frontends.qt]
-enabled = false
-remote.enabled = true
-remote.url = "127.0.0.1:9000"
-remote.auth.token = "demo-token"
 
 [behavior]
 poll_interval_ms = 500

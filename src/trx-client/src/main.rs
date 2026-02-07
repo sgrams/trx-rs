@@ -25,15 +25,11 @@ use trx_frontend_http::register_frontend as register_http_frontend;
 use trx_frontend_http_json::{register_frontend as register_http_json_frontend, set_auth_tokens};
 use trx_frontend_rigctl::register_frontend as register_rigctl_frontend;
 
-#[cfg(feature = "qt-frontend")]
-use trx_frontend_qt::register_frontend as register_qt_frontend;
-
 use config::ClientConfig;
 use remote_client::{parse_remote_url, RemoteClientConfig};
 
 const PKG_DESCRIPTION: &str = concat!(env!("CARGO_PKG_NAME"), " - remote rig client");
 const RIG_TASK_CHANNEL_BUFFER: usize = 32;
-const QT_FRONTEND_LISTEN_ADDR: ([u8; 4], u16) = ([127, 0, 0, 1], 0);
 
 #[derive(Debug, Parser)]
 #[command(
@@ -57,7 +53,7 @@ struct Cli {
     /// Poll interval in milliseconds
     #[arg(long = "poll-interval")]
     poll_interval_ms: Option<u64>,
-    /// Frontend(s) to expose locally (e.g. http,rigctl,qt)
+    /// Frontend(s) to expose locally (e.g. http,rigctl)
     #[arg(short = 'f', long = "frontend", value_delimiter = ',', num_args = 1..)]
     frontends: Option<Vec<String>>,
     /// HTTP frontend listen address
@@ -98,8 +94,6 @@ async fn main() -> DynResult<()> {
     register_http_frontend();
     register_http_json_frontend();
     register_rigctl_frontend();
-    #[cfg(feature = "qt-frontend")]
-    register_qt_frontend();
     let _plugin_libs = plugins::load_plugins();
 
     let cli = Cli::parse();
@@ -154,9 +148,6 @@ async fn main() -> DynResult<()> {
         }
         if cfg.frontends.http_json.enabled {
             fes.push("httpjson".to_string());
-        }
-        if cfg.frontends.qt.enabled {
-            fes.push("qt".to_string());
         }
         if fes.is_empty() {
             fes.push("http".to_string());
@@ -239,7 +230,6 @@ async fn main() -> DynResult<()> {
             "http" => SocketAddr::from((http_listen, http_port)),
             "rigctl" => SocketAddr::from((rigctl_listen, rigctl_port)),
             "httpjson" => SocketAddr::from((http_json_listen, http_json_port)),
-            "qt" => SocketAddr::from(QT_FRONTEND_LISTEN_ADDR),
             other => {
                 return Err(format!("Frontend missing listen configuration: {}", other).into());
             }

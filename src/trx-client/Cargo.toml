@@ -22,8 +22,3 @@ trx-frontend = { path = "trx-frontend" }
 trx-frontend-http = { path = "trx-frontend/trx-frontend-http" }
 trx-frontend-http-json = { path = "trx-frontend/trx-frontend-http-json" }
 trx-frontend-rigctl = { path = "trx-frontend/trx-frontend-rigctl" }
-trx-frontend-qt = { path = "trx-frontend/trx-frontend-qt", optional = true }
-
-[features]
-default = []
-qt-frontend = ["trx-frontend-qt/qt"]
