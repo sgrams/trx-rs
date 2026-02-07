@@ -97,13 +97,34 @@ fn run_capture(
         None,
     )?;
 
-    stream.play()?;
-    info!("Audio capture: started ({}Hz, {} ch, {}ms frames)", sample_rate, channels, frame_duration_ms);
+    // Start paused — only capture when clients are connected
+    info!("Audio capture: ready ({}Hz, {} ch, {}ms frames)", sample_rate, channels, frame_duration_ms);
 
     let mut pcm_buf: Vec<f32> = Vec::with_capacity(frame_samples * 2);
     let mut opus_buf = vec![0u8; 4096];
+    let mut capturing = false;
 
     loop {
+        let has_receivers = tx.receiver_count() > 0;
+
+        if has_receivers && !capturing {
+            let _ = stream.play();
+            capturing = true;
+            info!("Audio capture: started");
+        } else if !has_receivers && capturing {
+            let _ = stream.pause();
+            capturing = false;
+            pcm_buf.clear();
+            // Drain any buffered samples
+            while sample_rx.try_recv().is_ok() {}
+            info!("Audio capture: paused (no listeners)");
+        }
+
+        if !capturing {
+            std::thread::sleep(std::time::Duration::from_millis(100));
+            continue;
+        }
+
         match sample_rx.recv() {
             Ok(samples) => {
                 pcm_buf.extend_from_slice(&samples);
