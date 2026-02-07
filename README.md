@@ -20,6 +20,40 @@ The rig task is now driven by the controller components (state machine, handlers
 - AppKit GUI frontend (`trx-frontend-appkit`, macOS only, optional via `appkit-frontend` feature)
 - rigctl-compatible TCP frontend (`trx-frontend-rigctl`, listens on 127.0.0.1:4532)
 
+## Audio streaming
+
+Bidirectional Opus audio streaming between server, client, and browser.
+
+- **Server** captures audio from a configured input device (cpal), encodes to Opus, and streams over a dedicated TCP connection (default port 4533). TX audio received from clients is decoded and played back.
+- **Client** connects to the server's audio TCP port and relays Opus frames to/from the HTTP frontend via a WebSocket at `/audio`.
+- **Browser** connects to the `/audio` WebSocket, decodes Opus via WebCodecs `AudioDecoder`, and plays RX audio. TX audio is captured via `getUserMedia` and encoded with WebCodecs `AudioEncoder`.
+
+Enable with `[audio] enabled = true` in the server config and `[frontends.audio] enabled = true` in the client config.
+
+## Dependencies
+
+### System libraries
+
+The following system libraries are required at build time:
+
+| Library | Purpose | Install |
+|---------|---------|---------|
+| **libopus** | Opus audio codec encoding/decoding | `zb install opus` (or your system package manager) |
+| **cmake** | Required by the `audiopus_sys` build script if libopus is not found via pkg-config | `zb install cmake` |
+| **pkg-config** / **pkgconf** | Locates system libopus during build | `zb install pkgconf` |
+| **Core Audio** (macOS) / **ALSA** (Linux) | Audio device access via cpal | Provided by the OS (macOS) or `alsa-lib-dev` (Linux) |
+
+### Rust crate dependencies
+
+New crate dependencies introduced for audio streaming:
+
+| Crate | Version | Used by | Purpose |
+|-------|---------|---------|---------|
+| **cpal** | 0.15 | trx-server | Cross-platform audio capture and playback (wraps Core Audio, ALSA, WASAPI) |
+| **opus** | 0.3 | trx-server | Safe Rust bindings to libopus for encoding/decoding audio |
+| **bytes** | 1 | trx-server, trx-client | Efficient byte buffer type for passing Opus packets through channels |
+| **actix-ws** | 0.3 | trx-frontend-http | WebSocket support for the actix-web HTTP frontend (`/audio` endpoint) |
+
 ## Plugin discovery
 
 `trx-server` and `trx-client` can load shared-library plugins that register backends/frontends
