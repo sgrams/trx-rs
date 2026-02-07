@@ -167,6 +167,7 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
         .service(set_mode)
         .service(set_ptt)
         .service(set_tx_limit)
+        .service(crate::server::audio::audio_ws)
         .service(favicon)
         .service(logo);
 }

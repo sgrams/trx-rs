@@ -4,6 +4,8 @@
 
 #[path = "api.rs"]
 mod api;
+#[path = "audio.rs"]
+pub mod audio;
 #[path = "status.rs"]
 pub mod status;
 
