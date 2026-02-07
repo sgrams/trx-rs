@@ -9,7 +9,6 @@
 //! thread via a std::sync::mpsc channel.
 
 use std::net::SocketAddr;
-use std::thread;
 
 use objc2::MainThreadMarker;
 use objc2_app_kit::NSApplication;
@@ -30,65 +29,78 @@ pub struct AppKitFrontend;
 impl FrontendSpawner for AppKitFrontend {
     fn spawn_frontend(
         state_rx: watch::Receiver<RigState>,
-        rig_tx: mpsc::Sender<RigRequest>,
+        _rig_tx: mpsc::Sender<RigRequest>,
         _callsign: Option<String>,
         listen_addr: SocketAddr,
     ) -> JoinHandle<()> {
-        // Channel for state updates: async watcher -> AppKit thread.
-        let (state_update_tx, state_update_rx) = std::sync::mpsc::channel::<RigState>();
-
-        // Channel for button actions: UI buttons -> AppKit thread main loop.
-        let (action_tx, action_rx) = std::sync::mpsc::channel::<ButtonAction>();
+        let (state_update_tx, _state_update_rx) = std::sync::mpsc::channel::<RigState>();
 
         // Spawn async state watcher that forwards state changes.
-        let handle = tokio::spawn(async move {
+        // The actual AppKit event loop is driven by `run_appkit_main_thread`
+        // called from main() on the process main thread.
+        tokio::spawn(async move {
             info!("AppKit frontend starting (addr hint: {})", listen_addr);
             run_state_watcher(state_rx, state_update_tx).await;
-        });
+        })
+    }
+}
 
-        // Spawn the AppKit main thread.
-        thread::spawn(move || {
-            let mtm = match MainThreadMarker::new() {
-                Some(m) => m,
-                None => {
-                    warn!("AppKit frontend: could not obtain MainThreadMarker");
-                    return;
-                }
-            };
+/// Run the AppKit event loop on the calling thread (must be the process main
+/// thread, i.e. thread 0). This function **blocks forever**.
+///
+/// It creates the NSApplication, builds the UI window, and enters a polling
+/// loop that drains AppKit events, applies rig state updates, and dispatches
+/// button actions.
+pub fn run_appkit_main_thread(
+    state_rx: watch::Receiver<RigState>,
+    rig_tx: mpsc::Sender<RigRequest>,
+) {
+    // Channel for state updates: async watcher -> main thread.
+    let (state_update_tx, state_update_rx) = std::sync::mpsc::channel::<RigState>();
 
-            let app = NSApplication::sharedApplication(mtm);
+    // Channel for button actions: UI buttons -> main thread loop.
+    let (action_tx, action_rx) = std::sync::mpsc::channel::<ButtonAction>();
 
-            let (window, ui_elements) = ui::build_window(mtm, action_tx);
+    // Spawn async state watcher onto the tokio runtime (running on a
+    // background thread).
+    tokio::spawn(async move {
+        run_state_watcher(state_rx, state_update_tx).await;
+    });
 
-            // Keep window alive for the process lifetime.
-            std::mem::forget(window);
+    let mtm = MainThreadMarker::new()
+        .expect("run_appkit_main_thread must be called from the process main thread");
 
-            let mut model = RigStateModel::default();
+    let app = NSApplication::sharedApplication(mtm);
 
-            // Run a polling loop instead of NSApplication::run() so we can
-            // process state updates and button actions between event cycles.
-            loop {
-                // Process pending AppKit events.
-                drain_appkit_events(&app);
+    let (window, ui_elements) = ui::build_window(mtm, action_tx);
 
-                // Process state updates from the async watcher.
-                while let Ok(state) = state_update_rx.try_recv() {
-                    if model.update(&state) {
-                        ui_elements.refresh(&model);
-                    }
-                }
+    // Keep window alive for the process lifetime.
+    std::mem::forget(window);
 
-                // Process button actions.
-                while let Ok(action) = action_rx.try_recv() {
-                    handle_action(action, &ui_elements, &rig_tx, &model);
-                }
+    let mut model = RigStateModel::default();
 
-                // Sleep briefly to avoid busy-waiting.
-                std::thread::sleep(std::time::Duration::from_millis(16));
+    info!("AppKit frontend: entering main run loop");
+
+    // Run a polling loop instead of NSApplication::run() so we can
+    // process state updates and button actions between event cycles.
+    loop {
+        // Process pending AppKit events.
+        drain_appkit_events(&app);
+
+        // Process state updates from the async watcher.
+        while let Ok(state) = state_update_rx.try_recv() {
+            if model.update(&state) {
+                ui_elements.refresh(&model);
             }
-        });
+        }
 
-        handle
+        // Process button actions.
+        while let Ok(action) = action_rx.try_recv() {
+            handle_action(action, &ui_elements, &rig_tx, &model);
+        }
+
+        // Sleep briefly to avoid busy-waiting.
+        std::thread::sleep(std::time::Duration::from_millis(16));
     }
 }
 

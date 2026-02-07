@@ -12,6 +12,9 @@ pub mod server;
 pub mod ui;
 
 #[cfg(all(target_os = "macos", feature = "appkit"))]
+pub use server::run_appkit_main_thread;
+
+#[cfg(all(target_os = "macos", feature = "appkit"))]
 pub fn register_frontend() {
     use trx_frontend::FrontendSpawner;
     trx_frontend::register_frontend("appkit", server::AppKitFrontend::spawn_frontend);
