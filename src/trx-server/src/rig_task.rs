@@ -211,12 +211,20 @@ pub async fn run_rig_task(
     let _ = state_tx.send(state.clone());
 
     // Main task loop
+    let mut current_poll_duration = polling.interval(state.status.tx_en);
+    let mut poll_sleep: std::pin::Pin<Box<tokio::time::Sleep>> =
+        Box::pin(tokio::time::sleep(current_poll_duration));
     loop {
-        let poll_duration = polling.interval(state.status.tx_en);
-        let mut poll_interval = time::interval(poll_duration);
+        // Update sleep duration if tx_en state changed
+        let new_duration = polling.interval(state.status.tx_en);
+        if new_duration != current_poll_duration {
+            current_poll_duration = new_duration;
+            poll_sleep = Box::pin(tokio::time::sleep(current_poll_duration));
+        }
 
         tokio::select! {
-            _ = poll_interval.tick() => {
+            _ = &mut poll_sleep => {
+                poll_sleep = Box::pin(tokio::time::sleep(current_poll_duration));
                 // Check if polling is paused
                 if let Some(until) = poll_pause_until {
                     if Instant::now() < until {
