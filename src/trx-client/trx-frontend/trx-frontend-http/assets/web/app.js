@@ -471,13 +471,51 @@ let txActive = false;
 let txStream = null;
 let txProcessor = null;
 let streamInfo = null;
+const TX_TIMEOUT_SECS = 120;
+let txTimeoutTimer = null;
+let txTimeoutRemaining = 0;
+let txTimeoutInterval = null;
+const hasWebCodecs = typeof AudioDecoder !== "undefined" && typeof AudioEncoder !== "undefined";
 
-// Simple ring-buffer based audio player
-let playBuffer = [];
-let playNode = null;
+// Show compatibility warning for non-Chromium browsers
+if (!hasWebCodecs) {
+  rxAudioBtn.disabled = true;
+  txAudioBtn.disabled = true;
+  audioStatus.textContent = "Audio requires Chrome/Edge";
+}
+
+function resetTxTimeout() {
+  txTimeoutRemaining = TX_TIMEOUT_SECS;
+  if (txTimeoutTimer) clearTimeout(txTimeoutTimer);
+  txTimeoutTimer = setTimeout(() => {
+    console.warn("PTT safety timeout — stopping TX");
+    stopTxAudio();
+  }, TX_TIMEOUT_SECS * 1000);
+}
+
+function startTxTimeoutCountdown() {
+  txTimeoutRemaining = TX_TIMEOUT_SECS;
+  if (txTimeoutInterval) clearInterval(txTimeoutInterval);
+  txTimeoutInterval = setInterval(() => {
+    txTimeoutRemaining--;
+    if (txTimeoutRemaining <= 10 && txTimeoutRemaining > 0 && txActive) {
+      audioStatus.textContent = `TX timeout ${txTimeoutRemaining}s`;
+    }
+  }, 1000);
+}
+
+function clearTxTimeout() {
+  if (txTimeoutTimer) { clearTimeout(txTimeoutTimer); txTimeoutTimer = null; }
+  if (txTimeoutInterval) { clearInterval(txTimeoutInterval); txTimeoutInterval = null; }
+  txTimeoutRemaining = 0;
+}
 
 function startRxAudio() {
   if (rxActive) { stopRxAudio(); return; }
+  if (!hasWebCodecs) {
+    audioStatus.textContent = "Audio requires Chrome/Edge";
+    return;
+  }
   const proto = location.protocol === "https:" ? "wss:" : "ws:";
   audioWs = new WebSocket(`${proto}//${location.host}/audio`);
   audioWs.binaryType = "arraybuffer";
@@ -599,6 +637,10 @@ function stopRxAudio() {
 
 function startTxAudio() {
   if (txActive) { stopTxAudio(); return; }
+  if (!hasWebCodecs) {
+    audioStatus.textContent = "Audio requires Chrome/Edge";
+    return;
+  }
   if (!audioWs || audioWs.readyState !== WebSocket.OPEN) {
     audioStatus.textContent = "RX first";
     return;
@@ -614,69 +656,67 @@ function startTxAudio() {
     txAudioBtn.style.color = "#e55353";
     audioStatus.textContent = "RX+TX";
 
+    // Start PTT safety timeout
+    resetTxTimeout();
+    startTxTimeoutCountdown();
+
     // Engage PTT automatically
     try { await postPath("/set_ptt?ptt=true"); } catch (e) { console.error("PTT on failed", e); }
 
-    // If WebCodecs AudioEncoder is available, use it for Opus encoding
-    if (typeof AudioEncoder !== "undefined") {
-      const sampleRate = streamInfo.sample_rate || 48000;
-      const channels = streamInfo.channels || 1;
-      const encoder = new AudioEncoder({
-        output: (chunk) => {
-          const buf = new ArrayBuffer(chunk.byteLength);
-          chunk.copyTo(buf);
-          if (audioWs && audioWs.readyState === WebSocket.OPEN) {
-            audioWs.send(buf);
-          }
-        },
-        error: (e) => { console.error("AudioEncoder error", e); }
-      });
-      encoder.configure({
-        codec: "opus",
-        sampleRate: sampleRate,
-        numberOfChannels: channels,
-        bitrate: (streamInfo.bitrate_bps || 24000),
-      });
-      window._txEncoder = encoder;
+    const sampleRate = streamInfo.sample_rate || 48000;
+    const channels = streamInfo.channels || 1;
+    const encoder = new AudioEncoder({
+      output: (chunk) => {
+        const buf = new ArrayBuffer(chunk.byteLength);
+        chunk.copyTo(buf);
+        if (audioWs && audioWs.readyState === WebSocket.OPEN) {
+          audioWs.send(buf);
+        }
+      },
+      error: (e) => { console.error("AudioEncoder error", e); }
+    });
+    encoder.configure({
+      codec: "opus",
+      sampleRate: sampleRate,
+      numberOfChannels: channels,
+      bitrate: (streamInfo.bitrate_bps || 24000),
+    });
+    window._txEncoder = encoder;
 
-      // Use AudioWorklet or ScriptProcessor to feed encoder
-      if (!audioCtx) audioCtx = new AudioContext({ sampleRate: sampleRate });
-      const source = audioCtx.createMediaStreamSource(stream);
-      const frameDuration = (streamInfo.frame_duration_ms || 20) / 1000;
-      const frameSize = Math.floor(sampleRate * frameDuration);
-      // Use ScriptProcessorNode (deprecated but widely supported)
-      const processor = audioCtx.createScriptProcessor(frameSize, channels, channels);
-      let tsCounter = 0;
-      processor.onaudioprocess = (e) => {
-        if (!txActive || !window._txEncoder) return;
-        const input = e.inputBuffer;
-        const data = new Float32Array(input.length * input.numberOfChannels);
-        for (let ch = 0; ch < input.numberOfChannels; ch++) {
-          const chData = input.getChannelData(ch);
-          for (let i = 0; i < input.length; i++) {
-            data[i * input.numberOfChannels + ch] = chData[i];
-          }
-        }
-        try {
-          const frame = new AudioData({
-            format: "f32-planar",
-            sampleRate: input.sampleRate,
-            numberOfFrames: input.length,
-            numberOfChannels: input.numberOfChannels,
-            timestamp: tsCounter,
-            data: input.getChannelData(0),
-          });
-          tsCounter += (input.length / input.sampleRate) * 1_000_000;
-          window._txEncoder.encode(frame);
-          frame.close();
-        } catch (e) {
-          // Ignore
-        }
-      };
-      source.connect(processor);
-      processor.connect(audioCtx.destination);
-      txProcessor = { source, processor };
-    }
+    // Use AudioWorklet or ScriptProcessor to feed encoder
+    if (!audioCtx) audioCtx = new AudioContext({ sampleRate: sampleRate });
+    const source = audioCtx.createMediaStreamSource(stream);
+    const frameDuration = (streamInfo.frame_duration_ms || 20) / 1000;
+    const frameSize = Math.floor(sampleRate * frameDuration);
+    // Use ScriptProcessorNode (deprecated but widely supported)
+    const processor = audioCtx.createScriptProcessor(frameSize, channels, channels);
+    let tsCounter = 0;
+    processor.onaudioprocess = (e) => {
+      if (!txActive || !window._txEncoder) return;
+      const input = e.inputBuffer;
+      // Reset PTT safety timeout on each audio callback
+      resetTxTimeout();
+      // Use mono (channel 0) for f32-planar format
+      const monoData = input.getChannelData(0);
+      try {
+        const frame = new AudioData({
+          format: "f32-planar",
+          sampleRate: input.sampleRate,
+          numberOfFrames: input.length,
+          numberOfChannels: 1,
+          timestamp: tsCounter,
+          data: monoData,
+        });
+        tsCounter += (input.length / input.sampleRate) * 1_000_000;
+        window._txEncoder.encode(frame);
+        frame.close();
+      } catch (e) {
+        // Ignore
+      }
+    };
+    source.connect(processor);
+    processor.connect(audioCtx.destination);
+    txProcessor = { source, processor };
   }).catch((err) => {
     console.error("getUserMedia failed:", err);
     audioStatus.textContent = "Mic denied";
@@ -686,6 +726,7 @@ function startTxAudio() {
 async function stopTxAudio() {
   if (!txActive) return;
   txActive = false;
+  clearTxTimeout();
 
   // Release PTT automatically
   try { await postPath("/set_ptt?ptt=false"); } catch (e) { console.error("PTT off failed", e); }
@@ -710,3 +751,10 @@ async function stopTxAudio() {
 
 rxAudioBtn.addEventListener("click", startRxAudio);
 txAudioBtn.addEventListener("click", startTxAudio);
+
+// Release PTT on page unload to prevent stuck transmit
+window.addEventListener("beforeunload", () => {
+  if (txActive) {
+    navigator.sendBeacon("/set_ptt?ptt=false", "");
+  }
+});
