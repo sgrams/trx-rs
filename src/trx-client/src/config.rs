@@ -96,7 +96,7 @@ pub struct AudioClientConfig {
 impl Default for AudioClientConfig {
     fn default() -> Self {
         Self {
-            enabled: false,
+            enabled: true,
             server_port: 4533,
         }
     }
@@ -314,7 +314,7 @@ mod tests {
         assert_eq!(config.frontends.http_json.port, 0);
         assert!(config.remote.url.is_none());
         assert_eq!(config.remote.poll_interval_ms, 750);
-        assert!(!config.frontends.audio.enabled);
+        assert!(config.frontends.audio.enabled);
         assert_eq!(config.frontends.audio.server_port, 4533);
     }
 
