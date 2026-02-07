@@ -29,6 +29,13 @@ let lastControl;
 let lastTxEn = null;
 let lastRendered = null;
 let rigName = "Rig";
+let hintTimer = null;
+
+function showHint(msg, duration) {
+  powerHint.textContent = msg;
+  if (hintTimer) clearTimeout(hintTimer);
+  if (duration) hintTimer = setTimeout(() => { powerHint.textContent = "Ready"; }, duration);
+}
 let supportedModes = [];
 let supportedBands = [];
 let freqDirty = false;
@@ -313,14 +320,13 @@ async function postPath(path) {
 
 powerBtn.addEventListener("click", async () => {
   powerBtn.disabled = true;
-  powerHint.textContent = "Sending...";
+  showHint("Sending...");
   try {
     await postPath("/toggle_power");
-    powerHint.textContent = "Toggled, waiting for update…";
+    showHint("Toggled, waiting for update…");
   } catch (err) {
-    powerHint.textContent = "Toggle failed";
+    showHint("Toggle failed", 2000);
     console.error(err);
-    setTimeout(() => powerHint.textContent = "Ready", 2000);
   } finally {
     powerBtn.disabled = false;
   }
@@ -328,19 +334,13 @@ powerBtn.addEventListener("click", async () => {
 
 vfoBtn.addEventListener("click", async () => {
   vfoBtn.disabled = true;
-  powerHint.textContent = "Toggling VFO…";
+  showHint("Toggling VFO…");
   try {
     await postPath("/toggle_vfo");
-    powerHint.textContent = "VFO toggled, waiting for update…";
-    setTimeout(() => {
-      if (powerHint.textContent.includes("VFO toggled")) {
-        powerHint.textContent = "Ready";
-      }
-    }, 1200);
+    showHint("VFO toggled", 1200);
   } catch (err) {
-    powerHint.textContent = "VFO toggle failed";
+    showHint("VFO toggle failed", 2000);
     console.error(err);
-    setTimeout(() => powerHint.textContent = "Ready", 2000);
   } finally {
     vfoBtn.disabled = false;
   }
@@ -348,15 +348,14 @@ vfoBtn.addEventListener("click", async () => {
 
 pttBtn.addEventListener("click", async () => {
   pttBtn.disabled = true;
-  powerHint.textContent = "Toggling PTT…";
+  showHint("Toggling PTT…");
   try {
     const desired = lastTxEn ? "false" : "true";
     await postPath(`/set_ptt?ptt=${desired}`);
-    powerHint.textContent = "PTT command sent";
+    showHint("PTT command sent", 1500);
   } catch (err) {
-    powerHint.textContent = "PTT toggle failed";
+    showHint("PTT toggle failed", 2000);
     console.error(err);
-    setTimeout(() => powerHint.textContent = "Ready", 2000);
   } finally {
     pttBtn.disabled = false;
   }
@@ -365,24 +364,22 @@ pttBtn.addEventListener("click", async () => {
 freqBtn.addEventListener("click", async () => {
   const parsed = parseFreqInput(freqEl.value);
   if (parsed === null) {
-    powerHint.textContent = "Freq missing";
+    showHint("Freq missing", 1500);
     return;
   }
   if (!freqAllowed(parsed)) {
-    powerHint.textContent = "Out of supported bands";
-    setTimeout(() => powerHint.textContent = "Ready", 1500);
+    showHint("Out of supported bands", 1500);
     return;
   }
   freqDirty = false;
   freqBtn.disabled = true;
-  powerHint.textContent = "Setting frequency…";
+  showHint("Setting frequency…");
   try {
     await postPath(`/set_freq?hz=${parsed}`);
-    powerHint.textContent = "Freq set";
+    showHint("Freq set", 1500);
   } catch (err) {
-    powerHint.textContent = "Set freq failed";
+    showHint("Set freq failed", 2000);
     console.error(err);
-    setTimeout(() => powerHint.textContent = "Ready", 2000);
   } finally {
     freqBtn.disabled = false;
   }
@@ -398,19 +395,18 @@ freqEl.addEventListener("keydown", (e) => {
 modeBtn.addEventListener("click", async () => {
   const mode = modeEl.value || "";
   if (!mode) {
-    powerHint.textContent = "Mode missing";
+    showHint("Mode missing", 1500);
     return;
   }
   modeDirty = false;
   modeBtn.disabled = true;
-  powerHint.textContent = "Setting mode…";
+  showHint("Setting mode…");
   try {
     await postPath(`/set_mode?mode=${encodeURIComponent(mode)}`);
-    powerHint.textContent = "Mode set";
+    showHint("Mode set", 1500);
   } catch (err) {
-    powerHint.textContent = "Set mode failed";
+    showHint("Set mode failed", 2000);
     console.error(err);
-    setTimeout(() => powerHint.textContent = "Ready", 2000);
   } finally {
     modeBtn.disabled = false;
   }
@@ -423,18 +419,17 @@ modeEl.addEventListener("input", () => {
 txLimitBtn.addEventListener("click", async () => {
   const limit = txLimitInput.value;
   if (limit === "" || limit === "--") {
-    powerHint.textContent = "Limit missing";
+    showHint("Limit missing", 1500);
     return;
   }
   txLimitBtn.disabled = true;
-  powerHint.textContent = "Setting TX limit…";
+  showHint("Setting TX limit…");
   try {
     await postPath(`/set_tx_limit?limit=${encodeURIComponent(limit)}`);
-    powerHint.textContent = "TX limit set";
+    showHint("TX limit set", 1500);
   } catch (err) {
-    powerHint.textContent = "TX limit failed";
+    showHint("TX limit failed", 2000);
     console.error(err);
-    setTimeout(() => powerHint.textContent = "Ready", 2000);
   } finally {
     txLimitBtn.disabled = false;
   }
@@ -442,15 +437,14 @@ txLimitBtn.addEventListener("click", async () => {
 
 lockBtn.addEventListener("click", async () => {
   lockBtn.disabled = true;
-  powerHint.textContent = "Toggling lock…";
+  showHint("Toggling lock…");
   try {
     const nextLock = lockBtn.textContent === "Lock";
     await postPath(nextLock ? "/lock" : "/unlock");
-    powerHint.textContent = "Lock toggled";
+    showHint("Lock toggled", 1500);
   } catch (err) {
-    powerHint.textContent = "Lock toggle failed";
+    showHint("Lock toggle failed", 2000);
     console.error(err);
-    setTimeout(() => powerHint.textContent = "Ready", 2000);
   } finally {
     lockBtn.disabled = false;
   }
@@ -463,6 +457,12 @@ const rxAudioBtn = document.getElementById("rx-audio-btn");
 const txAudioBtn = document.getElementById("tx-audio-btn");
 const audioStatus = document.getElementById("audio-status");
 const audioLevelFill = document.getElementById("audio-level-fill");
+const audioRow = document.getElementById("audio-row");
+
+// Hide audio row if audio is not configured on the server
+fetch("/audio", { method: "GET" }).then((r) => {
+  if (r.status === 404) audioRow.style.display = "none";
+}).catch(() => {});
 
 let audioWs = null;
 let audioCtx = null;
@@ -471,6 +471,10 @@ let txActive = false;
 let txStream = null;
 let txProcessor = null;
 let streamInfo = null;
+let opusDecoder = null;
+let txEncoder = null;
+let nextPlayTime = 0;
+let lastLevelUpdate = 0;
 const TX_TIMEOUT_SECS = 120;
 let txTimeoutTimer = null;
 let txTimeoutRemaining = 0;
@@ -545,16 +549,20 @@ function startRxAudio() {
     if (!audioCtx) return;
     const data = new Uint8Array(evt.data);
 
-    // Show level indicator from packet size (rough estimate)
-    const level = Math.min(100, (data.length / 120) * 100);
-    audioLevelFill.style.width = `${level}%`;
+    // Throttle level indicator updates to max 10/sec
+    const now = Date.now();
+    if (now - lastLevelUpdate >= 100) {
+      const level = Math.min(100, (data.length / 120) * 100);
+      audioLevelFill.style.width = `${level}%`;
+      lastLevelUpdate = now;
+    }
 
     // Use WebCodecs AudioDecoder for Opus if available
-    if (typeof AudioDecoder !== "undefined" && !window._opusDecoder) {
+    if (typeof AudioDecoder !== "undefined" && !opusDecoder) {
       try {
         const channels = (streamInfo && streamInfo.channels) || 1;
         const sampleRate = (streamInfo && streamInfo.sample_rate) || 48000;
-        window._opusDecoder = new AudioDecoder({
+        opusDecoder = new AudioDecoder({
           output: (frame) => {
             const buf = new Float32Array(frame.numberOfFrames * frame.numberOfChannels);
             frame.copyTo(buf, { planeIndex: 0 });
@@ -570,26 +578,26 @@ function startRxAudio() {
             src.buffer = ab;
             src.connect(audioCtx.destination);
             const now = audioCtx.currentTime;
-            const schedTime = Math.max(now, (window._nextPlayTime || now));
+            const schedTime = Math.max(now, (nextPlayTime || now));
             src.start(schedTime);
-            window._nextPlayTime = schedTime + ab.duration;
+            nextPlayTime = schedTime + ab.duration;
             frame.close();
           },
           error: (e) => { console.error("AudioDecoder error", e); }
         });
-        window._opusDecoder.configure({
+        opusDecoder.configure({
           codec: "opus",
           sampleRate: sampleRate,
           numberOfChannels: channels,
         });
       } catch (e) {
         console.warn("WebCodecs AudioDecoder not available for Opus", e);
-        window._opusDecoder = null;
+        opusDecoder = null;
       }
     }
-    if (window._opusDecoder) {
+    if (opusDecoder) {
       try {
-        window._opusDecoder.decode(new EncodedAudioChunk({
+        opusDecoder.decode(new EncodedAudioChunk({
           type: "key",
           timestamp: performance.now() * 1000,
           data: data,
@@ -608,11 +616,11 @@ function startRxAudio() {
     rxAudioBtn.style.color = "";
     audioStatus.textContent = "Off";
     audioLevelFill.style.width = "0%";
-    if (window._opusDecoder) {
-      try { window._opusDecoder.close(); } catch(e) {}
-      window._opusDecoder = null;
+    if (opusDecoder) {
+      try { opusDecoder.close(); } catch(e) {}
+      opusDecoder = null;
     }
-    window._nextPlayTime = 0;
+    nextPlayTime = 0;
   };
 
   audioWs.onerror = () => {
@@ -624,11 +632,11 @@ function stopRxAudio() {
   rxActive = false;
   if (audioWs) { audioWs.close(); audioWs = null; }
   if (audioCtx) { audioCtx.close(); audioCtx = null; }
-  if (window._opusDecoder) {
-    try { window._opusDecoder.close(); } catch(e) {}
-    window._opusDecoder = null;
+  if (opusDecoder) {
+    try { opusDecoder.close(); } catch(e) {}
+    opusDecoder = null;
   }
-  window._nextPlayTime = 0;
+  nextPlayTime = 0;
   rxAudioBtn.style.borderColor = "";
   rxAudioBtn.style.color = "";
   audioStatus.textContent = "Off";
@@ -681,7 +689,7 @@ function startTxAudio() {
       numberOfChannels: channels,
       bitrate: (streamInfo.bitrate_bps || 24000),
     });
-    window._txEncoder = encoder;
+    txEncoder = encoder;
 
     // Use AudioWorklet or ScriptProcessor to feed encoder
     if (!audioCtx) audioCtx = new AudioContext({ sampleRate: sampleRate });
@@ -692,7 +700,7 @@ function startTxAudio() {
     const processor = audioCtx.createScriptProcessor(frameSize, channels, channels);
     let tsCounter = 0;
     processor.onaudioprocess = (e) => {
-      if (!txActive || !window._txEncoder) return;
+      if (!txActive || !txEncoder) return;
       const input = e.inputBuffer;
       // Reset PTT safety timeout on each audio callback
       resetTxTimeout();
@@ -708,7 +716,7 @@ function startTxAudio() {
           data: monoData,
         });
         tsCounter += (input.length / input.sampleRate) * 1_000_000;
-        window._txEncoder.encode(frame);
+        txEncoder.encode(frame);
         frame.close();
       } catch (e) {
         // Ignore
@@ -740,9 +748,9 @@ async function stopTxAudio() {
     txProcessor.processor.disconnect();
     txProcessor = null;
   }
-  if (window._txEncoder) {
-    try { window._txEncoder.close(); } catch(e) {}
-    window._txEncoder = null;
+  if (txEncoder) {
+    try { txEncoder.close(); } catch(e) {}
+    txEncoder = null;
   }
   txAudioBtn.style.borderColor = "";
   txAudioBtn.style.color = "";
