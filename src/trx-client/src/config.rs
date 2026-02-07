@@ -79,6 +79,27 @@ pub struct FrontendsConfig {
     pub http_json: HttpJsonFrontendConfig,
     /// AppKit (macOS) frontend settings
     pub appkit: AppKitFrontendConfig,
+    /// Audio streaming settings
+    pub audio: AudioClientConfig,
+}
+
+/// Audio streaming client configuration.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct AudioClientConfig {
+    /// Whether audio streaming is enabled
+    pub enabled: bool,
+    /// Audio TCP port on the remote server
+    pub server_port: u16,
+}
+
+impl Default for AudioClientConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            server_port: 4533,
+        }
+    }
 }
 
 /// HTTP frontend configuration.
@@ -236,6 +257,7 @@ impl ClientConfig {
                 },
                 http_json: HttpJsonFrontendConfig::default(),
                 appkit: AppKitFrontendConfig { enabled: false },
+                audio: AudioClientConfig::default(),
             },
         };
 
@@ -292,6 +314,8 @@ mod tests {
         assert_eq!(config.frontends.http_json.port, 0);
         assert!(config.remote.url.is_none());
         assert_eq!(config.remote.poll_interval_ms, 750);
+        assert!(!config.frontends.audio.enabled);
+        assert_eq!(config.frontends.audio.server_port, 4533);
     }
 
     #[test]

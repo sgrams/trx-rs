@@ -17,6 +17,7 @@ tracing-subscriber = { workspace = true }
 clap = { workspace = true, features = ["derive"] }
 dirs = "6"
 libloading = "0.8"
+bytes = "1"
 trx-core = { path = "../trx-core" }
 trx-frontend = { path = "trx-frontend" }
 trx-frontend-http = { path = "trx-frontend/trx-frontend-http" }

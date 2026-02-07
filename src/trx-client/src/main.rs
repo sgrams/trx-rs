@@ -2,6 +2,7 @@
 //
 // SPDX-License-Identifier: BSD-2-Clause
 
+mod audio_client;
 mod config;
 mod plugins;
 mod remote_client;
@@ -10,10 +11,13 @@ use std::net::{IpAddr, SocketAddr};
 use std::path::PathBuf;
 use std::time::Duration;
 
+use bytes::Bytes;
 use clap::Parser;
 use tokio::signal;
-use tokio::sync::{mpsc, watch};
+use tokio::sync::{broadcast, mpsc, watch};
 use tracing::info;
+
+use trx_core::audio::AudioStreamInfo;
 
 use trx_core::rig::request::RigRequest;
 use trx_core::rig::state::RigState;
@@ -21,7 +25,7 @@ use trx_core::rig::{RigControl, RigRxStatus, RigStatus, RigTxStatus};
 use trx_core::radio::freq::Freq;
 use trx_core::DynResult;
 use trx_frontend::{is_frontend_registered, registered_frontends};
-use trx_frontend_http::register_frontend as register_http_frontend;
+use trx_frontend_http::{register_frontend as register_http_frontend, set_audio_channels};
 use trx_frontend_http_json::{register_frontend as register_http_json_frontend, set_auth_tokens};
 use trx_frontend_rigctl::register_frontend as register_rigctl_frontend;
 
@@ -266,6 +270,13 @@ async fn async_init() -> DynResult<AppState> {
     };
     let (state_tx, state_rx) = watch::channel(initial_state);
 
+    // Extract host for audio before moving remote_addr
+    let remote_host = remote_addr
+        .split(':')
+        .next()
+        .unwrap_or("127.0.0.1")
+        .to_string();
+
     let remote_cfg = RemoteClientConfig {
         addr: remote_addr,
         token: remote_token,
@@ -273,6 +284,24 @@ async fn async_init() -> DynResult<AppState> {
     };
     let _remote_handle =
         tokio::spawn(remote_client::run_remote_client(remote_cfg, rx, state_tx));
+
+    // Audio streaming setup
+    if cfg.frontends.audio.enabled {
+        let (rx_audio_tx, _) = broadcast::channel::<Bytes>(256);
+        let (tx_audio_tx, tx_audio_rx) = mpsc::channel::<Bytes>(64);
+        let (stream_info_tx, stream_info_rx) = watch::channel::<Option<AudioStreamInfo>>(None);
+
+        let audio_addr = format!("{}:{}", remote_host, cfg.frontends.audio.server_port);
+
+        set_audio_channels(rx_audio_tx.clone(), tx_audio_tx, stream_info_rx);
+
+        tokio::spawn(audio_client::run_audio_client(
+            audio_addr,
+            rx_audio_tx,
+            tx_audio_rx,
+            stream_info_tx,
+        ));
+    }
 
     // Spawn frontends (skip appkit — it will be driven from main thread)
     for frontend in &frontends {
