@@ -8,6 +8,8 @@ use std::sync::{Mutex, OnceLock};
 use trx_core::rig::RigCat;
 use trx_core::DynResult;
 
+mod dummy;
+
 #[cfg(feature = "ft817")]
 use trx_backend_ft817::Ft817;
 
@@ -53,8 +55,13 @@ pub fn register_backend(name: &str, factory: BackendFactory) {
 
 /// Register all built-in backends enabled by features.
 pub fn register_builtin_backends() {
+    register_backend("dummy", dummy_factory);
     #[cfg(feature = "ft817")]
     register_backend("ft817", ft817_factory);
+}
+
+fn dummy_factory(_access: RigAccess) -> DynResult<Box<dyn RigCat>> {
+    Ok(Box::new(dummy::DummyRig::new()))
 }
 
 /// Check whether a backend name is registered.
