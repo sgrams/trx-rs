@@ -171,9 +171,15 @@ function render(update) {
   if (update.status && typeof update.status.tx_en === "boolean") {
     lastTxEn = update.status.tx_en;
     pttBtn.textContent = update.status.tx_en ? "PTT On" : "PTT Off";
-    pttBtn.style.background = update.status.tx_en ? "#ffefef" : "#f3f3f3";
-    pttBtn.style.borderColor = update.status.tx_en ? "#d22" : "#999";
-    pttBtn.style.color = update.status.tx_en ? "#a00" : "#222";
+    if (update.status.tx_en) {
+      pttBtn.style.background = "var(--accent-red)";
+      pttBtn.style.borderColor = "var(--accent-red)";
+      pttBtn.style.color = "white";
+    } else {
+      pttBtn.style.background = "";
+      pttBtn.style.borderColor = "";
+      pttBtn.style.color = "";
+    }
   }
   if (update.status && update.status.vfo && Array.isArray(update.status.vfo.entries)) {
     const entries = update.status.vfo.entries;

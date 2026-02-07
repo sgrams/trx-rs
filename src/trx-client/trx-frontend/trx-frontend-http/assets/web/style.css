@@ -1,30 +1,54 @@
-body { font-family: sans-serif; margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center; background: #0d1117; color: #e5e7eb; }
-.card { border: 1px solid #1f2a35; border-radius: 12px; padding: 1.25rem 1.75rem; width: min(680px, 90vw); box-shadow: 0 12px 40px rgba(0,0,0,0.35); background: #161b22; }
-.label { color: #9aa4b5; font-size: 0.9rem; margin-bottom: 6px; display: block; }
-.value { font-size: 1.4rem; margin-bottom: 0.5rem; }
+:root {
+  --bg: #0d1117;
+  --card-bg: #161b22;
+  --input-bg: #0f1720;
+  --border: #1f2a35;
+  --border-light: #2d3748;
+  --text: #e5e7eb;
+  --text-muted: #9aa4b5;
+  --text-heading: #c5cedd;
+  --btn-bg: #1f2937;
+  --btn-border: #394455;
+  --accent-green: #00d17f;
+  --accent-yellow: #f0ad4e;
+  --accent-red: #e55353;
+}
+
+body { font-family: sans-serif; margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center; background: var(--bg); color: var(--text); }
+.card { border: 1px solid var(--border); border-radius: 12px; padding: 1.25rem 1.75rem; width: min(680px, 90vw); box-shadow: 0 12px 40px rgba(0,0,0,0.35); background: var(--card-bg); }
+.label { color: var(--text-muted); font-size: 0.9rem; margin-bottom: 6px; display: block; }
 .status { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1.1rem 1rem; }
-input.status-input, select.status-input { width: 100%; padding: 0.45rem 0.5rem; font-size: 1rem; border: 1px solid #2d3748; border-radius: 6px; background: #0f1720; color: #e5e7eb; }
-.vfo-box { width: 100%; min-height: 2.6rem; padding: 0.45rem 0.5rem; border: 1px solid #2d3748; border-radius: 6px; background: #0f1720; color: #e5e7eb; white-space: pre-line; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
-.controls { margin-top: 1rem; display: flex; gap: 0.75rem; align-items: center; flex-wrap: wrap; }
-button { padding: 0.5rem 0.9rem; border-radius: 6px; border: 1px solid #394455; background: #1f2937; color: #e5e7eb; cursor: pointer; height: 2.4rem; }
+input.status-input, select.status-input { width: 100%; padding: 0.45rem 0.5rem; font-size: 1rem; border: 1px solid var(--border-light); border-radius: 6px; background: var(--input-bg); color: var(--text); }
+.vfo-box { width: 100%; min-height: 2.6rem; padding: 0.45rem 0.5rem; border: 1px solid var(--border-light); border-radius: 6px; background: var(--input-bg); color: var(--text); white-space: pre-line; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
+button { padding: 0.5rem 0.9rem; border-radius: 6px; border: 1px solid var(--btn-border); background: var(--btn-bg); color: var(--text); cursor: pointer; height: 2.4rem; }
 button:disabled { opacity: 0.6; cursor: not-allowed; }
-.hint { color: #9aa4b5; font-size: 0.85rem; }
+.hint { color: var(--text-muted); font-size: 0.85rem; }
 .inline { display: flex; gap: 0.5rem; align-items: center; }
-.section-title { margin-top: 0.5rem; font-size: 1.05rem; font-weight: 600; color: #c5cedd; }
-small { color: #9aa4b5; }
+small { color: var(--text-muted); }
 .header { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 0.25rem; }
 .title { font-size: 1.4rem; font-weight: 700; display: inline-flex; align-items: center; gap: 0.35rem; position: relative; z-index: 2; }
 .logo-bg { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; pointer-events: none; opacity: 0.2; }
 .logo-bg img { max-width: 50%; max-height: 50%; filter: drop-shadow(0 4px 12px rgba(0,0,0,0.35)); }
-.subtitle { color: #9aa4b5; font-size: 0.95rem; }
-.band-tag { display: inline-block; padding: 2px 6px; border-radius: 6px; background: #1f2937; color: #e5e7eb; font-size: 0.82rem; border: 1px solid #2d3748; margin-left: 6px; }
+.subtitle { color: var(--text-muted); font-size: 0.95rem; }
+.band-tag { display: inline-block; padding: 2px 6px; border-radius: 6px; background: var(--btn-bg); color: var(--text); font-size: 0.82rem; border: 1px solid var(--border-light); margin-left: 6px; }
 .signal { display: flex; gap: 0.6rem; align-items: center; }
-.signal-bar { flex: 1 1 auto; height: 12px; border-radius: 999px; background: #1f2937; border: 1px solid #2d3748; overflow: hidden; }
-.signal-bar-fill { height: 100%; width: 0%; background: linear-gradient(90deg, #00d17f, #f0ad4e, #e55353); transition: width 150ms ease; }
-.signal-value { font-size: 0.95rem; color: #c5cedd; min-width: 48px; text-align: right; }
+.signal-bar { flex: 1 1 auto; height: 12px; border-radius: 999px; background: var(--btn-bg); border: 1px solid var(--border-light); overflow: hidden; }
+.signal-bar-fill { height: 100%; width: 0%; background: linear-gradient(90deg, var(--accent-green), var(--accent-yellow), var(--accent-red)); transition: width 150ms ease; }
+.signal-value { font-size: 0.95rem; color: var(--text-heading); min-width: 48px; text-align: right; }
 .meter { display: flex; gap: 0.6rem; align-items: center; }
-.meter-bar { flex: 1 1 auto; height: 12px; border-radius: 999px; background: #1f2937; border: 1px solid #2d3748; overflow: hidden; }
-.meter-fill { height: 100%; width: 0%; background: linear-gradient(90deg, #00d17f, #f0ad4e, #e55353); transition: width 150ms ease; }
-.meter-value { font-size: 0.95rem; color: #c5cedd; min-width: 64px; text-align: right; }
+.meter-bar { flex: 1 1 auto; height: 12px; border-radius: 999px; background: var(--btn-bg); border: 1px solid var(--border-light); overflow: hidden; }
+.meter-fill { height: 100%; width: 0%; background: linear-gradient(90deg, var(--accent-green), var(--accent-yellow), var(--accent-red)); transition: width 150ms ease; }
+.meter-value { font-size: 0.95rem; color: var(--text-heading); min-width: 64px; text-align: right; }
 .footer { margin-top: 0.6rem; display: flex; justify-content: flex-end; }
 .full-row { grid-column: 1 / -1; }
+
+button:focus-visible, input:focus-visible, select:focus-visible {
+  outline: 2px solid var(--accent-green);
+  outline-offset: 2px;
+}
+
+@media (max-width: 480px) {
+  .card { padding: 1rem; }
+  button { min-height: 2.8rem; font-size: 0.95rem; }
+  input.status-input, select.status-input { font-size: 1.1rem; }
+}
