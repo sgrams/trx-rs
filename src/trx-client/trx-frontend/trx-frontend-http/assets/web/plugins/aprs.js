@@ -429,6 +429,25 @@ function parseAprsLon(s) {
   return Math.round(lon * 1e6) / 1e6;
 }
 
+function escapeAprsInfo(str) {
+  let out = "";
+  for (let i = 0; i < str.length; i++) {
+    const code = str.charCodeAt(i);
+    if (code >= 0x20 && code <= 0x7e) {
+      const ch = str[i];
+      if (ch === "<") out += "&lt;";
+      else if (ch === ">") out += "&gt;";
+      else if (ch === "&") out += "&amp;";
+      else if (ch === '"') out += "&quot;";
+      else out += ch;
+    } else {
+      const hex = code.toString(16).toUpperCase().padStart(2, "0");
+      out += `<span style="color:var(--accent-yellow);">[0x${hex}]</span>`;
+    }
+  }
+  return out;
+}
+
 function addAprsPacket(pkt) {
   const tag = pkt.crcOk ? "[APRS]" : "[APRS-CRC-FAIL]";
   console.log(tag, `${pkt.srcCall}>${pkt.destCall}${pkt.path ? "," + pkt.path : ""}: ${pkt.info}`, pkt);
@@ -453,7 +472,7 @@ function addAprsPacket(pkt) {
     const osmUrl = `https://www.openstreetmap.org/?mlat=${pkt.lat}&mlon=${pkt.lon}#map=15/${pkt.lat}/${pkt.lon}`;
     posHtml = ` <a class="aprs-pos" href="${osmUrl}" target="_blank">${pkt.lat.toFixed(4)}, ${pkt.lon.toFixed(4)}</a>`;
   }
-  row.innerHTML = `<span class="aprs-time">${ts}</span>${symbolHtml}<span class="aprs-call">${pkt.srcCall}</span>&gt;${pkt.destCall}${pkt.path ? "," + pkt.path : ""}: <span title="${pkt.type}">${pkt.info}</span>${posHtml}${crcTag}`;
+  row.innerHTML = `<span class="aprs-time">${ts}</span>${symbolHtml}<span class="aprs-call">${pkt.srcCall}</span>&gt;${pkt.destCall}${pkt.path ? "," + pkt.path : ""}: <span title="${pkt.type}">${escapeAprsInfo(pkt.info)}</span>${posHtml}${crcTag}`;
   if (pkt.lat != null && pkt.lon != null && window.aprsMapAddStation) {
     window.aprsMapAddStation(pkt.srcCall, pkt.lat, pkt.lon, pkt.info, pkt.symbolTable, pkt.symbolCode);
   }
