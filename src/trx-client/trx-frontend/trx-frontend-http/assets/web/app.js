@@ -669,17 +669,39 @@ function initAprsMap() {
   }
 }
 
-window.aprsMapAddStation = function(call, lat, lon, info) {
+function aprsSymbolIcon(symbolTable, symbolCode) {
+  if (!symbolTable || !symbolCode) return null;
+  const sheet = symbolTable === "/" ? 0 : 1;
+  const code = symbolCode.charCodeAt(0) - 33;
+  const col = code % 16;
+  const row = Math.floor(code / 16);
+  const bgX = -(col * 24);
+  const bgY = -(row * 24);
+  const url = `https://raw.githubusercontent.com/hessu/aprs-symbols/master/png/aprs-symbols-24-${sheet}.png`;
+  return L.divIcon({
+    className: "",
+    html: `<div style="width:24px;height:24px;background:url('${url}') ${bgX}px ${bgY}px / 384px 192px no-repeat;"></div>`,
+    iconSize: [24, 24],
+    iconAnchor: [12, 12],
+    popupAnchor: [0, -12]
+  });
+}
+
+window.aprsMapAddStation = function(call, lat, lon, info, symbolTable, symbolCode) {
   if (!aprsMap) initAprsMap();
   if (!aprsMap) return;
+  const popupContent = `<b>${call}</b><br>${info}`;
   const existing = stationMarkers.get(call);
   if (existing) {
     existing.setLatLng([lat, lon]);
-    existing.setPopupContent(`<b>${call}</b><br>${info}`);
+    existing.setPopupContent(popupContent);
   } else {
-    const marker = L.circleMarker([lat, lon], {
-      radius: 6, color: "#00d17f", fillColor: "#00d17f", fillOpacity: 0.8
-    }).addTo(aprsMap).bindPopup(`<b>${call}</b><br>${info}`);
+    const icon = aprsSymbolIcon(symbolTable, symbolCode);
+    const marker = icon
+      ? L.marker([lat, lon], { icon }).addTo(aprsMap).bindPopup(popupContent)
+      : L.circleMarker([lat, lon], {
+          radius: 6, color: "#00d17f", fillColor: "#00d17f", fillOpacity: 0.8
+        }).addTo(aprsMap).bindPopup(popupContent);
     stationMarkers.set(call, marker);
   }
 };

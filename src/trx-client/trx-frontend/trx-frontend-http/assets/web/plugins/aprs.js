@@ -455,7 +455,7 @@ function addAprsPacket(pkt) {
   }
   row.innerHTML = `<span class="aprs-time">${ts}</span>${symbolHtml}<span class="aprs-call">${pkt.srcCall}</span>&gt;${pkt.destCall}${pkt.path ? "," + pkt.path : ""}: <span title="${pkt.type}">${pkt.info}</span>${posHtml}${crcTag}`;
   if (pkt.lat != null && pkt.lon != null && window.aprsMapAddStation) {
-    window.aprsMapAddStation(pkt.srcCall, pkt.lat, pkt.lon, pkt.info);
+    window.aprsMapAddStation(pkt.srcCall, pkt.lat, pkt.lon, pkt.info, pkt.symbolTable, pkt.symbolCode);
   }
   aprsPacketsEl.prepend(row);
   while (aprsPacketsEl.children.length > APRS_MAX_PACKETS) {
