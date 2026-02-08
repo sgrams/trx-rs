@@ -110,7 +110,8 @@ fn run_capture(
     let mut capturing = false;
 
     loop {
-        let has_receivers = tx.receiver_count() > 0;
+        let has_receivers = tx.receiver_count() > 0
+            || pcm_tx.as_ref().map_or(false, |p| p.receiver_count() > 0);
 
         if has_receivers && !capturing {
             let _ = stream.play();
