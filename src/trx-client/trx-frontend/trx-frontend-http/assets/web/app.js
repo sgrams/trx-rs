@@ -1133,37 +1133,33 @@ function updateDecodeStatus(text) {
 }
 function connectDecode() {
   if (decodeSource) { decodeSource.close(); }
-  // Probe first to distinguish 404 from real SSE errors
-  fetch("/decode", { method: "HEAD" }).then((r) => {
-    if (r.status === 404) {
-      updateDecodeStatus("Decode not available (audio disabled?)");
-      setTimeout(connectDecode, 10000);
-      return;
+  decodeSource = new EventSource("/decode");
+  decodeSource.onopen = () => {
+    decodeConnected = true;
+    updateDecodeStatus("Connected, listening for packets");
+  };
+  decodeSource.onmessage = (evt) => {
+    try {
+      const msg = JSON.parse(evt.data);
+      if (msg.type === "aprs" && window.onServerAprs) window.onServerAprs(msg);
+      if (msg.type === "cw" && window.onServerCw) window.onServerCw(msg);
+    } catch (e) {
+      // ignore parse errors
     }
-    decodeSource = new EventSource("/decode");
-    decodeSource.onopen = () => {
-      decodeConnected = true;
-      updateDecodeStatus("Connected, listening for packets");
-    };
-    decodeSource.onmessage = (evt) => {
-      try {
-        const msg = JSON.parse(evt.data);
-        if (msg.type === "aprs" && window.onServerAprs) window.onServerAprs(msg);
-        if (msg.type === "cw" && window.onServerCw) window.onServerCw(msg);
-      } catch (e) {
-        // ignore parse errors
-      }
-    };
-    decodeSource.onerror = () => {
-      decodeSource.close();
-      decodeConnected = false;
+  };
+  decodeSource.onerror = () => {
+    // readyState CLOSED (2) = server rejected (404/error), CONNECTING (0) = temporary drop
+    const wasClosed = decodeSource.readyState === 2;
+    decodeSource.close();
+    decodeConnected = false;
+    if (wasClosed) {
+      updateDecodeStatus("Decode not available (check client audio config)");
+      setTimeout(connectDecode, 10000);
+    } else {
       updateDecodeStatus("Decode disconnected, retrying…");
       setTimeout(connectDecode, 5000);
-    };
-  }).catch(() => {
-    updateDecodeStatus("Decode endpoint unreachable");
-    setTimeout(connectDecode, 5000);
-  });
+    }
+  };
 }
 connectDecode();
 
