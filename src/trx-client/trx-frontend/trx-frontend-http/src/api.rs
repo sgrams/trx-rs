@@ -9,7 +9,7 @@ use actix_web::{get, post, web, HttpResponse, Responder};
 use actix_web::{http::header, Error};
 use bytes::Bytes;
 use futures_util::stream::{once, select, StreamExt};
-use tokio::sync::{mpsc, oneshot, watch};
+use tokio::sync::{broadcast, mpsc, oneshot, watch};
 use tokio::time::{self, Duration};
 use tokio_stream::wrappers::{IntervalStream, WatchStream};
 
@@ -87,6 +87,41 @@ pub async fn events(
     let stream = DropStream::new(Box::pin(stream), move || {
         counter_drop.fetch_sub(1, Ordering::Relaxed);
     });
+
+    Ok(HttpResponse::Ok()
+        .insert_header((header::CONTENT_TYPE, "text/event-stream"))
+        .insert_header((header::CACHE_CONTROL, "no-cache"))
+        .insert_header((header::CONNECTION, "keep-alive"))
+        .streaming(stream))
+}
+
+#[get("/decode")]
+pub async fn decode_events() -> Result<HttpResponse, Error> {
+    let Some(decode_rx) = crate::server::audio::subscribe_decode() else {
+        return Ok(HttpResponse::NotFound().body("decode not enabled"));
+    };
+
+    let decode_stream = futures_util::stream::unfold(decode_rx, |mut rx| async move {
+        loop {
+            match rx.recv().await {
+                Ok(msg) => {
+                    if let Ok(json) = serde_json::to_string(&msg) {
+                        return Some((
+                            Ok::<Bytes, Error>(Bytes::from(format!("data: {json}\n\n"))),
+                            rx,
+                        ));
+                    }
+                }
+                Err(broadcast::error::RecvError::Lagged(_)) => continue,
+                Err(broadcast::error::RecvError::Closed) => return None,
+            }
+        }
+    });
+
+    let pings = IntervalStream::new(time::interval(Duration::from_secs(15)))
+        .map(|_| Ok::<Bytes, Error>(Bytes::from(": ping\n\n")));
+
+    let stream = select(pings, decode_stream);
 
     Ok(HttpResponse::Ok()
         .insert_header((header::CONTENT_TYPE, "text/event-stream"))
@@ -231,6 +266,7 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
     cfg.service(index)
         .service(status_api)
         .service(events)
+        .service(decode_events)
         .service(toggle_power)
         .service(toggle_vfo)
         .service(lock_panel)

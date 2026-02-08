@@ -643,7 +643,34 @@ for (let i = aprsPacketHistory.length - 1; i >= 0; i--) {
   }
 }
 
-// Auto-start APRS if it was running before page refresh
+// --- Server-side APRS decode handler ---
+window.onServerAprs = function(pkt) {
+  addAprsPacket({
+    srcCall: pkt.src_call,
+    destCall: pkt.dest_call,
+    path: pkt.path,
+    info: pkt.info,
+    type: pkt.packet_type,
+    crcOk: pkt.crc_ok,
+    lat: pkt.lat,
+    lon: pkt.lon,
+    symbolTable: pkt.symbol_table,
+    symbolCode: pkt.symbol_code,
+  });
+};
+
+// Update status display based on server decode availability
+function updateAprsStatus() {
+  if (typeof decodeConnected !== "undefined" && decodeConnected) {
+    if (!aprsActive) {
+      aprsStatus.textContent = "Server decode active";
+      aprsToggleBtn.textContent = "Start APRS (browser)";
+    }
+  }
+}
+setInterval(updateAprsStatus, 2000);
+
+// Auto-start APRS if it was running before page refresh (browser fallback)
 if (loadSetting("aprsRunning", false) && hasWebCodecs) {
   startAprs();
 }

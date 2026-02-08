@@ -18,6 +18,7 @@ use tokio::sync::{broadcast, mpsc, watch};
 use tracing::warn;
 
 use trx_core::audio::AudioStreamInfo;
+use trx_core::decode::DecodedMessage;
 
 struct AudioChannels {
     rx: broadcast::Sender<Bytes>,
@@ -41,6 +42,27 @@ pub fn set_audio_channels(
         .lock()
         .expect("audio channels mutex poisoned");
     *ch = Some(AudioChannels { rx, tx, info });
+}
+
+fn decode_channel() -> &'static Mutex<Option<broadcast::Sender<DecodedMessage>>> {
+    static CHANNEL: OnceLock<Mutex<Option<broadcast::Sender<DecodedMessage>>>> = OnceLock::new();
+    CHANNEL.get_or_init(|| Mutex::new(None))
+}
+
+/// Set the decode broadcast channel from the client main.
+pub fn set_decode_channel(tx: broadcast::Sender<DecodedMessage>) {
+    let mut ch = decode_channel()
+        .lock()
+        .expect("decode channel mutex poisoned");
+    *ch = Some(tx);
+}
+
+/// Subscribe to the decode broadcast channel, if available.
+pub fn subscribe_decode() -> Option<broadcast::Receiver<DecodedMessage>> {
+    let ch = decode_channel()
+        .lock()
+        .expect("decode channel mutex poisoned");
+    ch.as_ref().map(|tx| tx.subscribe())
 }
 
 #[get("/audio")]

@@ -457,3 +457,40 @@ cwToggleBtn.addEventListener("click", startCw);
 document.getElementById("cw-clear-btn").addEventListener("click", () => {
   cwOutputEl.innerHTML = "";
 });
+
+// --- Server-side CW decode handler ---
+let cwLastAppendTime = 0;
+window.onServerCw = function(evt) {
+  if (evt.text) {
+    // Append decoded text to output
+    const now = Date.now();
+    if (!cwOutputEl.lastElementChild || now - cwLastAppendTime > 10000 || evt.text === "\n") {
+      const line = document.createElement("div");
+      line.className = "cw-line";
+      cwOutputEl.appendChild(line);
+    }
+    cwLastAppendTime = now;
+    const lastLine = cwOutputEl.lastElementChild;
+    if (lastLine) {
+      lastLine.textContent += evt.text;
+    }
+    while (cwOutputEl.children.length > CW_MAX_LINES) {
+      cwOutputEl.removeChild(cwOutputEl.firstChild);
+    }
+    cwOutputEl.scrollTop = cwOutputEl.scrollHeight;
+  }
+  cwSignalIndicator.className = evt.signal_on ? "cw-signal-on" : "cw-signal-off";
+  cwWpmInput.value = evt.wpm;
+  cwToneInput.value = evt.tone_hz;
+};
+
+// Update status display based on server decode availability
+function updateCwStatus() {
+  if (typeof decodeConnected !== "undefined" && decodeConnected) {
+    if (!cwActive) {
+      cwStatusEl.textContent = "Server decode active";
+      cwToggleBtn.textContent = "Start CW (browser)";
+    }
+  }
+}
+setInterval(updateCwStatus, 2000);

@@ -1122,6 +1122,30 @@ volWheel(txVolSlider, txVolPct, () => txGainNode, "txVol");
 
 document.getElementById("copyright-year").textContent = new Date().getFullYear();
 
+// --- Server-side decode SSE ---
+let decodeSource = null;
+let decodeConnected = false;
+function connectDecode() {
+  if (decodeSource) { decodeSource.close(); }
+  decodeSource = new EventSource("/decode");
+  decodeSource.onopen = () => { decodeConnected = true; };
+  decodeSource.onmessage = (evt) => {
+    try {
+      const msg = JSON.parse(evt.data);
+      if (msg.type === "aprs" && window.onServerAprs) window.onServerAprs(msg);
+      if (msg.type === "cw" && window.onServerCw) window.onServerCw(msg);
+    } catch (e) {
+      // ignore parse errors
+    }
+  };
+  decodeSource.onerror = () => {
+    decodeSource.close();
+    decodeConnected = false;
+    setTimeout(connectDecode, 5000);
+  };
+}
+connectDecode();
+
 // Release PTT on page unload to prevent stuck transmit
 window.addEventListener("beforeunload", () => {
   if (txActive) {

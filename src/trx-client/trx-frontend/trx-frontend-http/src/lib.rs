@@ -4,7 +4,7 @@
 
 pub mod server;
 
-pub use server::audio::set_audio_channels;
+pub use server::audio::{set_audio_channels, set_decode_channel};
 
 pub fn register_frontend() {
     use trx_frontend::FrontendSpawner;
