@@ -25,7 +25,8 @@ use trx_core::rig::{RigControl, RigRxStatus, RigStatus, RigTxStatus};
 use trx_core::radio::freq::Freq;
 use trx_core::DynResult;
 use trx_frontend::{is_frontend_registered, registered_frontends};
-use trx_frontend_http::{register_frontend as register_http_frontend, set_audio_channels};
+use trx_core::decode::DecodedMessage;
+use trx_frontend_http::{register_frontend as register_http_frontend, set_audio_channels, set_decode_channel};
 use trx_frontend_http_json::{register_frontend as register_http_json_frontend, set_auth_tokens};
 use trx_frontend_rigctl::register_frontend as register_rigctl_frontend;
 
@@ -294,16 +295,19 @@ async fn async_init() -> DynResult<AppState> {
         let (rx_audio_tx, _) = broadcast::channel::<Bytes>(256);
         let (tx_audio_tx, tx_audio_rx) = mpsc::channel::<Bytes>(64);
         let (stream_info_tx, stream_info_rx) = watch::channel::<Option<AudioStreamInfo>>(None);
+        let (decode_tx, _) = broadcast::channel::<DecodedMessage>(256);
 
         let audio_addr = format!("{}:{}", remote_host, cfg.frontends.audio.server_port);
 
         set_audio_channels(rx_audio_tx.clone(), tx_audio_tx, stream_info_rx);
+        set_decode_channel(decode_tx.clone());
 
         tokio::spawn(audio_client::run_audio_client(
             audio_addr,
             rx_audio_tx,
             tx_audio_rx,
             stream_info_tx,
+            decode_tx,
         ));
     }
 
