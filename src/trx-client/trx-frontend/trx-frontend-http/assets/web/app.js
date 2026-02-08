@@ -1,3 +1,15 @@
+// --- Persistent settings (localStorage) ---
+const STORAGE_PREFIX = "trx_";
+function saveSetting(key, value) {
+  try { localStorage.setItem(STORAGE_PREFIX + key, JSON.stringify(value)); } catch(e) {}
+}
+function loadSetting(key, fallback) {
+  try {
+    const v = localStorage.getItem(STORAGE_PREFIX + key);
+    return v !== null ? JSON.parse(v) : fallback;
+  } catch(e) { return fallback; }
+}
+
 const freqEl = document.getElementById("freq");
 const modeEl = document.getElementById("mode");
 const bandLabel = document.getElementById("band-label");
@@ -32,7 +44,7 @@ let hintTimer = null;
 let sigMeasuring = false;
 let sigSamples = [];
 let lastFreqHz = null;
-let jogStep = 1000; // default 1 kHz
+let jogStep = loadSetting("jogStep", 1000);
 const VFO_COLORS = ["var(--accent-green)", "var(--accent-yellow)"];
 function vfoColor(idx) {
   if (idx < VFO_COLORS.length) return VFO_COLORS[idx];
@@ -562,6 +574,12 @@ jogStepEl.addEventListener("click", (e) => {
   jogStep = parseInt(btn.dataset.step, 10);
   jogStepEl.querySelectorAll("button").forEach((b) => b.classList.remove("active"));
   btn.classList.add("active");
+  saveSetting("jogStep", jogStep);
+});
+
+// Restore active jog step button from saved setting
+jogStepEl.querySelectorAll("button").forEach((b) => {
+  b.classList.toggle("active", parseInt(b.dataset.step, 10) === jogStep);
 });
 
 modeBtn.addEventListener("click", async () => {
@@ -1076,24 +1094,31 @@ txAudioBtn.addEventListener("click", startTxAudio);
 const rxVolPct = document.getElementById("rx-vol-pct");
 const txVolPct = document.getElementById("tx-vol-pct");
 
+// Restore saved volumes
+rxVolSlider.value = loadSetting("rxVol", 80);
+txVolSlider.value = loadSetting("txVol", 80);
+rxVolPct.textContent = `${rxVolSlider.value}%`;
+txVolPct.textContent = `${txVolSlider.value}%`;
+
 function updateVolSlider(slider, pctEl, gainNode) {
   pctEl.textContent = `${slider.value}%`;
   if (gainNode) gainNode.gain.value = slider.value / 100;
 }
 
-rxVolSlider.addEventListener("input", () => updateVolSlider(rxVolSlider, rxVolPct, rxGainNode));
-txVolSlider.addEventListener("input", () => updateVolSlider(txVolSlider, txVolPct, txGainNode));
+rxVolSlider.addEventListener("input", () => { updateVolSlider(rxVolSlider, rxVolPct, rxGainNode); saveSetting("rxVol", Number(rxVolSlider.value)); });
+txVolSlider.addEventListener("input", () => { updateVolSlider(txVolSlider, txVolPct, txGainNode); saveSetting("txVol", Number(txVolSlider.value)); });
 
-function volWheel(slider, pctEl, getGain) {
+function volWheel(slider, pctEl, getGain, storageKey) {
   slider.addEventListener("wheel", (e) => {
     e.preventDefault();
     const step = e.deltaY < 0 ? 2 : -2;
     slider.value = Math.max(0, Math.min(100, Number(slider.value) + step));
     updateVolSlider(slider, pctEl, getGain());
+    saveSetting(storageKey, Number(slider.value));
   }, { passive: false });
 }
-volWheel(rxVolSlider, rxVolPct, () => rxGainNode);
-volWheel(txVolSlider, txVolPct, () => txGainNode);
+volWheel(rxVolSlider, rxVolPct, () => rxGainNode, "rxVol");
+volWheel(txVolSlider, txVolPct, () => txGainNode, "txVol");
 
 document.getElementById("copyright-year").textContent = new Date().getFullYear();
 

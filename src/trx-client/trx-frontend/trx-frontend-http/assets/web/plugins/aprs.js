@@ -9,6 +9,9 @@ let aprsWs = null;
 let aprsAudioCtx = null;
 let aprsDecoder = null;
 
+// Persistent packet history
+let aprsPacketHistory = loadSetting("aprsPackets", []);
+
 // CRC-16-CCITT lookup table
 const CRC_CCITT_TABLE = new Uint16Array(256);
 (function initCrc() {
@@ -448,14 +451,11 @@ function escapeAprsInfo(str) {
   return out;
 }
 
-function addAprsPacket(pkt) {
-  const tag = pkt.crcOk ? "[APRS]" : "[APRS-CRC-FAIL]";
-  console.log(tag, `${pkt.srcCall}>${pkt.destCall}${pkt.path ? "," + pkt.path : ""}: ${pkt.info}`, pkt);
+function renderAprsRow(pkt) {
   const row = document.createElement("div");
   row.className = "aprs-packet";
   if (!pkt.crcOk) row.style.opacity = "0.5";
-  const now = new Date();
-  const ts = now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+  const ts = pkt._ts || new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
   const crcTag = pkt.crcOk ? "" : ' <span style="color:var(--accent-red);">[CRC]</span>';
   let symbolHtml = "";
   if (pkt.symbolTable && pkt.symbolCode) {
@@ -473,6 +473,22 @@ function addAprsPacket(pkt) {
     posHtml = ` <a class="aprs-pos" href="${osmUrl}" target="_blank">${pkt.lat.toFixed(4)}, ${pkt.lon.toFixed(4)}</a>`;
   }
   row.innerHTML = `<span class="aprs-time">${ts}</span>${symbolHtml}<span class="aprs-call">${pkt.srcCall}</span>&gt;${pkt.destCall}${pkt.path ? "," + pkt.path : ""}: <span title="${pkt.type}">${escapeAprsInfo(pkt.info)}</span>${posHtml}${crcTag}`;
+  return row;
+}
+
+function addAprsPacket(pkt) {
+  const tag = pkt.crcOk ? "[APRS]" : "[APRS-CRC-FAIL]";
+  console.log(tag, `${pkt.srcCall}>${pkt.destCall}${pkt.path ? "," + pkt.path : ""}: ${pkt.info}`, pkt);
+
+  // Stamp timestamp for persistence
+  pkt._ts = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+
+  // Persist to history
+  aprsPacketHistory.unshift(pkt);
+  if (aprsPacketHistory.length > APRS_MAX_PACKETS) aprsPacketHistory.length = APRS_MAX_PACKETS;
+  saveSetting("aprsPackets", aprsPacketHistory);
+
+  const row = renderAprsRow(pkt);
   if (pkt.lat != null && pkt.lon != null && window.aprsMapAddStation) {
     window.aprsMapAddStation(pkt.srcCall, pkt.lat, pkt.lon, pkt.info, pkt.symbolTable, pkt.symbolCode);
   }
@@ -483,7 +499,7 @@ function addAprsPacket(pkt) {
 }
 
 function startAprs() {
-  if (aprsActive) { stopAprs(); return; }
+  if (aprsActive) return;
   if (!hasWebCodecs) {
     aprsStatus.textContent = "Requires Chrome/Edge";
     return;
@@ -565,6 +581,7 @@ function startAprs() {
         });
 
         aprsActive = true;
+        saveSetting("aprsRunning", true);
         aprsToggleBtn.style.borderColor = "#00d17f";
         aprsToggleBtn.style.color = "#00d17f";
         aprsToggleBtn.textContent = "Stop APRS";
@@ -590,7 +607,7 @@ function startAprs() {
   };
 
   aprsWs.onclose = () => {
-    stopAprs();
+    stopAprs(false);
   };
 
   aprsWs.onerror = () => {
@@ -598,8 +615,9 @@ function startAprs() {
   };
 }
 
-function stopAprs() {
+function stopAprs(explicit) {
   aprsActive = false;
+  if (explicit) saveSetting("aprsRunning", false);
   if (aprsWs) { aprsWs.close(); aprsWs = null; }
   if (aprsAudioCtx) { aprsAudioCtx.close(); aprsAudioCtx = null; }
   if (aprsDecoder) {
@@ -612,4 +630,20 @@ function stopAprs() {
   aprsStatus.textContent = "Stopped";
 }
 
-aprsToggleBtn.addEventListener("click", startAprs);
+aprsToggleBtn.addEventListener("click", () => {
+  if (aprsActive) { stopAprs(true); } else { startAprs(); }
+});
+
+// Restore saved packets and map markers on page load
+for (let i = aprsPacketHistory.length - 1; i >= 0; i--) {
+  const pkt = aprsPacketHistory[i];
+  aprsPacketsEl.prepend(renderAprsRow(pkt));
+  if (pkt.lat != null && pkt.lon != null && window.aprsMapAddStation) {
+    window.aprsMapAddStation(pkt.srcCall, pkt.lat, pkt.lon, pkt.info, pkt.symbolTable, pkt.symbolCode);
+  }
+}
+
+// Auto-start APRS if it was running before page refresh
+if (loadSetting("aprsRunning", false) && hasWebCodecs) {
+  startAprs();
+}

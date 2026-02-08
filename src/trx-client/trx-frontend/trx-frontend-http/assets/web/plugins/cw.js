@@ -11,6 +11,16 @@ const cwWpmAutoCheck = document.getElementById("cw-wpm-auto");
 const cwToneAutoCheck = document.getElementById("cw-tone-auto");
 const CW_MAX_LINES = 200;
 
+// Restore saved CW settings
+cwWpmInput.value = loadSetting("cwWpm", 15);
+cwToneInput.value = loadSetting("cwTone", 700);
+cwThresholdInput.value = loadSetting("cwThreshold", 5);
+cwThresholdVal.textContent = (cwThresholdInput.value / 100).toFixed(2);
+cwWpmAutoCheck.checked = loadSetting("cwWpmAuto", true);
+cwToneAutoCheck.checked = loadSetting("cwToneAuto", true);
+cwWpmInput.readOnly = cwWpmAutoCheck.checked;
+cwToneInput.readOnly = cwToneAutoCheck.checked;
+
 let cwActive = false;
 let cwWs = null;
 let cwAudioCtx = null;
@@ -36,17 +46,24 @@ const MORSE_TABLE = {
 // Update threshold display
 cwThresholdInput.addEventListener("input", () => {
   cwThresholdVal.textContent = (cwThresholdInput.value / 100).toFixed(2);
+  saveSetting("cwThreshold", Number(cwThresholdInput.value));
 });
 
 // Toggle readonly on WPM input based on Auto checkbox
 cwWpmAutoCheck.addEventListener("change", () => {
   cwWpmInput.readOnly = cwWpmAutoCheck.checked;
+  saveSetting("cwWpmAuto", cwWpmAutoCheck.checked);
 });
 
 // Toggle readonly on Tone input based on Auto checkbox
 cwToneAutoCheck.addEventListener("change", () => {
   cwToneInput.readOnly = cwToneAutoCheck.checked;
+  saveSetting("cwToneAuto", cwToneAutoCheck.checked);
 });
+
+// Save WPM/Tone when manually changed
+cwWpmInput.addEventListener("change", () => { saveSetting("cwWpm", Number(cwWpmInput.value)); });
+cwToneInput.addEventListener("change", () => { saveSetting("cwTone", Number(cwToneInput.value)); });
 
 function createCwDecoder(sampleRate) {
   let wpm = parseInt(cwWpmInput.value, 10) || 15;
@@ -163,6 +180,7 @@ function createCwDecoder(sampleRate) {
       if (Math.abs(detectedFreq - toneFreq) > TONE_SCAN_STEP) {
         recomputeGoertzel(detectedFreq);
         cwToneInput.value = detectedFreq;
+        saveSetting("cwTone", detectedFreq);
       }
     }
   }
@@ -201,6 +219,7 @@ function createCwDecoder(sampleRate) {
     if (newWpm !== wpm) {
       wpm = newWpm;
       cwWpmInput.value = wpm;
+      saveSetting("cwWpm", wpm);
     }
   }
 
