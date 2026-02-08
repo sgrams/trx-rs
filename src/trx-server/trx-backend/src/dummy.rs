@@ -158,7 +158,13 @@ impl RigCat for DummyRig {
     fn get_signal_strength<'a>(
         &'a mut self,
     ) -> Pin<Box<dyn std::future::Future<Output = DynResult<u8>> + Send + 'a>> {
-        Box::pin(async { Ok(5) })
+        // Fluctuate between 2 and 8 using low-order time bits
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .subsec_nanos();
+        let val = 2 + (nanos % 7) as u8; // 2..=8
+        Box::pin(async move { Ok(val) })
     }
 
     fn get_tx_power<'a>(
