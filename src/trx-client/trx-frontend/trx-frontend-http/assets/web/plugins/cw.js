@@ -435,3 +435,6 @@ function stopCw() {
 }
 
 cwToggleBtn.addEventListener("click", startCw);
+document.getElementById("cw-clear-btn").addEventListener("click", () => {
+  cwOutputEl.innerHTML = "";
+});
