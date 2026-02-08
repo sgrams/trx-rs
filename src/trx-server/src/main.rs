@@ -4,6 +4,7 @@
 
 mod audio;
 mod config;
+mod decode;
 mod error;
 mod listener;
 mod plugins;
@@ -336,8 +337,33 @@ async fn main() -> DynResult<()> {
         let (rx_audio_tx, _) = broadcast::channel::<Bytes>(256);
         let (tx_audio_tx, tx_audio_rx) = mpsc::channel::<Bytes>(64);
 
+        // PCM tap for server-side decoders
+        let (pcm_tx, _) = broadcast::channel::<Vec<f32>>(64);
+        // Decoded messages broadcast
+        let (decode_tx, _) = broadcast::channel::<trx_core::decode::DecodedMessage>(256);
+
         if cfg.audio.rx_enabled {
-            let _capture_thread = audio::spawn_audio_capture(&cfg.audio, rx_audio_tx.clone());
+            let _capture_thread = audio::spawn_audio_capture(&cfg.audio, rx_audio_tx.clone(), Some(pcm_tx.clone()));
+
+            // Spawn APRS decoder task
+            let aprs_pcm_rx = pcm_tx.subscribe();
+            let aprs_state_rx = _state_rx.clone();
+            let aprs_decode_tx = decode_tx.clone();
+            let aprs_sr = cfg.audio.sample_rate;
+            let aprs_ch = cfg.audio.channels;
+            tokio::spawn(audio::run_aprs_decoder(
+                aprs_sr, aprs_ch as u16, aprs_pcm_rx, aprs_state_rx, aprs_decode_tx,
+            ));
+
+            // Spawn CW decoder task
+            let cw_pcm_rx = pcm_tx.subscribe();
+            let cw_state_rx = _state_rx.clone();
+            let cw_decode_tx = decode_tx.clone();
+            let cw_sr = cfg.audio.sample_rate;
+            let cw_ch = cfg.audio.channels;
+            tokio::spawn(audio::run_cw_decoder(
+                cw_sr, cw_ch as u16, cw_pcm_rx, cw_state_rx, cw_decode_tx,
+            ));
         }
         if cfg.audio.tx_enabled {
             let _playback_thread = audio::spawn_audio_playback(&cfg.audio, tx_audio_rx);
@@ -345,7 +371,7 @@ async fn main() -> DynResult<()> {
 
         tokio::spawn(async move {
             if let Err(e) =
-                audio::run_audio_listener(audio_listen, rx_audio_tx, tx_audio_tx, stream_info)
+                audio::run_audio_listener(audio_listen, rx_audio_tx, tx_audio_tx, stream_info, decode_tx)
                     .await
             {
                 error!("Audio listener error: {:?}", e);

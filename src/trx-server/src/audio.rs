@@ -8,15 +8,18 @@ use std::net::SocketAddr;
 
 use bytes::Bytes;
 use tokio::net::{TcpListener, TcpStream};
-use tokio::sync::{broadcast, mpsc};
+use tokio::sync::{broadcast, mpsc, watch};
 use tracing::{error, info, warn};
 
 use trx_core::audio::{
-    read_audio_msg, write_audio_msg, AudioStreamInfo, AUDIO_MSG_RX_FRAME, AUDIO_MSG_STREAM_INFO,
-    AUDIO_MSG_TX_FRAME,
+    read_audio_msg, write_audio_msg, AudioStreamInfo, AUDIO_MSG_APRS_DECODE,
+    AUDIO_MSG_CW_DECODE, AUDIO_MSG_RX_FRAME, AUDIO_MSG_STREAM_INFO, AUDIO_MSG_TX_FRAME,
 };
+use trx_core::decode::DecodedMessage;
+use trx_core::rig::state::{RigMode, RigState};
 
 use crate::config::AudioConfig;
+use crate::decode;
 
 /// Spawn the audio capture thread.
 ///
@@ -26,6 +29,7 @@ use crate::config::AudioConfig;
 pub fn spawn_audio_capture(
     cfg: &AudioConfig,
     tx: broadcast::Sender<Bytes>,
+    pcm_tx: Option<broadcast::Sender<Vec<f32>>>,
 ) -> std::thread::JoinHandle<()> {
     let sample_rate = cfg.sample_rate;
     let channels = cfg.channels as u16;
@@ -35,7 +39,7 @@ pub fn spawn_audio_capture(
 
     std::thread::spawn(move || {
         if let Err(e) =
-            run_capture(sample_rate, channels, frame_duration_ms, bitrate_bps, device_name, tx)
+            run_capture(sample_rate, channels, frame_duration_ms, bitrate_bps, device_name, tx, pcm_tx)
         {
             error!("Audio capture thread error: {}", e);
         }
@@ -49,6 +53,7 @@ fn run_capture(
     bitrate_bps: u32,
     device_name: Option<String>,
     tx: broadcast::Sender<Bytes>,
+    pcm_tx: Option<broadcast::Sender<Vec<f32>>>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 
@@ -130,6 +135,9 @@ fn run_capture(
                 pcm_buf.extend_from_slice(&samples);
                 while pcm_buf.len() >= frame_samples {
                     let frame: Vec<f32> = pcm_buf.drain(..frame_samples).collect();
+                    if let Some(ref pcm_tx) = pcm_tx {
+                        let _ = pcm_tx.send(frame.clone());
+                    }
                     match encoder.encode_float(&frame, &mut opus_buf) {
                         Ok(len) => {
                             let packet = Bytes::copy_from_slice(&opus_buf[..len]);
@@ -263,12 +271,115 @@ fn run_playback(
     Ok(())
 }
 
+/// Run the APRS decoder task. Only processes PCM when rig mode is PKT.
+pub async fn run_aprs_decoder(
+    sample_rate: u32,
+    channels: u16,
+    mut pcm_rx: broadcast::Receiver<Vec<f32>>,
+    state_rx: watch::Receiver<RigState>,
+    decode_tx: broadcast::Sender<DecodedMessage>,
+) {
+    info!("APRS decoder started ({}Hz, {} ch)", sample_rate, channels);
+    let mut decoder = decode::aprs::AprsDecoder::new(sample_rate);
+    let mut was_active = false;
+
+    loop {
+        match pcm_rx.recv().await {
+            Ok(frame) => {
+                let mode = &state_rx.borrow().status.mode;
+                let active = matches!(mode, RigMode::PKT);
+
+                if !active {
+                    if was_active {
+                        decoder.reset();
+                        was_active = false;
+                    }
+                    continue;
+                }
+                was_active = true;
+
+                // Downmix to mono if stereo
+                let mono = if channels > 1 {
+                    let num_frames = frame.len() / channels as usize;
+                    let mut mono = Vec::with_capacity(num_frames);
+                    for i in 0..num_frames {
+                        mono.push(frame[i * channels as usize]);
+                    }
+                    mono
+                } else {
+                    frame
+                };
+
+                for pkt in decoder.process_samples(&mono) {
+                    let _ = decode_tx.send(DecodedMessage::Aprs(pkt));
+                }
+            }
+            Err(broadcast::error::RecvError::Lagged(n)) => {
+                warn!("APRS decoder: dropped {} PCM frames", n);
+            }
+            Err(broadcast::error::RecvError::Closed) => break,
+        }
+    }
+}
+
+/// Run the CW decoder task. Only processes PCM when rig mode is CW or CWR.
+pub async fn run_cw_decoder(
+    sample_rate: u32,
+    channels: u16,
+    mut pcm_rx: broadcast::Receiver<Vec<f32>>,
+    state_rx: watch::Receiver<RigState>,
+    decode_tx: broadcast::Sender<DecodedMessage>,
+) {
+    info!("CW decoder started ({}Hz, {} ch)", sample_rate, channels);
+    let mut decoder = decode::cw::CwDecoder::new(sample_rate);
+    let mut was_active = false;
+
+    loop {
+        match pcm_rx.recv().await {
+            Ok(frame) => {
+                let mode = &state_rx.borrow().status.mode;
+                let active = matches!(mode, RigMode::CW | RigMode::CWR);
+
+                if !active {
+                    if was_active {
+                        decoder.reset();
+                        was_active = false;
+                    }
+                    continue;
+                }
+                was_active = true;
+
+                // Downmix to mono if stereo
+                let mono = if channels > 1 {
+                    let num_frames = frame.len() / channels as usize;
+                    let mut mono = Vec::with_capacity(num_frames);
+                    for i in 0..num_frames {
+                        mono.push(frame[i * channels as usize]);
+                    }
+                    mono
+                } else {
+                    frame
+                };
+
+                for evt in decoder.process_samples(&mono) {
+                    let _ = decode_tx.send(DecodedMessage::Cw(evt));
+                }
+            }
+            Err(broadcast::error::RecvError::Lagged(n)) => {
+                warn!("CW decoder: dropped {} PCM frames", n);
+            }
+            Err(broadcast::error::RecvError::Closed) => break,
+        }
+    }
+}
+
 /// Run the audio TCP listener, accepting client connections.
 pub async fn run_audio_listener(
     addr: SocketAddr,
     rx_audio: broadcast::Sender<Bytes>,
     tx_audio: mpsc::Sender<Bytes>,
     stream_info: AudioStreamInfo,
+    decode_tx: broadcast::Sender<DecodedMessage>,
 ) -> std::io::Result<()> {
     let listener = TcpListener::bind(addr).await?;
     info!("Audio listener on {}", addr);
@@ -280,9 +391,10 @@ pub async fn run_audio_listener(
         let rx_audio = rx_audio.clone();
         let tx_audio = tx_audio.clone();
         let info = stream_info.clone();
+        let decode_tx = decode_tx.clone();
 
         tokio::spawn(async move {
-            if let Err(e) = handle_audio_client(socket, peer, rx_audio, tx_audio, info).await {
+            if let Err(e) = handle_audio_client(socket, peer, rx_audio, tx_audio, info, decode_tx).await {
                 warn!("Audio client {} error: {:?}", peer, e);
             }
             info!("Audio client {} disconnected", peer);
@@ -296,6 +408,7 @@ async fn handle_audio_client(
     rx_audio: broadcast::Sender<Bytes>,
     tx_audio: mpsc::Sender<Bytes>,
     stream_info: AudioStreamInfo,
+    decode_tx: broadcast::Sender<DecodedMessage>,
 ) -> std::io::Result<()> {
     let (reader, writer) = socket.into_split();
     let mut reader = tokio::io::BufReader::new(reader);
@@ -306,22 +419,47 @@ async fn handle_audio_client(
         .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
     write_audio_msg(&mut writer, AUDIO_MSG_STREAM_INFO, &info_json).await?;
 
-    // Spawn RX forwarding task
+    // Spawn RX + decode forwarding task (shares the writer)
     let mut rx_sub = rx_audio.subscribe();
+    let mut decode_sub = decode_tx.subscribe();
     let mut writer_for_rx = writer;
     let rx_handle = tokio::spawn(async move {
         loop {
-            match rx_sub.recv().await {
-                Ok(packet) => {
-                    if let Err(e) = write_audio_msg(&mut writer_for_rx, AUDIO_MSG_RX_FRAME, &packet).await {
-                        warn!("Audio RX write to {} failed: {}", peer, e);
-                        break;
+            tokio::select! {
+                result = rx_sub.recv() => {
+                    match result {
+                        Ok(packet) => {
+                            if let Err(e) = write_audio_msg(&mut writer_for_rx, AUDIO_MSG_RX_FRAME, &packet).await {
+                                warn!("Audio RX write to {} failed: {}", peer, e);
+                                break;
+                            }
+                        }
+                        Err(broadcast::error::RecvError::Lagged(n)) => {
+                            warn!("Audio RX: {} dropped {} frames", peer, n);
+                        }
+                        Err(broadcast::error::RecvError::Closed) => break,
                     }
                 }
-                Err(broadcast::error::RecvError::Lagged(n)) => {
-                    warn!("Audio RX: {} dropped {} frames", peer, n);
+                result = decode_sub.recv() => {
+                    match result {
+                        Ok(msg) => {
+                            let msg_type = match &msg {
+                                DecodedMessage::Aprs(_) => AUDIO_MSG_APRS_DECODE,
+                                DecodedMessage::Cw(_) => AUDIO_MSG_CW_DECODE,
+                            };
+                            if let Ok(json) = serde_json::to_vec(&msg) {
+                                if let Err(e) = write_audio_msg(&mut writer_for_rx, msg_type, &json).await {
+                                    warn!("Audio decode write to {} failed: {}", peer, e);
+                                    break;
+                                }
+                            }
+                        }
+                        Err(broadcast::error::RecvError::Lagged(n)) => {
+                            warn!("Audio decode: {} dropped {} messages", peer, n);
+                        }
+                        Err(broadcast::error::RecvError::Closed) => break,
+                    }
                 }
-                Err(broadcast::error::RecvError::Closed) => break,
             }
         }
     });
