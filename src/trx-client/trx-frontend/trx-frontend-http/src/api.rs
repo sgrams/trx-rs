@@ -243,7 +243,9 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
         .service(favicon)
         .service(logo)
         .service(style_css)
-        .service(app_js);
+        .service(app_js)
+        .service(aprs_js)
+        .service(cw_js);
 }
 
 #[get("/")]
@@ -279,6 +281,20 @@ async fn app_js() -> impl Responder {
     HttpResponse::Ok()
         .insert_header((header::CONTENT_TYPE, "application/javascript; charset=utf-8"))
         .body(status::APP_JS)
+}
+
+#[get("/aprs.js")]
+async fn aprs_js() -> impl Responder {
+    HttpResponse::Ok()
+        .insert_header((header::CONTENT_TYPE, "application/javascript; charset=utf-8"))
+        .body(status::APRS_JS)
+}
+
+#[get("/cw.js")]
+async fn cw_js() -> impl Responder {
+    HttpResponse::Ok()
+        .insert_header((header::CONTENT_TYPE, "application/javascript; charset=utf-8"))
+        .body(status::CW_JS)
 }
 
 async fn send_command(

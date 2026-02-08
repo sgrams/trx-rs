@@ -121,12 +121,19 @@
       <div class="sub-tab-bar">
         <button class="sub-tab active" data-subtab="overview">Overview</button>
         <button class="sub-tab" data-subtab="aprs">APRS</button>
+        <button class="sub-tab" data-subtab="cw">CW</button>
       </div>
       <div id="subtab-overview" class="sub-tab-panel">
         <div class="plugin-item">
           <strong>APRS Decoder</strong>
           <div style="color:var(--text-muted); font-size:0.85rem; margin-top:0.2rem;">
             Decodes APRS packets from RX audio using Bell 202 AFSK (1200 baud).
+          </div>
+        </div>
+        <div class="plugin-item">
+          <strong>CW Decoder</strong>
+          <div style="color:var(--text-muted); font-size:0.85rem; margin-top:0.2rem;">
+            Decodes CW (Morse code) from RX audio.
           </div>
         </div>
       </div>
@@ -136,6 +143,19 @@
           <small id="aprs-status" style="color:var(--text-muted);">Stopped</small>
         </div>
         <div id="aprs-packets"></div>
+      </div>
+      <div id="subtab-cw" class="sub-tab-panel" style="display:none;">
+        <div class="cw-controls">
+          <button id="cw-toggle-btn" type="button">Start CW</button>
+          <small id="cw-status" style="color:var(--text-muted);">Stopped</small>
+          <div id="cw-signal-indicator" class="cw-signal-off"></div>
+        </div>
+        <div class="cw-config">
+          <label>WPM <input type="number" id="cw-wpm" min="5" max="40" value="15" /></label>
+          <label>Tone (Hz) <input type="number" id="cw-tone" min="300" max="1200" value="700" /></label>
+          <label>Threshold <input type="range" id="cw-threshold" min="1" max="50" value="5" /><small id="cw-threshold-val">0.05</small></label>
+        </div>
+        <div id="cw-output"></div>
       </div>
     </div>
     <div id="tab-about" class="tab-panel" style="display:none;">
@@ -157,5 +177,7 @@
     </div>
   </div>
   <script src="/app.js"></script>
+  <script src="/aprs.js"></script>
+  <script src="/cw.js"></script>
 </body>
 </html>
