@@ -4,6 +4,7 @@
 
 pub mod audio;
 pub mod client;
+pub mod decode;
 pub mod math;
 pub mod radio;
 pub mod rig;

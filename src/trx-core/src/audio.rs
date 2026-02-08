@@ -11,6 +11,8 @@ use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 pub const AUDIO_MSG_STREAM_INFO: u8 = 0x00;
 pub const AUDIO_MSG_RX_FRAME: u8 = 0x01;
 pub const AUDIO_MSG_TX_FRAME: u8 = 0x02;
+pub const AUDIO_MSG_APRS_DECODE: u8 = 0x03;
+pub const AUDIO_MSG_CW_DECODE: u8 = 0x04;
 
 /// Maximum payload size (1 MB) to reject bogus frames early.
 const MAX_PAYLOAD_SIZE: u32 = 1_048_576;
