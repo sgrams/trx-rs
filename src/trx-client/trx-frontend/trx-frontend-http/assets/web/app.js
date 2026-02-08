@@ -4,7 +4,6 @@ const bandLabel = document.getElementById("band-label");
 const powerBtn = document.getElementById("power-btn");
 const powerHint = document.getElementById("power-hint");
 const vfoPicker = document.getElementById("vfo-picker");
-const signalGraph = document.getElementById("signal-graph");
 const signalBar = document.getElementById("signal-bar");
 const signalValue = document.getElementById("signal-value");
 const pttBtn = document.getElementById("ptt-btn");
@@ -30,8 +29,8 @@ let lastTxEn = null;
 let lastRendered = null;
 let rigName = "Rig";
 let hintTimer = null;
-const signalHistory = [];
-const SIGNAL_HISTORY_MAX = 120;
+let sigMeasuring = false;
+let sigSamples = [];
 let lastFreqHz = null;
 let jogStep = 1000; // default 1 kHz
 let jogAngle = 0;
@@ -122,6 +121,20 @@ function freqAllowed(hz) {
   if (!Number.isFinite(hz)) return false;
   if (supportedBands.length === 0) return true; // if unknown, don't block
   return supportedBands.some((b) => hz >= b.low && hz <= b.high);
+}
+
+// Convert dBm (wire format) to S-units (S1=-121dBm, S9=-73dBm, 6dB/S-unit).
+// Above S9, returns 9 + (overshoot in S-unit-equivalent, i.e. dB/10).
+function dbmToSUnits(dbm) {
+  if (dbm <= -121) return 0;
+  if (dbm >= -73) return 9 + (dbm + 73) / 10;
+  return (dbm + 121) / 6;
+}
+
+function formatSignal(sUnits) {
+  if (sUnits <= 9) return `S${sUnits.toFixed(1)}`;
+  const overDb = (sUnits - 9) * 10;
+  return `S9 + ${overDb.toFixed(0)}dB`;
 }
 
 function setDisabled(disabled) {
@@ -244,28 +257,18 @@ function render(update) {
     vfoPicker.innerHTML = "<button type=\"button\" class=\"active\">--</button>";
   }
   if (update.status && update.status.rx && typeof update.status.rx.sig === "number") {
-    const raw = Math.max(0, update.status.rx.sig);
-    let pct;
-    let label;
-    if (raw <= 9) {
-      pct = Math.max(0, Math.min(100, (raw / 9) * 100));
-      label = `S${raw.toFixed(1)}`;
-    } else {
-      const overDb = (raw - 9) * 10;
-      pct = 100;
-      label = `S9 + ${overDb.toFixed(0)}dB`;
-    }
+    const sUnits = dbmToSUnits(update.status.rx.sig);
+    const pct = sUnits <= 9 ? Math.max(0, Math.min(100, (sUnits / 9) * 100)) : 100;
     signalBar.style.width = `${pct}%`;
-    signalValue.textContent = label;
-    signalHistory.push(raw);
-    if (signalHistory.length > SIGNAL_HISTORY_MAX) signalHistory.shift();
+    signalValue.textContent = formatSignal(sUnits);
+    if (sigMeasuring) {
+      sigSamples.push(sUnits);
+      sigMeasureBtn.textContent = `Stop (${sigSamples.length})`;
+    }
   } else {
     signalBar.style.width = "0%";
     signalValue.textContent = "--";
-    signalHistory.push(0);
-    if (signalHistory.length > SIGNAL_HISTORY_MAX) signalHistory.shift();
   }
-  drawSignalGraph();
   bandLabel.textContent = typeof update.band === "string" ? update.band : "--";
   if (typeof update.enabled === "boolean") {
     powerBtn.disabled = false;
@@ -309,49 +312,6 @@ function render(update) {
     swrBar.style.width = "0%";
     swrValue.textContent = "SWR --";
   }
-}
-
-function drawSignalGraph() {
-  if (!signalGraph) return;
-  const ctx = signalGraph.getContext("2d");
-  const w = signalGraph.width;
-  const h = signalGraph.height;
-  ctx.clearRect(0, 0, w, h);
-  if (signalHistory.length < 2) return;
-  const maxVal = 12; // S9+30dB in S-units
-  const len = signalHistory.length;
-  const step = w / (SIGNAL_HISTORY_MAX - 1);
-  const offsetX = (SIGNAL_HISTORY_MAX - len) * step;
-
-  ctx.beginPath();
-  ctx.moveTo(offsetX, h);
-  for (let i = 0; i < len; i++) {
-    const val = Math.min(signalHistory[i], maxVal);
-    const x = offsetX + i * step;
-    const y = h - (val / maxVal) * h;
-    ctx.lineTo(x, y);
-  }
-  ctx.lineTo(offsetX + (len - 1) * step, h);
-  ctx.closePath();
-
-  const grad = ctx.createLinearGradient(0, h, 0, 0);
-  grad.addColorStop(0, "rgba(0,209,127,0.25)");
-  grad.addColorStop(0.6, "rgba(240,173,78,0.35)");
-  grad.addColorStop(1, "rgba(229,83,83,0.45)");
-  ctx.fillStyle = grad;
-  ctx.fill();
-
-  ctx.beginPath();
-  for (let i = 0; i < len; i++) {
-    const val = Math.min(signalHistory[i], maxVal);
-    const x = offsetX + i * step;
-    const y = h - (val / maxVal) * h;
-    if (i === 0) ctx.moveTo(x, y);
-    else ctx.lineTo(x, y);
-  }
-  ctx.strokeStyle = "rgba(0,209,127,0.8)";
-  ctx.lineWidth = 1.5;
-  ctx.stroke();
 }
 
 function connect() {
@@ -609,6 +569,35 @@ lockBtn.addEventListener("click", async () => {
 });
 
 connect();
+
+// --- Signal measurement ---
+const sigMeasureBtn = document.getElementById("sig-measure-btn");
+const sigClearBtn = document.getElementById("sig-clear-btn");
+const sigResult = document.getElementById("sig-result");
+
+sigMeasureBtn.addEventListener("click", () => {
+  if (!sigMeasuring) {
+    sigSamples = [];
+    sigMeasuring = true;
+    sigMeasureBtn.textContent = "Stop (0)";
+    sigMeasureBtn.style.borderColor = "#00d17f";
+    sigMeasureBtn.style.color = "#00d17f";
+  } else {
+    sigMeasuring = false;
+    sigMeasureBtn.textContent = "Measure";
+    sigMeasureBtn.style.borderColor = "";
+    sigMeasureBtn.style.color = "";
+    if (sigSamples.length > 0) {
+      const avg = sigSamples.reduce((a, b) => a + b, 0) / sigSamples.length;
+      const peak = Math.max(...sigSamples);
+      sigResult.textContent = `Avg ${formatSignal(avg)} / Peak ${formatSignal(peak)} (${sigSamples.length} samples)`;
+    }
+  }
+});
+
+sigClearBtn.addEventListener("click", () => {
+  sigResult.textContent = "";
+});
 
 // --- Audio streaming ---
 const rxAudioBtn = document.getElementById("rx-audio-btn");

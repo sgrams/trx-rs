@@ -71,7 +71,11 @@
           <div class="signal-bar"><div class="signal-bar-fill" id="signal-bar"></div></div>
           <div class="signal-value" id="signal-value">--</div>
         </div>
-        <canvas id="signal-graph" width="600" height="60"></canvas>
+        <div class="signal-measure">
+          <button id="sig-measure-btn" type="button">Measure</button>
+          <button id="sig-clear-btn" type="button">Clear</button>
+          <span id="sig-result"></span>
+        </div>
       </div>
       <div class="full-row" id="tx-meters" style="display:none;">
         <div class="label">TX Meters</div>
