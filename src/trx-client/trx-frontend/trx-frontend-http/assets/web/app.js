@@ -682,12 +682,12 @@ function crc16ccitt(bytes) {
 }
 
 // AFSK Bell 202 Demodulator (1200 baud, mark=1200Hz, space=2200Hz)
+// Uses bandpass filter + envelope detection for robust non-coherent decoding.
 function createDemodulator(sampleRate) {
   const BAUD = 1200;
   const MARK = 1200;
   const SPACE = 2200;
   const samplesPerBit = sampleRate / BAUD;
-  const windowLen = Math.round(samplesPerBit);
 
   // Debug counters
   let dbgSamples = 0;
@@ -701,24 +701,49 @@ function createDemodulator(sampleRate) {
   // Energy gate — reset demodulator when signal is absent
   let energyAcc = 0;
   let energyCount = 0;
-  const ENERGY_WINDOW = Math.round(sampleRate * 0.05); // 50ms window
-  const ENERGY_THRESHOLD = 0.001; // silence threshold
+  const ENERGY_WINDOW = Math.round(sampleRate * 0.05);
+  const ENERGY_THRESHOLD = 0.001;
 
-  // Correlation buffers
-  let markI = 0, markQ = 0, spaceI = 0, spaceQ = 0;
-  const ringLen = windowLen;
-  const ringMarkI = new Float32Array(ringLen);
-  const ringMarkQ = new Float32Array(ringLen);
-  const ringSpaceI = new Float32Array(ringLen);
-  const ringSpaceQ = new Float32Array(ringLen);
-  let ringIdx = 0;
+  // Biquad bandpass filter coefficients
+  function biquadBP(f0, Q) {
+    const w0 = 2 * Math.PI * f0 / sampleRate;
+    const alpha = Math.sin(w0) / (2 * Q);
+    const a0 = 1 + alpha;
+    return {
+      b0: alpha / a0, b1: 0, b2: -alpha / a0,
+      a1: (-2 * Math.cos(w0)) / a0, a2: (1 - alpha) / a0,
+    };
+  }
 
-  // Clock recovery
-  let sampleCount = 0;
-  let lastTone = 0;     // tone-level tracking for clock recovery
+  // Q chosen for adequate bandwidth at 1200 baud:
+  // mark BPF Q≈6 → BW≈200Hz, space BPF Q≈6 → BW≈367Hz
+  // Two cascaded stages for sharper rolloff
+  const markCoeffs1 = biquadBP(MARK, 6);
+  const markCoeffs2 = biquadBP(MARK, 6);
+  const spaceCoeffs1 = biquadBP(SPACE, 6);
+  const spaceCoeffs2 = biquadBP(SPACE, 6);
+
+  // Filter states [x1, x2, y1, y2]
+  let mf1 = [0,0,0,0], mf2 = [0,0,0,0];
+  let sf1 = [0,0,0,0], sf2 = [0,0,0,0];
+
+  function biquad(c, st, x) {
+    const y = c.b0 * x + c.b1 * st[0] + c.b2 * st[1] - c.a1 * st[2] - c.a2 * st[3];
+    st[1] = st[0]; st[0] = x;
+    st[3] = st[2]; st[2] = y;
+    return y;
+  }
+
+  // Envelope smoothing: simple IIR low-pass at ~1200 Hz (one bit period)
+  const envAlpha = 1 - Math.exp(-2 * Math.PI * BAUD / sampleRate);
+  let markEnv = 0, spaceEnv = 0;
+
+  // Clock recovery (PLL)
+  let lastTone = 0;
   let bitPhase = 0;
+  const PLL_GAIN = 0.7; // correction factor (0=no correction, 1=hard reset)
 
-  // NRZI state (separate from clock recovery)
+  // NRZI state
   let prevSampledBit = 0;
 
   // HDLC state
@@ -729,10 +754,9 @@ function createDemodulator(sampleRate) {
   const frames = [];
 
   function resetState() {
-    markI = markQ = spaceI = spaceQ = 0;
-    ringMarkI.fill(0); ringMarkQ.fill(0);
-    ringSpaceI.fill(0); ringSpaceQ.fill(0);
-    ringIdx = 0;
+    mf1 = [0,0,0,0]; mf2 = [0,0,0,0];
+    sf1 = [0,0,0,0]; sf2 = [0,0,0,0];
+    markEnv = spaceEnv = 0;
     lastTone = 0;
     bitPhase = 0;
     prevSampledBit = 0;
@@ -742,45 +766,33 @@ function createDemodulator(sampleRate) {
   }
 
   function processSample(s) {
-    // Energy gate: detect silence and reset state
+    // Energy gate
     energyAcc += s * s;
     energyCount++;
     if (energyCount >= ENERGY_WINDOW) {
-      const rms = Math.sqrt(energyAcc / energyCount);
-      if (rms < ENERGY_THRESHOLD) {
+      if (Math.sqrt(energyAcc / energyCount) < ENERGY_THRESHOLD) {
         resetState();
       }
       energyAcc = 0;
       energyCount = 0;
     }
 
-    const t = sampleCount / sampleRate;
-    const mI = s * Math.cos(2 * Math.PI * MARK * t);
-    const mQ = s * Math.sin(2 * Math.PI * MARK * t);
-    const sI = s * Math.cos(2 * Math.PI * SPACE * t);
-    const sQ = s * Math.sin(2 * Math.PI * SPACE * t);
+    // Bandpass filter: two cascaded biquads per tone
+    const markOut = biquad(markCoeffs2, mf2, biquad(markCoeffs1, mf1, s));
+    const spaceOut = biquad(spaceCoeffs2, sf2, biquad(spaceCoeffs1, sf1, s));
 
-    // Sliding window correlation
-    markI += mI - ringMarkI[ringIdx];
-    markQ += mQ - ringMarkQ[ringIdx];
-    spaceI += sI - ringSpaceI[ringIdx];
-    spaceQ += sQ - ringSpaceQ[ringIdx];
+    // Envelope detection: squared magnitude + IIR smoothing
+    markEnv += envAlpha * (markOut * markOut - markEnv);
+    spaceEnv += envAlpha * (spaceOut * spaceOut - spaceEnv);
 
-    ringMarkI[ringIdx] = mI;
-    ringMarkQ[ringIdx] = mQ;
-    ringSpaceI[ringIdx] = sI;
-    ringSpaceQ[ringIdx] = sQ;
-    ringIdx = (ringIdx + 1) % ringLen;
+    const bit = markEnv > spaceEnv ? 1 : 0;
 
-    const markEnergy = markI * markI + markQ * markQ;
-    const spaceEnergy = spaceI * spaceI + spaceQ * spaceQ;
-    const bit = markEnergy > spaceEnergy ? 1 : 0;
-
-    // Clock recovery via zero-crossing
+    // PLL clock recovery
     if (bit !== lastTone) {
       lastTone = bit;
-      // Nudge phase toward center of bit
-      bitPhase = samplesPerBit / 2;
+      // Phase error: distance from ideal center (samplesPerBit/2)
+      const error = bitPhase - samplesPerBit / 2;
+      bitPhase -= PLL_GAIN * error;
     }
 
     bitPhase--;
@@ -791,7 +803,6 @@ function createDemodulator(sampleRate) {
     }
 
     dbgSamples++;
-    sampleCount++;
   }
 
   function processBit(rawBit) {
