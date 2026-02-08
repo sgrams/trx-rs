@@ -28,13 +28,22 @@ pub struct ClientConfig {
 }
 
 /// General application settings.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct GeneralConfig {
     /// Callsign or owner label to display in frontends
     pub callsign: Option<String>,
     /// Log level (trace, debug, info, warn, error)
     pub log_level: Option<String>,
+}
+
+impl Default for GeneralConfig {
+    fn default() -> Self {
+        Self {
+            callsign: Some("N0CALL".to_string()),
+            log_level: None,
+        }
+    }
 }
 
 /// Remote connection configuration.

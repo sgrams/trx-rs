@@ -267,6 +267,8 @@ async fn async_init() -> DynResult<AppState> {
             clar_on: None,
             enabled: Some(false),
         },
+        server_callsign: None,
+        server_version: None,
     };
     let (state_tx, state_rx) = watch::channel(initial_state);
 

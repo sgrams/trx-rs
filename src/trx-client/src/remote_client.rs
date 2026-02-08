@@ -180,6 +180,8 @@ pub fn state_from_snapshot(snapshot: trx_core::RigSnapshot) -> RigState {
             clar_on: None,
             enabled: snapshot.enabled,
         },
+        server_callsign: snapshot.server_callsign,
+        server_version: snapshot.server_version,
     }
 }
 
