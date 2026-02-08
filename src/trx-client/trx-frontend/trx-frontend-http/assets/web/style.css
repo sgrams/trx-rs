@@ -227,6 +227,9 @@ small { color: var(--text-muted); }
 .cw-line { line-height: 1.5; }
 .cw-signal-on { width: 10px; height: 10px; border-radius: 50%; background: var(--accent-green); box-shadow: 0 0 6px var(--accent-green); flex-shrink: 0; }
 .cw-signal-off { width: 10px; height: 10px; border-radius: 50%; background: var(--border-light); flex-shrink: 0; }
+.cw-auto-label { display: inline-flex; align-items: center; gap: 0.25rem; font-size: 0.82rem; color: var(--text-muted); cursor: pointer; }
+.cw-auto-label input[type="checkbox"] { margin: 0; cursor: pointer; }
+.cw-config input[type="number"][readonly] { opacity: 0.6; }
 
 button:focus-visible, input:focus-visible, select:focus-visible {
   outline: 2px solid var(--accent-green);
