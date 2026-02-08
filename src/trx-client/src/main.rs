@@ -272,6 +272,10 @@ async fn async_init() -> DynResult<AppState> {
         server_version: None,
         server_latitude: None,
         server_longitude: None,
+        aprs_decode_enabled: false,
+        cw_decode_enabled: false,
+        aprs_decode_reset_seq: 0,
+        cw_decode_reset_seq: 0,
     };
     let (state_tx, state_rx) = watch::channel(initial_state);
 
