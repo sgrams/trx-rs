@@ -313,7 +313,7 @@ async fn main() -> DynResult<()> {
     }
 
     if cfg.audio.enabled {
-        let audio_listen = SocketAddr::from((cfg.audio.listen, cfg.audio.port));
+        let audio_listen = SocketAddr::from((cli.listen.unwrap_or(cfg.audio.listen), cfg.audio.port));
         let stream_info = AudioStreamInfo {
             sample_rate: cfg.audio.sample_rate,
             channels: cfg.audio.channels,
