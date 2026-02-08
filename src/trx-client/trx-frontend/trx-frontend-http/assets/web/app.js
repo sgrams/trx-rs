@@ -1125,24 +1125,45 @@ document.getElementById("copyright-year").textContent = new Date().getFullYear()
 // --- Server-side decode SSE ---
 let decodeSource = null;
 let decodeConnected = false;
+function updateDecodeStatus(text) {
+  const aprs = document.getElementById("aprs-status");
+  const cw = document.getElementById("cw-status");
+  if (aprs && aprs.textContent !== "Receiving") aprs.textContent = text;
+  if (cw && cw.textContent !== "Receiving") cw.textContent = text;
+}
 function connectDecode() {
   if (decodeSource) { decodeSource.close(); }
-  decodeSource = new EventSource("/decode");
-  decodeSource.onopen = () => { decodeConnected = true; };
-  decodeSource.onmessage = (evt) => {
-    try {
-      const msg = JSON.parse(evt.data);
-      if (msg.type === "aprs" && window.onServerAprs) window.onServerAprs(msg);
-      if (msg.type === "cw" && window.onServerCw) window.onServerCw(msg);
-    } catch (e) {
-      // ignore parse errors
+  // Probe first to distinguish 404 from real SSE errors
+  fetch("/decode", { method: "HEAD" }).then((r) => {
+    if (r.status === 404) {
+      updateDecodeStatus("Decode not available (audio disabled?)");
+      setTimeout(connectDecode, 10000);
+      return;
     }
-  };
-  decodeSource.onerror = () => {
-    decodeSource.close();
-    decodeConnected = false;
+    decodeSource = new EventSource("/decode");
+    decodeSource.onopen = () => {
+      decodeConnected = true;
+      updateDecodeStatus("Connected, listening for packets");
+    };
+    decodeSource.onmessage = (evt) => {
+      try {
+        const msg = JSON.parse(evt.data);
+        if (msg.type === "aprs" && window.onServerAprs) window.onServerAprs(msg);
+        if (msg.type === "cw" && window.onServerCw) window.onServerCw(msg);
+      } catch (e) {
+        // ignore parse errors
+      }
+    };
+    decodeSource.onerror = () => {
+      decodeSource.close();
+      decodeConnected = false;
+      updateDecodeStatus("Decode disconnected, retrying…");
+      setTimeout(connectDecode, 5000);
+    };
+  }).catch(() => {
+    updateDecodeStatus("Decode endpoint unreachable");
     setTimeout(connectDecode, 5000);
-  };
+  });
 }
 connectDecode();
 
