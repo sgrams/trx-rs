@@ -615,6 +615,18 @@ document.querySelector(".tab-bar").addEventListener("click", (e) => {
 
 connect();
 
+// --- Plugins tab ---
+fetch("/frontends").then(r => r.json()).then(names => {
+  const list = document.getElementById("plugins-list");
+  if (!Array.isArray(names) || names.length === 0) {
+    list.innerHTML = '<div class="plugin-item" style="color:var(--text-muted);">No frontends registered</div>';
+    return;
+  }
+  list.innerHTML = names.map(n => `<div class="plugin-item">${n}</div>`).join("");
+}).catch(err => {
+  console.error("Failed to fetch frontends", err);
+});
+
 // --- Signal measurement ---
 const sigMeasureBtn = document.getElementById("sig-measure-btn");
 const sigClearBtn = document.getElementById("sig-clear-btn");

@@ -26,6 +26,12 @@ const FAVICON_BYTES: &[u8] = include_bytes!(concat!(
 const LOGO_BYTES: &[u8] =
     include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/assets/trx-logo.png"));
 
+#[get("/frontends")]
+pub async fn frontends_api() -> Result<impl Responder, Error> {
+    let names = trx_frontend::registered_frontends();
+    Ok(HttpResponse::Ok().json(names))
+}
+
 #[get("/status")]
 pub async fn status_api(
     state: web::Data<watch::Receiver<RigState>>,
@@ -229,6 +235,7 @@ pub async fn set_tx_limit(
 
 pub fn configure(cfg: &mut web::ServiceConfig) {
     cfg.service(index)
+        .service(frontends_api)
         .service(status_api)
         .service(events)
         .service(toggle_power)
@@ -322,9 +329,17 @@ async fn wait_for_view(mut rx: watch::Receiver<RigState>) -> Result<RigSnapshot,
         return Ok(view);
     }
 
-    while rx.changed().await.is_ok() {
-        if let Some(view) = rx.borrow().snapshot() {
-            return Ok(view);
+    // Wait up to 5 seconds for a valid snapshot; fall back to a placeholder
+    // so the SSE stream starts immediately and the browser isn't left hanging.
+    let deadline = time::Instant::now() + Duration::from_secs(5);
+    loop {
+        match time::timeout_at(deadline, rx.changed()).await {
+            Ok(Ok(())) => {
+                if let Some(view) = rx.borrow().snapshot() {
+                    return Ok(view);
+                }
+            }
+            _ => break,
         }
     }
 

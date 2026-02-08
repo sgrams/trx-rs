@@ -157,6 +157,8 @@ small { color: var(--text-muted); }
 .about-table td { padding: 0.5rem 0.6rem; border-bottom: 1px solid var(--border); }
 .about-table tr:last-child td { border-bottom: none; }
 .about-table td:first-child { color: var(--text-muted); width: 40%; }
+.plugin-item { padding: 0.5rem 0.6rem; border-bottom: 1px solid var(--border); color: var(--text); }
+.plugin-item:last-child { border-bottom: none; }
 .footer { display: flex; justify-content: space-between; align-items: baseline; margin-top: 1.1rem; }
 .full-row { grid-column: 1 / -1; }
 .copyright { color: var(--text-muted); font-size: 0.75rem; opacity: 0.7; }
