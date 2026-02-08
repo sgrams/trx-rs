@@ -384,10 +384,11 @@ fn parse_aprs(ax25: &Ax25Frame) -> AprsPacket {
         .map(|d| format_call(d))
         .collect::<Vec<_>>()
         .join(",");
-    let info_str = String::from_utf8_lossy(&ax25.info).to_string();
+    let info = &ax25.info;
+    let info_str = String::from_utf8_lossy(info).to_string();
 
-    let packet_type = if !info_str.is_empty() {
-        match info_str.as_bytes()[0] {
+    let packet_type = if !info.is_empty() {
+        match info[0] {
             b'!' | b'=' | b'/' | b'@' => "Position",
             b':' => "Message",
             b'>' => "Status",
@@ -407,7 +408,7 @@ fn parse_aprs(ax25: &Ax25Frame) -> AprsPacket {
     let mut symbol_code = None;
 
     if packet_type == "Position" {
-        if let Some(pos) = parse_aprs_position(&info_str) {
+        if let Some(pos) = parse_aprs_position(info) {
             lat = Some(pos.0);
             lon = Some(pos.1);
             symbol_table = Some(pos.2.to_string());
@@ -429,61 +430,56 @@ fn parse_aprs(ax25: &Ax25Frame) -> AprsPacket {
     }
 }
 
-fn parse_aprs_position(info_str: &str) -> Option<(f64, f64, char, char)> {
-    if info_str.is_empty() {
+fn parse_aprs_position(info: &[u8]) -> Option<(f64, f64, char, char)> {
+    if info.is_empty() {
         return None;
     }
-    let bytes = info_str.as_bytes();
-    let dt = bytes[0];
+    let dt = info[0];
 
-    let pos_str = match dt {
-        b'!' | b'=' => &info_str[1..],
+    let pos = match dt {
+        b'!' | b'=' => &info[1..],
         b'/' | b'@' => {
-            if info_str.len() < 9 {
+            if info.len() < 9 {
                 return None;
             }
-            &info_str[8..]
+            &info[8..]
         }
         _ => return None,
     };
 
-    if pos_str.is_empty() {
+    if pos.is_empty() {
         return None;
     }
 
-    let first = pos_str.as_bytes()[0];
-    if first < b'0' || first > b'9' {
-        return parse_aprs_compressed(pos_str);
+    if pos[0] < b'0' || pos[0] > b'9' {
+        return parse_aprs_compressed(pos);
     }
 
     // Uncompressed: DDMM.MMN/DDDMM.MMEsYYY
-    if pos_str.len() < 19 {
+    if pos.len() < 19 {
         return None;
     }
 
-    let lat_str = &pos_str[..8];
-    let sym_table = pos_str.as_bytes()[8] as char;
-    let lon_str = &pos_str[9..18];
-    let sym_code = pos_str.as_bytes()[18] as char;
+    let sym_table = pos[8] as char;
+    let sym_code = pos[18] as char;
 
-    let lat = parse_aprs_lat(lat_str)?;
-    let lon = parse_aprs_lon(lon_str)?;
+    let lat = parse_aprs_lat(&pos[..8])?;
+    let lon = parse_aprs_lon(&pos[9..18])?;
 
     Some((lat, lon, sym_table, sym_code))
 }
 
-fn parse_aprs_compressed(pos_str: &str) -> Option<(f64, f64, char, char)> {
-    if pos_str.len() < 10 {
+fn parse_aprs_compressed(pos: &[u8]) -> Option<(f64, f64, char, char)> {
+    if pos.len() < 10 {
         return None;
     }
-    let bytes = pos_str.as_bytes();
-    let sym_table = bytes[0] as char;
+    let sym_table = pos[0] as char;
 
     let mut lat_val: u32 = 0;
     let mut lon_val: u32 = 0;
     for i in 0..4 {
-        let lc = bytes[1 + i] as i32 - 33;
-        let xc = bytes[5 + i] as i32 - 33;
+        let lc = pos[1 + i] as i32 - 33;
+        let xc = pos[5 + i] as i32 - 33;
         if lc < 0 || lc > 90 || xc < 0 || xc > 90 {
             return None;
         }
@@ -498,22 +494,21 @@ fn parse_aprs_compressed(pos_str: &str) -> Option<(f64, f64, char, char)> {
         return None;
     }
 
-    let sym_code = bytes[9] as char;
+    let sym_code = pos[9] as char;
     let lat = (lat * 1e6).round() / 1e6;
     let lon = (lon * 1e6).round() / 1e6;
 
     Some((lat, lon, sym_table, sym_code))
 }
 
-fn parse_aprs_lat(s: &str) -> Option<f64> {
-    if s.len() < 8 {
+fn parse_aprs_lat(b: &[u8]) -> Option<f64> {
+    if b.len() < 8 {
         return None;
     }
-    let deg: f64 = s[..2].parse().ok()?;
-    let min: f64 = s[2..7].parse().ok()?;
-    let ns = s.as_bytes()[7];
+    let deg: f64 = std::str::from_utf8(&b[..2]).ok()?.parse().ok()?;
+    let min: f64 = std::str::from_utf8(&b[2..7]).ok()?.parse().ok()?;
     let mut lat = deg + min / 60.0;
-    match ns {
+    match b[7] {
         b'S' | b's' => lat = -lat,
         b'N' | b'n' => {}
         _ => return None,
@@ -521,15 +516,14 @@ fn parse_aprs_lat(s: &str) -> Option<f64> {
     Some((lat * 1e6).round() / 1e6)
 }
 
-fn parse_aprs_lon(s: &str) -> Option<f64> {
-    if s.len() < 9 {
+fn parse_aprs_lon(b: &[u8]) -> Option<f64> {
+    if b.len() < 9 {
         return None;
     }
-    let deg: f64 = s[..3].parse().ok()?;
-    let min: f64 = s[3..8].parse().ok()?;
-    let ew = s.as_bytes()[8];
+    let deg: f64 = std::str::from_utf8(&b[..3]).ok()?.parse().ok()?;
+    let min: f64 = std::str::from_utf8(&b[3..8]).ok()?.parse().ok()?;
     let mut lon = deg + min / 60.0;
-    match ew {
+    match b[8] {
         b'W' | b'w' => lon = -lon,
         b'E' | b'e' => {}
         _ => return None,
