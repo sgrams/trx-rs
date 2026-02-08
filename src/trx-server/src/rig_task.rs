@@ -33,6 +33,8 @@ pub struct RigTaskConfig {
     pub retry: ExponentialBackoff,
     pub initial_freq_hz: u64,
     pub initial_mode: RigMode,
+    pub server_callsign: Option<String>,
+    pub server_version: Option<String>,
 }
 
 impl Default for RigTaskConfig {
@@ -47,6 +49,8 @@ impl Default for RigTaskConfig {
             retry: ExponentialBackoff::default(),
             initial_freq_hz: 144_300_000,
             initial_mode: RigMode::USB,
+            server_callsign: None,
+            server_version: None,
         }
     }
 }
@@ -80,6 +84,8 @@ pub async fn run_rig_task(
     // Initialize state machine and state
     let mut machine = RigStateMachine::new();
     let emitter = RigEventEmitter::new();
+    let server_callsign = config.server_callsign.clone();
+    let server_version = config.server_version.clone();
     let mut state = RigState {
         rig_info: None,
         status: RigStatus {
@@ -106,6 +112,8 @@ pub async fn run_rig_task(
             clar_on: None,
             enabled: Some(false),
         },
+        server_callsign,
+        server_version,
     };
 
     // Polling configuration

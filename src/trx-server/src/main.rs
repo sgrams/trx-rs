@@ -180,7 +180,7 @@ fn resolve_config(cli: &Cli, cfg: &ServerConfig) -> DynResult<ResolvedConfig> {
     })
 }
 
-fn build_initial_state(cfg: &ServerConfig) -> RigState {
+fn build_initial_state(cfg: &ServerConfig, callsign: &Option<String>) -> RigState {
     RigState {
         rig_info: None,
         status: RigStatus {
@@ -209,6 +209,8 @@ fn build_initial_state(cfg: &ServerConfig) -> RigState {
             clar_on: None,
             enabled: Some(false),
         },
+        server_callsign: callsign.clone(),
+        server_version: Some(env!("CARGO_PKG_VERSION").to_string()),
     }
 }
 
@@ -230,6 +232,8 @@ fn build_rig_task_config(
         ),
         initial_freq_hz: cfg.rig.initial_freq_hz,
         initial_mode: cfg.rig.initial_mode.clone(),
+        server_callsign: resolved.callsign.clone(),
+        server_version: Some(env!("CARGO_PKG_VERSION").to_string()),
     }
 }
 
@@ -280,7 +284,7 @@ async fn main() -> DynResult<()> {
     }
 
     let (tx, rx) = mpsc::channel::<RigRequest>(RIG_TASK_CHANNEL_BUFFER);
-    let initial_state = build_initial_state(&cfg);
+    let initial_state = build_initial_state(&cfg, &resolved.callsign);
     let (state_tx, state_rx) = watch::channel(initial_state);
     // Keep receivers alive so channels don't close prematurely
     let _state_rx = state_rx;
