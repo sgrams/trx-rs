@@ -698,6 +698,12 @@ function createDemodulator(sampleRate) {
   let dbgFramesOk = 0;
   let dbgLastLog = 0;
 
+  // Energy gate — reset demodulator when signal is absent
+  let energyAcc = 0;
+  let energyCount = 0;
+  const ENERGY_WINDOW = Math.round(sampleRate * 0.05); // 50ms window
+  const ENERGY_THRESHOLD = 0.001; // silence threshold
+
   // Correlation buffers
   let markI = 0, markQ = 0, spaceI = 0, spaceQ = 0;
   const ringLen = windowLen;
@@ -722,7 +728,32 @@ function createDemodulator(sampleRate) {
 
   const frames = [];
 
+  function resetState() {
+    markI = markQ = spaceI = spaceQ = 0;
+    ringMarkI.fill(0); ringMarkQ.fill(0);
+    ringSpaceI.fill(0); ringSpaceQ.fill(0);
+    ringIdx = 0;
+    lastTone = 0;
+    bitPhase = 0;
+    prevSampledBit = 0;
+    ones = 0;
+    frameBits = [];
+    inFrame = false;
+  }
+
   function processSample(s) {
+    // Energy gate: detect silence and reset state
+    energyAcc += s * s;
+    energyCount++;
+    if (energyCount >= ENERGY_WINDOW) {
+      const rms = Math.sqrt(energyAcc / energyCount);
+      if (rms < ENERGY_THRESHOLD) {
+        resetState();
+      }
+      energyAcc = 0;
+      energyCount = 0;
+    }
+
     const t = sampleCount / sampleRate;
     const mI = s * Math.cos(2 * Math.PI * MARK * t);
     const mQ = s * Math.sin(2 * Math.PI * MARK * t);
@@ -788,8 +819,11 @@ function createDemodulator(sampleRate) {
       dbgFlags++;
       if (inFrame && frameBits.length >= 136) {
         dbgFrameAttempts++;
-        const frame = bitsToBytes(frameBits);
-        if (frame) { dbgFramesOk++; frames.push(frame); }
+        const result = bitsToBytes(frameBits);
+        if (result) {
+          if (result.crcOk) dbgFramesOk++;
+          frames.push(result);
+        }
       }
       frameBits = [];
       inFrame = true;
@@ -831,12 +865,21 @@ function createDemodulator(sampleRate) {
     const computed = crc16ccitt(payload);
     if (computed !== fcs) {
       dbgCrcFails++;
-      console.debug("[APRS-DBG] CRC fail:", byteLen, "bytes, fcs=0x" + fcs.toString(16), "computed=0x" + computed.toString(16),
-        "first6:", Array.from(payload.subarray(0, 6)).map(b => b.toString(16).padStart(2, "0")).join(" "));
-      return null;
+      // Try to decode addresses for diagnostics
+      let addrInfo = "";
+      if (payload.length >= 14) {
+        const dstCall = Array.from(payload.subarray(0, 6)).map(b => String.fromCharCode(b >> 1)).join("").trim();
+        const srcCall = Array.from(payload.subarray(7, 13)).map(b => String.fromCharCode(b >> 1)).join("").trim();
+        addrInfo = ` dst="${dstCall}" src="${srcCall}"`;
+      }
+      console.debug("[APRS-DBG] CRC fail:", byteLen, "bytes, fcs=0x" + fcs.toString(16),
+        "computed=0x" + computed.toString(16), "bits:", bits.length, addrInfo,
+        "hex:", Array.from(bytes.subarray(0, Math.min(20, byteLen))).map(b => b.toString(16).padStart(2, "0")).join(" "));
+      // Return as suspect frame for display
+      return { payload, crcOk: false };
     }
 
-    return payload;
+    return { payload, crcOk: true };
   }
 
   function processBuffer(samples) {
@@ -915,12 +958,15 @@ function parseAPRS(ax25) {
 }
 
 function addAprsPacket(pkt) {
-  console.log("[APRS]", `${pkt.srcCall}>${pkt.destCall}${pkt.path ? "," + pkt.path : ""}: ${pkt.info}`, pkt);
+  const tag = pkt.crcOk ? "[APRS]" : "[APRS-CRC-FAIL]";
+  console.log(tag, `${pkt.srcCall}>${pkt.destCall}${pkt.path ? "," + pkt.path : ""}: ${pkt.info}`, pkt);
   const row = document.createElement("div");
   row.className = "aprs-packet";
+  if (!pkt.crcOk) row.style.opacity = "0.5";
   const now = new Date();
   const ts = now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
-  row.innerHTML = `<span class="aprs-time">${ts}</span><span class="aprs-call">${pkt.srcCall}</span>&gt;${pkt.destCall}${pkt.path ? "," + pkt.path : ""}: <span title="${pkt.type}">${pkt.info}</span>`;
+  const crcTag = pkt.crcOk ? "" : ' <span style="color:var(--accent-red);">[CRC]</span>';
+  row.innerHTML = `<span class="aprs-time">${ts}</span><span class="aprs-call">${pkt.srcCall}</span>&gt;${pkt.destCall}${pkt.path ? "," + pkt.path : ""}: <span title="${pkt.type}">${pkt.info}</span>${crcTag}`;
   aprsPacketsEl.prepend(row);
   while (aprsPacketsEl.children.length > APRS_MAX_PACKETS) {
     aprsPacketsEl.removeChild(aprsPacketsEl.lastChild);
@@ -973,10 +1019,11 @@ function startAprs() {
               }
             }
             const frames = demodulator.processBuffer(mono);
-            for (const f of frames) {
-              const ax25 = parseAX25(f);
+            for (const result of frames) {
+              const ax25 = parseAX25(result.payload);
               if (!ax25) continue;
               const pkt = parseAPRS(ax25);
+              pkt.crcOk = result.crcOk;
               addAprsPacket(pkt);
             }
             frame.close();
