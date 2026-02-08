@@ -6,6 +6,8 @@
   <link rel="icon" href="/favicon.ico" />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fontsource/dseg14-classic/400.css" />
   <link rel="stylesheet" href="/style.css" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 </head>
 <body>
   <div class="card" id="card">
@@ -120,6 +122,7 @@
     <div id="tab-plugins" class="tab-panel" style="display:none;">
       <div class="sub-tab-bar">
         <button class="sub-tab active" data-subtab="overview">Overview</button>
+        <button class="sub-tab" data-subtab="map">Map</button>
         <button class="sub-tab" data-subtab="aprs">APRS</button>
         <button class="sub-tab" data-subtab="cw">CW</button>
       </div>
@@ -136,6 +139,9 @@
             Decodes CW (Morse code) from RX audio.
           </div>
         </div>
+      </div>
+      <div id="subtab-map" class="sub-tab-panel" style="display:none;">
+        <div id="aprs-map"></div>
       </div>
       <div id="subtab-aprs" class="sub-tab-panel" style="display:none;">
         <div class="aprs-controls">

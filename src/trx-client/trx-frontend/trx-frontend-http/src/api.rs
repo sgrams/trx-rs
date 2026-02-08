@@ -365,6 +365,8 @@ async fn wait_for_view(mut rx: watch::Receiver<RigState>) -> Result<RigSnapshot,
         initialized: state.initialized,
         server_callsign: state.server_callsign,
         server_version: state.server_version,
+        server_latitude: state.server_latitude,
+        server_longitude: state.server_longitude,
     })
 }
 

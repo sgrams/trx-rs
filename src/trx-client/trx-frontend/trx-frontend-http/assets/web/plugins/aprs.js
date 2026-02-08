@@ -31,11 +31,12 @@ function crc16ccitt(bytes) {
 
 // AFSK Bell 202 Demodulator (1200 baud, mark=1200Hz, space=2200Hz)
 // Uses mark/space correlation detector (non-coherent FSK matched filter).
-function createDemodulator(sampleRate) {
+function createDemodulator(sampleRate, windowFactor) {
   const BAUD = 1200;
   const MARK = 1200;
   const SPACE = 2200;
   const samplesPerBit = sampleRate / BAUD;
+  const corrFactor = windowFactor || 1.0;
 
   // Debug counters
   let dbgSamples = 0;
@@ -60,8 +61,8 @@ function createDemodulator(sampleRate) {
   let markPhase = 0;
   let spacePhase = 0;
 
-  // Sliding-window matched filter (1 bit period)
-  const corrLen = Math.round(samplesPerBit);
+  // Sliding-window matched filter
+  const corrLen = Math.max(2, Math.round(samplesPerBit * corrFactor));
   const markIBuf = new Float32Array(corrLen);
   const markQBuf = new Float32Array(corrLen);
   const spaceIBuf = new Float32Array(corrLen);
@@ -453,6 +454,9 @@ function addAprsPacket(pkt) {
     posHtml = ` <a class="aprs-pos" href="${osmUrl}" target="_blank">${pkt.lat.toFixed(4)}, ${pkt.lon.toFixed(4)}</a>`;
   }
   row.innerHTML = `<span class="aprs-time">${ts}</span>${symbolHtml}<span class="aprs-call">${pkt.srcCall}</span>&gt;${pkt.destCall}${pkt.path ? "," + pkt.path : ""}: <span title="${pkt.type}">${pkt.info}</span>${posHtml}${crcTag}`;
+  if (pkt.lat != null && pkt.lon != null && window.aprsMapAddStation) {
+    window.aprsMapAddStation(pkt.srcCall, pkt.lat, pkt.lon, pkt.info);
+  }
   aprsPacketsEl.prepend(row);
   while (aprsPacketsEl.children.length > APRS_MAX_PACKETS) {
     aprsPacketsEl.removeChild(aprsPacketsEl.lastChild);
@@ -471,7 +475,7 @@ function startAprs() {
   aprsWs.binaryType = "arraybuffer";
   aprsStatus.textContent = "Connecting…";
 
-  let demodulator = null;
+  let demodulators = null;
 
   aprsWs.onopen = () => {
     aprsStatus.textContent = "Waiting for stream info…";
@@ -484,7 +488,12 @@ function startAprs() {
         const sr = info.sample_rate || 48000;
         const ch = info.channels || 1;
         aprsAudioCtx = new AudioContext({ sampleRate: sr });
-        demodulator = createDemodulator(sr);
+        // Multiple decoders with different correlation window lengths
+        // for robustness — different windows produce different error patterns
+        demodulators = [
+          createDemodulator(sr, 1.0),
+          createDemodulator(sr, 0.5),
+        ];
 
         let aprsFrameCount = 0;
         aprsDecoder = new AudioDecoder({
@@ -504,8 +513,22 @@ function startAprs() {
                 mono[i] = buf[i * frame.numberOfChannels];
               }
             }
-            const frames = demodulator.processBuffer(mono);
-            for (const result of frames) {
+            // Run all decoders and merge results, preferring CRC-ok frames
+            const seen = new Set();
+            const allResults = [];
+            for (const demod of demodulators) {
+              for (const result of demod.processBuffer(mono)) {
+                const hex = Array.from(result.payload.subarray(0, Math.min(14, result.payload.length)))
+                  .map(b => b.toString(16).padStart(2, "0")).join("");
+                const key = hex + ":" + result.payload.length;
+                if (seen.has(key)) continue;
+                seen.add(key);
+                allResults.push(result);
+              }
+            }
+            // Show CRC-ok frames first, then CRC-fail frames
+            allResults.sort((a, b) => (b.crcOk ? 1 : 0) - (a.crcOk ? 1 : 0));
+            for (const result of allResults) {
               const ax25 = parseAX25(result.payload);
               if (!ax25) continue;
               const pkt = parseAPRS(ax25);

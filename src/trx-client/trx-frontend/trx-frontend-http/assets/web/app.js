@@ -152,6 +152,8 @@ function setDisabled(disabled) {
 
 let serverVersion = null;
 let serverCallsign = null;
+let serverLat = null;
+let serverLon = null;
 
 function updateTitle() {
   let title = "trx-rs";
@@ -166,6 +168,8 @@ function render(update) {
   if (update.info && update.info.model) rigName = update.info.model;
   if (update.server_version) serverVersion = update.server_version;
   if (update.server_callsign) serverCallsign = update.server_callsign;
+  if (update.server_latitude != null) serverLat = update.server_latitude;
+  if (update.server_longitude != null) serverLon = update.server_longitude;
   updateTitle();
 
   initialized = !!update.initialized;
@@ -637,6 +641,49 @@ document.querySelector(".tab-bar").addEventListener("click", (e) => {
 
 connect();
 
+// --- Leaflet Map (lazy-initialized) ---
+let aprsMap = null;
+let aprsMapReceiverMarker = null;
+const stationMarkers = new Map();
+
+function initAprsMap() {
+  if (aprsMap) return;
+  const mapEl = document.getElementById("aprs-map");
+  if (!mapEl) return;
+
+  const hasLocation = serverLat != null && serverLon != null;
+  const center = hasLocation ? [serverLat, serverLon] : [20, 0];
+  const zoom = hasLocation ? 10 : 2;
+
+  aprsMap = L.map("aprs-map").setView(center, zoom);
+  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    maxZoom: 19,
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+  }).addTo(aprsMap);
+
+  if (hasLocation) {
+    const popupText = serverCallsign ? serverCallsign : "Receiver";
+    aprsMapReceiverMarker = L.circleMarker([serverLat, serverLon], {
+      radius: 8, color: "#3388ff", fillColor: "#3388ff", fillOpacity: 0.8
+    }).addTo(aprsMap).bindPopup(popupText);
+  }
+}
+
+window.aprsMapAddStation = function(call, lat, lon, info) {
+  if (!aprsMap) initAprsMap();
+  if (!aprsMap) return;
+  const existing = stationMarkers.get(call);
+  if (existing) {
+    existing.setLatLng([lat, lon]);
+    existing.setPopupContent(`<b>${call}</b><br>${info}`);
+  } else {
+    const marker = L.circleMarker([lat, lon], {
+      radius: 6, color: "#00d17f", fillColor: "#00d17f", fillOpacity: 0.8
+    }).addTo(aprsMap).bindPopup(`<b>${call}</b><br>${info}`);
+    stationMarkers.set(call, marker);
+  }
+};
+
 // --- Sub-tab navigation (Plugins tab) ---
 document.querySelectorAll(".sub-tab-bar").forEach((bar) => {
   bar.addEventListener("click", (e) => {
@@ -647,6 +694,10 @@ document.querySelectorAll(".sub-tab-bar").forEach((bar) => {
     const parent = bar.parentElement;
     parent.querySelectorAll(".sub-tab-panel").forEach((p) => p.style.display = "none");
     parent.querySelector(`#subtab-${btn.dataset.subtab}`).style.display = "";
+    if (btn.dataset.subtab === "map") {
+      initAprsMap();
+      if (aprsMap) setTimeout(() => aprsMap.invalidateSize(), 50);
+    }
   });
 });
 
