@@ -19,6 +19,10 @@ pub struct RigState {
     pub server_callsign: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub server_version: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub server_latitude: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub server_longitude: Option<f64>,
 }
 
 /// Mode supported by the rig.
@@ -62,6 +66,8 @@ impl RigState {
             initialized: self.initialized,
             server_callsign: self.server_callsign.clone(),
             server_version: self.server_version.clone(),
+            server_latitude: self.server_latitude,
+            server_longitude: self.server_longitude,
         })
     }
 
@@ -100,4 +106,8 @@ pub struct RigSnapshot {
     pub server_callsign: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub server_version: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub server_latitude: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub server_longitude: Option<f64>,
 }
