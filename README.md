@@ -43,17 +43,6 @@ The following system libraries are required at build time:
 | **pkg-config** / **pkgconf** | Locates system libopus during build | `zb install pkgconf` |
 | **Core Audio** (macOS) / **ALSA** (Linux) | Audio device access via cpal | Provided by the OS (macOS) or `alsa-lib-dev` (Linux) |
 
-### Rust crate dependencies
-
-New crate dependencies introduced for audio streaming:
-
-| Crate | Version | Used by | Purpose |
-|-------|---------|---------|---------|
-| **cpal** | 0.15 | trx-server | Cross-platform audio capture and playback (wraps Core Audio, ALSA, WASAPI) |
-| **opus** | 0.3 | trx-server | Safe Rust bindings to libopus for encoding/decoding audio |
-| **bytes** | 1 | trx-server, trx-client | Efficient byte buffer type for passing Opus packets through channels |
-| **actix-ws** | 0.3 | trx-frontend-http | WebSocket support for the actix-web HTTP frontend (`/audio` endpoint) |
-
 ## Plugin discovery
 
 `trx-server` and `trx-client` can load shared-library plugins that register backends/frontends
