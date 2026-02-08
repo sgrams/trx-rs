@@ -3,8 +3,8 @@ const modeEl = document.getElementById("mode");
 const bandLabel = document.getElementById("band-label");
 const powerBtn = document.getElementById("power-btn");
 const powerHint = document.getElementById("power-hint");
-const vfoEl = document.getElementById("vfo");
-const vfoBtn = document.getElementById("vfo-btn");
+const vfoPicker = document.getElementById("vfo-picker");
+const signalGraph = document.getElementById("signal-graph");
 const signalBar = document.getElementById("signal-bar");
 const signalValue = document.getElementById("signal-value");
 const pttBtn = document.getElementById("ptt-btn");
@@ -30,11 +30,21 @@ let lastTxEn = null;
 let lastRendered = null;
 let rigName = "Rig";
 let hintTimer = null;
+const signalHistory = [];
+const SIGNAL_HISTORY_MAX = 120;
+let lastFreqHz = null;
+let jogStep = 1000; // default 1 kHz
+let jogAngle = 0;
+let lastClientCount = null;
+
+function readyText() {
+  return lastClientCount !== null ? `Ready \u00b7 ${lastClientCount} user${lastClientCount !== 1 ? "s" : ""}` : "Ready";
+}
 
 function showHint(msg, duration) {
   powerHint.textContent = msg;
   if (hintTimer) clearTimeout(hintTimer);
-  if (duration) hintTimer = setTimeout(() => { powerHint.textContent = "Ready"; }, duration);
+  if (duration) hintTimer = setTimeout(() => { powerHint.textContent = readyText(); }, duration);
 }
 let supportedModes = [];
 let supportedBands = [];
@@ -113,7 +123,7 @@ function freqAllowed(hz) {
 }
 
 function setDisabled(disabled) {
-  [freqEl, modeEl, freqBtn, modeBtn, pttBtn, vfoBtn, powerBtn, txLimitInput, txLimitBtn, lockBtn].forEach((el) => {
+  [freqEl, modeEl, freqBtn, modeBtn, pttBtn, powerBtn, txLimitInput, txLimitBtn, lockBtn].forEach((el) => {
     if (el) el.disabled = disabled;
   });
 }
@@ -168,8 +178,11 @@ function render(update) {
   if (update.info && update.info.capabilities) {
     updateSupportedBands(update.info.capabilities);
   }
-  if (!freqDirty && update.status && update.status.freq && typeof update.status.freq.hz === "number") {
-    freqEl.value = formatFreq(update.status.freq.hz);
+  if (update.status && update.status.freq && typeof update.status.freq.hz === "number") {
+    lastFreqHz = update.status.freq.hz;
+    if (!freqDirty) {
+      freqEl.value = formatFreq(update.status.freq.hz);
+    }
   }
   if (!modeDirty && update.status && update.status.mode) {
     const mode = normalizeMode(update.status.mode);
@@ -191,22 +204,34 @@ function render(update) {
   if (update.status && update.status.vfo && Array.isArray(update.status.vfo.entries)) {
     const entries = update.status.vfo.entries;
     const activeIdx = Number.isInteger(update.status.vfo.active) ? update.status.vfo.active : null;
-    const parts = entries.map((entry, idx) => {
+    vfoPicker.innerHTML = "";
+    entries.forEach((entry, idx) => {
       const hz = entry && entry.freq && typeof entry.freq.hz === "number" ? entry.freq.hz : null;
-      if (hz === null) return null;
-      const mark = activeIdx === idx ? " *" : "";
+      if (hz === null) return;
       const mode = entry.mode ? normalizeMode(entry.mode) : "";
       const modeText = mode ? ` [${mode}]` : "";
-      return `${entry.name || `VFO ${idx + 1}`}: ${formatFreq(hz)}${modeText}${mark}`;
-    }).filter(Boolean);
-    vfoEl.textContent = parts.join("\n") || "--";
-    const activeLabel = activeIdx !== null
-      ? `VFO ${activeIdx + 1}${entries[activeIdx] && entries[activeIdx].name ? ` (${entries[activeIdx].name})` : ""}`
-      : "VFO";
-    vfoBtn.textContent = activeLabel;
+      const label = `${entry.name || String.fromCharCode(65 + idx)}: ${formatFreq(hz)}${modeText}`;
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.textContent = label;
+      if (activeIdx === idx) btn.classList.add("active");
+      else btn.addEventListener("click", async () => {
+        btn.disabled = true;
+        showHint("Toggling VFO…");
+        try {
+          await postPath("/toggle_vfo");
+          showHint("VFO toggled", 1200);
+        } catch (err) {
+          showHint("VFO toggle failed", 2000);
+          console.error(err);
+        } finally {
+          btn.disabled = false;
+        }
+      });
+      vfoPicker.appendChild(btn);
+    });
   } else {
-    vfoEl.textContent = "--";
-    vfoBtn.textContent = "VFO";
+    vfoPicker.innerHTML = "<button type=\"button\" class=\"active\">--</button>";
   }
   if (update.status && update.status.rx && typeof update.status.rx.sig === "number") {
     const raw = Math.max(0, update.status.rx.sig);
@@ -222,15 +247,19 @@ function render(update) {
     }
     signalBar.style.width = `${pct}%`;
     signalValue.textContent = label;
+    signalHistory.push(raw);
+    if (signalHistory.length > SIGNAL_HISTORY_MAX) signalHistory.shift();
   } else {
     signalBar.style.width = "0%";
     signalValue.textContent = "--";
+    signalHistory.push(0);
+    if (signalHistory.length > SIGNAL_HISTORY_MAX) signalHistory.shift();
   }
+  drawSignalGraph();
   bandLabel.textContent = typeof update.band === "string" ? update.band : "--";
   if (typeof update.enabled === "boolean") {
     powerBtn.disabled = false;
     powerBtn.textContent = update.enabled ? "Power Off" : "Power On";
-    powerHint.textContent = "Ready";
   } else {
     powerBtn.disabled = true;
     powerBtn.textContent = "Toggle Power";
@@ -246,7 +275,8 @@ function render(update) {
     txLimitRow.style.display = "none";
   }
 
-  powerHint.textContent = "Ready";
+  if (typeof update.clients === "number") lastClientCount = update.clients;
+  powerHint.textContent = readyText();
   const locked = update.status && update.status.lock === true;
   lockBtn.textContent = locked ? "Unlock" : "Lock";
 
@@ -271,6 +301,49 @@ function render(update) {
   }
 }
 
+function drawSignalGraph() {
+  if (!signalGraph) return;
+  const ctx = signalGraph.getContext("2d");
+  const w = signalGraph.width;
+  const h = signalGraph.height;
+  ctx.clearRect(0, 0, w, h);
+  if (signalHistory.length < 2) return;
+  const maxVal = 12; // S9+30dB in S-units
+  const len = signalHistory.length;
+  const step = w / (SIGNAL_HISTORY_MAX - 1);
+  const offsetX = (SIGNAL_HISTORY_MAX - len) * step;
+
+  ctx.beginPath();
+  ctx.moveTo(offsetX, h);
+  for (let i = 0; i < len; i++) {
+    const val = Math.min(signalHistory[i], maxVal);
+    const x = offsetX + i * step;
+    const y = h - (val / maxVal) * h;
+    ctx.lineTo(x, y);
+  }
+  ctx.lineTo(offsetX + (len - 1) * step, h);
+  ctx.closePath();
+
+  const grad = ctx.createLinearGradient(0, h, 0, 0);
+  grad.addColorStop(0, "rgba(0,209,127,0.25)");
+  grad.addColorStop(0.6, "rgba(240,173,78,0.35)");
+  grad.addColorStop(1, "rgba(229,83,83,0.45)");
+  ctx.fillStyle = grad;
+  ctx.fill();
+
+  ctx.beginPath();
+  for (let i = 0; i < len; i++) {
+    const val = Math.min(signalHistory[i], maxVal);
+    const x = offsetX + i * step;
+    const y = h - (val / maxVal) * h;
+    if (i === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
+  }
+  ctx.strokeStyle = "rgba(0,209,127,0.8)";
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+}
+
 function connect() {
   if (es) {
     es.close();
@@ -288,7 +361,7 @@ es.onmessage = (evt) => {
       render(data);
       lastEventAt = Date.now();
       if (data.initialized) {
-        powerHint.textContent = "Ready";
+        powerHint.textContent = readyText();
       }
     } catch (e) {
       console.error("Bad event data", e);
@@ -329,20 +402,6 @@ powerBtn.addEventListener("click", async () => {
     console.error(err);
   } finally {
     powerBtn.disabled = false;
-  }
-});
-
-vfoBtn.addEventListener("click", async () => {
-  vfoBtn.disabled = true;
-  showHint("Toggling VFO…");
-  try {
-    await postPath("/toggle_vfo");
-    showHint("VFO toggled", 1200);
-  } catch (err) {
-    showHint("VFO toggle failed", 2000);
-    console.error(err);
-  } finally {
-    vfoBtn.disabled = false;
   }
 });
 
@@ -392,6 +451,87 @@ freqEl.addEventListener("keydown", (e) => {
   }
 });
 
+// --- Jog wheel ---
+const jogWheel = document.getElementById("jog-wheel");
+const jogIndicator = document.getElementById("jog-indicator");
+const jogDownBtn = document.getElementById("jog-down");
+const jogUpBtn = document.getElementById("jog-up");
+const jogStepEl = document.getElementById("jog-step");
+
+async function jogFreq(direction) {
+  if (lastFreqHz === null) return;
+  const newHz = lastFreqHz + direction * jogStep;
+  if (!freqAllowed(newHz)) {
+    showHint("Out of supported bands", 1500);
+    return;
+  }
+  jogAngle = (jogAngle + direction * 15) % 360;
+  jogIndicator.style.transform = `translateX(-50%) rotate(${jogAngle}deg)`;
+  showHint("Setting frequency…");
+  try {
+    await postPath(`/set_freq?hz=${newHz}`);
+    showHint("Freq set", 1000);
+  } catch (err) {
+    showHint("Set freq failed", 2000);
+    console.error(err);
+  }
+}
+
+jogDownBtn.addEventListener("click", () => jogFreq(-1));
+jogUpBtn.addEventListener("click", () => jogFreq(1));
+
+jogWheel.addEventListener("wheel", (e) => {
+  e.preventDefault();
+  const direction = e.deltaY < 0 ? 1 : -1;
+  jogFreq(direction);
+}, { passive: false });
+
+// Touch drag on jog wheel
+let jogTouchY = null;
+jogWheel.addEventListener("touchstart", (e) => {
+  e.preventDefault();
+  jogTouchY = e.touches[0].clientY;
+}, { passive: false });
+jogWheel.addEventListener("touchmove", (e) => {
+  e.preventDefault();
+  if (jogTouchY === null) return;
+  const dy = jogTouchY - e.touches[0].clientY;
+  if (Math.abs(dy) > 12) {
+    jogFreq(dy > 0 ? 1 : -1);
+    jogTouchY = e.touches[0].clientY;
+  }
+}, { passive: false });
+jogWheel.addEventListener("touchend", () => { jogTouchY = null; });
+
+// Mouse drag on jog wheel
+let jogMouseY = null;
+jogWheel.addEventListener("mousedown", (e) => {
+  e.preventDefault();
+  jogMouseY = e.clientY;
+  jogWheel.style.cursor = "grabbing";
+});
+window.addEventListener("mousemove", (e) => {
+  if (jogMouseY === null) return;
+  const dy = jogMouseY - e.clientY;
+  if (Math.abs(dy) > 10) {
+    jogFreq(dy > 0 ? 1 : -1);
+    jogMouseY = e.clientY;
+  }
+});
+window.addEventListener("mouseup", () => {
+  jogMouseY = null;
+  if (jogWheel) jogWheel.style.cursor = "grab";
+});
+
+// Step selector
+jogStepEl.addEventListener("click", (e) => {
+  const btn = e.target.closest("button[data-step]");
+  if (!btn) return;
+  jogStep = parseInt(btn.dataset.step, 10);
+  jogStepEl.querySelectorAll("button").forEach((b) => b.classList.remove("active"));
+  btn.classList.add("active");
+});
+
 modeBtn.addEventListener("click", async () => {
   const mode = modeEl.value || "";
   if (!mode) {
@@ -414,6 +554,13 @@ modeBtn.addEventListener("click", async () => {
 
 modeEl.addEventListener("input", () => {
   modeDirty = true;
+});
+
+txLimitInput.addEventListener("keydown", (e) => {
+  if (e.key === "Enter") {
+    e.preventDefault();
+    txLimitBtn.click();
+  }
 });
 
 txLimitBtn.addEventListener("click", async () => {

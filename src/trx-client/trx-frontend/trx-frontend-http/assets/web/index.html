@@ -22,34 +22,47 @@
     </div>
     <div id="content" style="display:none;">
     <div class="status">
-      <div>
+      <div class="full-row">
         <div class="label">Frequency<span class="band-tag" id="band-label">--</span></div>
         <div class="inline">
           <input class="status-input" id="freq" type="text" value="--" />
           <button id="freq-apply" type="button">Set</button>
         </div>
-      </div>
-      <div>
-        <div class="label">Mode</div>
-        <div class="inline">
-          <select class="status-input" id="mode">
-            <option value="">--</option>
-          </select>
-          <button id="mode-apply" type="button">Set</button>
+        <div class="jog-container">
+          <button id="jog-down" type="button" class="jog-btn">&minus;</button>
+          <div class="jog-wheel" id="jog-wheel">
+            <div class="jog-indicator" id="jog-indicator"></div>
+          </div>
+          <button id="jog-up" type="button" class="jog-btn">+</button>
+          <div class="jog-step" id="jog-step">
+            <button type="button" data-step="1000000">MHz</button>
+            <button type="button" data-step="1000" class="active">kHz</button>
+            <button type="button" data-step="1">Hz</button>
+          </div>
         </div>
       </div>
-      <div>
-        <div class="label">Transmit / VFO / Power</div>
-        <div class="inline" style="gap: 0.6rem; flex-wrap: wrap;">
-          <button id="ptt-btn" type="button" style="flex: 1 1 30%;">Toggle PTT</button>
-          <button id="vfo-btn" type="button" style="flex: 1 1 30%;">VFO</button>
-          <button id="power-btn" type="button" style="flex: 1 1 30%;">Toggle Power</button>
-          <button id="lock-btn" type="button" style="flex: 1 1 30%;">Lock</button>
+      <div class="controls-row full-row">
+        <div>
+          <div class="label">Mode</div>
+          <div class="inline">
+            <select class="status-input" id="mode">
+              <option value="">--</option>
+            </select>
+            <button id="mode-apply" type="button">Set</button>
+          </div>
+        </div>
+        <div>
+          <div class="label">Transmit / Power</div>
+          <div class="btn-grid">
+            <button id="ptt-btn" type="button">Toggle PTT</button>
+            <button id="power-btn" type="button">Toggle Power</button>
+            <button id="lock-btn" type="button">Lock</button>
+          </div>
         </div>
       </div>
-      <div style="margin-bottom: 0.9rem;">
+      <div class="full-row" id="vfo-row">
         <div class="label">VFO</div>
-        <div class="vfo-box" id="vfo">--</div>
+        <div class="vfo-picker" id="vfo-picker"></div>
       </div>
       <div class="full-row">
         <div class="label">Signal</div>
@@ -57,6 +70,7 @@
           <div class="signal-bar"><div class="signal-bar-fill" id="signal-bar"></div></div>
           <div class="signal-value" id="signal-value">--</div>
         </div>
+        <canvas id="signal-graph" width="600" height="60"></canvas>
       </div>
       <div class="full-row" id="tx-meters" style="display:none;">
         <div class="label">TX Meters</div>

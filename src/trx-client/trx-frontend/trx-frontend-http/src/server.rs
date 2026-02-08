@@ -10,6 +10,8 @@ pub mod audio;
 pub mod status;
 
 use std::net::SocketAddr;
+use std::sync::atomic::AtomicUsize;
+use std::sync::Arc;
 
 use actix_web::dev::Server;
 use actix_web::{web, App, HttpServer};
@@ -67,12 +69,14 @@ fn build_server(
     let state_data = web::Data::new(state_rx);
     let rig_tx = web::Data::new(rig_tx);
     let callsign = web::Data::new(callsign);
+    let clients = web::Data::new(Arc::new(AtomicUsize::new(0)));
 
     let server = HttpServer::new(move || {
         App::new()
             .app_data(state_data.clone())
             .app_data(rig_tx.clone())
             .app_data(callsign.clone())
+            .app_data(clients.clone())
             .configure(api::configure)
     })
     .shutdown_timeout(1)

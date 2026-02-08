@@ -2,6 +2,9 @@
 //
 // SPDX-License-Identifier: BSD-2-Clause
 
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Arc;
+
 use actix_web::{get, post, web, HttpResponse, Responder};
 use actix_web::{http::header, Error};
 use bytes::Bytes;
@@ -31,33 +34,102 @@ pub async fn status_api(
     Ok(HttpResponse::Ok().json(state))
 }
 
+/// Inject `"clients": N` into a JSON object string.
+fn inject_clients(json: &str, count: usize) -> String {
+    // Fast path: insert after the opening '{'.
+    if let Some(pos) = json.find('{') {
+        let mut out = String::with_capacity(json.len() + 20);
+        out.push_str(&json[..=pos]);
+        out.push_str(&format!("\"clients\":{count},"));
+        out.push_str(&json[pos + 1..]);
+        out
+    } else {
+        json.to_string()
+    }
+}
+
 #[get("/events")]
-pub async fn events(state: web::Data<watch::Receiver<RigState>>) -> Result<HttpResponse, Error> {
+pub async fn events(
+    state: web::Data<watch::Receiver<RigState>>,
+    clients: web::Data<Arc<AtomicUsize>>,
+) -> Result<HttpResponse, Error> {
     let rx = state.get_ref().clone();
     let initial = wait_for_view(rx.clone()).await?;
 
+    let counter = clients.get_ref().clone();
+    let count = counter.fetch_add(1, Ordering::Relaxed) + 1;
+
     let initial_json =
         serde_json::to_string(&initial).map_err(actix_web::error::ErrorInternalServerError)?;
+    let initial_json = inject_clients(&initial_json, count);
     let initial_stream =
         once(async move { Ok::<Bytes, Error>(Bytes::from(format!("data: {initial_json}\n\n"))) });
 
-    let updates = WatchStream::new(rx).filter_map(|state| async move {
-        state
-            .snapshot()
-            .and_then(|v| serde_json::to_string(&v).ok())
-            .map(|json| Ok::<Bytes, Error>(Bytes::from(format!("data: {json}\n\n"))))
+    let counter_updates = counter.clone();
+    let updates = WatchStream::new(rx).filter_map(move |state| {
+        let counter = counter_updates.clone();
+        async move {
+            state.snapshot().and_then(|v| {
+                serde_json::to_string(&v).ok().map(|json| {
+                    let json = inject_clients(&json, counter.load(Ordering::Relaxed));
+                    Ok::<Bytes, Error>(Bytes::from(format!("data: {json}\n\n")))
+                })
+            })
+        }
     });
 
     let pings = IntervalStream::new(time::interval(Duration::from_secs(5)))
         .map(|_| Ok::<Bytes, Error>(Bytes::from(": ping\n\n")));
 
+    // Wrap stream to decrement counter on drop.
+    let counter_drop = counter.clone();
     let stream = initial_stream.chain(select(pings, updates));
+    let stream = DropStream::new(Box::pin(stream), move || {
+        counter_drop.fetch_sub(1, Ordering::Relaxed);
+    });
 
     Ok(HttpResponse::Ok()
         .insert_header((header::CONTENT_TYPE, "text/event-stream"))
         .insert_header((header::CACHE_CONTROL, "no-cache"))
         .insert_header((header::CONNECTION, "keep-alive"))
         .streaming(stream))
+}
+
+/// A stream wrapper that calls a callback when dropped.
+struct DropStream<I> {
+    inner: std::pin::Pin<Box<dyn futures_util::Stream<Item = I> + 'static>>,
+    on_drop: Option<Box<dyn FnOnce() + Send>>,
+}
+
+impl<I> DropStream<I> {
+    fn new<S, F>(inner: std::pin::Pin<Box<S>>, on_drop: F) -> Self
+    where
+        S: futures_util::Stream<Item = I> + 'static,
+        F: FnOnce() + Send + 'static,
+    {
+        Self {
+            inner,
+            on_drop: Some(Box::new(on_drop)),
+        }
+    }
+}
+
+impl<I> Drop for DropStream<I> {
+    fn drop(&mut self) {
+        if let Some(f) = self.on_drop.take() {
+            f();
+        }
+    }
+}
+
+impl<I> futures_util::Stream for DropStream<I> {
+    type Item = I;
+    fn poll_next(
+        mut self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Option<Self::Item>> {
+        self.inner.as_mut().poll_next(cx)
+    }
 }
 
 #[post("/toggle_power")]
