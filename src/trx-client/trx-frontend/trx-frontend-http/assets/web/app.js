@@ -289,6 +289,20 @@ function render(update) {
   }
 
   if (typeof update.clients === "number") lastClientCount = update.clients;
+  // Populate About tab
+  if (update.server_version) {
+    document.getElementById("about-server-ver").textContent = `trx-server v${update.server_version}`;
+  }
+  if (update.server_callsign) {
+    document.getElementById("about-server-call").textContent = update.server_callsign;
+  }
+  if (update.info) {
+    const parts = [update.info.manufacturer, update.info.model, update.info.revision].filter(Boolean).join(" ");
+    if (parts) document.getElementById("about-rig-info").textContent = parts;
+  }
+  if (typeof update.clients === "number") {
+    document.getElementById("about-clients").textContent = update.clients;
+  }
   powerHint.textContent = readyText();
   lastLocked = update.status && update.status.lock === true;
   lockBtn.textContent = lastLocked ? "Unlock" : "Lock";
@@ -566,6 +580,16 @@ lockBtn.addEventListener("click", async () => {
   } finally {
     lockBtn.disabled = false;
   }
+});
+
+// --- Tab navigation ---
+document.querySelector(".tab-bar").addEventListener("click", (e) => {
+  const btn = e.target.closest(".tab[data-tab]");
+  if (!btn) return;
+  document.querySelectorAll(".tab-bar .tab").forEach((t) => t.classList.remove("active"));
+  btn.classList.add("active");
+  document.querySelectorAll(".tab-panel").forEach((p) => p.style.display = "none");
+  document.getElementById(`tab-${btn.dataset.tab}`).style.display = "";
 });
 
 connect();

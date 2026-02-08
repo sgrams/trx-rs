@@ -150,6 +150,14 @@ small { color: var(--text-muted); }
 .meter-fill { height: 100%; width: 0%; background: linear-gradient(90deg, var(--accent-green), var(--accent-yellow), var(--accent-red)); transition: width 150ms ease; }
 .meter-value { font-size: 0.95rem; color: var(--text-heading); min-width: 64px; text-align: right; }
 #content { display: flex; flex-direction: column; gap: 1.1rem; }
+.tab-bar { display: flex; border-bottom: 1px solid var(--border); margin-bottom: 1rem; position: relative; z-index: 2; }
+.tab { background: transparent; border: none; border-bottom: 2px solid transparent; border-radius: 0; padding: 0.5rem 1rem; color: var(--text-muted); cursor: pointer; font-size: 0.95rem; height: auto; }
+.tab.active { border-bottom-color: var(--accent-green); color: var(--accent-green); font-weight: 600; }
+.tab:hover:not(.active) { color: var(--text); }
+.about-table { width: 100%; border-collapse: collapse; }
+.about-table td { padding: 0.5rem 0.6rem; border-bottom: 1px solid var(--border); }
+.about-table tr:last-child td { border-bottom: none; }
+.about-table td:first-child { color: var(--text-muted); width: 40%; }
 .footer { display: flex; justify-content: space-between; align-items: baseline; }
 .full-row { grid-column: 1 / -1; }
 .copyright { color: var(--text-muted); font-size: 0.75rem; opacity: 0.7; }

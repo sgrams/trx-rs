@@ -17,6 +17,11 @@
         <div class="subtitle">{pkg} v{ver}</div>
       </div>
     </div>
+    <div class="tab-bar">
+      <button class="tab active" data-tab="main">Main</button>
+      <button class="tab" data-tab="about">About</button>
+    </div>
+    <div id="tab-main" class="tab-panel">
     <div id="loading" style="text-align:center; padding:2rem 0;">
       <div id="loading-title" style="margin-bottom:0.4rem; font-size:1.1rem; font-weight:600;">Initializing (rig)…</div>
       <div id="loading-sub" style="color:#9aa4b5;"></div>
@@ -109,10 +114,19 @@
         <small id="audio-status" style="min-width: 60px;">Off</small>
       </div>
     </div>
+    </div>
+    <div id="tab-about" class="tab-panel" style="display:none;">
+      <table class="about-table">
+        <tr><td>Server</td><td id="about-server-ver">--</td></tr>
+        <tr><td>Server callsign</td><td id="about-server-call">--</td></tr>
+        <tr><td>Rig</td><td id="about-rig-info">--</td></tr>
+        <tr><td>Client</td><td>{pkg} v{ver}</td></tr>
+        <tr><td>Connected clients</td><td id="about-clients">--</td></tr>
+      </table>
+    </div>
     <div class="footer">
       <div class="copyright">Built by <a href="https://www.qrzcq.com/call/SP2SJG" target="_blank" rel="noopener">SP2SJG</a> from <a href="https://haxx.space" target="_blank" rel="noopener">haxx.space</a> — <span id="copyright-year"></span></div>
       <div class="hint" id="power-hint">Connecting…</div>
-    </div>
     </div>
   </div>
   <script src="/app.js"></script>
