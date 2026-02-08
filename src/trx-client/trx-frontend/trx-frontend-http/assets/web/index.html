@@ -118,7 +118,25 @@
     </div>
     </div>
     <div id="tab-plugins" class="tab-panel" style="display:none;">
-      <div id="plugins-list"></div>
+      <div class="sub-tab-bar">
+        <button class="sub-tab active" data-subtab="overview">Overview</button>
+        <button class="sub-tab" data-subtab="aprs">APRS</button>
+      </div>
+      <div id="subtab-overview" class="sub-tab-panel">
+        <div class="plugin-item">
+          <strong>APRS Decoder</strong>
+          <div style="color:var(--text-muted); font-size:0.85rem; margin-top:0.2rem;">
+            Decodes APRS packets from RX audio using Bell 202 AFSK (1200 baud). Switch to the APRS tab to start.
+          </div>
+        </div>
+      </div>
+      <div id="subtab-aprs" class="sub-tab-panel" style="display:none;">
+        <div class="aprs-controls">
+          <button id="aprs-toggle-btn" type="button">Start APRS</button>
+          <small id="aprs-status" style="color:var(--text-muted);">Stopped</small>
+        </div>
+        <div id="aprs-packets"></div>
+      </div>
     </div>
     <div id="tab-about" class="tab-panel" style="display:none;">
       <table class="about-table">

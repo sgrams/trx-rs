@@ -26,12 +26,6 @@ const FAVICON_BYTES: &[u8] = include_bytes!(concat!(
 const LOGO_BYTES: &[u8] =
     include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/assets/trx-logo.png"));
 
-#[get("/frontends")]
-pub async fn frontends_api() -> Result<impl Responder, Error> {
-    let names = trx_frontend::registered_frontends();
-    Ok(HttpResponse::Ok().json(names))
-}
-
 #[get("/status")]
 pub async fn status_api(
     state: web::Data<watch::Receiver<RigState>>,
@@ -235,7 +229,6 @@ pub async fn set_tx_limit(
 
 pub fn configure(cfg: &mut web::ServiceConfig) {
     cfg.service(index)
-        .service(frontends_api)
         .service(status_api)
         .service(events)
         .service(toggle_power)

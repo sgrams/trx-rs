@@ -209,6 +209,17 @@ small { color: var(--text-muted); }
   cursor: pointer;
 }
 
+.sub-tab-bar { display: flex; border-bottom: 1px solid var(--border); margin-bottom: 0.75rem; }
+.sub-tab { background: transparent; border: none; border-bottom: 2px solid transparent; border-radius: 0; padding: 0.35rem 0.75rem; color: var(--text-muted); cursor: pointer; font-size: 0.85rem; height: auto; }
+.sub-tab.active { border-bottom-color: var(--accent-green); color: var(--accent-green); font-weight: 600; }
+.sub-tab:hover:not(.active) { color: var(--text); }
+.aprs-controls { display: flex; gap: 0.6rem; align-items: center; margin-bottom: 0.75rem; }
+#aprs-packets { max-height: 360px; overflow-y: auto; }
+.aprs-packet { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; font-size: 0.82rem; padding: 0.35rem 0.5rem; border-bottom: 1px solid var(--border); line-height: 1.4; }
+.aprs-packet:last-child { border-bottom: none; }
+.aprs-call { color: var(--accent-green); font-weight: 600; }
+.aprs-time { color: var(--text-muted); margin-right: 0.5rem; }
+
 button:focus-visible, input:focus-visible, select:focus-visible {
   outline: 2px solid var(--accent-green);
   outline-offset: 2px;

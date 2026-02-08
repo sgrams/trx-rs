@@ -615,17 +615,367 @@ document.querySelector(".tab-bar").addEventListener("click", (e) => {
 
 connect();
 
-// --- Plugins tab ---
-fetch("/frontends").then(r => r.json()).then(names => {
-  const list = document.getElementById("plugins-list");
-  if (!Array.isArray(names) || names.length === 0) {
-    list.innerHTML = '<div class="plugin-item" style="color:var(--text-muted);">No frontends registered</div>';
+// --- Sub-tab navigation (Plugins tab) ---
+document.querySelectorAll(".sub-tab-bar").forEach((bar) => {
+  bar.addEventListener("click", (e) => {
+    const btn = e.target.closest(".sub-tab[data-subtab]");
+    if (!btn) return;
+    bar.querySelectorAll(".sub-tab").forEach((t) => t.classList.remove("active"));
+    btn.classList.add("active");
+    const parent = bar.parentElement;
+    parent.querySelectorAll(".sub-tab-panel").forEach((p) => p.style.display = "none");
+    parent.querySelector(`#subtab-${btn.dataset.subtab}`).style.display = "";
+  });
+});
+
+// --- APRS Decoder Plugin ---
+const aprsToggleBtn = document.getElementById("aprs-toggle-btn");
+const aprsStatus = document.getElementById("aprs-status");
+const aprsPacketsEl = document.getElementById("aprs-packets");
+const APRS_MAX_PACKETS = 100;
+
+let aprsActive = false;
+let aprsWs = null;
+let aprsAudioCtx = null;
+let aprsDecoder = null;
+
+// CRC-16-CCITT lookup table
+const CRC_CCITT_TABLE = new Uint16Array(256);
+(function initCrc() {
+  for (let i = 0; i < 256; i++) {
+    let crc = i;
+    for (let j = 0; j < 8; j++) {
+      crc = (crc & 1) ? ((crc >>> 1) ^ 0x8408) : (crc >>> 1);
+    }
+    CRC_CCITT_TABLE[i] = crc;
+  }
+})();
+
+function crc16ccitt(bytes) {
+  let crc = 0xFFFF;
+  for (let i = 0; i < bytes.length; i++) {
+    crc = (crc >>> 8) ^ CRC_CCITT_TABLE[(crc ^ bytes[i]) & 0xFF];
+  }
+  return crc ^ 0xFFFF;
+}
+
+// AFSK Bell 202 Demodulator (1200 baud, mark=1200Hz, space=2200Hz)
+function createDemodulator(sampleRate) {
+  const BAUD = 1200;
+  const MARK = 1200;
+  const SPACE = 2200;
+  const samplesPerBit = sampleRate / BAUD;
+  const windowLen = Math.round(samplesPerBit);
+
+  // Correlation buffers
+  let markI = 0, markQ = 0, spaceI = 0, spaceQ = 0;
+  const ringLen = windowLen;
+  const ringMarkI = new Float32Array(ringLen);
+  const ringMarkQ = new Float32Array(ringLen);
+  const ringSpaceI = new Float32Array(ringLen);
+  const ringSpaceQ = new Float32Array(ringLen);
+  let ringIdx = 0;
+
+  // Clock recovery
+  let sampleCount = 0;
+  let lastBit = 0;
+  let bitPhase = 0;
+
+  // HDLC state
+  let ones = 0;
+  let frameBits = [];
+  let inFrame = false;
+  let shiftReg = 0;
+  let bitCount = 0;
+
+  const frames = [];
+
+  function processSample(s) {
+    const t = sampleCount / sampleRate;
+    const mI = s * Math.cos(2 * Math.PI * MARK * t);
+    const mQ = s * Math.sin(2 * Math.PI * MARK * t);
+    const sI = s * Math.cos(2 * Math.PI * SPACE * t);
+    const sQ = s * Math.sin(2 * Math.PI * SPACE * t);
+
+    // Sliding window correlation
+    markI += mI - ringMarkI[ringIdx];
+    markQ += mQ - ringMarkQ[ringIdx];
+    spaceI += sI - ringSpaceI[ringIdx];
+    spaceQ += sQ - ringSpaceQ[ringIdx];
+
+    ringMarkI[ringIdx] = mI;
+    ringMarkQ[ringIdx] = mQ;
+    ringSpaceI[ringIdx] = sI;
+    ringSpaceQ[ringIdx] = sQ;
+    ringIdx = (ringIdx + 1) % ringLen;
+
+    const markEnergy = markI * markI + markQ * markQ;
+    const spaceEnergy = spaceI * spaceI + spaceQ * spaceQ;
+    const bit = markEnergy > spaceEnergy ? 1 : 0;
+
+    // Clock recovery via zero-crossing
+    if (bit !== lastBit) {
+      lastBit = bit;
+      // Nudge phase toward center of bit
+      bitPhase = samplesPerBit / 2;
+    }
+
+    bitPhase--;
+    if (bitPhase <= 0) {
+      bitPhase += samplesPerBit;
+      processBit(bit);
+    }
+
+    sampleCount++;
+  }
+
+  function processBit(rawBit) {
+    // NRZI decode: no transition = 1, transition = 0
+    // We track previous raw bit; same = 1, different = 0
+    const nrziBit = (rawBit === lastBit) ? 1 : 0;
+
+    // Check for flag (0x7E = 01111110 in bit order)
+    shiftReg = ((shiftReg >> 1) | (rawBit << 7)) & 0xFF;
+    bitCount++;
+
+    if (nrziBit === 1) {
+      ones++;
+    } else {
+      if (ones === 5) {
+        // Bit stuffing — skip this zero
+        ones = 0;
+        return;
+      }
+      ones = 0;
+    }
+
+    if (shiftReg === 0x7E) {
+      // Flag detected
+      if (inFrame && frameBits.length >= 136) {
+        // Minimum AX.25 frame: 14 addr + 1 ctrl + 1 pid + 1 info + 2 fcs = 19 bytes = 152 bits
+        // But we check >= 136 bits (17 bytes) to be lenient
+        const frame = bitsToBytes(frameBits);
+        if (frame) frames.push(frame);
+      }
+      frameBits = [];
+      inFrame = true;
+      ones = 0;
+      return;
+    }
+
+    if (inFrame) {
+      frameBits.push(nrziBit);
+    }
+  }
+
+  function bitsToBytes(bits) {
+    const byteLen = Math.floor(bits.length / 8);
+    if (byteLen < 17) return null;
+    const bytes = new Uint8Array(byteLen);
+    for (let i = 0; i < byteLen; i++) {
+      let b = 0;
+      for (let j = 0; j < 8; j++) {
+        b |= (bits[i * 8 + j] << j);
+      }
+      bytes[i] = b;
+    }
+
+    // Verify FCS (last 2 bytes)
+    const payload = bytes.subarray(0, byteLen - 2);
+    const fcs = bytes[byteLen - 2] | (bytes[byteLen - 1] << 8);
+    const computed = crc16ccitt(payload);
+    if (computed !== fcs) return null;
+
+    return payload;
+  }
+
+  function processBuffer(samples) {
+    for (let i = 0; i < samples.length; i++) {
+      processSample(samples[i]);
+    }
+    const result = frames.splice(0);
+    return result;
+  }
+
+  return { processBuffer };
+}
+
+// AX.25 address extraction
+function decodeAX25Address(bytes, offset) {
+  let call = "";
+  for (let i = 0; i < 6; i++) {
+    const ch = bytes[offset + i] >> 1;
+    if (ch > 32) call += String.fromCharCode(ch);
+  }
+  call = call.trimEnd();
+  const ssid = (bytes[offset + 6] >> 1) & 0x0F;
+  const last = (bytes[offset + 6] & 0x01) === 1;
+  return { call, ssid, last };
+}
+
+function parseAX25(frame) {
+  if (frame.length < 16) return null;
+  const dest = decodeAX25Address(frame, 0);
+  const src = decodeAX25Address(frame, 7);
+
+  let offset = 14;
+  const digis = [];
+  let lastAddr = src.last;
+  while (!lastAddr && offset + 7 <= frame.length) {
+    const digi = decodeAX25Address(frame, offset);
+    digis.push(digi);
+    lastAddr = digi.last;
+    offset += 7;
+  }
+
+  if (offset + 2 > frame.length) return null;
+  const control = frame[offset];
+  const pid = frame[offset + 1];
+  const info = frame.subarray(offset + 2);
+
+  return { src, dest, digis, control, pid, info };
+}
+
+function parseAPRS(ax25) {
+  const srcCall = ax25.src.ssid ? `${ax25.src.call}-${ax25.src.ssid}` : ax25.src.call;
+  const destCall = ax25.dest.ssid ? `${ax25.dest.call}-${ax25.dest.ssid}` : ax25.dest.call;
+  const path = ax25.digis.map((d) => d.ssid ? `${d.call}-${d.ssid}` : d.call).join(",");
+  const infoStr = new TextDecoder().decode(ax25.info);
+
+  let type = "Unknown";
+  if (infoStr.length > 0) {
+    const dt = infoStr[0];
+    if (dt === "!" || dt === "=" || dt === "/" || dt === "@") type = "Position";
+    else if (dt === ":") type = "Message";
+    else if (dt === ">") type = "Status";
+    else if (dt === "T") type = "Telemetry";
+    else if (dt === ";") type = "Object";
+    else if (dt === ")") type = "Item";
+    else if (dt === "`" || dt === "'") type = "Mic-E";
+  }
+
+  return { srcCall, destCall, path, info: infoStr, type };
+}
+
+function addAprsPacket(pkt) {
+  const row = document.createElement("div");
+  row.className = "aprs-packet";
+  const now = new Date();
+  const ts = now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+  row.innerHTML = `<span class="aprs-time">${ts}</span><span class="aprs-call">${pkt.srcCall}</span>&gt;${pkt.destCall}${pkt.path ? "," + pkt.path : ""}: <span title="${pkt.type}">${pkt.info}</span>`;
+  aprsPacketsEl.prepend(row);
+  while (aprsPacketsEl.children.length > APRS_MAX_PACKETS) {
+    aprsPacketsEl.removeChild(aprsPacketsEl.lastChild);
+  }
+}
+
+function startAprs() {
+  if (aprsActive) { stopAprs(); return; }
+  if (!hasWebCodecs) {
+    aprsStatus.textContent = "Requires Chrome/Edge";
     return;
   }
-  list.innerHTML = names.map(n => `<div class="plugin-item">${n}</div>`).join("");
-}).catch(err => {
-  console.error("Failed to fetch frontends", err);
-});
+
+  const proto = location.protocol === "https:" ? "wss:" : "ws:";
+  aprsWs = new WebSocket(`${proto}//${location.host}/audio`);
+  aprsWs.binaryType = "arraybuffer";
+  aprsStatus.textContent = "Connecting…";
+
+  let demodulator = null;
+
+  aprsWs.onopen = () => {
+    aprsStatus.textContent = "Waiting for stream info…";
+  };
+
+  aprsWs.onmessage = (evt) => {
+    if (typeof evt.data === "string") {
+      try {
+        const info = JSON.parse(evt.data);
+        const sr = info.sample_rate || 48000;
+        const ch = info.channels || 1;
+        aprsAudioCtx = new AudioContext({ sampleRate: sr });
+        demodulator = createDemodulator(sr);
+
+        aprsDecoder = new AudioDecoder({
+          output: (frame) => {
+            const buf = new Float32Array(frame.numberOfFrames * frame.numberOfChannels);
+            frame.copyTo(buf, { planeIndex: 0 });
+            // Use first channel only
+            let mono;
+            if (frame.numberOfChannels === 1) {
+              mono = buf;
+            } else {
+              mono = new Float32Array(frame.numberOfFrames);
+              for (let i = 0; i < frame.numberOfFrames; i++) {
+                mono[i] = buf[i * frame.numberOfChannels];
+              }
+            }
+            const frames = demodulator.processBuffer(mono);
+            for (const f of frames) {
+              const ax25 = parseAX25(f);
+              if (!ax25) continue;
+              const pkt = parseAPRS(ax25);
+              addAprsPacket(pkt);
+            }
+            frame.close();
+          },
+          error: (e) => { console.error("APRS AudioDecoder error", e); }
+        });
+        aprsDecoder.configure({
+          codec: "opus",
+          sampleRate: sr,
+          numberOfChannels: ch,
+        });
+
+        aprsActive = true;
+        aprsToggleBtn.style.borderColor = "#00d17f";
+        aprsToggleBtn.style.color = "#00d17f";
+        aprsToggleBtn.textContent = "Stop APRS";
+        aprsStatus.textContent = "Listening…";
+      } catch (e) {
+        console.error("APRS stream info error", e);
+        aprsStatus.textContent = "Error";
+      }
+      return;
+    }
+
+    // Binary Opus data
+    if (!aprsDecoder) return;
+    try {
+      aprsDecoder.decode(new EncodedAudioChunk({
+        type: "key",
+        timestamp: performance.now() * 1000,
+        data: new Uint8Array(evt.data),
+      }));
+    } catch (e) {
+      // Ignore individual decode errors
+    }
+  };
+
+  aprsWs.onclose = () => {
+    stopAprs();
+  };
+
+  aprsWs.onerror = () => {
+    aprsStatus.textContent = "Connection error";
+  };
+}
+
+function stopAprs() {
+  aprsActive = false;
+  if (aprsWs) { aprsWs.close(); aprsWs = null; }
+  if (aprsAudioCtx) { aprsAudioCtx.close(); aprsAudioCtx = null; }
+  if (aprsDecoder) {
+    try { aprsDecoder.close(); } catch (e) {}
+    aprsDecoder = null;
+  }
+  aprsToggleBtn.style.borderColor = "";
+  aprsToggleBtn.style.color = "";
+  aprsToggleBtn.textContent = "Start APRS";
+  aprsStatus.textContent = "Stopped";
+}
+
+aprsToggleBtn.addEventListener("click", startAprs);
 
 // --- Signal measurement ---
 const sigMeasureBtn = document.getElementById("sig-measure-btn");
