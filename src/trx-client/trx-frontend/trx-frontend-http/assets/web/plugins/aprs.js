@@ -72,10 +72,15 @@ function addAprsPacket(pkt) {
   }
 }
 
-document.getElementById("aprs-clear-btn").addEventListener("click", () => {
+document.getElementById("aprs-decode-toggle-btn").addEventListener("click", async () => {
+  try { await postPath("/toggle_aprs_decode"); } catch (e) { console.error("APRS toggle failed", e); }
+});
+
+document.getElementById("aprs-clear-btn").addEventListener("click", async () => {
   aprsPacketsEl.innerHTML = "";
   aprsPacketHistory = [];
   saveSetting("aprsPackets", []);
+  try { await postPath("/clear_aprs_decode"); } catch (e) { console.error("APRS clear failed", e); }
 });
 
 // Restore saved packets and map markers on page load

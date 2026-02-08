@@ -362,6 +362,24 @@ function render(update) {
   if (typeof update.clients === "number") {
     document.getElementById("about-clients").textContent = update.clients;
   }
+  // Decoder toggle buttons
+  const aprsToggleBtn = document.getElementById("aprs-decode-toggle-btn");
+  const cwToggleBtn = document.getElementById("cw-decode-toggle-btn");
+  if (aprsToggleBtn) {
+    const aprsOn = !!update.aprs_decode_enabled;
+    aprsToggleBtn.textContent = aprsOn ? "Disable APRS" : "Enable APRS";
+    aprsToggleBtn.style.borderColor = aprsOn ? "#00d17f" : "";
+    aprsToggleBtn.style.color = aprsOn ? "#00d17f" : "";
+    window.aprsDecodeEnabled = aprsOn;
+  }
+  if (cwToggleBtn) {
+    const cwOn = !!update.cw_decode_enabled;
+    cwToggleBtn.textContent = cwOn ? "Disable CW" : "Enable CW";
+    cwToggleBtn.style.borderColor = cwOn ? "#00d17f" : "";
+    cwToggleBtn.style.color = cwOn ? "#00d17f" : "";
+    window.cwDecodeEnabled = cwOn;
+  }
+
   powerHint.textContent = readyText();
   lastLocked = update.status && update.status.lock === true;
   lockBtn.textContent = lastLocked ? "Unlock" : "Lock";

@@ -264,6 +264,38 @@ pub async fn set_tx_limit(
     send_command(&rig_tx, RigCommand::SetTxLimit(query.limit)).await
 }
 
+#[post("/toggle_aprs_decode")]
+pub async fn toggle_aprs_decode(
+    state: web::Data<watch::Receiver<RigState>>,
+    rig_tx: web::Data<mpsc::Sender<RigRequest>>,
+) -> Result<HttpResponse, Error> {
+    let enabled = state.get_ref().borrow().aprs_decode_enabled;
+    send_command(&rig_tx, RigCommand::SetAprsDecodeEnabled(!enabled)).await
+}
+
+#[post("/toggle_cw_decode")]
+pub async fn toggle_cw_decode(
+    state: web::Data<watch::Receiver<RigState>>,
+    rig_tx: web::Data<mpsc::Sender<RigRequest>>,
+) -> Result<HttpResponse, Error> {
+    let enabled = state.get_ref().borrow().cw_decode_enabled;
+    send_command(&rig_tx, RigCommand::SetCwDecodeEnabled(!enabled)).await
+}
+
+#[post("/clear_aprs_decode")]
+pub async fn clear_aprs_decode(
+    rig_tx: web::Data<mpsc::Sender<RigRequest>>,
+) -> Result<HttpResponse, Error> {
+    send_command(&rig_tx, RigCommand::ResetAprsDecoder).await
+}
+
+#[post("/clear_cw_decode")]
+pub async fn clear_cw_decode(
+    rig_tx: web::Data<mpsc::Sender<RigRequest>>,
+) -> Result<HttpResponse, Error> {
+    send_command(&rig_tx, RigCommand::ResetCwDecoder).await
+}
+
 pub fn configure(cfg: &mut web::ServiceConfig) {
     cfg.service(index)
         .service(status_api)
@@ -277,6 +309,10 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
         .service(set_mode)
         .service(set_ptt)
         .service(set_tx_limit)
+        .service(toggle_aprs_decode)
+        .service(toggle_cw_decode)
+        .service(clear_aprs_decode)
+        .service(clear_cw_decode)
         .service(crate::server::audio::audio_ws)
         .service(favicon)
         .service(logo)
@@ -405,6 +441,8 @@ async fn wait_for_view(mut rx: watch::Receiver<RigState>) -> Result<RigSnapshot,
         server_version: state.server_version,
         server_latitude: state.server_latitude,
         server_longitude: state.server_longitude,
+        aprs_decode_enabled: state.aprs_decode_enabled,
+        cw_decode_enabled: state.cw_decode_enabled,
     })
 }
 
