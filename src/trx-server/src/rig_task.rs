@@ -122,6 +122,10 @@ pub async fn run_rig_task(
         server_version,
         server_latitude,
         server_longitude,
+        aprs_decode_enabled: false,
+        cw_decode_enabled: false,
+        aprs_decode_reset_seq: 0,
+        cw_decode_reset_seq: 0,
     };
 
     // Polling configuration
@@ -343,6 +347,31 @@ async fn process_command(
     cmd: RigCommand,
     ctx: &mut CommandExecContext<'_>,
 ) -> RigResult<RigSnapshot> {
+    // Handle decoder commands early — they don't touch the rig CAT.
+    match cmd {
+        RigCommand::SetAprsDecodeEnabled(en) => {
+            ctx.state.aprs_decode_enabled = en;
+            let _ = ctx.state_tx.send(ctx.state.clone());
+            return snapshot_from(ctx.state);
+        }
+        RigCommand::SetCwDecodeEnabled(en) => {
+            ctx.state.cw_decode_enabled = en;
+            let _ = ctx.state_tx.send(ctx.state.clone());
+            return snapshot_from(ctx.state);
+        }
+        RigCommand::ResetAprsDecoder => {
+            ctx.state.aprs_decode_reset_seq += 1;
+            let _ = ctx.state_tx.send(ctx.state.clone());
+            return snapshot_from(ctx.state);
+        }
+        RigCommand::ResetCwDecoder => {
+            ctx.state.cw_decode_reset_seq += 1;
+            let _ = ctx.state_tx.send(ctx.state.clone());
+            return snapshot_from(ctx.state);
+        }
+        _ => {} // fall through to normal rig handler
+    }
+
     sync_machine_state(ctx.machine, ctx.state);
 
     // Check if rig is ready for commands

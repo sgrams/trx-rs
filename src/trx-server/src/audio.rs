@@ -283,12 +283,22 @@ pub async fn run_aprs_decoder(
     info!("APRS decoder started ({}Hz, {} ch)", sample_rate, channels);
     let mut decoder = decode::aprs::AprsDecoder::new(sample_rate);
     let mut was_active = false;
+    let mut last_reset_seq: u64 = 0;
 
     loop {
         match pcm_rx.recv().await {
             Ok(frame) => {
-                let mode = &state_rx.borrow().status.mode;
-                let active = matches!(mode, RigMode::PKT);
+                let state = state_rx.borrow().clone();
+                let mode = &state.status.mode;
+                let enabled = state.aprs_decode_enabled;
+                let active = enabled && matches!(mode, RigMode::PKT);
+
+                // Check for reset request
+                if state.aprs_decode_reset_seq != last_reset_seq {
+                    last_reset_seq = state.aprs_decode_reset_seq;
+                    decoder.reset();
+                    info!("APRS decoder reset (seq={})", last_reset_seq);
+                }
 
                 if !active {
                     if was_active {
@@ -334,12 +344,22 @@ pub async fn run_cw_decoder(
     info!("CW decoder started ({}Hz, {} ch)", sample_rate, channels);
     let mut decoder = decode::cw::CwDecoder::new(sample_rate);
     let mut was_active = false;
+    let mut last_reset_seq: u64 = 0;
 
     loop {
         match pcm_rx.recv().await {
             Ok(frame) => {
-                let mode = &state_rx.borrow().status.mode;
-                let active = matches!(mode, RigMode::CW | RigMode::CWR);
+                let state = state_rx.borrow().clone();
+                let mode = &state.status.mode;
+                let enabled = state.cw_decode_enabled;
+                let active = enabled && matches!(mode, RigMode::CW | RigMode::CWR);
+
+                // Check for reset request
+                if state.cw_decode_reset_seq != last_reset_seq {
+                    last_reset_seq = state.cw_decode_reset_seq;
+                    decoder.reset();
+                    info!("CW decoder reset (seq={})", last_reset_seq);
+                }
 
                 if !active {
                     if was_active {

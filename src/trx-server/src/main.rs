@@ -222,6 +222,10 @@ fn build_initial_state(cfg: &ServerConfig, resolved: &ResolvedConfig) -> RigStat
         server_version: Some(env!("CARGO_PKG_VERSION").to_string()),
         server_latitude: resolved.latitude,
         server_longitude: resolved.longitude,
+        aprs_decode_enabled: false,
+        cw_decode_enabled: false,
+        aprs_decode_reset_seq: 0,
+        cw_decode_reset_seq: 0,
     }
 }
 

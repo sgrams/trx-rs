@@ -188,6 +188,10 @@ fn map_command(cmd: ClientCommand) -> RigCommand {
         ClientCommand::Unlock => RigCommand::Unlock,
         ClientCommand::GetTxLimit => RigCommand::GetTxLimit,
         ClientCommand::SetTxLimit { limit } => RigCommand::SetTxLimit(limit),
+        ClientCommand::SetAprsDecodeEnabled { enabled } => RigCommand::SetAprsDecodeEnabled(enabled),
+        ClientCommand::SetCwDecodeEnabled { enabled } => RigCommand::SetCwDecodeEnabled(enabled),
+        ClientCommand::ResetAprsDecoder => RigCommand::ResetAprsDecoder,
+        ClientCommand::ResetCwDecoder => RigCommand::ResetCwDecoder,
     }
 }
 
