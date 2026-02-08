@@ -667,6 +667,15 @@ function createDemodulator(sampleRate) {
   const samplesPerBit = sampleRate / BAUD;
   const windowLen = Math.round(samplesPerBit);
 
+  // Debug counters
+  let dbgSamples = 0;
+  let dbgBits = 0;
+  let dbgFlags = 0;
+  let dbgFrameAttempts = 0;
+  let dbgCrcFails = 0;
+  let dbgFramesOk = 0;
+  let dbgLastLog = 0;
+
   // Correlation buffers
   let markI = 0, markQ = 0, spaceI = 0, spaceQ = 0;
   const ringLen = windowLen;
@@ -678,15 +687,16 @@ function createDemodulator(sampleRate) {
 
   // Clock recovery
   let sampleCount = 0;
-  let lastBit = 0;
+  let lastTone = 0;     // tone-level tracking for clock recovery
   let bitPhase = 0;
+
+  // NRZI state (separate from clock recovery)
+  let prevSampledBit = 0;
 
   // HDLC state
   let ones = 0;
   let frameBits = [];
   let inFrame = false;
-  let shiftReg = 0;
-  let bitCount = 0;
 
   const frames = [];
 
@@ -714,8 +724,8 @@ function createDemodulator(sampleRate) {
     const bit = markEnergy > spaceEnergy ? 1 : 0;
 
     // Clock recovery via zero-crossing
-    if (bit !== lastBit) {
-      lastBit = bit;
+    if (bit !== lastTone) {
+      lastTone = bit;
       // Nudge phase toward center of bit
       bitPhase = samplesPerBit / 2;
     }
@@ -723,49 +733,62 @@ function createDemodulator(sampleRate) {
     bitPhase--;
     if (bitPhase <= 0) {
       bitPhase += samplesPerBit;
+      dbgBits++;
       processBit(bit);
     }
 
+    dbgSamples++;
     sampleCount++;
   }
 
   function processBit(rawBit) {
     // NRZI decode: no transition = 1, transition = 0
-    // We track previous raw bit; same = 1, different = 0
-    const nrziBit = (rawBit === lastBit) ? 1 : 0;
+    const decodedBit = (rawBit === prevSampledBit) ? 1 : 0;
+    prevSampledBit = rawBit;
 
-    // Check for flag (0x7E = 01111110 in bit order)
-    shiftReg = ((shiftReg >> 1) | (rawBit << 7)) & 0xFF;
-    bitCount++;
-
-    if (nrziBit === 1) {
+    if (decodedBit === 1) {
+      // Don't push yet — buffer in ones counter until we know
+      // these aren't part of a flag, stuff, or abort sequence
       ones++;
-    } else {
-      if (ones === 5) {
-        // Bit stuffing — skip this zero
-        ones = 0;
-        return;
-      }
-      ones = 0;
+      return;
     }
 
-    if (shiftReg === 0x7E) {
-      // Flag detected
+    // decodedBit === 0
+    if (ones >= 7) {
+      // Abort sequence — reset
+      inFrame = false;
+      frameBits = [];
+      ones = 0;
+      return;
+    }
+    if (ones === 6) {
+      // Flag (01111110) — frame boundary; the 6 ones are flag bits, not data
+      dbgFlags++;
       if (inFrame && frameBits.length >= 136) {
-        // Minimum AX.25 frame: 14 addr + 1 ctrl + 1 pid + 1 info + 2 fcs = 19 bytes = 152 bits
-        // But we check >= 136 bits (17 bytes) to be lenient
+        dbgFrameAttempts++;
         const frame = bitsToBytes(frameBits);
-        if (frame) frames.push(frame);
+        if (frame) { dbgFramesOk++; frames.push(frame); }
       }
       frameBits = [];
       inFrame = true;
       ones = 0;
       return;
     }
-
-    if (inFrame) {
-      frameBits.push(nrziBit);
+    if (ones === 5) {
+      // Bit stuffing — flush the 5 data ones, discard the stuffed zero
+      if (inFrame) {
+        for (let k = 0; k < 5; k++) frameBits.push(1);
+      }
+      ones = 0;
+      return;
     }
+
+    // Normal data: flush buffered ones then push the zero
+    if (inFrame) {
+      for (let k = 0; k < ones; k++) frameBits.push(1);
+      frameBits.push(0);
+    }
+    ones = 0;
   }
 
   function bitsToBytes(bits) {
@@ -784,7 +807,12 @@ function createDemodulator(sampleRate) {
     const payload = bytes.subarray(0, byteLen - 2);
     const fcs = bytes[byteLen - 2] | (bytes[byteLen - 1] << 8);
     const computed = crc16ccitt(payload);
-    if (computed !== fcs) return null;
+    if (computed !== fcs) {
+      dbgCrcFails++;
+      console.debug("[APRS-DBG] CRC fail:", byteLen, "bytes, fcs=0x" + fcs.toString(16), "computed=0x" + computed.toString(16),
+        "first6:", Array.from(payload.subarray(0, 6)).map(b => b.toString(16).padStart(2, "0")).join(" "));
+      return null;
+    }
 
     return payload;
   }
@@ -792,6 +820,13 @@ function createDemodulator(sampleRate) {
   function processBuffer(samples) {
     for (let i = 0; i < samples.length; i++) {
       processSample(samples[i]);
+    }
+    // Periodic debug log every 3 seconds
+    const now = Date.now();
+    if (now - dbgLastLog >= 3000) {
+      console.log("[APRS-DBG] samples:", dbgSamples, "bits:", dbgBits, "flags:", dbgFlags,
+        "frameAttempts:", dbgFrameAttempts, "crcFails:", dbgCrcFails, "ok:", dbgFramesOk);
+      dbgLastLog = now;
     }
     const result = frames.splice(0);
     return result;
@@ -858,6 +893,7 @@ function parseAPRS(ax25) {
 }
 
 function addAprsPacket(pkt) {
+  console.log("[APRS]", `${pkt.srcCall}>${pkt.destCall}${pkt.path ? "," + pkt.path : ""}: ${pkt.info}`, pkt);
   const row = document.createElement("div");
   row.className = "aprs-packet";
   const now = new Date();
@@ -896,8 +932,12 @@ function startAprs() {
         aprsAudioCtx = new AudioContext({ sampleRate: sr });
         demodulator = createDemodulator(sr);
 
+        let aprsFrameCount = 0;
         aprsDecoder = new AudioDecoder({
           output: (frame) => {
+            if (aprsFrameCount++ === 0) {
+              console.log("[APRS-DBG] First PCM frame:", frame.numberOfFrames, "samples,", frame.numberOfChannels, "ch, format:", frame.format, "sr:", frame.sampleRate);
+            }
             const buf = new Float32Array(frame.numberOfFrames * frame.numberOfChannels);
             frame.copyTo(buf, { planeIndex: 0 });
             // Use first channel only

@@ -214,7 +214,7 @@ small { color: var(--text-muted); }
 .sub-tab.active { border-bottom-color: var(--accent-green); color: var(--accent-green); font-weight: 600; }
 .sub-tab:hover:not(.active) { color: var(--text); }
 .aprs-controls { display: flex; gap: 0.6rem; align-items: center; margin-bottom: 0.75rem; }
-#aprs-packets { max-height: 360px; overflow-y: auto; }
+#aprs-packets { max-height: 360px; overflow-y: auto; border: 1px solid var(--border-light); border-radius: 6px; background: var(--input-bg); font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
 .aprs-packet { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; font-size: 0.82rem; padding: 0.35rem 0.5rem; border-bottom: 1px solid var(--border); line-height: 1.4; }
 .aprs-packet:last-child { border-bottom: none; }
 .aprs-call { color: var(--accent-green); font-weight: 600; }
