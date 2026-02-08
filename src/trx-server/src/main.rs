@@ -305,8 +305,9 @@ async fn main() -> DynResult<()> {
             .cloned()
             .collect();
         let rig_tx = tx.clone();
+        let state_rx_listener = _state_rx.clone();
         tokio::spawn(async move {
-            if let Err(e) = listener::run_listener(listen_addr, rig_tx, auth_tokens).await {
+            if let Err(e) = listener::run_listener(listen_addr, rig_tx, auth_tokens, state_rx_listener).await {
                 error!("Listener error: {:?}", e);
             }
         });

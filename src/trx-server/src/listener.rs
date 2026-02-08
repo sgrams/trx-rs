@@ -12,14 +12,14 @@ use std::net::SocketAddr;
 
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::{TcpListener, TcpStream};
-use tokio::sync::{mpsc, oneshot};
+use tokio::sync::{mpsc, oneshot, watch};
 use tracing::{error, info};
 
 use trx_core::client::ClientEnvelope;
 use trx_core::radio::freq::Freq;
 use trx_core::rig::command::RigCommand;
 use trx_core::rig::request::RigRequest;
-use trx_core::rig::state::RigMode;
+use trx_core::rig::state::{RigMode, RigState};
 use trx_core::{ClientCommand, ClientResponse};
 
 /// Run the JSON TCP listener, accepting client connections.
@@ -27,6 +27,7 @@ pub async fn run_listener(
     addr: SocketAddr,
     rig_tx: mpsc::Sender<RigRequest>,
     auth_tokens: HashSet<String>,
+    state_rx: watch::Receiver<RigState>,
 ) -> std::io::Result<()> {
     let listener = TcpListener::bind(addr).await?;
     info!("Listening on {}", addr);
@@ -37,8 +38,9 @@ pub async fn run_listener(
 
         let tx = rig_tx.clone();
         let tokens = auth_tokens.clone();
+        let srx = state_rx.clone();
         tokio::spawn(async move {
-            if let Err(e) = handle_client(socket, peer, tx, &tokens).await {
+            if let Err(e) = handle_client(socket, peer, tx, &tokens, srx).await {
                 error!("Client {} error: {:?}", peer, e);
             }
         });
@@ -50,6 +52,7 @@ async fn handle_client(
     addr: SocketAddr,
     tx: mpsc::Sender<RigRequest>,
     auth_tokens: &HashSet<String>,
+    state_rx: watch::Receiver<RigState>,
 ) -> std::io::Result<()> {
     let (reader, mut writer) = socket.into_split();
     let mut reader = BufReader::new(reader);
@@ -97,6 +100,23 @@ async fn handle_client(
         }
 
         let rig_cmd = map_command(envelope.cmd);
+
+        // Fast path: serve GetSnapshot directly from the watch channel
+        // so clients get a response even while the rig task is initializing.
+        if matches!(rig_cmd, RigCommand::GetSnapshot) {
+            let state = state_rx.borrow().clone();
+            if let Some(snapshot) = state.snapshot() {
+                let resp = ClientResponse {
+                    success: true,
+                    state: Some(snapshot),
+                    error: None,
+                };
+                let resp_line = serde_json::to_string(&resp)? + "\n";
+                writer.write_all(resp_line.as_bytes()).await?;
+                writer.flush().await?;
+                continue;
+            }
+        }
 
         let (resp_tx, resp_rx) = oneshot::channel();
         let req = RigRequest {
