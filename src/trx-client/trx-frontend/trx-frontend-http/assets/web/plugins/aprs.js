@@ -634,6 +634,12 @@ aprsToggleBtn.addEventListener("click", () => {
   if (aprsActive) { stopAprs(true); } else { startAprs(); }
 });
 
+document.getElementById("aprs-clear-btn").addEventListener("click", () => {
+  aprsPacketsEl.innerHTML = "";
+  aprsPacketHistory = [];
+  saveSetting("aprsPackets", []);
+});
+
 // Restore saved packets and map markers on page load
 for (let i = aprsPacketHistory.length - 1; i >= 0; i--) {
   const pkt = aprsPacketHistory[i];
