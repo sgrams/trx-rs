@@ -21,7 +21,7 @@ const swrBar = document.getElementById("swr-bar");
 const swrValue = document.getElementById("swr-value");
 const loadingEl = document.getElementById("loading");
 const contentEl = document.getElementById("content");
-const callsignEl = document.getElementById("callsign");
+const serverSubtitle = document.getElementById("server-subtitle");
 const loadingTitle = document.getElementById("loading-title");
 const loadingSub = document.getElementById("loading-sub");
 
@@ -153,9 +153,12 @@ function render(update) {
     loadingEl.style.display = "none";
     if (contentEl) contentEl.style.display = "";
   }
-  // Reveal callsign if provided and non-empty.
-  if (callsignEl && callsignEl.textContent.trim() !== "") {
-    callsignEl.style.display = "";
+  // Server subtitle: "trx-server vX.Y.Z hosted by CALL"
+  if (update.server_version || update.server_callsign) {
+    let text = "trx-server";
+    if (update.server_version) text += ` v${update.server_version}`;
+    if (update.server_callsign) text += ` hosted by ${update.server_callsign}`;
+    serverSubtitle.textContent = text;
   }
   setDisabled(false);
   if (update.info && update.info.capabilities && Array.isArray(update.info.capabilities.supported_modes)) {
@@ -622,6 +625,10 @@ let opusDecoder = null;
 let txEncoder = null;
 let nextPlayTime = 0;
 let lastLevelUpdate = 0;
+let rxGainNode = null;
+let txGainNode = null;
+const rxVolSlider = document.getElementById("rx-vol");
+const txVolSlider = document.getElementById("tx-vol");
 const TX_TIMEOUT_SECS = 120;
 let txTimeoutTimer = null;
 let txTimeoutRemaining = 0;
@@ -682,6 +689,9 @@ function startRxAudio() {
       try {
         streamInfo = JSON.parse(evt.data);
         audioCtx = new AudioContext({ sampleRate: streamInfo.sample_rate || 48000 });
+        rxGainNode = audioCtx.createGain();
+        rxGainNode.gain.value = rxVolSlider.value / 100;
+        rxGainNode.connect(audioCtx.destination);
         rxActive = true;
         rxAudioBtn.style.borderColor = "#00d17f";
         rxAudioBtn.style.color = "#00d17f";
@@ -723,7 +733,7 @@ function startRxAudio() {
             }
             const src = audioCtx.createBufferSource();
             src.buffer = ab;
-            src.connect(audioCtx.destination);
+            src.connect(rxGainNode);
             const now = audioCtx.currentTime;
             const schedTime = Math.max(now, (nextPlayTime || now));
             src.start(schedTime);
@@ -763,6 +773,7 @@ function startRxAudio() {
     rxAudioBtn.style.color = "";
     audioStatus.textContent = "Off";
     audioLevelFill.style.width = "0%";
+    rxGainNode = null;
     if (opusDecoder) {
       try { opusDecoder.close(); } catch(e) {}
       opusDecoder = null;
@@ -779,6 +790,7 @@ function stopRxAudio() {
   rxActive = false;
   if (audioWs) { audioWs.close(); audioWs = null; }
   if (audioCtx) { audioCtx.close(); audioCtx = null; }
+  rxGainNode = null;
   if (opusDecoder) {
     try { opusDecoder.close(); } catch(e) {}
     opusDecoder = null;
@@ -869,7 +881,10 @@ function startTxAudio() {
         // Ignore
       }
     };
-    source.connect(processor);
+    txGainNode = audioCtx.createGain();
+    txGainNode.gain.value = txVolSlider.value / 100;
+    source.connect(txGainNode);
+    txGainNode.connect(processor);
     processor.connect(audioCtx.destination);
     txProcessor = { source, processor };
   }).catch((err) => {
@@ -899,6 +914,7 @@ async function stopTxAudio() {
     try { txEncoder.close(); } catch(e) {}
     txEncoder = null;
   }
+  txGainNode = null;
   txAudioBtn.style.borderColor = "";
   txAudioBtn.style.color = "";
   audioStatus.textContent = rxActive ? "RX" : "Off";
@@ -906,6 +922,30 @@ async function stopTxAudio() {
 
 rxAudioBtn.addEventListener("click", startRxAudio);
 txAudioBtn.addEventListener("click", startTxAudio);
+
+const rxVolPct = document.getElementById("rx-vol-pct");
+const txVolPct = document.getElementById("tx-vol-pct");
+
+function updateVolSlider(slider, pctEl, gainNode) {
+  pctEl.textContent = `${slider.value}%`;
+  if (gainNode) gainNode.gain.value = slider.value / 100;
+}
+
+rxVolSlider.addEventListener("input", () => updateVolSlider(rxVolSlider, rxVolPct, rxGainNode));
+txVolSlider.addEventListener("input", () => updateVolSlider(txVolSlider, txVolPct, txGainNode));
+
+function volWheel(slider, pctEl, getGain) {
+  slider.addEventListener("wheel", (e) => {
+    e.preventDefault();
+    const step = e.deltaY < 0 ? 2 : -2;
+    slider.value = Math.max(0, Math.min(100, Number(slider.value) + step));
+    updateVolSlider(slider, pctEl, getGain());
+  }, { passive: false });
+}
+volWheel(rxVolSlider, rxVolPct, () => rxGainNode);
+volWheel(txVolSlider, txVolPct, () => txGainNode);
+
+document.getElementById("copyright-year").textContent = new Date().getFullYear();
 
 // Release PTT on page unload to prevent stuck transmit
 window.addEventListener("beforeunload", () => {

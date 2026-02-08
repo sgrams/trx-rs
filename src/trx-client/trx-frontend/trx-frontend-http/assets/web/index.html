@@ -12,9 +12,9 @@
     <div class="header" style="position:relative; z-index:2;">
       <div>
         <div class="title"><span id="rig-title">Rig status</span></div>
+        <div class="subtitle" id="server-subtitle"></div>
         <div class="subtitle">{pkg} v{ver}</div>
       </div>
-      <div id="callsign" style="color:#9aa4b5; font-weight:600; display:none;">{callsign_opt}</div>
     </div>
     <div id="loading" style="text-align:center; padding:2rem 0;">
       <div id="loading-title" style="margin-bottom:0.4rem; font-size:1.1rem; font-weight:600;">Initializing (rig)…</div>
@@ -84,12 +84,11 @@
         </div>
       </div>
       <div id="tx-limit-row" style="display:none;">
-        <div class="label">TX Limit</div>
+        <div class="label">TX Limit — units depend on rig (percentage/watts)</div>
         <div class="inline">
           <input class="status-input" id="tx-limit" type="number" min="0" max="255" step="1" value="" placeholder="--" />
           <button id="tx-limit-btn" type="button">Set</button>
         </div>
-        <small>Units depend on rig (percent/watts).</small>
       </div>
     </div>
     <div class="full-row" id="audio-row">
@@ -97,6 +96,8 @@
       <div class="inline" style="gap: 0.6rem; flex-wrap: wrap; align-items: center;">
         <button id="rx-audio-btn" type="button">RX Audio</button>
         <button id="tx-audio-btn" type="button">TX Audio</button>
+        <label class="vol-label">RX<input type="range" id="rx-vol" min="0" max="100" value="80" class="vol-slider" /><small class="vol-pct" id="rx-vol-pct">80%</small></label>
+        <label class="vol-label">TX<input type="range" id="tx-vol" min="0" max="100" value="80" class="vol-slider" /><small class="vol-pct" id="tx-vol-pct">80%</small></label>
         <div id="audio-level" style="flex: 1 1 auto; height: 12px; border-radius: 999px; background: #1f2937; border: 1px solid #2d3748; overflow: hidden; min-width: 80px;">
           <div id="audio-level-fill" style="height: 100%; width: 0%; background: linear-gradient(90deg, #00d17f, #f0ad4e); transition: width 100ms ease;"></div>
         </div>
@@ -104,6 +105,7 @@
       </div>
     </div>
     <div class="footer">
+      <div class="copyright">Built by Stan Grams SP2SJG from <a href="https://haxx.space" target="_blank" rel="noopener">haxx.space</a> — <span id="copyright-year"></span></div>
       <div class="hint" id="power-hint">Connecting…</div>
     </div>
     </div>

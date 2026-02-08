@@ -247,10 +247,10 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
 }
 
 #[get("/")]
-async fn index(callsign: web::Data<Option<String>>) -> impl Responder {
+async fn index() -> impl Responder {
     HttpResponse::Ok()
         .insert_header((header::CONTENT_TYPE, "text/html; charset=utf-8"))
-        .body(status::index_html(callsign.get_ref().as_deref()))
+        .body(status::index_html())
 }
 
 #[get("/favicon.ico")]
@@ -339,6 +339,8 @@ async fn wait_for_view(mut rx: watch::Receiver<RigState>) -> Result<RigSnapshot,
         band: None,
         enabled: state.control.enabled,
         initialized: state.initialized,
+        server_callsign: state.server_callsign,
+        server_version: state.server_version,
     })
 }
 

@@ -9,9 +9,8 @@ const INDEX_HTML: &str = include_str!("../assets/web/index.html");
 pub const STYLE_CSS: &str = include_str!("../assets/web/style.css");
 pub const APP_JS: &str = include_str!("../assets/web/app.js");
 
-pub fn index_html(callsign: Option<&str>) -> String {
+pub fn index_html() -> String {
     INDEX_HTML
         .replace("{pkg}", PKG_NAME)
         .replace("{ver}", PKG_VERSION)
-        .replace("{callsign_opt}", callsign.unwrap_or(""))
 }

@@ -64,18 +64,16 @@ fn build_server(
     addr: SocketAddr,
     state_rx: watch::Receiver<RigState>,
     rig_tx: mpsc::Sender<RigRequest>,
-    callsign: Option<String>,
+    _callsign: Option<String>,
 ) -> Result<Server, actix_web::Error> {
     let state_data = web::Data::new(state_rx);
     let rig_tx = web::Data::new(rig_tx);
-    let callsign = web::Data::new(callsign);
     let clients = web::Data::new(Arc::new(AtomicUsize::new(0)));
 
     let server = HttpServer::new(move || {
         App::new()
             .app_data(state_data.clone())
             .app_data(rig_tx.clone())
-            .app_data(callsign.clone())
             .app_data(clients.clone())
             .configure(api::configure)
     })
