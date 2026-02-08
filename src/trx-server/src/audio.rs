@@ -224,12 +224,19 @@ fn run_playback(
         None,
     )?;
 
-    stream.play()?;
-    info!("Audio playback: started");
+    // Start paused — only play when TX packets arrive
+    info!("Audio playback: ready ({}Hz, {} ch)", sample_rate, channels);
 
     let mut pcm_buf = vec![0f32; frame_samples];
+    let mut playing = false;
 
     while let Some(packet) = rx.blocking_recv() {
+        if !playing {
+            stream.play()?;
+            playing = true;
+            info!("Audio playback: started");
+        }
+
         match decoder.decode_float(&packet, &mut pcm_buf, false) {
             Ok(decoded) => {
                 let mut ring = ring_writer.lock().unwrap();
@@ -237,6 +244,18 @@ fn run_playback(
             }
             Err(e) => {
                 warn!("Opus decode error: {}", e);
+            }
+        }
+
+        // Pause when no more packets are queued to avoid ALSA underruns
+        if rx.is_empty() {
+            // Drain remaining samples before pausing
+            std::thread::sleep(std::time::Duration::from_millis(frame_duration_ms as u64 * 2));
+            if rx.is_empty() {
+                let _ = stream.pause();
+                playing = false;
+                ring_writer.lock().unwrap().clear();
+                info!("Audio playback: paused (idle)");
             }
         }
     }
