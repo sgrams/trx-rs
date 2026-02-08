@@ -19,4 +19,8 @@ pub enum RigCommand {
     SetTxLimit(u8),
     Lock,
     Unlock,
+    SetAprsDecodeEnabled(bool),
+    SetCwDecodeEnabled(bool),
+    ResetAprsDecoder,
+    ResetCwDecoder,
 }

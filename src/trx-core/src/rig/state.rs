@@ -23,6 +23,14 @@ pub struct RigState {
     pub server_latitude: Option<f64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub server_longitude: Option<f64>,
+    #[serde(default)]
+    pub aprs_decode_enabled: bool,
+    #[serde(default)]
+    pub cw_decode_enabled: bool,
+    #[serde(default, skip_serializing)]
+    pub aprs_decode_reset_seq: u64,
+    #[serde(default, skip_serializing)]
+    pub cw_decode_reset_seq: u64,
 }
 
 /// Mode supported by the rig.
@@ -68,6 +76,8 @@ impl RigState {
             server_version: self.server_version.clone(),
             server_latitude: self.server_latitude,
             server_longitude: self.server_longitude,
+            aprs_decode_enabled: self.aprs_decode_enabled,
+            cw_decode_enabled: self.cw_decode_enabled,
         })
     }
 
@@ -110,4 +120,8 @@ pub struct RigSnapshot {
     pub server_latitude: Option<f64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub server_longitude: Option<f64>,
+    #[serde(default)]
+    pub aprs_decode_enabled: bool,
+    #[serde(default)]
+    pub cw_decode_enabled: bool,
 }

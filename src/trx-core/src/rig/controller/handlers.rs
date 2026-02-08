@@ -500,6 +500,12 @@ pub fn command_from_rig_command(cmd: RigCommand) -> Box<dyn RigCommandHandler> {
         RigCommand::SetTxLimit(limit) => Box::new(SetTxLimitCommand::new(limit)),
         RigCommand::Lock => Box::new(LockCommand),
         RigCommand::Unlock => Box::new(UnlockCommand),
+        // Decoder commands are handled before reaching this function;
+        // map to GetSnapshot as a safe fallback.
+        RigCommand::SetAprsDecodeEnabled(_)
+        | RigCommand::SetCwDecodeEnabled(_)
+        | RigCommand::ResetAprsDecoder
+        | RigCommand::ResetCwDecoder => Box::new(GetSnapshotCommand),
     }
 }
 

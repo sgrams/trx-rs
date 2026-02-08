@@ -21,6 +21,10 @@ pub enum ClientCommand {
     Unlock,
     GetTxLimit,
     SetTxLimit { limit: u8 },
+    SetAprsDecodeEnabled { enabled: bool },
+    SetCwDecodeEnabled { enabled: bool },
+    ResetAprsDecoder,
+    ResetCwDecoder,
 }
 
 /// Envelope for client commands with optional authentication token.
