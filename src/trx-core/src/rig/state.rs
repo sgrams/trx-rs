@@ -15,6 +15,10 @@ pub struct RigState {
     pub initialized: bool,
     #[serde(skip_serializing, skip_deserializing)]
     pub control: RigControl,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub server_callsign: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub server_version: Option<String>,
 }
 
 /// Mode supported by the rig.
@@ -56,6 +60,8 @@ impl RigState {
             band: self.band_name(),
             enabled: self.control.enabled,
             initialized: self.initialized,
+            server_callsign: self.server_callsign.clone(),
+            server_version: self.server_version.clone(),
         })
     }
 
@@ -90,4 +96,8 @@ pub struct RigSnapshot {
     pub band: Option<String>,
     pub enabled: Option<bool>,
     pub initialized: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub server_callsign: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub server_version: Option<String>,
 }
