@@ -293,12 +293,33 @@ function render(update) {
   if (update.server_version) {
     document.getElementById("about-server-ver").textContent = `trx-server v${update.server_version}`;
   }
+  document.getElementById("about-server-addr").textContent = location.host;
   if (update.server_callsign) {
     document.getElementById("about-server-call").textContent = update.server_callsign;
   }
   if (update.info) {
     const parts = [update.info.manufacturer, update.info.model, update.info.revision].filter(Boolean).join(" ");
     if (parts) document.getElementById("about-rig-info").textContent = parts;
+    const access = update.info.access;
+    if (access) {
+      if (access.Serial) {
+        document.getElementById("about-rig-access").textContent = `Serial (${access.Serial.port || "?"}, ${access.Serial.baud || "?"} baud)`;
+      } else if (access.Tcp) {
+        document.getElementById("about-rig-access").textContent = `TCP (${access.Tcp.host || "?"}:${access.Tcp.port || "?"})`;
+      } else {
+        const key = Object.keys(access)[0];
+        if (key) document.getElementById("about-rig-access").textContent = key;
+      }
+    }
+    if (update.info.capabilities) {
+      const cap = update.info.capabilities;
+      if (Array.isArray(cap.supported_modes) && cap.supported_modes.length) {
+        document.getElementById("about-modes").textContent = cap.supported_modes.map(normalizeMode).filter(Boolean).join(", ");
+      }
+      if (typeof cap.num_vfos === "number") {
+        document.getElementById("about-vfos").textContent = cap.num_vfos;
+      }
+    }
   }
   if (typeof update.clients === "number") {
     document.getElementById("about-clients").textContent = update.clients;
