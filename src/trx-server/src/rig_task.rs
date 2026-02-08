@@ -35,6 +35,8 @@ pub struct RigTaskConfig {
     pub initial_mode: RigMode,
     pub server_callsign: Option<String>,
     pub server_version: Option<String>,
+    pub server_latitude: Option<f64>,
+    pub server_longitude: Option<f64>,
 }
 
 impl Default for RigTaskConfig {
@@ -51,6 +53,8 @@ impl Default for RigTaskConfig {
             initial_mode: RigMode::USB,
             server_callsign: None,
             server_version: None,
+            server_latitude: None,
+            server_longitude: None,
         }
     }
 }
@@ -86,6 +90,8 @@ pub async fn run_rig_task(
     let emitter = RigEventEmitter::new();
     let server_callsign = config.server_callsign.clone();
     let server_version = config.server_version.clone();
+    let server_latitude = config.server_latitude;
+    let server_longitude = config.server_longitude;
     let mut state = RigState {
         rig_info: None,
         status: RigStatus {
@@ -114,6 +120,8 @@ pub async fn run_rig_task(
         },
         server_callsign,
         server_version,
+        server_latitude,
+        server_longitude,
     };
 
     // Polling configuration

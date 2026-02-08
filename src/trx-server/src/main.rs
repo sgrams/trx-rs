@@ -108,6 +108,8 @@ struct ResolvedConfig {
     rig: String,
     access: RigAccess,
     callsign: Option<String>,
+    latitude: Option<f64>,
+    longitude: Option<f64>,
 }
 
 fn resolve_config(cli: &Cli, cfg: &ServerConfig) -> DynResult<ResolvedConfig> {
@@ -173,14 +175,20 @@ fn resolve_config(cli: &Cli, cfg: &ServerConfig) -> DynResult<ResolvedConfig> {
         .clone()
         .or_else(|| cfg.general.callsign.clone());
 
+    let latitude = cfg.general.latitude;
+    let longitude = cfg.general.longitude;
+
     Ok(ResolvedConfig {
         rig,
         access,
         callsign,
+        latitude,
+        longitude,
     })
 }
 
-fn build_initial_state(cfg: &ServerConfig, callsign: &Option<String>) -> RigState {
+fn build_initial_state(cfg: &ServerConfig, resolved: &ResolvedConfig) -> RigState {
+    let callsign = &resolved.callsign;
     RigState {
         rig_info: None,
         status: RigStatus {
@@ -211,6 +219,8 @@ fn build_initial_state(cfg: &ServerConfig, callsign: &Option<String>) -> RigStat
         },
         server_callsign: callsign.clone(),
         server_version: Some(env!("CARGO_PKG_VERSION").to_string()),
+        server_latitude: resolved.latitude,
+        server_longitude: resolved.longitude,
     }
 }
 
@@ -234,6 +244,8 @@ fn build_rig_task_config(
         initial_mode: cfg.rig.initial_mode.clone(),
         server_callsign: resolved.callsign.clone(),
         server_version: Some(env!("CARGO_PKG_VERSION").to_string()),
+        server_latitude: resolved.latitude,
+        server_longitude: resolved.longitude,
     }
 }
 
@@ -284,7 +296,7 @@ async fn main() -> DynResult<()> {
     }
 
     let (tx, rx) = mpsc::channel::<RigRequest>(RIG_TASK_CHANNEL_BUFFER);
-    let initial_state = build_initial_state(&cfg, &resolved.callsign);
+    let initial_state = build_initial_state(&cfg, &resolved);
     let (state_tx, state_rx) = watch::channel(initial_state);
     // Keep receivers alive so channels don't close prematurely
     let _state_rx = state_rx;

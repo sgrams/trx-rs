@@ -41,6 +41,10 @@ pub struct GeneralConfig {
     pub callsign: Option<String>,
     /// Log level (trace, debug, info, warn, error)
     pub log_level: Option<String>,
+    /// Receiver latitude (decimal degrees, WGS84)
+    pub latitude: Option<f64>,
+    /// Receiver longitude (decimal degrees, WGS84)
+    pub longitude: Option<f64>,
 }
 
 impl Default for GeneralConfig {
@@ -48,6 +52,8 @@ impl Default for GeneralConfig {
         Self {
             callsign: Some("N0CALL".to_string()),
             log_level: None,
+            latitude: None,
+            longitude: None,
         }
     }
 }
@@ -244,6 +250,8 @@ impl ServerConfig {
             general: GeneralConfig {
                 callsign: Some("N0CALL".to_string()),
                 log_level: Some("info".to_string()),
+                latitude: None,
+                longitude: None,
             },
             rig: RigConfig {
                 model: Some("ft817".to_string()),
