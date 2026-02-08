@@ -145,25 +145,20 @@
       </div>
       <div id="subtab-aprs" class="sub-tab-panel" style="display:none;">
         <div class="aprs-controls">
-          <button id="aprs-toggle-btn" type="button">Start APRS</button>
           <button id="aprs-clear-btn" type="button">Clear</button>
-          <small id="aprs-status" style="color:var(--text-muted);">Stopped</small>
+          <small id="aprs-status" style="color:var(--text-muted);">Waiting for server decode</small>
         </div>
         <div id="aprs-packets"></div>
       </div>
       <div id="subtab-cw" class="sub-tab-panel" style="display:none;">
         <div class="cw-controls">
-          <button id="cw-toggle-btn" type="button">Start CW</button>
           <button id="cw-clear-btn" type="button">Clear</button>
-          <small id="cw-status" style="color:var(--text-muted);">Stopped</small>
+          <small id="cw-status" style="color:var(--text-muted);">Waiting for server decode</small>
           <div id="cw-signal-indicator" class="cw-signal-off"></div>
         </div>
         <div class="cw-config">
           <label>WPM <input type="number" id="cw-wpm" min="5" max="40" value="15" readonly /></label>
-          <label class="cw-auto-label"><input type="checkbox" id="cw-wpm-auto" checked /> Auto</label>
           <label>Tone (Hz) <input type="number" id="cw-tone" min="300" max="1200" value="700" readonly /></label>
-          <label class="cw-auto-label"><input type="checkbox" id="cw-tone-auto" checked /> Auto</label>
-          <label>Threshold <input type="range" id="cw-threshold" min="1" max="50" value="5" /><small id="cw-threshold-val">0.05</small></label>
         </div>
         <div id="cw-output"></div>
       </div>
