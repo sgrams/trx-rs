@@ -50,6 +50,11 @@ pub async fn audio_ws(req: HttpRequest, body: web::Payload) -> Result<HttpRespon
         return Ok(HttpResponse::NotFound().body("audio not enabled"));
     };
 
+    // Plain GET probe (no WebSocket upgrade) — return 204 to signal audio is available
+    if !req.headers().contains_key("upgrade") {
+        return Ok(HttpResponse::NoContent().finish());
+    }
+
     let mut rx_sub = ch.rx.subscribe();
     let tx_sender = ch.tx.clone();
     let mut info_rx = ch.info.clone();
