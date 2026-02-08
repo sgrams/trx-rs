@@ -119,7 +119,6 @@ input.status-input, select.status-input { width: 100%; padding: 0.45rem 0.5rem; 
 .vfo-picker button:last-child { border-right: none; }
 .vfo-picker button.active {
   background: var(--btn-bg);
-  color: var(--accent-green);
   font-weight: 600;
 }
 .signal-measure {

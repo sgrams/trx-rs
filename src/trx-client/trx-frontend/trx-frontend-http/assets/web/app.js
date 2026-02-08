@@ -33,6 +33,13 @@ let sigMeasuring = false;
 let sigSamples = [];
 let lastFreqHz = null;
 let jogStep = 1000; // default 1 kHz
+const VFO_COLORS = ["var(--accent-green)", "var(--accent-yellow)"];
+function vfoColor(idx) {
+  if (idx < VFO_COLORS.length) return VFO_COLORS[idx];
+  // Deterministic pseudo-random hue for extra VFOs
+  const hue = ((idx * 137) % 360);
+  return `hsl(${hue}, 70%, 55%)`;
+}
 let jogAngle = 0;
 let lastClientCount = null;
 let lastLocked = false;
@@ -143,12 +150,23 @@ function setDisabled(disabled) {
   });
 }
 
+let serverVersion = null;
+let serverCallsign = null;
+
+function updateTitle() {
+  let title = "trx-rs";
+  if (serverVersion) title += ` v${serverVersion}`;
+  if (serverCallsign) title += ` @ ${serverCallsign}'s`;
+  title += ` ${rigName}`;
+  document.getElementById("rig-title").textContent = title;
+}
+
 function render(update) {
   if (!update) return;
-  if (update.info && update.info.model) {
-    rigName = update.info.model;
-  }
-  document.getElementById("rig-title").textContent = `${rigName} status`;
+  if (update.info && update.info.model) rigName = update.info.model;
+  if (update.server_version) serverVersion = update.server_version;
+  if (update.server_callsign) serverCallsign = update.server_callsign;
+  updateTitle();
 
   initialized = !!update.initialized;
   if (!initialized) {
@@ -237,8 +255,12 @@ function render(update) {
       const btn = document.createElement("button");
       btn.type = "button";
       btn.textContent = label;
-      if (activeIdx === idx) btn.classList.add("active");
-      else btn.addEventListener("click", async () => {
+      const color = vfoColor(idx);
+      if (activeIdx === idx) {
+        btn.classList.add("active");
+        btn.style.color = color;
+        freqEl.style.color = color;
+      } else btn.addEventListener("click", async () => {
         btn.disabled = true;
         showHint("Toggling VFO…");
         try {
