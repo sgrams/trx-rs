@@ -30,7 +30,7 @@ function crc16ccitt(bytes) {
 }
 
 // AFSK Bell 202 Demodulator (1200 baud, mark=1200Hz, space=2200Hz)
-// Uses delay-and-multiply frequency discriminator for robust non-coherent decoding.
+// Uses mark/space correlation detector (non-coherent FSK matched filter).
 function createDemodulator(sampleRate) {
   const BAUD = 1200;
   const MARK = 1200;
@@ -52,35 +52,27 @@ function createDemodulator(sampleRate) {
   const ENERGY_WINDOW = Math.round(sampleRate * 0.05);
   const ENERGY_THRESHOLD = 0.001;
 
-  // Bandpass pre-filter: biquad centered at 1700 Hz (AFSK midpoint), Q=1.2
-  // Passes ~1000-2500 Hz, removes out-of-band noise
-  const bpfW0 = 2 * Math.PI * ((MARK + SPACE) / 2) / sampleRate;
-  const bpfAlpha = Math.sin(bpfW0) / (2 * 1.2);
-  const bpfA0 = 1 + bpfAlpha;
-  const bpfCoeffs = {
-    b0: bpfAlpha / bpfA0, b1: 0, b2: -bpfAlpha / bpfA0,
-    a1: (-2 * Math.cos(bpfW0)) / bpfA0, a2: (1 - bpfAlpha) / bpfA0,
-  };
-  let bpfState = [0, 0, 0, 0]; // x1, x2, y1, y2
+  // Mark/space correlation detector
+  // Mix input with cos/sin reference oscillators at mark and space frequencies,
+  // then integrate over one bit period to get I/Q energy at each frequency.
+  const markPhaseInc = 2 * Math.PI * MARK / sampleRate;
+  const spacePhaseInc = 2 * Math.PI * SPACE / sampleRate;
+  let markPhase = 0;
+  let spacePhase = 0;
 
-  // Delay-and-multiply discriminator
-  // Delay = Fs / (2 * Δf) where Δf = space - mark = 1000 Hz
-  // At this delay: mark tone → negative product, space tone → positive product
-  const DELAY = Math.round(sampleRate / (2 * (SPACE - MARK)));
-  const delayBuf = new Float32Array(DELAY);
-  let delayIdx = 0;
-
-  // Moving-average LPF over half a bit period
-  // First null at 2*mark freq (2400 Hz), cleanly removing discriminator artifacts
-  const avgLen = Math.round(samplesPerBit / 2);
-  const avgBuf = new Float32Array(avgLen);
-  let avgIdx = 0;
-  let avgSum = 0;
+  // Sliding-window matched filter (1 bit period)
+  const corrLen = Math.round(samplesPerBit);
+  const markIBuf = new Float32Array(corrLen);
+  const markQBuf = new Float32Array(corrLen);
+  const spaceIBuf = new Float32Array(corrLen);
+  const spaceQBuf = new Float32Array(corrLen);
+  let corrIdx = 0;
+  let markISum = 0, markQSum = 0, spaceISum = 0, spaceQSum = 0;
 
   // Clock recovery (PLL)
-  let lastTone = 0;
+  let lastBit = 0;
   let bitPhase = 0;
-  const PLL_GAIN = 0.7;
+  const PLL_GAIN = 0.4;
 
   // NRZI state
   let prevSampledBit = 0;
@@ -93,13 +85,14 @@ function createDemodulator(sampleRate) {
   const frames = [];
 
   function resetState() {
-    bpfState = [0, 0, 0, 0];
-    delayBuf.fill(0);
-    delayIdx = 0;
-    avgBuf.fill(0);
-    avgIdx = 0;
-    avgSum = 0;
-    lastTone = 0;
+    markPhase = 0;
+    spacePhase = 0;
+    markIBuf.fill(0); markQBuf.fill(0);
+    spaceIBuf.fill(0); spaceQBuf.fill(0);
+    corrIdx = 0;
+    markISum = 0; markQSum = 0;
+    spaceISum = 0; spaceQSum = 0;
+    lastBit = 0;
     bitPhase = 0;
     prevSampledBit = 0;
     ones = 0;
@@ -119,31 +112,35 @@ function createDemodulator(sampleRate) {
       energyCount = 0;
     }
 
-    // Bandpass pre-filter
-    const c = bpfCoeffs;
-    const filtered = c.b0 * s + c.b1 * bpfState[0] + c.b2 * bpfState[1]
-                   - c.a1 * bpfState[2] - c.a2 * bpfState[3];
-    bpfState[1] = bpfState[0]; bpfState[0] = s;
-    bpfState[3] = bpfState[2]; bpfState[2] = filtered;
+    // Mix with mark/space reference oscillators
+    const mI = s * Math.cos(markPhase);
+    const mQ = s * Math.sin(markPhase);
+    const sI = s * Math.cos(spacePhase);
+    const sQ = s * Math.sin(spacePhase);
+    markPhase += markPhaseInc;
+    spacePhase += spacePhaseInc;
+    if (markPhase > 6.283185307) markPhase -= 6.283185307;
+    if (spacePhase > 6.283185307) spacePhase -= 6.283185307;
 
-    // Delay-and-multiply frequency discriminator
-    const delayed = delayBuf[delayIdx];
-    delayBuf[delayIdx] = filtered;
-    delayIdx = (delayIdx + 1) % DELAY;
+    // Sliding-window integration (matched filter over 1 bit period)
+    markISum += mI - markIBuf[corrIdx];
+    markQSum += mQ - markQBuf[corrIdx];
+    spaceISum += sI - spaceIBuf[corrIdx];
+    spaceQSum += sQ - spaceQBuf[corrIdx];
+    markIBuf[corrIdx] = mI;
+    markQBuf[corrIdx] = mQ;
+    spaceIBuf[corrIdx] = sI;
+    spaceQBuf[corrIdx] = sQ;
+    corrIdx = (corrIdx + 1) % corrLen;
 
-    const disc = filtered * delayed;
-
-    // Moving-average LPF
-    avgSum += disc - avgBuf[avgIdx];
-    avgBuf[avgIdx] = disc;
-    avgIdx = (avgIdx + 1) % avgLen;
-
-    // mark (1200 Hz) → negative, space (2200 Hz) → positive
-    const bit = avgSum < 0 ? 1 : 0;
+    // Compare mark vs space energy (I²+Q²)
+    const markEnergy = markISum * markISum + markQSum * markQSum;
+    const spaceEnergy = spaceISum * spaceISum + spaceQSum * spaceQSum;
+    const bit = markEnergy > spaceEnergy ? 1 : 0;
 
     // PLL clock recovery
-    if (bit !== lastTone) {
-      lastTone = bit;
+    if (bit !== lastBit) {
+      lastBit = bit;
       const error = bitPhase - samplesPerBit / 2;
       bitPhase -= PLL_GAIN * error;
     }
@@ -318,7 +315,117 @@ function parseAPRS(ax25) {
     else if (dt === "`" || dt === "'") type = "Mic-E";
   }
 
-  return { srcCall, destCall, path, info: infoStr, type };
+  const result = { srcCall, destCall, path, info: infoStr, type };
+
+  if (type === "Position") {
+    const pos = parseAprsPosition(infoStr);
+    if (pos) {
+      result.lat = pos.lat;
+      result.lon = pos.lon;
+      result.symbolTable = pos.symbolTable;
+      result.symbolCode = pos.symbolCode;
+    }
+  }
+
+  return result;
+}
+
+function parseAprsPosition(infoStr) {
+  if (infoStr.length < 1) return null;
+  const dt = infoStr[0];
+  let posStr;
+
+  if (dt === "!" || dt === "=") {
+    posStr = infoStr.substring(1);
+  } else if (dt === "/" || dt === "@") {
+    if (infoStr.length < 8) return null;
+    posStr = infoStr.substring(8);
+  } else {
+    return null;
+  }
+
+  if (posStr.length < 1) return null;
+
+  // Compressed format: first char is symbol table (not a digit)
+  // Layout: T YYYY XXXX C [cs T] — 10 chars minimum
+  const firstChar = posStr[0];
+  if (firstChar < "0" || firstChar > "9") {
+    return parseAprsCompressed(posStr);
+  }
+
+  // Uncompressed: DDMM.MMN/DDDMM.MMEsYYY...
+  // Need at least: 8 lat + 1 table + 9 lon + 1 code = 19 chars
+  if (posStr.length < 19) return null;
+
+  const latStr = posStr.substring(0, 8);  // DDMM.MMN
+  const symbolTable = posStr[8];
+  const lonStr = posStr.substring(9, 18); // DDDMM.MME
+  const symbolCode = posStr[18];
+
+  const lat = parseAprsLat(latStr);
+  const lon = parseAprsLon(lonStr);
+  if (lat === null || lon === null) return null;
+
+  return { lat, lon, symbolTable, symbolCode };
+}
+
+function parseAprsCompressed(posStr) {
+  // Compressed position: SymTable(1) Lat(4) Lon(4) SymCode(1) = 10 chars min
+  if (posStr.length < 10) return null;
+
+  const symbolTable = posStr[0];
+  const latChars = posStr.substring(1, 5);
+  const lonChars = posStr.substring(5, 9);
+  const symbolCode = posStr[9];
+
+  // Base-91 decode: each char value = (ASCII - 33)
+  let latVal = 0;
+  let lonVal = 0;
+  for (let i = 0; i < 4; i++) {
+    const lc = latChars.charCodeAt(i) - 33;
+    const xc = lonChars.charCodeAt(i) - 33;
+    if (lc < 0 || lc > 90 || xc < 0 || xc > 90) return null;
+    latVal = latVal * 91 + lc;
+    lonVal = lonVal * 91 + xc;
+  }
+
+  const lat = 90 - latVal / 380926;
+  const lon = -180 + lonVal / 190463;
+
+  if (lat < -90 || lat > 90 || lon < -180 || lon > 180) return null;
+
+  return {
+    lat: Math.round(lat * 1e6) / 1e6,
+    lon: Math.round(lon * 1e6) / 1e6,
+    symbolTable,
+    symbolCode,
+  };
+}
+
+function parseAprsLat(s) {
+  // DDMM.MMN
+  if (s.length < 8) return null;
+  const deg = parseInt(s.substring(0, 2), 10);
+  const min = parseFloat(s.substring(2, 7));
+  const ns = s[7];
+  if (isNaN(deg) || isNaN(min)) return null;
+  let lat = deg + min / 60;
+  if (ns === "S" || ns === "s") lat = -lat;
+  else if (ns !== "N" && ns !== "n") return null;
+  return Math.round(lat * 1e6) / 1e6;
+}
+
+function parseAprsLon(s) {
+  // DDDMM.MME
+  if (s.length < 9) return null;
+  const deg = parseInt(s.substring(0, 3), 10);
+  const min = parseFloat(s.substring(3, 8));
+  const ew = s[8];
+  if (isNaN(deg) || isNaN(min)) return null;
+  let lon = deg + min / 60;
+  if (ew === "W" || ew === "w") lon = -lon;
+  else if (ew !== "E" && ew !== "e") return null;
+  return Math.round(lon * 1e6) / 1e6;
 }
 
 function addAprsPacket(pkt) {
@@ -330,7 +437,22 @@ function addAprsPacket(pkt) {
   const now = new Date();
   const ts = now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
   const crcTag = pkt.crcOk ? "" : ' <span style="color:var(--accent-red);">[CRC]</span>';
-  row.innerHTML = `<span class="aprs-time">${ts}</span><span class="aprs-call">${pkt.srcCall}</span>&gt;${pkt.destCall}${pkt.path ? "," + pkt.path : ""}: <span title="${pkt.type}">${pkt.info}</span>${crcTag}`;
+  let symbolHtml = "";
+  if (pkt.symbolTable && pkt.symbolCode) {
+    const sheet = pkt.symbolTable === "/" ? 0 : 1;
+    const code = pkt.symbolCode.charCodeAt(0) - 33;
+    const col = code % 16;
+    const row2 = Math.floor(code / 16);
+    const bgX = -(col * 24);
+    const bgY = -(row2 * 24);
+    symbolHtml = `<span class="aprs-symbol" style="background-image:url('https://raw.githubusercontent.com/hessu/aprs-symbols/master/png/aprs-symbols-24-${sheet}.png');background-position:${bgX}px ${bgY}px"></span>`;
+  }
+  let posHtml = "";
+  if (pkt.lat != null && pkt.lon != null) {
+    const osmUrl = `https://www.openstreetmap.org/?mlat=${pkt.lat}&mlon=${pkt.lon}#map=15/${pkt.lat}/${pkt.lon}`;
+    posHtml = ` <a class="aprs-pos" href="${osmUrl}" target="_blank">${pkt.lat.toFixed(4)}, ${pkt.lon.toFixed(4)}</a>`;
+  }
+  row.innerHTML = `<span class="aprs-time">${ts}</span>${symbolHtml}<span class="aprs-call">${pkt.srcCall}</span>&gt;${pkt.destCall}${pkt.path ? "," + pkt.path : ""}: <span title="${pkt.type}">${pkt.info}</span>${posHtml}${crcTag}`;
   aprsPacketsEl.prepend(row);
   while (aprsPacketsEl.children.length > APRS_MAX_PACKETS) {
     aprsPacketsEl.removeChild(aprsPacketsEl.lastChild);
