@@ -135,7 +135,7 @@ button:disabled { opacity: 0.6; cursor: not-allowed; }
 small { color: var(--text-muted); }
 .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.25rem; }
 .title { font-size: 1.4rem; font-weight: 700; display: inline-flex; align-items: center; gap: 0.35rem; }
-.header-logo { height: 3rem; width: auto; flex-shrink: 0; filter: drop-shadow(0 4px 12px rgba(0,0,0,0.35)); }
+.header-logo { height: 5em; width: auto; flex-shrink: 0; filter: drop-shadow(0 4px 12px rgba(0,0,0,0.35)); }
 .subtitle { color: var(--text-muted); font-size: 0.95rem; }
 .subtitle a { color: var(--accent-green); text-decoration: none; }
 .subtitle a:hover { text-decoration: underline; }
