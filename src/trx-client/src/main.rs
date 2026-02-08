@@ -302,6 +302,11 @@ async fn async_init() -> DynResult<AppState> {
         set_audio_channels(rx_audio_tx.clone(), tx_audio_tx, stream_info_rx);
         set_decode_channel(decode_tx.clone());
 
+        info!(
+            "Audio enabled: connecting to {}, decode channel set",
+            audio_addr
+        );
+
         tokio::spawn(audio_client::run_audio_client(
             audio_addr,
             rx_audio_tx,
@@ -309,6 +314,8 @@ async fn async_init() -> DynResult<AppState> {
             stream_info_tx,
             decode_tx,
         ));
+    } else {
+        info!("Audio disabled in config, decode will not be available");
     }
 
     // Spawn frontends (skip appkit — it will be driven from main thread)

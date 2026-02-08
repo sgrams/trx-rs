@@ -98,8 +98,10 @@ pub async fn events(
 #[get("/decode")]
 pub async fn decode_events() -> Result<HttpResponse, Error> {
     let Some(decode_rx) = crate::server::audio::subscribe_decode() else {
+        tracing::warn!("/decode requested but decode channel not set (audio disabled?)");
         return Ok(HttpResponse::NotFound().body("decode not enabled"));
     };
+    tracing::info!("/decode SSE client connected");
 
     let decode_stream = futures_util::stream::unfold(decode_rx, |mut rx| async move {
         loop {
