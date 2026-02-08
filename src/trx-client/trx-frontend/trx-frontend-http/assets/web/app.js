@@ -682,7 +682,7 @@ function crc16ccitt(bytes) {
 }
 
 // AFSK Bell 202 Demodulator (1200 baud, mark=1200Hz, space=2200Hz)
-// Uses bandpass filter + envelope detection for robust non-coherent decoding.
+// Uses delay-and-multiply frequency discriminator for robust non-coherent decoding.
 function createDemodulator(sampleRate) {
   const BAUD = 1200;
   const MARK = 1200;
@@ -704,44 +704,35 @@ function createDemodulator(sampleRate) {
   const ENERGY_WINDOW = Math.round(sampleRate * 0.05);
   const ENERGY_THRESHOLD = 0.001;
 
-  // Biquad bandpass filter coefficients
-  function biquadBP(f0, Q) {
-    const w0 = 2 * Math.PI * f0 / sampleRate;
-    const alpha = Math.sin(w0) / (2 * Q);
-    const a0 = 1 + alpha;
-    return {
-      b0: alpha / a0, b1: 0, b2: -alpha / a0,
-      a1: (-2 * Math.cos(w0)) / a0, a2: (1 - alpha) / a0,
-    };
-  }
+  // Bandpass pre-filter: biquad centered at 1700 Hz (AFSK midpoint), Q=1.2
+  // Passes ~1000-2500 Hz, removes out-of-band noise
+  const bpfW0 = 2 * Math.PI * ((MARK + SPACE) / 2) / sampleRate;
+  const bpfAlpha = Math.sin(bpfW0) / (2 * 1.2);
+  const bpfA0 = 1 + bpfAlpha;
+  const bpfCoeffs = {
+    b0: bpfAlpha / bpfA0, b1: 0, b2: -bpfAlpha / bpfA0,
+    a1: (-2 * Math.cos(bpfW0)) / bpfA0, a2: (1 - bpfAlpha) / bpfA0,
+  };
+  let bpfState = [0, 0, 0, 0]; // x1, x2, y1, y2
 
-  // Q chosen for adequate bandwidth at 1200 baud:
-  // mark BPF Q≈6 → BW≈200Hz, space BPF Q≈6 → BW≈367Hz
-  // Two cascaded stages for sharper rolloff
-  const markCoeffs1 = biquadBP(MARK, 6);
-  const markCoeffs2 = biquadBP(MARK, 6);
-  const spaceCoeffs1 = biquadBP(SPACE, 6);
-  const spaceCoeffs2 = biquadBP(SPACE, 6);
+  // Delay-and-multiply discriminator
+  // Delay = Fs / (2 * Δf) where Δf = space - mark = 1000 Hz
+  // At this delay: mark tone → negative product, space tone → positive product
+  const DELAY = Math.round(sampleRate / (2 * (SPACE - MARK)));
+  const delayBuf = new Float32Array(DELAY);
+  let delayIdx = 0;
 
-  // Filter states [x1, x2, y1, y2]
-  let mf1 = [0,0,0,0], mf2 = [0,0,0,0];
-  let sf1 = [0,0,0,0], sf2 = [0,0,0,0];
-
-  function biquad(c, st, x) {
-    const y = c.b0 * x + c.b1 * st[0] + c.b2 * st[1] - c.a1 * st[2] - c.a2 * st[3];
-    st[1] = st[0]; st[0] = x;
-    st[3] = st[2]; st[2] = y;
-    return y;
-  }
-
-  // Envelope smoothing: simple IIR low-pass at ~1200 Hz (one bit period)
-  const envAlpha = 1 - Math.exp(-2 * Math.PI * BAUD / sampleRate);
-  let markEnv = 0, spaceEnv = 0;
+  // Moving-average LPF over half a bit period
+  // First null at 2*mark freq (2400 Hz), cleanly removing discriminator artifacts
+  const avgLen = Math.round(samplesPerBit / 2);
+  const avgBuf = new Float32Array(avgLen);
+  let avgIdx = 0;
+  let avgSum = 0;
 
   // Clock recovery (PLL)
   let lastTone = 0;
   let bitPhase = 0;
-  const PLL_GAIN = 0.7; // correction factor (0=no correction, 1=hard reset)
+  const PLL_GAIN = 0.7;
 
   // NRZI state
   let prevSampledBit = 0;
@@ -754,9 +745,12 @@ function createDemodulator(sampleRate) {
   const frames = [];
 
   function resetState() {
-    mf1 = [0,0,0,0]; mf2 = [0,0,0,0];
-    sf1 = [0,0,0,0]; sf2 = [0,0,0,0];
-    markEnv = spaceEnv = 0;
+    bpfState = [0, 0, 0, 0];
+    delayBuf.fill(0);
+    delayIdx = 0;
+    avgBuf.fill(0);
+    avgIdx = 0;
+    avgSum = 0;
     lastTone = 0;
     bitPhase = 0;
     prevSampledBit = 0;
@@ -777,20 +771,31 @@ function createDemodulator(sampleRate) {
       energyCount = 0;
     }
 
-    // Bandpass filter: two cascaded biquads per tone
-    const markOut = biquad(markCoeffs2, mf2, biquad(markCoeffs1, mf1, s));
-    const spaceOut = biquad(spaceCoeffs2, sf2, biquad(spaceCoeffs1, sf1, s));
+    // Bandpass pre-filter
+    const c = bpfCoeffs;
+    const filtered = c.b0 * s + c.b1 * bpfState[0] + c.b2 * bpfState[1]
+                   - c.a1 * bpfState[2] - c.a2 * bpfState[3];
+    bpfState[1] = bpfState[0]; bpfState[0] = s;
+    bpfState[3] = bpfState[2]; bpfState[2] = filtered;
 
-    // Envelope detection: squared magnitude + IIR smoothing
-    markEnv += envAlpha * (markOut * markOut - markEnv);
-    spaceEnv += envAlpha * (spaceOut * spaceOut - spaceEnv);
+    // Delay-and-multiply frequency discriminator
+    const delayed = delayBuf[delayIdx];
+    delayBuf[delayIdx] = filtered;
+    delayIdx = (delayIdx + 1) % DELAY;
 
-    const bit = markEnv > spaceEnv ? 1 : 0;
+    const disc = filtered * delayed;
+
+    // Moving-average LPF
+    avgSum += disc - avgBuf[avgIdx];
+    avgBuf[avgIdx] = disc;
+    avgIdx = (avgIdx + 1) % avgLen;
+
+    // mark (1200 Hz) → negative, space (2200 Hz) → positive
+    const bit = avgSum < 0 ? 1 : 0;
 
     // PLL clock recovery
     if (bit !== lastTone) {
       lastTone = bit;
-      // Phase error: distance from ideal center (samplesPerBit/2)
       const error = bitPhase - samplesPerBit / 2;
       bitPhase -= PLL_GAIN * error;
     }
