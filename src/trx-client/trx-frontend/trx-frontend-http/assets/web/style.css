@@ -19,7 +19,7 @@ body { font-family: sans-serif; margin: 0; min-height: 100vh; display: flex; ali
 .label { color: var(--text-muted); font-size: 0.9rem; margin-bottom: 6px; display: block; }
 .status { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1.1rem 1rem; }
 input.status-input, select.status-input { width: 100%; padding: 0.45rem 0.5rem; font-size: 1rem; border: 1px solid var(--border-light); border-radius: 6px; background: var(--input-bg); color: var(--text); }
-#freq { font-family: 'DSEG14 Classic', monospace; font-size: 2rem; padding: 0.5rem 0.6rem; letter-spacing: 0.05em; }
+#freq { font-family: 'DSEG14 Classic', monospace; font-size: 2rem; padding: 0.5rem 0.6rem; letter-spacing: 0.05em; text-align: center; }
 .controls-row {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -140,6 +140,8 @@ small { color: var(--text-muted); }
 .logo-bg { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; pointer-events: none; opacity: 0.2; }
 .logo-bg img { max-width: 50%; max-height: 50%; filter: drop-shadow(0 4px 12px rgba(0,0,0,0.35)); }
 .subtitle { color: var(--text-muted); font-size: 0.95rem; }
+.subtitle a { color: var(--accent-green); text-decoration: none; }
+.subtitle a:hover { text-decoration: underline; }
 .band-tag { display: inline-block; padding: 2px 6px; border-radius: 6px; background: var(--btn-bg); color: var(--text); font-size: 0.82rem; border: 1px solid var(--border-light); margin-left: 6px; }
 .signal { display: flex; gap: 0.6rem; align-items: center; }
 .signal-bar { flex: 1 1 auto; height: 12px; border-radius: 999px; background: var(--btn-bg); border: 1px solid var(--border-light); overflow: hidden; }

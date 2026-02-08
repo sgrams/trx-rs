@@ -36,6 +36,8 @@ let lastFreqHz = null;
 let jogStep = 1000; // default 1 kHz
 let jogAngle = 0;
 let lastClientCount = null;
+let lastLocked = false;
+const originalTitle = document.title;
 
 function readyText() {
   return lastClientCount !== null ? `Ready \u00b7 ${lastClientCount} user${lastClientCount !== 1 ? "s" : ""}` : "Ready";
@@ -155,10 +157,15 @@ function render(update) {
   }
   // Server subtitle: "trx-server vX.Y.Z hosted by CALL"
   if (update.server_version || update.server_callsign) {
-    let text = "trx-server";
-    if (update.server_version) text += ` v${update.server_version}`;
-    if (update.server_callsign) text += ` hosted by ${update.server_callsign}`;
-    serverSubtitle.textContent = text;
+    let parts = "trx-server";
+    if (update.server_version) parts += ` v${update.server_version}`;
+    if (update.server_callsign) {
+      const cs = update.server_callsign;
+      serverSubtitle.innerHTML = `${parts} hosted by <a href="https://www.qrzcq.com/call/${encodeURIComponent(cs)}" target="_blank" rel="noopener">${cs}</a>`;
+      document.title = `${cs} - ${originalTitle}`;
+    } else {
+      serverSubtitle.textContent = parts;
+    }
   }
   setDisabled(false);
   if (update.info && update.info.capabilities && Array.isArray(update.info.capabilities.supported_modes)) {
@@ -280,8 +287,8 @@ function render(update) {
 
   if (typeof update.clients === "number") lastClientCount = update.clients;
   powerHint.textContent = readyText();
-  const locked = update.status && update.status.lock === true;
-  lockBtn.textContent = locked ? "Unlock" : "Lock";
+  lastLocked = update.status && update.status.lock === true;
+  lockBtn.textContent = lastLocked ? "Unlock" : "Lock";
 
   const tx = update.status && update.status.tx ? update.status.tx : null;
   txMeters.style.display = "";
@@ -462,6 +469,7 @@ const jogUpBtn = document.getElementById("jog-up");
 const jogStepEl = document.getElementById("jog-step");
 
 async function jogFreq(direction) {
+  if (lastLocked) { showHint("Locked", 1500); return; }
   if (lastFreqHz === null) return;
   const newHz = lastFreqHz + direction * jogStep;
   if (!freqAllowed(newHz)) {
