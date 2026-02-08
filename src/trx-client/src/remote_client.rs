@@ -182,6 +182,8 @@ pub fn state_from_snapshot(snapshot: trx_core::RigSnapshot) -> RigState {
         },
         server_callsign: snapshot.server_callsign,
         server_version: snapshot.server_version,
+        server_latitude: snapshot.server_latitude,
+        server_longitude: snapshot.server_longitude,
     }
 }
 
