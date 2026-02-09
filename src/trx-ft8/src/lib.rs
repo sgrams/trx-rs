@@ -109,7 +109,7 @@ impl Ft8Decoder {
                 return Vec::new();
             }
             let mut raw = vec![Ft8DecodeResultRaw {
-                text: [0; 64],
+                text: [0; FTX_MAX_MESSAGE_LENGTH],
                 snr_db: 0.0,
                 dt_s: 0.0,
                 freq_hz: 0.0,
