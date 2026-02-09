@@ -50,6 +50,10 @@ pub struct Ft8Decoder {
     sample_rate: u32,
 }
 
+// SAFETY: Ft8Decoder owns its C-side state and is not shared across threads.
+// It is only moved into a single task, so Send is safe.
+unsafe impl Send for Ft8Decoder {}
+
 impl Ft8Decoder {
     pub fn new(sample_rate: u32) -> Result<Self, String> {
         unsafe {
@@ -112,7 +116,7 @@ impl Ft8Decoder {
             let count = count.max(0) as usize;
             let mut out = Vec::with_capacity(count);
             for item in raw.into_iter().take(count) {
-                let text = unsafe { CStr::from_ptr(item.text.as_ptr()) }
+                let text = CStr::from_ptr(item.text.as_ptr())
                     .to_string_lossy()
                     .to_string();
                 out.push(Ft8DecodeResult {
