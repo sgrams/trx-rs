@@ -148,11 +148,13 @@ pub fn clear_ft8_history() {
 
 /// Set the decode broadcast channel from the client main.
 pub fn set_decode_channel(tx: broadcast::Sender<DecodedMessage>) {
-    let mut ch = decode_channel()
-        .lock()
-        .expect("decode channel mutex poisoned");
-    *ch = Some(tx);
-    start_decode_history_collector();
+    {
+        let mut ch = decode_channel()
+            .lock()
+            .expect("decode channel mutex poisoned");
+        *ch = Some(tx.clone());
+    }
+    start_decode_history_collector(tx);
 }
 
 /// Subscribe to the decode broadcast channel, if available.
@@ -163,7 +165,7 @@ pub fn subscribe_decode() -> Option<broadcast::Receiver<DecodedMessage>> {
     ch.as_ref().map(|tx| tx.subscribe())
 }
 
-fn start_decode_history_collector() {
+fn start_decode_history_collector(tx: broadcast::Sender<DecodedMessage>) {
     static STARTED: OnceLock<Mutex<bool>> = OnceLock::new();
     let started = STARTED.get_or_init(|| Mutex::new(false));
     let mut started_guard = started.lock().expect("decode history start mutex poisoned");
@@ -171,13 +173,6 @@ fn start_decode_history_collector() {
         return;
     }
     *started_guard = true;
-
-    let ch = decode_channel()
-        .lock()
-        .expect("decode channel mutex poisoned");
-    let Some(tx) = ch.as_ref().cloned() else {
-        return;
-    };
 
     tokio::spawn(async move {
         let mut rx = tx.subscribe();
