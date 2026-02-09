@@ -10,6 +10,8 @@ fn main() {
         .include(format!("{base}/common"))
         .include(format!("{base}/fft"))
         .include(format!("{base}/ft8"))
+        .define("_GNU_SOURCE", None)
+        .define("_POSIX_C_SOURCE", "200809L")
         .file("src/ft8_wrapper.c")
         .file(format!("{base}/common/monitor.c"))
         .file(format!("{base}/fft/kiss_fft.c"))
