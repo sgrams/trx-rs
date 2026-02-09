@@ -233,6 +233,9 @@ small { color: var(--text-muted); }
 .ft8-dt { color: var(--text-muted); min-width: 3.6rem; text-align: right; }
 .ft8-freq { color: var(--accent-green); min-width: 4.6rem; text-align: right; }
 .ft8-msg { flex: 1; }
+.ft8-locator { color: var(--accent-green); background: rgba(0, 209, 127, 0.12); border: 1px solid rgba(0, 209, 127, 0.25); border-radius: 4px; padding: 0 0.2rem; margin: 0 0.1rem; font-weight: 600; }
+.map-controls { display: flex; gap: 1rem; align-items: center; margin-bottom: 0.6rem; color: var(--text-muted); font-size: 0.82rem; }
+.map-controls input[type="checkbox"] { margin-right: 0.3rem; }
 
 .cw-controls { display: flex; gap: 0.6rem; align-items: center; margin-bottom: 0.75rem; }
 .cw-config { display: flex; gap: 1rem; align-items: center; flex-wrap: wrap; margin-bottom: 0.75rem; }

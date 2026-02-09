@@ -704,6 +704,8 @@ connect();
 let aprsMap = null;
 let aprsMapReceiverMarker = null;
 const stationMarkers = new Map();
+const mapMarkers = new Set();
+const mapFilter = { aprs: true, ft8: true };
 
 function initAprsMap() {
   if (aprsMap) return;
@@ -725,6 +727,21 @@ function initAprsMap() {
     aprsMapReceiverMarker = L.circleMarker([serverLat, serverLon], {
       radius: 8, color: "#3388ff", fillColor: "#3388ff", fillOpacity: 0.8
     }).addTo(aprsMap).bindPopup(popupText);
+  }
+
+  const aprsFilter = document.getElementById("map-filter-aprs");
+  const ft8Filter = document.getElementById("map-filter-ft8");
+  if (aprsFilter) {
+    aprsFilter.addEventListener("change", () => {
+      mapFilter.aprs = aprsFilter.checked;
+      applyMapFilter();
+    });
+  }
+  if (ft8Filter) {
+    ft8Filter.addEventListener("change", () => {
+      mapFilter.ft8 = ft8Filter.checked;
+      applyMapFilter();
+    });
   }
 }
 
@@ -752,8 +769,8 @@ window.aprsMapAddStation = function(call, lat, lon, info, symbolTable, symbolCod
   const popupContent = `<b>${call}</b><br>${info}`;
   const existing = stationMarkers.get(call);
   if (existing) {
-    existing.setLatLng([lat, lon]);
-    existing.setPopupContent(popupContent);
+    existing.marker.setLatLng([lat, lon]);
+    existing.marker.setPopupContent(popupContent);
   } else {
     const icon = aprsSymbolIcon(symbolTable, symbolCode);
     const marker = icon
@@ -761,8 +778,53 @@ window.aprsMapAddStation = function(call, lat, lon, info, symbolTable, symbolCod
       : L.circleMarker([lat, lon], {
           radius: 6, color: "#00d17f", fillColor: "#00d17f", fillOpacity: 0.8
         }).addTo(aprsMap).bindPopup(popupContent);
-    stationMarkers.set(call, marker);
+    marker.__trxType = "aprs";
+    stationMarkers.set(call, { marker, type: "aprs" });
+    mapMarkers.add(marker);
+    applyMapFilter();
   }
+};
+
+function maidenheadToLatLon(grid) {
+  if (!grid || grid.length < 4) return null;
+  const g = grid.toUpperCase();
+  const A = "A".charCodeAt(0);
+  const lon = (g.charCodeAt(0) - A) * 20 - 180 + (parseInt(g[2], 10) * 2) + 1;
+  const lat = (g.charCodeAt(1) - A) * 10 - 90 + (parseInt(g[3], 10) * 1) + 0.5;
+  let lonAdj = lon;
+  let latAdj = lat;
+  if (g.length >= 6) {
+    const subLon = (g.charCodeAt(4) - A) * (5 / 60);
+    const subLat = (g.charCodeAt(5) - A) * (2.5 / 60);
+    lonAdj += subLon - (5 / 120);
+    latAdj += subLat - (2.5 / 120);
+  }
+  return { lat: latAdj, lon: lonAdj };
+}
+
+function applyMapFilter() {
+  if (!aprsMap) return;
+  mapMarkers.forEach((marker) => {
+    const type = marker.__trxType;
+    const visible = (type === "aprs" && mapFilter.aprs) || (type === "ft8" && mapFilter.ft8);
+    const onMap = aprsMap.hasLayer(marker);
+    if (visible && !onMap) marker.addTo(aprsMap);
+    if (!visible && onMap) marker.removeFrom(aprsMap);
+  });
+}
+
+window.ft8MapAddLocator = function(message, grid) {
+  if (!aprsMap) initAprsMap();
+  if (!aprsMap) return;
+  const loc = maidenheadToLatLon(grid);
+  if (!loc) return;
+  const popupContent = `<b>${grid}</b><br>${message}`;
+  const marker = L.circleMarker([loc.lat, loc.lon], {
+    radius: 5, color: "#ffb020", fillColor: "#ffb020", fillOpacity: 0.85
+  }).addTo(aprsMap).bindPopup(popupContent);
+  marker.__trxType = "ft8";
+  mapMarkers.add(marker);
+  applyMapFilter();
 };
 
 // --- Sub-tab navigation (Plugins tab) ---
