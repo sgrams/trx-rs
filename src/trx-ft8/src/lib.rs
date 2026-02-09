@@ -12,6 +12,7 @@ const TIME_OSR: i32 = 2;
 const FREQ_OSR: i32 = 2;
 
 #[repr(C)]
+#[derive(Clone, Copy)]
 struct Ft8DecodeResultRaw {
     text: [libc::c_char; 64],
     snr_db: c_float,
