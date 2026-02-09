@@ -29,17 +29,27 @@ function addFt8Message(msg) {
 }
 
 function renderFt8Message(message) {
-  const gridRegex = /(^|\\s)([A-R]{2}\\d{2}(?:[A-X]{2})?)(?=\\s|$)/gi;
-  return message.replace(gridRegex, (match, lead, grid) => {
-    const safeGrid = grid.toUpperCase();
-    return `${lead}<span class="ft8-locator">[${safeGrid}]</span>`;
-  });
+  const parts = message.split(/(\\s+)/);
+  return parts.map((part) => {
+    const token = part.trim();
+    if (!token) return part;
+    const grid = token.toUpperCase();
+    if (/^[A-R]{2}\\d{2}(?:[A-X]{2})?$/.test(grid)) {
+      return part.replace(token, `<span class="ft8-locator">[${grid}]</span>`);
+    }
+    return part;
+  }).join("");
 }
 
 function extractFirstGrid(message) {
-  const gridRegex = /(^|\\s)([A-R]{2}\\d{2}(?:[A-X]{2})?)(?=\\s|$)/i;
-  const match = message.match(gridRegex);
-  return match ? match[2].toUpperCase() : null;
+  const parts = message.split(/\\s+/);
+  for (const part of parts) {
+    const grid = part.toUpperCase();
+    if (/^[A-R]{2}\\d{2}(?:[A-X]{2})?$/.test(grid)) {
+      return grid;
+    }
+  }
+  return null;
 }
 
 document.getElementById("ft8-decode-toggle-btn").addEventListener("click", async () => {
