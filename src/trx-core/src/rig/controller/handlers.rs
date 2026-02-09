@@ -504,6 +504,9 @@ pub fn command_from_rig_command(cmd: RigCommand) -> Box<dyn RigCommandHandler> {
         // map to GetSnapshot as a safe fallback.
         RigCommand::SetAprsDecodeEnabled(_)
         | RigCommand::SetCwDecodeEnabled(_)
+        | RigCommand::SetCwAuto(_)
+        | RigCommand::SetCwWpm(_)
+        | RigCommand::SetCwToneHz(_)
         | RigCommand::ResetAprsDecoder
         | RigCommand::ResetCwDecoder => Box::new(GetSnapshotCommand),
     }
