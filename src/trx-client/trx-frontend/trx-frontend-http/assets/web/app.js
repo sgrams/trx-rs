@@ -70,6 +70,8 @@ let supportedModes = [];
 let supportedBands = [];
 let freqDirty = false;
 let modeDirty = false;
+let aprsAutoToggleInFlight = false;
+let cwAutoToggleInFlight = false;
 let initialized = false;
 let lastEventAt = Date.now();
 let es;
@@ -245,6 +247,24 @@ function render(update) {
     const mode = normalizeMode(update.status.mode);
     modeEl.value = mode ? mode.toUpperCase() : "";
   }
+  const currentMode = update.status && update.status.mode ? normalizeMode(update.status.mode) : "";
+  const modeUpper = currentMode ? currentMode.toUpperCase() : "";
+  const aprsDesired = modeUpper === "PKT";
+  const cwDesired = modeUpper === "CW" || modeUpper === "CWR";
+  const aprsEnabled = !!update.aprs_decode_enabled;
+  const cwEnabled = !!update.cw_decode_enabled;
+  if (aprsDesired !== aprsEnabled && !aprsAutoToggleInFlight) {
+    aprsAutoToggleInFlight = true;
+    postPath("/toggle_aprs_decode")
+      .catch((e) => console.error("APRS auto-toggle failed", e))
+      .finally(() => { aprsAutoToggleInFlight = false; });
+  }
+  if (cwDesired !== cwEnabled && !cwAutoToggleInFlight) {
+    cwAutoToggleInFlight = true;
+    postPath("/toggle_cw_decode")
+      .catch((e) => console.error("CW auto-toggle failed", e))
+      .finally(() => { cwAutoToggleInFlight = false; });
+  }
   if (update.status && typeof update.status.tx_en === "boolean") {
     lastTxEn = update.status.tx_en;
     pttBtn.textContent = update.status.tx_en ? "PTT On" : "PTT Off";
@@ -362,24 +382,6 @@ function render(update) {
   if (typeof update.clients === "number") {
     document.getElementById("about-clients").textContent = update.clients;
   }
-  // Decoder toggle buttons
-  const aprsToggleBtn = document.getElementById("aprs-decode-toggle-btn");
-  const cwToggleBtn = document.getElementById("cw-decode-toggle-btn");
-  if (aprsToggleBtn) {
-    const aprsOn = !!update.aprs_decode_enabled;
-    aprsToggleBtn.textContent = aprsOn ? "Disable APRS" : "Enable APRS";
-    aprsToggleBtn.style.borderColor = aprsOn ? "#00d17f" : "";
-    aprsToggleBtn.style.color = aprsOn ? "#00d17f" : "";
-    window.aprsDecodeEnabled = aprsOn;
-  }
-  if (cwToggleBtn) {
-    const cwOn = !!update.cw_decode_enabled;
-    cwToggleBtn.textContent = cwOn ? "Disable CW" : "Enable CW";
-    cwToggleBtn.style.borderColor = cwOn ? "#00d17f" : "";
-    cwToggleBtn.style.color = cwOn ? "#00d17f" : "";
-    window.cwDecodeEnabled = cwOn;
-  }
-
   powerHint.textContent = readyText();
   lastLocked = update.status && update.status.lock === true;
   lockBtn.textContent = lastLocked ? "Unlock" : "Lock";

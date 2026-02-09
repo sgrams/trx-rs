@@ -72,10 +72,6 @@ function addAprsPacket(pkt) {
   }
 }
 
-document.getElementById("aprs-decode-toggle-btn").addEventListener("click", async () => {
-  try { await postPath("/toggle_aprs_decode"); } catch (e) { console.error("APRS toggle failed", e); }
-});
-
 document.getElementById("aprs-clear-btn").addEventListener("click", async () => {
   aprsPacketsEl.innerHTML = "";
   aprsPacketHistory = [];

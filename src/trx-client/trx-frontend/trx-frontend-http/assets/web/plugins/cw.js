@@ -6,10 +6,6 @@ const cwToneInput = document.getElementById("cw-tone");
 const cwSignalIndicator = document.getElementById("cw-signal-indicator");
 const CW_MAX_LINES = 200;
 
-document.getElementById("cw-decode-toggle-btn").addEventListener("click", async () => {
-  try { await postPath("/toggle_cw_decode"); } catch (e) { console.error("CW toggle failed", e); }
-});
-
 document.getElementById("cw-clear-btn").addEventListener("click", async () => {
   cwOutputEl.innerHTML = "";
   try { await postPath("/clear_cw_decode"); } catch (e) { console.error("CW clear failed", e); }
