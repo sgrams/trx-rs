@@ -694,15 +694,6 @@ pub async fn run_ft8_decoder(
                                         Ok(dur) => dur.as_millis() as i64,
                                         Err(_) => 0,
                                     };
-                                    let base_hz = match &state.status.freq.hz {
-                                        hz => *hz as f32,
-                                    };
-                                    info!(
-                                        "FT8 decode: base_hz={} offset_hz={} msg=\"{}\"",
-                                        base_hz,
-                                        res.freq_hz,
-                                        res.text
-                                    );
                                     let msg = Ft8Message {
                                         ts_ms,
                                         snr_db: res.snr_db,

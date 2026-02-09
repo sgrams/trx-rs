@@ -11,10 +11,12 @@ const F_MAX_HZ: f32 = 3000.0;
 const TIME_OSR: i32 = 2;
 const FREQ_OSR: i32 = 2;
 
+const FTX_MAX_MESSAGE_LENGTH: usize = 35;
+
 #[repr(C)]
 #[derive(Clone, Copy)]
 struct Ft8DecodeResultRaw {
-    text: [libc::c_char; 64],
+    text: [libc::c_char; FTX_MAX_MESSAGE_LENGTH],
     snr_db: c_float,
     dt_s: c_float,
     freq_hz: c_float,
