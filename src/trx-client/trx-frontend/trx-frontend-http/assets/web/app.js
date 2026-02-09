@@ -245,6 +245,15 @@ function render(update) {
     const mode = normalizeMode(update.status.mode);
     modeEl.value = mode ? mode.toUpperCase() : "";
   }
+  const modeUpper = update.status && update.status.mode ? normalizeMode(update.status.mode).toUpperCase() : "";
+  const aprsStatus = document.getElementById("aprs-status");
+  const cwStatus = document.getElementById("cw-status");
+  if (aprsStatus && modeUpper !== "PKT" && aprsStatus.textContent === "Receiving") {
+    aprsStatus.textContent = "Connected, listening for packets";
+  }
+  if (cwStatus && modeUpper !== "CW" && modeUpper !== "CWR" && cwStatus.textContent === "Receiving") {
+    cwStatus.textContent = "Connected, listening for packets";
+  }
   if (update.status && typeof update.status.tx_en === "boolean") {
     lastTxEn = update.status.tx_en;
     pttBtn.textContent = update.status.tx_en ? "PTT On" : "PTT Off";
