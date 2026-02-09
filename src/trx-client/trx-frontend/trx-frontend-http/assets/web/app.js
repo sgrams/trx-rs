@@ -70,8 +70,6 @@ let supportedModes = [];
 let supportedBands = [];
 let freqDirty = false;
 let modeDirty = false;
-let aprsAutoToggleInFlight = false;
-let cwAutoToggleInFlight = false;
 let initialized = false;
 let lastEventAt = Date.now();
 let es;
@@ -246,24 +244,6 @@ function render(update) {
   if (!modeDirty && update.status && update.status.mode) {
     const mode = normalizeMode(update.status.mode);
     modeEl.value = mode ? mode.toUpperCase() : "";
-  }
-  const currentMode = update.status && update.status.mode ? normalizeMode(update.status.mode) : "";
-  const modeUpper = currentMode ? currentMode.toUpperCase() : "";
-  const aprsDesired = modeUpper === "PKT";
-  const cwDesired = modeUpper === "CW" || modeUpper === "CWR";
-  const aprsEnabled = !!update.aprs_decode_enabled;
-  const cwEnabled = !!update.cw_decode_enabled;
-  if (aprsDesired !== aprsEnabled && !aprsAutoToggleInFlight) {
-    aprsAutoToggleInFlight = true;
-    postPath("/toggle_aprs_decode")
-      .catch((e) => console.error("APRS auto-toggle failed", e))
-      .finally(() => { aprsAutoToggleInFlight = false; });
-  }
-  if (cwDesired !== cwEnabled && !cwAutoToggleInFlight) {
-    cwAutoToggleInFlight = true;
-    postPath("/toggle_cw_decode")
-      .catch((e) => console.error("CW auto-toggle failed", e))
-      .finally(() => { cwAutoToggleInFlight = false; });
   }
   if (update.status && typeof update.status.tx_en === "boolean") {
     lastTxEn = update.status.tx_en;

@@ -22,6 +22,7 @@ pub struct AprsPacket {
     pub dest_call: String,
     pub path: String,
     pub info: String,
+    pub info_bytes: Vec<u8>,
     pub packet_type: String,
     pub crc_ok: bool,
     #[serde(skip_serializing_if = "Option::is_none")]

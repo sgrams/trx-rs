@@ -421,6 +421,7 @@ fn parse_aprs(ax25: &Ax25Frame) -> AprsPacket {
         dest_call,
         path,
         info: info_str,
+        info_bytes: info.to_vec(),
         packet_type: packet_type.to_string(),
         crc_ok: false, // set by caller
         lat,

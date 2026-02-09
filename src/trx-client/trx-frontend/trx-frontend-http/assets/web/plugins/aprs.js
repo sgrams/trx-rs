@@ -6,7 +6,27 @@ const APRS_MAX_PACKETS = 100;
 // Persistent packet history
 let aprsPacketHistory = loadSetting("aprsPackets", []);
 
-function escapeAprsInfo(str) {
+function renderAprsInfo(pkt) {
+  const bytes = Array.isArray(pkt.info_bytes) ? pkt.info_bytes : null;
+  if (bytes && bytes.length > 0) {
+    let out = "";
+    for (let i = 0; i < bytes.length; i++) {
+      const b = bytes[i];
+      if (b >= 0x20 && b <= 0x7e) {
+        const ch = String.fromCharCode(b);
+        if (ch === "<") out += "&lt;";
+        else if (ch === ">") out += "&gt;";
+        else if (ch === "&") out += "&amp;";
+        else if (ch === '"') out += "&quot;";
+        else out += ch;
+      } else {
+        const hex = b.toString(16).toUpperCase().padStart(2, "0");
+        out += `<span class="aprs-byte">0x${hex}</span>`;
+      }
+    }
+    return out;
+  }
+  const str = pkt.info || "";
   let out = "";
   for (let i = 0; i < str.length; i++) {
     const code = str.charCodeAt(i);
@@ -19,7 +39,7 @@ function escapeAprsInfo(str) {
       else out += ch;
     } else {
       const hex = code.toString(16).toUpperCase().padStart(2, "0");
-      out += `<span style="color:var(--accent-yellow);">[0x${hex}]</span>`;
+      out += `<span class="aprs-byte">0x${hex}</span>`;
     }
   }
   return out;
@@ -46,7 +66,7 @@ function renderAprsRow(pkt) {
     const osmUrl = `https://www.openstreetmap.org/?mlat=${pkt.lat}&mlon=${pkt.lon}#map=15/${pkt.lat}/${pkt.lon}`;
     posHtml = ` <a class="aprs-pos" href="${osmUrl}" target="_blank">${pkt.lat.toFixed(4)}, ${pkt.lon.toFixed(4)}</a>`;
   }
-  row.innerHTML = `<span class="aprs-time">${ts}</span>${symbolHtml}<span class="aprs-call">${pkt.srcCall}</span>&gt;${pkt.destCall}${pkt.path ? "," + pkt.path : ""}: <span title="${pkt.type}">${escapeAprsInfo(pkt.info)}</span>${posHtml}${crcTag}`;
+  row.innerHTML = `<span class="aprs-time">${ts}</span>${symbolHtml}<span class="aprs-call">${pkt.srcCall}</span>&gt;${pkt.destCall}${pkt.path ? "," + pkt.path : ""}: <span title="${pkt.type}">${renderAprsInfo(pkt)}</span>${posHtml}${crcTag}`;
   return row;
 }
 
@@ -96,6 +116,7 @@ window.onServerAprs = function(pkt) {
     destCall: pkt.dest_call,
     path: pkt.path,
     info: pkt.info,
+    info_bytes: pkt.info_bytes,
     type: pkt.packet_type,
     crcOk: pkt.crc_ok,
     lat: pkt.lat,

@@ -328,8 +328,7 @@ pub async fn run_aprs_decoder(
             Ok(frame) => {
                 let state = state_rx.borrow().clone();
                 let mode = &state.status.mode;
-                let enabled = state.aprs_decode_enabled;
-                let active = enabled && matches!(mode, RigMode::PKT);
+                let active = matches!(mode, RigMode::PKT);
 
                 // Check for reset request
                 if state.aprs_decode_reset_seq != last_reset_seq {
@@ -390,8 +389,7 @@ pub async fn run_cw_decoder(
             Ok(frame) => {
                 let state = state_rx.borrow().clone();
                 let mode = &state.status.mode;
-                let enabled = state.cw_decode_enabled;
-                let active = enabled && matches!(mode, RigMode::CW | RigMode::CWR);
+                let active = matches!(mode, RigMode::CW | RigMode::CWR);
 
                 // Check for reset request
                 if state.cw_decode_reset_seq != last_reset_seq {
