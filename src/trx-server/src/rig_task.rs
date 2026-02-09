@@ -23,6 +23,7 @@ use trx_core::rig::state::{RigMode, RigSnapshot, RigState};
 use trx_core::rig::{RigCat, RigControl, RigRxStatus, RigStatus, RigTxStatus};
 use trx_core::{DynResult, RigError, RigResult};
 
+use crate::audio;
 use crate::error::is_invalid_bcd_error;
 
 /// Configuration for the rig task.
@@ -360,6 +361,7 @@ async fn process_command(
             return snapshot_from(ctx.state);
         }
         RigCommand::ResetAprsDecoder => {
+            audio::clear_aprs_history();
             ctx.state.aprs_decode_reset_seq += 1;
             let _ = ctx.state_tx.send(ctx.state.clone());
             return snapshot_from(ctx.state);
