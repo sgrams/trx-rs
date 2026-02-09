@@ -70,8 +70,8 @@ static void hashtable_add(const char* callsign, uint32_t hash)
 
 static bool hashtable_lookup(ftx_callsign_hash_type_t hash_type, uint32_t hash, char* callsign)
 {
-    int hash_shift = (hash_type == FTX_CALLSIGN_HASH_22) ? 0 : (hash_type == FTX_CALLSIGN_HASH_12) ? 10 : 12;
-    uint32_t mask = (hash_type == FTX_CALLSIGN_HASH_22) ? 0x3FFFFFu : (hash_type == FTX_CALLSIGN_HASH_12) ? 0xFFFu : 0x3FFu;
+    int hash_shift = (hash_type == FTX_CALLSIGN_HASH_22_BITS) ? 0 : (hash_type == FTX_CALLSIGN_HASH_12_BITS) ? 10 : 12;
+    uint32_t mask = (hash_type == FTX_CALLSIGN_HASH_22_BITS) ? 0x3FFFFFu : (hash_type == FTX_CALLSIGN_HASH_12_BITS) ? 0xFFFu : 0x3FFu;
 
     int idx_hash = hash % CALLSIGN_HASHTABLE_SIZE;
     while (callsign_hashtable[idx_hash].callsign[0] != '\0')
