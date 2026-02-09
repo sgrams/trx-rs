@@ -13,7 +13,9 @@ function renderFt8Row(msg) {
   row.className = "ft8-row";
   const snr = Number.isFinite(msg.snr_db) ? msg.snr_db.toFixed(1) : "--";
   const dt = Number.isFinite(msg.dt_s) ? msg.dt_s.toFixed(2) : "--";
-  const freq = Number.isFinite(msg.freq_hz) ? msg.freq_hz.toFixed(0) : "--";
+  const baseHz = Number.isFinite(window.ft8BaseHz) ? window.ft8BaseHz : null;
+  const rfHz = Number.isFinite(msg.freq_hz) && Number.isFinite(baseHz) ? (baseHz + msg.freq_hz) : null;
+  const freq = Number.isFinite(rfHz) ? rfHz.toFixed(0) : "--";
   row.innerHTML = `<span class="ft8-time">${fmtTime(msg.ts_ms)}</span><span class="ft8-snr">${snr}</span><span class="ft8-dt">${dt}</span><span class="ft8-freq">${freq}</span><span class="ft8-msg">${msg.message || ""}</span>`;
   return row;
 }

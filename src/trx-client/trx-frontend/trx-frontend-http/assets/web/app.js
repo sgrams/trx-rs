@@ -240,6 +240,7 @@ function render(update) {
     if (!freqDirty) {
       freqEl.value = formatFreq(update.status.freq.hz);
     }
+    window.ft8BaseHz = update.status.freq.hz;
   }
   if (!modeDirty && update.status && update.status.mode) {
     const mode = normalizeMode(update.status.mode);
