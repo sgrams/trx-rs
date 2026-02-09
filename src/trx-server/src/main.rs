@@ -50,7 +50,7 @@ struct Cli {
     /// Print example configuration and exit
     #[arg(long = "print-config")]
     print_config: bool,
-    /// Rig backend to use (e.g. ft817)
+    /// Rig backend to use (e.g. ft817, ft450d)
     #[arg(short = 'r', long = "rig")]
     rig: Option<String>,
     /// Access method to reach the rig CAT interface

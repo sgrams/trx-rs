@@ -2347,7 +2347,19 @@ dependencies = [
  "tokio",
  "tokio-serial",
  "tracing",
+ "trx-backend-ft450d",
  "trx-backend-ft817",
+ "trx-core",
+]
+
+[[package]]
+name = "trx-backend-ft450d"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "tokio",
+ "tokio-serial",
+ "tracing",
  "trx-core",
 ]
 
@@ -2454,6 +2466,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "trx-ft8"
+version = "0.1.0"
+dependencies = [
+ "cc",
+ "libc",
+]
+
+[[package]]
 name = "trx-server"
 version = "0.1.0"
 dependencies = [
@@ -2472,6 +2492,7 @@ dependencies = [
  "tracing-subscriber",
  "trx-backend",
  "trx-core",
+ "trx-ft8",
 ]
 
 [[package]]

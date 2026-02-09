@@ -8,6 +8,7 @@ members = [
     "src/trx-server",
     "src/trx-server/trx-backend",
     "src/trx-server/trx-backend/trx-backend-ft817",
+    "src/trx-server/trx-backend/trx-backend-ft450d",
     "src/trx-client",
     "src/trx-client/trx-frontend",
     "src/trx-client/trx-frontend/trx-frontend-http",

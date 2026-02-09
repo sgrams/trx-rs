@@ -8,12 +8,14 @@ version = "0.1.0"
 edition = "2021"
 
 [features]
-default = ["ft817"]
+default = ["ft817", "ft450d"]
 ft817 = ["dep:trx-backend-ft817"]
+ft450d = ["dep:trx-backend-ft450d"]
 
 [dependencies]
 trx-core = { path = "../../trx-core" }
 trx-backend-ft817 = { path = "trx-backend-ft817", optional = true }
+trx-backend-ft450d = { path = "trx-backend-ft450d", optional = true }
 tokio = { workspace = true, features = ["full"] }
 tokio-serial = { workspace = true }
 serde = { workspace = true, features = ["derive"] }

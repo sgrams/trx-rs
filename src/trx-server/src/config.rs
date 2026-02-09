@@ -62,7 +62,7 @@ impl Default for GeneralConfig {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct RigConfig {
-    /// Rig model (e.g., "ft817", "ic7300")
+    /// Rig model (e.g., "ft817", "ft450d", "ic7300")
     pub model: Option<String>,
     /// Initial frequency (Hz) for the rig state before first CAT read
     pub initial_freq_hz: u64,

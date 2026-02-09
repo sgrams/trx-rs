@@ -12,6 +12,8 @@ mod dummy;
 
 #[cfg(feature = "ft817")]
 use trx_backend_ft817::Ft817;
+#[cfg(feature = "ft450d")]
+use trx_backend_ft450d::Ft450d;
 
 /// Connection details for instantiating a rig backend.
 #[derive(Debug, Clone)]
@@ -58,6 +60,8 @@ pub fn register_builtin_backends() {
     register_backend("dummy", dummy_factory);
     #[cfg(feature = "ft817")]
     register_backend("ft817", ft817_factory);
+    #[cfg(feature = "ft450d")]
+    register_backend("ft450d", ft450d_factory);
 }
 
 fn dummy_factory(_access: RigAccess) -> DynResult<Box<dyn RigCat>> {
@@ -95,5 +99,13 @@ fn ft817_factory(access: RigAccess) -> DynResult<Box<dyn RigCat>> {
     match access {
         RigAccess::Serial { path, baud } => Ok(Box::new(Ft817::new(&path, baud)?)),
         RigAccess::Tcp { .. } => Err("FT-817 only supports serial CAT access".into()),
+    }
+}
+
+#[cfg(feature = "ft450d")]
+fn ft450d_factory(access: RigAccess) -> DynResult<Box<dyn RigCat>> {
+    match access {
+        RigAccess::Serial { path, baud } => Ok(Box::new(Ft450d::new(&path, baud)?)),
+        RigAccess::Tcp { .. } => Err("FT-450D only supports serial CAT access".into()),
     }
 }
