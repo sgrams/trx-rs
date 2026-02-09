@@ -38,8 +38,8 @@ function renderFt8Message(message) {
       while (j < message.length && isAlphaNum(message[j])) j++;
       const token = message.slice(i, j);
       const grid = token.toUpperCase();
-      if (/^[A-R]{2}\\d{2}(?:[A-X]{2})?$/.test(grid)) {
-        out += `<span class="ft8-locator">[${grid}]</span>`;
+      if (/^[A-R]{2}\d{2}(?:[A-X]{2})?$/.test(grid)) {
+        out += `<span class="ft8-locator">${grid}</span>`;
       } else {
         out += escapeHtml(token);
       }
@@ -60,7 +60,7 @@ function extractFirstGrid(message) {
       while (j < message.length && isAlphaNum(message[j])) j++;
       const token = message.slice(i, j);
       const grid = token.toUpperCase();
-      if (/^[A-R]{2}\\d{2}(?:[A-X]{2})?$/.test(grid)) return grid;
+      if (/^[A-R]{2}\d{2}(?:[A-X]{2})?$/.test(grid)) return grid;
       i = j;
     } else {
       i += 1;

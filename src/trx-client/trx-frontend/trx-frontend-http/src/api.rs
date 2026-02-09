@@ -111,6 +111,11 @@ pub async fn decode_events() -> Result<HttpResponse, Error> {
                 .map(trx_core::decode::DecodedMessage::Aprs),
         );
         out.extend(
+            crate::server::audio::snapshot_cw_history()
+                .into_iter()
+                .map(trx_core::decode::DecodedMessage::Cw),
+        );
+        out.extend(
             crate::server::audio::snapshot_ft8_history()
                 .into_iter()
                 .map(trx_core::decode::DecodedMessage::Ft8),
@@ -355,6 +360,7 @@ pub async fn toggle_ft8_decode(
 pub async fn clear_ft8_decode(
     rig_tx: web::Data<mpsc::Sender<RigRequest>>,
 ) -> Result<HttpResponse, Error> {
+    crate::server::audio::clear_ft8_history();
     send_command(&rig_tx, RigCommand::ResetFt8Decoder).await
 }
 
@@ -362,6 +368,7 @@ pub async fn clear_ft8_decode(
 pub async fn clear_aprs_decode(
     rig_tx: web::Data<mpsc::Sender<RigRequest>>,
 ) -> Result<HttpResponse, Error> {
+    crate::server::audio::clear_aprs_history();
     send_command(&rig_tx, RigCommand::ResetAprsDecoder).await
 }
 
@@ -369,6 +376,7 @@ pub async fn clear_aprs_decode(
 pub async fn clear_cw_decode(
     rig_tx: web::Data<mpsc::Sender<RigRequest>>,
 ) -> Result<HttpResponse, Error> {
+    crate::server::audio::clear_cw_history();
     send_command(&rig_tx, RigCommand::ResetCwDecoder).await
 }
 
