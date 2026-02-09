@@ -382,6 +382,7 @@ async fn process_command(
         }
         RigCommand::SetFt8DecodeEnabled(en) => {
             ctx.state.ft8_decode_enabled = en;
+            info!("FT8 decode {}", if en { "enabled" } else { "disabled" });
             let _ = ctx.state_tx.send(ctx.state.clone());
             return snapshot_from(ctx.state);
         }
