@@ -186,7 +186,7 @@ fn run_capture(
 
     loop {
         let has_receivers = tx.receiver_count() > 0
-            || pcm_tx.as_ref().map_or(false, |p| p.receiver_count() > 0);
+            || pcm_tx.as_ref().is_some_and(|p| p.receiver_count() > 0);
 
         if has_receivers && !capturing {
             let _ = stream.play();
@@ -592,7 +592,7 @@ fn resample_to_12k(samples: &[f32], sample_rate: u32) -> Option<Vec<f32>> {
     if sample_rate == FT8_SAMPLE_RATE {
         return Some(samples.to_vec());
     }
-    if sample_rate % FT8_SAMPLE_RATE != 0 {
+    if !sample_rate.is_multiple_of(FT8_SAMPLE_RATE) {
         return None;
     }
     let factor = (sample_rate / FT8_SAMPLE_RATE) as usize;
@@ -768,7 +768,7 @@ async fn handle_audio_client(
 
     // Send stream info
     let info_json = serde_json::to_vec(&stream_info)
-        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+        .map_err(std::io::Error::other)?;
     write_audio_msg(&mut writer, AUDIO_MSG_STREAM_INFO, &info_json).await?;
 
     // Send APRS history to newly connected client.

@@ -281,12 +281,12 @@ impl Demodulator {
             return None;
         }
         let mut bytes = vec![0u8; byte_len];
-        for i in 0..byte_len {
+        for (i, out) in bytes.iter_mut().enumerate() {
             let mut b: u8 = 0;
             for j in 0..8 {
                 b |= self.frame_bits[i * 8 + j] << j;
             }
-            bytes[i] = b;
+            *out = b;
         }
 
         let payload = &bytes[..byte_len - 2];
@@ -381,7 +381,7 @@ fn parse_aprs(ax25: &Ax25Frame) -> AprsPacket {
     let path = ax25
         .digis
         .iter()
-        .map(|d| format_call(d))
+        .map(format_call)
         .collect::<Vec<_>>()
         .join(",");
     let info = &ax25.info;
@@ -481,7 +481,7 @@ fn parse_aprs_compressed(pos: &[u8]) -> Option<(f64, f64, char, char)> {
     for i in 0..4 {
         let lc = pos[1 + i] as i32 - 33;
         let xc = pos[5 + i] as i32 - 33;
-        if lc < 0 || lc > 90 || xc < 0 || xc > 90 {
+        if !(0..=90).contains(&lc) || !(0..=90).contains(&xc) {
             return None;
         }
         lat_val = lat_val * 91 + lc as u32;

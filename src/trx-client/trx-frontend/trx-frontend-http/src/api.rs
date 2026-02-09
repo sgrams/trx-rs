@@ -483,14 +483,9 @@ async fn wait_for_view(mut rx: watch::Receiver<RigState>) -> Result<RigSnapshot,
     // Wait up to 5 seconds for a valid snapshot; fall back to a placeholder
     // so the SSE stream starts immediately and the browser isn't left hanging.
     let deadline = time::Instant::now() + Duration::from_secs(5);
-    loop {
-        match time::timeout_at(deadline, rx.changed()).await {
-            Ok(Ok(())) => {
-                if let Some(view) = rx.borrow().snapshot() {
-                    return Ok(view);
-                }
-            }
-            _ => break,
+    while let Ok(Ok(())) = time::timeout_at(deadline, rx.changed()).await {
+        if let Some(view) = rx.borrow().snapshot() {
+            return Ok(view);
         }
     }
 
