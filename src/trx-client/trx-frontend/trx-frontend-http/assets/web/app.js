@@ -241,6 +241,9 @@ function render(update) {
       freqEl.value = formatFreq(update.status.freq.hz);
     }
     window.ft8BaseHz = update.status.freq.hz;
+    if (window.updateFt8RfDisplay) {
+      window.updateFt8RfDisplay();
+    }
   }
   if (!modeDirty && update.status && update.status.mode) {
     const mode = normalizeMode(update.status.mode);
@@ -785,21 +788,33 @@ window.aprsMapAddStation = function(call, lat, lon, info, symbolTable, symbolCod
   }
 };
 
-function maidenheadToLatLon(grid) {
+function maidenheadToBounds(grid) {
   if (!grid || grid.length < 4) return null;
   const g = grid.toUpperCase();
   const A = "A".charCodeAt(0);
-  const lon = (g.charCodeAt(0) - A) * 20 - 180 + (parseInt(g[2], 10) * 2) + 1;
-  const lat = (g.charCodeAt(1) - A) * 10 - 90 + (parseInt(g[3], 10) * 1) + 0.5;
-  let lonAdj = lon;
-  let latAdj = lat;
+  const fieldLon = (g.charCodeAt(0) - A) * 20 - 180;
+  const fieldLat = (g.charCodeAt(1) - A) * 10 - 90;
+  const squareLon = parseInt(g[2], 10) * 2;
+  const squareLat = parseInt(g[3], 10) * 1;
+
+  let lon = fieldLon + squareLon;
+  let lat = fieldLat + squareLat;
+  let lonSpan = 2;
+  let latSpan = 1;
+
   if (g.length >= 6) {
     const subLon = (g.charCodeAt(4) - A) * (5 / 60);
     const subLat = (g.charCodeAt(5) - A) * (2.5 / 60);
-    lonAdj += subLon - (5 / 120);
-    latAdj += subLat - (2.5 / 120);
+    lon += subLon;
+    lat += subLat;
+    lonSpan = 5 / 60;
+    latSpan = 2.5 / 60;
   }
-  return { lat: latAdj, lon: lonAdj };
+
+  return [
+    [lat, lon],
+    [lat + latSpan, lon + lonSpan],
+  ];
 }
 
 function applyMapFilter() {
@@ -816,11 +831,14 @@ function applyMapFilter() {
 window.ft8MapAddLocator = function(message, grid) {
   if (!aprsMap) initAprsMap();
   if (!aprsMap) return;
-  const loc = maidenheadToLatLon(grid);
-  if (!loc) return;
+  const bounds = maidenheadToBounds(grid);
+  if (!bounds) return;
   const popupContent = `<b>${grid}</b><br>${message}`;
-  const marker = L.circleMarker([loc.lat, loc.lon], {
-    radius: 5, color: "#ffb020", fillColor: "#ffb020", fillOpacity: 0.85
+  const marker = L.rectangle(bounds, {
+    color: "#ffb020",
+    weight: 1,
+    fillColor: "#ffb020",
+    fillOpacity: 0.25,
   }).addTo(aprsMap).bindPopup(popupContent);
   marker.__trxType = "ft8";
   mapMarkers.add(marker);

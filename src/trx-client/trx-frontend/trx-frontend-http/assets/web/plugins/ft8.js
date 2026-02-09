@@ -1,7 +1,9 @@
 // --- FT8 Decoder Plugin (server-side decode) ---
 const ft8Status = document.getElementById("ft8-status");
 const ft8MessagesEl = document.getElementById("ft8-messages");
+const ft8FilterInput = document.getElementById("ft8-filter");
 const FT8_MAX_MESSAGES = 200;
+let ft8FilterText = "";
 
 function fmtTime(tsMs) {
   if (!tsMs) return "--:--:--";
@@ -11,13 +13,17 @@ function fmtTime(tsMs) {
 function renderFt8Row(msg) {
   const row = document.createElement("div");
   row.className = "ft8-row";
+  const rawMessage = (msg.message || "").toString();
+  row.dataset.message = rawMessage.toUpperCase();
+  row.dataset.offsetHz = Number.isFinite(msg.freq_hz) ? String(msg.freq_hz) : "";
   const snr = Number.isFinite(msg.snr_db) ? msg.snr_db.toFixed(1) : "--";
   const dt = Number.isFinite(msg.dt_s) ? msg.dt_s.toFixed(2) : "--";
   const baseHz = Number.isFinite(window.ft8BaseHz) ? window.ft8BaseHz : null;
   const rfHz = Number.isFinite(msg.freq_hz) && Number.isFinite(baseHz) ? (baseHz + msg.freq_hz) : null;
   const freq = Number.isFinite(rfHz) ? rfHz.toFixed(0) : "--";
-  const renderedMessage = renderFt8Message(msg.message || "");
+  const renderedMessage = renderFt8Message(rawMessage);
   row.innerHTML = `<span class="ft8-time">${fmtTime(msg.ts_ms)}</span><span class="ft8-snr">${snr}</span><span class="ft8-dt">${dt}</span><span class="ft8-freq">${freq}</span><span class="ft8-msg">${renderedMessage}</span>`;
+  applyFt8FilterToRow(row);
   return row;
 }
 
@@ -79,6 +85,44 @@ function escapeHtml(input) {
 
 function isAlphaNum(ch) {
   return /[A-Za-z0-9]/.test(ch);
+}
+
+function applyFt8FilterToRow(row) {
+  if (!ft8FilterText) {
+    row.style.display = "";
+    return;
+  }
+  const message = row.dataset.message || "";
+  row.style.display = message.includes(ft8FilterText) ? "" : "none";
+}
+
+function applyFt8FilterToAll() {
+  const rows = ft8MessagesEl.querySelectorAll(".ft8-row");
+  rows.forEach((row) => applyFt8FilterToRow(row));
+}
+
+function updateFt8RowRf(row) {
+  const freqEl = row.querySelector(".ft8-freq");
+  if (!freqEl) return;
+  const baseHz = Number.isFinite(window.ft8BaseHz) ? window.ft8BaseHz : null;
+  const offset = row.dataset.offsetHz ? Number(row.dataset.offsetHz) : NaN;
+  if (Number.isFinite(baseHz) && Number.isFinite(offset)) {
+    freqEl.textContent = (baseHz + offset).toFixed(0);
+  } else {
+    freqEl.textContent = "--";
+  }
+}
+
+window.updateFt8RfDisplay = function() {
+  const rows = ft8MessagesEl.querySelectorAll(".ft8-row");
+  rows.forEach((row) => updateFt8RowRf(row));
+};
+
+if (ft8FilterInput) {
+  ft8FilterInput.addEventListener("input", () => {
+    ft8FilterText = ft8FilterInput.value.trim().toUpperCase();
+    applyFt8FilterToAll();
+  });
 }
 
 document.getElementById("ft8-decode-toggle-btn").addEventListener("click", async () => {
