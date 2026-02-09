@@ -32,24 +32,33 @@ function renderFt8Message(message) {
   const parts = message.split(/(\\s+)/);
   return parts.map((part) => {
     const token = part.trim();
-    if (!token) return part;
-    const grid = token.toUpperCase();
+    if (!token) return escapeHtml(part);
+    const stripped = token.replace(/[^A-Za-z0-9]/g, "");
+    const grid = stripped.toUpperCase();
     if (/^[A-R]{2}\\d{2}(?:[A-X]{2})?$/.test(grid)) {
       return part.replace(token, `<span class="ft8-locator">[${grid}]</span>`);
     }
-    return part;
+    return escapeHtml(part);
   }).join("");
 }
 
 function extractFirstGrid(message) {
   const parts = message.split(/\\s+/);
   for (const part of parts) {
-    const grid = part.toUpperCase();
+    const grid = part.replace(/[^A-Za-z0-9]/g, "").toUpperCase();
     if (/^[A-R]{2}\\d{2}(?:[A-X]{2})?$/.test(grid)) {
       return grid;
     }
   }
   return null;
+}
+
+function escapeHtml(input) {
+  return input
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll("\"", "&quot;");
 }
 
 document.getElementById("ft8-decode-toggle-btn").addEventListener("click", async () => {
