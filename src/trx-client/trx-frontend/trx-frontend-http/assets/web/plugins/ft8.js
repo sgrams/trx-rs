@@ -29,32 +29,42 @@ function addFt8Message(msg) {
 }
 
 function renderFt8Message(message) {
-  const gridRegex = /[A-R]{2}\\d{2}(?:[A-X]{2})?/gi;
   let out = "";
-  let lastIdx = 0;
-  for (const match of message.matchAll(gridRegex)) {
-    const idx = match.index ?? 0;
-    const grid = match[0].toUpperCase();
-    const prev = idx > 0 ? message[idx - 1] : "";
-    const next = idx + grid.length < message.length ? message[idx + grid.length] : "";
-    if (isAlphaNum(prev) || isAlphaNum(next)) continue;
-    out += escapeHtml(message.slice(lastIdx, idx));
-    out += `<span class="ft8-locator">[${grid}]</span>`;
-    lastIdx = idx + grid.length;
+  let i = 0;
+  while (i < message.length) {
+    const ch = message[i];
+    if (isAlphaNum(ch)) {
+      let j = i + 1;
+      while (j < message.length && isAlphaNum(message[j])) j++;
+      const token = message.slice(i, j);
+      const grid = token.toUpperCase();
+      if (/^[A-R]{2}\\d{2}(?:[A-X]{2})?$/.test(grid)) {
+        out += `<span class="ft8-locator">[${grid}]</span>`;
+      } else {
+        out += escapeHtml(token);
+      }
+      i = j;
+    } else {
+      out += escapeHtml(ch);
+      i += 1;
+    }
   }
-  out += escapeHtml(message.slice(lastIdx));
   return out;
 }
 
 function extractFirstGrid(message) {
-  const gridRegex = /[A-R]{2}\\d{2}(?:[A-X]{2})?/gi;
-  for (const match of message.matchAll(gridRegex)) {
-    const idx = match.index ?? 0;
-    const grid = match[0].toUpperCase();
-    const prev = idx > 0 ? message[idx - 1] : "";
-    const next = idx + grid.length < message.length ? message[idx + grid.length] : "";
-    if (isAlphaNum(prev) || isAlphaNum(next)) continue;
-    return grid;
+  let i = 0;
+  while (i < message.length) {
+    if (isAlphaNum(message[i])) {
+      let j = i + 1;
+      while (j < message.length && isAlphaNum(message[j])) j++;
+      const token = message.slice(i, j);
+      const grid = token.toUpperCase();
+      if (/^[A-R]{2}\\d{2}(?:[A-X]{2})?$/.test(grid)) return grid;
+      i = j;
+    } else {
+      i += 1;
+    }
   }
   return null;
 }
