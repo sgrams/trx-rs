@@ -225,7 +225,7 @@ small { color: var(--text-muted); }
 .aprs-byte { color: var(--accent-yellow); background: rgba(255, 214, 0, 0.12); border: 1px solid rgba(255, 214, 0, 0.25); border-radius: 4px; padding: 0 0.2rem; margin: 0 0.1rem; font-size: 0.78em; }
 
 .cw-controls { display: flex; gap: 0.6rem; align-items: center; margin-bottom: 0.75rem; }
-.cw-config { display: flex; gap: 1rem; align-items: flex-end; flex-wrap: wrap; margin-bottom: 0.75rem; }
+.cw-config { display: flex; gap: 1rem; align-items: center; flex-wrap: wrap; margin-bottom: 0.75rem; }
 .cw-config label { display: flex; flex-direction: column; gap: 0.2rem; color: var(--text-muted); font-size: 0.82rem; }
 .cw-config input[type="number"] { width: 5rem; padding: 0.3rem 0.4rem; font-size: 0.9rem; border: 1px solid var(--border-light); border-radius: 6px; background: var(--input-bg); color: var(--text); }
 #cw-output { max-height: 360px; overflow-y: auto; border: 1px solid var(--border-light); border-radius: 6px; background: var(--input-bg); font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; font-size: 0.85rem; padding: 0.4rem 0.5rem; min-height: 60px; white-space: pre-wrap; word-break: break-all; }
