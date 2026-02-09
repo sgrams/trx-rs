@@ -388,8 +388,7 @@ pub async fn run_cw_decoder(
         match pcm_rx.recv().await {
             Ok(frame) => {
                 let state = state_rx.borrow().clone();
-                let mode = &state.status.mode;
-                let active = matches!(mode, RigMode::CW | RigMode::CWR);
+                let active = true;
 
                 // Check for reset request
                 if state.cw_decode_reset_seq != last_reset_seq {
