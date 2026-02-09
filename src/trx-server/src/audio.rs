@@ -630,6 +630,8 @@ pub async fn run_ft8_decoder(
     let mut active = state_rx.borrow().ft8_decode_enabled
         && matches!(state_rx.borrow().status.mode, RigMode::DIG | RigMode::USB);
     let mut ft8_buf: Vec<f32> = Vec::new();
+    let mut last_slot: i64 = -1;
+    let slot_len_s: i64 = 15;
 
     loop {
         if !active {
@@ -646,6 +648,7 @@ pub async fn run_ft8_decoder(
                         decoder.reset();
                         ft8_buf.clear();
                     }
+                    last_slot = -1;
                 }
                 Err(_) => break,
             }
@@ -656,6 +659,17 @@ pub async fn run_ft8_decoder(
             recv = pcm_rx.recv() => {
                 match recv {
                     Ok(frame) => {
+                        let now = match std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH) {
+                            Ok(dur) => dur.as_secs() as i64,
+                            Err(_) => 0,
+                        };
+                        let slot = now / slot_len_s;
+                        if slot != last_slot {
+                            last_slot = slot;
+                            decoder.reset();
+                            ft8_buf.clear();
+                        }
+
                         let state = state_rx.borrow();
                         if state.ft8_decode_reset_seq != last_reset_seq {
                             last_reset_seq = state.ft8_decode_reset_seq;
@@ -675,7 +689,6 @@ pub async fn run_ft8_decoder(
                             decoder.process_block(&block);
                             let results = decoder.decode_if_ready(100);
                             if !results.is_empty() {
-                                decoder.reset();
                                 for res in results {
                                     let ts_ms = match std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH) {
                                         Ok(dur) => dur.as_millis() as i64,
@@ -714,6 +727,7 @@ pub async fn run_ft8_decoder(
                         if !active {
                             decoder.reset();
                             ft8_buf.clear();
+                            last_slot = -1;
                         } else {
                             pcm_rx = pcm_rx.resubscribe();
                         }
