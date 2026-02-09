@@ -124,6 +124,10 @@ pub struct CwDecoder {
     // WPM
     wpm: u32,
 
+    // Auto control
+    auto_tone: bool,
+    auto_wpm: bool,
+
     // Auto tone detection
     tone_scan_bins: Vec<ToneScanBin>,
     tone_stable_bin: i32,
@@ -172,12 +176,28 @@ impl CwDecoder {
             current_symbol: String::new(),
             sample_counter: 0,
             wpm: 15,
+            auto_tone: true,
+            auto_wpm: true,
             tone_scan_bins,
             tone_stable_bin: -1,
             tone_stable_count: 0,
             on_durations: Vec::new(),
             events: Vec::new(),
         }
+    }
+
+    pub fn set_auto(&mut self, enabled: bool) {
+        self.auto_tone = enabled;
+        self.auto_wpm = enabled;
+    }
+
+    pub fn set_wpm(&mut self, wpm: u32) {
+        self.wpm = wpm.clamp(5, 40);
+    }
+
+    pub fn set_tone_hz(&mut self, tone_hz: u32) {
+        let tone_hz = tone_hz.clamp(TONE_SCAN_LOW, TONE_SCAN_HIGH);
+        self.recompute_goertzel(tone_hz);
     }
 
     fn recompute_goertzel(&mut self, new_freq: u32) {
@@ -300,8 +320,9 @@ impl CwDecoder {
     }
 
     fn process_window(&mut self) {
-        // Auto tone detection
-        self.auto_detect_tone();
+        if self.auto_tone {
+            self.auto_detect_tone();
+        }
 
         let detected = self.goertzel_detect();
         let now = self.now_ms();
@@ -345,12 +366,14 @@ impl CwDecoder {
             }
             self.tone_off_at = now;
 
-            // Collect for auto WPM
-            self.on_durations.push(on_duration);
-            if self.on_durations.len() > 30 {
-                self.on_durations.remove(0);
+            if self.auto_wpm {
+                // Collect for auto WPM
+                self.on_durations.push(on_duration);
+                if self.on_durations.len() > 30 {
+                    self.on_durations.remove(0);
+                }
+                self.auto_detect_wpm();
             }
-            self.auto_detect_wpm();
         }
 
         // Flush pending character after long silence
@@ -387,6 +410,10 @@ impl CwDecoder {
     }
 
     pub fn reset(&mut self) {
+        let tone = self.tone_freq;
+        let wpm = self.wpm;
+        let auto_tone = self.auto_tone;
+        let auto_wpm = self.auto_wpm;
         self.sample_buf.fill(0.0);
         self.sample_idx = 0;
         self.tone_on = false;
@@ -394,9 +421,11 @@ impl CwDecoder {
         self.tone_off_at = 0.0;
         self.current_symbol.clear();
         self.sample_counter = 0;
-        self.wpm = 15;
-        self.tone_freq = 700;
-        self.recompute_goertzel(700);
+        self.wpm = wpm;
+        self.tone_freq = tone;
+        self.auto_tone = auto_tone;
+        self.auto_wpm = auto_wpm;
+        self.recompute_goertzel(tone);
         self.tone_stable_bin = -1;
         self.tone_stable_count = 0;
         self.on_durations.clear();

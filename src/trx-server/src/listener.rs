@@ -190,6 +190,9 @@ fn map_command(cmd: ClientCommand) -> RigCommand {
         ClientCommand::SetTxLimit { limit } => RigCommand::SetTxLimit(limit),
         ClientCommand::SetAprsDecodeEnabled { enabled } => RigCommand::SetAprsDecodeEnabled(enabled),
         ClientCommand::SetCwDecodeEnabled { enabled } => RigCommand::SetCwDecodeEnabled(enabled),
+        ClientCommand::SetCwAuto { enabled } => RigCommand::SetCwAuto(enabled),
+        ClientCommand::SetCwWpm { wpm } => RigCommand::SetCwWpm(wpm),
+        ClientCommand::SetCwToneHz { tone_hz } => RigCommand::SetCwToneHz(tone_hz),
         ClientCommand::ResetAprsDecoder => RigCommand::ResetAprsDecoder,
         ClientCommand::ResetCwDecoder => RigCommand::ResetCwDecoder,
     }

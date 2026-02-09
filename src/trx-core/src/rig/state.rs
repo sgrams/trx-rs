@@ -27,6 +27,12 @@ pub struct RigState {
     pub aprs_decode_enabled: bool,
     #[serde(default)]
     pub cw_decode_enabled: bool,
+    #[serde(default)]
+    pub cw_auto: bool,
+    #[serde(default)]
+    pub cw_wpm: u32,
+    #[serde(default)]
+    pub cw_tone_hz: u32,
     #[serde(default, skip_serializing)]
     pub aprs_decode_reset_seq: u64,
     #[serde(default, skip_serializing)]
@@ -78,6 +84,9 @@ impl RigState {
             server_longitude: self.server_longitude,
             aprs_decode_enabled: self.aprs_decode_enabled,
             cw_decode_enabled: self.cw_decode_enabled,
+            cw_auto: self.cw_auto,
+            cw_wpm: self.cw_wpm,
+            cw_tone_hz: self.cw_tone_hz,
         })
     }
 
@@ -124,4 +133,10 @@ pub struct RigSnapshot {
     pub aprs_decode_enabled: bool,
     #[serde(default)]
     pub cw_decode_enabled: bool,
+    #[serde(default)]
+    pub cw_auto: bool,
+    #[serde(default)]
+    pub cw_wpm: u32,
+    #[serde(default)]
+    pub cw_tone_hz: u32,
 }

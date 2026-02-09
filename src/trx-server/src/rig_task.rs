@@ -125,6 +125,9 @@ pub async fn run_rig_task(
         server_longitude,
         aprs_decode_enabled: false,
         cw_decode_enabled: false,
+        cw_auto: true,
+        cw_wpm: 15,
+        cw_tone_hz: 700,
         aprs_decode_reset_seq: 0,
         cw_decode_reset_seq: 0,
     };
@@ -357,6 +360,21 @@ async fn process_command(
         }
         RigCommand::SetCwDecodeEnabled(en) => {
             ctx.state.cw_decode_enabled = en;
+            let _ = ctx.state_tx.send(ctx.state.clone());
+            return snapshot_from(ctx.state);
+        }
+        RigCommand::SetCwAuto(en) => {
+            ctx.state.cw_auto = en;
+            let _ = ctx.state_tx.send(ctx.state.clone());
+            return snapshot_from(ctx.state);
+        }
+        RigCommand::SetCwWpm(wpm) => {
+            ctx.state.cw_wpm = wpm.clamp(5, 40);
+            let _ = ctx.state_tx.send(ctx.state.clone());
+            return snapshot_from(ctx.state);
+        }
+        RigCommand::SetCwToneHz(tone_hz) => {
+            ctx.state.cw_tone_hz = tone_hz.clamp(300, 1200);
             let _ = ctx.state_tx.send(ctx.state.clone());
             return snapshot_from(ctx.state);
         }

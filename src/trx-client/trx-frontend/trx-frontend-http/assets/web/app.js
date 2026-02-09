@@ -267,6 +267,25 @@ function render(update) {
       pttBtn.style.color = "";
     }
   }
+  const cwAutoEl = document.getElementById("cw-auto");
+  const cwWpmEl = document.getElementById("cw-wpm");
+  const cwToneEl = document.getElementById("cw-tone");
+  if (cwAutoEl && typeof update.cw_auto === "boolean") {
+    cwAutoEl.checked = update.cw_auto;
+  }
+  if (cwWpmEl && typeof update.cw_wpm === "number") {
+    cwWpmEl.value = update.cw_wpm;
+  }
+  if (cwToneEl && typeof update.cw_tone_hz === "number") {
+    cwToneEl.value = update.cw_tone_hz;
+  }
+  if (cwWpmEl && cwToneEl && typeof update.cw_auto === "boolean") {
+    const disabled = update.cw_auto;
+    cwWpmEl.disabled = disabled;
+    cwWpmEl.readOnly = disabled;
+    cwToneEl.disabled = disabled;
+    cwToneEl.readOnly = disabled;
+  }
   if (update.status && update.status.vfo && Array.isArray(update.status.vfo.entries)) {
     const entries = update.status.vfo.entries;
     const activeIdx = Number.isInteger(update.status.vfo.active) ? update.status.vfo.active : null;

@@ -224,6 +224,9 @@ fn build_initial_state(cfg: &ServerConfig, resolved: &ResolvedConfig) -> RigStat
         server_longitude: resolved.longitude,
         aprs_decode_enabled: false,
         cw_decode_enabled: false,
+        cw_auto: true,
+        cw_wpm: 15,
+        cw_tone_hz: 700,
         aprs_decode_reset_seq: 0,
         cw_decode_reset_seq: 0,
     }

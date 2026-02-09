@@ -23,6 +23,9 @@ pub enum ClientCommand {
     SetTxLimit { limit: u8 },
     SetAprsDecodeEnabled { enabled: bool },
     SetCwDecodeEnabled { enabled: bool },
+    SetCwAuto { enabled: bool },
+    SetCwWpm { wpm: u32 },
+    SetCwToneHz { tone_hz: u32 },
     ResetAprsDecoder,
     ResetCwDecoder,
 }

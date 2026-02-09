@@ -282,6 +282,45 @@ pub async fn toggle_cw_decode(
     send_command(&rig_tx, RigCommand::SetCwDecodeEnabled(!enabled)).await
 }
 
+#[derive(serde::Deserialize)]
+pub struct CwAutoQuery {
+    pub enabled: bool,
+}
+
+#[post("/set_cw_auto")]
+pub async fn set_cw_auto(
+    query: web::Query<CwAutoQuery>,
+    rig_tx: web::Data<mpsc::Sender<RigRequest>>,
+) -> Result<HttpResponse, Error> {
+    send_command(&rig_tx, RigCommand::SetCwAuto(query.enabled)).await
+}
+
+#[derive(serde::Deserialize)]
+pub struct CwWpmQuery {
+    pub wpm: u32,
+}
+
+#[post("/set_cw_wpm")]
+pub async fn set_cw_wpm(
+    query: web::Query<CwWpmQuery>,
+    rig_tx: web::Data<mpsc::Sender<RigRequest>>,
+) -> Result<HttpResponse, Error> {
+    send_command(&rig_tx, RigCommand::SetCwWpm(query.wpm)).await
+}
+
+#[derive(serde::Deserialize)]
+pub struct CwToneQuery {
+    pub tone_hz: u32,
+}
+
+#[post("/set_cw_tone")]
+pub async fn set_cw_tone(
+    query: web::Query<CwToneQuery>,
+    rig_tx: web::Data<mpsc::Sender<RigRequest>>,
+) -> Result<HttpResponse, Error> {
+    send_command(&rig_tx, RigCommand::SetCwToneHz(query.tone_hz)).await
+}
+
 #[post("/clear_aprs_decode")]
 pub async fn clear_aprs_decode(
     rig_tx: web::Data<mpsc::Sender<RigRequest>>,
@@ -311,6 +350,9 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
         .service(set_tx_limit)
         .service(toggle_aprs_decode)
         .service(toggle_cw_decode)
+        .service(set_cw_auto)
+        .service(set_cw_wpm)
+        .service(set_cw_tone)
         .service(clear_aprs_decode)
         .service(clear_cw_decode)
         .service(crate::server::audio::audio_ws)
@@ -443,6 +485,9 @@ async fn wait_for_view(mut rx: watch::Receiver<RigState>) -> Result<RigSnapshot,
         server_longitude: state.server_longitude,
         aprs_decode_enabled: state.aprs_decode_enabled,
         cw_decode_enabled: state.cw_decode_enabled,
+        cw_auto: state.cw_auto,
+        cw_wpm: state.cw_wpm,
+        cw_tone_hz: state.cw_tone_hz,
     })
 }
 

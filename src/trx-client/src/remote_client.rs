@@ -148,6 +148,9 @@ fn map_rig_command(cmd: trx_core::RigCommand) -> ClientCommand {
         trx_core::RigCommand::Unlock => ClientCommand::Unlock,
         trx_core::RigCommand::SetAprsDecodeEnabled(enabled) => ClientCommand::SetAprsDecodeEnabled { enabled },
         trx_core::RigCommand::SetCwDecodeEnabled(enabled) => ClientCommand::SetCwDecodeEnabled { enabled },
+        trx_core::RigCommand::SetCwAuto(enabled) => ClientCommand::SetCwAuto { enabled },
+        trx_core::RigCommand::SetCwWpm(wpm) => ClientCommand::SetCwWpm { wpm },
+        trx_core::RigCommand::SetCwToneHz(tone_hz) => ClientCommand::SetCwToneHz { tone_hz },
         trx_core::RigCommand::ResetAprsDecoder => ClientCommand::ResetAprsDecoder,
         trx_core::RigCommand::ResetCwDecoder => ClientCommand::ResetCwDecoder,
     }
@@ -190,6 +193,9 @@ pub fn state_from_snapshot(snapshot: trx_core::RigSnapshot) -> RigState {
         server_longitude: snapshot.server_longitude,
         aprs_decode_enabled: snapshot.aprs_decode_enabled,
         cw_decode_enabled: snapshot.cw_decode_enabled,
+        cw_auto: snapshot.cw_auto,
+        cw_wpm: snapshot.cw_wpm,
+        cw_tone_hz: snapshot.cw_tone_hz,
         aprs_decode_reset_seq: 0,
         cw_decode_reset_seq: 0,
     }

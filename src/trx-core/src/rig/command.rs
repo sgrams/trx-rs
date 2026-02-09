@@ -21,6 +21,9 @@ pub enum RigCommand {
     Unlock,
     SetAprsDecodeEnabled(bool),
     SetCwDecodeEnabled(bool),
+    SetCwAuto(bool),
+    SetCwWpm(u32),
+    SetCwToneHz(u32),
     ResetAprsDecoder,
     ResetCwDecoder,
 }

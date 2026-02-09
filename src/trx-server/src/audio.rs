@@ -417,6 +417,12 @@ pub async fn run_cw_decoder(
     let mut was_active = false;
     let mut last_reset_seq: u64 = 0;
     let mut active = matches!(state_rx.borrow().status.mode, RigMode::CW | RigMode::CWR);
+    let mut last_auto = state_rx.borrow().cw_auto;
+    let mut last_wpm = state_rx.borrow().cw_wpm;
+    let mut last_tone = state_rx.borrow().cw_tone_hz;
+    decoder.set_auto(last_auto);
+    decoder.set_wpm(last_wpm);
+    decoder.set_tone_hz(last_tone);
 
     loop {
         if !active {
@@ -426,6 +432,18 @@ pub async fn run_cw_decoder(
                     active = matches!(state.status.mode, RigMode::CW | RigMode::CWR);
                     if active {
                         pcm_rx = pcm_rx.resubscribe();
+                    }
+                    if state.cw_auto != last_auto {
+                        last_auto = state.cw_auto;
+                        decoder.set_auto(last_auto);
+                    }
+                    if state.cw_wpm != last_wpm {
+                        last_wpm = state.cw_wpm;
+                        decoder.set_wpm(last_wpm);
+                    }
+                    if state.cw_tone_hz != last_tone {
+                        last_tone = state.cw_tone_hz;
+                        decoder.set_tone_hz(last_tone);
                     }
                     if state.cw_decode_reset_seq != last_reset_seq {
                         last_reset_seq = state.cw_decode_reset_seq;
@@ -443,6 +461,18 @@ pub async fn run_cw_decoder(
                 match recv {
                     Ok(frame) => {
                         let state = state_rx.borrow();
+                        if state.cw_auto != last_auto {
+                            last_auto = state.cw_auto;
+                            decoder.set_auto(last_auto);
+                        }
+                        if state.cw_wpm != last_wpm {
+                            last_wpm = state.cw_wpm;
+                            decoder.set_wpm(last_wpm);
+                        }
+                        if state.cw_tone_hz != last_tone {
+                            last_tone = state.cw_tone_hz;
+                            decoder.set_tone_hz(last_tone);
+                        }
                         if state.cw_decode_reset_seq != last_reset_seq {
                             last_reset_seq = state.cw_decode_reset_seq;
                             decoder.reset();
@@ -477,6 +507,18 @@ pub async fn run_cw_decoder(
                     Ok(()) => {
                         let state = state_rx.borrow();
                         active = matches!(state.status.mode, RigMode::CW | RigMode::CWR);
+                        if state.cw_auto != last_auto {
+                            last_auto = state.cw_auto;
+                            decoder.set_auto(last_auto);
+                        }
+                        if state.cw_wpm != last_wpm {
+                            last_wpm = state.cw_wpm;
+                            decoder.set_wpm(last_wpm);
+                        }
+                        if state.cw_tone_hz != last_tone {
+                            last_tone = state.cw_tone_hz;
+                            decoder.set_tone_hz(last_tone);
+                        }
                         if state.cw_decode_reset_seq != last_reset_seq {
                             last_reset_seq = state.cw_decode_reset_seq;
                             decoder.reset();
