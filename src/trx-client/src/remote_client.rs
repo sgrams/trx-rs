@@ -151,8 +151,10 @@ fn map_rig_command(cmd: trx_core::RigCommand) -> ClientCommand {
         trx_core::RigCommand::SetCwAuto(enabled) => ClientCommand::SetCwAuto { enabled },
         trx_core::RigCommand::SetCwWpm(wpm) => ClientCommand::SetCwWpm { wpm },
         trx_core::RigCommand::SetCwToneHz(tone_hz) => ClientCommand::SetCwToneHz { tone_hz },
+        trx_core::RigCommand::SetFt8DecodeEnabled(enabled) => ClientCommand::SetFt8DecodeEnabled { enabled },
         trx_core::RigCommand::ResetAprsDecoder => ClientCommand::ResetAprsDecoder,
         trx_core::RigCommand::ResetCwDecoder => ClientCommand::ResetCwDecoder,
+        trx_core::RigCommand::ResetFt8Decoder => ClientCommand::ResetFt8Decoder,
     }
 }
 
@@ -196,8 +198,10 @@ pub fn state_from_snapshot(snapshot: trx_core::RigSnapshot) -> RigState {
         cw_auto: snapshot.cw_auto,
         cw_wpm: snapshot.cw_wpm,
         cw_tone_hz: snapshot.cw_tone_hz,
+        ft8_decode_enabled: snapshot.ft8_decode_enabled,
         aprs_decode_reset_seq: 0,
         cw_decode_reset_seq: 0,
+        ft8_decode_reset_seq: 0,
     }
 }
 

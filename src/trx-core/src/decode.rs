@@ -14,6 +14,8 @@ pub enum DecodedMessage {
     Aprs(AprsPacket),
     #[serde(rename = "cw")]
     Cw(CwEvent),
+    #[serde(rename = "ft8")]
+    Ft8(Ft8Message),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -45,4 +47,18 @@ pub struct CwEvent {
     pub tone_hz: u32,
     /// Whether a CW tone is currently detected
     pub signal_on: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Ft8Message {
+    /// UTC timestamp (milliseconds since epoch)
+    pub ts_ms: i64,
+    /// Approximate SNR (dB)
+    pub snr_db: f32,
+    /// Time offset within slot (seconds)
+    pub dt_s: f32,
+    /// Audio frequency (Hz)
+    pub freq_hz: f32,
+    /// Decoded message text
+    pub message: String,
 }

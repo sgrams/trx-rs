@@ -9,6 +9,7 @@ const INDEX_HTML: &str = include_str!("../assets/web/index.html");
 pub const STYLE_CSS: &str = include_str!("../assets/web/style.css");
 pub const APP_JS: &str = include_str!("../assets/web/app.js");
 pub const APRS_JS: &str = include_str!("../assets/web/plugins/aprs.js");
+pub const FT8_JS: &str = include_str!("../assets/web/plugins/ft8.js");
 pub const CW_JS: &str = include_str!("../assets/web/plugins/cw.js");
 
 pub fn index_html() -> String {

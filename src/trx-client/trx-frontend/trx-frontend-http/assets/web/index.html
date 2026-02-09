@@ -124,6 +124,7 @@
         <button class="sub-tab active" data-subtab="overview">Overview</button>
         <button class="sub-tab" data-subtab="map">Map</button>
         <button class="sub-tab" data-subtab="aprs">APRS</button>
+        <button class="sub-tab" data-subtab="ft8">FT8</button>
         <button class="sub-tab" data-subtab="cw">CW</button>
       </div>
       <div id="subtab-overview" class="sub-tab-panel">
@@ -149,6 +150,14 @@
           <small id="aprs-status" style="color:var(--text-muted);">Waiting for server decode</small>
         </div>
         <div id="aprs-packets"></div>
+      </div>
+      <div id="subtab-ft8" class="sub-tab-panel" style="display:none;">
+        <div class="ft8-controls">
+          <button id="ft8-decode-toggle-btn" type="button">Enable FT8</button>
+          <button id="ft8-clear-btn" type="button">Clear</button>
+          <small id="ft8-status" style="color:var(--text-muted);">Waiting for server decode</small>
+        </div>
+        <div id="ft8-messages"></div>
       </div>
       <div id="subtab-cw" class="sub-tab-panel" style="display:none;">
         <div class="cw-controls">
@@ -184,6 +193,7 @@
   </div>
   <script src="/app.js"></script>
   <script src="/aprs.js"></script>
+  <script src="/ft8.js"></script>
   <script src="/cw.js"></script>
 </body>
 </html>

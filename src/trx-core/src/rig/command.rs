@@ -24,6 +24,8 @@ pub enum RigCommand {
     SetCwAuto(bool),
     SetCwWpm(u32),
     SetCwToneHz(u32),
+    SetFt8DecodeEnabled(bool),
     ResetAprsDecoder,
     ResetCwDecoder,
+    ResetFt8Decoder,
 }

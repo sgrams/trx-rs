@@ -4,6 +4,7 @@
 
 [workspace]
 members = [
+    "src/trx-ft8",
     "src/trx-server",
     "src/trx-server/trx-backend",
     "src/trx-server/trx-backend/trx-backend-ft817",

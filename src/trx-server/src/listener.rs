@@ -193,8 +193,10 @@ fn map_command(cmd: ClientCommand) -> RigCommand {
         ClientCommand::SetCwAuto { enabled } => RigCommand::SetCwAuto(enabled),
         ClientCommand::SetCwWpm { wpm } => RigCommand::SetCwWpm(wpm),
         ClientCommand::SetCwToneHz { tone_hz } => RigCommand::SetCwToneHz(tone_hz),
+        ClientCommand::SetFt8DecodeEnabled { enabled } => RigCommand::SetFt8DecodeEnabled(enabled),
         ClientCommand::ResetAprsDecoder => RigCommand::ResetAprsDecoder,
         ClientCommand::ResetCwDecoder => RigCommand::ResetCwDecoder,
+        ClientCommand::ResetFt8Decoder => RigCommand::ResetFt8Decoder,
     }
 }
 

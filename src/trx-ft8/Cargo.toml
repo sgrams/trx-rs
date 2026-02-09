@@ -1,0 +1,14 @@
+# SPDX-FileCopyrightText: 2026 Stanislaw Grams <stanislawgrams@gmail.com>
+#
+# SPDX-License-Identifier: BSD-2-Clause
+
+[package]
+name = "trx-ft8"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+libc = "0.2"
+
+[build-dependencies]
+cc = "1"

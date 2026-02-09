@@ -277,8 +277,10 @@ async fn async_init() -> DynResult<AppState> {
         cw_auto: true,
         cw_wpm: 15,
         cw_tone_hz: 700,
+        ft8_decode_enabled: false,
         aprs_decode_reset_seq: 0,
         cw_decode_reset_seq: 0,
+        ft8_decode_reset_seq: 0,
     };
     let (state_tx, state_rx) = watch::channel(initial_state);
 

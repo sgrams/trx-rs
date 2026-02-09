@@ -248,11 +248,16 @@ function render(update) {
   const modeUpper = update.status && update.status.mode ? normalizeMode(update.status.mode).toUpperCase() : "";
   const aprsStatus = document.getElementById("aprs-status");
   const cwStatus = document.getElementById("cw-status");
+  const ft8Status = document.getElementById("ft8-status");
   if (aprsStatus && modeUpper !== "PKT" && aprsStatus.textContent === "Receiving") {
     aprsStatus.textContent = "Connected, listening for packets";
   }
   if (cwStatus && modeUpper !== "CW" && modeUpper !== "CWR" && cwStatus.textContent === "Receiving") {
     cwStatus.textContent = "Connected, listening for packets";
+  }
+  const ft8Enabled = !!update.ft8_decode_enabled;
+  if (ft8Status && (!ft8Enabled || (modeUpper !== "DIG" && modeUpper !== "USB")) && ft8Status.textContent === "Receiving") {
+    ft8Status.textContent = "Connected, listening for packets";
   }
   if (update.status && typeof update.status.tx_en === "boolean") {
     lastTxEn = update.status.tx_en;
@@ -266,6 +271,13 @@ function render(update) {
       pttBtn.style.borderColor = "";
       pttBtn.style.color = "";
     }
+  }
+  const ft8ToggleBtn = document.getElementById("ft8-decode-toggle-btn");
+  if (ft8ToggleBtn) {
+    const ft8On = !!update.ft8_decode_enabled;
+    ft8ToggleBtn.textContent = ft8On ? "Disable FT8" : "Enable FT8";
+    ft8ToggleBtn.style.borderColor = ft8On ? "#00d17f" : "";
+    ft8ToggleBtn.style.color = ft8On ? "#00d17f" : "";
   }
   const cwAutoEl = document.getElementById("cw-auto");
   const cwWpmEl = document.getElementById("cw-wpm");
@@ -1156,8 +1168,10 @@ let decodeConnected = false;
 function updateDecodeStatus(text) {
   const aprs = document.getElementById("aprs-status");
   const cw = document.getElementById("cw-status");
+  const ft8 = document.getElementById("ft8-status");
   if (aprs && aprs.textContent !== "Receiving") aprs.textContent = text;
   if (cw && cw.textContent !== "Receiving") cw.textContent = text;
+  if (ft8 && ft8.textContent !== "Receiving") ft8.textContent = text;
 }
 function connectDecode() {
   if (decodeSource) { decodeSource.close(); }
@@ -1171,6 +1185,7 @@ function connectDecode() {
       const msg = JSON.parse(evt.data);
       if (msg.type === "aprs" && window.onServerAprs) window.onServerAprs(msg);
       if (msg.type === "cw" && window.onServerCw) window.onServerCw(msg);
+      if (msg.type === "ft8" && window.onServerFt8) window.onServerFt8(msg);
     } catch (e) {
       // ignore parse errors
     }

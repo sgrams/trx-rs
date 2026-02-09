@@ -507,8 +507,10 @@ pub fn command_from_rig_command(cmd: RigCommand) -> Box<dyn RigCommandHandler> {
         | RigCommand::SetCwAuto(_)
         | RigCommand::SetCwWpm(_)
         | RigCommand::SetCwToneHz(_)
+        | RigCommand::SetFt8DecodeEnabled(_)
         | RigCommand::ResetAprsDecoder
-        | RigCommand::ResetCwDecoder => Box::new(GetSnapshotCommand),
+        | RigCommand::ResetCwDecoder
+        | RigCommand::ResetFt8Decoder => Box::new(GetSnapshotCommand),
     }
 }
 

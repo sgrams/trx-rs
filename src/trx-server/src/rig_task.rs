@@ -128,8 +128,10 @@ pub async fn run_rig_task(
         cw_auto: true,
         cw_wpm: 15,
         cw_tone_hz: 700,
+        ft8_decode_enabled: false,
         aprs_decode_reset_seq: 0,
         cw_decode_reset_seq: 0,
+        ft8_decode_reset_seq: 0,
     };
 
     // Polling configuration
@@ -378,6 +380,11 @@ async fn process_command(
             let _ = ctx.state_tx.send(ctx.state.clone());
             return snapshot_from(ctx.state);
         }
+        RigCommand::SetFt8DecodeEnabled(en) => {
+            ctx.state.ft8_decode_enabled = en;
+            let _ = ctx.state_tx.send(ctx.state.clone());
+            return snapshot_from(ctx.state);
+        }
         RigCommand::ResetAprsDecoder => {
             audio::clear_aprs_history();
             ctx.state.aprs_decode_reset_seq += 1;
@@ -386,6 +393,12 @@ async fn process_command(
         }
         RigCommand::ResetCwDecoder => {
             ctx.state.cw_decode_reset_seq += 1;
+            let _ = ctx.state_tx.send(ctx.state.clone());
+            return snapshot_from(ctx.state);
+        }
+        RigCommand::ResetFt8Decoder => {
+            audio::clear_ft8_history();
+            ctx.state.ft8_decode_reset_seq += 1;
             let _ = ctx.state_tx.send(ctx.state.clone());
             return snapshot_from(ctx.state);
         }

@@ -321,6 +321,22 @@ pub async fn set_cw_tone(
     send_command(&rig_tx, RigCommand::SetCwToneHz(query.tone_hz)).await
 }
 
+#[post("/toggle_ft8_decode")]
+pub async fn toggle_ft8_decode(
+    state: web::Data<watch::Receiver<RigState>>,
+    rig_tx: web::Data<mpsc::Sender<RigRequest>>,
+) -> Result<HttpResponse, Error> {
+    let enabled = state.get_ref().borrow().ft8_decode_enabled;
+    send_command(&rig_tx, RigCommand::SetFt8DecodeEnabled(!enabled)).await
+}
+
+#[post("/clear_ft8_decode")]
+pub async fn clear_ft8_decode(
+    rig_tx: web::Data<mpsc::Sender<RigRequest>>,
+) -> Result<HttpResponse, Error> {
+    send_command(&rig_tx, RigCommand::ResetFt8Decoder).await
+}
+
 #[post("/clear_aprs_decode")]
 pub async fn clear_aprs_decode(
     rig_tx: web::Data<mpsc::Sender<RigRequest>>,
@@ -353,14 +369,17 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
         .service(set_cw_auto)
         .service(set_cw_wpm)
         .service(set_cw_tone)
+        .service(toggle_ft8_decode)
         .service(clear_aprs_decode)
         .service(clear_cw_decode)
+        .service(clear_ft8_decode)
         .service(crate::server::audio::audio_ws)
         .service(favicon)
         .service(logo)
         .service(style_css)
         .service(app_js)
         .service(aprs_js)
+        .service(ft8_js)
         .service(cw_js);
 }
 
@@ -404,6 +423,13 @@ async fn aprs_js() -> impl Responder {
     HttpResponse::Ok()
         .insert_header((header::CONTENT_TYPE, "application/javascript; charset=utf-8"))
         .body(status::APRS_JS)
+}
+
+#[get("/ft8.js")]
+async fn ft8_js() -> impl Responder {
+    HttpResponse::Ok()
+        .insert_header((header::CONTENT_TYPE, "application/javascript; charset=utf-8"))
+        .body(status::FT8_JS)
 }
 
 #[get("/cw.js")]
@@ -488,6 +514,7 @@ async fn wait_for_view(mut rx: watch::Receiver<RigState>) -> Result<RigSnapshot,
         cw_auto: state.cw_auto,
         cw_wpm: state.cw_wpm,
         cw_tone_hz: state.cw_tone_hz,
+        ft8_decode_enabled: state.ft8_decode_enabled,
     })
 }
 

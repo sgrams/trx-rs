@@ -26,8 +26,10 @@ pub enum ClientCommand {
     SetCwAuto { enabled: bool },
     SetCwWpm { wpm: u32 },
     SetCwToneHz { tone_hz: u32 },
+    SetFt8DecodeEnabled { enabled: bool },
     ResetAprsDecoder,
     ResetCwDecoder,
+    ResetFt8Decoder,
 }
 
 /// Envelope for client commands with optional authentication token.

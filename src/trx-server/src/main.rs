@@ -227,8 +227,10 @@ fn build_initial_state(cfg: &ServerConfig, resolved: &ResolvedConfig) -> RigStat
         cw_auto: true,
         cw_wpm: 15,
         cw_tone_hz: 700,
+        ft8_decode_enabled: false,
         aprs_decode_reset_seq: 0,
         cw_decode_reset_seq: 0,
+        ft8_decode_reset_seq: 0,
     }
 }
 
@@ -370,6 +372,16 @@ async fn main() -> DynResult<()> {
             let cw_ch = cfg.audio.channels;
             tokio::spawn(audio::run_cw_decoder(
                 cw_sr, cw_ch as u16, cw_pcm_rx, cw_state_rx, cw_decode_tx,
+            ));
+
+            // Spawn FT8 decoder task
+            let ft8_pcm_rx = pcm_tx.subscribe();
+            let ft8_state_rx = _state_rx.clone();
+            let ft8_decode_tx = decode_tx.clone();
+            let ft8_sr = cfg.audio.sample_rate;
+            let ft8_ch = cfg.audio.channels;
+            tokio::spawn(audio::run_ft8_decoder(
+                ft8_sr, ft8_ch as u16, ft8_pcm_rx, ft8_state_rx, ft8_decode_tx,
             ));
         }
         if cfg.audio.tx_enabled {
