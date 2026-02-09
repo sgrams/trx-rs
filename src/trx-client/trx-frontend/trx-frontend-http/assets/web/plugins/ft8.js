@@ -29,29 +29,32 @@ function addFt8Message(msg) {
 }
 
 function renderFt8Message(message) {
-  const parts = message.split(/(\\s+)/);
-  return parts.map((part) => {
-    if (/^\\s+$/.test(part)) return part;
-    const m = part.match(/^([^A-Za-z0-9]*)([A-Za-z0-9]+)([^A-Za-z0-9]*)$/);
-    if (!m) return escapeHtml(part);
-    const [, lead, core, tail] = m;
-    const grid = core.toUpperCase();
-    if (/^[A-R]{2}\\d{2}(?:[A-X]{2})?$/.test(grid)) {
-      return `${escapeHtml(lead)}<span class="ft8-locator">[${grid}]</span>${escapeHtml(tail)}`;
-    }
-    return escapeHtml(part);
-  }).join("");
+  const gridRegex = /[A-R]{2}\\d{2}(?:[A-X]{2})?/gi;
+  let out = "";
+  let lastIdx = 0;
+  for (const match of message.matchAll(gridRegex)) {
+    const idx = match.index ?? 0;
+    const grid = match[0].toUpperCase();
+    const prev = idx > 0 ? message[idx - 1] : "";
+    const next = idx + grid.length < message.length ? message[idx + grid.length] : "";
+    if (isAlphaNum(prev) || isAlphaNum(next)) continue;
+    out += escapeHtml(message.slice(lastIdx, idx));
+    out += `<span class="ft8-locator">[${grid}]</span>`;
+    lastIdx = idx + grid.length;
+  }
+  out += escapeHtml(message.slice(lastIdx));
+  return out;
 }
 
 function extractFirstGrid(message) {
-  const parts = message.split(/\\s+/);
-  for (const part of parts) {
-    const m = part.match(/[A-Za-z0-9]+/);
-    if (!m) continue;
-    const grid = m[0].toUpperCase();
-    if (/^[A-R]{2}\\d{2}(?:[A-X]{2})?$/.test(grid)) {
-      return grid;
-    }
+  const gridRegex = /[A-R]{2}\\d{2}(?:[A-X]{2})?/gi;
+  for (const match of message.matchAll(gridRegex)) {
+    const idx = match.index ?? 0;
+    const grid = match[0].toUpperCase();
+    const prev = idx > 0 ? message[idx - 1] : "";
+    const next = idx + grid.length < message.length ? message[idx + grid.length] : "";
+    if (isAlphaNum(prev) || isAlphaNum(next)) continue;
+    return grid;
   }
   return null;
 }
@@ -62,6 +65,10 @@ function escapeHtml(input) {
     .replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;")
     .replaceAll("\"", "&quot;");
+}
+
+function isAlphaNum(ch) {
+  return /[A-Za-z0-9]/.test(ch);
 }
 
 document.getElementById("ft8-decode-toggle-btn").addEventListener("click", async () => {
