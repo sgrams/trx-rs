@@ -98,14 +98,14 @@ fn main() -> DynResult<()> {
 struct AppState;
 
 async fn async_init() -> DynResult<AppState> {
+    use std::sync::Arc;
+
     tracing_subscriber::fmt().with_target(false).init();
 
-    // Phase 3B: Create bootstrap context for explicit initialization.
-    // This replaces reliance on global mutable state, though currently
-    // built-in frontends still register on globals for plugin compatibility.
-    // Full de-globalization would require threading context through spawn_frontend.
+    // Phase 3: Create bootstrap context for explicit initialization.
+    // This replaces reliance on global mutable state by threading context through spawn_frontend.
     let mut _frontend_reg_ctx = FrontendRegistrationContext::new();
-    let mut _frontend_runtime_ctx = FrontendRuntimeContext::new();
+    let frontend_runtime_ctx = Arc::new(FrontendRuntimeContext::new());
 
     register_http_frontend();
     register_http_json_frontend();
@@ -248,7 +248,7 @@ async fn async_init() -> DynResult<AppState> {
         info!("Audio disabled in config, decode will not be available");
     }
 
-    // Spawn frontends
+    // Spawn frontends with runtime context
     for frontend in &frontends {
         let frontend_state_rx = state_rx.clone();
         let addr = match frontend.as_str() {
@@ -265,6 +265,7 @@ async fn async_init() -> DynResult<AppState> {
             tx.clone(),
             callsign.clone(),
             addr,
+            frontend_runtime_ctx.clone(),
         )?;
     }
 
