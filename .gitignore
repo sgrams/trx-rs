@@ -1,5 +1,26 @@
-# SPDX-FileCopyrightText: 2025 Stanislaw Grams <stanislawgrams@gmail.com>
-#
-# SPDX-License-Identifier: BSD-2-Clause
-
+# Rust
 /target/
+**/*.rs.bk
+Cargo.lock
+
+# IDEs/Editors
+/.idea/
+/.vscode/
+*.swp
+*.swo
+
+# macOS
+.DS_Store
+
+# Logs
+*.log
+
+# Coverage/Bench
+*.profraw
+*.lcov
+coverage/
+benchmarks/
+
+# Env
+.env
+.env.*

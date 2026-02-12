@@ -1,0 +1,24 @@
+# Enforce LF for all text files to prevent CRLF or mixed EOLs
+* text=auto eol=lf
+
+# Treat common binary types as binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.pdf binary
+*.zip binary
+*.gz binary
+*.bz2 binary
+*.xz binary
+*.7z binary
+*.tar binary
+*.mp4 binary
+*.mov binary
+*.mp3 binary
+*.wav binary
+*.ttf binary
+*.otf binary
+*.woff binary
+*.woff2 binary
