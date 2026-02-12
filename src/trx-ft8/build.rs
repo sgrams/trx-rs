@@ -23,6 +23,8 @@ fn main() {
         .file(format!("{base}/ft8/message.c"))
         .file(format!("{base}/ft8/text.c"))
         .flag_if_supported("-std=c99")
+        .flag_if_supported("-Wno-unused-const-variable")
+        .flag_if_supported("-Wno-unused-function")
         .compile("trx_ft8");
 
     println!("cargo:rustc-link-lib=m");
