@@ -22,8 +22,58 @@ pub enum RigAccess {
     Tcp { addr: String },
 }
 
-type BackendFactory = fn(RigAccess) -> DynResult<Box<dyn RigCat>>;
+pub type BackendFactory = fn(RigAccess) -> DynResult<Box<dyn RigCat>>;
 
+/// Context for registering and instantiating rig backends.
+pub struct RegistrationContext {
+    factories: HashMap<String, BackendFactory>,
+}
+
+impl RegistrationContext {
+    /// Create a new empty registration context.
+    pub fn new() -> Self {
+        Self {
+            factories: HashMap::new(),
+        }
+    }
+
+    /// Register a backend factory under a stable name (e.g. "ft817").
+    pub fn register_backend(&mut self, name: &str, factory: BackendFactory) {
+        let key = normalize_name(name);
+        self.factories.insert(key, factory);
+    }
+
+    /// Check whether a backend name is registered.
+    pub fn is_backend_registered(&self, name: &str) -> bool {
+        let key = normalize_name(name);
+        self.factories.contains_key(&key)
+    }
+
+    /// List registered backend names.
+    pub fn registered_backends(&self) -> Vec<String> {
+        let mut names: Vec<String> = self.factories.keys().cloned().collect();
+        names.sort();
+        names
+    }
+
+    /// Instantiate a rig backend based on the selected name and access method.
+    pub fn build_rig(&self, name: &str, access: RigAccess) -> DynResult<Box<dyn RigCat>> {
+        let key = normalize_name(name);
+        let factory = self
+            .factories
+            .get(&key)
+            .ok_or_else(|| format!("Unknown rig backend: {}", name))?;
+        factory(access)
+    }
+}
+
+impl Default for RegistrationContext {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+// Legacy global registry for plugin compatibility
 struct BackendRegistry {
     factories: HashMap<String, BackendFactory>,
 }
