@@ -1,12 +1,26 @@
 // --- WSPR Decoder Plugin (server-side decode) ---
 const wsprStatus = document.getElementById("wspr-status");
+const wsprPeriodEl = document.getElementById("wspr-period");
 const wsprMessagesEl = document.getElementById("wspr-messages");
 const WSPR_MAX_MESSAGES = 200;
+const WSPR_PERIOD_SECONDS = 120;
 
 function fmtWsprTime(tsMs) {
   if (!tsMs) return "--:--:--";
   return new Date(tsMs).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
 }
+
+function updateWsprPeriodTimer() {
+  if (!wsprPeriodEl) return;
+  const nowSec = Math.floor(Date.now() / 1000);
+  const remaining = WSPR_PERIOD_SECONDS - (nowSec % WSPR_PERIOD_SECONDS);
+  const mm = String(Math.floor(remaining / 60)).padStart(2, "0");
+  const ss = String(remaining % 60).padStart(2, "0");
+  wsprPeriodEl.textContent = `Next slot ${mm}:${ss}`;
+}
+
+updateWsprPeriodTimer();
+setInterval(updateWsprPeriodTimer, 500);
 
 function renderWsprRow(msg) {
   const row = document.createElement("div");
