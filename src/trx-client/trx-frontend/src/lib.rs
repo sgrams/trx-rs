@@ -22,6 +22,7 @@ pub trait FrontendSpawner {
         rig_tx: mpsc::Sender<RigRequest>,
         callsign: Option<String>,
         listen_addr: SocketAddr,
+        context: Arc<FrontendRuntimeContext>,
     ) -> JoinHandle<()>;
 }
 
@@ -30,6 +31,7 @@ pub type FrontendSpawnFn = fn(
     mpsc::Sender<RigRequest>,
     Option<String>,
     SocketAddr,
+    Arc<FrontendRuntimeContext>,
 ) -> JoinHandle<()>;
 
 /// Context for registering and spawning frontends.
@@ -64,7 +66,7 @@ impl FrontendRegistrationContext {
         names
     }
 
-    /// Spawn a registered frontend by name.
+    /// Spawn a registered frontend by name with runtime context.
     pub fn spawn_frontend(
         &self,
         name: &str,
@@ -72,13 +74,14 @@ impl FrontendRegistrationContext {
         rig_tx: mpsc::Sender<RigRequest>,
         callsign: Option<String>,
         listen_addr: SocketAddr,
+        context: Arc<FrontendRuntimeContext>,
     ) -> DynResult<JoinHandle<()>> {
         let key = normalize_name(name);
         let spawner = self
             .spawners
             .get(&key)
             .ok_or_else(|| format!("Unknown frontend: {}", name))?;
-        Ok(spawner(state_rx, rig_tx, callsign, listen_addr))
+        Ok(spawner(state_rx, rig_tx, callsign, listen_addr, context))
     }
 }
 
@@ -177,13 +180,14 @@ pub fn registered_frontends() -> Vec<String> {
     names
 }
 
-/// Spawn a registered frontend by name.
+/// Spawn a registered frontend by name with runtime context.
 pub fn spawn_frontend(
     name: &str,
     state_rx: watch::Receiver<RigState>,
     rig_tx: mpsc::Sender<RigRequest>,
     callsign: Option<String>,
     listen_addr: SocketAddr,
+    context: Arc<FrontendRuntimeContext>,
 ) -> DynResult<JoinHandle<()>> {
     let key = normalize_name(name);
     let reg = registry().lock().expect("frontend registry mutex poisoned");
@@ -191,5 +195,5 @@ pub fn spawn_frontend(
         .spawners
         .get(&key)
         .ok_or_else(|| format!("Unknown frontend: {}", name))?;
-    Ok(spawner(state_rx, rig_tx, callsign, listen_addr))
+    Ok(spawner(state_rx, rig_tx, callsign, listen_addr, context))
 }
