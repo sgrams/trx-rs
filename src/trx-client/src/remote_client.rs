@@ -15,6 +15,7 @@ use trx_core::rig::request::RigRequest;
 use trx_core::rig::state::RigState;
 use trx_core::rig::RigControl;
 use trx_core::{RigError, RigResult};
+use trx_protocol::rig_command_to_client;
 
 pub struct RemoteClientConfig {
     pub addr: String,
@@ -75,7 +76,7 @@ async fn handle_connection(
                 };
                 let cmd = req.cmd;
                 let result = {
-                    let client_cmd = map_rig_command(cmd);
+                    let client_cmd = rig_command_to_client(cmd);
                     send_command(config, &mut writer, &mut reader, client_cmd, state_tx).await
                 };
 
@@ -129,48 +130,6 @@ async fn send_command(
     Err(RigError::communication(
         resp.error.unwrap_or_else(|| "remote error".into()),
     ))
-}
-
-fn map_rig_command(cmd: trx_core::RigCommand) -> ClientCommand {
-    match cmd {
-        trx_core::RigCommand::GetSnapshot => ClientCommand::GetState,
-        trx_core::RigCommand::SetFreq(freq) => ClientCommand::SetFreq { freq_hz: freq.hz },
-        trx_core::RigCommand::SetMode(mode) => ClientCommand::SetMode {
-            mode: mode_label(&mode),
-        },
-        trx_core::RigCommand::SetPtt(ptt) => ClientCommand::SetPtt { ptt },
-        trx_core::RigCommand::PowerOn => ClientCommand::PowerOn,
-        trx_core::RigCommand::PowerOff => ClientCommand::PowerOff,
-        trx_core::RigCommand::ToggleVfo => ClientCommand::ToggleVfo,
-        trx_core::RigCommand::GetTxLimit => ClientCommand::GetTxLimit,
-        trx_core::RigCommand::SetTxLimit(limit) => ClientCommand::SetTxLimit { limit },
-        trx_core::RigCommand::Lock => ClientCommand::Lock,
-        trx_core::RigCommand::Unlock => ClientCommand::Unlock,
-        trx_core::RigCommand::SetAprsDecodeEnabled(enabled) => ClientCommand::SetAprsDecodeEnabled { enabled },
-        trx_core::RigCommand::SetCwDecodeEnabled(enabled) => ClientCommand::SetCwDecodeEnabled { enabled },
-        trx_core::RigCommand::SetCwAuto(enabled) => ClientCommand::SetCwAuto { enabled },
-        trx_core::RigCommand::SetCwWpm(wpm) => ClientCommand::SetCwWpm { wpm },
-        trx_core::RigCommand::SetCwToneHz(tone_hz) => ClientCommand::SetCwToneHz { tone_hz },
-        trx_core::RigCommand::SetFt8DecodeEnabled(enabled) => ClientCommand::SetFt8DecodeEnabled { enabled },
-        trx_core::RigCommand::ResetAprsDecoder => ClientCommand::ResetAprsDecoder,
-        trx_core::RigCommand::ResetCwDecoder => ClientCommand::ResetCwDecoder,
-        trx_core::RigCommand::ResetFt8Decoder => ClientCommand::ResetFt8Decoder,
-    }
-}
-
-fn mode_label(mode: &trx_core::rig::state::RigMode) -> String {
-    match mode {
-        trx_core::rig::state::RigMode::LSB => "LSB".to_string(),
-        trx_core::rig::state::RigMode::USB => "USB".to_string(),
-        trx_core::rig::state::RigMode::CW => "CW".to_string(),
-        trx_core::rig::state::RigMode::CWR => "CWR".to_string(),
-        trx_core::rig::state::RigMode::AM => "AM".to_string(),
-        trx_core::rig::state::RigMode::WFM => "WFM".to_string(),
-        trx_core::rig::state::RigMode::FM => "FM".to_string(),
-        trx_core::rig::state::RigMode::DIG => "DIG".to_string(),
-        trx_core::rig::state::RigMode::PKT => "PKT".to_string(),
-        trx_core::rig::state::RigMode::Other(val) => val.clone(),
-    }
 }
 
 pub fn state_from_snapshot(snapshot: trx_core::RigSnapshot) -> RigState {

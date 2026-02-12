@@ -19,6 +19,7 @@ dirs = "6"
 libloading = "0.8"
 bytes = "1"
 trx-core = { path = "../trx-core" }
+trx-protocol = { path = "../trx-protocol" }
 trx-frontend = { path = "trx-frontend" }
 trx-frontend-http = { path = "trx-frontend/trx-frontend-http" }
 trx-frontend-http-json = { path = "trx-frontend/trx-frontend-http-json" }
