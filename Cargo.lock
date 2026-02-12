@@ -2223,13 +2223,11 @@ dependencies = [
  "bytes",
  "clap",
  "dirs",
- "libloading",
  "serde",
  "serde_json",
  "tokio",
  "toml",
  "tracing",
- "tracing-subscriber",
  "trx-app",
  "trx-core",
  "trx-frontend",
@@ -2253,6 +2251,7 @@ dependencies = [
 name = "trx-frontend"
 version = "0.1.0"
 dependencies = [
+ "bytes",
  "tokio",
  "trx-core",
 ]
@@ -2272,6 +2271,7 @@ dependencies = [
  "tracing",
  "trx-core",
  "trx-frontend",
+ "trx-protocol",
 ]
 
 [[package]]
@@ -2294,6 +2294,7 @@ dependencies = [
  "tracing",
  "trx-core",
  "trx-frontend",
+ "trx-protocol",
 ]
 
 [[package]]
@@ -2321,7 +2322,6 @@ dependencies = [
  "clap",
  "cpal",
  "dirs",
- "libloading",
  "opus",
  "serde",
  "serde_json",
@@ -2329,7 +2329,6 @@ dependencies = [
  "tokio-serial",
  "toml",
  "tracing",
- "tracing-subscriber",
  "trx-app",
  "trx-backend",
  "trx-core",

@@ -14,6 +14,7 @@ use std::net::IpAddr;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
+use trx_app::{ConfigError, ConfigFile};
 
 /// Top-level client configuration structure.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -189,44 +190,13 @@ pub struct HttpJsonAuthConfig {
 impl ClientConfig {
     /// Load configuration from a specific file path.
     pub fn load_from_file(path: &Path) -> Result<Self, ConfigError> {
-        let contents = std::fs::read_to_string(path)
-            .map_err(|e| ConfigError::ReadError(path.to_path_buf(), e.to_string()))?;
-
-        toml::from_str(&contents)
-            .map_err(|e| ConfigError::ParseError(path.to_path_buf(), e.to_string()))
+        <Self as ConfigFile>::load_from_file(path)
     }
 
     /// Load configuration from the default search paths.
     /// Returns default config if no config file is found.
     pub fn load_from_default_paths() -> Result<(Self, Option<PathBuf>), ConfigError> {
-        let search_paths = Self::default_search_paths();
-
-        for path in search_paths {
-            if path.exists() {
-                let config = Self::load_from_file(&path)?;
-                return Ok((config, Some(path)));
-            }
-        }
-
-        Ok((Self::default(), None))
-    }
-
-    /// Get the default search paths for config files.
-    pub fn default_search_paths() -> Vec<PathBuf> {
-        let mut paths = Vec::new();
-
-        // Current directory
-        paths.push(PathBuf::from("trx-client.toml"));
-
-        // XDG config directory
-        if let Some(config_dir) = dirs::config_dir() {
-            paths.push(config_dir.join("trx-rs").join("client.toml"));
-        }
-
-        // System-wide config
-        paths.push(PathBuf::from("/etc/trx-rs/client.toml"));
-
-        paths
+        <Self as ConfigFile>::load_from_default_paths()
     }
 
     /// Generate an example configuration as a TOML string.
@@ -263,39 +233,21 @@ impl ClientConfig {
     }
 }
 
-/// Errors that can occur when loading configuration.
-#[derive(Debug)]
-pub enum ConfigError {
-    /// Failed to read the config file
-    ReadError(PathBuf, String),
-    /// Failed to parse the config file
-    ParseError(PathBuf, String),
-}
+impl ConfigFile for ClientConfig {
+    fn config_filename() -> &'static str {
+        "client.toml"
+    }
 
-impl std::fmt::Display for ConfigError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::ReadError(path, err) => {
-                write!(
-                    f,
-                    "failed to read config file '{}': {}",
-                    path.display(),
-                    err
-                )
-            }
-            Self::ParseError(path, err) => {
-                write!(
-                    f,
-                    "failed to parse config file '{}': {}",
-                    path.display(),
-                    err
-                )
-            }
+    fn default_search_paths() -> Vec<PathBuf> {
+        let mut paths = Vec::new();
+        paths.push(PathBuf::from("trx-client.toml"));
+        if let Some(config_dir) = dirs::config_dir() {
+            paths.push(config_dir.join("trx-rs").join("client.toml"));
         }
+        paths.push(PathBuf::from("/etc/trx-rs/client.toml"));
+        paths
     }
 }
-
-impl std::error::Error for ConfigError {}
 
 #[cfg(test)]
 mod tests {

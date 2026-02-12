@@ -14,10 +14,8 @@ serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 toml = { workspace = true }
 tracing = { workspace = true }
-tracing-subscriber = { workspace = true }
 clap = { workspace = true, features = ["derive"] }
 dirs = "6"
-libloading = "0.8"
 bytes = "1"
 cpal = "0.15"
 opus = "0.3"
