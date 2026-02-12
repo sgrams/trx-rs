@@ -188,6 +188,40 @@ pub struct HttpJsonAuthConfig {
 }
 
 impl ClientConfig {
+    pub fn validate(&self) -> Result<(), String> {
+        validate_log_level(self.general.log_level.as_deref())?;
+
+        if self.remote.poll_interval_ms == 0 {
+            return Err("[remote].poll_interval_ms must be > 0".to_string());
+        }
+        if let Some(url) = &self.remote.url {
+            if url.trim().is_empty() {
+                return Err("[remote].url must not be empty when set".to_string());
+            }
+        }
+        if let Some(token) = &self.remote.auth.token {
+            if token.trim().is_empty() {
+                return Err("[remote.auth].token must not be empty when set".to_string());
+            }
+        }
+
+        if self.frontends.http.enabled && self.frontends.http.port == 0 {
+            return Err("[frontends.http].port must be > 0 when enabled".to_string());
+        }
+        if self.frontends.rigctl.enabled && self.frontends.rigctl.port == 0 {
+            return Err("[frontends.rigctl].port must be > 0 when enabled".to_string());
+        }
+        if self.frontends.audio.enabled && self.frontends.audio.server_port == 0 {
+            return Err("[frontends.audio].server_port must be > 0 when enabled".to_string());
+        }
+        validate_tokens(
+            "[frontends.http_json.auth].tokens",
+            &self.frontends.http_json.auth.tokens,
+        )?;
+
+        Ok(())
+    }
+
     /// Load configuration from a specific file path.
     pub fn load_from_file(path: &Path) -> Result<Self, ConfigError> {
         <Self as ConfigFile>::load_from_file(path)
@@ -231,6 +265,28 @@ impl ClientConfig {
 
         toml::to_string_pretty(&example).unwrap_or_default()
     }
+}
+
+fn validate_log_level(level: Option<&str>) -> Result<(), String> {
+    if let Some(level) = level {
+        match level {
+            "trace" | "debug" | "info" | "warn" | "error" => {}
+            _ => {
+                return Err(format!(
+                    "[general].log_level '{}' is invalid (expected one of: trace, debug, info, warn, error)",
+                    level
+                ))
+            }
+        }
+    }
+    Ok(())
+}
+
+fn validate_tokens(path: &str, tokens: &[String]) -> Result<(), String> {
+    if tokens.iter().any(|t| t.trim().is_empty()) {
+        return Err(format!("{path} must not contain empty tokens"));
+    }
+    Ok(())
 }
 
 impl ConfigFile for ClientConfig {
@@ -298,5 +354,19 @@ port = 8080
     fn test_example_toml_parses() {
         let example = ClientConfig::example_toml();
         let _config: ClientConfig = toml::from_str(&example).unwrap();
+    }
+
+    #[test]
+    fn test_validate_rejects_zero_poll_interval() {
+        let mut config = ClientConfig::default();
+        config.remote.poll_interval_ms = 0;
+        assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn test_validate_rejects_empty_http_json_token() {
+        let mut config = ClientConfig::default();
+        config.frontends.http_json.auth.tokens = vec!["".to_string()];
+        assert!(config.validate().is_err());
     }
 }

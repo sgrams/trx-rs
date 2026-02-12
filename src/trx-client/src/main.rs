@@ -137,6 +137,8 @@ async fn async_init() -> DynResult<AppState> {
     } else {
         ClientConfig::load_from_default_paths()?
     };
+    cfg.validate()
+        .map_err(|e| format!("Invalid client configuration: {}", e))?;
 
     init_logging(cfg.general.log_level.as_deref());
 

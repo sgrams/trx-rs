@@ -203,6 +203,66 @@ impl Default for AudioConfig {
 }
 
 impl ServerConfig {
+    pub fn validate(&self) -> Result<(), String> {
+        validate_log_level(self.general.log_level.as_deref())?;
+        validate_coordinates(self.general.latitude, self.general.longitude)?;
+
+        if self.rig.initial_freq_hz == 0 {
+            return Err("[rig].initial_freq_hz must be > 0".to_string());
+        }
+
+        validate_access(&self.rig.access)?;
+
+        if self.behavior.poll_interval_ms == 0 {
+            return Err("[behavior].poll_interval_ms must be > 0".to_string());
+        }
+        if self.behavior.poll_interval_tx_ms == 0 {
+            return Err("[behavior].poll_interval_tx_ms must be > 0".to_string());
+        }
+        if self.behavior.max_retries == 0 {
+            return Err("[behavior].max_retries must be > 0".to_string());
+        }
+        if self.behavior.retry_base_delay_ms == 0 {
+            return Err("[behavior].retry_base_delay_ms must be > 0".to_string());
+        }
+
+        validate_tokens("[listen.auth].tokens", &self.listen.auth.tokens)?;
+        if self.listen.enabled && self.listen.port == 0 {
+            return Err("[listen].port must be > 0 when listener is enabled".to_string());
+        }
+
+        if self.audio.enabled {
+            if self.audio.port == 0 {
+                return Err("[audio].port must be > 0 when audio is enabled".to_string());
+            }
+            if !self.audio.rx_enabled && !self.audio.tx_enabled {
+                return Err(
+                    "[audio] enabled but both rx_enabled and tx_enabled are false".to_string(),
+                );
+            }
+            if self.audio.sample_rate < 8_000 || self.audio.sample_rate > 192_000 {
+                return Err("[audio].sample_rate must be in range 8000..=192000".to_string());
+            }
+            if !(1..=2).contains(&self.audio.channels) {
+                return Err("[audio].channels must be 1 or 2".to_string());
+            }
+            match self.audio.frame_duration_ms {
+                3 | 5 | 10 | 20 | 40 | 60 => {}
+                _ => {
+                    return Err(
+                        "[audio].frame_duration_ms must be one of: 3, 5, 10, 20, 40, 60"
+                            .to_string(),
+                    )
+                }
+            }
+            if self.audio.bitrate_bps == 0 {
+                return Err("[audio].bitrate_bps must be > 0".to_string());
+            }
+        }
+
+        Ok(())
+    }
+
     /// Load configuration from a specific file path.
     pub fn load_from_file(path: &Path) -> Result<Self, ConfigError> {
         <Self as ConfigFile>::load_from_file(path)
@@ -242,6 +302,94 @@ impl ServerConfig {
 
         toml::to_string_pretty(&example).unwrap_or_default()
     }
+}
+
+fn validate_log_level(level: Option<&str>) -> Result<(), String> {
+    if let Some(level) = level {
+        match level {
+            "trace" | "debug" | "info" | "warn" | "error" => {}
+            _ => {
+                return Err(format!(
+                    "[general].log_level '{}' is invalid (expected one of: trace, debug, info, warn, error)",
+                    level
+                ))
+            }
+        }
+    }
+    Ok(())
+}
+
+fn validate_coordinates(latitude: Option<f64>, longitude: Option<f64>) -> Result<(), String> {
+    match (latitude, longitude) {
+        (Some(lat), Some(lon)) => {
+            if !(-90.0..=90.0).contains(&lat) {
+                return Err("[general].latitude must be in range -90..=90".to_string());
+            }
+            if !(-180.0..=180.0).contains(&lon) {
+                return Err("[general].longitude must be in range -180..=180".to_string());
+            }
+            Ok(())
+        }
+        (None, None) => Ok(()),
+        _ => Err(
+            "[general].latitude and [general].longitude must be set together or both omitted"
+                .to_string(),
+        ),
+    }
+}
+
+fn validate_access(access: &AccessConfig) -> Result<(), String> {
+    let serial_fields_set = access.port.is_some() || access.baud.is_some();
+    let tcp_fields_set = access.host.is_some() || access.tcp_port.is_some();
+
+    if access.access_type.is_none() && !serial_fields_set && !tcp_fields_set {
+        return Ok(());
+    }
+
+    match access.access_type.as_deref().unwrap_or("serial") {
+        "serial" => {
+            if access.port.as_deref().unwrap_or("").trim().is_empty() {
+                return Err(
+                    "[rig.access].port must be set for serial access ([rig.access].type='serial')"
+                        .to_string(),
+                );
+            }
+            if access.baud.unwrap_or(0) == 0 {
+                return Err(
+                    "[rig.access].baud must be > 0 for serial access ([rig.access].type='serial')"
+                        .to_string(),
+                );
+            }
+        }
+        "tcp" => {
+            if access.host.as_deref().unwrap_or("").trim().is_empty() {
+                return Err(
+                    "[rig.access].host must be set for tcp access ([rig.access].type='tcp')"
+                        .to_string(),
+                );
+            }
+            if access.tcp_port.unwrap_or(0) == 0 {
+                return Err(
+                    "[rig.access].tcp_port must be > 0 for tcp access ([rig.access].type='tcp')"
+                        .to_string(),
+                );
+            }
+        }
+        other => {
+            return Err(format!(
+                "[rig.access].type '{}' is invalid (expected 'serial' or 'tcp')",
+                other
+            ))
+        }
+    }
+    Ok(())
+}
+
+fn validate_tokens(path: &str, tokens: &[String]) -> Result<(), String> {
+    if tokens.iter().any(|t| t.trim().is_empty()) {
+        return Err(format!("{path} must not contain empty tokens"));
+    }
+    Ok(())
 }
 
 impl ConfigFile for ServerConfig {
@@ -349,5 +497,22 @@ tokens = ["secret123"]
     fn test_example_toml_parses() {
         let example = ServerConfig::example_toml();
         let _config: ServerConfig = toml::from_str(&example).unwrap();
+    }
+
+    #[test]
+    fn test_validate_rejects_invalid_coordinates() {
+        let mut config = ServerConfig::default();
+        config.general.latitude = Some(120.0);
+        config.general.longitude = Some(10.0);
+        assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn test_validate_rejects_invalid_audio_frame_duration() {
+        let mut config = ServerConfig::default();
+        config.rig.access.port = Some("/dev/ttyUSB0".to_string());
+        config.rig.access.baud = Some(9600);
+        config.audio.frame_duration_ms = 7;
+        assert!(config.validate().is_err());
     }
 }

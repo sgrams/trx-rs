@@ -242,6 +242,8 @@ async fn main() -> DynResult<()> {
     } else {
         ServerConfig::load_from_default_paths()?
     };
+    cfg.validate()
+        .map_err(|e| format!("Invalid server configuration: {}", e))?;
 
     init_logging(cfg.general.log_level.as_deref());
 
