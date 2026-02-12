@@ -87,7 +87,20 @@ function formatFreq(hz) {
   return `${(hz / 1_000).toFixed(1)} kHz`;
 }
 
-function parseFreqInput(val) {
+function formatFreqForStep(hz, step) {
+  if (!Number.isFinite(hz)) return "--";
+  if (step === 1_000_000) return (hz / 1_000_000).toFixed(6);
+  if (step === 1_000) return (hz / 1_000).toFixed(3);
+  if (step === 1) return String(Math.round(hz));
+  return formatFreq(hz);
+}
+
+function refreshFreqDisplay() {
+  if (lastFreqHz == null || freqDirty) return;
+  freqEl.value = formatFreqForStep(lastFreqHz, jogStep);
+}
+
+function parseFreqInput(val, defaultStep) {
   if (!val) return null;
   const trimmed = val.trim().toLowerCase();
   const match = trimmed.match(/^([0-9]+(?:[.,][0-9]+)?)\s*([kmg]hz|[kmg]|hz)?$/);
@@ -102,13 +115,22 @@ function parseFreqInput(val) {
   } else if (unit.startsWith("kh") || unit === "k") {
     num *= 1_000;
   } else if (!unit) {
-    // Heuristic when no unit is provided: large numbers are kHz/Hz, small numbers are MHz.
-    if (num >= 1_000_000) {
-      // Assume already Hz.
-    } else if (num >= 1_000) {
-      num *= 1_000; // treat as kHz
+    // Use currently selected input unit when user omits suffix.
+    if (defaultStep === 1_000_000) {
+      num *= 1_000_000;
+    } else if (defaultStep === 1_000) {
+      num *= 1_000;
+    } else if (defaultStep === 1) {
+      // already Hz
     } else {
-      num *= 1_000_000; // treat as MHz
+      // Fallback heuristic.
+      if (num >= 1_000_000) {
+        // Assume already Hz.
+      } else if (num >= 1_000) {
+        num *= 1_000;
+      } else {
+        num *= 1_000_000;
+      }
     }
   }
   return Math.round(num);
@@ -239,7 +261,7 @@ function render(update) {
   if (update.status && update.status.freq && typeof update.status.freq.hz === "number") {
     lastFreqHz = update.status.freq.hz;
     if (!freqDirty) {
-      freqEl.value = formatFreq(update.status.freq.hz);
+      refreshFreqDisplay();
     }
     window.ft8BaseHz = update.status.freq.hz;
     if (window.updateFt8RfDisplay) {
@@ -550,7 +572,7 @@ pttBtn.addEventListener("click", async () => {
 });
 
 freqBtn.addEventListener("click", async () => {
-  const parsed = parseFreqInput(freqEl.value);
+  const parsed = parseFreqInput(freqEl.value, jogStep);
   if (parsed === null) {
     showHint("Freq missing", 1500);
     return;
@@ -661,6 +683,7 @@ jogStepEl.addEventListener("click", (e) => {
   jogStepEl.querySelectorAll("button").forEach((b) => b.classList.remove("active"));
   btn.classList.add("active");
   saveSetting("jogStep", jogStep);
+  refreshFreqDisplay();
 });
 
 // Restore active jog step button from saved setting
