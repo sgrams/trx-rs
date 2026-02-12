@@ -23,7 +23,7 @@ use trx_core::audio::AudioStreamInfo;
 use trx_core::rig::request::RigRequest;
 use trx_core::rig::state::RigState;
 use trx_core::DynResult;
-use trx_frontend::{is_frontend_registered, registered_frontends};
+use trx_frontend::{is_frontend_registered, registered_frontends, FrontendRegistrationContext, FrontendRuntimeContext};
 use trx_core::decode::DecodedMessage;
 use trx_frontend_http::{register_frontend as register_http_frontend, set_audio_channels, set_decode_channel};
 use trx_frontend_http_json::{register_frontend as register_http_json_frontend, set_auth_tokens};
@@ -99,6 +99,13 @@ struct AppState;
 
 async fn async_init() -> DynResult<AppState> {
     tracing_subscriber::fmt().with_target(false).init();
+
+    // Phase 3B: Create bootstrap context for explicit initialization.
+    // This replaces reliance on global mutable state, though currently
+    // built-in frontends still register on globals for plugin compatibility.
+    // Full de-globalization would require threading context through spawn_frontend.
+    let mut _frontend_reg_ctx = FrontendRegistrationContext::new();
+    let mut _frontend_runtime_ctx = FrontendRuntimeContext::new();
 
     register_http_frontend();
     register_http_json_frontend();
