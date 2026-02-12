@@ -24,11 +24,9 @@ use tracing::{error, info};
 use trx_core::audio::AudioStreamInfo;
 
 use trx_backend::{is_backend_registered, register_builtin_backends, registered_backends, RigAccess};
-use trx_core::radio::freq::Freq;
 use trx_core::rig::controller::{AdaptivePolling, ExponentialBackoff};
 use trx_core::rig::request::RigRequest;
 use trx_core::rig::state::RigState;
-use trx_core::rig::{RigControl, RigRxStatus, RigStatus, RigTxStatus};
 use trx_core::DynResult;
 
 use config::ServerConfig;
@@ -188,51 +186,6 @@ fn resolve_config(cli: &Cli, cfg: &ServerConfig) -> DynResult<ResolvedConfig> {
     })
 }
 
-fn build_initial_state(cfg: &ServerConfig, resolved: &ResolvedConfig) -> RigState {
-    let callsign = &resolved.callsign;
-    RigState {
-        rig_info: None,
-        status: RigStatus {
-            freq: Freq {
-                hz: cfg.rig.initial_freq_hz,
-            },
-            mode: cfg.rig.initial_mode.clone(),
-            tx_en: false,
-            vfo: None,
-            tx: Some(RigTxStatus {
-                power: None,
-                limit: None,
-                swr: None,
-                alc: None,
-            }),
-            rx: Some(RigRxStatus { sig: None }),
-            lock: Some(false),
-        },
-        initialized: false,
-        control: RigControl {
-            rpt_offset_hz: None,
-            ctcss_hz: None,
-            dcs_code: None,
-            lock: Some(false),
-            clar_hz: None,
-            clar_on: None,
-            enabled: Some(false),
-        },
-        server_callsign: callsign.clone(),
-        server_version: Some(env!("CARGO_PKG_VERSION").to_string()),
-        server_latitude: resolved.latitude,
-        server_longitude: resolved.longitude,
-        aprs_decode_enabled: false,
-        cw_decode_enabled: false,
-        cw_auto: true,
-        cw_wpm: 15,
-        cw_tone_hz: 700,
-        ft8_decode_enabled: false,
-        aprs_decode_reset_seq: 0,
-        cw_decode_reset_seq: 0,
-        ft8_decode_reset_seq: 0,
-    }
-}
 
 fn build_rig_task_config(
     resolved: &ResolvedConfig,
@@ -306,7 +259,14 @@ async fn main() -> DynResult<()> {
     }
 
     let (tx, rx) = mpsc::channel::<RigRequest>(RIG_TASK_CHANNEL_BUFFER);
-    let initial_state = build_initial_state(&cfg, &resolved);
+    let initial_state = RigState::new_with_metadata(
+        resolved.callsign.clone(),
+        Some(env!("CARGO_PKG_VERSION").to_string()),
+        resolved.latitude,
+        resolved.longitude,
+        cfg.rig.initial_freq_hz,
+        cfg.rig.initial_mode.clone(),
+    );
     let (state_tx, state_rx) = watch::channel(initial_state);
     // Keep receivers alive so channels don't close prematurely
     let _state_rx = state_rx;

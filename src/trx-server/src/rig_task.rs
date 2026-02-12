@@ -20,7 +20,7 @@ use trx_core::rig::controller::{
 };
 use trx_core::rig::request::RigRequest;
 use trx_core::rig::state::{RigMode, RigSnapshot, RigState};
-use trx_core::rig::{RigCat, RigControl, RigRxStatus, RigStatus, RigTxStatus};
+use trx_core::rig::{RigCat, RigRxStatus, RigTxStatus};
 use trx_core::{DynResult, RigError, RigResult};
 
 use crate::audio;
@@ -89,50 +89,14 @@ pub async fn run_rig_task(
     // Initialize state machine and state
     let mut machine = RigStateMachine::new();
     let emitter = RigEventEmitter::new();
-    let server_callsign = config.server_callsign.clone();
-    let server_version = config.server_version.clone();
-    let server_latitude = config.server_latitude;
-    let server_longitude = config.server_longitude;
-    let mut state = RigState {
-        rig_info: None,
-        status: RigStatus {
-            freq: Freq { hz: 144_300_000 },
-            mode: RigMode::USB,
-            tx_en: false,
-            vfo: None,
-            tx: Some(RigTxStatus {
-                power: None,
-                limit: None,
-                swr: None,
-                alc: None,
-            }),
-            rx: Some(RigRxStatus { sig: None }),
-            lock: Some(false),
-        },
-        initialized: false,
-        control: RigControl {
-            rpt_offset_hz: None,
-            ctcss_hz: None,
-            dcs_code: None,
-            lock: Some(false),
-            clar_hz: None,
-            clar_on: None,
-            enabled: Some(false),
-        },
-        server_callsign,
-        server_version,
-        server_latitude,
-        server_longitude,
-        aprs_decode_enabled: false,
-        cw_decode_enabled: false,
-        cw_auto: true,
-        cw_wpm: 15,
-        cw_tone_hz: 700,
-        ft8_decode_enabled: false,
-        aprs_decode_reset_seq: 0,
-        cw_decode_reset_seq: 0,
-        ft8_decode_reset_seq: 0,
-    };
+    let mut state = RigState::new_with_metadata(
+        config.server_callsign.clone(),
+        config.server_version.clone(),
+        config.server_latitude,
+        config.server_longitude,
+        config.initial_freq_hz,
+        config.initial_mode.clone(),
+    );
 
     // Polling configuration
     let polling = &config.polling;
