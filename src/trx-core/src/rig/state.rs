@@ -4,7 +4,8 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::rig::{RigControl, RigInfo, RigStatus, RigStatusProvider};
+use crate::radio::freq::Freq;
+use crate::rig::{RigControl, RigInfo, RigRxStatus, RigStatus, RigStatusProvider, RigTxStatus};
 
 /// Simple transceiver state representation held by the rig task.
 #[derive(Debug, Clone, Serialize)]
@@ -58,6 +59,39 @@ pub enum RigMode {
     Other(String),
 }
 
+impl Default for RigStatus {
+    fn default() -> Self {
+        Self {
+            freq: Freq { hz: 144_300_000 },  // 2m calling frequency
+            mode: RigMode::USB,
+            tx_en: false,
+            vfo: None,
+            tx: Some(RigTxStatus {
+                power: None,
+                limit: None,
+                swr: None,
+                alc: None,
+            }),
+            rx: Some(RigRxStatus { sig: None }),
+            lock: Some(false),
+        }
+    }
+}
+
+impl Default for RigControl {
+    fn default() -> Self {
+        Self {
+            rpt_offset_hz: None,
+            ctcss_hz: None,
+            dcs_code: None,
+            lock: Some(false),
+            clar_hz: None,
+            clar_on: None,
+            enabled: Some(false),
+        }
+    }
+}
+
 impl RigStatusProvider for RigState {
     fn status(&self) -> RigStatus {
         self.status.clone()
@@ -65,6 +99,80 @@ impl RigStatusProvider for RigState {
 }
 
 impl RigState {
+    /// Create uninitialized state with common defaults (client-side).
+    pub fn new_uninitialized() -> Self {
+        Self {
+            rig_info: None,
+            status: RigStatus::default(),
+            initialized: false,
+            control: RigControl::default(),
+            server_callsign: None,
+            server_version: None,
+            server_latitude: None,
+            server_longitude: None,
+            aprs_decode_enabled: false,
+            cw_decode_enabled: false,
+            ft8_decode_enabled: false,
+            cw_auto: true,
+            cw_wpm: 15,
+            cw_tone_hz: 700,
+            aprs_decode_reset_seq: 0,
+            cw_decode_reset_seq: 0,
+            ft8_decode_reset_seq: 0,
+        }
+    }
+
+    /// Create state with server metadata and initial freq/mode (server-side).
+    pub fn new_with_metadata(
+        callsign: Option<String>,
+        version: Option<String>,
+        latitude: Option<f64>,
+        longitude: Option<f64>,
+        initial_freq_hz: u64,
+        initial_mode: RigMode,
+    ) -> Self {
+        let mut state = Self::new_uninitialized();
+        state.server_callsign = callsign;
+        state.server_version = version;
+        state.server_latitude = latitude;
+        state.server_longitude = longitude;
+        state.status.freq = Freq { hz: initial_freq_hz };
+        state.status.mode = initial_mode;
+        state
+    }
+
+    /// Convert snapshot to full state (remote client).
+    pub fn from_snapshot(snapshot: RigSnapshot) -> Self {
+        let lock = snapshot.status.lock;
+        Self {
+            rig_info: Some(snapshot.info),
+            status: snapshot.status,
+            initialized: snapshot.initialized,
+            control: RigControl {
+                rpt_offset_hz: None,
+                ctcss_hz: None,
+                dcs_code: None,
+                lock,
+                clar_hz: None,
+                clar_on: None,
+                enabled: snapshot.enabled,
+            },
+            server_callsign: snapshot.server_callsign,
+            server_version: snapshot.server_version,
+            server_latitude: snapshot.server_latitude,
+            server_longitude: snapshot.server_longitude,
+            aprs_decode_enabled: snapshot.aprs_decode_enabled,
+            cw_decode_enabled: snapshot.cw_decode_enabled,
+            cw_auto: snapshot.cw_auto,
+            cw_wpm: snapshot.cw_wpm,
+            cw_tone_hz: snapshot.cw_tone_hz,
+            ft8_decode_enabled: snapshot.ft8_decode_enabled,
+            aprs_decode_reset_seq: 0,
+            cw_decode_reset_seq: 0,
+            ft8_decode_reset_seq: 0,
+        }
+    }
+
     pub fn band_name(&self) -> Option<String> {
         self.rig_info.as_ref().and_then(|info| {
             self.status
