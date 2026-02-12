@@ -7,6 +7,7 @@ members = [
     "src/trx-ft8",
     "src/trx-core",
     "src/trx-protocol",
+    "src/trx-app",
     "src/trx-server",
     "src/trx-server/trx-backend",
     "src/trx-server/trx-backend/trx-backend-ft817",

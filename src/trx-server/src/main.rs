@@ -23,6 +23,7 @@ use tracing::{error, info};
 
 use trx_core::audio::AudioStreamInfo;
 
+use trx_app::normalize_name;
 use trx_backend::{is_backend_registered, register_builtin_backends, registered_backends, RigAccess};
 use trx_core::rig::controller::{AdaptivePolling, ExponentialBackoff};
 use trx_core::rig::request::RigRequest;
@@ -74,14 +75,6 @@ struct Cli {
 enum AccessKind {
     Serial,
     Tcp,
-}
-
-/// Normalize a rig name to lowercase alphanumeric.
-fn normalize_name(name: &str) -> String {
-    name.to_ascii_lowercase()
-        .chars()
-        .filter(|c| c.is_ascii_alphanumeric())
-        .collect()
 }
 
 /// Parse a serial rig address of the form "<path> <baud>".
