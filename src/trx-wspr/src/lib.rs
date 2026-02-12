@@ -3,5 +3,6 @@
 // SPDX-License-Identifier: BSD-2-Clause
 
 mod decoder;
+mod protocol;
 
 pub use decoder::{WsprDecodeResult, WsprDecoder};

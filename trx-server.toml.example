@@ -2,6 +2,7 @@
 #
 # Copy this file to one of:
 #   ./trx-server.toml                   (current directory)
+#   ~/.trx-server.toml                  (legacy user config)
 #   ~/.config/trx-rs/server.toml        (user config)
 #   /etc/trx-rs/server.toml             (system-wide)
 #

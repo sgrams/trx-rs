@@ -8,8 +8,9 @@ This document lists all currently supported configuration options for `trx-serve
 Configuration lookup order:
 1. `--config <FILE>`
 2. `./trx-server.toml`
-3. `~/.config/trx-rs/server.toml`
-4. `/etc/trx-rs/server.toml`
+3. `~/.trx-server.toml`
+4. `~/.config/trx-rs/server.toml`
+5. `/etc/trx-rs/server.toml`
 
 ### `trx-client`
 Configuration lookup order:
