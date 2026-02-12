@@ -2334,7 +2334,12 @@ dependencies = [
  "trx-core",
  "trx-ft8",
  "trx-protocol",
+ "trx-wspr",
 ]
+
+[[package]]
+name = "trx-wspr"
+version = "0.1.0"
 
 [[package]]
 name = "typenum"

@@ -5,6 +5,7 @@
 [workspace]
 members = [
     "src/trx-ft8",
+    "src/trx-wspr",
     "src/trx-core",
     "src/trx-protocol",
     "src/trx-app",

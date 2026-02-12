@@ -22,6 +22,7 @@ use trx_core::audio::{
 use trx_core::decode::{AprsPacket, DecodedMessage, Ft8Message, WsprMessage};
 use trx_core::rig::state::{RigMode, RigState};
 use trx_ft8::Ft8Decoder;
+use trx_wspr::WsprDecoder;
 
 use crate::config::AudioConfig;
 use crate::decode;
@@ -122,6 +123,12 @@ pub fn snapshot_wspr_history() -> Vec<WsprMessage> {
 pub fn clear_wspr_history() {
     let mut history = wspr_history().lock().expect("wspr history mutex poisoned");
     history.clear();
+}
+
+pub fn record_wspr_message(msg: WsprMessage) {
+    let mut history = wspr_history().lock().expect("wspr history mutex poisoned");
+    history.push_back((Instant::now(), msg));
+    prune_wspr_history(&mut history);
 }
 
 /// Spawn the audio capture thread.
@@ -791,13 +798,22 @@ pub async fn run_wspr_decoder(
     channels: u16,
     mut pcm_rx: broadcast::Receiver<Vec<f32>>,
     mut state_rx: watch::Receiver<RigState>,
-    _decode_tx: broadcast::Sender<DecodedMessage>,
+    decode_tx: broadcast::Sender<DecodedMessage>,
 ) {
     info!("WSPR decoder started ({}Hz, {} ch)", sample_rate, channels);
+    let decoder = match WsprDecoder::new() {
+        Ok(decoder) => decoder,
+        Err(err) => {
+            warn!("WSPR decoder init failed: {}", err);
+            return;
+        }
+    };
     let mut last_reset_seq: u64 = 0;
     let mut active = state_rx.borrow().wspr_decode_enabled
         && matches!(state_rx.borrow().status.mode, RigMode::DIG | RigMode::USB);
-    let mut warned_no_decoder = false;
+    let mut slot_buf: Vec<f32> = Vec::new();
+    let mut last_slot: i64 = -1;
+    let slot_len_s: i64 = 120;
 
     loop {
         if !active {
@@ -812,7 +828,8 @@ pub async fn run_wspr_decoder(
                     if state.wspr_decode_reset_seq != last_reset_seq {
                         last_reset_seq = state.wspr_decode_reset_seq;
                     }
-                    warned_no_decoder = false;
+                    slot_buf.clear();
+                    last_slot = -1;
                 }
                 Err(_) => break,
             }
@@ -823,22 +840,58 @@ pub async fn run_wspr_decoder(
             recv = pcm_rx.recv() => {
                 match recv {
                     Ok(frame) => {
+                        let now = match std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH) {
+                            Ok(dur) => dur.as_secs() as i64,
+                            Err(_) => 0,
+                        };
+                        let slot = now / slot_len_s;
+                        if last_slot == -1 {
+                            last_slot = slot;
+                        } else if slot != last_slot {
+                            let base_freq = state_rx.borrow().status.freq.hz;
+                            match decoder.decode_slot(&slot_buf, Some(base_freq)) {
+                                Ok(results) => {
+                                    for res in results {
+                                        let ts_ms = match std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH) {
+                                            Ok(dur) => dur.as_millis() as i64,
+                                            Err(_) => 0,
+                                        };
+                                        let msg = WsprMessage {
+                                            ts_ms,
+                                            snr_db: res.snr_db,
+                                            dt_s: res.dt_s,
+                                            freq_hz: res.freq_hz,
+                                            message: res.message,
+                                        };
+                                        record_wspr_message(msg.clone());
+                                        let _ = decode_tx.send(DecodedMessage::Wspr(msg));
+                                    }
+                                }
+                                Err(err) => warn!("WSPR decode failed: {}", err),
+                            }
+                            slot_buf.clear();
+                            last_slot = slot;
+                        }
+
                         let state = state_rx.borrow();
                         if state.wspr_decode_reset_seq != last_reset_seq {
                             last_reset_seq = state.wspr_decode_reset_seq;
+                            slot_buf.clear();
+                            last_slot = slot;
                         }
 
-                        // Keep the same preprocessing path as FT8 so decoder integration
-                        // can be dropped in without changing task flow.
                         let mono = downmix_mono(frame, channels);
-                        if resample_to_12k(&mono, sample_rate).is_none() {
+                        let Some(resampled) = resample_to_12k(&mono, sample_rate) else {
                             warn!("WSPR decoder: unsupported sample rate {}", sample_rate);
                             break;
-                        }
-
-                        if !warned_no_decoder {
-                            warn!("WSPR decoder engine not integrated yet; decode output is inactive");
-                            warned_no_decoder = true;
+                        };
+                        slot_buf.extend_from_slice(&resampled);
+                        if slot_buf.len() > decoder.slot_samples() {
+                            let keep = decoder.slot_samples();
+                            let drain = slot_buf.len().saturating_sub(keep);
+                            if drain > 0 {
+                                slot_buf.drain(..drain);
+                            }
                         }
                     }
                     Err(broadcast::error::RecvError::Lagged(n)) => {
@@ -855,11 +908,14 @@ pub async fn run_wspr_decoder(
                             && matches!(state.status.mode, RigMode::DIG | RigMode::USB);
                         if state.wspr_decode_reset_seq != last_reset_seq {
                             last_reset_seq = state.wspr_decode_reset_seq;
+                            slot_buf.clear();
+                            last_slot = -1;
                         }
                         if active {
                             pcm_rx = pcm_rx.resubscribe();
                         } else {
-                            warned_no_decoder = false;
+                            slot_buf.clear();
+                            last_slot = -1;
                         }
                     }
                     Err(_) => break,
