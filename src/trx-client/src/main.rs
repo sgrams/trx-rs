@@ -17,6 +17,7 @@ use tokio::signal;
 use tokio::sync::{broadcast, mpsc, watch};
 use tracing::info;
 
+use trx_app::normalize_name;
 use trx_core::audio::AudioStreamInfo;
 
 use trx_core::rig::request::RigRequest;
@@ -79,14 +80,6 @@ struct Cli {
     /// Optional callsign/owner label to show in the frontend
     #[arg(short = 'c', long = "callsign")]
     callsign: Option<String>,
-}
-
-/// Normalize a rig/frontend name to lowercase alphanumeric.
-fn normalize_name(name: &str) -> String {
-    name.to_ascii_lowercase()
-        .chars()
-        .filter(|c| c.is_ascii_alphanumeric())
-        .collect()
 }
 
 fn main() -> DynResult<()> {
