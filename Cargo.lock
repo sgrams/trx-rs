@@ -2169,6 +2169,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "trx-app"
+version = "0.1.0"
+dependencies = [
+ "dirs",
+ "libloading",
+ "serde",
+ "thiserror 2.0.17",
+ "toml",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "trx-backend"
 version = "0.1.0"
 dependencies = [
@@ -2217,6 +2230,7 @@ dependencies = [
  "toml",
  "tracing",
  "tracing-subscriber",
+ "trx-app",
  "trx-core",
  "trx-frontend",
  "trx-frontend-http",
@@ -2316,6 +2330,7 @@ dependencies = [
  "toml",
  "tracing",
  "tracing-subscriber",
+ "trx-app",
  "trx-backend",
  "trx-core",
  "trx-ft8",
