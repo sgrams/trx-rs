@@ -21,8 +21,6 @@ use trx_core::audio::AudioStreamInfo;
 
 use trx_core::rig::request::RigRequest;
 use trx_core::rig::state::RigState;
-use trx_core::rig::{RigControl, RigRxStatus, RigStatus, RigTxStatus};
-use trx_core::radio::freq::Freq;
 use trx_core::DynResult;
 use trx_frontend::{is_frontend_registered, registered_frontends};
 use trx_core::decode::DecodedMessage;
@@ -204,46 +202,7 @@ async fn async_init() -> DynResult<AppState> {
 
     let (tx, rx) = mpsc::channel::<RigRequest>(RIG_TASK_CHANNEL_BUFFER);
 
-    let initial_state = RigState {
-        rig_info: None,
-        status: RigStatus {
-            freq: Freq { hz: 144_300_000 },
-            mode: trx_core::rig::state::RigMode::USB,
-            tx_en: false,
-            vfo: None,
-            tx: Some(RigTxStatus {
-                power: None,
-                limit: None,
-                swr: None,
-                alc: None,
-            }),
-            rx: Some(RigRxStatus { sig: None }),
-            lock: Some(false),
-        },
-        initialized: false,
-        control: RigControl {
-            rpt_offset_hz: None,
-            ctcss_hz: None,
-            dcs_code: None,
-            lock: Some(false),
-            clar_hz: None,
-            clar_on: None,
-            enabled: Some(false),
-        },
-        server_callsign: None,
-        server_version: None,
-        server_latitude: None,
-        server_longitude: None,
-        aprs_decode_enabled: false,
-        cw_decode_enabled: false,
-        cw_auto: true,
-        cw_wpm: 15,
-        cw_tone_hz: 700,
-        ft8_decode_enabled: false,
-        aprs_decode_reset_seq: 0,
-        cw_decode_reset_seq: 0,
-        ft8_decode_reset_seq: 0,
-    };
+    let initial_state = RigState::new_uninitialized();
     let (state_tx, state_rx) = watch::channel(initial_state);
 
     // Extract host for audio before moving remote_addr

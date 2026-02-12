@@ -13,7 +13,6 @@ use tracing::{info, warn};
 use trx_core::client::{ClientCommand, ClientEnvelope, ClientResponse};
 use trx_core::rig::request::RigRequest;
 use trx_core::rig::state::RigState;
-use trx_core::rig::RigControl;
 use trx_core::{RigError, RigResult};
 use trx_protocol::rig_command_to_client;
 
@@ -121,7 +120,7 @@ async fn send_command(
 
     if resp.success {
         if let Some(snapshot) = resp.state {
-            let _ = state_tx.send(state_from_snapshot(snapshot.clone()));
+            let _ = state_tx.send(RigState::from_snapshot(snapshot.clone()));
             return Ok(snapshot);
         }
         return Err(RigError::communication("missing snapshot"));
@@ -130,38 +129,6 @@ async fn send_command(
     Err(RigError::communication(
         resp.error.unwrap_or_else(|| "remote error".into()),
     ))
-}
-
-pub fn state_from_snapshot(snapshot: trx_core::RigSnapshot) -> RigState {
-    let status = snapshot.status;
-    let lock = status.lock;
-    RigState {
-        rig_info: Some(snapshot.info),
-        status,
-        initialized: snapshot.initialized,
-        control: RigControl {
-            rpt_offset_hz: None,
-            ctcss_hz: None,
-            dcs_code: None,
-            lock,
-            clar_hz: None,
-            clar_on: None,
-            enabled: snapshot.enabled,
-        },
-        server_callsign: snapshot.server_callsign,
-        server_version: snapshot.server_version,
-        server_latitude: snapshot.server_latitude,
-        server_longitude: snapshot.server_longitude,
-        aprs_decode_enabled: snapshot.aprs_decode_enabled,
-        cw_decode_enabled: snapshot.cw_decode_enabled,
-        cw_auto: snapshot.cw_auto,
-        cw_wpm: snapshot.cw_wpm,
-        cw_tone_hz: snapshot.cw_tone_hz,
-        ft8_decode_enabled: snapshot.ft8_decode_enabled,
-        aprs_decode_reset_seq: 0,
-        cw_decode_reset_seq: 0,
-        ft8_decode_reset_seq: 0,
-    }
 }
 
 pub fn parse_remote_url(url: &str) -> Result<String, String> {
