@@ -187,6 +187,15 @@ fn build_rig_task_config(
     cfg: &ServerConfig,
     registry: std::sync::Arc<RegistrationContext>,
 ) -> rig_task::RigTaskConfig {
+    let pskreporter_status = if cfg.pskreporter.enabled {
+        Some(format!(
+            "Enabled ({}:{})",
+            cfg.pskreporter.host, cfg.pskreporter.port
+        ))
+    } else {
+        Some("Disabled".to_string())
+    };
+
     rig_task::RigTaskConfig {
         registry,
         rig_model: resolved.rig.clone(),
@@ -206,6 +215,7 @@ fn build_rig_task_config(
         server_version: Some(env!("CARGO_PKG_VERSION").to_string()),
         server_latitude: resolved.latitude,
         server_longitude: resolved.longitude,
+        pskreporter_status,
     }
 }
 

@@ -40,6 +40,7 @@ pub struct RigTaskConfig {
     pub server_version: Option<String>,
     pub server_latitude: Option<f64>,
     pub server_longitude: Option<f64>,
+    pub pskreporter_status: Option<String>,
 }
 
 impl Default for RigTaskConfig {
@@ -61,6 +62,7 @@ impl Default for RigTaskConfig {
             server_version: None,
             server_latitude: None,
             server_longitude: None,
+            pskreporter_status: None,
         }
     }
 }
@@ -105,6 +107,7 @@ pub async fn run_rig_task(
         config.initial_freq_hz,
         config.initial_mode.clone(),
     );
+    state.pskreporter_status = config.pskreporter_status.clone();
 
     // Polling configuration
     let polling = &config.polling;
