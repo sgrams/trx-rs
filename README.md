@@ -8,6 +8,8 @@ This is an early, untested snapshot of a transceiver control stack (core + backe
 
 The rig task is now driven by the controller components (state machine, handlers, and policies). Polling and retry behavior are configurable via the `[behavior]` section in the config file.
 
+Configuration reference: see `CONFIGURATION.md` for all server/client options and defaults.
+
 ## Supported backends
 
 - Yaesu FT-817 (feature-gated crate `trx-backend-ft817`)
