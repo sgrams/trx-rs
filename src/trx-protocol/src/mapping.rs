@@ -6,9 +6,9 @@
 
 use trx_core::radio::freq::Freq;
 use trx_core::rig::command::RigCommand;
-use trx_core::ClientCommand;
 
 use crate::codec::{mode_to_string, parse_mode};
+use crate::types::ClientCommand;
 
 /// Convert a ClientCommand to a RigCommand.
 ///
@@ -123,7 +123,7 @@ mod tests {
     fn test_client_command_to_rig_set_ptt() {
         let cmd = ClientCommand::SetPtt { ptt: true };
         if let RigCommand::SetPtt(ptt) = client_command_to_rig(cmd) {
-            assert_eq!(ptt, true);
+            assert!(ptt);
         } else {
             panic!("Expected SetPtt");
         }
@@ -203,7 +203,7 @@ mod tests {
     fn test_client_command_to_rig_set_aprs_decode_enabled() {
         let cmd = ClientCommand::SetAprsDecodeEnabled { enabled: true };
         if let RigCommand::SetAprsDecodeEnabled(enabled) = client_command_to_rig(cmd) {
-            assert_eq!(enabled, true);
+            assert!(enabled);
         } else {
             panic!("Expected SetAprsDecodeEnabled");
         }
@@ -213,7 +213,7 @@ mod tests {
     fn test_client_command_to_rig_set_cw_decode_enabled() {
         let cmd = ClientCommand::SetCwDecodeEnabled { enabled: false };
         if let RigCommand::SetCwDecodeEnabled(enabled) = client_command_to_rig(cmd) {
-            assert_eq!(enabled, false);
+            assert!(!enabled);
         } else {
             panic!("Expected SetCwDecodeEnabled");
         }
@@ -223,7 +223,7 @@ mod tests {
     fn test_client_command_to_rig_set_cw_auto() {
         let cmd = ClientCommand::SetCwAuto { enabled: true };
         if let RigCommand::SetCwAuto(enabled) = client_command_to_rig(cmd) {
-            assert_eq!(enabled, true);
+            assert!(enabled);
         } else {
             panic!("Expected SetCwAuto");
         }
@@ -253,7 +253,7 @@ mod tests {
     fn test_client_command_to_rig_set_ft8_decode_enabled() {
         let cmd = ClientCommand::SetFt8DecodeEnabled { enabled: true };
         if let RigCommand::SetFt8DecodeEnabled(enabled) = client_command_to_rig(cmd) {
-            assert_eq!(enabled, true);
+            assert!(enabled);
         } else {
             panic!("Expected SetFt8DecodeEnabled");
         }
@@ -333,7 +333,7 @@ mod tests {
     fn test_rig_command_to_client_set_ptt() {
         let cmd = RigCommand::SetPtt(true);
         if let ClientCommand::SetPtt { ptt } = rig_command_to_client(cmd) {
-            assert_eq!(ptt, true);
+            assert!(ptt);
         } else {
             panic!("Expected SetPtt");
         }
@@ -413,7 +413,7 @@ mod tests {
     fn test_rig_command_to_client_set_aprs_decode_enabled() {
         let cmd = RigCommand::SetAprsDecodeEnabled(true);
         if let ClientCommand::SetAprsDecodeEnabled { enabled } = rig_command_to_client(cmd) {
-            assert_eq!(enabled, true);
+            assert!(enabled);
         } else {
             panic!("Expected SetAprsDecodeEnabled");
         }
@@ -423,7 +423,7 @@ mod tests {
     fn test_rig_command_to_client_set_cw_decode_enabled() {
         let cmd = RigCommand::SetCwDecodeEnabled(false);
         if let ClientCommand::SetCwDecodeEnabled { enabled } = rig_command_to_client(cmd) {
-            assert_eq!(enabled, false);
+            assert!(!enabled);
         } else {
             panic!("Expected SetCwDecodeEnabled");
         }
@@ -433,7 +433,7 @@ mod tests {
     fn test_rig_command_to_client_set_cw_auto() {
         let cmd = RigCommand::SetCwAuto(true);
         if let ClientCommand::SetCwAuto { enabled } = rig_command_to_client(cmd) {
-            assert_eq!(enabled, true);
+            assert!(enabled);
         } else {
             panic!("Expected SetCwAuto");
         }
@@ -463,7 +463,7 @@ mod tests {
     fn test_rig_command_to_client_set_ft8_decode_enabled() {
         let cmd = RigCommand::SetFt8DecodeEnabled(true);
         if let ClientCommand::SetFt8DecodeEnabled { enabled } = rig_command_to_client(cmd) {
-            assert_eq!(enabled, true);
+            assert!(enabled);
         } else {
             panic!("Expected SetFt8DecodeEnabled");
         }
@@ -534,7 +534,7 @@ mod tests {
         let client_cmd = rig_command_to_client(rig_cmd);
 
         if let ClientCommand::SetPtt { ptt } = client_cmd {
-            assert_eq!(ptt, false);
+            assert!(!ptt);
         } else {
             panic!("Round trip failed");
         }

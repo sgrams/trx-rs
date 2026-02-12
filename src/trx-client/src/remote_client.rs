@@ -10,11 +10,11 @@ use tokio::sync::{mpsc, watch};
 use tokio::time::{self, Instant};
 use tracing::{info, warn};
 
-use trx_core::client::{ClientCommand, ClientEnvelope, ClientResponse};
 use trx_core::rig::request::RigRequest;
 use trx_core::rig::state::RigState;
 use trx_core::{RigError, RigResult};
 use trx_protocol::rig_command_to_client;
+use trx_protocol::{ClientCommand, ClientEnvelope, ClientResponse};
 
 pub struct RemoteClientConfig {
     pub addr: String,

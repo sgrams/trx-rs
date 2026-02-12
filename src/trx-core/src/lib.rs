@@ -3,7 +3,6 @@
 // SPDX-License-Identifier: BSD-2-Clause
 
 pub mod audio;
-pub mod client;
 pub mod decode;
 pub mod math;
 pub mod radio;
@@ -11,7 +10,6 @@ pub mod rig;
 
 pub type DynResult<T> = Result<T, Box<dyn std::error::Error + Send + Sync>>;
 
-pub use client::{ClientCommand, ClientResponse};
 pub use rig::command::RigCommand;
 pub use rig::request::RigRequest;
 pub use rig::response::{RigError, RigResult};

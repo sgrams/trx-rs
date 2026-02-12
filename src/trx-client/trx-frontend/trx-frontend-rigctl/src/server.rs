@@ -11,6 +11,7 @@ use tokio::sync::{mpsc, oneshot, watch};
 use tokio::task::JoinHandle;
 use tokio::time::timeout;
 use tracing::{debug, error, info, warn};
+use trx_protocol::{mode_to_string, parse_mode};
 
 use trx_core::radio::freq::Freq;
 use trx_core::rig::state::RigSnapshot;
@@ -252,26 +253,8 @@ fn current_snapshot(state_rx: &watch::Receiver<RigState>) -> Option<RigSnapshot>
     state_rx.borrow().snapshot()
 }
 
-fn parse_mode(s: &str) -> RigMode {
-    match s.to_ascii_uppercase().as_str() {
-        "LSB" => RigMode::LSB,
-        "USB" => RigMode::USB,
-        "CW" => RigMode::CW,
-        "CWR" => RigMode::CWR,
-        "AM" => RigMode::AM,
-        "FM" => RigMode::FM,
-        "WFM" => RigMode::WFM,
-        "DIG" | "DIGI" => RigMode::DIG,
-        "PKT" | "PACKET" => RigMode::PKT,
-        other => RigMode::Other(other.to_string()),
-    }
-}
-
 fn rig_mode_to_str(mode: &RigMode) -> String {
-    match mode {
-        RigMode::Other(other) => other.clone(),
-        other => format!("{:?}", other),
-    }
+    mode_to_string(mode)
 }
 
 fn dump_state_lines(_snapshot: &RigSnapshot) -> Vec<String> {

@@ -2,9 +2,11 @@
 //
 // SPDX-License-Identifier: BSD-2-Clause
 
+//! Transport DTOs for the JSON line protocol.
+
 use serde::{Deserialize, Serialize};
 
-use crate::rig::state::RigSnapshot;
+use trx_core::rig::state::RigSnapshot;
 
 /// Command received from network clients (JSON).
 #[derive(Debug, Serialize, Deserialize)]

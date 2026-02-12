@@ -5,7 +5,7 @@
 //! JSON-over-TCP listener for trx-server.
 //!
 //! Accepts client connections speaking the `ClientEnvelope`/`ClientResponse`
-//! protocol defined in `trx-core::client`.
+//! protocol defined in `trx-protocol`.
 
 use std::collections::HashSet;
 use std::net::SocketAddr;
@@ -19,11 +19,10 @@ use tracing::{error, info};
 use trx_core::rig::command::RigCommand;
 use trx_core::rig::request::RigRequest;
 use trx_core::rig::state::RigState;
-use trx_core::ClientResponse;
-
-use trx_protocol::codec::parse_envelope;
 use trx_protocol::auth::{SimpleTokenValidator, TokenValidator};
+use trx_protocol::codec::parse_envelope;
 use trx_protocol::mapping;
+use trx_protocol::ClientResponse;
 
 /// Run the JSON TCP listener, accepting client connections.
 pub async fn run_listener(
@@ -179,4 +178,3 @@ async fn handle_client(
 
     Ok(())
 }
-
