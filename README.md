@@ -17,7 +17,6 @@ The rig task is now driven by the controller components (state machine, handlers
 
 - HTTP status/control frontend (`trx-frontend-http`)
 - JSON TCP control frontend (`trx-frontend-http-json`)
-- AppKit GUI frontend (`trx-frontend-appkit`, macOS only, optional via `appkit-frontend` feature)
 - rigctl-compatible TCP frontend (`trx-frontend-rigctl`, listens on 127.0.0.1:4532)
 
 ## Audio streaming

@@ -4,7 +4,7 @@
 - Workspace root contains `Cargo.toml`, `README.md`, and contributor docs.
 - Core crates live under `src/`: `src/trx-core`, `src/trx-server`, and `src/trx-client`.
 - Server backends are under `src/trx-server/trx-backend` (example: `trx-backend-ft817`).
-- Client frontends are under `src/trx-client/trx-frontend` (HTTP, JSON, AppKit, rigctl).
+- Client frontends are under `src/trx-client/trx-frontend` (HTTP, JSON, rigctl).
 - Examples live in `examples/` and static assets in `assets/`.
 - Reference configs are `trx-server.toml.example` and `trx-client.toml.example`.
 

@@ -19,7 +19,6 @@
 | Backend/frontend registry | Implemented |
 | TCP CAT transport | Partial (config wiring only) |
 | JSON TCP control (line-delimited) | Implemented (configurable frontend) |
-| AppKit GUI frontend | Implemented (macOS only, optional) |
 | Plugin registry loading | Implemented (shared libraries) |
 | Configuration file (TOML) | Implemented |
 | Rig state machine | Implemented |
@@ -81,7 +80,6 @@
 | `trx-frontend` | Frontend trait (`FrontendSpawner`) |
 | `trx-frontend-http` | Web UI with REST API and SSE |
 | `trx-frontend-http-json` | JSON-over-TCP control frontend |
-| `trx-frontend-appkit` | AppKit GUI frontend (macOS only, optional) |
 | `trx-frontend-rigctl` | Hamlib rigctl-compatible TCP interface |
 | `trx-server` | Server binary — connects to rig backend, exposes JSON TCP control |
 | `trx-client` | Client binary — connects to server, runs frontends (HTTP, rigctl) |
