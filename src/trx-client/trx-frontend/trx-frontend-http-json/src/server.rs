@@ -73,16 +73,21 @@ impl FrontendSpawner for HttpJsonFrontend {
         rig_tx: mpsc::Sender<RigRequest>,
         _callsign: Option<String>,
         listen_addr: SocketAddr,
+        context: std::sync::Arc<trx_frontend::FrontendRuntimeContext>,
     ) -> JoinHandle<()> {
         tokio::spawn(async move {
-            if let Err(e) = serve(listen_addr, rig_tx).await {
+            if let Err(e) = serve(listen_addr, rig_tx, context).await {
                 error!("json tcp server error: {:?}", e);
             }
         })
     }
 }
 
-async fn serve(listen_addr: SocketAddr, rig_tx: mpsc::Sender<RigRequest>) -> std::io::Result<()> {
+async fn serve(
+    listen_addr: SocketAddr,
+    rig_tx: mpsc::Sender<RigRequest>,
+    _context: std::sync::Arc<trx_frontend::FrontendRuntimeContext>,
+) -> std::io::Result<()> {
     let listener = TcpListener::bind(listen_addr).await?;
     info!("json tcp frontend listening on {}", listen_addr);
 

@@ -22,7 +22,7 @@ use tracing::{error, info};
 
 use trx_core::RigRequest;
 use trx_core::RigState;
-use trx_frontend::FrontendSpawner;
+use trx_frontend::{FrontendSpawner, FrontendRuntimeContext};
 
 /// HTTP frontend implementation.
 pub struct HttpFrontend;
@@ -33,9 +33,10 @@ impl FrontendSpawner for HttpFrontend {
         rig_tx: mpsc::Sender<RigRequest>,
         callsign: Option<String>,
         listen_addr: SocketAddr,
+        context: Arc<FrontendRuntimeContext>,
     ) -> JoinHandle<()> {
         tokio::spawn(async move {
-            if let Err(e) = serve(listen_addr, state_rx, rig_tx, callsign).await {
+            if let Err(e) = serve(listen_addr, state_rx, rig_tx, callsign, context).await {
                 error!("HTTP status server error: {:?}", e);
             }
         })
@@ -47,6 +48,7 @@ async fn serve(
     state_rx: watch::Receiver<RigState>,
     rig_tx: mpsc::Sender<RigRequest>,
     callsign: Option<String>,
+    _context: Arc<FrontendRuntimeContext>,
 ) -> Result<(), actix_web::Error> {
     let server = build_server(addr, state_rx, rig_tx, callsign)?;
     let handle = server.handle();
