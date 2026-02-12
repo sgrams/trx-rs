@@ -6,6 +6,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use tokio::net::UdpSocket;
 use tokio::sync::{broadcast, watch};
+use tokio::time::{self, Duration};
 use tracing::{info, warn};
 
 use trx_core::decode::DecodedMessage;
@@ -81,9 +82,20 @@ pub async fn run_pskreporter_uplink(
     );
 
     let mut current_freq_hz = state_rx.borrow().status.freq.hz;
+    let mut stats_received: u64 = 0;
+    let mut stats_sent: u64 = 0;
+    let mut stats_skipped: u64 = 0;
+    let mut stats_send_err: u64 = 0;
+    let mut stats_tick = time::interval(Duration::from_secs(60));
 
     loop {
         tokio::select! {
+            _ = stats_tick.tick() => {
+                info!(
+                    "PSK Reporter stats: received={}, sent={}, skipped={}, send_errors={}",
+                    stats_received, stats_sent, stats_skipped, stats_send_err
+                );
+            }
             changed = state_rx.changed() => {
                 if changed.is_err() {
                     break;
@@ -99,13 +111,20 @@ pub async fn run_pskreporter_uplink(
                     }
                     Err(broadcast::error::RecvError::Closed) => break,
                 };
+                stats_received += 1;
 
                 let spot = match decoded_to_spot(decoded, current_freq_hz) {
                     Some(spot) => spot,
-                    None => continue,
+                    None => {
+                        stats_skipped += 1;
+                        continue;
+                    }
                 };
                 if let Err(err) = client.send_spot(&spot).await {
                     warn!("PSK Reporter send failed: {}", err);
+                    stats_send_err += 1;
+                } else {
+                    stats_sent += 1;
                 }
             }
         }

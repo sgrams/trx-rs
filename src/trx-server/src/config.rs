@@ -296,6 +296,15 @@ impl ServerConfig {
             if self.pskreporter.port == 0 {
                 return Err("[pskreporter].port must be > 0".to_string());
             }
+            if self.pskreporter.receiver_locator.is_none()
+                && (self.general.latitude.is_none() || self.general.longitude.is_none())
+            {
+                return Err(
+                    "[pskreporter] enabled requires either [pskreporter].receiver_locator \
+                     or [general].latitude and [general].longitude"
+                        .to_string(),
+                );
+            }
         }
 
         Ok(())
@@ -558,6 +567,22 @@ tokens = ["secret123"]
         config.rig.access.baud = Some(9600);
         config.audio.frame_duration_ms = 7;
         assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn test_validate_pskreporter_requires_locator_source() {
+        let mut config = ServerConfig::default();
+        config.rig.access.port = Some("/dev/ttyUSB0".to_string());
+        config.rig.access.baud = Some(9600);
+        config.pskreporter.enabled = true;
+        config.pskreporter.receiver_locator = None;
+        config.general.latitude = None;
+        config.general.longitude = None;
+        assert!(config.validate().is_err());
+
+        config.general.latitude = Some(52.0);
+        config.general.longitude = Some(21.0);
+        assert!(config.validate().is_ok());
     }
 
     #[test]

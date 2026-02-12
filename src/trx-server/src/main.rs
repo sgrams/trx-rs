@@ -188,10 +188,19 @@ fn build_rig_task_config(
     registry: std::sync::Arc<RegistrationContext>,
 ) -> rig_task::RigTaskConfig {
     let pskreporter_status = if cfg.pskreporter.enabled {
-        Some(format!(
-            "Enabled ({}:{})",
-            cfg.pskreporter.host, cfg.pskreporter.port
-        ))
+        let has_locator = cfg.pskreporter.receiver_locator.is_some()
+            || (resolved.latitude.is_some() && resolved.longitude.is_some());
+        if has_locator {
+            Some(format!(
+                "Enabled ({}:{})",
+                cfg.pskreporter.host, cfg.pskreporter.port
+            ))
+        } else {
+            Some(format!(
+                "Enabled but inactive (missing locator source) ({}:{})",
+                cfg.pskreporter.host, cfg.pskreporter.port
+            ))
+        }
     } else {
         Some("Disabled".to_string())
     };
