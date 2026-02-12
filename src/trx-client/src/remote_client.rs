@@ -4,7 +4,7 @@
 
 use std::time::Duration;
 
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+use tokio::io::{AsyncBufRead, AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::TcpStream;
 use tokio::sync::{mpsc, watch};
 use tokio::time::{self, Instant};
@@ -15,6 +15,27 @@ use trx_core::rig::state::RigState;
 use trx_core::{RigError, RigResult};
 use trx_protocol::rig_command_to_client;
 use trx_protocol::{ClientCommand, ClientEnvelope, ClientResponse};
+
+const DEFAULT_REMOTE_PORT: u16 = 4532;
+const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
+const IO_TIMEOUT: Duration = Duration::from_secs(10);
+const MAX_JSON_LINE_BYTES: usize = 16 * 1024;
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RemoteEndpoint {
+    pub host: String,
+    pub port: u16,
+}
+
+impl RemoteEndpoint {
+    pub fn connect_addr(&self) -> String {
+        if self.host.contains(':') && !self.host.starts_with('[') {
+            format!("[{}]:{}", self.host, self.port)
+        } else {
+            format!("{}:{}", self.host, self.port)
+        }
+    }
+}
 
 pub struct RemoteClientConfig {
     pub addr: String,
@@ -37,16 +58,19 @@ pub async fn run_remote_client(
         }
 
         info!("Remote client: connecting to {}", config.addr);
-        match TcpStream::connect(&config.addr).await {
-            Ok(stream) => {
+        match time::timeout(CONNECT_TIMEOUT, TcpStream::connect(&config.addr)).await {
+            Ok(Ok(stream)) => {
                 if let Err(e) =
                     handle_connection(&config, stream, &mut rx, &state_tx, &mut shutdown_rx).await
                 {
                     warn!("Remote connection dropped: {}", e);
                 }
             }
-            Err(e) => {
+            Ok(Err(e)) => {
                 warn!("Remote connect failed: {}", e);
+            }
+            Err(_) => {
+                warn!("Remote connect timed out after {:?}", CONNECT_TIMEOUT);
             }
         }
 
@@ -128,20 +152,23 @@ async fn send_command(
     let payload = serde_json::to_string(&envelope)
         .map_err(|e| RigError::communication(format!("JSON serialize failed: {e}")))?;
 
-    writer
-        .write_all(format!("{}\n", payload).as_bytes())
+    time::timeout(
+        IO_TIMEOUT,
+        writer.write_all(format!("{}\n", payload).as_bytes()),
+    )
+    .await
+    .map_err(|_| RigError::communication(format!("write timed out after {:?}", IO_TIMEOUT)))?
+    .map_err(|e| RigError::communication(format!("write failed: {e}")))?;
+    time::timeout(IO_TIMEOUT, writer.flush())
         .await
-        .map_err(|e| RigError::communication(format!("write failed: {e}")))?;
-    writer
-        .flush()
-        .await
+        .map_err(|_| RigError::communication(format!("flush timed out after {:?}", IO_TIMEOUT)))?
         .map_err(|e| RigError::communication(format!("flush failed: {e}")))?;
 
-    let mut line = String::new();
-    reader
-        .read_line(&mut line)
+    let line = time::timeout(IO_TIMEOUT, read_limited_line(reader, MAX_JSON_LINE_BYTES))
         .await
+        .map_err(|_| RigError::communication(format!("read timed out after {:?}", IO_TIMEOUT)))?
         .map_err(|e| RigError::communication(format!("read failed: {e}")))?;
+    let line = line.ok_or_else(|| RigError::communication("connection closed by remote"))?;
 
     let resp: ClientResponse = serde_json::from_str(line.trim_end())
         .map_err(|e| RigError::communication(format!("invalid response: {e}")))?;
@@ -159,7 +186,59 @@ async fn send_command(
     ))
 }
 
-pub fn parse_remote_url(url: &str) -> Result<String, String> {
+async fn read_limited_line<R: AsyncBufRead + Unpin>(
+    reader: &mut R,
+    max_bytes: usize,
+) -> std::io::Result<Option<String>> {
+    let mut line = Vec::with_capacity(256);
+    loop {
+        let available = reader.fill_buf().await?;
+        if available.is_empty() {
+            if line.is_empty() {
+                return Ok(None);
+            }
+            let text = String::from_utf8(line).map_err(|e| {
+                std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    format!("line is not valid UTF-8: {e}"),
+                )
+            })?;
+            return Ok(Some(text));
+        }
+
+        if let Some(pos) = available.iter().position(|b| *b == b'\n') {
+            let chunk = &available[..=pos];
+            if line.len() + chunk.len() > max_bytes {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    format!("line exceeds maximum size of {max_bytes} bytes"),
+                ));
+            }
+            line.extend_from_slice(chunk);
+            reader.consume(pos + 1);
+            let text = String::from_utf8(line).map_err(|e| {
+                std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    format!("line is not valid UTF-8: {e}"),
+                )
+            })?;
+            return Ok(Some(text));
+        }
+
+        if line.len() + available.len() > max_bytes {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!("line exceeds maximum size of {max_bytes} bytes"),
+            ));
+        }
+
+        line.extend_from_slice(available);
+        let consumed = available.len();
+        reader.consume(consumed);
+    }
+}
+
+pub fn parse_remote_url(url: &str) -> Result<RemoteEndpoint, String> {
     let trimmed = url.trim();
     if trimmed.is_empty() {
         return Err("remote url is empty".into());
@@ -170,9 +249,107 @@ pub fn parse_remote_url(url: &str) -> Result<String, String> {
         .or_else(|| trimmed.strip_prefix("http-json://"))
         .unwrap_or(trimmed);
 
-    if !addr.contains(':') {
-        return Ok(format!("{}:4532", addr));
+    parse_host_port(addr)
+}
+
+fn parse_host_port(input: &str) -> Result<RemoteEndpoint, String> {
+    if let Some(rest) = input.strip_prefix('[') {
+        let closing = rest
+            .find(']')
+            .ok_or("invalid remote url: missing closing ']' for IPv6 host")?;
+        let host = &rest[..closing];
+        let remainder = &rest[closing + 1..];
+        if host.is_empty() {
+            return Err("invalid remote url: host is empty".into());
+        }
+        let port = if remainder.is_empty() {
+            DEFAULT_REMOTE_PORT
+        } else if let Some(port_str) = remainder.strip_prefix(':') {
+            parse_port(port_str)?
+        } else {
+            return Err("invalid remote url: expected ':<port>' after ']'".into());
+        };
+        return Ok(RemoteEndpoint {
+            host: host.to_string(),
+            port,
+        });
     }
 
-    Ok(addr.to_string())
+    if input.contains(':') {
+        if input.matches(':').count() > 1 {
+            return Err("invalid remote url: IPv6 host must be bracketed like [::1]:4532".into());
+        }
+        let (host, port_str) = input
+            .rsplit_once(':')
+            .ok_or("invalid remote url: expected host:port")?;
+        if host.is_empty() {
+            return Err("invalid remote url: host is empty".into());
+        }
+        return Ok(RemoteEndpoint {
+            host: host.to_string(),
+            port: parse_port(port_str)?,
+        });
+    }
+
+    Ok(RemoteEndpoint {
+        host: input.to_string(),
+        port: DEFAULT_REMOTE_PORT,
+    })
+}
+
+fn parse_port(port_str: &str) -> Result<u16, String> {
+    let port: u16 = port_str
+        .parse()
+        .map_err(|_| format!("invalid remote port: '{port_str}'"))?;
+    if port == 0 {
+        return Err("invalid remote port: 0".into());
+    }
+    Ok(port)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{parse_remote_url, RemoteEndpoint};
+
+    #[test]
+    fn parse_host_default_port() {
+        let parsed = parse_remote_url("example.local").expect("must parse");
+        assert_eq!(
+            parsed,
+            RemoteEndpoint {
+                host: "example.local".to_string(),
+                port: 4532
+            }
+        );
+    }
+
+    #[test]
+    fn parse_ipv4_with_port() {
+        let parsed = parse_remote_url("tcp://127.0.0.1:9000").expect("must parse");
+        assert_eq!(
+            parsed,
+            RemoteEndpoint {
+                host: "127.0.0.1".to_string(),
+                port: 9000
+            }
+        );
+    }
+
+    #[test]
+    fn parse_bracketed_ipv6() {
+        let parsed = parse_remote_url("http-json://[::1]:7000").expect("must parse");
+        assert_eq!(
+            parsed,
+            RemoteEndpoint {
+                host: "::1".to_string(),
+                port: 7000
+            }
+        );
+    }
+
+    #[test]
+    fn reject_unbracketed_ipv6() {
+        let err = parse_remote_url("::1:7000").expect_err("must fail");
+        assert!(err.contains("must be bracketed"));
+    }
 }

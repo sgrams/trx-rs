@@ -164,7 +164,7 @@ async fn async_init() -> DynResult<AppState> {
         .or_else(|| cfg.remote.url.clone())
         .ok_or("Remote URL not specified. Use --url or set [remote].url in config.")?;
 
-    let remote_addr =
+    let remote_endpoint =
         parse_remote_url(&remote_url).map_err(|e| format!("Invalid remote URL: {}", e))?;
 
     let remote_token = cli.token.clone().or_else(|| cfg.remote.auth.token.clone());
@@ -216,7 +216,7 @@ async fn async_init() -> DynResult<AppState> {
 
     info!(
         "Starting trx-client (remote: {}, frontends: {})",
-        remote_addr,
+        remote_endpoint.connect_addr(),
         frontends.join(", ")
     );
 
@@ -228,14 +228,10 @@ async fn async_init() -> DynResult<AppState> {
     let (state_tx, state_rx) = watch::channel(initial_state);
 
     // Extract host for audio before moving remote_addr
-    let remote_host = remote_addr
-        .split(':')
-        .next()
-        .unwrap_or("127.0.0.1")
-        .to_string();
+    let remote_host = remote_endpoint.host.clone();
 
     let remote_cfg = RemoteClientConfig {
-        addr: remote_addr,
+        addr: remote_endpoint.connect_addr(),
         token: remote_token,
         poll_interval: Duration::from_millis(poll_interval_ms),
     };
