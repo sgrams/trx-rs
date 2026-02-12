@@ -391,6 +391,20 @@ async fn main() -> DynResult<()> {
                     _ = wait_for_shutdown(ft8_shutdown_rx) => {}
                 }
             }));
+
+            // Spawn WSPR decoder task
+            let wspr_pcm_rx = pcm_tx.subscribe();
+            let wspr_state_rx = _state_rx.clone();
+            let wspr_decode_tx = decode_tx.clone();
+            let wspr_sr = cfg.audio.sample_rate;
+            let wspr_ch = cfg.audio.channels;
+            let wspr_shutdown_rx = shutdown_rx.clone();
+            task_handles.push(tokio::spawn(async move {
+                tokio::select! {
+                    _ = audio::run_wspr_decoder(wspr_sr, wspr_ch as u16, wspr_pcm_rx, wspr_state_rx, wspr_decode_tx) => {}
+                    _ = wait_for_shutdown(wspr_shutdown_rx) => {}
+                }
+            }));
         }
         if cfg.audio.tx_enabled {
             let _playback_thread = audio::spawn_audio_playback(&cfg.audio, tx_audio_rx);

@@ -13,7 +13,7 @@ use tokio::sync::{broadcast, mpsc, watch};
 use tokio::task::JoinHandle;
 
 use trx_core::audio::AudioStreamInfo;
-use trx_core::decode::{AprsPacket, CwEvent, DecodedMessage, Ft8Message};
+use trx_core::decode::{AprsPacket, CwEvent, DecodedMessage, Ft8Message, WsprMessage};
 use trx_core::{DynResult, RigRequest, RigState};
 
 /// Trait implemented by concrete frontends to expose a runner entrypoint.
@@ -116,6 +116,8 @@ pub struct FrontendRuntimeContext {
     pub cw_history: Arc<Mutex<VecDeque<(Instant, CwEvent)>>>,
     /// FT8 decode history (timestamp, message)
     pub ft8_history: Arc<Mutex<VecDeque<(Instant, Ft8Message)>>>,
+    /// WSPR decode history (timestamp, message)
+    pub wspr_history: Arc<Mutex<VecDeque<(Instant, WsprMessage)>>>,
     /// Authentication tokens for HTTP-JSON frontend
     pub auth_tokens: HashSet<String>,
     /// Guard to avoid spawning duplicate decode collectors.
@@ -133,6 +135,7 @@ impl FrontendRuntimeContext {
             aprs_history: Arc::new(Mutex::new(VecDeque::new())),
             cw_history: Arc::new(Mutex::new(VecDeque::new())),
             ft8_history: Arc::new(Mutex::new(VecDeque::new())),
+            wspr_history: Arc::new(Mutex::new(VecDeque::new())),
             auth_tokens: HashSet::new(),
             decode_collector_started: AtomicBool::new(false),
         }

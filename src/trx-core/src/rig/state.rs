@@ -31,6 +31,8 @@ pub struct RigState {
     #[serde(default)]
     pub ft8_decode_enabled: bool,
     #[serde(default)]
+    pub wspr_decode_enabled: bool,
+    #[serde(default)]
     pub cw_auto: bool,
     #[serde(default)]
     pub cw_wpm: u32,
@@ -42,6 +44,8 @@ pub struct RigState {
     pub cw_decode_reset_seq: u64,
     #[serde(default, skip_serializing)]
     pub ft8_decode_reset_seq: u64,
+    #[serde(default, skip_serializing)]
+    pub wspr_decode_reset_seq: u64,
 }
 
 /// Mode supported by the rig.
@@ -113,12 +117,14 @@ impl RigState {
             aprs_decode_enabled: false,
             cw_decode_enabled: false,
             ft8_decode_enabled: false,
+            wspr_decode_enabled: false,
             cw_auto: true,
             cw_wpm: 15,
             cw_tone_hz: 700,
             aprs_decode_reset_seq: 0,
             cw_decode_reset_seq: 0,
             ft8_decode_reset_seq: 0,
+            wspr_decode_reset_seq: 0,
         }
     }
 
@@ -169,9 +175,11 @@ impl RigState {
             cw_wpm: snapshot.cw_wpm,
             cw_tone_hz: snapshot.cw_tone_hz,
             ft8_decode_enabled: snapshot.ft8_decode_enabled,
+            wspr_decode_enabled: snapshot.wspr_decode_enabled,
             aprs_decode_reset_seq: 0,
             cw_decode_reset_seq: 0,
             ft8_decode_reset_seq: 0,
+            wspr_decode_reset_seq: 0,
         }
     }
 
@@ -202,6 +210,7 @@ impl RigState {
             cw_wpm: self.cw_wpm,
             cw_tone_hz: self.cw_tone_hz,
             ft8_decode_enabled: self.ft8_decode_enabled,
+            wspr_decode_enabled: self.wspr_decode_enabled,
         })
     }
 
@@ -250,6 +259,8 @@ pub struct RigSnapshot {
     pub cw_decode_enabled: bool,
     #[serde(default)]
     pub ft8_decode_enabled: bool,
+    #[serde(default)]
+    pub wspr_decode_enabled: bool,
     #[serde(default)]
     pub cw_auto: bool,
     #[serde(default)]

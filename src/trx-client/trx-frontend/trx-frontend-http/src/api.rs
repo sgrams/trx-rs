@@ -124,6 +124,11 @@ pub async fn decode_events(
                 .into_iter()
                 .map(trx_core::decode::DecodedMessage::Ft8),
         );
+        out.extend(
+            crate::server::audio::snapshot_wspr_history(context.get_ref())
+                .into_iter()
+                .map(trx_core::decode::DecodedMessage::Wspr),
+        );
         out
     };
 
@@ -360,6 +365,15 @@ pub async fn toggle_ft8_decode(
     send_command(&rig_tx, RigCommand::SetFt8DecodeEnabled(!enabled)).await
 }
 
+#[post("/toggle_wspr_decode")]
+pub async fn toggle_wspr_decode(
+    state: web::Data<watch::Receiver<RigState>>,
+    rig_tx: web::Data<mpsc::Sender<RigRequest>>,
+) -> Result<HttpResponse, Error> {
+    let enabled = state.get_ref().borrow().wspr_decode_enabled;
+    send_command(&rig_tx, RigCommand::SetWsprDecodeEnabled(!enabled)).await
+}
+
 #[post("/clear_ft8_decode")]
 pub async fn clear_ft8_decode(
     context: web::Data<Arc<FrontendRuntimeContext>>,
@@ -367,6 +381,15 @@ pub async fn clear_ft8_decode(
 ) -> Result<HttpResponse, Error> {
     crate::server::audio::clear_ft8_history(context.get_ref());
     send_command(&rig_tx, RigCommand::ResetFt8Decoder).await
+}
+
+#[post("/clear_wspr_decode")]
+pub async fn clear_wspr_decode(
+    context: web::Data<Arc<FrontendRuntimeContext>>,
+    rig_tx: web::Data<mpsc::Sender<RigRequest>>,
+) -> Result<HttpResponse, Error> {
+    crate::server::audio::clear_wspr_history(context.get_ref());
+    send_command(&rig_tx, RigCommand::ResetWsprDecoder).await
 }
 
 #[post("/clear_aprs_decode")]
@@ -406,9 +429,11 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
         .service(set_cw_wpm)
         .service(set_cw_tone)
         .service(toggle_ft8_decode)
+        .service(toggle_wspr_decode)
         .service(clear_aprs_decode)
         .service(clear_cw_decode)
         .service(clear_ft8_decode)
+        .service(clear_wspr_decode)
         .service(crate::server::audio::audio_ws)
         .service(favicon)
         .service(logo)
@@ -558,6 +583,7 @@ async fn wait_for_view(mut rx: watch::Receiver<RigState>) -> Result<RigSnapshot,
         cw_wpm: state.cw_wpm,
         cw_tone_hz: state.cw_tone_hz,
         ft8_decode_enabled: state.ft8_decode_enabled,
+        wspr_decode_enabled: state.wspr_decode_enabled,
     })
 }
 

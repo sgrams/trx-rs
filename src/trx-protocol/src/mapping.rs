@@ -35,9 +35,13 @@ pub fn client_command_to_rig(cmd: ClientCommand) -> RigCommand {
         ClientCommand::SetCwWpm { wpm } => RigCommand::SetCwWpm(wpm),
         ClientCommand::SetCwToneHz { tone_hz } => RigCommand::SetCwToneHz(tone_hz),
         ClientCommand::SetFt8DecodeEnabled { enabled } => RigCommand::SetFt8DecodeEnabled(enabled),
+        ClientCommand::SetWsprDecodeEnabled { enabled } => {
+            RigCommand::SetWsprDecodeEnabled(enabled)
+        }
         ClientCommand::ResetAprsDecoder => RigCommand::ResetAprsDecoder,
         ClientCommand::ResetCwDecoder => RigCommand::ResetCwDecoder,
         ClientCommand::ResetFt8Decoder => RigCommand::ResetFt8Decoder,
+        ClientCommand::ResetWsprDecoder => RigCommand::ResetWsprDecoder,
     }
 }
 
@@ -68,9 +72,13 @@ pub fn rig_command_to_client(cmd: RigCommand) -> ClientCommand {
         RigCommand::SetCwWpm(wpm) => ClientCommand::SetCwWpm { wpm },
         RigCommand::SetCwToneHz(tone_hz) => ClientCommand::SetCwToneHz { tone_hz },
         RigCommand::SetFt8DecodeEnabled(enabled) => ClientCommand::SetFt8DecodeEnabled { enabled },
+        RigCommand::SetWsprDecodeEnabled(enabled) => {
+            ClientCommand::SetWsprDecodeEnabled { enabled }
+        }
         RigCommand::ResetAprsDecoder => ClientCommand::ResetAprsDecoder,
         RigCommand::ResetCwDecoder => ClientCommand::ResetCwDecoder,
         RigCommand::ResetFt8Decoder => ClientCommand::ResetFt8Decoder,
+        RigCommand::ResetWsprDecoder => ClientCommand::ResetWsprDecoder,
     }
 }
 
@@ -264,6 +272,16 @@ mod tests {
     }
 
     #[test]
+    fn test_client_command_to_rig_set_wspr_decode_enabled() {
+        let cmd = ClientCommand::SetWsprDecodeEnabled { enabled: true };
+        if let RigCommand::SetWsprDecodeEnabled(enabled) = client_command_to_rig(cmd) {
+            assert!(enabled);
+        } else {
+            panic!("Expected SetWsprDecodeEnabled");
+        }
+    }
+
+    #[test]
     fn test_client_command_to_rig_reset_aprs_decoder() {
         let cmd = ClientCommand::ResetAprsDecoder;
         if let RigCommand::ResetAprsDecoder = client_command_to_rig(cmd) {
@@ -290,6 +308,16 @@ mod tests {
             // Success
         } else {
             panic!("Expected ResetFt8Decoder");
+        }
+    }
+
+    #[test]
+    fn test_client_command_to_rig_reset_wspr_decoder() {
+        let cmd = ClientCommand::ResetWsprDecoder;
+        if let RigCommand::ResetWsprDecoder = client_command_to_rig(cmd) {
+            // Success
+        } else {
+            panic!("Expected ResetWsprDecoder");
         }
     }
 
@@ -474,6 +502,16 @@ mod tests {
     }
 
     #[test]
+    fn test_rig_command_to_client_set_wspr_decode_enabled() {
+        let cmd = RigCommand::SetWsprDecodeEnabled(true);
+        if let ClientCommand::SetWsprDecodeEnabled { enabled } = rig_command_to_client(cmd) {
+            assert!(enabled);
+        } else {
+            panic!("Expected SetWsprDecodeEnabled");
+        }
+    }
+
+    #[test]
     fn test_rig_command_to_client_reset_aprs_decoder() {
         let cmd = RigCommand::ResetAprsDecoder;
         if let ClientCommand::ResetAprsDecoder = rig_command_to_client(cmd) {
@@ -500,6 +538,16 @@ mod tests {
             // Success
         } else {
             panic!("Expected ResetFt8Decoder");
+        }
+    }
+
+    #[test]
+    fn test_rig_command_to_client_reset_wspr_decoder() {
+        let cmd = RigCommand::ResetWsprDecoder;
+        if let ClientCommand::ResetWsprDecoder = rig_command_to_client(cmd) {
+            // Success
+        } else {
+            panic!("Expected ResetWsprDecoder");
         }
     }
 

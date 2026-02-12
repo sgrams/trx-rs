@@ -20,7 +20,7 @@ use bytes::Bytes;
 use tokio::sync::broadcast;
 use tracing::warn;
 
-use trx_core::decode::{AprsPacket, CwEvent, DecodedMessage, Ft8Message};
+use trx_core::decode::{AprsPacket, CwEvent, DecodedMessage, Ft8Message, WsprMessage};
 use trx_frontend::FrontendRuntimeContext;
 
 const HISTORY_RETENTION: Duration = Duration::from_secs(24 * 60 * 60);
@@ -44,6 +44,15 @@ fn prune_cw_history(history: &mut VecDeque<(Instant, CwEvent)>) {
 }
 
 fn prune_ft8_history(history: &mut VecDeque<(Instant, Ft8Message)>) {
+    while let Some((ts, _)) = history.front() {
+        if ts.elapsed() <= HISTORY_RETENTION {
+            break;
+        }
+        history.pop_front();
+    }
+}
+
+fn prune_wspr_history(history: &mut VecDeque<(Instant, WsprMessage)>) {
     while let Some((ts, _)) = history.front() {
         if ts.elapsed() <= HISTORY_RETENTION {
             break;
@@ -79,6 +88,15 @@ fn record_ft8(context: &FrontendRuntimeContext, msg: Ft8Message) {
     prune_ft8_history(&mut history);
 }
 
+fn record_wspr(context: &FrontendRuntimeContext, msg: WsprMessage) {
+    let mut history = context
+        .wspr_history
+        .lock()
+        .expect("wspr history mutex poisoned");
+    history.push_back((Instant::now(), msg));
+    prune_wspr_history(&mut history);
+}
+
 pub fn snapshot_aprs_history(context: &FrontendRuntimeContext) -> Vec<AprsPacket> {
     let mut history = context
         .aprs_history
@@ -106,6 +124,15 @@ pub fn snapshot_ft8_history(context: &FrontendRuntimeContext) -> Vec<Ft8Message>
     history.iter().map(|(_, msg)| msg.clone()).collect()
 }
 
+pub fn snapshot_wspr_history(context: &FrontendRuntimeContext) -> Vec<WsprMessage> {
+    let mut history = context
+        .wspr_history
+        .lock()
+        .expect("wspr history mutex poisoned");
+    prune_wspr_history(&mut history);
+    history.iter().map(|(_, msg)| msg.clone()).collect()
+}
+
 pub fn clear_aprs_history(context: &FrontendRuntimeContext) {
     let mut history = context
         .aprs_history
@@ -127,6 +154,14 @@ pub fn clear_ft8_history(context: &FrontendRuntimeContext) {
         .ft8_history
         .lock()
         .expect("ft8 history mutex poisoned");
+    history.clear();
+}
+
+pub fn clear_wspr_history(context: &FrontendRuntimeContext) {
+    let mut history = context
+        .wspr_history
+        .lock()
+        .expect("wspr history mutex poisoned");
     history.clear();
 }
 
@@ -156,6 +191,7 @@ pub fn start_decode_history_collector(context: Arc<FrontendRuntimeContext>) {
                     DecodedMessage::Aprs(pkt) => record_aprs(&context, pkt),
                     DecodedMessage::Cw(evt) => record_cw(&context, evt),
                     DecodedMessage::Ft8(msg) => record_ft8(&context, msg),
+                    DecodedMessage::Wspr(msg) => record_wspr(&context, msg),
                 },
                 Err(broadcast::error::RecvError::Lagged(_)) => continue,
                 Err(broadcast::error::RecvError::Closed) => break,

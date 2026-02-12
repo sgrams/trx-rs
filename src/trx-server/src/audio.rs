@@ -17,8 +17,9 @@ use tracing::{error, info, warn};
 use trx_core::audio::{
     read_audio_msg, write_audio_msg, AudioStreamInfo, AUDIO_MSG_APRS_DECODE, AUDIO_MSG_CW_DECODE,
     AUDIO_MSG_FT8_DECODE, AUDIO_MSG_RX_FRAME, AUDIO_MSG_STREAM_INFO, AUDIO_MSG_TX_FRAME,
+    AUDIO_MSG_WSPR_DECODE,
 };
-use trx_core::decode::{AprsPacket, DecodedMessage, Ft8Message};
+use trx_core::decode::{AprsPacket, DecodedMessage, Ft8Message, WsprMessage};
 use trx_core::rig::state::{RigMode, RigState};
 use trx_ft8::Ft8Decoder;
 
@@ -27,6 +28,7 @@ use crate::decode;
 
 const APRS_HISTORY_RETENTION: Duration = Duration::from_secs(24 * 60 * 60);
 const FT8_HISTORY_RETENTION: Duration = Duration::from_secs(24 * 60 * 60);
+const WSPR_HISTORY_RETENTION: Duration = Duration::from_secs(24 * 60 * 60);
 const FT8_SAMPLE_RATE: u32 = 12_000;
 
 fn aprs_history() -> &'static Mutex<VecDeque<(Instant, AprsPacket)>> {
@@ -92,6 +94,33 @@ pub fn snapshot_ft8_history() -> Vec<Ft8Message> {
 
 pub fn clear_ft8_history() {
     let mut history = ft8_history().lock().expect("ft8 history mutex poisoned");
+    history.clear();
+}
+
+fn wspr_history() -> &'static Mutex<VecDeque<(Instant, WsprMessage)>> {
+    static HISTORY: OnceLock<Mutex<VecDeque<(Instant, WsprMessage)>>> = OnceLock::new();
+    HISTORY.get_or_init(|| Mutex::new(VecDeque::new()))
+}
+
+fn prune_wspr_history(history: &mut VecDeque<(Instant, WsprMessage)>) {
+    let cutoff = Instant::now() - WSPR_HISTORY_RETENTION;
+    while let Some((ts, _)) = history.front() {
+        if *ts < cutoff {
+            history.pop_front();
+        } else {
+            break;
+        }
+    }
+}
+
+pub fn snapshot_wspr_history() -> Vec<WsprMessage> {
+    let mut history = wspr_history().lock().expect("wspr history mutex poisoned");
+    prune_wspr_history(&mut history);
+    history.iter().map(|(_, msg)| msg.clone()).collect()
+}
+
+pub fn clear_wspr_history() {
+    let mut history = wspr_history().lock().expect("wspr history mutex poisoned");
     history.clear();
 }
 
@@ -753,6 +782,93 @@ pub async fn run_ft8_decoder(
     }
 }
 
+/// Run the WSPR decoder task. Mirrors FT8 lifecycle/slot behavior.
+///
+/// Note: decoding engine integration is intentionally staged; this task already
+/// participates in enable/disable/reset flow and transport plumbing.
+pub async fn run_wspr_decoder(
+    sample_rate: u32,
+    channels: u16,
+    mut pcm_rx: broadcast::Receiver<Vec<f32>>,
+    mut state_rx: watch::Receiver<RigState>,
+    _decode_tx: broadcast::Sender<DecodedMessage>,
+) {
+    info!("WSPR decoder started ({}Hz, {} ch)", sample_rate, channels);
+    let mut last_reset_seq: u64 = 0;
+    let mut active = state_rx.borrow().wspr_decode_enabled
+        && matches!(state_rx.borrow().status.mode, RigMode::DIG | RigMode::USB);
+    let mut warned_no_decoder = false;
+
+    loop {
+        if !active {
+            match state_rx.changed().await {
+                Ok(()) => {
+                    let state = state_rx.borrow();
+                    active = state.wspr_decode_enabled
+                        && matches!(state.status.mode, RigMode::DIG | RigMode::USB);
+                    if active {
+                        pcm_rx = pcm_rx.resubscribe();
+                    }
+                    if state.wspr_decode_reset_seq != last_reset_seq {
+                        last_reset_seq = state.wspr_decode_reset_seq;
+                    }
+                    warned_no_decoder = false;
+                }
+                Err(_) => break,
+            }
+            continue;
+        }
+
+        tokio::select! {
+            recv = pcm_rx.recv() => {
+                match recv {
+                    Ok(frame) => {
+                        let state = state_rx.borrow();
+                        if state.wspr_decode_reset_seq != last_reset_seq {
+                            last_reset_seq = state.wspr_decode_reset_seq;
+                        }
+
+                        // Keep the same preprocessing path as FT8 so decoder integration
+                        // can be dropped in without changing task flow.
+                        let mono = downmix_mono(frame, channels);
+                        if resample_to_12k(&mono, sample_rate).is_none() {
+                            warn!("WSPR decoder: unsupported sample rate {}", sample_rate);
+                            break;
+                        }
+
+                        if !warned_no_decoder {
+                            warn!("WSPR decoder engine not integrated yet; decode output is inactive");
+                            warned_no_decoder = true;
+                        }
+                    }
+                    Err(broadcast::error::RecvError::Lagged(n)) => {
+                        warn!("WSPR decoder: dropped {} PCM frames", n);
+                    }
+                    Err(broadcast::error::RecvError::Closed) => break,
+                }
+            }
+            changed = state_rx.changed() => {
+                match changed {
+                    Ok(()) => {
+                        let state = state_rx.borrow();
+                        active = state.wspr_decode_enabled
+                            && matches!(state.status.mode, RigMode::DIG | RigMode::USB);
+                        if state.wspr_decode_reset_seq != last_reset_seq {
+                            last_reset_seq = state.wspr_decode_reset_seq;
+                        }
+                        if active {
+                            pcm_rx = pcm_rx.resubscribe();
+                        } else {
+                            warned_no_decoder = false;
+                        }
+                    }
+                    Err(_) => break,
+                }
+            }
+        }
+    }
+}
+
 /// Run the audio TCP listener, accepting client connections.
 pub async fn run_audio_listener(
     addr: SocketAddr,
@@ -834,6 +950,15 @@ async fn handle_audio_client(
             write_audio_msg(&mut writer, msg_type, &json).await?;
         }
     }
+    // Send WSPR history to newly connected client.
+    let history = snapshot_wspr_history();
+    for msg in history {
+        let msg = DecodedMessage::Wspr(msg);
+        let msg_type = AUDIO_MSG_WSPR_DECODE;
+        if let Ok(json) = serde_json::to_vec(&msg) {
+            write_audio_msg(&mut writer, msg_type, &json).await?;
+        }
+    }
 
     // Spawn RX + decode forwarding task (shares the writer)
     let mut rx_sub = rx_audio.subscribe();
@@ -863,6 +988,7 @@ async fn handle_audio_client(
                                 DecodedMessage::Aprs(_) => AUDIO_MSG_APRS_DECODE,
                                 DecodedMessage::Cw(_) => AUDIO_MSG_CW_DECODE,
                                 DecodedMessage::Ft8(_) => AUDIO_MSG_FT8_DECODE,
+                                DecodedMessage::Wspr(_) => AUDIO_MSG_WSPR_DECODE,
                             };
                             if let Ok(json) = serde_json::to_vec(&msg) {
                                 if let Err(e) = write_audio_msg(&mut writer_for_rx, msg_type, &json).await {

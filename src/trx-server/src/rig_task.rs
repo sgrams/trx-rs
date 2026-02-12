@@ -368,6 +368,12 @@ async fn process_command(
             let _ = ctx.state_tx.send(ctx.state.clone());
             return snapshot_from(ctx.state);
         }
+        RigCommand::SetWsprDecodeEnabled(en) => {
+            ctx.state.wspr_decode_enabled = en;
+            info!("WSPR decode {}", if en { "enabled" } else { "disabled" });
+            let _ = ctx.state_tx.send(ctx.state.clone());
+            return snapshot_from(ctx.state);
+        }
         RigCommand::ResetAprsDecoder => {
             audio::clear_aprs_history();
             ctx.state.aprs_decode_reset_seq += 1;
@@ -382,6 +388,12 @@ async fn process_command(
         RigCommand::ResetFt8Decoder => {
             audio::clear_ft8_history();
             ctx.state.ft8_decode_reset_seq += 1;
+            let _ = ctx.state_tx.send(ctx.state.clone());
+            return snapshot_from(ctx.state);
+        }
+        RigCommand::ResetWsprDecoder => {
+            audio::clear_wspr_history();
+            ctx.state.wspr_decode_reset_seq += 1;
             let _ = ctx.state_tx.send(ctx.state.clone());
             return snapshot_from(ctx.state);
         }
