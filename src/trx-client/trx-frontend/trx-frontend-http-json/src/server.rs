@@ -13,13 +13,13 @@ use tracing::{error, info};
 use std::collections::HashSet;
 use std::sync::{Mutex, OnceLock};
 
-use trx_core::client::ClientEnvelope;
-use trx_core::radio::freq::Freq;
-use trx_core::rig::command::RigCommand;
 use trx_core::rig::request::RigRequest;
-use trx_core::rig::state::{RigMode, RigState};
-use trx_core::{ClientCommand, ClientResponse};
+use trx_core::rig::state::RigState;
+use trx_core::{ClientResponse};
 use trx_frontend::FrontendSpawner;
+use trx_protocol::codec::parse_envelope;
+use trx_protocol::auth::TokenValidator;
+use trx_protocol::mapping;
 
 /// JSON-over-TCP frontend for control and status.
 pub struct HttpJsonFrontend;
@@ -42,6 +42,29 @@ pub fn set_auth_tokens(tokens: Vec<String>) {
         .lock()
         .expect("http-json auth mutex poisoned");
     reg.tokens = tokens.into_iter().filter(|t| !t.is_empty()).collect();
+}
+
+/// Token validator that uses the global auth registry.
+struct RegistryTokenValidator;
+
+impl TokenValidator for RegistryTokenValidator {
+    fn validate(&self, token: &Option<String>) -> Result<(), String> {
+        let reg = auth_registry()
+            .lock()
+            .expect("http-json auth mutex poisoned");
+        if reg.tokens.is_empty() {
+            return Ok(());
+        }
+        let Some(token) = token else {
+            return Err("missing authorization token".into());
+        };
+        let candidate = trx_protocol::auth::strip_bearer(token);
+        if reg.tokens.contains(candidate) {
+            Ok(())
+        } else {
+            Err("invalid authorization token".into())
+        }
+    }
 }
 
 impl FrontendSpawner for HttpJsonFrontend {
@@ -127,29 +150,8 @@ async fn handle_client(
             continue;
         }
 
-        // Map ClientCommand -> RigCommand.
-        let rig_cmd = match envelope.cmd {
-            ClientCommand::GetState => RigCommand::GetSnapshot,
-            ClientCommand::SetFreq { freq_hz } => RigCommand::SetFreq(Freq { hz: freq_hz }),
-            ClientCommand::SetMode { mode } => RigCommand::SetMode(parse_mode(&mode)),
-            ClientCommand::SetPtt { ptt } => RigCommand::SetPtt(ptt),
-            ClientCommand::PowerOn => RigCommand::PowerOn,
-            ClientCommand::PowerOff => RigCommand::PowerOff,
-            ClientCommand::ToggleVfo => RigCommand::ToggleVfo,
-            ClientCommand::Lock => RigCommand::Lock,
-            ClientCommand::Unlock => RigCommand::Unlock,
-            ClientCommand::GetTxLimit => RigCommand::GetTxLimit,
-            ClientCommand::SetTxLimit { limit } => RigCommand::SetTxLimit(limit),
-            ClientCommand::SetAprsDecodeEnabled { enabled } => RigCommand::SetAprsDecodeEnabled(enabled),
-            ClientCommand::SetCwDecodeEnabled { enabled } => RigCommand::SetCwDecodeEnabled(enabled),
-            ClientCommand::SetCwAuto { enabled } => RigCommand::SetCwAuto(enabled),
-            ClientCommand::SetCwWpm { wpm } => RigCommand::SetCwWpm(wpm),
-            ClientCommand::SetCwToneHz { tone_hz } => RigCommand::SetCwToneHz(tone_hz),
-            ClientCommand::SetFt8DecodeEnabled { enabled } => RigCommand::SetFt8DecodeEnabled(enabled),
-            ClientCommand::ResetAprsDecoder => RigCommand::ResetAprsDecoder,
-            ClientCommand::ResetCwDecoder => RigCommand::ResetCwDecoder,
-            ClientCommand::ResetFt8Decoder => RigCommand::ResetFt8Decoder,
-        };
+        // Map ClientCommand -> RigCommand using trx-protocol.
+        let rig_cmd = mapping::client_command_to_rig(envelope.cmd);
 
         let (resp_tx, resp_rx) = oneshot::channel();
         let req = RigRequest {
@@ -208,56 +210,6 @@ async fn handle_client(
     Ok(())
 }
 
-fn parse_mode(s: &str) -> RigMode {
-    match s.to_uppercase().as_str() {
-        "LSB" => RigMode::LSB,
-        "USB" => RigMode::USB,
-        "CW" => RigMode::CW,
-        "CWR" => RigMode::CWR,
-        "AM" => RigMode::AM,
-        "FM" => RigMode::FM,
-        "DIG" | "DIGI" => RigMode::DIG,
-        "PKT" | "PACKET" => RigMode::PKT,
-        other => RigMode::Other(other.to_string()),
-    }
-}
-
-fn parse_envelope(input: &str) -> Result<ClientEnvelope, serde_json::Error> {
-    match serde_json::from_str::<ClientEnvelope>(input) {
-        Ok(envelope) => Ok(envelope),
-        Err(_) => {
-            let cmd = serde_json::from_str::<ClientCommand>(input)?;
-            Ok(ClientEnvelope { token: None, cmd })
-        }
-    }
-}
-
 fn authorize(token: &Option<String>) -> Result<(), String> {
-    let reg = auth_registry()
-        .lock()
-        .expect("http-json auth mutex poisoned");
-    if reg.tokens.is_empty() {
-        return Ok(());
-    }
-
-    let Some(token) = token.as_ref() else {
-        return Err("missing authorization token".into());
-    };
-
-    let candidate = strip_bearer(token);
-    if reg.tokens.contains(candidate) {
-        return Ok(());
-    }
-
-    Err("invalid authorization token".into())
-}
-
-fn strip_bearer(value: &str) -> &str {
-    let trimmed = value.trim();
-    let prefix = "bearer ";
-    if trimmed.len() >= prefix.len() && trimmed[..prefix.len()].eq_ignore_ascii_case(prefix) {
-        &trimmed[prefix.len()..]
-    } else {
-        trimmed
-    }
+    RegistryTokenValidator.validate(token)
 }
