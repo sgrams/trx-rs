@@ -32,6 +32,8 @@ pub struct ServerConfig {
     pub listen: ListenConfig,
     /// Audio streaming configuration
     pub audio: AudioConfig,
+    /// PSK Reporter uplink configuration
+    pub pskreporter: PskReporterConfig,
 }
 
 /// General application settings.
@@ -202,6 +204,32 @@ impl Default for AudioConfig {
     }
 }
 
+/// PSK Reporter uplink configuration.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct PskReporterConfig {
+    /// Whether PSK Reporter uplink is enabled
+    pub enabled: bool,
+    /// PSK Reporter host
+    pub host: String,
+    /// PSK Reporter UDP port
+    pub port: u16,
+    /// Receiver locator (Maidenhead, 4 or 6 chars). If omitted, derived from
+    /// [general].latitude/[general].longitude when available.
+    pub receiver_locator: Option<String>,
+}
+
+impl Default for PskReporterConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            host: "report.pskreporter.info".to_string(),
+            port: 4739,
+            receiver_locator: None,
+        }
+    }
+}
+
 impl ServerConfig {
     pub fn validate(&self) -> Result<(), String> {
         validate_log_level(self.general.log_level.as_deref())?;
@@ -260,6 +288,15 @@ impl ServerConfig {
             }
         }
 
+        if self.pskreporter.enabled {
+            if self.pskreporter.host.trim().is_empty() {
+                return Err("[pskreporter].host must not be empty".to_string());
+            }
+            if self.pskreporter.port == 0 {
+                return Err("[pskreporter].port must be > 0".to_string());
+            }
+        }
+
         Ok(())
     }
 
@@ -298,6 +335,7 @@ impl ServerConfig {
             behavior: BehaviorConfig::default(),
             listen: ListenConfig::default(),
             audio: AudioConfig::default(),
+            pskreporter: PskReporterConfig::default(),
         };
 
         toml::to_string_pretty(&example).unwrap_or_default()
@@ -425,6 +463,8 @@ mod tests {
         assert!(config.audio.enabled);
         assert_eq!(config.audio.port, 4533);
         assert_eq!(config.audio.sample_rate, 48000);
+        assert!(!config.pskreporter.enabled);
+        assert_eq!(config.pskreporter.port, 4739);
     }
 
     #[test]

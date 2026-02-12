@@ -7,6 +7,7 @@ mod config;
 mod decode;
 mod error;
 mod listener;
+mod pskreporter;
 mod rig_task;
 
 use std::collections::HashSet;
@@ -20,7 +21,7 @@ use clap::{Parser, ValueEnum};
 use tokio::signal;
 use tokio::sync::{broadcast, mpsc, watch};
 use tokio::task::JoinHandle;
-use tracing::{error, info};
+use tracing::{error, info, warn};
 
 use trx_core::audio::AudioStreamInfo;
 
@@ -345,6 +346,33 @@ async fn main() -> DynResult<()> {
         let (pcm_tx, _) = broadcast::channel::<Vec<f32>>(64);
         // Decoded messages broadcast
         let (decode_tx, _) = broadcast::channel::<trx_core::decode::DecodedMessage>(256);
+
+        if cfg.pskreporter.enabled {
+            let callsign = resolved.callsign.clone().unwrap_or_default();
+            if callsign.trim().is_empty() {
+                warn!("PSK Reporter enabled but [general].callsign is empty; uplink disabled");
+            } else {
+                let pr_cfg = cfg.pskreporter.clone();
+                let pr_state_rx = _state_rx.clone();
+                let pr_decode_rx = decode_tx.subscribe();
+                let pr_shutdown_rx = shutdown_rx.clone();
+                let latitude = resolved.latitude;
+                let longitude = resolved.longitude;
+                task_handles.push(tokio::spawn(async move {
+                    tokio::select! {
+                        _ = pskreporter::run_pskreporter_uplink(
+                            pr_cfg,
+                            callsign,
+                            latitude,
+                            longitude,
+                            pr_state_rx,
+                            pr_decode_rx
+                        ) => {}
+                        _ = wait_for_shutdown(pr_shutdown_rx) => {}
+                    }
+                }));
+            }
+        }
 
         if cfg.audio.rx_enabled {
             let _capture_thread =

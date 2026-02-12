@@ -62,3 +62,15 @@ port = 4532
 [listen.auth]
 # Authentication tokens (empty = no auth required)
 tokens = []
+
+[pskreporter]
+# Enable uploads of decoded FT8/WSPR spots to PSK Reporter
+enabled = false
+
+# PSK Reporter endpoint (UDP)
+host = "report.pskreporter.info"
+port = 4739
+
+# Optional receiver locator (4 or 6-char Maidenhead).
+# If omitted, it is derived from [general].latitude/[general].longitude.
+# receiver_locator = "JO93"
