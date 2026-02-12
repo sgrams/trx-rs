@@ -133,24 +133,6 @@ impl Default for FrontendRuntimeContext {
     }
 }
 
-// Legacy global registry for plugin compatibility
-struct FrontendRegistry {
-    spawners: HashMap<String, FrontendSpawnFn>,
-}
-
-impl FrontendRegistry {
-    fn new() -> Self {
-        Self {
-            spawners: HashMap::new(),
-        }
-    }
-}
-
-fn registry() -> &'static Mutex<FrontendRegistry> {
-    static REGISTRY: OnceLock<Mutex<FrontendRegistry>> = OnceLock::new();
-    REGISTRY.get_or_init(|| Mutex::new(FrontendRegistry::new()))
-}
-
 fn normalize_name(name: &str) -> String {
     name.to_ascii_lowercase()
         .chars()
@@ -158,29 +140,35 @@ fn normalize_name(name: &str) -> String {
         .collect()
 }
 
+/// Phase 3D: Plugin compatibility adapter - delegates to bootstrap context.
+fn bootstrap_context() -> &'static Arc<Mutex<FrontendRegistrationContext>> {
+    static BOOTSTRAP_CONTEXT: OnceLock<Arc<Mutex<FrontendRegistrationContext>>> = OnceLock::new();
+    BOOTSTRAP_CONTEXT.get_or_init(|| Arc::new(Mutex::new(FrontendRegistrationContext::new())))
+}
+
 /// Register a frontend spawner under a stable name (e.g. "http").
+/// Plugin compatibility: delegates to bootstrap context.
 pub fn register_frontend(name: &str, spawner: FrontendSpawnFn) {
-    let key = normalize_name(name);
-    let mut reg = registry().lock().expect("frontend registry mutex poisoned");
-    reg.spawners.insert(key, spawner);
+    let mut ctx = bootstrap_context().lock().expect("frontend context mutex poisoned");
+    ctx.register_frontend(name, spawner);
 }
 
 /// Check whether a frontend name is registered.
+/// Plugin compatibility: reads from bootstrap context.
 pub fn is_frontend_registered(name: &str) -> bool {
-    let key = normalize_name(name);
-    let reg = registry().lock().expect("frontend registry mutex poisoned");
-    reg.spawners.contains_key(&key)
+    let ctx = bootstrap_context().lock().expect("frontend context mutex poisoned");
+    ctx.is_frontend_registered(name)
 }
 
 /// List registered frontend names.
+/// Plugin compatibility: reads from bootstrap context.
 pub fn registered_frontends() -> Vec<String> {
-    let reg = registry().lock().expect("frontend registry mutex poisoned");
-    let mut names: Vec<String> = reg.spawners.keys().cloned().collect();
-    names.sort();
-    names
+    let ctx = bootstrap_context().lock().expect("frontend context mutex poisoned");
+    ctx.registered_frontends()
 }
 
 /// Spawn a registered frontend by name with runtime context.
+/// Plugin compatibility: reads from bootstrap context.
 pub fn spawn_frontend(
     name: &str,
     state_rx: watch::Receiver<RigState>,
@@ -189,11 +177,6 @@ pub fn spawn_frontend(
     listen_addr: SocketAddr,
     context: Arc<FrontendRuntimeContext>,
 ) -> DynResult<JoinHandle<()>> {
-    let key = normalize_name(name);
-    let reg = registry().lock().expect("frontend registry mutex poisoned");
-    let spawner = reg
-        .spawners
-        .get(&key)
-        .ok_or_else(|| format!("Unknown frontend: {}", name))?;
-    Ok(spawner(state_rx, rig_tx, callsign, listen_addr, context))
+    let ctx = bootstrap_context().lock().expect("frontend context mutex poisoned");
+    ctx.spawn_frontend(name, state_rx, rig_tx, callsign, listen_addr, context)
 }
