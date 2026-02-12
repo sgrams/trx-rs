@@ -30,11 +30,6 @@ use trx_frontend_http::{register_frontend as register_http_frontend, set_audio_c
 use trx_frontend_http_json::{register_frontend as register_http_json_frontend, set_auth_tokens};
 use trx_frontend_rigctl::register_frontend as register_rigctl_frontend;
 
-#[cfg(feature = "appkit-frontend")]
-use trx_frontend_appkit::register_frontend as register_appkit_frontend;
-#[cfg(feature = "appkit-frontend")]
-use trx_frontend_appkit::run_appkit_main_thread;
-
 use config::ClientConfig;
 use remote_client::{parse_remote_url, RemoteClientConfig};
 
@@ -99,27 +94,8 @@ fn normalize_name(name: &str) -> String {
 fn main() -> DynResult<()> {
     let rt = tokio::runtime::Runtime::new()?;
 
-    #[allow(unused_variables)]
-    let app_state = rt.block_on(async_init())?;
+    let _app_state = rt.block_on(async_init())?;
 
-    #[cfg(feature = "appkit-frontend")]
-    if app_state.has_appkit {
-        // Keep a runtime context active on the main thread so that
-        // tokio::spawn inside run_appkit_main_thread works.
-        let _guard = rt.enter();
-
-        // AppKit needs the process main thread. Spawn Ctrl+C handler on the
-        // runtime, then hand main thread to AppKit (blocks forever).
-        rt.spawn(async {
-            signal::ctrl_c().await.ok();
-            info!("Ctrl+C received, shutting down");
-            std::process::exit(0);
-        });
-        run_appkit_main_thread(app_state.state_rx, app_state.rig_tx);
-        unreachable!();
-    }
-
-    // No AppKit — block on Ctrl+C as before.
     rt.block_on(async {
         signal::ctrl_c().await?;
         info!("Ctrl+C received, shutting down");
@@ -128,14 +104,7 @@ fn main() -> DynResult<()> {
 }
 
 /// Holds the state needed after async initialization completes.
-struct AppState {
-    #[allow(dead_code)]
-    has_appkit: bool,
-    #[cfg(feature = "appkit-frontend")]
-    state_rx: watch::Receiver<RigState>,
-    #[cfg(feature = "appkit-frontend")]
-    rig_tx: mpsc::Sender<RigRequest>,
-}
+struct AppState;
 
 async fn async_init() -> DynResult<AppState> {
     tracing_subscriber::fmt().with_target(false).init();
@@ -143,8 +112,6 @@ async fn async_init() -> DynResult<AppState> {
     register_http_frontend();
     register_http_json_frontend();
     register_rigctl_frontend();
-    #[cfg(feature = "appkit-frontend")]
-    register_appkit_frontend();
     let _plugin_libs = plugins::load_plugins();
 
     let cli = Cli::parse();
@@ -200,9 +167,6 @@ async fn async_init() -> DynResult<AppState> {
         if cfg.frontends.http_json.enabled {
             fes.push("httpjson".to_string());
         }
-        if cfg.frontends.appkit.enabled {
-            fes.push("appkit".to_string());
-        }
         if fes.is_empty() {
             fes.push("http".to_string());
         }
@@ -231,8 +195,6 @@ async fn async_init() -> DynResult<AppState> {
         .callsign
         .clone()
         .or_else(|| cfg.general.callsign.clone());
-
-    let has_appkit = frontends.iter().any(|f| f == "appkit");
 
     info!(
         "Starting trx-client (remote: {}, frontends: {})",
@@ -327,11 +289,8 @@ async fn async_init() -> DynResult<AppState> {
         info!("Audio disabled in config, decode will not be available");
     }
 
-    // Spawn frontends (skip appkit — it will be driven from main thread)
+    // Spawn frontends
     for frontend in &frontends {
-        if frontend == "appkit" {
-            continue;
-        }
         let frontend_state_rx = state_rx.clone();
         let addr = match frontend.as_str() {
             "http" => SocketAddr::from((http_listen, http_port)),
@@ -350,11 +309,5 @@ async fn async_init() -> DynResult<AppState> {
         )?;
     }
 
-    Ok(AppState {
-        has_appkit,
-        #[cfg(feature = "appkit-frontend")]
-        state_rx,
-        #[cfg(feature = "appkit-frontend")]
-        rig_tx: tx,
-    })
+    Ok(AppState)
 }
