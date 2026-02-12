@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: BSD-2-Clause
 
 use std::collections::HashMap;
-use std::sync::{Mutex, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock};
 
 use trx_core::rig::RigCat;
 use trx_core::DynResult;
@@ -73,24 +73,6 @@ impl Default for RegistrationContext {
     }
 }
 
-// Legacy global registry for plugin compatibility
-struct BackendRegistry {
-    factories: HashMap<String, BackendFactory>,
-}
-
-impl BackendRegistry {
-    fn new() -> Self {
-        Self {
-            factories: HashMap::new(),
-        }
-    }
-}
-
-fn registry() -> &'static Mutex<BackendRegistry> {
-    static REGISTRY: OnceLock<Mutex<BackendRegistry>> = OnceLock::new();
-    REGISTRY.get_or_init(|| Mutex::new(BackendRegistry::new()))
-}
-
 fn normalize_name(name: &str) -> String {
     name.to_ascii_lowercase()
         .chars()
@@ -98,11 +80,17 @@ fn normalize_name(name: &str) -> String {
         .collect()
 }
 
+/// Phase 3D: Plugin compatibility adapter - delegates to bootstrap context.
+fn bootstrap_context() -> &'static Arc<Mutex<RegistrationContext>> {
+    static BOOTSTRAP_CONTEXT: OnceLock<Arc<Mutex<RegistrationContext>>> = OnceLock::new();
+    BOOTSTRAP_CONTEXT.get_or_init(|| Arc::new(Mutex::new(RegistrationContext::new())))
+}
+
 /// Register a backend factory under a stable name (e.g. "ft817").
+/// Plugin compatibility: delegates to bootstrap context.
 pub fn register_backend(name: &str, factory: BackendFactory) {
-    let key = normalize_name(name);
-    let mut reg = registry().lock().expect("backend registry mutex poisoned");
-    reg.factories.insert(key, factory);
+    let mut ctx = bootstrap_context().lock().expect("backend context mutex poisoned");
+    ctx.register_backend(name, factory);
 }
 
 /// Register all built-in backends enabled by features on a context.
@@ -128,29 +116,24 @@ fn dummy_factory(_access: RigAccess) -> DynResult<Box<dyn RigCat>> {
 }
 
 /// Check whether a backend name is registered.
+/// Plugin compatibility: reads from bootstrap context.
 pub fn is_backend_registered(name: &str) -> bool {
-    let key = normalize_name(name);
-    let reg = registry().lock().expect("backend registry mutex poisoned");
-    reg.factories.contains_key(&key)
+    let ctx = bootstrap_context().lock().expect("backend context mutex poisoned");
+    ctx.is_backend_registered(name)
 }
 
 /// List registered backend names.
+/// Plugin compatibility: reads from bootstrap context.
 pub fn registered_backends() -> Vec<String> {
-    let reg = registry().lock().expect("backend registry mutex poisoned");
-    let mut names: Vec<String> = reg.factories.keys().cloned().collect();
-    names.sort();
-    names
+    let ctx = bootstrap_context().lock().expect("backend context mutex poisoned");
+    ctx.registered_backends()
 }
 
 /// Instantiate a rig backend based on the selected name and access method.
+/// Plugin compatibility: reads from bootstrap context.
 pub fn build_rig(name: &str, access: RigAccess) -> DynResult<Box<dyn RigCat>> {
-    let key = normalize_name(name);
-    let reg = registry().lock().expect("backend registry mutex poisoned");
-    let factory = reg
-        .factories
-        .get(&key)
-        .ok_or_else(|| format!("Unknown rig backend: {}", name))?;
-    factory(access)
+    let ctx = bootstrap_context().lock().expect("backend context mutex poisoned");
+    ctx.build_rig(name, access)
 }
 
 #[cfg(feature = "ft817")]
