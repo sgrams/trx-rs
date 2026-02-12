@@ -3,7 +3,5 @@
 // SPDX-License-Identifier: BSD-2-Clause
 
 mod decoder;
-mod wsprd_wrapper;
 
 pub use decoder::{WsprDecodeResult, WsprDecoder};
-pub use wsprd_wrapper::WsprdWrapper;
