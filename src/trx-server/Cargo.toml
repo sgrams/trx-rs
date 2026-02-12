@@ -24,3 +24,4 @@ opus = "0.3"
 trx-backend = { path = "trx-backend" }
 trx-core = { path = "../trx-core" }
 trx-ft8 = { path = "../trx-ft8" }
+trx-protocol = { path = "../trx-protocol" }
