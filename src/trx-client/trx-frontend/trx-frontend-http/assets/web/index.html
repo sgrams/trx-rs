@@ -122,11 +122,11 @@
     <div id="tab-plugins" class="tab-panel" style="display:none;">
       <div class="sub-tab-bar">
         <button class="sub-tab active" data-subtab="overview">Overview</button>
-        <button class="sub-tab" data-subtab="map">Map</button>
         <button class="sub-tab" data-subtab="aprs">APRS</button>
+        <button class="sub-tab" data-subtab="cw">CW</button>
         <button class="sub-tab" data-subtab="ft8">FT8</button>
         <button class="sub-tab" data-subtab="wspr">WSPR</button>
-        <button class="sub-tab" data-subtab="cw">CW</button>
+        <button class="sub-tab" data-subtab="map">Map</button>
       </div>
       <div id="subtab-overview" class="sub-tab-panel">
         <div class="plugin-item">
@@ -174,6 +174,7 @@
           <button id="ft8-clear-btn" type="button">Clear</button>
           <input id="ft8-filter" class="ft8-filter" type="text" placeholder="Filter (e.g. CQ, DL4)" />
           <small id="ft8-status" style="color:var(--text-muted);">Waiting for server decode</small>
+          <small id="ft8-period" style="color:var(--text-muted);">Next slot --s</small>
         </div>
         <div class="ft8-header">
           <span class="ft8-time">Time</span>
@@ -189,6 +190,7 @@
           <button id="wspr-decode-toggle-btn" type="button">Enable WSPR</button>
           <button id="wspr-clear-btn" type="button">Clear</button>
           <small id="wspr-status" style="color:var(--text-muted);">Waiting for server decode</small>
+          <small id="wspr-period" style="color:var(--text-muted);">Next slot --:--</small>
         </div>
         <div class="ft8-header">
           <span class="ft8-time">Time</span>

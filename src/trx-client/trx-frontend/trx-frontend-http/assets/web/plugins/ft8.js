@@ -1,14 +1,26 @@
 // --- FT8 Decoder Plugin (server-side decode) ---
 const ft8Status = document.getElementById("ft8-status");
+const ft8PeriodEl = document.getElementById("ft8-period");
 const ft8MessagesEl = document.getElementById("ft8-messages");
 const ft8FilterInput = document.getElementById("ft8-filter");
 const FT8_MAX_MESSAGES = 200;
+const FT8_PERIOD_SECONDS = 15;
 let ft8FilterText = "";
 
 function fmtTime(tsMs) {
   if (!tsMs) return "--:--:--";
   return new Date(tsMs).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
 }
+
+function updateFt8PeriodTimer() {
+  if (!ft8PeriodEl) return;
+  const nowSec = Math.floor(Date.now() / 1000);
+  const remaining = FT8_PERIOD_SECONDS - (nowSec % FT8_PERIOD_SECONDS);
+  ft8PeriodEl.textContent = `Next slot ${String(remaining).padStart(2, "0")}s`;
+}
+
+updateFt8PeriodTimer();
+setInterval(updateFt8PeriodTimer, 500);
 
 function renderFt8Row(msg) {
   const row = document.createElement("div");
