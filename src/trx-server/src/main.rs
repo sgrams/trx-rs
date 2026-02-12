@@ -24,7 +24,10 @@ use tracing::{error, info};
 use trx_core::audio::AudioStreamInfo;
 
 use trx_app::normalize_name;
-use trx_backend::{is_backend_registered, register_builtin_backends, registered_backends, RigAccess};
+use trx_backend::{
+    is_backend_registered, register_builtin_backends, register_builtin_backends_on,
+    registered_backends, RegistrationContext, RigAccess,
+};
 use trx_core::rig::controller::{AdaptivePolling, ExponentialBackoff};
 use trx_core::rig::request::RigRequest;
 use trx_core::rig::state::RigState;
@@ -208,6 +211,14 @@ fn build_rig_task_config(
 #[tokio::main]
 async fn main() -> DynResult<()> {
     tracing_subscriber::fmt().with_target(false).init();
+
+    // Phase 3B: Create bootstrap context for explicit initialization.
+    // This replaces reliance on global mutable state, though currently
+    // built-in backends still register on globals for plugin compatibility.
+    // Full de-globalization would require threading context through rig_task and listener.
+    let mut bootstrap_ctx = RegistrationContext::new();
+    register_builtin_backends_on(&mut bootstrap_ctx);
+    info!("Bootstrap context initialized with {} backends", bootstrap_ctx.registered_backends().len());
 
     register_builtin_backends();
     let _plugin_libs = plugins::load_plugins();

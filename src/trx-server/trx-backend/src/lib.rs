@@ -105,7 +105,16 @@ pub fn register_backend(name: &str, factory: BackendFactory) {
     reg.factories.insert(key, factory);
 }
 
-/// Register all built-in backends enabled by features.
+/// Register all built-in backends enabled by features on a context.
+pub fn register_builtin_backends_on(context: &mut RegistrationContext) {
+    context.register_backend("dummy", dummy_factory);
+    #[cfg(feature = "ft817")]
+    context.register_backend("ft817", ft817_factory);
+    #[cfg(feature = "ft450d")]
+    context.register_backend("ft450d", ft450d_factory);
+}
+
+/// Register all built-in backends enabled by features (global, for plugin compatibility).
 pub fn register_builtin_backends() {
     register_backend("dummy", dummy_factory);
     #[cfg(feature = "ft817")]
