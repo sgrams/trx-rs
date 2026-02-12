@@ -253,6 +253,7 @@ function render(update) {
   const aprsStatus = document.getElementById("aprs-status");
   const cwStatus = document.getElementById("cw-status");
   const ft8Status = document.getElementById("ft8-status");
+  const wsprStatus = document.getElementById("wspr-status");
   if (aprsStatus && modeUpper !== "PKT" && aprsStatus.textContent === "Receiving") {
     aprsStatus.textContent = "Connected, listening for packets";
   }
@@ -262,6 +263,10 @@ function render(update) {
   const ft8Enabled = !!update.ft8_decode_enabled;
   if (ft8Status && (!ft8Enabled || (modeUpper !== "DIG" && modeUpper !== "USB")) && ft8Status.textContent === "Receiving") {
     ft8Status.textContent = "Connected, listening for packets";
+  }
+  const wsprEnabled = !!update.wspr_decode_enabled;
+  if (wsprStatus && (!wsprEnabled || (modeUpper !== "DIG" && modeUpper !== "USB")) && wsprStatus.textContent === "Receiving") {
+    wsprStatus.textContent = "Connected, listening for packets";
   }
   if (update.status && typeof update.status.tx_en === "boolean") {
     lastTxEn = update.status.tx_en;
@@ -282,6 +287,13 @@ function render(update) {
     ft8ToggleBtn.textContent = ft8On ? "Disable FT8" : "Enable FT8";
     ft8ToggleBtn.style.borderColor = ft8On ? "#00d17f" : "";
     ft8ToggleBtn.style.color = ft8On ? "#00d17f" : "";
+  }
+  const wsprToggleBtn = document.getElementById("wspr-decode-toggle-btn");
+  if (wsprToggleBtn) {
+    const wsprOn = !!update.wspr_decode_enabled;
+    wsprToggleBtn.textContent = wsprOn ? "Disable WSPR" : "Enable WSPR";
+    wsprToggleBtn.style.borderColor = wsprOn ? "#00d17f" : "";
+    wsprToggleBtn.style.color = wsprOn ? "#00d17f" : "";
   }
   const cwAutoEl = document.getElementById("cw-auto");
   const cwWpmEl = document.getElementById("cw-wpm");

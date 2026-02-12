@@ -441,6 +441,7 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
         .service(app_js)
         .service(aprs_js)
         .service(ft8_js)
+        .service(wspr_js)
         .service(cw_js);
 }
 
@@ -500,6 +501,16 @@ async fn ft8_js() -> impl Responder {
             "application/javascript; charset=utf-8",
         ))
         .body(status::FT8_JS)
+}
+
+#[get("/wspr.js")]
+async fn wspr_js() -> impl Responder {
+    HttpResponse::Ok()
+        .content_type("application/javascript; charset=utf-8")
+        .insert_header((header::CACHE_CONTROL, "no-cache, no-store, must-revalidate"))
+        .insert_header((header::PRAGMA, "no-cache"))
+        .insert_header((header::EXPIRES, "0"))
+        .body(status::WSPR_JS)
 }
 
 #[get("/cw.js")]

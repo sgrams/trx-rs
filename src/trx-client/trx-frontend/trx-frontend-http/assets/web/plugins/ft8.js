@@ -149,15 +149,3 @@ window.onServerFt8 = function(msg) {
     message: msg.message,
   });
 };
-
-// Reuse FT8 table rendering for WSPR until a dedicated WSPR panel is added.
-window.onServerWspr = function(msg) {
-  ft8Status.textContent = "Receiving";
-  addFt8Message({
-    ts_ms: msg.ts_ms,
-    snr_db: msg.snr_db,
-    dt_s: msg.dt_s,
-    freq_hz: msg.freq_hz,
-    message: `[WSPR] ${msg.message}`,
-  });
-};

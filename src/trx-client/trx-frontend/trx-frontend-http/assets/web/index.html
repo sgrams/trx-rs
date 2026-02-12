@@ -125,6 +125,7 @@
         <button class="sub-tab" data-subtab="map">Map</button>
         <button class="sub-tab" data-subtab="aprs">APRS</button>
         <button class="sub-tab" data-subtab="ft8">FT8</button>
+        <button class="sub-tab" data-subtab="wspr">WSPR</button>
         <button class="sub-tab" data-subtab="cw">CW</button>
       </div>
       <div id="subtab-overview" class="sub-tab-panel">
@@ -144,6 +145,12 @@
           <strong>FT8 Decoder</strong>
           <div style="color:var(--text-muted); font-size:0.85rem; margin-top:0.2rem;">
             Decodes FT8 messages from RX audio (DIG/USB only, toggle required).
+          </div>
+        </div>
+        <div class="plugin-item">
+          <strong>WSPR Decoder</strong>
+          <div style="color:var(--text-muted); font-size:0.85rem; margin-top:0.2rem;">
+            Decodes WSPR messages from RX audio (DIG/USB only, toggle required).
           </div>
         </div>
       </div>
@@ -176,6 +183,21 @@
           <span class="ft8-msg">Message</span>
         </div>
         <div id="ft8-messages"></div>
+      </div>
+      <div id="subtab-wspr" class="sub-tab-panel" style="display:none;">
+        <div class="ft8-controls">
+          <button id="wspr-decode-toggle-btn" type="button">Enable WSPR</button>
+          <button id="wspr-clear-btn" type="button">Clear</button>
+          <small id="wspr-status" style="color:var(--text-muted);">Waiting for server decode</small>
+        </div>
+        <div class="ft8-header">
+          <span class="ft8-time">Time</span>
+          <span class="ft8-snr">SNR</span>
+          <span class="ft8-dt">DT</span>
+          <span class="ft8-freq">RF</span>
+          <span class="ft8-msg">Message</span>
+        </div>
+        <div id="wspr-messages"></div>
       </div>
       <div id="subtab-cw" class="sub-tab-panel" style="display:none;">
         <div class="cw-controls">
@@ -212,6 +234,7 @@
   <script src="/app.js"></script>
   <script src="/aprs.js"></script>
   <script src="/ft8.js"></script>
+  <script src="/wspr.js"></script>
   <script src="/cw.js"></script>
 </body>
 </html>
