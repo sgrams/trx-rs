@@ -74,6 +74,7 @@ let initialized = false;
 let lastEventAt = Date.now();
 let es;
 let esHeartbeat;
+let reconnectTimer = null;
 
 function formatFreq(hz) {
   if (!Number.isFinite(hz)) return "--";
@@ -446,6 +447,26 @@ function render(update) {
   }
 }
 
+function scheduleReconnect(delayMs = 1000) {
+  if (reconnectTimer) return;
+  reconnectTimer = setTimeout(() => {
+    reconnectTimer = null;
+    connect();
+  }, delayMs);
+}
+
+async function pollFreshSnapshot() {
+  try {
+    const resp = await fetch("/status", { cache: "no-store" });
+    if (!resp.ok) return;
+    const data = await resp.json();
+    render(data);
+    lastEventAt = Date.now();
+  } catch (e) {
+    // Ignore network errors; connect() retry loop handles reconnection.
+  }
+}
+
 function connect() {
   if (es) {
     es.close();
@@ -453,9 +474,13 @@ function connect() {
   if (esHeartbeat) {
     clearInterval(esHeartbeat);
   }
+  pollFreshSnapshot();
   es = new EventSource("/events");
   lastEventAt = Date.now();
-es.onmessage = (evt) => {
+  es.onopen = () => {
+    pollFreshSnapshot();
+  };
+  es.onmessage = (evt) => {
     try {
       if (evt.data === lastRendered) return;
       const data = JSON.parse(evt.data);
@@ -472,14 +497,16 @@ es.onmessage = (evt) => {
   es.onerror = () => {
     powerHint.textContent = "Disconnected, retrying…";
     es.close();
-    setTimeout(connect, 1000);
+    pollFreshSnapshot();
+    scheduleReconnect(1000);
   };
 
   esHeartbeat = setInterval(() => {
     const now = Date.now();
     if (now - lastEventAt > 15000) {
       es.close();
-      connect();
+      pollFreshSnapshot();
+      scheduleReconnect(250);
     }
   }, 5000);
 }
