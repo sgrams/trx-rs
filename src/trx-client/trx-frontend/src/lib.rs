@@ -4,6 +4,7 @@
 
 use std::collections::{HashMap, VecDeque, HashSet};
 use std::net::SocketAddr;
+use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Instant;
 
@@ -35,6 +36,7 @@ pub type FrontendSpawnFn = fn(
 ) -> JoinHandle<()>;
 
 /// Context for registering and spawning frontends.
+#[derive(Clone)]
 pub struct FrontendRegistrationContext {
     spawners: HashMap<String, FrontendSpawnFn>,
 }
@@ -83,6 +85,13 @@ impl FrontendRegistrationContext {
             .ok_or_else(|| format!("Unknown frontend: {}", name))?;
         Ok(spawner(state_rx, rig_tx, callsign, listen_addr, context))
     }
+
+    /// Merge another registration context into this one.
+    pub fn extend_from(&mut self, other: &FrontendRegistrationContext) {
+        for (name, spawner) in &other.spawners {
+            self.spawners.insert(name.clone(), *spawner);
+        }
+    }
 }
 
 impl Default for FrontendRegistrationContext {
@@ -109,6 +118,8 @@ pub struct FrontendRuntimeContext {
     pub ft8_history: Arc<Mutex<VecDeque<(Instant, Ft8Message)>>>,
     /// Authentication tokens for HTTP-JSON frontend
     pub auth_tokens: HashSet<String>,
+    /// Guard to avoid spawning duplicate decode collectors.
+    pub decode_collector_started: AtomicBool,
 }
 
 impl FrontendRuntimeContext {
@@ -123,6 +134,7 @@ impl FrontendRuntimeContext {
             cw_history: Arc::new(Mutex::new(VecDeque::new())),
             ft8_history: Arc::new(Mutex::new(VecDeque::new())),
             auth_tokens: HashSet::new(),
+            decode_collector_started: AtomicBool::new(false),
         }
     }
 }
@@ -144,6 +156,14 @@ fn normalize_name(name: &str) -> String {
 fn bootstrap_context() -> &'static Arc<Mutex<FrontendRegistrationContext>> {
     static BOOTSTRAP_CONTEXT: OnceLock<Arc<Mutex<FrontendRegistrationContext>>> = OnceLock::new();
     BOOTSTRAP_CONTEXT.get_or_init(|| Arc::new(Mutex::new(FrontendRegistrationContext::new())))
+}
+
+/// Snapshot current plugin/bootstrap registrations into an owned context.
+pub fn snapshot_bootstrap_context() -> FrontendRegistrationContext {
+    let ctx = bootstrap_context()
+        .lock()
+        .expect("frontend context mutex poisoned");
+    ctx.clone()
 }
 
 /// Register a frontend spawner under a stable name (e.g. "http").

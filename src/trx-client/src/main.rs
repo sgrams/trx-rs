@@ -4,7 +4,6 @@
 
 mod audio_client;
 mod config;
-mod plugins;
 mod remote_client;
 
 use std::net::{IpAddr, SocketAddr};
@@ -17,17 +16,17 @@ use tokio::signal;
 use tokio::sync::{broadcast, mpsc, watch};
 use tracing::info;
 
-use trx_app::normalize_name;
+use trx_app::{init_logging, load_plugins, normalize_name};
 use trx_core::audio::AudioStreamInfo;
 
 use trx_core::rig::request::RigRequest;
 use trx_core::rig::state::RigState;
 use trx_core::DynResult;
-use trx_frontend::{is_frontend_registered, registered_frontends, FrontendRegistrationContext, FrontendRuntimeContext};
+use trx_frontend::{snapshot_bootstrap_context, FrontendRegistrationContext, FrontendRuntimeContext};
 use trx_core::decode::DecodedMessage;
-use trx_frontend_http::{register_frontend as register_http_frontend, set_audio_channels, set_decode_channel};
-use trx_frontend_http_json::{register_frontend as register_http_json_frontend, set_auth_tokens};
-use trx_frontend_rigctl::register_frontend as register_rigctl_frontend;
+use trx_frontend_http::register_frontend_on as register_http_frontend;
+use trx_frontend_http_json::register_frontend_on as register_http_json_frontend;
+use trx_frontend_rigctl::register_frontend_on as register_rigctl_frontend;
 
 use config::ClientConfig;
 use remote_client::{parse_remote_url, RemoteClientConfig};
@@ -100,17 +99,14 @@ struct AppState;
 async fn async_init() -> DynResult<AppState> {
     use std::sync::Arc;
 
-    tracing_subscriber::fmt().with_target(false).init();
-
     // Phase 3: Create bootstrap context for explicit initialization.
     // This replaces reliance on global mutable state by threading context through spawn_frontend.
-    let mut _frontend_reg_ctx = FrontendRegistrationContext::new();
-    let frontend_runtime_ctx = Arc::new(FrontendRuntimeContext::new());
+    let mut frontend_reg_ctx = FrontendRegistrationContext::new();
+    let mut frontend_runtime = FrontendRuntimeContext::new();
 
-    register_http_frontend();
-    register_http_json_frontend();
-    register_rigctl_frontend();
-    let _plugin_libs = plugins::load_plugins();
+    register_http_frontend(&mut frontend_reg_ctx);
+    register_http_json_frontend(&mut frontend_reg_ctx);
+    register_rigctl_frontend(&mut frontend_reg_ctx);
 
     let cli = Cli::parse();
 
@@ -126,11 +122,24 @@ async fn async_init() -> DynResult<AppState> {
         ClientConfig::load_from_default_paths()?
     };
 
+    init_logging(cfg.general.log_level.as_deref());
+
+    let _plugin_libs = load_plugins();
+    frontend_reg_ctx.extend_from(&snapshot_bootstrap_context());
+
     if let Some(ref path) = config_path {
         info!("Loaded configuration from {}", path.display());
     }
 
-    set_auth_tokens(cfg.frontends.http_json.auth.tokens.clone());
+    frontend_runtime.auth_tokens = cfg
+        .frontends
+        .http_json
+        .auth
+        .tokens
+        .iter()
+        .filter(|t| !t.is_empty())
+        .cloned()
+        .collect();
 
     // Resolve remote URL: CLI > config [remote] section > error
     let remote_url = cli
@@ -171,11 +180,11 @@ async fn async_init() -> DynResult<AppState> {
         fes
     };
     for name in &frontends {
-        if !is_frontend_registered(name) {
+        if !frontend_reg_ctx.is_frontend_registered(name) {
             return Err(format!(
                 "Unknown frontend: {} (available: {})",
                 name,
-                registered_frontends().join(", ")
+                frontend_reg_ctx.registered_frontends().join(", ")
             )
             .into());
         }
@@ -229,8 +238,10 @@ async fn async_init() -> DynResult<AppState> {
 
         let audio_addr = format!("{}:{}", remote_host, cfg.frontends.audio.server_port);
 
-        set_audio_channels(rx_audio_tx.clone(), tx_audio_tx, stream_info_rx);
-        set_decode_channel(decode_tx.clone());
+        frontend_runtime.audio_rx = Some(rx_audio_tx.clone());
+        frontend_runtime.audio_tx = Some(tx_audio_tx);
+        frontend_runtime.audio_info = Some(stream_info_rx);
+        frontend_runtime.decode_rx = Some(decode_tx.clone());
 
         info!(
             "Audio enabled: connecting to {}, decode channel set",
@@ -248,6 +259,8 @@ async fn async_init() -> DynResult<AppState> {
         info!("Audio disabled in config, decode will not be available");
     }
 
+    let frontend_runtime_ctx = Arc::new(frontend_runtime);
+
     // Spawn frontends with runtime context
     for frontend in &frontends {
         let frontend_state_rx = state_rx.clone();
@@ -259,7 +272,7 @@ async fn async_init() -> DynResult<AppState> {
                 return Err(format!("Frontend missing listen configuration: {}", other).into());
             }
         };
-        trx_frontend::spawn_frontend(
+        frontend_reg_ctx.spawn_frontend(
             frontend,
             frontend_state_rx,
             tx.clone(),

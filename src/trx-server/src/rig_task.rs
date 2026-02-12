@@ -5,12 +5,13 @@
 //! Rig task implementation using controller components.
 
 use std::time::Duration;
+use std::sync::Arc;
 
 use tokio::sync::{mpsc, watch};
 use tokio::time::{self, Instant};
 use tracing::{debug, error, info, warn};
 
-use trx_backend::{build_rig, RigAccess};
+use trx_backend::{RegistrationContext, RigAccess};
 use trx_core::radio::freq::Freq;
 use trx_core::rig::command::RigCommand;
 use trx_core::rig::controller::{
@@ -28,6 +29,7 @@ use crate::error::is_invalid_bcd_error;
 
 /// Configuration for the rig task.
 pub struct RigTaskConfig {
+    pub registry: Arc<RegistrationContext>,
     pub rig_model: String,
     pub access: RigAccess,
     pub polling: AdaptivePolling,
@@ -42,7 +44,10 @@ pub struct RigTaskConfig {
 
 impl Default for RigTaskConfig {
     fn default() -> Self {
+        let mut registry = RegistrationContext::new();
+        trx_backend::register_builtin_backends_on(&mut registry);
         Self {
+            registry: Arc::new(registry),
             rig_model: "ft817".to_string(),
             access: RigAccess::Serial {
                 path: "/dev/ttyUSB0".to_string(),
@@ -83,7 +88,7 @@ pub async fn run_rig_task(
         RigAccess::Tcp { addr } => info!("TCP CAT: {}", addr),
     }
 
-    let mut rig: Box<dyn RigCat> = build_rig(&config.rig_model, config.access)?;
+    let mut rig: Box<dyn RigCat> = config.registry.build_rig(&config.rig_model, config.access)?;
     info!("Rig backend ready");
 
     // Initialize state machine and state

@@ -13,9 +13,11 @@ use tokio::sync::{broadcast, mpsc, oneshot, watch};
 use tokio::time::{self, Duration};
 use tokio_stream::wrappers::{IntervalStream, WatchStream};
 
+use trx_frontend::FrontendRuntimeContext;
+use trx_protocol::{ClientResponse, parse_mode};
 use trx_core::radio::freq::Freq;
 use trx_core::rig::{RigAccessMethod, RigCapabilities, RigInfo};
-use trx_core::{ClientResponse, RigCommand, RigMode, RigRequest, RigSnapshot, RigState};
+use trx_core::{RigCommand, RigRequest, RigSnapshot, RigState};
 
 use crate::server::status;
 
@@ -96,8 +98,10 @@ pub async fn events(
 }
 
 #[get("/decode")]
-pub async fn decode_events() -> Result<HttpResponse, Error> {
-    let Some(decode_rx) = crate::server::audio::subscribe_decode() else {
+pub async fn decode_events(
+    context: web::Data<Arc<FrontendRuntimeContext>>,
+) -> Result<HttpResponse, Error> {
+    let Some(decode_rx) = crate::server::audio::subscribe_decode(context.get_ref()) else {
         tracing::warn!("/decode requested but decode channel not set (audio disabled?)");
         return Ok(HttpResponse::NotFound().body("decode not enabled"));
     };
@@ -106,17 +110,17 @@ pub async fn decode_events() -> Result<HttpResponse, Error> {
     let history = {
         let mut out = Vec::new();
         out.extend(
-            crate::server::audio::snapshot_aprs_history()
+            crate::server::audio::snapshot_aprs_history(context.get_ref())
                 .into_iter()
                 .map(trx_core::decode::DecodedMessage::Aprs),
         );
         out.extend(
-            crate::server::audio::snapshot_cw_history()
+            crate::server::audio::snapshot_cw_history(context.get_ref())
                 .into_iter()
                 .map(trx_core::decode::DecodedMessage::Cw),
         );
         out.extend(
-            crate::server::audio::snapshot_ft8_history()
+            crate::server::audio::snapshot_ft8_history(context.get_ref())
                 .into_iter()
                 .map(trx_core::decode::DecodedMessage::Ft8),
         );
@@ -358,25 +362,28 @@ pub async fn toggle_ft8_decode(
 
 #[post("/clear_ft8_decode")]
 pub async fn clear_ft8_decode(
+    context: web::Data<Arc<FrontendRuntimeContext>>,
     rig_tx: web::Data<mpsc::Sender<RigRequest>>,
 ) -> Result<HttpResponse, Error> {
-    crate::server::audio::clear_ft8_history();
+    crate::server::audio::clear_ft8_history(context.get_ref());
     send_command(&rig_tx, RigCommand::ResetFt8Decoder).await
 }
 
 #[post("/clear_aprs_decode")]
 pub async fn clear_aprs_decode(
+    context: web::Data<Arc<FrontendRuntimeContext>>,
     rig_tx: web::Data<mpsc::Sender<RigRequest>>,
 ) -> Result<HttpResponse, Error> {
-    crate::server::audio::clear_aprs_history();
+    crate::server::audio::clear_aprs_history(context.get_ref());
     send_command(&rig_tx, RigCommand::ResetAprsDecoder).await
 }
 
 #[post("/clear_cw_decode")]
 pub async fn clear_cw_decode(
+    context: web::Data<Arc<FrontendRuntimeContext>>,
     rig_tx: web::Data<mpsc::Sender<RigRequest>>,
 ) -> Result<HttpResponse, Error> {
-    crate::server::audio::clear_cw_history();
+    crate::server::audio::clear_cw_history(context.get_ref());
     send_command(&rig_tx, RigCommand::ResetCwDecoder).await
 }
 
@@ -573,20 +580,5 @@ impl From<RigInfoPlaceholder> for RigInfo {
                 baud: 0,
             },
         }
-    }
-}
-
-fn parse_mode(s: &str) -> RigMode {
-    match s.to_ascii_uppercase().as_str() {
-        "LSB" => RigMode::LSB,
-        "USB" => RigMode::USB,
-        "CW" => RigMode::CW,
-        "CWR" => RigMode::CWR,
-        "AM" => RigMode::AM,
-        "FM" => RigMode::FM,
-        "WFM" => RigMode::WFM,
-        "DIG" | "DIGI" => RigMode::DIG,
-        "PKT" | "PACKET" => RigMode::PKT,
-        other => RigMode::Other(other.to_string()),
     }
 }

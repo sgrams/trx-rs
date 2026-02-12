@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: BSD-2-Clause
 
 use std::net::SocketAddr;
+use std::sync::Arc;
 
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::{TcpListener, TcpStream};
@@ -10,62 +11,16 @@ use tokio::sync::{mpsc, oneshot, watch};
 use tokio::task::JoinHandle;
 use tracing::{error, info};
 
-use std::collections::HashSet;
-use std::sync::{Mutex, OnceLock};
-
 use trx_core::rig::request::RigRequest;
 use trx_core::rig::state::RigState;
-use trx_core::{ClientResponse};
-use trx_frontend::FrontendSpawner;
+use trx_frontend::{FrontendSpawner, FrontendRuntimeContext};
+use trx_protocol::auth::{SimpleTokenValidator, TokenValidator};
 use trx_protocol::codec::parse_envelope;
-use trx_protocol::auth::TokenValidator;
 use trx_protocol::mapping;
+use trx_protocol::ClientResponse;
 
 /// JSON-over-TCP frontend for control and status.
 pub struct HttpJsonFrontend;
-
-struct AuthConfig {
-    tokens: HashSet<String>,
-}
-
-fn auth_registry() -> &'static Mutex<AuthConfig> {
-    static REGISTRY: OnceLock<Mutex<AuthConfig>> = OnceLock::new();
-    REGISTRY.get_or_init(|| {
-        Mutex::new(AuthConfig {
-            tokens: HashSet::new(),
-        })
-    })
-}
-
-pub fn set_auth_tokens(tokens: Vec<String>) {
-    let mut reg = auth_registry()
-        .lock()
-        .expect("http-json auth mutex poisoned");
-    reg.tokens = tokens.into_iter().filter(|t| !t.is_empty()).collect();
-}
-
-/// Token validator that uses the global auth registry.
-struct RegistryTokenValidator;
-
-impl TokenValidator for RegistryTokenValidator {
-    fn validate(&self, token: &Option<String>) -> Result<(), String> {
-        let reg = auth_registry()
-            .lock()
-            .expect("http-json auth mutex poisoned");
-        if reg.tokens.is_empty() {
-            return Ok(());
-        }
-        let Some(token) = token else {
-            return Err("missing authorization token".into());
-        };
-        let candidate = trx_protocol::auth::strip_bearer(token);
-        if reg.tokens.contains(candidate) {
-            Ok(())
-        } else {
-            Err("invalid authorization token".into())
-        }
-    }
-}
 
 impl FrontendSpawner for HttpJsonFrontend {
     fn spawn_frontend(
@@ -73,7 +28,7 @@ impl FrontendSpawner for HttpJsonFrontend {
         rig_tx: mpsc::Sender<RigRequest>,
         _callsign: Option<String>,
         listen_addr: SocketAddr,
-        context: std::sync::Arc<trx_frontend::FrontendRuntimeContext>,
+        context: Arc<FrontendRuntimeContext>,
     ) -> JoinHandle<()> {
         tokio::spawn(async move {
             if let Err(e) = serve(listen_addr, rig_tx, context).await {
@@ -86,7 +41,7 @@ impl FrontendSpawner for HttpJsonFrontend {
 async fn serve(
     listen_addr: SocketAddr,
     rig_tx: mpsc::Sender<RigRequest>,
-    _context: std::sync::Arc<trx_frontend::FrontendRuntimeContext>,
+    context: Arc<FrontendRuntimeContext>,
 ) -> std::io::Result<()> {
     let listener = TcpListener::bind(listen_addr).await?;
     info!("json tcp frontend listening on {}", listen_addr);
@@ -96,8 +51,9 @@ async fn serve(
         info!("json tcp client connected: {}", addr);
 
         let tx_clone = rig_tx.clone();
+        let context = context.clone();
         tokio::spawn(async move {
-            if let Err(e) = handle_client(socket, addr, tx_clone).await {
+            if let Err(e) = handle_client(socket, addr, tx_clone, context).await {
                 error!("json tcp client {} error: {:?}", addr, e);
             }
         });
@@ -108,6 +64,7 @@ async fn handle_client(
     socket: TcpStream,
     addr: SocketAddr,
     tx: mpsc::Sender<RigRequest>,
+    context: Arc<FrontendRuntimeContext>,
 ) -> std::io::Result<()> {
     let (reader, mut writer) = socket.into_split();
     let mut reader = BufReader::new(reader);
@@ -143,7 +100,7 @@ async fn handle_client(
             }
         };
 
-        if let Err(err) = authorize(&envelope.token) {
+        if let Err(err) = authorize(&envelope.token, &context) {
             let resp = ClientResponse {
                 success: false,
                 state: None,
@@ -215,6 +172,7 @@ async fn handle_client(
     Ok(())
 }
 
-fn authorize(token: &Option<String>) -> Result<(), String> {
-    RegistryTokenValidator.validate(token)
+fn authorize(token: &Option<String>, context: &FrontendRuntimeContext) -> Result<(), String> {
+    let validator = SimpleTokenValidator::new(context.auth_tokens.clone());
+    validator.validate(token)
 }

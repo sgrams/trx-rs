@@ -48,9 +48,10 @@ async fn serve(
     state_rx: watch::Receiver<RigState>,
     rig_tx: mpsc::Sender<RigRequest>,
     callsign: Option<String>,
-    _context: Arc<FrontendRuntimeContext>,
+    context: Arc<FrontendRuntimeContext>,
 ) -> Result<(), actix_web::Error> {
-    let server = build_server(addr, state_rx, rig_tx, callsign)?;
+    audio::start_decode_history_collector(context.clone());
+    let server = build_server(addr, state_rx, rig_tx, callsign, context)?;
     let handle = server.handle();
     tokio::spawn(async move {
         let _ = signal::ctrl_c().await;
@@ -67,16 +68,19 @@ fn build_server(
     state_rx: watch::Receiver<RigState>,
     rig_tx: mpsc::Sender<RigRequest>,
     _callsign: Option<String>,
+    context: Arc<FrontendRuntimeContext>,
 ) -> Result<Server, actix_web::Error> {
     let state_data = web::Data::new(state_rx);
     let rig_tx = web::Data::new(rig_tx);
     let clients = web::Data::new(Arc::new(AtomicUsize::new(0)));
+    let context_data = web::Data::new(context);
 
     let server = HttpServer::new(move || {
         App::new()
             .app_data(state_data.clone())
             .app_data(rig_tx.clone())
             .app_data(clients.clone())
+            .app_data(context_data.clone())
             .configure(api::configure)
     })
     .shutdown_timeout(1)

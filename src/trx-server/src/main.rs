@@ -7,7 +7,6 @@ mod config;
 mod decode;
 mod error;
 mod listener;
-mod plugins;
 mod rig_task;
 
 use std::collections::HashSet;
@@ -23,10 +22,9 @@ use tracing::{error, info};
 
 use trx_core::audio::AudioStreamInfo;
 
-use trx_app::normalize_name;
+use trx_app::{init_logging, load_plugins, normalize_name};
 use trx_backend::{
-    is_backend_registered, register_builtin_backends, register_builtin_backends_on,
-    registered_backends, RegistrationContext, RigAccess,
+    register_builtin_backends_on, snapshot_bootstrap_context, RegistrationContext, RigAccess,
 };
 use trx_core::rig::controller::{AdaptivePolling, ExponentialBackoff};
 use trx_core::rig::request::RigRequest;
@@ -107,7 +105,11 @@ struct ResolvedConfig {
     longitude: Option<f64>,
 }
 
-fn resolve_config(cli: &Cli, cfg: &ServerConfig) -> DynResult<ResolvedConfig> {
+fn resolve_config(
+    cli: &Cli,
+    cfg: &ServerConfig,
+    registry: &RegistrationContext,
+) -> DynResult<ResolvedConfig> {
     let rig_str = cli.rig.clone().or_else(|| cfg.rig.model.clone());
     let rig = match rig_str.as_deref() {
         Some(name) => normalize_name(name),
@@ -117,11 +119,11 @@ fn resolve_config(cli: &Cli, cfg: &ServerConfig) -> DynResult<ResolvedConfig> {
             )
         }
     };
-    if !is_backend_registered(&rig) {
+    if !registry.is_backend_registered(&rig) {
         return Err(format!(
             "Unknown rig model: {} (available: {})",
             rig,
-            registered_backends().join(", ")
+            registry.registered_backends().join(", ")
         )
         .into());
     }
@@ -186,8 +188,10 @@ fn resolve_config(cli: &Cli, cfg: &ServerConfig) -> DynResult<ResolvedConfig> {
 fn build_rig_task_config(
     resolved: &ResolvedConfig,
     cfg: &ServerConfig,
+    registry: std::sync::Arc<RegistrationContext>,
 ) -> rig_task::RigTaskConfig {
     rig_task::RigTaskConfig {
+        registry,
         rig_model: resolved.rig.clone(),
         access: resolved.access.clone(),
         polling: AdaptivePolling::new(
@@ -210,18 +214,12 @@ fn build_rig_task_config(
 
 #[tokio::main]
 async fn main() -> DynResult<()> {
-    tracing_subscriber::fmt().with_target(false).init();
-
     // Phase 3B: Create bootstrap context for explicit initialization.
     // This replaces reliance on global mutable state, though currently
     // built-in backends still register on globals for plugin compatibility.
     // Full de-globalization would require threading context through rig_task and listener.
     let mut bootstrap_ctx = RegistrationContext::new();
     register_builtin_backends_on(&mut bootstrap_ctx);
-    info!("Bootstrap context initialized with {} backends", bootstrap_ctx.registered_backends().len());
-
-    register_builtin_backends();
-    let _plugin_libs = plugins::load_plugins();
 
     let cli = Cli::parse();
 
@@ -237,11 +235,16 @@ async fn main() -> DynResult<()> {
         ServerConfig::load_from_default_paths()?
     };
 
+    init_logging(cfg.general.log_level.as_deref());
+
+    let _plugin_libs = load_plugins();
+    bootstrap_ctx.extend_from(&snapshot_bootstrap_context());
+
     if let Some(ref path) = config_path {
         info!("Loaded configuration from {}", path.display());
     }
 
-    let resolved = resolve_config(&cli, &cfg)?;
+    let resolved = resolve_config(&cli, &cfg, &bootstrap_ctx)?;
 
     match &resolved.access {
         RigAccess::Serial { path, baud } => {
@@ -275,7 +278,7 @@ async fn main() -> DynResult<()> {
     // Keep receivers alive so channels don't close prematurely
     let _state_rx = state_rx;
 
-    let rig_task_config = build_rig_task_config(&resolved, &cfg);
+    let rig_task_config = build_rig_task_config(&resolved, &cfg, std::sync::Arc::new(bootstrap_ctx));
     let _rig_handle = tokio::spawn(rig_task::run_rig_task(rig_task_config, rx, state_tx));
 
     if cfg.listen.enabled {

@@ -25,6 +25,7 @@ pub enum RigAccess {
 pub type BackendFactory = fn(RigAccess) -> DynResult<Box<dyn RigCat>>;
 
 /// Context for registering and instantiating rig backends.
+#[derive(Clone)]
 pub struct RegistrationContext {
     factories: HashMap<String, BackendFactory>,
 }
@@ -65,6 +66,13 @@ impl RegistrationContext {
             .ok_or_else(|| format!("Unknown rig backend: {}", name))?;
         factory(access)
     }
+
+    /// Merge another registration context into this one.
+    pub fn extend_from(&mut self, other: &RegistrationContext) {
+        for (name, factory) in &other.factories {
+            self.factories.insert(name.clone(), *factory);
+        }
+    }
 }
 
 impl Default for RegistrationContext {
@@ -84,6 +92,14 @@ fn normalize_name(name: &str) -> String {
 fn bootstrap_context() -> &'static Arc<Mutex<RegistrationContext>> {
     static BOOTSTRAP_CONTEXT: OnceLock<Arc<Mutex<RegistrationContext>>> = OnceLock::new();
     BOOTSTRAP_CONTEXT.get_or_init(|| Arc::new(Mutex::new(RegistrationContext::new())))
+}
+
+/// Snapshot current plugin/bootstrap registrations into an owned context.
+pub fn snapshot_bootstrap_context() -> RegistrationContext {
+    let ctx = bootstrap_context()
+        .lock()
+        .expect("backend context mutex poisoned");
+    ctx.clone()
 }
 
 /// Register a backend factory under a stable name (e.g. "ft817").

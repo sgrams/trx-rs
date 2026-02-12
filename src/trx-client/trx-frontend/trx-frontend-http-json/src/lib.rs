@@ -4,11 +4,12 @@
 
 pub mod server;
 
+pub fn register_frontend_on(context: &mut trx_frontend::FrontendRegistrationContext) {
+    use trx_frontend::FrontendSpawner;
+    context.register_frontend("http-json", server::HttpJsonFrontend::spawn_frontend);
+}
+
 pub fn register_frontend() {
     use trx_frontend::FrontendSpawner;
     trx_frontend::register_frontend("http-json", server::HttpJsonFrontend::spawn_frontend);
-}
-
-pub fn set_auth_tokens(tokens: Vec<String>) {
-    server::set_auth_tokens(tokens);
 }
