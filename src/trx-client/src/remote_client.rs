@@ -26,14 +26,22 @@ pub async fn run_remote_client(
     config: RemoteClientConfig,
     mut rx: mpsc::Receiver<RigRequest>,
     state_tx: watch::Sender<RigState>,
+    mut shutdown_rx: watch::Receiver<bool>,
 ) -> RigResult<()> {
     let mut reconnect_delay = Duration::from_secs(1);
 
     loop {
+        if *shutdown_rx.borrow() {
+            info!("Remote client shutting down");
+            return Ok(());
+        }
+
         info!("Remote client: connecting to {}", config.addr);
         match TcpStream::connect(&config.addr).await {
             Ok(stream) => {
-                if let Err(e) = handle_connection(&config, stream, &mut rx, &state_tx).await {
+                if let Err(e) =
+                    handle_connection(&config, stream, &mut rx, &state_tx, &mut shutdown_rx).await
+                {
                     warn!("Remote connection dropped: {}", e);
                 }
             }
@@ -42,7 +50,19 @@ pub async fn run_remote_client(
             }
         }
 
-        time::sleep(reconnect_delay).await;
+        tokio::select! {
+            _ = time::sleep(reconnect_delay) => {}
+            changed = shutdown_rx.changed() => {
+                match changed {
+                    Ok(()) if *shutdown_rx.borrow() => {
+                        info!("Remote client shutting down");
+                        return Ok(());
+                    }
+                    Ok(()) => {}
+                    Err(_) => return Ok(()),
+                }
+            }
+        }
         reconnect_delay = (reconnect_delay * 2).min(Duration::from_secs(10));
     }
 }
@@ -52,6 +72,7 @@ async fn handle_connection(
     stream: TcpStream,
     rx: &mut mpsc::Receiver<RigRequest>,
     state_tx: &watch::Sender<RigState>,
+    shutdown_rx: &mut watch::Receiver<bool>,
 ) -> RigResult<()> {
     let (reader, mut writer) = stream.into_split();
     let mut reader = BufReader::new(reader);
@@ -60,6 +81,13 @@ async fn handle_connection(
 
     loop {
         tokio::select! {
+            changed = shutdown_rx.changed() => {
+                match changed {
+                    Ok(()) if *shutdown_rx.borrow() => return Ok(()),
+                    Ok(()) => {}
+                    Err(_) => return Ok(()),
+                }
+            }
             _ = poll_interval.tick() => {
                 if last_poll.elapsed() < config.poll_interval {
                     continue;

@@ -5,9 +5,9 @@
 //! Audio capture, playback, and TCP streaming for trx-server.
 
 use std::net::SocketAddr;
+use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 use std::{collections::VecDeque, sync::Mutex};
-use std::sync::OnceLock;
 
 use bytes::Bytes;
 use tokio::net::{TcpListener, TcpStream};
@@ -15,9 +15,8 @@ use tokio::sync::{broadcast, mpsc, watch};
 use tracing::{error, info, warn};
 
 use trx_core::audio::{
-    read_audio_msg, write_audio_msg, AudioStreamInfo, AUDIO_MSG_APRS_DECODE,
-    AUDIO_MSG_CW_DECODE, AUDIO_MSG_FT8_DECODE, AUDIO_MSG_RX_FRAME, AUDIO_MSG_STREAM_INFO,
-    AUDIO_MSG_TX_FRAME,
+    read_audio_msg, write_audio_msg, AudioStreamInfo, AUDIO_MSG_APRS_DECODE, AUDIO_MSG_CW_DECODE,
+    AUDIO_MSG_FT8_DECODE, AUDIO_MSG_RX_FRAME, AUDIO_MSG_STREAM_INFO, AUDIO_MSG_TX_FRAME,
 };
 use trx_core::decode::{AprsPacket, DecodedMessage, Ft8Message};
 use trx_core::rig::state::{RigMode, RigState};
@@ -113,9 +112,15 @@ pub fn spawn_audio_capture(
     let device_name = cfg.device.clone();
 
     std::thread::spawn(move || {
-        if let Err(e) =
-            run_capture(sample_rate, channels, frame_duration_ms, bitrate_bps, device_name, tx, pcm_tx)
-        {
+        if let Err(e) = run_capture(
+            sample_rate,
+            channels,
+            frame_duration_ms,
+            bitrate_bps,
+            device_name,
+            tx,
+            pcm_tx,
+        ) {
             error!("Audio capture thread error: {}", e);
         }
     })
@@ -153,7 +158,8 @@ fn run_capture(
         buffer_size: cpal::BufferSize::Default,
     };
 
-    let frame_samples = (sample_rate as usize * frame_duration_ms as usize / 1000) * channels as usize;
+    let frame_samples =
+        (sample_rate as usize * frame_duration_ms as usize / 1000) * channels as usize;
 
     let opus_channels = match channels {
         1 => opus::Channels::Mono,
@@ -178,15 +184,18 @@ fn run_capture(
     )?;
 
     // Start paused — only capture when clients are connected
-    info!("Audio capture: ready ({}Hz, {} ch, {}ms frames)", sample_rate, channels, frame_duration_ms);
+    info!(
+        "Audio capture: ready ({}Hz, {} ch, {}ms frames)",
+        sample_rate, channels, frame_duration_ms
+    );
 
     let mut pcm_buf: Vec<f32> = Vec::with_capacity(frame_samples * 2);
     let mut opus_buf = vec![0u8; 4096];
     let mut capturing = false;
 
     loop {
-        let has_receivers = tx.receiver_count() > 0
-            || pcm_tx.as_ref().is_some_and(|p| p.receiver_count() > 0);
+        let has_receivers =
+            tx.receiver_count() > 0 || pcm_tx.as_ref().is_some_and(|p| p.receiver_count() > 0);
 
         if has_receivers && !capturing {
             let _ = stream.play();
@@ -281,7 +290,8 @@ fn run_playback(
         buffer_size: cpal::BufferSize::Default,
     };
 
-    let frame_samples = (sample_rate as usize * frame_duration_ms as usize / 1000) * channels as usize;
+    let frame_samples =
+        (sample_rate as usize * frame_duration_ms as usize / 1000) * channels as usize;
 
     let opus_channels = match channels {
         1 => opus::Channels::Mono,
@@ -291,7 +301,9 @@ fn run_playback(
 
     let mut decoder = opus::Decoder::new(sample_rate, opus_channels)?;
 
-    let ring = std::sync::Arc::new(std::sync::Mutex::new(std::collections::VecDeque::<f32>::with_capacity(frame_samples * 8)));
+    let ring = std::sync::Arc::new(std::sync::Mutex::new(
+        std::collections::VecDeque::<f32>::with_capacity(frame_samples * 8),
+    ));
     let ring_writer = ring.clone();
 
     let stream = device.build_output_stream(
@@ -334,7 +346,9 @@ fn run_playback(
         // Pause when no more packets are queued to avoid ALSA underruns
         if rx.is_empty() {
             // Drain remaining samples before pausing
-            std::thread::sleep(std::time::Duration::from_millis(frame_duration_ms as u64 * 2));
+            std::thread::sleep(std::time::Duration::from_millis(
+                frame_duration_ms as u64 * 2,
+            ));
             if rx.is_empty() {
                 let _ = stream.pause();
                 playing = false;
@@ -746,26 +760,43 @@ pub async fn run_audio_listener(
     tx_audio: mpsc::Sender<Bytes>,
     stream_info: AudioStreamInfo,
     decode_tx: broadcast::Sender<DecodedMessage>,
+    mut shutdown_rx: watch::Receiver<bool>,
 ) -> std::io::Result<()> {
     let listener = TcpListener::bind(addr).await?;
     info!("Audio listener on {}", addr);
 
     loop {
-        let (socket, peer) = listener.accept().await?;
-        info!("Audio client connected: {}", peer);
+        tokio::select! {
+            accept = listener.accept() => {
+                let (socket, peer) = accept?;
+                info!("Audio client connected: {}", peer);
 
-        let rx_audio = rx_audio.clone();
-        let tx_audio = tx_audio.clone();
-        let info = stream_info.clone();
-        let decode_tx = decode_tx.clone();
+                let rx_audio = rx_audio.clone();
+                let tx_audio = tx_audio.clone();
+                let info = stream_info.clone();
+                let decode_tx = decode_tx.clone();
+                let client_shutdown_rx = shutdown_rx.clone();
 
-        tokio::spawn(async move {
-            if let Err(e) = handle_audio_client(socket, peer, rx_audio, tx_audio, info, decode_tx).await {
-                warn!("Audio client {} error: {:?}", peer, e);
+                tokio::spawn(async move {
+                    if let Err(e) = handle_audio_client(socket, peer, rx_audio, tx_audio, info, decode_tx, client_shutdown_rx).await {
+                        warn!("Audio client {} error: {:?}", peer, e);
+                    }
+                    info!("Audio client {} disconnected", peer);
+                });
             }
-            info!("Audio client {} disconnected", peer);
-        });
+            changed = shutdown_rx.changed() => {
+                match changed {
+                    Ok(()) if *shutdown_rx.borrow() => {
+                        info!("Audio listener shutting down");
+                        break;
+                    }
+                    Ok(()) => {}
+                    Err(_) => break,
+                }
+            }
+        }
     }
+    Ok(())
 }
 
 async fn handle_audio_client(
@@ -775,14 +806,14 @@ async fn handle_audio_client(
     tx_audio: mpsc::Sender<Bytes>,
     stream_info: AudioStreamInfo,
     decode_tx: broadcast::Sender<DecodedMessage>,
+    mut shutdown_rx: watch::Receiver<bool>,
 ) -> std::io::Result<()> {
     let (reader, writer) = socket.into_split();
     let mut reader = tokio::io::BufReader::new(reader);
     let mut writer = tokio::io::BufWriter::new(writer);
 
     // Send stream info
-    let info_json = serde_json::to_vec(&stream_info)
-        .map_err(std::io::Error::other)?;
+    let info_json = serde_json::to_vec(&stream_info).map_err(std::io::Error::other)?;
     write_audio_msg(&mut writer, AUDIO_MSG_STREAM_INFO, &info_json).await?;
 
     // Send APRS history to newly connected client.
@@ -852,7 +883,23 @@ async fn handle_audio_client(
 
     // Read TX frames from client
     loop {
-        match read_audio_msg(&mut reader).await {
+        let msg = tokio::select! {
+            msg = read_audio_msg(&mut reader) => msg,
+            changed = shutdown_rx.changed() => {
+                match changed {
+                    Ok(()) if *shutdown_rx.borrow() => {
+                        rx_handle.abort();
+                        return Ok(());
+                    }
+                    Ok(()) => continue,
+                    Err(_) => {
+                        rx_handle.abort();
+                        return Ok(());
+                    }
+                }
+            }
+        };
+        match msg {
             Ok((AUDIO_MSG_TX_FRAME, payload)) => {
                 let _ = tx_audio.send(Bytes::from(payload)).await;
             }

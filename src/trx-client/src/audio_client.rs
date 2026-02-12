@@ -15,9 +15,8 @@ use tokio::time;
 use tracing::{info, warn};
 
 use trx_core::audio::{
-    read_audio_msg, write_audio_msg, AudioStreamInfo, AUDIO_MSG_APRS_DECODE,
-    AUDIO_MSG_CW_DECODE, AUDIO_MSG_FT8_DECODE, AUDIO_MSG_RX_FRAME, AUDIO_MSG_STREAM_INFO,
-    AUDIO_MSG_TX_FRAME,
+    read_audio_msg, write_audio_msg, AudioStreamInfo, AUDIO_MSG_APRS_DECODE, AUDIO_MSG_CW_DECODE,
+    AUDIO_MSG_FT8_DECODE, AUDIO_MSG_RX_FRAME, AUDIO_MSG_STREAM_INFO, AUDIO_MSG_TX_FRAME,
 };
 use trx_core::decode::DecodedMessage;
 
@@ -28,16 +27,29 @@ pub async fn run_audio_client(
     mut tx_rx: mpsc::Receiver<Bytes>,
     stream_info_tx: watch::Sender<Option<AudioStreamInfo>>,
     decode_tx: broadcast::Sender<DecodedMessage>,
+    mut shutdown_rx: watch::Receiver<bool>,
 ) {
     let mut reconnect_delay = Duration::from_secs(1);
 
     loop {
+        if *shutdown_rx.borrow() {
+            info!("Audio client shutting down");
+            return;
+        }
+
         info!("Audio client: connecting to {}", server_addr);
         match TcpStream::connect(&server_addr).await {
             Ok(stream) => {
                 reconnect_delay = Duration::from_secs(1);
-                if let Err(e) =
-                    handle_audio_connection(stream, &rx_tx, &mut tx_rx, &stream_info_tx, &decode_tx).await
+                if let Err(e) = handle_audio_connection(
+                    stream,
+                    &rx_tx,
+                    &mut tx_rx,
+                    &stream_info_tx,
+                    &decode_tx,
+                    &mut shutdown_rx,
+                )
+                .await
                 {
                     warn!("Audio connection dropped: {}", e);
                 }
@@ -48,7 +60,19 @@ pub async fn run_audio_client(
         }
 
         let _ = stream_info_tx.send(None);
-        time::sleep(reconnect_delay).await;
+        tokio::select! {
+            _ = time::sleep(reconnect_delay) => {}
+            changed = shutdown_rx.changed() => {
+                match changed {
+                    Ok(()) if *shutdown_rx.borrow() => {
+                        info!("Audio client shutting down");
+                        return;
+                    }
+                    Ok(()) => {}
+                    Err(_) => return,
+                }
+            }
+        }
         reconnect_delay = (reconnect_delay * 2).min(Duration::from_secs(10));
     }
 }
@@ -59,6 +83,7 @@ async fn handle_audio_connection(
     tx_rx: &mut mpsc::Receiver<Bytes>,
     stream_info_tx: &watch::Sender<Option<AudioStreamInfo>>,
     decode_tx: &broadcast::Sender<DecodedMessage>,
+    shutdown_rx: &mut watch::Receiver<bool>,
 ) -> std::io::Result<()> {
     let (reader, writer) = stream.into_split();
     let mut reader = BufReader::new(reader);
@@ -89,7 +114,10 @@ async fn handle_audio_connection(
                 Ok((AUDIO_MSG_RX_FRAME, payload)) => {
                     let _ = rx_tx.send(Bytes::from(payload));
                 }
-                Ok((AUDIO_MSG_APRS_DECODE | AUDIO_MSG_CW_DECODE | AUDIO_MSG_FT8_DECODE, payload)) => {
+                Ok((
+                    AUDIO_MSG_APRS_DECODE | AUDIO_MSG_CW_DECODE | AUDIO_MSG_FT8_DECODE,
+                    payload,
+                )) => {
                     if let Ok(msg) = serde_json::from_slice::<DecodedMessage>(&payload) {
                         let _ = decode_tx.send(msg);
                     }
@@ -105,6 +133,19 @@ async fn handle_audio_connection(
     // Forward TX frames to server
     loop {
         tokio::select! {
+            changed = shutdown_rx.changed() => {
+                match changed {
+                    Ok(()) if *shutdown_rx.borrow() => {
+                        rx_handle.abort();
+                        return Ok(());
+                    }
+                    Ok(()) => {}
+                    Err(_) => {
+                        rx_handle.abort();
+                        return Ok(());
+                    }
+                }
+            }
             packet = tx_rx.recv() => {
                 match packet {
                     Some(data) => {

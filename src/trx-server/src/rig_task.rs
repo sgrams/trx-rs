@@ -4,8 +4,8 @@
 
 //! Rig task implementation using controller components.
 
-use std::time::Duration;
 use std::sync::Arc;
+use std::time::Duration;
 
 use tokio::sync::{mpsc, watch};
 use tokio::time::{self, Instant};
@@ -81,6 +81,7 @@ pub async fn run_rig_task(
     config: RigTaskConfig,
     mut rx: mpsc::Receiver<RigRequest>,
     state_tx: watch::Sender<RigState>,
+    mut shutdown_rx: watch::Receiver<bool>,
 ) -> DynResult<()> {
     info!("Opening rig backend {}", config.rig_model);
     match &config.access {
@@ -88,7 +89,9 @@ pub async fn run_rig_task(
         RigAccess::Tcp { addr } => info!("TCP CAT: {}", addr),
     }
 
-    let mut rig: Box<dyn RigCat> = config.registry.build_rig(&config.rig_model, config.access)?;
+    let mut rig: Box<dyn RigCat> = config
+        .registry
+        .build_rig(&config.rig_model, config.access)?;
     info!("Rig backend ready");
 
     // Initialize state machine and state
@@ -218,6 +221,16 @@ pub async fn run_rig_task(
         }
 
         tokio::select! {
+            changed = shutdown_rx.changed() => {
+                match changed {
+                    Ok(()) if *shutdown_rx.borrow() => {
+                        info!("rig_task shutting down (signal)");
+                        break;
+                    }
+                    Ok(()) => {}
+                    Err(_) => break,
+                }
+            }
             _ = &mut poll_sleep => {
                 poll_sleep = Box::pin(tokio::time::sleep(current_poll_duration));
                 // Check if polling is paused

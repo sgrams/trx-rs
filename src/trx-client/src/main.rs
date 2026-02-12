@@ -14,16 +14,19 @@ use bytes::Bytes;
 use clap::Parser;
 use tokio::signal;
 use tokio::sync::{broadcast, mpsc, watch};
-use tracing::info;
+use tokio::task::JoinHandle;
+use tracing::{error, info};
 
 use trx_app::{init_logging, load_plugins, normalize_name};
 use trx_core::audio::AudioStreamInfo;
 
+use trx_core::decode::DecodedMessage;
 use trx_core::rig::request::RigRequest;
 use trx_core::rig::state::RigState;
 use trx_core::DynResult;
-use trx_frontend::{snapshot_bootstrap_context, FrontendRegistrationContext, FrontendRuntimeContext};
-use trx_core::decode::DecodedMessage;
+use trx_frontend::{
+    snapshot_bootstrap_context, FrontendRegistrationContext, FrontendRuntimeContext,
+};
 use trx_frontend_http::register_frontend_on as register_http_frontend;
 use trx_frontend_http_json::register_frontend_on as register_http_json_frontend;
 use trx_frontend_rigctl::register_frontend_on as register_rigctl_frontend;
@@ -81,20 +84,33 @@ struct Cli {
     callsign: Option<String>,
 }
 
-fn main() -> DynResult<()> {
-    let rt = tokio::runtime::Runtime::new()?;
+#[tokio::main]
+async fn main() -> DynResult<()> {
+    let app_state = async_init().await?;
+    signal::ctrl_c().await?;
+    info!("Ctrl+C received, shutting down");
 
-    let _app_state = rt.block_on(async_init())?;
+    let _ = app_state.shutdown_tx.send(true);
+    drop(app_state.request_tx);
+    tokio::time::sleep(Duration::from_millis(400)).await;
 
-    rt.block_on(async {
-        signal::ctrl_c().await?;
-        info!("Ctrl+C received, shutting down");
-        Ok(())
-    })
+    for handle in &app_state.task_handles {
+        if !handle.is_finished() {
+            handle.abort();
+        }
+    }
+    for handle in app_state.task_handles {
+        let _ = handle.await;
+    }
+    Ok(())
 }
 
 /// Holds the state needed after async initialization completes.
-struct AppState;
+struct AppState {
+    shutdown_tx: watch::Sender<bool>,
+    task_handles: Vec<JoinHandle<()>>,
+    request_tx: mpsc::Sender<RigRequest>,
+}
 
 async fn async_init() -> DynResult<AppState> {
     use std::sync::Arc;
@@ -151,14 +167,9 @@ async fn async_init() -> DynResult<AppState> {
     let remote_addr =
         parse_remote_url(&remote_url).map_err(|e| format!("Invalid remote URL: {}", e))?;
 
-    let remote_token = cli
-        .token
-        .clone()
-        .or_else(|| cfg.remote.auth.token.clone());
+    let remote_token = cli.token.clone().or_else(|| cfg.remote.auth.token.clone());
 
-    let poll_interval_ms = cli
-        .poll_interval_ms
-        .unwrap_or(cfg.remote.poll_interval_ms);
+    let poll_interval_ms = cli.poll_interval_ms.unwrap_or(cfg.remote.poll_interval_ms);
 
     // Resolve frontends: CLI > config > default to http
     let frontends: Vec<String> = if let Some(ref fes) = cli.frontends {
@@ -210,6 +221,8 @@ async fn async_init() -> DynResult<AppState> {
     );
 
     let (tx, rx) = mpsc::channel::<RigRequest>(RIG_TASK_CHANNEL_BUFFER);
+    let (shutdown_tx, shutdown_rx) = watch::channel(false);
+    let mut task_handles: Vec<JoinHandle<()>> = Vec::new();
 
     let initial_state = RigState::new_uninitialized();
     let (state_tx, state_rx) = watch::channel(initial_state);
@@ -226,8 +239,14 @@ async fn async_init() -> DynResult<AppState> {
         token: remote_token,
         poll_interval: Duration::from_millis(poll_interval_ms),
     };
-    let _remote_handle =
-        tokio::spawn(remote_client::run_remote_client(remote_cfg, rx, state_tx));
+    let remote_shutdown_rx = shutdown_rx.clone();
+    task_handles.push(tokio::spawn(async move {
+        if let Err(e) =
+            remote_client::run_remote_client(remote_cfg, rx, state_tx, remote_shutdown_rx).await
+        {
+            error!("Remote client error: {}", e);
+        }
+    }));
 
     // Audio streaming setup
     if cfg.frontends.audio.enabled {
@@ -248,13 +267,15 @@ async fn async_init() -> DynResult<AppState> {
             audio_addr
         );
 
-        tokio::spawn(audio_client::run_audio_client(
+        let audio_shutdown_rx = shutdown_rx.clone();
+        task_handles.push(tokio::spawn(audio_client::run_audio_client(
             audio_addr,
             rx_audio_tx,
             tx_audio_rx,
             stream_info_tx,
             decode_tx,
-        ));
+            audio_shutdown_rx,
+        )));
     } else {
         info!("Audio disabled in config, decode will not be available");
     }
@@ -282,5 +303,9 @@ async fn async_init() -> DynResult<AppState> {
         )?;
     }
 
-    Ok(AppState)
+    Ok(AppState {
+        shutdown_tx,
+        task_handles,
+        request_tx: tx,
+    })
 }

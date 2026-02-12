@@ -30,6 +30,7 @@ pub async fn run_listener(
     rig_tx: mpsc::Sender<RigRequest>,
     auth_tokens: HashSet<String>,
     state_rx: watch::Receiver<RigState>,
+    mut shutdown_rx: watch::Receiver<bool>,
 ) -> std::io::Result<()> {
     let listener = TcpListener::bind(addr).await?;
     info!("Listening on {}", addr);
@@ -37,18 +38,34 @@ pub async fn run_listener(
     let validator = Arc::new(SimpleTokenValidator::new(auth_tokens));
 
     loop {
-        let (socket, peer) = listener.accept().await?;
-        info!("Client connected: {}", peer);
+        tokio::select! {
+            accept = listener.accept() => {
+                let (socket, peer) = accept?;
+                info!("Client connected: {}", peer);
 
-        let tx = rig_tx.clone();
-        let srx = state_rx.clone();
-        let validator = Arc::clone(&validator);
-        tokio::spawn(async move {
-            if let Err(e) = handle_client(socket, peer, tx, validator, srx).await {
-                error!("Client {} error: {:?}", peer, e);
+                let tx = rig_tx.clone();
+                let srx = state_rx.clone();
+                let validator = Arc::clone(&validator);
+                let client_shutdown_rx = shutdown_rx.clone();
+                tokio::spawn(async move {
+                    if let Err(e) = handle_client(socket, peer, tx, validator, srx, client_shutdown_rx).await {
+                        error!("Client {} error: {:?}", peer, e);
+                    }
+                });
             }
-        });
+            changed = shutdown_rx.changed() => {
+                match changed {
+                    Ok(()) if *shutdown_rx.borrow() => {
+                        info!("Listener shutting down");
+                        break;
+                    }
+                    Ok(()) => {}
+                    Err(_) => break,
+                }
+            }
+        }
     }
+    Ok(())
 }
 
 async fn handle_client(
@@ -57,6 +74,7 @@ async fn handle_client(
     tx: mpsc::Sender<RigRequest>,
     validator: Arc<SimpleTokenValidator>,
     state_rx: watch::Receiver<RigState>,
+    mut shutdown_rx: watch::Receiver<bool>,
 ) -> std::io::Result<()> {
     let (reader, mut writer) = socket.into_split();
     let mut reader = BufReader::new(reader);
@@ -64,7 +82,19 @@ async fn handle_client(
 
     loop {
         line.clear();
-        let bytes_read = reader.read_line(&mut line).await?;
+        let bytes_read = tokio::select! {
+            read = reader.read_line(&mut line) => read?,
+            changed = shutdown_rx.changed() => {
+                match changed {
+                    Ok(()) if *shutdown_rx.borrow() => {
+                        info!("Client {} closing due to shutdown", addr);
+                        break;
+                    }
+                    Ok(()) => continue,
+                    Err(_) => break,
+                }
+            }
+        };
         if bytes_read == 0 {
             info!("Client {} disconnected", addr);
             break;
@@ -141,7 +171,19 @@ async fn handle_client(
             continue;
         }
 
-        match resp_rx.await {
+        match tokio::select! {
+            result = resp_rx => result,
+            changed = shutdown_rx.changed() => {
+                match changed {
+                    Ok(()) if *shutdown_rx.borrow() => {
+                        info!("Client {} request canceled due to shutdown", addr);
+                        break;
+                    }
+                    Ok(()) => continue,
+                    Err(_) => break,
+                }
+            }
+        } {
             Ok(Ok(snapshot)) => {
                 let resp = ClientResponse {
                     success: true,

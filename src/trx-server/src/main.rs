@@ -18,6 +18,7 @@ use bytes::Bytes;
 use clap::{Parser, ValueEnum};
 use tokio::signal;
 use tokio::sync::{broadcast, mpsc, watch};
+use tokio::task::JoinHandle;
 use tracing::{error, info};
 
 use trx_core::audio::AudioStreamInfo;
@@ -114,9 +115,7 @@ fn resolve_config(
     let rig = match rig_str.as_deref() {
         Some(name) => normalize_name(name),
         None => {
-            return Err(
-                "Rig model not specified. Use --rig or set [rig].model in config.".into(),
-            )
+            return Err("Rig model not specified. Use --rig or set [rig].model in config.".into())
         }
     };
     if !registry.is_backend_registered(&rig) {
@@ -142,8 +141,7 @@ fn resolve_config(
             Some("serial") | None => {
                 let (path, baud) = if let Some(ref addr) = cli.rig_addr {
                     parse_serial_addr(addr)?
-                } else if let (Some(port), Some(baud)) =
-                    (&cfg.rig.access.port, cfg.rig.access.baud)
+                } else if let (Some(port), Some(baud)) = (&cfg.rig.access.port, cfg.rig.access.baud)
                 {
                     (port.clone(), baud)
                 } else {
@@ -184,7 +182,6 @@ fn resolve_config(
     })
 }
 
-
 fn build_rig_task_config(
     resolved: &ResolvedConfig,
     cfg: &ServerConfig,
@@ -209,6 +206,17 @@ fn build_rig_task_config(
         server_version: Some(env!("CARGO_PKG_VERSION").to_string()),
         server_latitude: resolved.latitude,
         server_longitude: resolved.longitude,
+    }
+}
+
+async fn wait_for_shutdown(mut shutdown_rx: watch::Receiver<bool>) {
+    if *shutdown_rx.borrow() {
+        return;
+    }
+    while shutdown_rx.changed().await.is_ok() {
+        if *shutdown_rx.borrow() {
+            break;
+        }
     }
 }
 
@@ -266,6 +274,8 @@ async fn main() -> DynResult<()> {
     }
 
     let (tx, rx) = mpsc::channel::<RigRequest>(RIG_TASK_CHANNEL_BUFFER);
+    let mut task_handles: Vec<JoinHandle<()>> = Vec::new();
+    let (shutdown_tx, shutdown_rx) = watch::channel(false);
     let initial_state = RigState::new_with_metadata(
         resolved.callsign.clone(),
         Some(env!("CARGO_PKG_VERSION").to_string()),
@@ -278,8 +288,15 @@ async fn main() -> DynResult<()> {
     // Keep receivers alive so channels don't close prematurely
     let _state_rx = state_rx;
 
-    let rig_task_config = build_rig_task_config(&resolved, &cfg, std::sync::Arc::new(bootstrap_ctx));
-    let _rig_handle = tokio::spawn(rig_task::run_rig_task(rig_task_config, rx, state_tx));
+    let rig_task_config =
+        build_rig_task_config(&resolved, &cfg, std::sync::Arc::new(bootstrap_ctx));
+    let rig_shutdown_rx = shutdown_rx.clone();
+    task_handles.push(tokio::spawn(async move {
+        if let Err(e) = rig_task::run_rig_task(rig_task_config, rx, state_tx, rig_shutdown_rx).await
+        {
+            error!("Rig task error: {:?}", e);
+        }
+    }));
 
     if cfg.listen.enabled {
         let listen_ip = cli.listen.unwrap_or(cfg.listen.listen);
@@ -295,15 +312,25 @@ async fn main() -> DynResult<()> {
             .collect();
         let rig_tx = tx.clone();
         let state_rx_listener = _state_rx.clone();
-        tokio::spawn(async move {
-            if let Err(e) = listener::run_listener(listen_addr, rig_tx, auth_tokens, state_rx_listener).await {
+        let listener_shutdown_rx = shutdown_rx.clone();
+        task_handles.push(tokio::spawn(async move {
+            if let Err(e) = listener::run_listener(
+                listen_addr,
+                rig_tx,
+                auth_tokens,
+                state_rx_listener,
+                listener_shutdown_rx,
+            )
+            .await
+            {
                 error!("Listener error: {:?}", e);
             }
-        });
+        }));
     }
 
     if cfg.audio.enabled {
-        let audio_listen = SocketAddr::from((cli.listen.unwrap_or(cfg.audio.listen), cfg.audio.port));
+        let audio_listen =
+            SocketAddr::from((cli.listen.unwrap_or(cfg.audio.listen), cfg.audio.port));
         let stream_info = AudioStreamInfo {
             sample_rate: cfg.audio.sample_rate,
             channels: cfg.audio.channels,
@@ -319,7 +346,8 @@ async fn main() -> DynResult<()> {
         let (decode_tx, _) = broadcast::channel::<trx_core::decode::DecodedMessage>(256);
 
         if cfg.audio.rx_enabled {
-            let _capture_thread = audio::spawn_audio_capture(&cfg.audio, rx_audio_tx.clone(), Some(pcm_tx.clone()));
+            let _capture_thread =
+                audio::spawn_audio_capture(&cfg.audio, rx_audio_tx.clone(), Some(pcm_tx.clone()));
 
             // Spawn APRS decoder task
             let aprs_pcm_rx = pcm_tx.subscribe();
@@ -327,9 +355,13 @@ async fn main() -> DynResult<()> {
             let aprs_decode_tx = decode_tx.clone();
             let aprs_sr = cfg.audio.sample_rate;
             let aprs_ch = cfg.audio.channels;
-            tokio::spawn(audio::run_aprs_decoder(
-                aprs_sr, aprs_ch as u16, aprs_pcm_rx, aprs_state_rx, aprs_decode_tx,
-            ));
+            let aprs_shutdown_rx = shutdown_rx.clone();
+            task_handles.push(tokio::spawn(async move {
+                tokio::select! {
+                    _ = audio::run_aprs_decoder(aprs_sr, aprs_ch as u16, aprs_pcm_rx, aprs_state_rx, aprs_decode_tx) => {}
+                    _ = wait_for_shutdown(aprs_shutdown_rx) => {}
+                }
+            }));
 
             // Spawn CW decoder task
             let cw_pcm_rx = pcm_tx.subscribe();
@@ -337,9 +369,13 @@ async fn main() -> DynResult<()> {
             let cw_decode_tx = decode_tx.clone();
             let cw_sr = cfg.audio.sample_rate;
             let cw_ch = cfg.audio.channels;
-            tokio::spawn(audio::run_cw_decoder(
-                cw_sr, cw_ch as u16, cw_pcm_rx, cw_state_rx, cw_decode_tx,
-            ));
+            let cw_shutdown_rx = shutdown_rx.clone();
+            task_handles.push(tokio::spawn(async move {
+                tokio::select! {
+                    _ = audio::run_cw_decoder(cw_sr, cw_ch as u16, cw_pcm_rx, cw_state_rx, cw_decode_tx) => {}
+                    _ = wait_for_shutdown(cw_shutdown_rx) => {}
+                }
+            }));
 
             // Spawn FT8 decoder task
             let ft8_pcm_rx = pcm_tx.subscribe();
@@ -347,27 +383,48 @@ async fn main() -> DynResult<()> {
             let ft8_decode_tx = decode_tx.clone();
             let ft8_sr = cfg.audio.sample_rate;
             let ft8_ch = cfg.audio.channels;
-            tokio::spawn(audio::run_ft8_decoder(
-                ft8_sr, ft8_ch as u16, ft8_pcm_rx, ft8_state_rx, ft8_decode_tx,
-            ));
+            let ft8_shutdown_rx = shutdown_rx.clone();
+            task_handles.push(tokio::spawn(async move {
+                tokio::select! {
+                    _ = audio::run_ft8_decoder(ft8_sr, ft8_ch as u16, ft8_pcm_rx, ft8_state_rx, ft8_decode_tx) => {}
+                    _ = wait_for_shutdown(ft8_shutdown_rx) => {}
+                }
+            }));
         }
         if cfg.audio.tx_enabled {
             let _playback_thread = audio::spawn_audio_playback(&cfg.audio, tx_audio_rx);
         }
 
-        tokio::spawn(async move {
-            if let Err(e) =
-                audio::run_audio_listener(audio_listen, rx_audio_tx, tx_audio_tx, stream_info, decode_tx)
-                    .await
+        let audio_shutdown_rx = shutdown_rx.clone();
+        task_handles.push(tokio::spawn(async move {
+            if let Err(e) = audio::run_audio_listener(
+                audio_listen,
+                rx_audio_tx,
+                tx_audio_tx,
+                stream_info,
+                decode_tx,
+                audio_shutdown_rx,
+            )
+            .await
             {
                 error!("Audio listener error: {:?}", e);
             }
-        });
+        }));
     }
-
-    let _tx = tx;
 
     signal::ctrl_c().await?;
     info!("Ctrl+C received, shutting down");
+    let _ = shutdown_tx.send(true);
+    drop(tx);
+    tokio::time::sleep(Duration::from_millis(400)).await;
+
+    for handle in &task_handles {
+        if !handle.is_finished() {
+            handle.abort();
+        }
+    }
+    for handle in task_handles {
+        let _ = handle.await;
+    }
     Ok(())
 }
