@@ -2222,6 +2222,7 @@ dependencies = [
  "trx-frontend-http",
  "trx-frontend-http-json",
  "trx-frontend-rigctl",
+ "trx-protocol",
 ]
 
 [[package]]
@@ -2268,6 +2269,7 @@ dependencies = [
  "tracing",
  "trx-core",
  "trx-frontend",
+ "trx-protocol",
 ]
 
 [[package]]
@@ -2286,6 +2288,15 @@ version = "0.1.0"
 dependencies = [
  "cc",
  "libc",
+]
+
+[[package]]
+name = "trx-protocol"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "trx-core",
 ]
 
 [[package]]
@@ -2308,6 +2319,7 @@ dependencies = [
  "trx-backend",
  "trx-core",
  "trx-ft8",
+ "trx-protocol",
 ]
 
 [[package]]

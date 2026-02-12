@@ -5,6 +5,8 @@
 [workspace]
 members = [
     "src/trx-ft8",
+    "src/trx-core",
+    "src/trx-protocol",
     "src/trx-server",
     "src/trx-server/trx-backend",
     "src/trx-server/trx-backend/trx-backend-ft817",
@@ -14,7 +16,6 @@ members = [
     "src/trx-client/trx-frontend/trx-frontend-http",
     "src/trx-client/trx-frontend/trx-frontend-http-json",
     "src/trx-client/trx-frontend/trx-frontend-rigctl",
-    "src/trx-core",
 ]
 resolver = "2"
 
