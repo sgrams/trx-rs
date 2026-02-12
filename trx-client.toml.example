@@ -47,3 +47,20 @@ listen = "127.0.0.1"
 port = 0
 # List of accepted bearer tokens (empty = no auth)
 # auth.tokens = ["example-token"]
+
+[frontends.audio]
+# Enable remote audio stream and decode transport
+enabled = true
+# Remote trx-server audio port
+server_port = 4533
+
+[frontends.audio.bridge]
+# Enable local cpal bridge for WSJT-X virtual audio routing
+enabled = false
+# Optional exact output device name for RX playback
+# rx_output_device = "BlackHole 2ch"
+# Optional exact input device name for TX capture
+# tx_input_device = "BlackHole 2ch"
+# Playback/capture gain multipliers
+rx_gain = 1.0
+tx_gain = 1.0

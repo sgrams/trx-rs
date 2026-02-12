@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: BSD-2-Clause
 
 mod audio_client;
+mod audio_bridge;
 mod config;
 mod remote_client;
 
@@ -273,6 +274,29 @@ async fn async_init() -> DynResult<AppState> {
             decode_tx,
             audio_shutdown_rx,
         )));
+
+        if cfg.frontends.audio.bridge.enabled {
+            info!("Audio bridge enabled (local virtual-device integration)");
+            task_handles.push(audio_bridge::spawn_audio_bridge(
+                cfg.frontends.audio.bridge.clone(),
+                frontend_runtime
+                    .audio_rx
+                    .as_ref()
+                    .expect("audio rx must be set")
+                    .clone(),
+                frontend_runtime
+                    .audio_tx
+                    .as_ref()
+                    .expect("audio tx must be set")
+                    .clone(),
+                frontend_runtime
+                    .audio_info
+                    .as_ref()
+                    .expect("audio info must be set")
+                    .clone(),
+                shutdown_rx.clone(),
+            ));
+        }
     } else {
         info!("Audio disabled in config, decode will not be available");
     }

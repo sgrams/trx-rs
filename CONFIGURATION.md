@@ -136,6 +136,16 @@ Notes:
 ### `[frontends.audio]`
 - `enabled` (`bool`, default: `true`)
 - `server_port` (`u16`, default: `4533`, must be `> 0` when enabled)
+- `bridge.enabled` (`bool`, default: `false`): enables local `cpal` audio bridge
+- `bridge.rx_output_device` (`string`, optional): exact local playback device name
+- `bridge.tx_input_device` (`string`, optional): exact local capture device name
+- `bridge.rx_gain` (`float`, default: `1.0`, must be finite and `>= 0`)
+- `bridge.tx_gain` (`float`, default: `1.0`, must be finite and `>= 0`)
+
+Notes:
+- The bridge is intended for local WSJT-X integration via virtual audio devices.
+- Linux: typically use ALSA loopback (`snd-aloop`).
+- macOS: install a virtual CoreAudio device (e.g. BlackHole), then set device names above.
 
 ## CLI Override Summary
 

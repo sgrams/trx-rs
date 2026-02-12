@@ -107,17 +107,18 @@ async fn process_command(
     rig_tx: &mpsc::Sender<RigRequest>,
 ) -> CommandResult {
     let mut parts = cmd_line.split_whitespace();
-    let Some(op) = parts.next() else {
+    let Some(raw_op) = parts.next() else {
         return CommandResult::Reply(err_response("empty command"));
     };
+    let op = raw_op.trim_start_matches('+');
 
     let resp = match op {
         "q" | "Q" | "\\q" | "\\quit" => return CommandResult::Close,
-        "f" => match request_snapshot(rig_tx).await {
+        "f" | "\\get_freq" => match request_snapshot(rig_tx).await {
             Ok(snapshot) => ok_response([snapshot.status.freq.hz.to_string()]),
             Err(e) => err_response(&e),
         },
-        "F" => match parts.next().and_then(|s| s.parse::<u64>().ok()) {
+        "F" | "\\set_freq" => match parts.next().and_then(|s| s.parse::<u64>().ok()) {
             Some(freq) => {
                 match send_rig_command(rig_tx, RigCommand::SetFreq(Freq { hz: freq })).await {
                     Ok(_) => ok_only(),
@@ -126,14 +127,14 @@ async fn process_command(
             }
             None => err_response("expected frequency in Hz"),
         },
-        "m" => match request_snapshot(rig_tx).await {
+        "m" | "\\get_mode" => match request_snapshot(rig_tx).await {
             Ok(snapshot) => {
                 let mode = rig_mode_to_str(&snapshot.status.mode);
                 ok_response([mode, "0".to_string()])
             }
             Err(e) => err_response(&e),
         },
-        "M" => {
+        "M" | "\\set_mode" => {
             let Some(mode_str) = parts.next() else {
                 return CommandResult::Reply(err_response("expected mode"));
             };
@@ -143,13 +144,13 @@ async fn process_command(
                 Err(e) => err_response(&e),
             }
         }
-        "t" => match request_snapshot(rig_tx).await {
+        "t" | "\\get_ptt" => match request_snapshot(rig_tx).await {
             Ok(snapshot) => {
                 ok_response([if snapshot.status.tx_en { "1" } else { "0" }.to_string()])
             }
             Err(e) => err_response(&e),
         },
-        "T" => match parts.next() {
+        "T" | "\\set_ptt" => match parts.next() {
             Some(v) if is_true(v) => match send_rig_command(rig_tx, RigCommand::SetPtt(true)).await
             {
                 Ok(_) => ok_only(),
@@ -163,6 +164,45 @@ async fn process_command(
             }
             _ => err_response("expected PTT state (0/1)"),
         },
+        "v" | "\\get_vfo" => match request_snapshot(rig_tx).await {
+            Ok(snapshot) => ok_response([active_vfo_label(&snapshot)]),
+            Err(e) => err_response(&e),
+        },
+        "V" | "\\set_vfo" => {
+            let Some(target) = parts.next() else {
+                return CommandResult::Reply(err_response("expected VFO (VFOA/VFOB)"));
+            };
+            match set_vfo_target(target, rig_tx).await {
+                Ok(()) => ok_only(),
+                Err(e) => err_response(&e),
+            }
+        }
+        "s" | "\\get_split_vfo" => match request_snapshot(rig_tx).await {
+            Ok(snapshot) => {
+                // split state, tx vfo
+                ok_response(["0".to_string(), active_vfo_label(&snapshot)])
+            }
+            Err(e) => err_response(&e),
+        },
+        "S" | "\\set_split_vfo" => match parts.next() {
+            Some(v) if is_false(v) => ok_only(),
+            Some(v) if is_true(v) => err_response("split mode not supported"),
+            _ => err_response("expected split state (0/1)"),
+        },
+        "\\get_info" => {
+            let snapshot = match current_snapshot(state_rx) {
+                Some(s) => s,
+                None => match request_snapshot(rig_tx).await {
+                    Ok(s) => s,
+                    Err(e) => return CommandResult::Reply(err_response(&e)),
+                },
+            };
+            let info = format!(
+                "Model: {} {}; Version: {}",
+                snapshot.info.manufacturer, snapshot.info.model, snapshot.info.revision
+            );
+            ok_response([info])
+        }
         "\\get_powerstat" | "get_powerstat" => match request_snapshot(rig_tx).await {
             Ok(snapshot) => {
                 let val = snapshot.enabled.unwrap_or(false);
@@ -318,6 +358,46 @@ fn active_vfo_label(snapshot: &RigSnapshot) -> String {
         })
         .unwrap_or_else(|| "VFOA".to_string())
 }
+
+async fn set_vfo_target(target: &str, rig_tx: &mpsc::Sender<RigRequest>) -> Result<(), String> {
+    let desired = normalize_vfo_name(target).ok_or_else(|| "expected VFOA or VFOB".to_string())?;
+    let snapshot = request_snapshot(rig_tx).await?;
+    let current = active_vfo_label(&snapshot);
+    if current == desired {
+        return Ok(());
+    }
+
+    let supports_toggle = snapshot
+        .info
+        .capabilities
+        .num_vfos
+        >= 2
+        && snapshot
+            .status
+            .vfo
+            .as_ref()
+            .is_some_and(|v| v.entries.len() >= 2);
+    if !supports_toggle {
+        return Err("VFO selection not supported".to_string());
+    }
+
+    send_rig_command(rig_tx, RigCommand::ToggleVfo).await?;
+    let after = request_snapshot(rig_tx).await?;
+    if active_vfo_label(&after) == desired {
+        Ok(())
+    } else {
+        Err("failed to switch VFO".to_string())
+    }
+}
+
+fn normalize_vfo_name(v: &str) -> Option<String> {
+    match v.trim().to_ascii_uppercase().as_str() {
+        "VFOA" | "A" => Some("VFOA".to_string()),
+        "VFOB" | "B" => Some("VFOB".to_string()),
+        _ => None,
+    }
+}
+
 fn is_true(s: &str) -> bool {
     matches!(s, "1" | "on" | "ON" | "true" | "True" | "TRUE")
 }

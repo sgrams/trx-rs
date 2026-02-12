@@ -99,6 +99,8 @@ pub struct AudioClientConfig {
     pub enabled: bool,
     /// Audio TCP port on the remote server
     pub server_port: u16,
+    /// Local audio bridge (virtual device integration)
+    pub bridge: AudioBridgeConfig,
 }
 
 impl Default for AudioClientConfig {
@@ -106,6 +108,35 @@ impl Default for AudioClientConfig {
         Self {
             enabled: true,
             server_port: 4533,
+            bridge: AudioBridgeConfig::default(),
+        }
+    }
+}
+
+/// Local audio bridge configuration.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct AudioBridgeConfig {
+    /// Enable local cpal bridge between remote stream and local audio devices.
+    pub enabled: bool,
+    /// Local output device for remote RX playback.
+    pub rx_output_device: Option<String>,
+    /// Local input device for TX uplink capture.
+    pub tx_input_device: Option<String>,
+    /// RX playback gain multiplier.
+    pub rx_gain: f32,
+    /// TX capture gain multiplier.
+    pub tx_gain: f32,
+}
+
+impl Default for AudioBridgeConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            rx_output_device: None,
+            tx_input_device: None,
+            rx_gain: 1.0,
+            tx_gain: 1.0,
         }
     }
 }
@@ -213,6 +244,14 @@ impl ClientConfig {
         }
         if self.frontends.audio.enabled && self.frontends.audio.server_port == 0 {
             return Err("[frontends.audio].server_port must be > 0 when enabled".to_string());
+        }
+        if !self.frontends.audio.bridge.rx_gain.is_finite() || self.frontends.audio.bridge.rx_gain < 0.0
+        {
+            return Err("[frontends.audio.bridge].rx_gain must be finite and >= 0".to_string());
+        }
+        if !self.frontends.audio.bridge.tx_gain.is_finite() || self.frontends.audio.bridge.tx_gain < 0.0
+        {
+            return Err("[frontends.audio.bridge].tx_gain must be finite and >= 0".to_string());
         }
         validate_tokens(
             "[frontends.http_json.auth].tokens",
@@ -322,6 +361,9 @@ mod tests {
         assert_eq!(config.remote.poll_interval_ms, 750);
         assert!(config.frontends.audio.enabled);
         assert_eq!(config.frontends.audio.server_port, 4533);
+        assert!(!config.frontends.audio.bridge.enabled);
+        assert_eq!(config.frontends.audio.bridge.rx_gain, 1.0);
+        assert_eq!(config.frontends.audio.bridge.tx_gain, 1.0);
     }
 
     #[test]

@@ -16,6 +16,8 @@ tracing = { workspace = true }
 clap = { workspace = true, features = ["derive"] }
 dirs = "6"
 bytes = "1"
+cpal = "0.15"
+opus = "0.3"
 trx-app = { path = "../trx-app" }
 trx-core = { path = "../trx-core" }
 trx-protocol = { path = "../trx-protocol" }
