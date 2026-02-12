@@ -22,7 +22,7 @@ use tracing::{error, info};
 
 use trx_core::RigRequest;
 use trx_core::RigState;
-use trx_frontend::{FrontendSpawner, FrontendRuntimeContext};
+use trx_frontend::{FrontendRuntimeContext, FrontendSpawner};
 
 /// HTTP frontend implementation.
 pub struct HttpFrontend;

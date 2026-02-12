@@ -8,6 +8,7 @@ mod remote_client;
 
 use std::net::{IpAddr, SocketAddr};
 use std::path::PathBuf;
+use std::ptr::NonNull;
 use std::time::Duration;
 
 use bytes::Bytes;
@@ -17,16 +18,14 @@ use tokio::sync::{broadcast, mpsc, watch};
 use tokio::task::JoinHandle;
 use tracing::{error, info};
 
-use trx_app::{init_logging, load_plugins, normalize_name};
+use trx_app::{init_logging, load_frontend_plugins, normalize_name};
 use trx_core::audio::AudioStreamInfo;
 
 use trx_core::decode::DecodedMessage;
 use trx_core::rig::request::RigRequest;
 use trx_core::rig::state::RigState;
 use trx_core::DynResult;
-use trx_frontend::{
-    snapshot_bootstrap_context, FrontendRegistrationContext, FrontendRuntimeContext,
-};
+use trx_frontend::{FrontendRegistrationContext, FrontendRuntimeContext};
 use trx_frontend_http::register_frontend_on as register_http_frontend;
 use trx_frontend_http_json::register_frontend_on as register_http_json_frontend;
 use trx_frontend_rigctl::register_frontend_on as register_rigctl_frontend;
@@ -142,8 +141,8 @@ async fn async_init() -> DynResult<AppState> {
 
     init_logging(cfg.general.log_level.as_deref());
 
-    let _plugin_libs = load_plugins();
-    frontend_reg_ctx.extend_from(&snapshot_bootstrap_context());
+    let frontend_ctx_ptr = NonNull::from(&mut frontend_reg_ctx).cast();
+    let _plugin_libs = load_frontend_plugins(frontend_ctx_ptr);
 
     if let Some(ref path) = config_path {
         info!("Loaded configuration from {}", path.display());

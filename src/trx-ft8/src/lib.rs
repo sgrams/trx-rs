@@ -43,7 +43,11 @@ extern "C" {
     fn ft8_decoder_reset(dec: *mut c_void);
     fn ft8_decoder_process(dec: *mut c_void, frame: *const c_float);
     fn ft8_decoder_is_ready(dec: *const c_void) -> c_int;
-    fn ft8_decoder_decode(dec: *mut c_void, out: *mut Ft8DecodeResultRaw, max_results: c_int) -> c_int;
+    fn ft8_decoder_decode(
+        dec: *mut c_void,
+        out: *mut Ft8DecodeResultRaw,
+        max_results: c_int,
+    ) -> c_int;
 }
 
 pub struct Ft8Decoder {
@@ -108,13 +112,17 @@ impl Ft8Decoder {
             if ft8_decoder_is_ready(self.inner.as_ptr()) == 0 {
                 return Vec::new();
             }
-            let mut raw = vec![Ft8DecodeResultRaw {
-                text: [0; FTX_MAX_MESSAGE_LENGTH],
-                snr_db: 0.0,
-                dt_s: 0.0,
-                freq_hz: 0.0,
-            }; max_results];
-            let count = ft8_decoder_decode(self.inner.as_ptr(), raw.as_mut_ptr(), max_results as c_int);
+            let mut raw = vec![
+                Ft8DecodeResultRaw {
+                    text: [0; FTX_MAX_MESSAGE_LENGTH],
+                    snr_db: 0.0,
+                    dt_s: 0.0,
+                    freq_hz: 0.0,
+                };
+                max_results
+            ];
+            let count =
+                ft8_decoder_decode(self.inner.as_ptr(), raw.as_mut_ptr(), max_results as c_int);
             let count = count.max(0) as usize;
             let mut out = Vec::with_capacity(count);
             for item in raw.into_iter().take(count) {

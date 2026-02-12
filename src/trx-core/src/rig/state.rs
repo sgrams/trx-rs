@@ -62,7 +62,7 @@ pub enum RigMode {
 impl Default for RigStatus {
     fn default() -> Self {
         Self {
-            freq: Freq { hz: 144_300_000 },  // 2m calling frequency
+            freq: Freq { hz: 144_300_000 }, // 2m calling frequency
             mode: RigMode::USB,
             tx_en: false,
             vfo: None,
@@ -136,7 +136,9 @@ impl RigState {
         state.server_version = version;
         state.server_latitude = latitude;
         state.server_longitude = longitude;
-        state.status.freq = Freq { hz: initial_freq_hz };
+        state.status.freq = Freq {
+            hz: initial_freq_hz,
+        };
         state.status.mode = initial_mode;
         state
     }

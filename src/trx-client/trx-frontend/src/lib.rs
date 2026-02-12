@@ -2,10 +2,10 @@
 //
 // SPDX-License-Identifier: BSD-2-Clause
 
-use std::collections::{HashMap, VecDeque, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::net::SocketAddr;
 use std::sync::atomic::AtomicBool;
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
 use bytes::Bytes;
@@ -150,53 +150,4 @@ fn normalize_name(name: &str) -> String {
         .chars()
         .filter(|c| c.is_ascii_alphanumeric())
         .collect()
-}
-
-/// Phase 3D: Plugin compatibility adapter - delegates to bootstrap context.
-fn bootstrap_context() -> &'static Arc<Mutex<FrontendRegistrationContext>> {
-    static BOOTSTRAP_CONTEXT: OnceLock<Arc<Mutex<FrontendRegistrationContext>>> = OnceLock::new();
-    BOOTSTRAP_CONTEXT.get_or_init(|| Arc::new(Mutex::new(FrontendRegistrationContext::new())))
-}
-
-/// Snapshot current plugin/bootstrap registrations into an owned context.
-pub fn snapshot_bootstrap_context() -> FrontendRegistrationContext {
-    let ctx = bootstrap_context()
-        .lock()
-        .expect("frontend context mutex poisoned");
-    ctx.clone()
-}
-
-/// Register a frontend spawner under a stable name (e.g. "http").
-/// Plugin compatibility: delegates to bootstrap context.
-pub fn register_frontend(name: &str, spawner: FrontendSpawnFn) {
-    let mut ctx = bootstrap_context().lock().expect("frontend context mutex poisoned");
-    ctx.register_frontend(name, spawner);
-}
-
-/// Check whether a frontend name is registered.
-/// Plugin compatibility: reads from bootstrap context.
-pub fn is_frontend_registered(name: &str) -> bool {
-    let ctx = bootstrap_context().lock().expect("frontend context mutex poisoned");
-    ctx.is_frontend_registered(name)
-}
-
-/// List registered frontend names.
-/// Plugin compatibility: reads from bootstrap context.
-pub fn registered_frontends() -> Vec<String> {
-    let ctx = bootstrap_context().lock().expect("frontend context mutex poisoned");
-    ctx.registered_frontends()
-}
-
-/// Spawn a registered frontend by name with runtime context.
-/// Plugin compatibility: reads from bootstrap context.
-pub fn spawn_frontend(
-    name: &str,
-    state_rx: watch::Receiver<RigState>,
-    rig_tx: mpsc::Sender<RigRequest>,
-    callsign: Option<String>,
-    listen_addr: SocketAddr,
-    context: Arc<FrontendRuntimeContext>,
-) -> DynResult<JoinHandle<()>> {
-    let ctx = bootstrap_context().lock().expect("frontend context mutex poisoned");
-    ctx.spawn_frontend(name, state_rx, rig_tx, callsign, listen_addr, context)
 }

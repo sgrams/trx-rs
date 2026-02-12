@@ -316,3 +316,129 @@ async fn handle_client(
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashSet;
+    use std::net::{Ipv4Addr, SocketAddr};
+
+    use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+    use tokio::net::TcpStream;
+
+    use trx_core::radio::freq::Band;
+    use trx_core::rig::{RigAccessMethod, RigCapabilities, RigInfo};
+
+    fn loopback_addr() -> SocketAddr {
+        let listener = std::net::TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).expect("bind");
+        let addr = listener.local_addr().expect("local_addr");
+        drop(listener);
+        addr
+    }
+
+    fn sample_state() -> RigState {
+        let mut state = RigState::new_uninitialized();
+        state.initialized = true;
+        state.rig_info = Some(RigInfo {
+            manufacturer: "Test".to_string(),
+            model: "Dummy".to_string(),
+            revision: "1".to_string(),
+            capabilities: RigCapabilities {
+                supported_bands: vec![Band {
+                    low_hz: 7_000_000,
+                    high_hz: 7_200_000,
+                    tx_allowed: true,
+                }],
+                supported_modes: vec![trx_core::RigMode::USB],
+                num_vfos: 1,
+                lock: false,
+                lockable: true,
+                attenuator: false,
+                preamp: false,
+                rit: false,
+                rpt: false,
+                split: false,
+            },
+            access: RigAccessMethod::Tcp {
+                addr: "127.0.0.1:1234".to_string(),
+            },
+        });
+        state
+    }
+
+    #[tokio::test]
+    #[ignore = "requires TCP bind permissions"]
+    async fn listener_rejects_missing_token() {
+        let addr = loopback_addr();
+        let (rig_tx, _rig_rx) = mpsc::channel::<RigRequest>(8);
+        let (state_tx, state_rx) = watch::channel(sample_state());
+        let _state_tx = state_tx;
+        let (shutdown_tx, shutdown_rx) = watch::channel(false);
+
+        let mut auth = HashSet::new();
+        auth.insert("secret".to_string());
+        let handle = tokio::spawn(run_listener(addr, rig_tx, auth, state_rx, shutdown_rx));
+
+        let stream = TcpStream::connect(addr).await.expect("connect");
+        let (reader, mut writer) = stream.into_split();
+        let mut reader = BufReader::new(reader);
+
+        writer
+            .write_all(br#"{"cmd":"get_state"}"#)
+            .await
+            .expect("write");
+        writer.write_all(b"\n").await.expect("newline");
+        writer.flush().await.expect("flush");
+
+        let mut line = String::new();
+        reader.read_line(&mut line).await.expect("read");
+        let resp: ClientResponse = serde_json::from_str(line.trim_end()).expect("response json");
+        assert!(!resp.success);
+        assert_eq!(resp.error.as_deref(), Some("missing authorization token"));
+
+        let _ = shutdown_tx.send(true);
+        handle.abort();
+        let _ = handle.await;
+    }
+
+    #[tokio::test]
+    #[ignore = "requires TCP bind permissions"]
+    async fn listener_serves_get_state_snapshot() {
+        let addr = loopback_addr();
+        let (rig_tx, _rig_rx) = mpsc::channel::<RigRequest>(8);
+        let (state_tx, state_rx) = watch::channel(sample_state());
+        let _state_tx = state_tx;
+        let (shutdown_tx, shutdown_rx) = watch::channel(false);
+
+        let handle = tokio::spawn(run_listener(
+            addr,
+            rig_tx,
+            HashSet::new(),
+            state_rx,
+            shutdown_rx,
+        ));
+
+        let stream = TcpStream::connect(addr).await.expect("connect");
+        let (reader, mut writer) = stream.into_split();
+        let mut reader = BufReader::new(reader);
+
+        writer
+            .write_all(br#"{"cmd":"get_state"}"#)
+            .await
+            .expect("write");
+        writer.write_all(b"\n").await.expect("newline");
+        writer.flush().await.expect("flush");
+
+        let mut line = String::new();
+        reader.read_line(&mut line).await.expect("read");
+        let resp: ClientResponse = serde_json::from_str(line.trim_end()).expect("response json");
+        assert!(resp.success);
+        let snapshot = resp.state.expect("snapshot");
+        assert_eq!(snapshot.info.model, "Dummy");
+        assert_eq!(snapshot.status.freq.hz, 144_300_000);
+
+        let _ = shutdown_tx.send(true);
+        handle.abort();
+        let _ = handle.await;
+    }
+}

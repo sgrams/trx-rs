@@ -8,8 +8,3 @@ pub fn register_frontend_on(context: &mut trx_frontend::FrontendRegistrationCont
     use trx_frontend::FrontendSpawner;
     context.register_frontend("http", server::HttpFrontend::spawn_frontend);
 }
-
-pub fn register_frontend() {
-    use trx_frontend::FrontendSpawner;
-    trx_frontend::register_frontend("http", server::HttpFrontend::spawn_frontend);
-}

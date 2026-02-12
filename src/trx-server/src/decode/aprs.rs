@@ -200,8 +200,7 @@ impl Demodulator {
         self.corr_idx = (idx + 1) % self.corr_len;
 
         // Compare mark vs space energy
-        let mark_energy =
-            self.mark_i_sum * self.mark_i_sum + self.mark_q_sum * self.mark_q_sum;
+        let mark_energy = self.mark_i_sum * self.mark_i_sum + self.mark_q_sum * self.mark_q_sum;
         let space_energy =
             self.space_i_sum * self.space_i_sum + self.space_q_sum * self.space_q_sum;
         let bit: u8 = if mark_energy > space_energy { 1 } else { 0 };

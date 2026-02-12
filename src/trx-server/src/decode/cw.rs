@@ -153,8 +153,7 @@ impl CwDecoder {
         let mut tone_scan_bins = Vec::new();
         let mut f = TONE_SCAN_LOW;
         while f <= TONE_SCAN_HIGH {
-            let bk =
-                (f as f32 * window_size as f32 / sample_rate as f32).round();
+            let bk = (f as f32 * window_size as f32 / sample_rate as f32).round();
             let b_omega = (2.0 * std::f32::consts::PI * bk) / window_size as f32;
             tone_scan_bins.push(ToneScanBin {
                 freq: f,
@@ -202,8 +201,7 @@ impl CwDecoder {
 
     fn recompute_goertzel(&mut self, new_freq: u32) {
         self.tone_freq = new_freq;
-        let k = (new_freq as f32 * self.window_size as f32 / self.sample_rate as f32)
-            .round();
+        let k = (new_freq as f32 * self.window_size as f32 / self.sample_rate as f32).round();
         let omega = (2.0 * std::f32::consts::PI * k) / self.window_size as f32;
         self.coeff = 2.0 * omega.cos();
     }
@@ -256,9 +254,7 @@ impl CwDecoder {
             return;
         }
 
-        if self.tone_stable_bin >= 0
-            && (best_idx - self.tone_stable_bin).unsigned_abs() <= 1
-        {
+        if self.tone_stable_bin >= 0 && (best_idx - self.tone_stable_bin).unsigned_abs() <= 1 {
             self.tone_stable_count += 1;
         } else {
             self.tone_stable_bin = best_idx;
@@ -267,9 +263,7 @@ impl CwDecoder {
 
         if self.tone_stable_count >= TONE_STABLE_NEEDED {
             let detected_freq = self.tone_scan_bins[self.tone_stable_bin as usize].freq;
-            if (detected_freq as i32 - self.tone_freq as i32).unsigned_abs()
-                > TONE_SCAN_STEP
-            {
+            if (detected_freq as i32 - self.tone_freq as i32).unsigned_abs() > TONE_SCAN_STEP {
                 self.recompute_goertzel(detected_freq);
             }
         }
@@ -337,8 +331,7 @@ impl CwDecoder {
                 if off_duration > u * 5.0 {
                     // Word gap
                     if !self.current_symbol.is_empty() {
-                        let ch = morse_lookup(&self.current_symbol)
-                            .unwrap_or('?');
+                        let ch = morse_lookup(&self.current_symbol).unwrap_or('?');
                         self.emit_text(&ch.to_string());
                         self.current_symbol.clear();
                     }
@@ -346,8 +339,7 @@ impl CwDecoder {
                 } else if off_duration > u * 2.0 {
                     // Character gap
                     if !self.current_symbol.is_empty() {
-                        let ch = morse_lookup(&self.current_symbol)
-                            .unwrap_or('?');
+                        let ch = morse_lookup(&self.current_symbol).unwrap_or('?');
                         self.emit_text(&ch.to_string());
                         self.current_symbol.clear();
                     }

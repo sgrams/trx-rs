@@ -309,7 +309,18 @@ fn parse_port(port_str: &str) -> Result<u16, String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_remote_url, RemoteEndpoint};
+    use super::{parse_remote_url, RemoteClientConfig, RemoteEndpoint};
+    use std::time::Duration;
+
+    use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+    use tokio::net::TcpListener;
+    use tokio::sync::{mpsc, watch};
+
+    use trx_core::radio::freq::{Band, Freq};
+    use trx_core::rig::state::RigSnapshot;
+    use trx_core::rig::{RigAccessMethod, RigCapabilities, RigInfo, RigStatus, RigTxStatus};
+    use trx_core::{RigMode, RigState};
+    use trx_protocol::ClientResponse;
 
     #[test]
     fn parse_host_default_port() {
@@ -351,5 +362,132 @@ mod tests {
     fn reject_unbracketed_ipv6() {
         let err = parse_remote_url("::1:7000").expect_err("must fail");
         assert!(err.contains("must be bracketed"));
+    }
+
+    fn sample_snapshot() -> RigSnapshot {
+        RigSnapshot {
+            info: RigInfo {
+                manufacturer: "Test".to_string(),
+                model: "Dummy".to_string(),
+                revision: "1".to_string(),
+                capabilities: RigCapabilities {
+                    supported_bands: vec![Band {
+                        low_hz: 7_000_000,
+                        high_hz: 7_200_000,
+                        tx_allowed: true,
+                    }],
+                    supported_modes: vec![RigMode::USB],
+                    num_vfos: 1,
+                    lock: false,
+                    lockable: true,
+                    attenuator: false,
+                    preamp: false,
+                    rit: false,
+                    rpt: false,
+                    split: false,
+                },
+                access: RigAccessMethod::Tcp {
+                    addr: "127.0.0.1:1234".to_string(),
+                },
+            },
+            status: RigStatus {
+                freq: Freq { hz: 7_100_000 },
+                mode: RigMode::USB,
+                tx_en: false,
+                vfo: None,
+                tx: Some(RigTxStatus {
+                    power: None,
+                    limit: None,
+                    swr: None,
+                    alc: None,
+                }),
+                rx: None,
+                lock: Some(false),
+            },
+            band: None,
+            enabled: Some(true),
+            initialized: true,
+            server_callsign: Some("N0CALL".to_string()),
+            server_version: Some("test".to_string()),
+            server_latitude: None,
+            server_longitude: None,
+            aprs_decode_enabled: false,
+            cw_decode_enabled: false,
+            ft8_decode_enabled: false,
+            cw_auto: true,
+            cw_wpm: 15,
+            cw_tone_hz: 700,
+        }
+    }
+
+    #[tokio::test]
+    #[ignore = "requires TCP bind permissions"]
+    async fn reconnects_and_updates_state_after_drop() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let addr = listener.local_addr().expect("local addr");
+        let response = serde_json::to_string(&ClientResponse {
+            success: true,
+            state: Some(sample_snapshot()),
+            error: None,
+        })
+        .expect("serialize response")
+            + "\n";
+
+        let server = tokio::spawn(async move {
+            let (first, _) = listener.accept().await.expect("accept first");
+            let (first_reader, _) = first.into_split();
+            let mut first_reader = BufReader::new(first_reader);
+            let mut buf = String::new();
+            let _ = first_reader.read_line(&mut buf).await.expect("read first");
+
+            let (second, _) = listener.accept().await.expect("accept second");
+            let (second_reader, mut second_writer) = second.into_split();
+            let mut second_reader = BufReader::new(second_reader);
+            buf.clear();
+            let _ = second_reader
+                .read_line(&mut buf)
+                .await
+                .expect("read second");
+            second_writer
+                .write_all(response.as_bytes())
+                .await
+                .expect("write response");
+            second_writer.flush().await.expect("flush");
+        });
+
+        let (_req_tx, req_rx) = mpsc::channel(8);
+        let (state_tx, mut state_rx) = watch::channel(RigState::new_uninitialized());
+        let (shutdown_tx, shutdown_rx) = watch::channel(false);
+
+        let client = tokio::spawn(super::run_remote_client(
+            RemoteClientConfig {
+                addr: addr.to_string(),
+                token: None,
+                poll_interval: Duration::from_millis(100),
+            },
+            req_rx,
+            state_tx,
+            shutdown_rx,
+        ));
+
+        tokio::time::timeout(Duration::from_secs(5), async {
+            loop {
+                if state_rx.borrow().initialized {
+                    break;
+                }
+                state_rx.changed().await.expect("state channel");
+            }
+        })
+        .await
+        .expect("state update timeout");
+        assert_eq!(state_rx.borrow().status.freq.hz, 7_100_000);
+
+        let _ = shutdown_tx.send(true);
+        tokio::time::timeout(Duration::from_secs(2), async {
+            let _ = client.await;
+        })
+        .await
+        .expect("client shutdown timeout");
+        let _ = server.await;
     }
 }

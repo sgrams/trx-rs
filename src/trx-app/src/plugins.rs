@@ -4,12 +4,14 @@
 
 use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
+use std::ptr::NonNull;
 
 use libloading::{Library, Symbol};
 use tracing::{info, warn};
 
 const PLUGIN_ENV: &str = "TRX_PLUGIN_DIRS";
-const PLUGIN_ENTRYPOINT: &str = "trx_register";
+const BACKEND_ENTRYPOINT: &str = "trx_register_backend";
+const FRONTEND_ENTRYPOINT: &str = "trx_register_frontend";
 
 #[cfg(windows)]
 const PATH_SEPARATOR: char = ';';
@@ -23,7 +25,18 @@ const PLUGIN_EXTENSIONS: &[&str] = &["dylib"];
 #[cfg(all(unix, not(target_os = "macos")))]
 const PLUGIN_EXTENSIONS: &[&str] = &["so"];
 
-pub fn load_plugins() -> Vec<Library> {
+pub fn load_backend_plugins(context: NonNull<std::ffi::c_void>) -> Vec<Library> {
+    load_plugins_for_entrypoint(BACKEND_ENTRYPOINT, context)
+}
+
+pub fn load_frontend_plugins(context: NonNull<std::ffi::c_void>) -> Vec<Library> {
+    load_plugins_for_entrypoint(FRONTEND_ENTRYPOINT, context)
+}
+
+fn load_plugins_for_entrypoint(
+    entrypoint: &str,
+    context: NonNull<std::ffi::c_void>,
+) -> Vec<Library> {
     let mut libraries = Vec::new();
     let search_paths = plugin_search_paths();
 
@@ -34,7 +47,7 @@ pub fn load_plugins() -> Vec<Library> {
     info!("Plugin search paths: {:?}", search_paths);
 
     for path in search_paths {
-        if let Err(err) = load_plugins_from_dir(&path, &mut libraries) {
+        if let Err(err) = load_plugins_from_dir(&path, entrypoint, context, &mut libraries) {
             warn!("Plugin scan failed for {:?}: {}", path, err);
         }
     }
@@ -42,7 +55,12 @@ pub fn load_plugins() -> Vec<Library> {
     libraries
 }
 
-fn load_plugins_from_dir(path: &Path, libraries: &mut Vec<Library>) -> std::io::Result<()> {
+fn load_plugins_from_dir(
+    path: &Path,
+    entrypoint: &str,
+    context: NonNull<std::ffi::c_void>,
+    libraries: &mut Vec<Library>,
+) -> std::io::Result<()> {
     if !path.exists() {
         return Ok(());
     }
@@ -60,7 +78,7 @@ fn load_plugins_from_dir(path: &Path, libraries: &mut Vec<Library>) -> std::io::
         unsafe {
             match Library::new(&path) {
                 Ok(lib) => {
-                    if let Err(err) = register_library(&lib, &path) {
+                    if let Err(err) = register_library(&lib, &path, entrypoint, context) {
                         warn!("Plugin {:?} failed to register: {}", path, err);
                         continue;
                     }
@@ -77,11 +95,16 @@ fn load_plugins_from_dir(path: &Path, libraries: &mut Vec<Library>) -> std::io::
     Ok(())
 }
 
-unsafe fn register_library(lib: &Library, path: &Path) -> Result<(), String> {
-    let entry: Symbol<unsafe extern "C" fn()> = lib
-        .get(PLUGIN_ENTRYPOINT.as_bytes())
-        .map_err(|e| format!("missing entrypoint {}: {}", PLUGIN_ENTRYPOINT, e))?;
-    entry();
+unsafe fn register_library(
+    lib: &Library,
+    path: &Path,
+    entrypoint: &str,
+    context: NonNull<std::ffi::c_void>,
+) -> Result<(), String> {
+    let entry: Symbol<unsafe extern "C" fn(*mut std::ffi::c_void)> = lib
+        .get(entrypoint.as_bytes())
+        .map_err(|e| format!("missing entrypoint {}: {}", entrypoint, e))?;
+    entry(context.as_ptr());
     info!("Registered plugin {:?}", path);
     Ok(())
 }
@@ -110,6 +133,10 @@ fn plugin_search_paths() -> Vec<PathBuf> {
 fn is_plugin_file(path: &Path) -> bool {
     path.extension()
         .and_then(OsStr::to_str)
-        .map(|ext| PLUGIN_EXTENSIONS.iter().any(|e| ext.eq_ignore_ascii_case(e)))
+        .map(|ext| {
+            PLUGIN_EXTENSIONS
+                .iter()
+                .any(|e| ext.eq_ignore_ascii_case(e))
+        })
         .unwrap_or(false)
 }

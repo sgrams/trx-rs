@@ -27,7 +27,9 @@ pub fn client_command_to_rig(cmd: ClientCommand) -> RigCommand {
         ClientCommand::Unlock => RigCommand::Unlock,
         ClientCommand::GetTxLimit => RigCommand::GetTxLimit,
         ClientCommand::SetTxLimit { limit } => RigCommand::SetTxLimit(limit),
-        ClientCommand::SetAprsDecodeEnabled { enabled } => RigCommand::SetAprsDecodeEnabled(enabled),
+        ClientCommand::SetAprsDecodeEnabled { enabled } => {
+            RigCommand::SetAprsDecodeEnabled(enabled)
+        }
         ClientCommand::SetCwDecodeEnabled { enabled } => RigCommand::SetCwDecodeEnabled(enabled),
         ClientCommand::SetCwAuto { enabled } => RigCommand::SetCwAuto(enabled),
         ClientCommand::SetCwWpm { wpm } => RigCommand::SetCwWpm(wpm),
@@ -58,7 +60,9 @@ pub fn rig_command_to_client(cmd: RigCommand) -> ClientCommand {
         RigCommand::Unlock => ClientCommand::Unlock,
         RigCommand::GetTxLimit => ClientCommand::GetTxLimit,
         RigCommand::SetTxLimit(limit) => ClientCommand::SetTxLimit { limit },
-        RigCommand::SetAprsDecodeEnabled(enabled) => ClientCommand::SetAprsDecodeEnabled { enabled },
+        RigCommand::SetAprsDecodeEnabled(enabled) => {
+            ClientCommand::SetAprsDecodeEnabled { enabled }
+        }
         RigCommand::SetCwDecodeEnabled(enabled) => ClientCommand::SetCwDecodeEnabled { enabled },
         RigCommand::SetCwAuto(enabled) => ClientCommand::SetCwAuto { enabled },
         RigCommand::SetCwWpm(wpm) => ClientCommand::SetCwWpm { wpm },

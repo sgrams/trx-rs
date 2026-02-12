@@ -13,11 +13,11 @@ use tokio::sync::{broadcast, mpsc, oneshot, watch};
 use tokio::time::{self, Duration};
 use tokio_stream::wrappers::{IntervalStream, WatchStream};
 
-use trx_frontend::FrontendRuntimeContext;
-use trx_protocol::{ClientResponse, parse_mode};
 use trx_core::radio::freq::Freq;
 use trx_core::rig::{RigAccessMethod, RigCapabilities, RigInfo};
 use trx_core::{RigCommand, RigRequest, RigSnapshot, RigState};
+use trx_frontend::FrontendRuntimeContext;
+use trx_protocol::{parse_mode, ClientResponse};
 
 use crate::server::status;
 
@@ -450,28 +450,40 @@ async fn style_css() -> impl Responder {
 #[get("/app.js")]
 async fn app_js() -> impl Responder {
     HttpResponse::Ok()
-        .insert_header((header::CONTENT_TYPE, "application/javascript; charset=utf-8"))
+        .insert_header((
+            header::CONTENT_TYPE,
+            "application/javascript; charset=utf-8",
+        ))
         .body(status::APP_JS)
 }
 
 #[get("/aprs.js")]
 async fn aprs_js() -> impl Responder {
     HttpResponse::Ok()
-        .insert_header((header::CONTENT_TYPE, "application/javascript; charset=utf-8"))
+        .insert_header((
+            header::CONTENT_TYPE,
+            "application/javascript; charset=utf-8",
+        ))
         .body(status::APRS_JS)
 }
 
 #[get("/ft8.js")]
 async fn ft8_js() -> impl Responder {
     HttpResponse::Ok()
-        .insert_header((header::CONTENT_TYPE, "application/javascript; charset=utf-8"))
+        .insert_header((
+            header::CONTENT_TYPE,
+            "application/javascript; charset=utf-8",
+        ))
         .body(status::FT8_JS)
 }
 
 #[get("/cw.js")]
 async fn cw_js() -> impl Responder {
     HttpResponse::Ok()
-        .insert_header((header::CONTENT_TYPE, "application/javascript; charset=utf-8"))
+        .insert_header((
+            header::CONTENT_TYPE,
+            "application/javascript; charset=utf-8",
+        ))
         .body(status::CW_JS)
 }
 

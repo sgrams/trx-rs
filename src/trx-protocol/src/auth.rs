@@ -187,9 +187,7 @@ mod tests {
 
         assert!(validator.validate(&Some("token1".to_string())).is_ok());
         assert!(validator.validate(&Some("token2".to_string())).is_ok());
-        assert!(validator
-            .validate(&Some("token3".to_string()))
-            .is_err());
+        assert!(validator.validate(&Some("token3".to_string())).is_err());
     }
 
     #[test]

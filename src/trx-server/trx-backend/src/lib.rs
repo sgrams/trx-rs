@@ -3,17 +3,16 @@
 // SPDX-License-Identifier: BSD-2-Clause
 
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex, OnceLock};
 
 use trx_core::rig::RigCat;
 use trx_core::DynResult;
 
 mod dummy;
 
-#[cfg(feature = "ft817")]
-use trx_backend_ft817::Ft817;
 #[cfg(feature = "ft450d")]
 use trx_backend_ft450d::Ft450d;
+#[cfg(feature = "ft817")]
+use trx_backend_ft817::Ft817;
 
 /// Connection details for instantiating a rig backend.
 #[derive(Debug, Clone)]
@@ -88,27 +87,6 @@ fn normalize_name(name: &str) -> String {
         .collect()
 }
 
-/// Phase 3D: Plugin compatibility adapter - delegates to bootstrap context.
-fn bootstrap_context() -> &'static Arc<Mutex<RegistrationContext>> {
-    static BOOTSTRAP_CONTEXT: OnceLock<Arc<Mutex<RegistrationContext>>> = OnceLock::new();
-    BOOTSTRAP_CONTEXT.get_or_init(|| Arc::new(Mutex::new(RegistrationContext::new())))
-}
-
-/// Snapshot current plugin/bootstrap registrations into an owned context.
-pub fn snapshot_bootstrap_context() -> RegistrationContext {
-    let ctx = bootstrap_context()
-        .lock()
-        .expect("backend context mutex poisoned");
-    ctx.clone()
-}
-
-/// Register a backend factory under a stable name (e.g. "ft817").
-/// Plugin compatibility: delegates to bootstrap context.
-pub fn register_backend(name: &str, factory: BackendFactory) {
-    let mut ctx = bootstrap_context().lock().expect("backend context mutex poisoned");
-    ctx.register_backend(name, factory);
-}
-
 /// Register all built-in backends enabled by features on a context.
 pub fn register_builtin_backends_on(context: &mut RegistrationContext) {
     context.register_backend("dummy", dummy_factory);
@@ -118,38 +96,8 @@ pub fn register_builtin_backends_on(context: &mut RegistrationContext) {
     context.register_backend("ft450d", ft450d_factory);
 }
 
-/// Register all built-in backends enabled by features (global, for plugin compatibility).
-pub fn register_builtin_backends() {
-    register_backend("dummy", dummy_factory);
-    #[cfg(feature = "ft817")]
-    register_backend("ft817", ft817_factory);
-    #[cfg(feature = "ft450d")]
-    register_backend("ft450d", ft450d_factory);
-}
-
 fn dummy_factory(_access: RigAccess) -> DynResult<Box<dyn RigCat>> {
     Ok(Box::new(dummy::DummyRig::new()))
-}
-
-/// Check whether a backend name is registered.
-/// Plugin compatibility: reads from bootstrap context.
-pub fn is_backend_registered(name: &str) -> bool {
-    let ctx = bootstrap_context().lock().expect("backend context mutex poisoned");
-    ctx.is_backend_registered(name)
-}
-
-/// List registered backend names.
-/// Plugin compatibility: reads from bootstrap context.
-pub fn registered_backends() -> Vec<String> {
-    let ctx = bootstrap_context().lock().expect("backend context mutex poisoned");
-    ctx.registered_backends()
-}
-
-/// Instantiate a rig backend based on the selected name and access method.
-/// Plugin compatibility: reads from bootstrap context.
-pub fn build_rig(name: &str, access: RigAccess) -> DynResult<Box<dyn RigCat>> {
-    let ctx = bootstrap_context().lock().expect("backend context mutex poisoned");
-    ctx.build_rig(name, access)
 }
 
 #[cfg(feature = "ft817")]

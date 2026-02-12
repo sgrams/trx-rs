@@ -10,11 +10,11 @@
 //! - Browser sends binary messages: raw Opus packets (TX)
 
 use std::collections::VecDeque;
-use std::sync::Arc;
 use std::sync::atomic::Ordering;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use actix_web::{Error, HttpRequest, HttpResponse, get, web};
+use actix_web::{get, web, Error, HttpRequest, HttpResponse};
 use actix_ws::Message;
 use bytes::Bytes;
 use tokio::sync::broadcast;
@@ -62,7 +62,10 @@ fn record_aprs(context: &FrontendRuntimeContext, pkt: AprsPacket) {
 }
 
 fn record_cw(context: &FrontendRuntimeContext, event: CwEvent) {
-    let mut history = context.cw_history.lock().expect("cw history mutex poisoned");
+    let mut history = context
+        .cw_history
+        .lock()
+        .expect("cw history mutex poisoned");
     history.push_back((Instant::now(), event));
     prune_cw_history(&mut history);
 }
@@ -86,7 +89,10 @@ pub fn snapshot_aprs_history(context: &FrontendRuntimeContext) -> Vec<AprsPacket
 }
 
 pub fn snapshot_cw_history(context: &FrontendRuntimeContext) -> Vec<CwEvent> {
-    let mut history = context.cw_history.lock().expect("cw history mutex poisoned");
+    let mut history = context
+        .cw_history
+        .lock()
+        .expect("cw history mutex poisoned");
     prune_cw_history(&mut history);
     history.iter().map(|(_, evt)| evt.clone()).collect()
 }
@@ -109,7 +115,10 @@ pub fn clear_aprs_history(context: &FrontendRuntimeContext) {
 }
 
 pub fn clear_cw_history(context: &FrontendRuntimeContext) {
-    let mut history = context.cw_history.lock().expect("cw history mutex poisoned");
+    let mut history = context
+        .cw_history
+        .lock()
+        .expect("cw history mutex poisoned");
     history.clear();
 }
 
@@ -128,7 +137,10 @@ pub fn subscribe_decode(
 }
 
 pub fn start_decode_history_collector(context: Arc<FrontendRuntimeContext>) {
-    if context.decode_collector_started.swap(true, Ordering::AcqRel) {
+    if context
+        .decode_collector_started
+        .swap(true, Ordering::AcqRel)
+    {
         return;
     }
 

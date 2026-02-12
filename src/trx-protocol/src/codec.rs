@@ -6,8 +6,8 @@
 
 use serde_json;
 
-use trx_core::rig::state::RigMode;
 use crate::types::{ClientCommand, ClientEnvelope};
+use trx_core::rig::state::RigMode;
 
 /// Parse a mode string into a RigMode.
 ///

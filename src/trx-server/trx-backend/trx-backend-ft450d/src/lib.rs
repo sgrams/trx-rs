@@ -325,7 +325,9 @@ impl Ft450d {
 
     async fn read_freq(&mut self) -> DynResult<u64> {
         let resp = self.query("FA;").await?;
-        let data = resp.strip_prefix("FA").ok_or("CAT freq response missing FA")?;
+        let data = resp
+            .strip_prefix("FA")
+            .ok_or("CAT freq response missing FA")?;
         let digits: String = data.chars().filter(|c| c.is_ascii_digit()).collect();
         let freq: u64 = digits.parse().map_err(|_| "CAT freq parse failed")?;
         Ok(freq)
@@ -333,7 +335,9 @@ impl Ft450d {
 
     async fn read_mode(&mut self) -> DynResult<RigMode> {
         let resp = self.query("MD0;").await?;
-        let data = resp.strip_prefix("MD").ok_or("CAT mode response missing MD")?;
+        let data = resp
+            .strip_prefix("MD")
+            .ok_or("CAT mode response missing MD")?;
         let code = data.chars().last().ok_or("CAT mode parse failed")?;
         Ok(decode_mode(code))
     }

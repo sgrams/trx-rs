@@ -12,6 +12,7 @@ mod rig_task;
 use std::collections::HashSet;
 use std::net::{IpAddr, SocketAddr};
 use std::path::PathBuf;
+use std::ptr::NonNull;
 use std::time::Duration;
 
 use bytes::Bytes;
@@ -23,10 +24,8 @@ use tracing::{error, info};
 
 use trx_core::audio::AudioStreamInfo;
 
-use trx_app::{init_logging, load_plugins, normalize_name};
-use trx_backend::{
-    register_builtin_backends_on, snapshot_bootstrap_context, RegistrationContext, RigAccess,
-};
+use trx_app::{init_logging, load_backend_plugins, normalize_name};
+use trx_backend::{register_builtin_backends_on, RegistrationContext, RigAccess};
 use trx_core::rig::controller::{AdaptivePolling, ExponentialBackoff};
 use trx_core::rig::request::RigRequest;
 use trx_core::rig::state::RigState;
@@ -247,8 +246,8 @@ async fn main() -> DynResult<()> {
 
     init_logging(cfg.general.log_level.as_deref());
 
-    let _plugin_libs = load_plugins();
-    bootstrap_ctx.extend_from(&snapshot_bootstrap_context());
+    let bootstrap_ctx_ptr = NonNull::from(&mut bootstrap_ctx).cast();
+    let _plugin_libs = load_backend_plugins(bootstrap_ctx_ptr);
 
     if let Some(ref path) = config_path {
         info!("Loaded configuration from {}", path.display());

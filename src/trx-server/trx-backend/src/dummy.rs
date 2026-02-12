@@ -38,15 +38,51 @@ impl DummyRig {
                 revision: "1.0".to_string(),
                 capabilities: RigCapabilities {
                     supported_bands: vec![
-                        Band { low_hz: 1_800_000, high_hz: 2_000_000, tx_allowed: true },
-                        Band { low_hz: 3_500_000, high_hz: 4_000_000, tx_allowed: true },
-                        Band { low_hz: 7_000_000, high_hz: 7_300_000, tx_allowed: true },
-                        Band { low_hz: 14_000_000, high_hz: 14_350_000, tx_allowed: true },
-                        Band { low_hz: 21_000_000, high_hz: 21_450_000, tx_allowed: true },
-                        Band { low_hz: 28_000_000, high_hz: 29_700_000, tx_allowed: true },
-                        Band { low_hz: 50_000_000, high_hz: 54_000_000, tx_allowed: true },
-                        Band { low_hz: 144_000_000, high_hz: 148_000_000, tx_allowed: true },
-                        Band { low_hz: 430_000_000, high_hz: 440_000_000, tx_allowed: true },
+                        Band {
+                            low_hz: 1_800_000,
+                            high_hz: 2_000_000,
+                            tx_allowed: true,
+                        },
+                        Band {
+                            low_hz: 3_500_000,
+                            high_hz: 4_000_000,
+                            tx_allowed: true,
+                        },
+                        Band {
+                            low_hz: 7_000_000,
+                            high_hz: 7_300_000,
+                            tx_allowed: true,
+                        },
+                        Band {
+                            low_hz: 14_000_000,
+                            high_hz: 14_350_000,
+                            tx_allowed: true,
+                        },
+                        Band {
+                            low_hz: 21_000_000,
+                            high_hz: 21_450_000,
+                            tx_allowed: true,
+                        },
+                        Band {
+                            low_hz: 28_000_000,
+                            high_hz: 29_700_000,
+                            tx_allowed: true,
+                        },
+                        Band {
+                            low_hz: 50_000_000,
+                            high_hz: 54_000_000,
+                            tx_allowed: true,
+                        },
+                        Band {
+                            low_hz: 144_000_000,
+                            high_hz: 148_000_000,
+                            tx_allowed: true,
+                        },
+                        Band {
+                            low_hz: 430_000_000,
+                            high_hz: 440_000_000,
+                            tx_allowed: true,
+                        },
                     ],
                     supported_modes: vec![
                         RigMode::LSB,
@@ -112,9 +148,7 @@ impl Rig for DummyRig {
 
 impl RigCat for DummyRig {
     fn get_status<'a>(&'a mut self) -> RigStatusFuture<'a> {
-        Box::pin(async move {
-            Ok((self.freq, self.mode.clone(), Some(self.build_vfo())))
-        })
+        Box::pin(async move { Ok((self.freq, self.mode.clone(), Some(self.build_vfo()))) })
     }
 
     fn set_freq<'a>(

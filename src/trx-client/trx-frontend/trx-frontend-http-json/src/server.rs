@@ -266,3 +266,148 @@ fn authorize(token: &Option<String>, context: &FrontendRuntimeContext) -> Result
     let validator = SimpleTokenValidator::new(context.auth_tokens.clone());
     validator.validate(token)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashSet;
+    use std::net::Ipv4Addr;
+
+    use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+
+    use trx_core::radio::freq::{Band, Freq};
+    use trx_core::rig::state::RigSnapshot;
+    use trx_core::rig::{RigAccessMethod, RigCapabilities, RigInfo, RigStatus, RigTxStatus};
+    use trx_core::RigMode;
+
+    fn loopback_addr() -> SocketAddr {
+        let listener = std::net::TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).expect("bind");
+        let addr = listener.local_addr().expect("local_addr");
+        drop(listener);
+        addr
+    }
+
+    fn sample_snapshot() -> RigSnapshot {
+        RigSnapshot {
+            info: RigInfo {
+                manufacturer: "Test".to_string(),
+                model: "Dummy".to_string(),
+                revision: "1".to_string(),
+                capabilities: RigCapabilities {
+                    supported_bands: vec![Band {
+                        low_hz: 14_000_000,
+                        high_hz: 14_350_000,
+                        tx_allowed: true,
+                    }],
+                    supported_modes: vec![RigMode::USB],
+                    num_vfos: 1,
+                    lock: false,
+                    lockable: true,
+                    attenuator: false,
+                    preamp: false,
+                    rit: false,
+                    rpt: false,
+                    split: false,
+                },
+                access: RigAccessMethod::Tcp {
+                    addr: "127.0.0.1:1234".to_string(),
+                },
+            },
+            status: RigStatus {
+                freq: Freq { hz: 14_074_000 },
+                mode: RigMode::USB,
+                tx_en: false,
+                vfo: None,
+                tx: Some(RigTxStatus {
+                    power: None,
+                    limit: None,
+                    swr: None,
+                    alc: None,
+                }),
+                rx: None,
+                lock: Some(false),
+            },
+            band: None,
+            enabled: Some(true),
+            initialized: true,
+            server_callsign: Some("N0CALL".to_string()),
+            server_version: Some("test".to_string()),
+            server_latitude: None,
+            server_longitude: None,
+            aprs_decode_enabled: false,
+            cw_decode_enabled: false,
+            ft8_decode_enabled: false,
+            cw_auto: true,
+            cw_wpm: 15,
+            cw_tone_hz: 700,
+        }
+    }
+
+    #[tokio::test]
+    #[ignore = "requires TCP bind permissions"]
+    async fn rejects_missing_token() {
+        let addr = loopback_addr();
+        let (rig_tx, _rig_rx) = mpsc::channel::<RigRequest>(8);
+        let mut runtime = FrontendRuntimeContext::new();
+        runtime.auth_tokens = HashSet::from(["secret".to_string()]);
+        let ctx = Arc::new(runtime);
+
+        let handle = tokio::spawn(serve(addr, rig_tx, ctx));
+
+        let stream = TcpStream::connect(addr).await.expect("connect");
+        let (reader, mut writer) = stream.into_split();
+        let mut reader = BufReader::new(reader);
+
+        writer
+            .write_all(br#"{"cmd":"get_state"}"#)
+            .await
+            .expect("write");
+        writer.write_all(b"\n").await.expect("newline");
+        writer.flush().await.expect("flush");
+
+        let mut line = String::new();
+        reader.read_line(&mut line).await.expect("read");
+        let resp: ClientResponse = serde_json::from_str(line.trim_end()).expect("response json");
+        assert!(!resp.success);
+        assert_eq!(resp.error.as_deref(), Some("missing authorization token"));
+
+        handle.abort();
+        let _ = handle.await;
+    }
+
+    #[tokio::test]
+    #[ignore = "requires TCP bind permissions"]
+    async fn forwards_command_and_returns_snapshot() {
+        let addr = loopback_addr();
+        let (rig_tx, mut rig_rx) = mpsc::channel::<RigRequest>(8);
+        let ctx = Arc::new(FrontendRuntimeContext::new());
+
+        let rig_worker = tokio::spawn(async move {
+            if let Some(req) = rig_rx.recv().await {
+                let _ = req.respond_to.send(Ok(sample_snapshot()));
+            }
+        });
+        let handle = tokio::spawn(serve(addr, rig_tx, ctx));
+
+        let stream = TcpStream::connect(addr).await.expect("connect");
+        let (reader, mut writer) = stream.into_split();
+        let mut reader = BufReader::new(reader);
+
+        writer
+            .write_all(br#"{"cmd":"get_state"}"#)
+            .await
+            .expect("write");
+        writer.write_all(b"\n").await.expect("newline");
+        writer.flush().await.expect("flush");
+
+        let mut line = String::new();
+        reader.read_line(&mut line).await.expect("read");
+        let resp: ClientResponse = serde_json::from_str(line.trim_end()).expect("response json");
+        assert!(resp.success);
+        assert_eq!(resp.state.expect("snapshot").status.freq.hz, 14_074_000);
+
+        let _ = rig_worker.await;
+        handle.abort();
+        let _ = handle.await;
+    }
+}
