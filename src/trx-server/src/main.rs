@@ -286,6 +286,15 @@ async fn main() -> DynResult<()> {
         cfg.rig.initial_freq_hz,
         cfg.rig.initial_mode.clone(),
     );
+    let mut initial_state = initial_state;
+    initial_state.pskreporter_status = if cfg.pskreporter.enabled {
+        Some(format!(
+            "Enabled ({}:{})",
+            cfg.pskreporter.host, cfg.pskreporter.port
+        ))
+    } else {
+        Some("Disabled".to_string())
+    };
     let (state_tx, state_rx) = watch::channel(initial_state);
     // Keep receivers alive so channels don't close prematurely
     let _state_rx = state_rx;

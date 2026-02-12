@@ -334,6 +334,7 @@ mod tests {
             server_version: Some("test".to_string()),
             server_latitude: None,
             server_longitude: None,
+            pskreporter_status: Some("Disabled".to_string()),
             aprs_decode_enabled: false,
             cw_decode_enabled: false,
             ft8_decode_enabled: false,

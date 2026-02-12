@@ -24,6 +24,8 @@ pub struct RigState {
     pub server_latitude: Option<f64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub server_longitude: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pskreporter_status: Option<String>,
     #[serde(default)]
     pub aprs_decode_enabled: bool,
     #[serde(default)]
@@ -114,6 +116,7 @@ impl RigState {
             server_version: None,
             server_latitude: None,
             server_longitude: None,
+            pskreporter_status: None,
             aprs_decode_enabled: false,
             cw_decode_enabled: false,
             ft8_decode_enabled: false,
@@ -169,6 +172,7 @@ impl RigState {
             server_version: snapshot.server_version,
             server_latitude: snapshot.server_latitude,
             server_longitude: snapshot.server_longitude,
+            pskreporter_status: snapshot.pskreporter_status,
             aprs_decode_enabled: snapshot.aprs_decode_enabled,
             cw_decode_enabled: snapshot.cw_decode_enabled,
             cw_auto: snapshot.cw_auto,
@@ -204,6 +208,7 @@ impl RigState {
             server_version: self.server_version.clone(),
             server_latitude: self.server_latitude,
             server_longitude: self.server_longitude,
+            pskreporter_status: self.pskreporter_status.clone(),
             aprs_decode_enabled: self.aprs_decode_enabled,
             cw_decode_enabled: self.cw_decode_enabled,
             cw_auto: self.cw_auto,
@@ -253,6 +258,8 @@ pub struct RigSnapshot {
     pub server_latitude: Option<f64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub server_longitude: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pskreporter_status: Option<String>,
     #[serde(default)]
     pub aprs_decode_enabled: bool,
     #[serde(default)]

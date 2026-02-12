@@ -391,6 +391,9 @@ function render(update) {
   if (update.server_callsign) {
     document.getElementById("about-server-call").textContent = update.server_callsign;
   }
+  if (update.pskreporter_status) {
+    document.getElementById("about-pskreporter").textContent = update.pskreporter_status;
+  }
   if (update.info) {
     const parts = [update.info.manufacturer, update.info.model, update.info.revision].filter(Boolean).join(" ");
     if (parts) document.getElementById("about-rig-info").textContent = parts;

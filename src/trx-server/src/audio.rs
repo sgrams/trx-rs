@@ -5,7 +5,7 @@
 //! Audio capture, playback, and TCP streaming for trx-server.
 
 use std::net::SocketAddr;
-use std::sync::OnceLock;
+use std::sync::{Arc, OnceLock};
 use std::time::{Duration, Instant};
 use std::{collections::VecDeque, sync::Mutex};
 
@@ -31,6 +31,60 @@ const APRS_HISTORY_RETENTION: Duration = Duration::from_secs(24 * 60 * 60);
 const FT8_HISTORY_RETENTION: Duration = Duration::from_secs(24 * 60 * 60);
 const WSPR_HISTORY_RETENTION: Duration = Duration::from_secs(24 * 60 * 60);
 const FT8_SAMPLE_RATE: u32 = 12_000;
+const AUDIO_STREAM_ERROR_LOG_INTERVAL: Duration = Duration::from_secs(10);
+
+struct StreamErrorLogger {
+    label: &'static str,
+    state: Mutex<StreamErrorState>,
+}
+
+#[derive(Default)]
+struct StreamErrorState {
+    last_error: Option<String>,
+    last_logged_at: Option<Instant>,
+    suppressed: u64,
+}
+
+impl StreamErrorLogger {
+    fn new(label: &'static str) -> Self {
+        Self {
+            label,
+            state: Mutex::new(StreamErrorState::default()),
+        }
+    }
+
+    fn log(&self, err: &str) {
+        let now = Instant::now();
+        let mut state = self
+            .state
+            .lock()
+            .expect("stream error logger mutex poisoned");
+        let should_log_now = match (&state.last_error, state.last_logged_at) {
+            (None, _) => true,
+            (Some(prev), Some(ts)) => {
+                prev != err || now.duration_since(ts) >= AUDIO_STREAM_ERROR_LOG_INTERVAL
+            }
+            (Some(_), None) => true,
+        };
+
+        if should_log_now {
+            if state.suppressed > 0 {
+                warn!(
+                    "{} repeated {} times: {}",
+                    self.label,
+                    state.suppressed,
+                    state.last_error.as_deref().unwrap_or("<unknown>")
+                );
+            }
+            error!("{}: {}", self.label, err);
+            state.last_error = Some(err.to_string());
+            state.last_logged_at = Some(now);
+            state.suppressed = 0;
+        } else {
+            state.suppressed += 1;
+        }
+    }
+}
 
 fn aprs_history() -> &'static Mutex<VecDeque<(Instant, AprsPacket)>> {
     static HISTORY: OnceLock<Mutex<VecDeque<(Instant, AprsPacket)>>> = OnceLock::new();
@@ -208,13 +262,17 @@ fn run_capture(
 
     let (sample_tx, sample_rx) = std::sync::mpsc::sync_channel::<Vec<f32>>(64);
 
+    let input_err_logger = Arc::new(StreamErrorLogger::new("Audio input stream error"));
     let stream = device.build_input_stream(
         &config,
         move |data: &[f32], _: &cpal::InputCallbackInfo| {
             let _ = sample_tx.try_send(data.to_vec());
         },
-        move |err| {
-            error!("Audio input stream error: {}", err);
+        {
+            let input_err_logger = input_err_logger.clone();
+            move |err| {
+                input_err_logger.log(&err.to_string());
+            }
         },
         None,
     )?;
@@ -342,6 +400,7 @@ fn run_playback(
     ));
     let ring_writer = ring.clone();
 
+    let output_err_logger = Arc::new(StreamErrorLogger::new("Audio output stream error"));
     let stream = device.build_output_stream(
         &config,
         move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
@@ -350,8 +409,11 @@ fn run_playback(
                 *sample = ring.pop_front().unwrap_or(0.0);
             }
         },
-        move |err| {
-            error!("Audio output stream error: {}", err);
+        {
+            let output_err_logger = output_err_logger.clone();
+            move |err| {
+                output_err_logger.log(&err.to_string());
+            }
         },
         None,
     )?;
