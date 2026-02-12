@@ -36,6 +36,7 @@ impl Ft450d {
             model: "FT-450D".to_string(),
             revision: "".to_string(),
             capabilities: RigCapabilities {
+                min_freq_step_hz: 10,
                 supported_bands: vec![
                     // Transmit-capable amateur bands (HF + 6m)
                     Band {

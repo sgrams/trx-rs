@@ -37,6 +37,7 @@ impl DummyRig {
                 model: "dummy".to_string(),
                 revision: "1.0".to_string(),
                 capabilities: RigCapabilities {
+                    min_freq_step_hz: 1,
                     supported_bands: vec![
                         Band {
                             low_hz: 1_800_000,

@@ -439,6 +439,7 @@ mod tests {
             model: "Mock".to_string(),
             revision: "1.0".to_string(),
             capabilities: RigCapabilities {
+                min_freq_step_hz: 1,
                 supported_bands: vec![],
                 supported_modes: vec![],
                 num_vfos: 2,

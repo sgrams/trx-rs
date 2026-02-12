@@ -614,6 +614,7 @@ impl From<RigInfoPlaceholder> for RigInfo {
             model: "Rig".to_string(),
             revision: "".to_string(),
             capabilities: RigCapabilities {
+                min_freq_step_hz: 1,
                 supported_bands: vec![],
                 supported_modes: vec![],
                 num_vfos: 0,

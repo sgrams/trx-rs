@@ -371,6 +371,7 @@ mod tests {
                 model: "Dummy".to_string(),
                 revision: "1".to_string(),
                 capabilities: RigCapabilities {
+                    min_freq_step_hz: 1,
                     supported_bands: vec![Band {
                         low_hz: 7_000_000,
                         high_hz: 7_200_000,

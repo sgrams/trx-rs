@@ -39,6 +39,8 @@ pub struct RigInfo {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RigCapabilities {
+    #[serde(default = "default_min_freq_step_hz")]
+    pub min_freq_step_hz: u64,
     pub supported_bands: Vec<Band>,
     pub supported_modes: Vec<RigMode>,
     pub num_vfos: usize,
@@ -49,6 +51,10 @@ pub struct RigCapabilities {
     pub rit: bool,
     pub rpt: bool,
     pub split: bool,
+}
+
+fn default_min_freq_step_hz() -> u64 {
+    1
 }
 
 /// Common interface for rig backends.

@@ -45,6 +45,7 @@ let sigMeasuring = false;
 let sigSamples = [];
 let lastFreqHz = null;
 let jogStep = loadSetting("jogStep", 1000);
+let minFreqStepHz = 1;
 const VFO_COLORS = ["var(--accent-green)", "var(--accent-yellow)"];
 function vfoColor(idx) {
   if (idx < VFO_COLORS.length) return VFO_COLORS[idx];
@@ -89,9 +90,9 @@ function formatFreq(hz) {
 
 function formatFreqForStep(hz, step) {
   if (!Number.isFinite(hz)) return "--";
-  if (step === 1_000_000) return (hz / 1_000_000).toFixed(6);
-  if (step === 1_000) return (hz / 1_000).toFixed(3);
-  if (step === 1) return String(Math.round(hz));
+  if (step >= 1_000_000) return (hz / 1_000_000).toFixed(6);
+  if (step >= 1_000) return (hz / 1_000).toFixed(3);
+  if (step >= 1) return String(Math.round(hz));
   return formatFreq(hz);
 }
 
@@ -116,11 +117,11 @@ function parseFreqInput(val, defaultStep) {
     num *= 1_000;
   } else if (!unit) {
     // Use currently selected input unit when user omits suffix.
-    if (defaultStep === 1_000_000) {
+    if (defaultStep >= 1_000_000) {
       num *= 1_000_000;
-    } else if (defaultStep === 1_000) {
+    } else if (defaultStep >= 1_000) {
       num *= 1_000;
-    } else if (defaultStep === 1) {
+    } else if (defaultStep >= 1) {
       // already Hz
     } else {
       // Fallback heuristic.
@@ -134,6 +135,54 @@ function parseFreqInput(val, defaultStep) {
     }
   }
   return Math.round(num);
+}
+
+function normalizeMinFreqStep(cap) {
+  const val = Number(cap && cap.min_freq_step_hz);
+  if (!Number.isFinite(val) || val < 1) return 1;
+  return Math.round(val);
+}
+
+function alignFreqToRigStep(hz) {
+  if (!Number.isFinite(hz)) return hz;
+  const step = Math.max(1, minFreqStepHz);
+  return Math.round(hz / step) * step;
+}
+
+function updateJogStepSupport(cap) {
+  const nextMinStep = normalizeMinFreqStep(cap);
+  minFreqStepHz = nextMinStep;
+
+  const stepRoot = document.getElementById("jog-step");
+  if (!stepRoot) return;
+  const buttons = Array.from(stepRoot.querySelectorAll("button[data-step]"));
+  if (buttons.length === 0) return;
+
+  buttons.forEach((btn) => {
+    const base = Number(btn.dataset.baseStep || btn.dataset.step);
+    if (Number.isFinite(base) && base > 0) {
+      btn.dataset.baseStep = String(Math.round(base));
+      btn.dataset.step = String(Math.max(Math.round(base), minFreqStepHz));
+    }
+  });
+
+  const steps = buttons
+    .map((btn) => Number(btn.dataset.step))
+    .filter((s) => Number.isFinite(s) && s > 0);
+  if (steps.length === 0) return;
+
+  const current = Number(jogStep);
+  const desired =
+    Number.isFinite(current) && current >= minFreqStepHz ? current : Math.max(steps[0], minFreqStepHz);
+
+  jogStep = steps.reduce((best, s) => (Math.abs(s - desired) < Math.abs(best - desired) ? s : best), steps[0]);
+  saveSetting("jogStep", jogStep);
+
+  buttons.forEach((btn) => {
+    btn.classList.toggle("active", Number(btn.dataset.step) === jogStep);
+  });
+
+  refreshFreqDisplay();
 }
 
 function normalizeMode(modeVal) {
@@ -256,6 +305,7 @@ function render(update) {
     }
   }
   if (update.info && update.info.capabilities) {
+    updateJogStepSupport(update.info.capabilities);
     updateSupportedBands(update.info.capabilities);
   }
   if (update.status && update.status.freq && typeof update.status.freq.hz === "number") {
@@ -572,7 +622,8 @@ pttBtn.addEventListener("click", async () => {
 });
 
 freqBtn.addEventListener("click", async () => {
-  const parsed = parseFreqInput(freqEl.value, jogStep);
+  const parsedRaw = parseFreqInput(freqEl.value, jogStep);
+  const parsed = alignFreqToRigStep(parsedRaw);
   if (parsed === null) {
     showHint("Freq missing", 1500);
     return;
@@ -612,7 +663,7 @@ const jogStepEl = document.getElementById("jog-step");
 async function jogFreq(direction) {
   if (lastLocked) { showHint("Locked", 1500); return; }
   if (lastFreqHz === null) return;
-  const newHz = lastFreqHz + direction * jogStep;
+  const newHz = alignFreqToRigStep(lastFreqHz + direction * jogStep);
   if (!freqAllowed(newHz)) {
     showHint("Out of supported bands", 1500);
     return;
@@ -679,7 +730,7 @@ window.addEventListener("mouseup", () => {
 jogStepEl.addEventListener("click", (e) => {
   const btn = e.target.closest("button[data-step]");
   if (!btn) return;
-  jogStep = parseInt(btn.dataset.step, 10);
+  jogStep = Math.max(parseInt(btn.dataset.step, 10), minFreqStepHz);
   jogStepEl.querySelectorAll("button").forEach((b) => b.classList.remove("active"));
   btn.classList.add("active");
   saveSetting("jogStep", jogStep);
@@ -687,9 +738,17 @@ jogStepEl.addEventListener("click", (e) => {
 });
 
 // Restore active jog step button from saved setting
-jogStepEl.querySelectorAll("button").forEach((b) => {
-  b.classList.toggle("active", parseInt(b.dataset.step, 10) === jogStep);
-});
+{
+  const buttons = Array.from(jogStepEl.querySelectorAll("button[data-step]"));
+  const active =
+    buttons.find((b) => parseInt(b.dataset.step, 10) === jogStep) ||
+    buttons.find((b) => parseInt(b.dataset.step, 10) === 1000) ||
+    buttons[0];
+  if (active) {
+    jogStep = parseInt(active.dataset.step, 10);
+    buttons.forEach((b) => b.classList.toggle("active", b === active));
+  }
+}
 
 modeBtn.addEventListener("click", async () => {
   const mode = modeEl.value || "";
