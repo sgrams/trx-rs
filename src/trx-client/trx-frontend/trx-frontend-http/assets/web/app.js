@@ -51,6 +51,8 @@ async function authLogout() {
     // Disconnect and show auth gate without page reload
     disconnect();
     document.getElementById("content").style.display = "none";
+    document.getElementById("loading").style.display = "none";
+    document.getElementById("auth-passphrase").value = "";
     updateAuthUI();
     showAuthGate(false);
   } catch (e) {
@@ -114,7 +116,7 @@ function updateAuthUI() {
 function applyAuthRestrictions() {
   if (!authRole) return;
 
-  // Disable TX/PTT/frequency/mode controls for rx role
+  // Disable TX/PTT/frequency/mode/VFO controls for rx role
   if (authRole === "rx") {
     const pttBtn = document.getElementById("ptt-btn");
     const powerBtn = document.getElementById("power-btn");
@@ -125,9 +127,11 @@ function applyAuthRestrictions() {
     const txLimitBtn = document.getElementById("tx-limit-btn");
     const txAudioBtn = document.getElementById("tx-audio-btn");
     const txLimitRow = document.getElementById("tx-limit-row");
+    const vfoPicker = document.getElementById("vfo-picker");
     const jogUp = document.getElementById("jog-up");
     const jogDown = document.getElementById("jog-down");
     const jogButtons = document.querySelectorAll(".jog-step button");
+    const vfoButtons = document.querySelectorAll("#vfo-picker button");
 
     // Disable TX buttons
     if (pttBtn) pttBtn.disabled = true;
@@ -141,9 +145,14 @@ function applyAuthRestrictions() {
     if (modeSelect) modeSelect.disabled = true;
     if (txLimitInput) txLimitInput.disabled = true;
 
+    // Disable VFO selector
+    vfoButtons.forEach(btn => btn.disabled = true);
+
     // Disable jog controls
+    const jogWheel = document.getElementById("jog-wheel");
     if (jogUp) jogUp.disabled = true;
     if (jogDown) jogDown.disabled = true;
+    if (jogWheel) jogWheel.style.opacity = "0.5";
     jogButtons.forEach(btn => btn.disabled = true);
 
     // Hide TX-specific UI but keep controls visible (disabled)
