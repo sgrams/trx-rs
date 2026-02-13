@@ -96,7 +96,7 @@ input.status-input, select.status-input { width: 100%; padding: 0.45rem 0.5rem; 
   margin-bottom: 0;
 }
 .controls-col-power.label-below-col .label {
-  text-align: right;
+  justify-content: flex-end;
 }
 .controls-col.label-below-col > :not(.label) {
   order: 1;
@@ -265,11 +265,15 @@ button:disabled { opacity: 0.6; cursor: not-allowed; }
   flex: 0 0 auto;
 }
 .unit-col .label {
-  text-align: right;
+  display: flex;
+  justify-content: flex-end;
 }
 .label-below-row {
   display: flex;
   flex-direction: column;
+}
+#tab-main .label > span {
+  text-align: center;
 }
 .label-below-row > .label {
   order: 2;
