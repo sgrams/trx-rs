@@ -71,6 +71,11 @@ function showAuthGate(allowGuest = false) {
   document.getElementById("auth-gate").style.display = "block";
   document.getElementById("tab-bar").style.display = "none";
 
+  // Hide all tab panels
+  document.querySelectorAll(".tab-panel").forEach(panel => {
+    panel.style.display = "none";
+  });
+
   // Show guest button if guest mode is available
   const guestBtn = document.getElementById("auth-guest-btn");
   if (guestBtn) {
