@@ -234,7 +234,33 @@ button { padding: 0.5rem 0.9rem; border-radius: 6px; border: 1px solid var(--btn
 button:disabled { opacity: 0.6; cursor: not-allowed; }
 .hint { color: var(--text-muted); font-size: 0.85rem; }
 .inline { display: flex; gap: 0.5rem; align-items: center; }
-.freq-inline #freq { flex: 1 1 auto; }
+.freq-inline {
+  align-items: flex-start;
+}
+.freq-field {
+  display: grid;
+  grid-template-rows: 3.35rem auto;
+  align-items: start;
+}
+.freq-field .label {
+  margin-top: 0.45rem;
+  margin-bottom: 0;
+}
+.frequency-col {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.frequency-col #freq {
+  width: 100%;
+  height: 3.35rem;
+  box-sizing: border-box;
+}
+.wavelength-col {
+  flex: 0 0 auto;
+}
+.unit-col {
+  flex: 0 0 auto;
+}
 .label-below-row {
   display: flex;
   flex-direction: column;

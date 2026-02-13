@@ -12,10 +12,15 @@ function loadSetting(key, fallback) {
 
 // --- Authentication ---
 let authRole = null;  // null (not authenticated), "rx" (read-only), or "control" (full access)
+let authEnabled = true;
 
 async function checkAuthStatus() {
   try {
     const resp = await fetch("/auth/session");
+    if (resp.status === 404) {
+      // Auth API not exposed -> treat as auth-disabled mode.
+      return { authenticated: true, role: "control", auth_disabled: true };
+    }
     if (!resp.ok) return { authenticated: false };
     const data = await resp.json();
     return data;
@@ -32,6 +37,9 @@ async function authLogin(passphrase) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ passphrase }),
     });
+    if (resp.status === 404) {
+      return { authenticated: true, role: "control", auth_disabled: true };
+    }
     if (!resp.ok) {
       const text = await resp.text();
       throw new Error(text || "Login failed");
@@ -46,7 +54,7 @@ async function authLogin(passphrase) {
 async function authLogout() {
   try {
     const resp = await fetch("/auth/logout", { method: "POST" });
-    if (!resp.ok) throw new Error("Logout failed");
+    if (resp.status !== 404 && !resp.ok) throw new Error("Logout failed");
     authRole = null;
     // Disconnect and show auth gate without page reload
     disconnect();
@@ -66,6 +74,7 @@ async function authLogout() {
 }
 
 function showAuthGate(allowGuest = false) {
+  if (!authEnabled) return;
   document.getElementById("loading").style.display = "none";
   document.getElementById("content").style.display = "none";
   document.getElementById("auth-gate").style.display = "block";
@@ -120,6 +129,12 @@ function updateAuthUI() {
   const badge = document.getElementById("auth-badge");
   const badgeRole = document.getElementById("auth-role-badge");
   const headerAuthBtn = document.getElementById("header-auth-btn");
+
+  if (!authEnabled) {
+    if (badge) badge.style.display = "none";
+    if (headerAuthBtn) headerAuthBtn.style.display = "none";
+    return;
+  }
 
   if (authRole) {
     badge.style.display = "block";
@@ -990,7 +1005,7 @@ function disconnect() {
 
 async function postPath(path) {
   const resp = await fetch(path, { method: "POST" });
-  if (resp.status === 401) {
+  if (authEnabled && resp.status === 401) {
     // Not authenticated - return to login
     authRole = null;
     if (es) es.close();
@@ -1247,6 +1262,18 @@ document.querySelector(".tab-bar").addEventListener("click", (e) => {
 // --- Auth startup sequence ---
 async function initializeApp() {
   const authStatus = await checkAuthStatus();
+  authEnabled = !authStatus.auth_disabled;
+
+  if (!authEnabled) {
+    authRole = "control";
+    hideAuthGate();
+    updateAuthUI();
+    connect();
+    resizeHeaderSignalCanvas();
+    startHeaderSignalSampling();
+    return;
+  }
+
   if (authStatus.authenticated) {
     // User has valid session
     authRole = authStatus.role;

@@ -54,15 +54,23 @@
     </div>
     <div id="content" style="display:none;">
     <div class="status">
-      <div class="full-row freq-row label-below-row">
-        <div class="label"><span>Frequency</span></div>
+      <div class="full-row freq-row">
         <div class="inline freq-inline">
-          <div class="wavelength-display" id="wavelength" title="Wavelength">--</div>
-          <input class="status-input" id="freq" type="text" value="--" />
-          <div class="jog-step" id="jog-step">
-            <button type="button" data-step="1000000">MHz</button>
-            <button type="button" data-step="1000" class="active">kHz</button>
-            <button type="button" data-step="1">Hz</button>
+          <div class="freq-field wavelength-col">
+            <div class="wavelength-display" id="wavelength" title="Wavelength">--</div>
+            <div class="label"><span>Wavelength</span></div>
+          </div>
+          <div class="freq-field frequency-col">
+            <input class="status-input" id="freq" type="text" value="--" />
+            <div class="label"><span>Frequency</span></div>
+          </div>
+          <div class="freq-field unit-col">
+            <div class="jog-step" id="jog-step">
+              <button type="button" data-step="1000000">MHz</button>
+              <button type="button" data-step="1000" class="active">kHz</button>
+              <button type="button" data-step="1">Hz</button>
+            </div>
+            <div class="label"><span>Unit</span></div>
           </div>
         </div>
       </div>
