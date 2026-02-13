@@ -110,27 +110,34 @@ async fn process_command(
     let Some(raw_op) = parts.next() else {
         return CommandResult::Reply(err_response("empty command"));
     };
-    let op = raw_op.trim_start_matches('+');
+    let extended = raw_op.starts_with('+');
+    let op = raw_op.trim_start_matches('+').trim_end_matches(':');
 
     let resp = match op {
         "q" | "Q" | "\\q" | "\\quit" => return CommandResult::Close,
         "f" | "\\get_freq" => match request_snapshot(rig_tx).await {
-            Ok(snapshot) => ok_response([snapshot.status.freq.hz.to_string()]),
+            Ok(snapshot) => ok_response(op, extended, [snapshot.status.freq.hz.to_string()]),
             Err(e) => err_response(&e),
         },
-        "F" | "\\set_freq" => match parts.next().and_then(|s| s.parse::<u64>().ok()) {
+        "F" | "\\set_freq" => match parts.next().and_then(parse_freq_hz_arg) {
             Some(freq) => {
-                match send_rig_command(rig_tx, RigCommand::SetFreq(Freq { hz: freq })).await {
-                    Ok(_) => ok_only(),
+                match send_set_freq_with_compat_retry(rig_tx, freq).await {
+                    Ok(_) => ok_only(op, extended),
                     Err(e) => err_response(&e),
                 }
             }
             None => err_response("expected frequency in Hz"),
         },
+        "l" | "\\get_level" => {
+            // Hamlib may probe optional levels during open (e.g. KEYSPD).
+            // Return a benign default to keep client compatibility.
+            let _level_name = parts.next();
+            ok_response(op, extended, ["0"])
+        }
         "m" | "\\get_mode" => match request_snapshot(rig_tx).await {
             Ok(snapshot) => {
                 let mode = rig_mode_to_str(&snapshot.status.mode);
-                ok_response([mode, "0".to_string()])
+                ok_response(op, extended, [mode, "0".to_string()])
             }
             Err(e) => err_response(&e),
         },
@@ -140,32 +147,32 @@ async fn process_command(
             };
             let mode = parse_mode(mode_str);
             match send_rig_command(rig_tx, RigCommand::SetMode(mode)).await {
-                Ok(_) => ok_only(),
+                Ok(_) => ok_only(op, extended),
                 Err(e) => err_response(&e),
             }
         }
         "t" | "\\get_ptt" => match request_snapshot(rig_tx).await {
             Ok(snapshot) => {
-                ok_response([if snapshot.status.tx_en { "1" } else { "0" }.to_string()])
+                ok_response(
+                    op,
+                    extended,
+                    [if snapshot.status.tx_en { "1" } else { "0" }.to_string()],
+                )
             }
             Err(e) => err_response(&e),
         },
         "T" | "\\set_ptt" => match parts.next() {
-            Some(v) if is_true(v) => match send_rig_command(rig_tx, RigCommand::SetPtt(true)).await
-            {
-                Ok(_) => ok_only(),
-                Err(e) => err_response(&e),
-            },
-            Some(v) if is_false(v) => {
-                match send_rig_command(rig_tx, RigCommand::SetPtt(false)).await {
-                    Ok(_) => ok_only(),
+            Some(v) => match parse_ptt_arg(v) {
+                Some(ptt) => match send_rig_command(rig_tx, RigCommand::SetPtt(ptt)).await {
+                    Ok(_) => ok_only(op, extended),
                     Err(e) => err_response(&e),
-                }
-            }
+                },
+                None => err_response("expected PTT state (0/1)"),
+            },
             _ => err_response("expected PTT state (0/1)"),
         },
         "v" | "\\get_vfo" => match request_snapshot(rig_tx).await {
-            Ok(snapshot) => ok_response([active_vfo_label(&snapshot)]),
+            Ok(snapshot) => ok_response(op, extended, [active_vfo_label(&snapshot)]),
             Err(e) => err_response(&e),
         },
         "V" | "\\set_vfo" => {
@@ -173,19 +180,19 @@ async fn process_command(
                 return CommandResult::Reply(err_response("expected VFO (VFOA/VFOB)"));
             };
             match set_vfo_target(target, rig_tx).await {
-                Ok(()) => ok_only(),
+                Ok(()) => ok_only(op, extended),
                 Err(e) => err_response(&e),
             }
         }
         "s" | "\\get_split_vfo" => match request_snapshot(rig_tx).await {
             Ok(snapshot) => {
                 // split state, tx vfo
-                ok_response(["0".to_string(), active_vfo_label(&snapshot)])
+                ok_response(op, extended, ["0".to_string(), active_vfo_label(&snapshot)])
             }
             Err(e) => err_response(&e),
         },
         "S" | "\\set_split_vfo" => match parts.next() {
-            Some(v) if is_false(v) => ok_only(),
+            Some(v) if is_false(v) => ok_only(op, extended),
             Some(v) if is_true(v) => err_response("split mode not supported"),
             _ => err_response("expected split state (0/1)"),
         },
@@ -201,26 +208,26 @@ async fn process_command(
                 "Model: {} {}; Version: {}",
                 snapshot.info.manufacturer, snapshot.info.model, snapshot.info.revision
             );
-            ok_response([info])
+            ok_response(op, extended, [info])
         }
         "\\get_powerstat" | "get_powerstat" => match request_snapshot(rig_tx).await {
             Ok(snapshot) => {
                 let val = snapshot.enabled.unwrap_or(false);
-                ok_response([if val { "1" } else { "0" }.to_string()])
+                ok_response(op, extended, [if val { "1" } else { "0" }.to_string()])
             }
             Err(e) => err_response(&e),
         },
         "\\chk_vfo" | "chk_vfo" => match request_snapshot(rig_tx).await {
-            Ok(snapshot) => ok_response([active_vfo_label(&snapshot)]),
+            Ok(snapshot) => ok_response(op, extended, [active_vfo_label(&snapshot)]),
             Err(e) => err_response(&e),
         },
         "\\dump_state" | "dump_state" => match request_snapshot(rig_tx).await {
-            Ok(snapshot) => ok_response(dump_state_lines(&snapshot)),
+            Ok(snapshot) => ok_response(op, extended, dump_state_lines(&snapshot)),
             Err(e) => err_response(&e),
         },
         "1" | "\\dump_caps" | "dump_caps" | "\\dumpcaps" | "dumpcaps" => {
             match request_snapshot(rig_tx).await {
-                Ok(snapshot) => dump_caps_response(&snapshot),
+                Ok(snapshot) => dump_caps_response(op, extended, &snapshot),
                 Err(e) => err_response(&e),
             }
         }
@@ -233,7 +240,7 @@ async fn process_command(
                 },
             };
             let info_line = format!("{} {}", snapshot.info.manufacturer, snapshot.info.model);
-            ok_response([info_line])
+            ok_response(op, extended, [info_line])
         }
         _ => {
             warn!("rigctl unsupported command: {}", cmd_line);
@@ -244,25 +251,40 @@ async fn process_command(
     CommandResult::Reply(resp)
 }
 
-fn ok_response<I, S>(lines: I) -> String
+fn ok_response<I, S>(op: &str, extended: bool, lines: I) -> String
 where
     I: IntoIterator<Item = S>,
     S: Into<String>,
 {
-    let mut resp = String::new();
-    for line in lines {
-        let line = line.into();
-        if !line.is_empty() {
-            resp.push_str(&line);
+    if extended {
+        let mut resp = String::new();
+        for line in lines {
+            resp.push_str(op);
+            resp.push_str(": ");
+            resp.push_str(&line.into());
             resp.push('\n');
         }
+        resp.push_str("RPRT 0\n");
+        resp
+    } else {
+        let mut resp = String::new();
+        for line in lines {
+            let line = line.into();
+            if !line.is_empty() {
+                resp.push_str(&line);
+                resp.push('\n');
+            }
+        }
+        resp
     }
-    resp.push_str("RPRT 0\n");
-    resp
 }
 
-fn ok_only() -> String {
-    "RPRT 0\n".to_string()
+fn ok_only(op: &str, extended: bool) -> String {
+    if extended {
+        format!("{op}:\nRPRT 0\n")
+    } else {
+        "RPRT 0\n".to_string()
+    }
 }
 
 fn err_response(msg: &str) -> String {
@@ -295,6 +317,27 @@ async fn send_rig_command(
     }
 }
 
+async fn send_set_freq_with_compat_retry(
+    rig_tx: &mpsc::Sender<RigRequest>,
+    freq_hz: u64,
+) -> Result<RigSnapshot, String> {
+    match send_rig_command(rig_tx, RigCommand::SetFreq(Freq { hz: freq_hz })).await {
+        Ok(snapshot) => Ok(snapshot),
+        Err(e) => {
+            // FT-817 backend requires 10 Hz alignment; some hamlib clients submit
+            // values with 1 Hz granularity.
+            if e.contains("multiple of 10 Hz") {
+                let rounded = ((freq_hz + 5) / 10) * 10;
+                if rounded != freq_hz {
+                    return send_rig_command(rig_tx, RigCommand::SetFreq(Freq { hz: rounded }))
+                        .await;
+                }
+            }
+            Err(e)
+        }
+    }
+}
+
 fn current_snapshot(state_rx: &watch::Receiver<RigState>) -> Option<RigSnapshot> {
     state_rx.borrow().snapshot()
 }
@@ -306,7 +349,8 @@ fn rig_mode_to_str(mode: &RigMode) -> String {
 fn dump_state_lines(_snapshot: &RigSnapshot) -> Vec<String> {
     // Hamlib expects a long, fixed sequence of bare values.
     // To maximize compatibility, mirror the ordering produced by hamlib's dummy backend.
-    vec![
+    // Some Hamlib/netrigctl versions expect a trailing `done` sentinel.
+    let mut lines = vec![
         "1".to_string(),
         "1".to_string(),
         "0".to_string(),
@@ -348,10 +392,12 @@ fn dump_state_lines(_snapshot: &RigSnapshot) -> Vec<String> {
         "0xfffeff7083ffffff".to_string(),
         "0xffffffffffffffff".to_string(),
         "0xffffffffffffffbf".to_string(),
-    ]
+    ];
+    lines.push("done".to_string());
+    lines
 }
 
-fn dump_caps_response(snapshot: &RigSnapshot) -> String {
+fn dump_caps_response(op: &str, extended: bool, snapshot: &RigSnapshot) -> String {
     // netrigctl_open expects `setting=value` lines terminated by `done`.
     // Unknown keys are tolerated by Hamlib, but malformed lines are not.
     let mut resp = String::new();
@@ -395,7 +441,11 @@ fn dump_caps_response(snapshot: &RigSnapshot) -> String {
         if snapshot.status.tx.is_some() { "1" } else { "0" }.to_string(),
     );
     resp.push_str("done\n");
-    resp
+    if extended {
+        ok_response(op, true, resp.lines().map(|s| s.to_string()).collect::<Vec<_>>())
+    } else {
+        resp
+    }
 }
 
 fn active_vfo_label(snapshot: &RigSnapshot) -> String {
@@ -457,6 +507,47 @@ fn is_true(s: &str) -> bool {
 
 fn is_false(s: &str) -> bool {
     matches!(s, "0" | "off" | "OFF" | "false" | "False" | "FALSE")
+}
+
+fn parse_ptt_arg(s: &str) -> Option<bool> {
+    if is_true(s) {
+        return Some(true);
+    }
+    if is_false(s) {
+        return Some(false);
+    }
+
+    // Hamlib may send enum-like numeric values where non-zero means ON.
+    if let Ok(v) = s.parse::<i64>() {
+        return Some(v != 0);
+    }
+
+    match s.to_ascii_uppercase().as_str() {
+        "ON_DATA" | "DATA" | "MIC" | "ON_MIC" => Some(true),
+        _ => None,
+    }
+}
+
+fn parse_freq_hz_arg(s: &str) -> Option<u64> {
+    if let Ok(hz) = s.parse::<u64>() {
+        return Some(hz);
+    }
+
+    let mut hz = s.parse::<f64>().ok()?;
+    if !hz.is_finite() || hz <= 0.0 {
+        return None;
+    }
+
+    // Some rigctl clients send MHz as a decimal float (e.g. "7.100000").
+    // Heuristic: if decimal value is below 1 MHz, interpret as MHz.
+    if s.contains('.') && hz < 1_000_000.0 {
+        hz *= 1_000_000.0;
+    }
+
+    if hz > (u64::MAX as f64) {
+        return None;
+    }
+    Some(hz.round() as u64)
 }
 
 #[cfg(test)]
@@ -521,11 +612,40 @@ mod tests {
 
     #[test]
     fn dump_caps_is_setting_value_and_ends_with_done() {
-        let response = dump_caps_response(&test_snapshot());
+        let response = dump_caps_response("dump_caps", false, &test_snapshot());
         let lines: Vec<&str> = response.lines().collect();
         assert!(lines.iter().all(|line| *line == "done" || line.contains('=')));
         assert_eq!(lines.last(), Some(&"done"));
         assert!(response.contains("model_name=Virtual\n"));
         assert!(response.contains("mfg_name=TRX\n"));
+    }
+
+    #[test]
+    fn ok_response_does_not_append_rprt_status() {
+        let response = ok_response("f", false, ["7100000"]);
+        assert_eq!(response, "7100000\n");
+    }
+
+    #[test]
+    fn ok_response_extended_includes_command_prefix_and_status() {
+        let response = ok_response("\\get_freq", true, ["7100000"]);
+        assert_eq!(response, "\\get_freq: 7100000\nRPRT 0\n");
+    }
+
+    #[test]
+    fn parse_freq_hz_arg_accepts_integer_and_decimal() {
+        assert_eq!(parse_freq_hz_arg("7100000"), Some(7_100_000));
+        assert_eq!(parse_freq_hz_arg("7100000.000000"), Some(7_100_000));
+        assert_eq!(parse_freq_hz_arg("7.100000"), Some(7_100_000));
+    }
+
+    #[test]
+    fn parse_ptt_arg_accepts_common_hamlib_values() {
+        assert_eq!(parse_ptt_arg("0"), Some(false));
+        assert_eq!(parse_ptt_arg("1"), Some(true));
+        assert_eq!(parse_ptt_arg("2"), Some(true));
+        assert_eq!(parse_ptt_arg("OFF"), Some(false));
+        assert_eq!(parse_ptt_arg("ON"), Some(true));
+        assert_eq!(parse_ptt_arg("DATA"), Some(true));
     }
 }
