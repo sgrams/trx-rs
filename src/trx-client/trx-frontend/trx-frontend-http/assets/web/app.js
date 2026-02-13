@@ -86,14 +86,23 @@ function updateAuthUI() {
   const btn = document.getElementById("logout-btn");
   const badge = document.getElementById("auth-badge");
   const badgeRole = document.getElementById("auth-role-badge");
+  const headerAuthBtn = document.getElementById("header-auth-btn");
 
   if (authRole) {
     btn.style.display = "block";
     badge.style.display = "block";
     badgeRole.textContent = authRole === "control" ? "Control (full access)" : "RX (read-only)";
+    if (headerAuthBtn) {
+      headerAuthBtn.textContent = "Logout";
+      headerAuthBtn.style.display = "block";
+    }
   } else {
     btn.style.display = "none";
     badge.style.display = "none";
+    if (headerAuthBtn) {
+      headerAuthBtn.textContent = "Login";
+      headerAuthBtn.style.display = "block";
+    }
   }
 }
 
@@ -1219,6 +1228,22 @@ document.getElementById("logout-btn").addEventListener("click", async () => {
     await authLogout();
   }
 });
+
+// Setup header auth button (Login/Logout)
+const headerAuthBtn = document.getElementById("header-auth-btn");
+if (headerAuthBtn) {
+  headerAuthBtn.addEventListener("click", async () => {
+    if (authRole) {
+      // Logged in - show logout confirmation
+      if (confirm("Are you sure you want to logout?")) {
+        await authLogout();
+      }
+    } else {
+      // Not logged in - show auth gate
+      showAuthGate(false);
+    }
+  });
+}
 
 // Start the app
 initializeApp();
