@@ -1163,16 +1163,9 @@ async function initializeApp() {
     connect();
     resizeHeaderSignalCanvas();
     startHeaderSignalSampling();
-  } else if (authStatus.role) {
-    // No session but role granted (guest mode available)
-    authRole = authStatus.role;
-    updateAuthUI();
-    applyAuthRestrictions();
-    connect();
-    resizeHeaderSignalCanvas();
-    startHeaderSignalSampling();
   } else {
-    // Auth required - show login screen with optional guest button
+    // No valid session - show auth gate
+    // Guest button is shown if guest mode is available (role granted without auth)
     const allowGuest = authStatus.role === "rx";
     showAuthGate(allowGuest);
   }
