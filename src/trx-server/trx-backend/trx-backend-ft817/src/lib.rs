@@ -303,9 +303,17 @@ impl Ft817 {
     /// Send CAT command to control PTT on FT-817.
     pub async fn set_ptt(&mut self, ptt: bool) -> DynResult<()> {
         let opcode = if ptt { CMD_PTT_ON } else { CMD_PTT_OFF };
+        // Mirror the reliability pattern used in set_mode: clear stale input and
+        // send twice because some radios occasionally drop the first CAT frame.
+        let _ = self.unlock().await;
+        let _ = self.port.clear(ClearBuffer::Input);
         // PTT on/off does not take a payload; CAT uses separate opcodes.
         let frame = [0x00, 0x00, 0x00, 0x00, opcode];
         self.write_frame(&frame).await?;
+        self.port.flush().await?;
+        tokio::time::sleep(std::time::Duration::from_millis(80)).await;
+        self.write_frame(&frame).await?;
+        self.port.flush().await?;
         Ok(())
     }
 

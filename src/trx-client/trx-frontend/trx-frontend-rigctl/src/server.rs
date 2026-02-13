@@ -106,6 +106,7 @@ async fn process_command(
     state_rx: &mut watch::Receiver<RigState>,
     rig_tx: &mpsc::Sender<RigRequest>,
 ) -> CommandResult {
+    debug!("rigctl command: {}", cmd_line);
     let mut parts = cmd_line.split_whitespace();
     let Some(raw_op) = parts.next() else {
         return CommandResult::Reply(err_response("empty command"));
@@ -151,7 +152,7 @@ async fn process_command(
                 Err(e) => err_response(&e),
             }
         }
-        "t" | "\\get_ptt" => match request_snapshot(rig_tx).await {
+        "t" | "\\get_ptt" | "get_ptt" => match request_snapshot(rig_tx).await {
             Ok(snapshot) => {
                 ok_response(
                     op,
@@ -161,14 +162,30 @@ async fn process_command(
             }
             Err(e) => err_response(&e),
         },
-        "T" | "\\set_ptt" => match parts.next() {
-            Some(v) => match parse_ptt_arg(v) {
-                Some(ptt) => match send_rig_command(rig_tx, RigCommand::SetPtt(ptt)).await {
-                    Ok(_) => ok_only(op, extended),
-                    Err(e) => err_response(&e),
-                },
-                None => err_response("expected PTT state (0/1)"),
-            },
+        "T" | "\\set_ptt" | "set_ptt" => match parse_ptt_tokens(parts.collect()) {
+            Some(v) => {
+                let snapshot = match current_snapshot(state_rx) {
+                    Some(s) => s,
+                    None => match request_snapshot(rig_tx).await {
+                        Ok(s) => s,
+                        Err(e) => return CommandResult::Reply(err_response(&e)),
+                    },
+                };
+                if !rig_supports_ptt(&snapshot) {
+                    return CommandResult::Reply(err_response("PTT not supported"));
+                }
+
+                match parse_ptt_arg(&v) {
+                    Some(ptt) => {
+                        debug!("rigctl ptt request: cmd='{}' parsed_ptt={}", cmd_line, ptt);
+                        match send_rig_command(rig_tx, RigCommand::SetPtt(ptt)).await {
+                            Ok(_) => ok_only(op, extended),
+                            Err(e) => err_response(&e),
+                        }
+                    }
+                    None => err_response("expected PTT state (0/1)"),
+                }
+            }
             _ => err_response("expected PTT state (0/1)"),
         },
         "v" | "\\get_vfo" => match request_snapshot(rig_tx).await {
@@ -292,6 +309,16 @@ fn err_response(msg: &str) -> String {
     "RPRT -1\n".to_string()
 }
 
+fn rig_supports_ptt(snapshot: &RigSnapshot) -> bool {
+    snapshot.status.tx.is_some()
+        || snapshot
+            .info
+            .capabilities
+            .supported_bands
+            .iter()
+            .any(|b| b.tx_allowed)
+}
+
 async fn request_snapshot(rig_tx: &mpsc::Sender<RigRequest>) -> Result<RigSnapshot, String> {
     send_rig_command(rig_tx, RigCommand::GetSnapshot).await
 }
@@ -346,7 +373,7 @@ fn rig_mode_to_str(mode: &RigMode) -> String {
     mode_to_string(mode)
 }
 
-fn dump_state_lines(_snapshot: &RigSnapshot) -> Vec<String> {
+fn dump_state_lines(snapshot: &RigSnapshot) -> Vec<String> {
     // Hamlib expects a long, fixed sequence of bare values.
     // To maximize compatibility, mirror the ordering produced by hamlib's dummy backend.
     // Some Hamlib/netrigctl versions expect a trailing `done` sentinel.
@@ -388,10 +415,14 @@ fn dump_state_lines(_snapshot: &RigSnapshot) -> Vec<String> {
         "10 20 30 ".to_string(),
         "0xffffffffffffffff".to_string(),
         "0xffffffffffffffff".to_string(),
-        "0xfffffffff7ffffff".to_string(),
-        "0xfffeff7083ffffff".to_string(),
         "0xffffffffffffffff".to_string(),
-        "0xffffffffffffffbf".to_string(),
+        if rig_supports_ptt(snapshot) {
+            "0xffffffffffffffff".to_string()
+        } else {
+            "0x0".to_string()
+        },
+        "0xffffffffffffffff".to_string(),
+        "0xffffffffffffffff".to_string(),
     ];
     lines.push("done".to_string());
     lines
@@ -438,7 +469,11 @@ fn dump_caps_response(op: &str, extended: bool, snapshot: &RigSnapshot) -> Strin
     push(
         &mut resp,
         "can_ptt",
-        if snapshot.status.tx.is_some() { "1" } else { "0" }.to_string(),
+        if rig_supports_ptt(snapshot) {
+            "1".to_string()
+        } else {
+            "0".to_string()
+        },
     );
     resp.push_str("done\n");
     if extended {
@@ -510,21 +545,37 @@ fn is_false(s: &str) -> bool {
 }
 
 fn parse_ptt_arg(s: &str) -> Option<bool> {
-    if is_true(s) {
+    let normalized = s.trim().trim_end_matches(';').trim_end_matches(',');
+    if is_true(normalized) {
         return Some(true);
     }
-    if is_false(s) {
+    if is_false(normalized) {
         return Some(false);
     }
 
     // Hamlib may send enum-like numeric values where non-zero means ON.
-    if let Ok(v) = s.parse::<i64>() {
+    if let Ok(v) = normalized.parse::<i64>() {
         return Some(v != 0);
     }
 
-    match s.to_ascii_uppercase().as_str() {
+    match normalized.to_ascii_uppercase().as_str() {
         "ON_DATA" | "DATA" | "MIC" | "ON_MIC" => Some(true),
         _ => None,
+    }
+}
+
+fn parse_ptt_tokens(tokens: Vec<&str>) -> Option<String> {
+    match tokens.as_slice() {
+        [] => None,
+        [only] => Some((*only).to_string()),
+        [first, second, ..] if normalize_vfo_name(first).is_some() => Some((*second).to_string()),
+        _ => tokens
+            .iter()
+            .rev()
+            .find(|t| parse_ptt_arg(t).is_some())
+            .copied()
+            .map(str::to_string)
+            .or_else(|| tokens.last().map(|s| (*s).to_string())),
     }
 }
 
@@ -647,5 +698,18 @@ mod tests {
         assert_eq!(parse_ptt_arg("OFF"), Some(false));
         assert_eq!(parse_ptt_arg("ON"), Some(true));
         assert_eq!(parse_ptt_arg("DATA"), Some(true));
+    }
+
+    #[test]
+    fn parse_ptt_tokens_accepts_optional_vfo_prefix() {
+        assert_eq!(parse_ptt_tokens(vec!["1"]), Some("1".to_string()));
+        assert_eq!(
+            parse_ptt_tokens(vec!["VFOA", "1"]),
+            Some("1".to_string())
+        );
+        assert_eq!(
+            parse_ptt_tokens(vec!["VFOB", "ON_DATA"]),
+            Some("ON_DATA".to_string())
+        );
     }
 }
