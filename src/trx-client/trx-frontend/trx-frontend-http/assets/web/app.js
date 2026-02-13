@@ -11,6 +11,7 @@ function loadSetting(key, fallback) {
 }
 
 const freqEl = document.getElementById("freq");
+const wavelengthEl = document.getElementById("wavelength");
 const modeEl = document.getElementById("mode");
 const bandLabel = document.getElementById("band-label");
 const powerBtn = document.getElementById("power-btn");
@@ -150,6 +151,7 @@ function drawHeaderSignalGraph() {
   if (!headerSigCanvas) return;
   const ctx = headerSigCanvas.getContext("2d");
   if (!ctx) return;
+  const isLight = currentTheme() === "light";
   const dpr = window.devicePixelRatio || 1;
   const w = headerSigCanvas.width / dpr;
   const h = headerSigCanvas.height / dpr;
@@ -160,7 +162,7 @@ function drawHeaderSignalGraph() {
   ctx.clearRect(0, 0, w, h);
 
   // Soft horizontal guides for readability.
-  ctx.strokeStyle = "rgba(148, 163, 184, 0.16)";
+  ctx.strokeStyle = isLight ? "rgba(71, 85, 105, 0.26)" : "rgba(148, 163, 184, 0.16)";
   ctx.lineWidth = 1;
   for (let i = 1; i <= 3; i++) {
     const y = Math.round((h * i) / 4) + 0.5;
@@ -172,14 +174,14 @@ function drawHeaderSignalGraph() {
 
   // Minimal S-unit scale markers.
   const yFor = (v) => h - (Math.max(0, Math.min(20, v)) / 20) * (h - 2) - 1;
-  ctx.fillStyle = "rgba(154, 164, 181, 0.55)";
+  ctx.fillStyle = isLight ? "rgba(30, 41, 59, 0.62)" : "rgba(154, 164, 181, 0.55)";
   ctx.font = "10px sans-serif";
   ctx.textAlign = "right";
   ctx.textBaseline = "middle";
   [["S9+", 18], ["S9", 9], ["S0", 0]].forEach(([label, val]) => {
     const y = yFor(val);
     ctx.fillText(label, w - 4, y);
-    ctx.strokeStyle = "rgba(154, 164, 181, 0.22)";
+    ctx.strokeStyle = isLight ? "rgba(51, 65, 85, 0.22)" : "rgba(154, 164, 181, 0.22)";
     ctx.beginPath();
     ctx.moveTo(2, y + 0.5);
     ctx.lineTo(w - 36, y + 0.5);
@@ -193,15 +195,27 @@ function drawHeaderSignalGraph() {
     const windowStart = now - HEADER_SIG_WINDOW_MS;
     const toX = (t) => ((t - windowStart) / HEADER_SIG_WINDOW_MS) * w;
     const strengthGrad = ctx.createLinearGradient(0, h, 0, 0);
-    strengthGrad.addColorStop(0.0, "rgba(64, 120, 255, 0.88)"); // weak: blue
-    strengthGrad.addColorStop(0.5, "rgba(106, 186, 255, 0.9)");
-    strengthGrad.addColorStop(0.8, "rgba(255, 166, 77, 0.9)");
-    strengthGrad.addColorStop(1.0, "rgba(255, 78, 78, 0.92)"); // strong: red
     const fillGrad = ctx.createLinearGradient(0, h, 0, 0);
-    fillGrad.addColorStop(0.0, "rgba(64, 120, 255, 0.12)");
-    fillGrad.addColorStop(0.5, "rgba(106, 186, 255, 0.16)");
-    fillGrad.addColorStop(0.8, "rgba(255, 166, 77, 0.18)");
-    fillGrad.addColorStop(1.0, "rgba(255, 78, 78, 0.2)");
+    if (isLight) {
+      // Higher-contrast palette for bright backgrounds.
+      strengthGrad.addColorStop(0.0, "rgba(0, 86, 255, 0.95)");   // weak: deep blue
+      strengthGrad.addColorStop(0.5, "rgba(0, 179, 255, 0.95)");
+      strengthGrad.addColorStop(0.8, "rgba(255, 133, 0, 0.97)");
+      strengthGrad.addColorStop(1.0, "rgba(224, 36, 36, 0.98)");  // strong: red
+      fillGrad.addColorStop(0.0, "rgba(0, 86, 255, 0.18)");
+      fillGrad.addColorStop(0.5, "rgba(0, 179, 255, 0.20)");
+      fillGrad.addColorStop(0.8, "rgba(255, 133, 0, 0.22)");
+      fillGrad.addColorStop(1.0, "rgba(224, 36, 36, 0.24)");
+    } else {
+      strengthGrad.addColorStop(0.0, "rgba(64, 120, 255, 0.88)"); // weak: blue
+      strengthGrad.addColorStop(0.5, "rgba(106, 186, 255, 0.9)");
+      strengthGrad.addColorStop(0.8, "rgba(255, 166, 77, 0.9)");
+      strengthGrad.addColorStop(1.0, "rgba(255, 78, 78, 0.92)"); // strong: red
+      fillGrad.addColorStop(0.0, "rgba(64, 120, 255, 0.12)");
+      fillGrad.addColorStop(0.5, "rgba(106, 186, 255, 0.16)");
+      fillGrad.addColorStop(0.8, "rgba(255, 166, 77, 0.18)");
+      fillGrad.addColorStop(1.0, "rgba(255, 78, 78, 0.2)");
+    }
 
     ctx.beginPath();
     headerSigSamples.forEach((sample, i) => {
@@ -250,9 +264,22 @@ function formatFreqForStep(hz, step) {
   return formatFreq(hz);
 }
 
+function formatWavelength(hz) {
+  if (!Number.isFinite(hz) || hz <= 0) return "--";
+  const meters = 299_792_458 / hz;
+  if (meters >= 1) return `${Math.round(meters)} m`;
+  return `${Math.round(meters * 100)} cm`;
+}
+
+function refreshWavelengthDisplay(hz) {
+  if (!wavelengthEl) return;
+  wavelengthEl.textContent = formatWavelength(hz);
+}
+
 function refreshFreqDisplay() {
   if (lastFreqHz == null || freqDirty) return;
   freqEl.value = formatFreqForStep(lastFreqHz, jogStep);
+  refreshWavelengthDisplay(lastFreqHz);
 }
 
 function parseFreqInput(val, defaultStep) {
@@ -371,14 +398,18 @@ function freqAllowed(hz) {
 // Convert dBm (wire format) to S-units (S1=-121dBm, S9=-73dBm, 6dB/S-unit).
 // Above S9, returns 9 + (overshoot in S-unit-equivalent, i.e. dB/10).
 function dbmToSUnits(dbm) {
-  if (dbm <= -121) return 0;
-  if (dbm >= -73) return 9 + (dbm + 73) / 10;
-  return (dbm + 121) / 6;
+  if (!Number.isFinite(dbm)) return 0;
+  // Guard against bogus backend values to keep display in a realistic range.
+  const clampedDbm = Math.max(-140, Math.min(20, dbm));
+  if (clampedDbm <= -121) return 0;
+  if (clampedDbm >= -73) return 9 + (clampedDbm + 73) / 10;
+  return (clampedDbm + 121) / 6;
 }
 
 function formatSignal(sUnits) {
-  if (sUnits <= 9) return `S${sUnits.toFixed(1)}`;
-  const overDb = (sUnits - 9) * 10;
+  if (!Number.isFinite(sUnits) || sUnits <= 9) return `S${Math.max(0, sUnits || 0).toFixed(1)}`;
+  // S9+60dB is already extremely strong; cap anything beyond that.
+  const overDb = Math.min(60, (sUnits - 9) * 10);
   return `S9 + ${overDb.toFixed(0)}dB`;
 }
 
@@ -444,15 +475,11 @@ function render(update) {
     if (JSON.stringify(modes) !== JSON.stringify(supportedModes)) {
       supportedModes = modes;
       modeEl.innerHTML = "";
-      const empty = document.createElement("option");
-      empty.value = "";
-      empty.textContent = "--";
-      modeEl.appendChild(empty);
       supportedModes.forEach((m) => {
         const opt = document.createElement("option");
         opt.value = m;
         opt.textContent = m;
-      modeEl.appendChild(opt);
+        modeEl.appendChild(opt);
       });
     }
   }
@@ -462,6 +489,7 @@ function render(update) {
   }
   if (update.status && update.status.freq && typeof update.status.freq.hz === "number") {
     lastFreqHz = update.status.freq.hz;
+    refreshWavelengthDisplay(lastFreqHz);
     if (!freqDirty) {
       refreshFreqDisplay();
     }
@@ -586,7 +614,9 @@ function render(update) {
     signalBar.style.width = "0%";
     signalValue.textContent = "--";
   }
-  bandLabel.textContent = typeof update.band === "string" ? update.band : "--";
+  if (bandLabel) {
+    bandLabel.textContent = typeof update.band === "string" ? update.band : "--";
+  }
   if (typeof update.enabled === "boolean") {
     powerBtn.disabled = false;
     powerBtn.textContent = update.enabled ? "Power Off" : "Power On";
@@ -995,6 +1025,7 @@ let aprsMap = null;
 let aprsMapBaseLayer = null;
 let aprsMapReceiverMarker = null;
 const stationMarkers = new Map();
+const locatorMarkers = new Map();
 const mapMarkers = new Set();
 const mapFilter = { aprs: true, ft8: true, wspr: true };
 
@@ -1172,23 +1203,50 @@ function escapeMapHtml(input) {
     .replaceAll("\"", "&quot;");
 }
 
-window.ft8MapAddLocator = function(message, grids, type = "ft8") {
+function locatorStyleForCount(count, type) {
+  const safeCount = Math.max(1, Number.isFinite(count) ? count : 1);
+  const intensity = Math.min(1, Math.log2(safeCount + 1) / 5);
+  const isWspr = type === "wspr";
+  return {
+    color: isWspr ? "#ff8f2a" : "#ffb020",
+    opacity: 0.45 + intensity * 0.5,
+    weight: 1 + intensity * 1.2,
+    fillColor: isWspr ? "#ff6a3d" : "#ff9b1a",
+    fillOpacity: 0.18 + intensity * 0.55,
+  };
+}
+
+window.ft8MapAddLocator = function(message, grids, type = "ft8", station = null) {
   if (!aprsMap) initAprsMap();
   if (!aprsMap) return;
   if (!Array.isArray(grids) || grids.length === 0) return;
+  const markerType = type === "wspr" ? "wspr" : "ft8";
   const unique = [...new Set(grids.map((g) => String(g).toUpperCase()))];
   const locatorsLines = unique.map((g) => escapeMapHtml(g)).join("<br>");
   for (const grid of unique) {
     const bounds = maidenheadToBounds(grid);
     if (!bounds) continue;
-    const popupContent = `<b>${escapeMapHtml(grid)}</b><br>${locatorsLines}`;
-    const marker = L.rectangle(bounds, {
-      color: "#ffb020",
-      weight: 1,
-      fillColor: "#ffb020",
-      fillOpacity: 0.25,
-    }).addTo(aprsMap).bindPopup(popupContent);
-    marker.__trxType = type === "wspr" ? "wspr" : "ft8";
+    const key = `${markerType}:${grid}`;
+    const stationId = station && String(station).trim() ? String(station).trim().toUpperCase() : "";
+    const existing = locatorMarkers.get(key);
+    if (existing) {
+      if (stationId) existing.stations.add(stationId);
+      const count = existing.stations.size || 1;
+      existing.marker.setStyle(locatorStyleForCount(count, markerType));
+      existing.marker.setPopupContent(
+        `<b>${escapeMapHtml(grid)}</b><br>Stations: ${count}<br>${locatorsLines}`
+      );
+      continue;
+    }
+
+    const stations = new Set();
+    if (stationId) stations.add(stationId);
+    const count = stations.size || 1;
+    const marker = L.rectangle(bounds, locatorStyleForCount(count, markerType))
+      .addTo(aprsMap)
+      .bindPopup(`<b>${escapeMapHtml(grid)}</b><br>Stations: ${count}<br>${locatorsLines}`);
+    marker.__trxType = markerType;
+    locatorMarkers.set(key, { marker, stations });
     mapMarkers.add(marker);
   }
   applyMapFilter();

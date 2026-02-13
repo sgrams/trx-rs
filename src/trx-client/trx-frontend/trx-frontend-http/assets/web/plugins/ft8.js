@@ -92,6 +92,18 @@ function extractAllGrids(message) {
   return out;
 }
 
+function extractLikelyCallsign(message) {
+  const parts = String(message || "").toUpperCase().split(/[^A-Z0-9/]+/);
+  for (const token of parts) {
+    if (!token) continue;
+    if (token.length < 3 || token.length > 12) continue;
+    if (token === "CQ" || token === "DE" || token === "QRZ" || token === "DX") continue;
+    if (/^[A-R]{2}\d{2}(?:[A-X]{2})?$/.test(token)) continue;
+    if (/^[A-Z0-9/]{1,5}\d[A-Z0-9/]{1,6}$/.test(token)) return token;
+  }
+  return null;
+}
+
 function escapeHtml(input) {
   return input
     .replaceAll("&", "&amp;")
@@ -154,9 +166,11 @@ document.getElementById("ft8-clear-btn").addEventListener("click", async () => {
 // --- Server-side FT8 decode handler ---
 window.onServerFt8 = function(msg) {
   ft8Status.textContent = "Receiving";
-  const grids = extractAllGrids((msg.message || "").toString());
+  const raw = (msg.message || "").toString();
+  const grids = extractAllGrids(raw);
+  const station = extractLikelyCallsign(raw);
   if (grids.length > 0 && window.ft8MapAddLocator) {
-    window.ft8MapAddLocator(msg.message || "", grids);
+    window.ft8MapAddLocator(raw, grids, "ft8", station);
   }
   addFt8Message({
     ts_ms: msg.ts_ms,

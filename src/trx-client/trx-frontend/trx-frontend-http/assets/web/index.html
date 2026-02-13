@@ -37,9 +37,10 @@
     </div>
     <div id="content" style="display:none;">
     <div class="status">
-      <div class="full-row">
-        <div class="label">Frequency<span class="band-tag" id="band-label">--</span></div>
+      <div class="full-row freq-row label-below-row">
+        <div class="label"><span>Frequency</span></div>
         <div class="inline freq-inline">
+          <div class="wavelength-display" id="wavelength" title="Wavelength">--</div>
           <input class="status-input" id="freq" type="text" value="--" />
           <div class="jog-step" id="jog-step">
             <button type="button" data-step="1000000">MHz</button>
@@ -49,16 +50,13 @@
         </div>
       </div>
       <div class="controls-row full-row">
-        <div class="controls-col">
-          <div class="label">Mode</div>
+        <div class="controls-col label-below-col">
+          <div class="label"><span>Mode</span></div>
           <div class="inline">
-            <select class="status-input" id="mode">
-              <option value="">--</option>
-            </select>
+            <select class="status-input" id="mode"></select>
           </div>
         </div>
         <div class="controls-col controls-col-center">
-          <div class="label">Tune</div>
           <div class="jog-container">
             <button id="jog-down" type="button" class="jog-btn">&minus;</button>
             <div class="jog-wheel" id="jog-wheel">
@@ -67,8 +65,8 @@
             <button id="jog-up" type="button" class="jog-btn">+</button>
           </div>
         </div>
-        <div class="controls-col controls-col-power">
-          <div class="label">Transmit / Power</div>
+        <div class="controls-col controls-col-power label-below-col">
+          <div class="label"><span>Transmit / Power</span></div>
           <div class="btn-grid">
             <button id="ptt-btn" type="button">Toggle PTT</button>
             <button id="power-btn" type="button">Toggle Power</button>
@@ -76,12 +74,12 @@
           </div>
         </div>
       </div>
-      <div class="full-row" id="vfo-row">
-        <div class="label">VFO</div>
+      <div class="full-row label-below-row" id="vfo-row">
+        <div class="label"><span>VFO</span></div>
         <div class="vfo-picker" id="vfo-picker"></div>
       </div>
-      <div class="full-row">
-        <div class="label">Signal</div>
+      <div class="full-row label-below-row">
+        <div class="label"><span>Signal</span></div>
         <div class="signal" style="gap: 1rem;">
           <div class="signal-bar"><div class="signal-bar-fill" id="signal-bar"></div></div>
           <div class="signal-value" id="signal-value">--</div>
@@ -92,8 +90,8 @@
           <span id="sig-result"></span>
         </div>
       </div>
-      <div class="full-row" id="tx-meters" style="display:none;">
-        <div class="label">TX Meters</div>
+      <div class="full-row label-below-row" id="tx-meters" style="display:none;">
+        <div class="label"><span>TX Meters</span></div>
         <div class="meter" style="gap: 1rem; margin-bottom: 0.4rem;">
           <div class="meter-bar"><div class="meter-fill" id="pwr-bar"></div></div>
           <div class="meter-value" id="pwr-value">PWR --</div>
@@ -104,15 +102,15 @@
         </div>
       </div>
       <div id="tx-limit-row" style="display:none;">
-        <div class="label">TX Limit — units depend on rig (percentage/watts)</div>
+        <div class="label"><span>TX Limit — units depend on rig (percentage/watts)</span></div>
         <div class="inline">
           <input class="status-input" id="tx-limit" type="number" min="0" max="255" step="1" value="" placeholder="--" />
           <button id="tx-limit-btn" type="button">Set</button>
         </div>
       </div>
     </div>
-    <div class="full-row" id="audio-row">
-      <div class="label">Audio</div>
+    <div class="full-row label-below-row" id="audio-row">
+      <div class="label"><span>Audio</span></div>
       <div class="inline" style="gap: 0.6rem; flex-wrap: wrap; align-items: center;">
         <button id="rx-audio-btn" type="button">RX Audio</button>
         <button id="tx-audio-btn" type="button">TX Audio</button>

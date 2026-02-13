@@ -68,6 +68,18 @@ function extractAllGrids(message) {
   return out;
 }
 
+function extractLikelyCallsign(message) {
+  const parts = String(message || "").toUpperCase().split(/[^A-Z0-9/]+/);
+  for (const token of parts) {
+    if (!token) continue;
+    if (token.length < 3 || token.length > 12) continue;
+    if (token === "CQ" || token === "DE" || token === "QRZ" || token === "DX") continue;
+    if (/^[A-R]{2}\d{2}(?:[A-X]{2})?$/.test(token)) continue;
+    if (/^[A-Z0-9/]{1,5}\d[A-Z0-9/]{1,6}$/.test(token)) return token;
+  }
+  return null;
+}
+
 function applyWsprFilterToRow(row) {
   if (!wsprFilterText) {
     row.style.display = "";
@@ -102,8 +114,9 @@ window.onServerWspr = function(msg) {
   wsprStatus.textContent = "Receiving";
   const raw = (msg.message || "").toString();
   const grids = extractAllGrids(raw);
+  const station = extractLikelyCallsign(raw);
   if (grids.length > 0 && window.ft8MapAddLocator) {
-    window.ft8MapAddLocator(raw, grids, "wspr");
+    window.ft8MapAddLocator(raw, grids, "wspr", station);
   }
   addWsprMessage({
     ts_ms: msg.ts_ms,
