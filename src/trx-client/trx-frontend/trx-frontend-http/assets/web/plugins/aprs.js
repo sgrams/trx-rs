@@ -1,7 +1,9 @@
 // --- APRS Decoder Plugin (server-side decode) ---
 const aprsStatus = document.getElementById("aprs-status");
 const aprsPacketsEl = document.getElementById("aprs-packets");
+const aprsFilterInput = document.getElementById("aprs-filter");
 const APRS_MAX_PACKETS = 100;
+let aprsFilterText = "";
 
 // Persistent packet history
 let aprsPacketHistory = loadSetting("aprsPackets", []);
@@ -66,8 +68,35 @@ function renderAprsRow(pkt) {
     const osmUrl = `https://www.openstreetmap.org/?mlat=${pkt.lat}&mlon=${pkt.lon}#map=15/${pkt.lat}/${pkt.lon}`;
     posHtml = ` <a class="aprs-pos" href="${osmUrl}" target="_blank">${pkt.lat.toFixed(4)}, ${pkt.lon.toFixed(4)}</a>`;
   }
+  row.dataset.filterText = [
+    pkt.srcCall,
+    pkt.destCall,
+    pkt.path,
+    pkt.info,
+    pkt.type,
+    pkt.lat != null ? pkt.lat.toFixed(4) : "",
+    pkt.lon != null ? pkt.lon.toFixed(4) : "",
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toUpperCase();
   row.innerHTML = `<span class="aprs-time">${ts}</span>${symbolHtml}<span class="aprs-call">${pkt.srcCall}</span>&gt;${pkt.destCall}${pkt.path ? "," + pkt.path : ""}: <span title="${pkt.type}">${renderAprsInfo(pkt)}</span>${posHtml}${crcTag}`;
+  applyAprsFilterToRow(row);
   return row;
+}
+
+function applyAprsFilterToRow(row) {
+  if (!aprsFilterText) {
+    row.style.display = "";
+    return;
+  }
+  const message = row.dataset.filterText || "";
+  row.style.display = message.includes(aprsFilterText) ? "" : "none";
+}
+
+function applyAprsFilterToAll() {
+  const rows = aprsPacketsEl.querySelectorAll(".aprs-packet");
+  rows.forEach((row) => applyAprsFilterToRow(row));
 }
 
 function addAprsPacket(pkt) {
@@ -106,6 +135,13 @@ for (let i = aprsPacketHistory.length - 1; i >= 0; i--) {
   if (pkt.lat != null && pkt.lon != null && window.aprsMapAddStation) {
     window.aprsMapAddStation(pkt.srcCall, pkt.lat, pkt.lon, pkt.info, pkt.symbolTable, pkt.symbolCode);
   }
+}
+
+if (aprsFilterInput) {
+  aprsFilterInput.addEventListener("input", () => {
+    aprsFilterText = aprsFilterInput.value.trim().toUpperCase();
+    applyAprsFilterToAll();
+  });
 }
 
 // --- Server-side APRS decode handler ---

@@ -33,6 +33,7 @@ const contentEl = document.getElementById("content");
 const serverSubtitle = document.getElementById("server-subtitle");
 const loadingTitle = document.getElementById("loading-title");
 const loadingSub = document.getElementById("loading-sub");
+const headerSigCanvas = document.getElementById("header-sig-canvas");
 
 let lastControl;
 let lastTxEn = null;
@@ -78,6 +79,127 @@ let lastEventAt = Date.now();
 let es;
 let esHeartbeat;
 let reconnectTimer = null;
+let headerSigSamples = [];
+let headerSigTimer = null;
+const HEADER_SIG_WINDOW_MS = 10_000;
+
+function resizeHeaderSignalCanvas() {
+  if (!headerSigCanvas) return;
+  const cssW = Math.floor(headerSigCanvas.clientWidth);
+  const cssH = Math.floor(headerSigCanvas.clientHeight);
+  if (cssW <= 0 || cssH <= 0) return;
+  const dpr = window.devicePixelRatio || 1;
+  const nextW = Math.floor(cssW * dpr);
+  const nextH = Math.floor(cssH * dpr);
+  if (headerSigCanvas.width !== nextW || headerSigCanvas.height !== nextH) {
+    headerSigCanvas.width = nextW;
+    headerSigCanvas.height = nextH;
+  }
+  drawHeaderSignalGraph();
+}
+
+function pushHeaderSignalSample(sUnits) {
+  if (!headerSigCanvas) return;
+  const now = Date.now();
+  const sample = Number.isFinite(sUnits) ? Math.max(0, Math.min(20, sUnits)) : 0;
+  headerSigSamples.push({ t: now, v: sample });
+  while (headerSigSamples.length && now - headerSigSamples[0].t > HEADER_SIG_WINDOW_MS) {
+    headerSigSamples.shift();
+  }
+  drawHeaderSignalGraph();
+}
+
+function startHeaderSignalSampling() {
+  if (!headerSigCanvas || headerSigTimer) return;
+  headerSigTimer = setInterval(() => {
+    pushHeaderSignalSample(Number.isFinite(sigLastSUnits) ? sigLastSUnits : 0);
+  }, 120);
+}
+
+function drawHeaderSignalGraph() {
+  if (!headerSigCanvas) return;
+  const ctx = headerSigCanvas.getContext("2d");
+  if (!ctx) return;
+  const dpr = window.devicePixelRatio || 1;
+  const w = headerSigCanvas.width / dpr;
+  const h = headerSigCanvas.height / dpr;
+  if (w <= 0 || h <= 0) return;
+
+  ctx.save();
+  ctx.scale(dpr, dpr);
+  ctx.clearRect(0, 0, w, h);
+
+  // Soft horizontal guides for readability.
+  ctx.strokeStyle = "rgba(148, 163, 184, 0.16)";
+  ctx.lineWidth = 1;
+  for (let i = 1; i <= 3; i++) {
+    const y = Math.round((h * i) / 4) + 0.5;
+    ctx.beginPath();
+    ctx.moveTo(0, y);
+    ctx.lineTo(w, y);
+    ctx.stroke();
+  }
+
+  // Minimal S-unit scale markers.
+  const yFor = (v) => h - (Math.max(0, Math.min(20, v)) / 20) * (h - 2) - 1;
+  ctx.fillStyle = "rgba(154, 164, 181, 0.55)";
+  ctx.font = "10px sans-serif";
+  ctx.textAlign = "right";
+  ctx.textBaseline = "middle";
+  [["S9+", 18], ["S9", 9], ["S0", 0]].forEach(([label, val]) => {
+    const y = yFor(val);
+    ctx.fillText(label, w - 4, y);
+    ctx.strokeStyle = "rgba(154, 164, 181, 0.22)";
+    ctx.beginPath();
+    ctx.moveTo(2, y + 0.5);
+    ctx.lineTo(w - 36, y + 0.5);
+    ctx.stroke();
+  });
+
+  if (headerSigSamples.length > 1) {
+    const maxVal = 20; // includes S9+ scale overshoot.
+    const toY = (v) => h - (Math.max(0, Math.min(maxVal, v)) / maxVal) * (h - 2) - 1;
+    const now = Date.now();
+    const windowStart = now - HEADER_SIG_WINDOW_MS;
+    const toX = (t) => ((t - windowStart) / HEADER_SIG_WINDOW_MS) * w;
+    const strengthGrad = ctx.createLinearGradient(0, h, 0, 0);
+    strengthGrad.addColorStop(0.0, "rgba(64, 120, 255, 0.88)"); // weak: blue
+    strengthGrad.addColorStop(0.5, "rgba(106, 186, 255, 0.9)");
+    strengthGrad.addColorStop(0.8, "rgba(255, 166, 77, 0.9)");
+    strengthGrad.addColorStop(1.0, "rgba(255, 78, 78, 0.92)"); // strong: red
+    const fillGrad = ctx.createLinearGradient(0, h, 0, 0);
+    fillGrad.addColorStop(0.0, "rgba(64, 120, 255, 0.12)");
+    fillGrad.addColorStop(0.5, "rgba(106, 186, 255, 0.16)");
+    fillGrad.addColorStop(0.8, "rgba(255, 166, 77, 0.18)");
+    fillGrad.addColorStop(1.0, "rgba(255, 78, 78, 0.2)");
+
+    ctx.beginPath();
+    headerSigSamples.forEach((sample, i) => {
+      const x = toX(sample.t);
+      const y = toY(sample.v);
+      if (i === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    });
+    ctx.lineTo(w, h);
+    ctx.lineTo(0, h);
+    ctx.closePath();
+    ctx.fillStyle = fillGrad;
+    ctx.fill();
+
+    ctx.beginPath();
+    headerSigSamples.forEach((sample, i) => {
+      const x = toX(sample.t);
+      const y = toY(sample.v);
+      if (i === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    });
+    ctx.strokeStyle = strengthGrad;
+    ctx.lineWidth = 1.25;
+    ctx.stroke();
+  }
+
+  ctx.restore();
+}
 
 function formatFreq(hz) {
   if (!Number.isFinite(hz)) return "--";
@@ -242,10 +364,8 @@ let serverLat = null;
 let serverLon = null;
 
 function updateTitle() {
-  let title = "trx-rs";
-  if (serverVersion) title += ` v${serverVersion}`;
-  if (serverCallsign) title += ` @ ${serverCallsign}'s`;
-  title += ` ${rigName}`;
+  let title = rigName || "Rig";
+  if (serverCallsign) title = `${serverCallsign}'s ${title}`;
   document.getElementById("rig-title").textContent = title;
 }
 
@@ -830,6 +950,9 @@ document.querySelector(".tab-bar").addEventListener("click", (e) => {
 });
 
 connect();
+resizeHeaderSignalCanvas();
+startHeaderSignalSampling();
+window.addEventListener("resize", resizeHeaderSignalCanvas);
 
 // --- Leaflet Map (lazy-initialized) ---
 let aprsMap = null;

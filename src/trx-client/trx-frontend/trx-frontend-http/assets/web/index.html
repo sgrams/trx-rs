@@ -12,10 +12,13 @@
 <body>
   <div class="card" id="card">
     <div class="header">
-      <div>
+      <div class="header-text">
         <div class="title"><span id="rig-title">trx-rs</span></div>
         <div class="subtitle" id="server-subtitle"></div>
         <div class="subtitle">{pkg} v{ver}</div>
+      </div>
+      <div class="header-signal-wrap" aria-hidden="true">
+        <canvas id="header-sig-canvas"></canvas>
       </div>
       <img id="logo" class="header-logo" src="/logo.png?v=1" alt="trx logo" onerror="this.style.display='none'" />
     </div>
@@ -165,6 +168,7 @@
       <div id="subtab-aprs" class="sub-tab-panel" style="display:none;">
         <div class="aprs-controls">
           <button id="aprs-clear-btn" type="button">Clear</button>
+          <input id="aprs-filter" class="ft8-filter" type="text" placeholder="Filter (e.g. SP2, beacon)" />
           <small id="aprs-status" style="color:var(--text-muted);">Waiting for server decode</small>
         </div>
         <div id="aprs-packets"></div>
@@ -190,6 +194,7 @@
         <div class="ft8-controls">
           <button id="wspr-decode-toggle-btn" type="button">Enable WSPR</button>
           <button id="wspr-clear-btn" type="button">Clear</button>
+          <input id="wspr-filter" class="ft8-filter" type="text" placeholder="Filter (e.g. K1ABC, FN31)" />
           <small id="wspr-status" style="color:var(--text-muted);">Waiting for server decode</small>
           <small id="wspr-period" style="color:var(--text-muted);">Next slot --:--</small>
         </div>

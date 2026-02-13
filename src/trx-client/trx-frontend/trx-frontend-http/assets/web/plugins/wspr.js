@@ -2,8 +2,10 @@
 const wsprStatus = document.getElementById("wspr-status");
 const wsprPeriodEl = document.getElementById("wspr-period");
 const wsprMessagesEl = document.getElementById("wspr-messages");
+const wsprFilterInput = document.getElementById("wspr-filter");
 const WSPR_MAX_MESSAGES = 200;
 const WSPR_PERIOD_SECONDS = 120;
+let wsprFilterText = "";
 
 function fmtWsprTime(tsMs) {
   if (!tsMs) return "--:--:--";
@@ -31,7 +33,9 @@ function renderWsprRow(msg) {
   const rfHz = Number.isFinite(msg.freq_hz) && Number.isFinite(baseHz) ? (baseHz + msg.freq_hz) : null;
   const freq = Number.isFinite(rfHz) ? rfHz.toFixed(0) : "--";
   const message = (msg.message || "").toString();
+  row.dataset.message = message.toUpperCase();
   row.innerHTML = `<span class="ft8-time">${fmtWsprTime(msg.ts_ms)}</span><span class="ft8-snr">${snr}</span><span class="ft8-dt">${dt}</span><span class="ft8-freq">${freq}</span><span class="ft8-msg">${escapeWsprHtml(message)}</span>`;
+  applyWsprFilterToRow(row);
   return row;
 }
 
@@ -48,6 +52,27 @@ function escapeWsprHtml(input) {
     .replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;")
     .replaceAll("\"", "&quot;");
+}
+
+function applyWsprFilterToRow(row) {
+  if (!wsprFilterText) {
+    row.style.display = "";
+    return;
+  }
+  const message = row.dataset.message || "";
+  row.style.display = message.includes(wsprFilterText) ? "" : "none";
+}
+
+function applyWsprFilterToAll() {
+  const rows = wsprMessagesEl.querySelectorAll(".ft8-row");
+  rows.forEach((row) => applyWsprFilterToRow(row));
+}
+
+if (wsprFilterInput) {
+  wsprFilterInput.addEventListener("input", () => {
+    wsprFilterText = wsprFilterInput.value.trim().toUpperCase();
+    applyWsprFilterToAll();
+  });
 }
 
 document.getElementById("wspr-decode-toggle-btn").addEventListener("click", async () => {
