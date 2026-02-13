@@ -179,7 +179,8 @@ function applyAuthRestrictions() {
     if (jogWheel) jogWheel.style.opacity = "0.5";
     jogButtons.forEach(btn => btn.disabled = true);
 
-    // Disable plugin enable/disable buttons and clear buttons
+    // Disable plugin enable/disable buttons and decode history clear buttons
+    // Note: sig-clear-btn is allowed for RX (clears local measurements only)
     const pluginToggleBtns = [
       "ft8-decode-toggle-btn",
       "wspr-decode-toggle-btn",
@@ -187,8 +188,7 @@ function applyAuthRestrictions() {
       "aprs-clear-btn",
       "ft8-clear-btn",
       "wspr-clear-btn",
-      "cw-clear-btn",
-      "sig-clear-btn"
+      "cw-clear-btn"
     ];
     pluginToggleBtns.forEach(id => {
       const btn = document.getElementById(id);
