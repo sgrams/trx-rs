@@ -351,8 +351,12 @@ pub async fn session_status(
     req: HttpRequest,
     auth_state: web::Data<AuthState>,
 ) -> Result<impl Responder, Error> {
+    // If auth is disabled, grant full control access without requiring login
     if !auth_state.config.enabled {
-        return Ok(HttpResponse::NotFound().finish());
+        return Ok(HttpResponse::Ok().json(SessionStatus {
+            authenticated: true,
+            role: Some("control".to_string()),
+        }));
     }
 
     let session_id = extract_session_id(&req);
