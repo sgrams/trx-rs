@@ -7,8 +7,9 @@
 //! Supports loading configuration from TOML files with the following search order:
 //! 1. Path specified via `--config` CLI argument
 //! 2. `./trx-client.toml` (current directory)
-//! 3. `~/.config/trx-rs/client.toml` (XDG config)
-//! 4. `/etc/trx-rs/client.toml` (system-wide)
+//! 3. `~/.trx-client.toml` (home directory)
+//! 4. `~/.config/trx-rs/client.toml` (XDG config)
+//! 5. `/etc/trx-rs/client.toml` (system-wide)
 
 use std::net::IpAddr;
 use std::path::{Path, PathBuf};
@@ -452,6 +453,9 @@ impl ConfigFile for ClientConfig {
     fn default_search_paths() -> Vec<PathBuf> {
         let mut paths = Vec::new();
         paths.push(PathBuf::from("trx-client.toml"));
+        if let Some(home_dir) = dirs::home_dir() {
+            paths.push(home_dir.join(".trx-client.toml"));
+        }
         if let Some(config_dir) = dirs::config_dir() {
             paths.push(config_dir.join("trx-rs").join("client.toml"));
         }
