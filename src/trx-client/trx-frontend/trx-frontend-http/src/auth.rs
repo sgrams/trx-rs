@@ -529,11 +529,19 @@ where
             }
 
             if !access.allows(role) {
-                // Access denied - return 401/403
+                // Access denied
                 return Box::pin(async move {
-                    Err(actix_web::error::ErrorUnauthorized(
-                        "Unauthorized".to_string(),
-                    ))
+                    if role.is_some() {
+                        // Has session but insufficient permissions - 403 Forbidden
+                        Err(actix_web::error::ErrorForbidden(
+                            "Insufficient permissions".to_string(),
+                        ))
+                    } else {
+                        // No session - 401 Unauthorized
+                        Err(actix_web::error::ErrorUnauthorized(
+                            "Authentication required".to_string(),
+                        ))
+                    }
                 });
             }
         }
