@@ -78,18 +78,24 @@ fn build_server(
     let state_data = web::Data::new(state_rx);
     let rig_tx = web::Data::new(rig_tx);
     let clients = web::Data::new(Arc::new(AtomicUsize::new(0)));
-    let context_data = web::Data::new(context);
 
-    // Create authentication state (default: disabled)
+    // Extract auth config values before moving context
+    let same_site = match context.http_auth_cookie_same_site.as_str() {
+        "Strict" => SameSite::Strict,
+        "None" => SameSite::None,
+        _ => SameSite::Lax,  // default
+    };
     let auth_config = AuthConfig::new(
-        false,  // enabled - disabled by default
-        None,   // rx_passphrase
-        None,   // control_passphrase
-        true,   // tx_access_control_enabled
-        Duration::from_secs(480 * 60),  // session_ttl (480 minutes)
-        false,  // cookie_secure
-        SameSite::Lax,  // cookie_same_site
+        context.http_auth_enabled,
+        context.http_auth_rx_passphrase.clone(),
+        context.http_auth_control_passphrase.clone(),
+        context.http_auth_tx_access_control_enabled,
+        Duration::from_secs(context.http_auth_session_ttl_secs),
+        context.http_auth_cookie_secure,
+        same_site,
     );
+
+    let context_data = web::Data::new(context);
     let auth_state = web::Data::new(AuthState::new(auth_config.clone()));
 
     // Spawn session cleanup task if auth is enabled

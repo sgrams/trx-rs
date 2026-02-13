@@ -126,6 +126,20 @@ pub struct FrontendRuntimeContext {
     pub rigctl_listen_addr: Arc<Mutex<Option<SocketAddr>>>,
     /// Guard to avoid spawning duplicate decode collectors.
     pub decode_collector_started: AtomicBool,
+    /// HTTP frontend authentication configuration (enabled, passphrases, TTL, etc.)
+    pub http_auth_enabled: bool,
+    /// HTTP frontend auth rx passphrase
+    pub http_auth_rx_passphrase: Option<String>,
+    /// HTTP frontend auth control passphrase
+    pub http_auth_control_passphrase: Option<String>,
+    /// HTTP frontend auth tx access control enabled
+    pub http_auth_tx_access_control_enabled: bool,
+    /// HTTP frontend auth session TTL in seconds
+    pub http_auth_session_ttl_secs: u64,
+    /// HTTP frontend auth cookie secure flag
+    pub http_auth_cookie_secure: bool,
+    /// HTTP frontend auth cookie same-site policy
+    pub http_auth_cookie_same_site: String,
 }
 
 impl FrontendRuntimeContext {
@@ -144,6 +158,13 @@ impl FrontendRuntimeContext {
             rigctl_clients: Arc::new(AtomicUsize::new(0)),
             rigctl_listen_addr: Arc::new(Mutex::new(None)),
             decode_collector_started: AtomicBool::new(false),
+            http_auth_enabled: false,
+            http_auth_rx_passphrase: None,
+            http_auth_control_passphrase: None,
+            http_auth_tx_access_control_enabled: true,
+            http_auth_session_ttl_secs: 480 * 60,
+            http_auth_cookie_secure: false,
+            http_auth_cookie_same_site: "Lax".to_string(),
         }
     }
 }

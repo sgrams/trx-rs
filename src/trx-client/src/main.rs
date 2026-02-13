@@ -159,6 +159,19 @@ async fn async_init() -> DynResult<AppState> {
         .cloned()
         .collect();
 
+    // Set HTTP frontend authentication config
+    frontend_runtime.http_auth_enabled = cfg.frontends.http.auth.enabled;
+    frontend_runtime.http_auth_rx_passphrase = cfg.frontends.http.auth.rx_passphrase.clone();
+    frontend_runtime.http_auth_control_passphrase = cfg.frontends.http.auth.control_passphrase.clone();
+    frontend_runtime.http_auth_tx_access_control_enabled = cfg.frontends.http.auth.tx_access_control_enabled;
+    frontend_runtime.http_auth_session_ttl_secs = cfg.frontends.http.auth.session_ttl_min * 60;
+    frontend_runtime.http_auth_cookie_secure = cfg.frontends.http.auth.cookie_secure;
+    frontend_runtime.http_auth_cookie_same_site = match cfg.frontends.http.auth.cookie_same_site {
+        config::CookieSameSite::Strict => "Strict".to_string(),
+        config::CookieSameSite::Lax => "Lax".to_string(),
+        config::CookieSameSite::None => "None".to_string(),
+    };
+
     // Resolve remote URL: CLI > config [remote] section > error
     let remote_url = cli
         .url
