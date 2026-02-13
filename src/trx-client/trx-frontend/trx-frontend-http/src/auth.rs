@@ -536,8 +536,14 @@ where
                         Err(actix_web::error::ErrorForbidden(
                             "Insufficient permissions".to_string(),
                         ))
+                    } else if allow_unrestricted_read {
+                        // No session but rx access is unrestricted - 403 Forbidden
+                        // (user has implicit rx role from unrestricted access)
+                        Err(actix_web::error::ErrorForbidden(
+                            "Insufficient permissions".to_string(),
+                        ))
                     } else {
-                        // No session - 401 Unauthorized
+                        // No session and no unrestricted access - 401 Unauthorized
                         Err(actix_web::error::ErrorUnauthorized(
                             "Authentication required".to_string(),
                         ))
