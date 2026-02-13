@@ -58,11 +58,13 @@ function showAuthGate() {
   document.getElementById("loading").style.display = "none";
   document.getElementById("content").style.display = "none";
   document.getElementById("auth-gate").style.display = "block";
+  document.getElementById("tab-bar").style.display = "none";
 }
 
 function hideAuthGate() {
   document.getElementById("auth-gate").style.display = "none";
   document.getElementById("loading").style.display = "block";
+  document.getElementById("tab-bar").style.display = "";
 }
 
 function showAuthError(msg) {
