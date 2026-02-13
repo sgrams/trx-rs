@@ -54,11 +54,17 @@ async function authLogout() {
   }
 }
 
-function showAuthGate() {
+function showAuthGate(allowGuest = false) {
   document.getElementById("loading").style.display = "none";
   document.getElementById("content").style.display = "none";
   document.getElementById("auth-gate").style.display = "block";
   document.getElementById("tab-bar").style.display = "none";
+
+  // Show guest button if guest mode is available
+  const guestBtn = document.getElementById("auth-guest-btn");
+  if (guestBtn) {
+    guestBtn.style.display = allowGuest ? "block" : "none";
+  }
 }
 
 function hideAuthGate() {
@@ -1150,6 +1156,15 @@ document.querySelector(".tab-bar").addEventListener("click", (e) => {
 async function initializeApp() {
   const authStatus = await checkAuthStatus();
   if (authStatus.authenticated) {
+    // User has valid session
+    authRole = authStatus.role;
+    updateAuthUI();
+    applyAuthRestrictions();
+    connect();
+    resizeHeaderSignalCanvas();
+    startHeaderSignalSampling();
+  } else if (authStatus.role) {
+    // No session but role granted (guest mode available)
     authRole = authStatus.role;
     updateAuthUI();
     applyAuthRestrictions();
@@ -1157,7 +1172,9 @@ async function initializeApp() {
     resizeHeaderSignalCanvas();
     startHeaderSignalSampling();
   } else {
-    showAuthGate();
+    // Auth required - show login screen with optional guest button
+    const allowGuest = authStatus.role === "rx";
+    showAuthGate(allowGuest);
   }
 }
 
@@ -1187,6 +1204,21 @@ document.getElementById("auth-form").addEventListener("submit", async (e) => {
     btn.textContent = "Login";
   }
 });
+
+// Setup guest button
+const guestBtn = document.getElementById("auth-guest-btn");
+if (guestBtn) {
+  guestBtn.addEventListener("click", async () => {
+    authRole = "rx";
+    document.getElementById("auth-passphrase").value = "";
+    hideAuthGate();
+    updateAuthUI();
+    applyAuthRestrictions();
+    connect();
+    resizeHeaderSignalCanvas();
+    startHeaderSignalSampling();
+  });
+}
 
 // Setup logout button
 document.getElementById("logout-btn").addEventListener("click", async () => {
