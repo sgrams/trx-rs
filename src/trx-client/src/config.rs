@@ -206,6 +206,7 @@ impl Default for HttpAuthConfig {
 
 impl HttpAuthConfig {
     /// Convert session TTL from minutes to Duration
+    #[allow(dead_code)]
     pub fn session_ttl(&self) -> Duration {
         Duration::from_secs(self.session_ttl_min * 60)
     }
@@ -366,7 +367,15 @@ impl ClientConfig {
                     enabled: true,
                     listen: IpAddr::from([127, 0, 0, 1]),
                     port: 8080,
-                    auth: HttpAuthConfig::default(),
+                    auth: HttpAuthConfig {
+                        enabled: false,
+                        rx_passphrase: None,
+                        control_passphrase: None,
+                        tx_access_control_enabled: true,
+                        session_ttl_min: 480,
+                        cookie_secure: false,
+                        cookie_same_site: CookieSameSite::Lax,
+                    },
                 },
                 rigctl: RigctlFrontendConfig {
                     enabled: false,
