@@ -629,9 +629,18 @@ function setDisabled(disabled) {
 }
 
 let serverVersion = null;
+let serverBuildDate = null;
 let serverCallsign = null;
 let serverLat = null;
 let serverLon = null;
+
+function updateFooterBuildInfo() {
+  const serverEl = document.getElementById("footer-server-build");
+  if (!serverEl) return;
+  const ver = serverVersion || "--";
+  const build = serverBuildDate || "--";
+  serverEl.textContent = `trx-server v${ver} ${build}`;
+}
 
 function updateTitle() {
   let title = rigName || "Rig";
@@ -643,10 +652,12 @@ function render(update) {
   if (!update) return;
   if (update.info && update.info.model) rigName = update.info.model;
   if (update.server_version) serverVersion = update.server_version;
+  if (update.server_build_date) serverBuildDate = update.server_build_date;
   if (update.server_callsign) serverCallsign = update.server_callsign;
   if (update.server_latitude != null) serverLat = update.server_latitude;
   if (update.server_longitude != null) serverLon = update.server_longitude;
   updateTitle();
+  updateFooterBuildInfo();
 
   initialized = !!update.initialized;
   if (!initialized) {

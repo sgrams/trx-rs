@@ -224,6 +224,7 @@ fn build_rig_task_config(
         initial_mode: cfg.rig.initial_mode.clone(),
         server_callsign: resolved.callsign.clone(),
         server_version: Some(env!("CARGO_PKG_VERSION").to_string()),
+        server_build_date: Some(env!("TRX_SERVER_BUILD_DATE").to_string()),
         server_latitude: resolved.latitude,
         server_longitude: resolved.longitude,
         pskreporter_status,
@@ -302,6 +303,7 @@ async fn main() -> DynResult<()> {
     let initial_state = RigState::new_with_metadata(
         resolved.callsign.clone(),
         Some(env!("CARGO_PKG_VERSION").to_string()),
+        Some(env!("TRX_SERVER_BUILD_DATE").to_string()),
         resolved.latitude,
         resolved.longitude,
         cfg.rig.initial_freq_hz,

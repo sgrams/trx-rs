@@ -38,6 +38,7 @@ pub struct RigTaskConfig {
     pub initial_mode: RigMode,
     pub server_callsign: Option<String>,
     pub server_version: Option<String>,
+    pub server_build_date: Option<String>,
     pub server_latitude: Option<f64>,
     pub server_longitude: Option<f64>,
     pub pskreporter_status: Option<String>,
@@ -60,6 +61,7 @@ impl Default for RigTaskConfig {
             initial_mode: RigMode::USB,
             server_callsign: None,
             server_version: None,
+            server_build_date: None,
             server_latitude: None,
             server_longitude: None,
             pskreporter_status: None,
@@ -102,6 +104,7 @@ pub async fn run_rig_task(
     let mut state = RigState::new_with_metadata(
         config.server_callsign.clone(),
         config.server_version.clone(),
+        config.server_build_date.clone(),
         config.server_latitude,
         config.server_longitude,
         config.initial_freq_hz,

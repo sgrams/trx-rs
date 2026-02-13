@@ -21,6 +21,8 @@ pub struct RigState {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub server_version: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub server_build_date: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub server_latitude: Option<f64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub server_longitude: Option<f64>,
@@ -114,6 +116,7 @@ impl RigState {
             control: RigControl::default(),
             server_callsign: None,
             server_version: None,
+            server_build_date: None,
             server_latitude: None,
             server_longitude: None,
             pskreporter_status: None,
@@ -135,6 +138,7 @@ impl RigState {
     pub fn new_with_metadata(
         callsign: Option<String>,
         version: Option<String>,
+        build_date: Option<String>,
         latitude: Option<f64>,
         longitude: Option<f64>,
         initial_freq_hz: u64,
@@ -143,6 +147,7 @@ impl RigState {
         let mut state = Self::new_uninitialized();
         state.server_callsign = callsign;
         state.server_version = version;
+        state.server_build_date = build_date;
         state.server_latitude = latitude;
         state.server_longitude = longitude;
         state.status.freq = Freq {
@@ -170,6 +175,7 @@ impl RigState {
             },
             server_callsign: snapshot.server_callsign,
             server_version: snapshot.server_version,
+            server_build_date: snapshot.server_build_date,
             server_latitude: snapshot.server_latitude,
             server_longitude: snapshot.server_longitude,
             pskreporter_status: snapshot.pskreporter_status,
@@ -206,6 +212,7 @@ impl RigState {
             initialized: self.initialized,
             server_callsign: self.server_callsign.clone(),
             server_version: self.server_version.clone(),
+            server_build_date: self.server_build_date.clone(),
             server_latitude: self.server_latitude,
             server_longitude: self.server_longitude,
             pskreporter_status: self.pskreporter_status.clone(),
@@ -254,6 +261,8 @@ pub struct RigSnapshot {
     pub server_callsign: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub server_version: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub server_build_date: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub server_latitude: Option<f64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]

@@ -410,6 +410,7 @@ mod tests {
             initialized: true,
             server_callsign: Some("N0CALL".to_string()),
             server_version: Some("test".to_string()),
+            server_build_date: Some("2026-01-01".to_string()),
             server_latitude: None,
             server_longitude: None,
             pskreporter_status: Some("Disabled".to_string()),

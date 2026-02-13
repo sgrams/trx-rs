@@ -657,6 +657,7 @@ mod tests {
             initialized: true,
             server_callsign: None,
             server_version: None,
+            server_build_date: None,
             server_latitude: None,
             server_longitude: None,
             pskreporter_status: None,

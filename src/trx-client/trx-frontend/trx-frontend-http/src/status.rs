@@ -4,6 +4,7 @@
 
 const PKG_NAME: &str = env!("CARGO_PKG_NAME");
 const PKG_VERSION: &str = env!("CARGO_PKG_VERSION");
+const CLIENT_BUILD_DATE: &str = env!("TRX_CLIENT_BUILD_DATE");
 
 const INDEX_HTML: &str = include_str!("../assets/web/index.html");
 pub const STYLE_CSS: &str = include_str!("../assets/web/style.css");
@@ -17,4 +18,5 @@ pub fn index_html() -> String {
     INDEX_HTML
         .replace("{pkg}", PKG_NAME)
         .replace("{ver}", PKG_VERSION)
+        .replace("{client_build_date}", CLIENT_BUILD_DATE)
 }
