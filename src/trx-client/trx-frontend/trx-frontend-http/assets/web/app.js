@@ -54,7 +54,11 @@ async function authLogout() {
     document.getElementById("loading").style.display = "none";
     document.getElementById("auth-passphrase").value = "";
     updateAuthUI();
-    showAuthGate(false);
+
+    // Check if guest mode is available after logout
+    const authStatus = await checkAuthStatus();
+    const allowGuest = authStatus.role === "rx";
+    showAuthGate(allowGuest);
   } catch (e) {
     console.error("Logout failed:", e);
     showAuthError("Logout failed");
