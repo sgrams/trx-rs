@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: BSD-2-Clause
 
 use std::net::SocketAddr;
+use std::sync::Arc;
 use std::time::Duration;
 
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
@@ -10,6 +11,7 @@ use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{mpsc, oneshot, watch};
 use tokio::task::JoinHandle;
 use tokio::time::timeout;
+use std::sync::atomic::Ordering;
 use tracing::{debug, error, info, warn};
 use trx_protocol::{mode_to_string, parse_mode};
 
@@ -31,10 +33,10 @@ impl FrontendSpawner for RigctlFrontend {
         rig_tx: mpsc::Sender<RigRequest>,
         _callsign: Option<String>,
         listen_addr: SocketAddr,
-        _context: std::sync::Arc<trx_frontend::FrontendRuntimeContext>,
+        context: Arc<trx_frontend::FrontendRuntimeContext>,
     ) -> JoinHandle<()> {
         tokio::spawn(async move {
-            if let Err(e) = serve(listen_addr, state_rx, rig_tx).await {
+            if let Err(e) = serve(listen_addr, state_rx, rig_tx, context).await {
                 error!("rigctl server error: {:?}", e);
             }
         })
@@ -45,7 +47,11 @@ async fn serve(
     listen_addr: SocketAddr,
     state_rx: watch::Receiver<RigState>,
     rig_tx: mpsc::Sender<RigRequest>,
+    context: Arc<trx_frontend::FrontendRuntimeContext>,
 ) -> std::io::Result<()> {
+    if let Ok(mut slot) = context.rigctl_listen_addr.lock() {
+        *slot = Some(listen_addr);
+    }
     let listener = TcpListener::bind(listen_addr).await?;
     info!("rigctl frontend listening on {}", listen_addr);
     info!("rigctl frontend ready (rigctld-compatible)");
@@ -55,10 +61,13 @@ async fn serve(
         info!("rigctl client connected: {}", addr);
         let state_rx = state_rx.clone();
         let rig_tx = rig_tx.clone();
+        let context = context.clone();
+        context.rigctl_clients.fetch_add(1, Ordering::Relaxed);
         tokio::spawn(async move {
             if let Err(e) = handle_client(stream, addr, state_rx, rig_tx).await {
                 warn!("rigctl client {} error: {:?}", addr, e);
             }
+            context.rigctl_clients.fetch_sub(1, Ordering::Relaxed);
         });
     }
 }

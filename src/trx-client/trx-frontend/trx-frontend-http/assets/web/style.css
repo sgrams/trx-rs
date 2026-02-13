@@ -35,6 +35,7 @@ input.status-input, select.status-input { width: 100%; padding: 0.45rem 0.5rem; 
 .jog-container {
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 0.5rem;
   margin-top: 0.6rem;
 }
@@ -80,15 +81,16 @@ input.status-input, select.status-input { width: 100%; padding: 0.45rem 0.5rem; 
   border: 1px solid var(--border-light);
   border-radius: 6px;
   overflow: hidden;
-  margin-left: 0.3rem;
+  height: 3.35rem;
+  flex-shrink: 0;
 }
 .jog-step button {
   border: none;
   border-right: 1px solid var(--border-light);
   border-radius: 0;
-  height: 2rem;
-  padding: 0 0.55rem;
-  font-size: 0.78rem;
+  height: 100%;
+  padding: 0 0.8rem;
+  font-size: 0.92rem;
   background: var(--input-bg);
   color: var(--text-muted);
   cursor: pointer;
@@ -131,6 +133,7 @@ button { padding: 0.5rem 0.9rem; border-radius: 6px; border: 1px solid var(--btn
 button:disabled { opacity: 0.6; cursor: not-allowed; }
 .hint { color: var(--text-muted); font-size: 0.85rem; }
 .inline { display: flex; gap: 0.5rem; align-items: center; }
+.freq-inline #freq { flex: 1 1 auto; }
 small { color: var(--text-muted); }
 .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.25rem; }
 .title { font-size: 1.4rem; font-weight: 700; display: inline-flex; align-items: center; gap: 0.35rem; }

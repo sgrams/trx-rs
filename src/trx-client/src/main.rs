@@ -314,6 +314,11 @@ async fn async_init() -> DynResult<AppState> {
                 return Err(format!("Frontend missing listen configuration: {}", other).into());
             }
         };
+        if frontend == "rigctl" {
+            if let Ok(mut listen_addr) = frontend_runtime_ctx.rigctl_listen_addr.lock() {
+                *listen_addr = Some(addr);
+            }
+        }
         frontend_reg_ctx.spawn_frontend(
             frontend,
             frontend_state_rx,

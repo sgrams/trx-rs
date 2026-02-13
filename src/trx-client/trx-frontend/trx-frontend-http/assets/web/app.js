@@ -19,7 +19,6 @@ const vfoPicker = document.getElementById("vfo-picker");
 const signalBar = document.getElementById("signal-bar");
 const signalValue = document.getElementById("signal-value");
 const pttBtn = document.getElementById("ptt-btn");
-const freqBtn = document.getElementById("freq-apply");
 const modeBtn = document.getElementById("mode-apply");
 const txLimitInput = document.getElementById("tx-limit");
 const txLimitBtn = document.getElementById("tx-limit-btn");
@@ -229,7 +228,7 @@ function formatSignal(sUnits) {
 }
 
 function setDisabled(disabled) {
-  [freqEl, modeEl, freqBtn, modeBtn, pttBtn, powerBtn, txLimitInput, txLimitBtn, lockBtn].forEach((el) => {
+  [freqEl, modeEl, modeBtn, pttBtn, powerBtn, txLimitInput, txLimitBtn, lockBtn].forEach((el) => {
     if (el) el.disabled = disabled;
   });
 }
@@ -494,6 +493,12 @@ function render(update) {
   if (typeof update.clients === "number") {
     document.getElementById("about-clients").textContent = update.clients;
   }
+  if (typeof update.rigctl_clients === "number") {
+    document.getElementById("about-rigctl-clients").textContent = update.rigctl_clients;
+  }
+  if (typeof update.rigctl_addr === "string" && update.rigctl_addr.length > 0) {
+    document.getElementById("about-rigctl-endpoint").textContent = update.rigctl_addr;
+  }
   powerHint.textContent = readyText();
   lastLocked = update.status && update.status.lock === true;
   lockBtn.textContent = lastLocked ? "Unlock" : "Lock";
@@ -621,7 +626,7 @@ pttBtn.addEventListener("click", async () => {
   }
 });
 
-freqBtn.addEventListener("click", async () => {
+async function applyFreqFromInput() {
   const parsedRaw = parseFreqInput(freqEl.value, jogStep);
   const parsed = alignFreqToRigStep(parsedRaw);
   if (parsed === null) {
@@ -633,7 +638,7 @@ freqBtn.addEventListener("click", async () => {
     return;
   }
   freqDirty = false;
-  freqBtn.disabled = true;
+  freqEl.disabled = true;
   showHint("Setting frequency…");
   try {
     await postPath(`/set_freq?hz=${parsed}`);
@@ -642,14 +647,15 @@ freqBtn.addEventListener("click", async () => {
     showHint("Set freq failed", 2000);
     console.error(err);
   } finally {
-    freqBtn.disabled = false;
+    freqEl.disabled = false;
   }
-});
+}
+
 freqEl.addEventListener("keydown", (e) => {
   freqDirty = true;
   if (e.key === "Enter") {
     e.preventDefault();
-    freqBtn.click();
+    applyFreqFromInput();
   }
 });
 

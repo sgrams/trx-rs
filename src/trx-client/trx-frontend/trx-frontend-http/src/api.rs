@@ -37,23 +37,46 @@ pub async fn status_api(
 }
 
 /// Inject `"clients": N` into a JSON object string.
-fn inject_clients(json: &str, count: usize) -> String {
-    // Fast path: insert after the opening '{'.
-    if let Some(pos) = json.find('{') {
-        let mut out = String::with_capacity(json.len() + 20);
-        out.push_str(&json[..=pos]);
-        out.push_str(&format!("\"clients\":{count},"));
-        out.push_str(&json[pos + 1..]);
-        out
-    } else {
-        json.to_string()
+fn inject_frontend_meta(
+    json: &str,
+    http_clients: usize,
+    rigctl_clients: usize,
+    rigctl_addr: Option<String>,
+) -> String {
+    let mut value: serde_json::Value = match serde_json::from_str(json) {
+        Ok(v) => v,
+        Err(_) => return json.to_string(),
+    };
+
+    let Some(map) = value.as_object_mut() else {
+        return json.to_string();
+    };
+    map.insert("clients".to_string(), serde_json::json!(http_clients));
+    map.insert(
+        "rigctl_clients".to_string(),
+        serde_json::json!(rigctl_clients),
+    );
+    if let Some(addr) = rigctl_addr {
+        map.insert("rigctl_addr".to_string(), serde_json::json!(addr));
     }
+
+    serde_json::to_string(&value).unwrap_or_else(|_| json.to_string())
+}
+
+fn rigctl_addr_from_context(context: &FrontendRuntimeContext) -> Option<String> {
+    context
+        .rigctl_listen_addr
+        .lock()
+        .ok()
+        .and_then(|v| *v)
+        .map(|addr| addr.to_string())
 }
 
 #[get("/events")]
 pub async fn events(
     state: web::Data<watch::Receiver<RigState>>,
     clients: web::Data<Arc<AtomicUsize>>,
+    context: web::Data<Arc<FrontendRuntimeContext>>,
 ) -> Result<HttpResponse, Error> {
     let rx = state.get_ref().clone();
     let initial = wait_for_view(rx.clone()).await?;
@@ -63,17 +86,29 @@ pub async fn events(
 
     let initial_json =
         serde_json::to_string(&initial).map_err(actix_web::error::ErrorInternalServerError)?;
-    let initial_json = inject_clients(&initial_json, count);
+    let initial_json = inject_frontend_meta(
+        &initial_json,
+        count,
+        context.rigctl_clients.load(Ordering::Relaxed),
+        rigctl_addr_from_context(context.get_ref().as_ref()),
+    );
     let initial_stream =
         once(async move { Ok::<Bytes, Error>(Bytes::from(format!("data: {initial_json}\n\n"))) });
 
     let counter_updates = counter.clone();
+    let context_updates = context.get_ref().clone();
     let updates = WatchStream::new(rx).filter_map(move |state| {
         let counter = counter_updates.clone();
+        let context = context_updates.clone();
         async move {
             state.snapshot().and_then(|v| {
                 serde_json::to_string(&v).ok().map(|json| {
-                    let json = inject_clients(&json, counter.load(Ordering::Relaxed));
+                    let json = inject_frontend_meta(
+                        &json,
+                        counter.load(Ordering::Relaxed),
+                        context.rigctl_clients.load(Ordering::Relaxed),
+                        rigctl_addr_from_context(context.as_ref()),
+                    );
                     Ok::<Bytes, Error>(Bytes::from(format!("data: {json}\n\n")))
                 })
             })

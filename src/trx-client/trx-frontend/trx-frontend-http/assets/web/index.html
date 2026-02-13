@@ -33,9 +33,13 @@
     <div class="status">
       <div class="full-row">
         <div class="label">Frequency<span class="band-tag" id="band-label">--</span></div>
-        <div class="inline">
+        <div class="inline freq-inline">
           <input class="status-input" id="freq" type="text" value="--" />
-          <button id="freq-apply" type="button">Set</button>
+          <div class="jog-step" id="jog-step">
+            <button type="button" data-step="1000000">MHz</button>
+            <button type="button" data-step="1000" class="active">kHz</button>
+            <button type="button" data-step="1">Hz</button>
+          </div>
         </div>
         <div class="jog-container">
           <button id="jog-down" type="button" class="jog-btn">&minus;</button>
@@ -43,11 +47,6 @@
             <div class="jog-indicator" id="jog-indicator"></div>
           </div>
           <button id="jog-up" type="button" class="jog-btn">+</button>
-          <div class="jog-step" id="jog-step">
-            <button type="button" data-step="1000000">MHz</button>
-            <button type="button" data-step="1000" class="active">kHz</button>
-            <button type="button" data-step="1">Hz</button>
-          </div>
         </div>
       </div>
       <div class="controls-row full-row">
@@ -224,6 +223,8 @@
         <tr><td>Rig connection</td><td id="about-rig-access">--</td></tr>
         <tr><td>Supported modes</td><td id="about-modes">--</td></tr>
         <tr><td>VFOs</td><td id="about-vfos">--</td></tr>
+        <tr><td>Rigctl endpoint</td><td id="about-rigctl-endpoint">--</td></tr>
+        <tr><td>Rigctl clients</td><td id="about-rigctl-clients">--</td></tr>
         <tr><td>PSK Reporter</td><td id="about-pskreporter">--</td></tr>
         <tr><td>Client</td><td>{pkg} v{ver}</td></tr>
         <tr><td>Connected clients</td><td id="about-clients">--</td></tr>

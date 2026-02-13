@@ -4,7 +4,7 @@
 
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::net::SocketAddr;
-use std::sync::atomic::AtomicBool;
+use std::sync::atomic::{AtomicBool, AtomicUsize};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
@@ -120,6 +120,10 @@ pub struct FrontendRuntimeContext {
     pub wspr_history: Arc<Mutex<VecDeque<(Instant, WsprMessage)>>>,
     /// Authentication tokens for HTTP-JSON frontend
     pub auth_tokens: HashSet<String>,
+    /// Active rigctl TCP clients.
+    pub rigctl_clients: Arc<AtomicUsize>,
+    /// rigctl listen endpoint, if enabled.
+    pub rigctl_listen_addr: Arc<Mutex<Option<SocketAddr>>>,
     /// Guard to avoid spawning duplicate decode collectors.
     pub decode_collector_started: AtomicBool,
 }
@@ -137,6 +141,8 @@ impl FrontendRuntimeContext {
             ft8_history: Arc::new(Mutex::new(VecDeque::new())),
             wspr_history: Arc::new(Mutex::new(VecDeque::new())),
             auth_tokens: HashSet::new(),
+            rigctl_clients: Arc::new(AtomicUsize::new(0)),
+            rigctl_listen_addr: Arc::new(Mutex::new(None)),
             decode_collector_started: AtomicBool::new(false),
         }
     }
