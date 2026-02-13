@@ -12,6 +12,7 @@
 
 use std::net::IpAddr;
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 use trx_app::{ConfigError, ConfigFile};
@@ -141,6 +142,75 @@ impl Default for AudioBridgeConfig {
     }
 }
 
+/// Cookie SameSite attribute options.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[serde(rename_all = "PascalCase")]
+pub enum CookieSameSite {
+    /// Strict: cookie only sent in same-site context
+    Strict,
+    /// Lax: cookie sent with top-level navigation (default)
+    Lax,
+    /// None: cookie sent in all contexts (requires Secure=true)
+    None,
+}
+
+impl Default for CookieSameSite {
+    fn default() -> Self {
+        Self::Lax
+    }
+}
+
+impl AsRef<str> for CookieSameSite {
+    fn as_ref(&self) -> &str {
+        match self {
+            Self::Strict => "Strict",
+            Self::Lax => "Lax",
+            Self::None => "None",
+        }
+    }
+}
+
+/// HTTP frontend authentication configuration.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct HttpAuthConfig {
+    /// Enable HTTP frontend authentication
+    pub enabled: bool,
+    /// Passphrase for read-only access (rx role)
+    pub rx_passphrase: Option<String>,
+    /// Passphrase for full control access (control role)
+    pub control_passphrase: Option<String>,
+    /// Enforce TX/PTT access control (hide from unauthenticated/rx users)
+    pub tx_access_control_enabled: bool,
+    /// Session time-to-live in minutes
+    pub session_ttl_min: u64,
+    /// Set Secure flag on session cookie (required for HTTPS)
+    pub cookie_secure: bool,
+    /// SameSite attribute for session cookie
+    pub cookie_same_site: CookieSameSite,
+}
+
+impl Default for HttpAuthConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            rx_passphrase: None,
+            control_passphrase: None,
+            tx_access_control_enabled: true,
+            session_ttl_min: 480,
+            cookie_secure: false,
+            cookie_same_site: CookieSameSite::Lax,
+        }
+    }
+}
+
+impl HttpAuthConfig {
+    /// Convert session TTL from minutes to Duration
+    pub fn session_ttl(&self) -> Duration {
+        Duration::from_secs(self.session_ttl_min * 60)
+    }
+}
+
 /// HTTP frontend configuration.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
@@ -151,6 +221,8 @@ pub struct HttpFrontendConfig {
     pub listen: IpAddr,
     /// Listen port
     pub port: u16,
+    /// Authentication settings
+    pub auth: HttpAuthConfig,
 }
 
 impl Default for HttpFrontendConfig {
@@ -159,6 +231,7 @@ impl Default for HttpFrontendConfig {
             enabled: true,
             listen: IpAddr::from([127, 0, 0, 1]),
             port: 8080,
+            auth: HttpAuthConfig::default(),
         }
     }
 }
@@ -258,6 +331,8 @@ impl ClientConfig {
             &self.frontends.http_json.auth.tokens,
         )?;
 
+        validate_http_auth(&self.frontends.http.auth)?;
+
         Ok(())
     }
 
@@ -291,6 +366,7 @@ impl ClientConfig {
                     enabled: true,
                     listen: IpAddr::from([127, 0, 0, 1]),
                     port: 8080,
+                    auth: HttpAuthConfig::default(),
                 },
                 rigctl: RigctlFrontendConfig {
                     enabled: false,
@@ -325,6 +401,42 @@ fn validate_tokens(path: &str, tokens: &[String]) -> Result<(), String> {
     if tokens.iter().any(|t| t.trim().is_empty()) {
         return Err(format!("{path} must not contain empty tokens"));
     }
+    Ok(())
+}
+
+fn validate_http_auth(auth: &HttpAuthConfig) -> Result<(), String> {
+    if !auth.enabled {
+        return Ok(());
+    }
+
+    // If enabled, require at least one passphrase
+    if auth.rx_passphrase.is_none() && auth.control_passphrase.is_none() {
+        return Err(
+            "[frontends.http.auth] enabled=true requires at least one passphrase \
+             (rx_passphrase and/or control_passphrase)"
+                .to_string(),
+        );
+    }
+
+    // Validate passphrases are not empty strings
+    if let Some(rx) = &auth.rx_passphrase {
+        if rx.trim().is_empty() {
+            return Err("[frontends.http.auth].rx_passphrase must not be empty if set".to_string());
+        }
+    }
+    if let Some(ctrl) = &auth.control_passphrase {
+        if ctrl.trim().is_empty() {
+            return Err(
+                "[frontends.http.auth].control_passphrase must not be empty if set".to_string(),
+            );
+        }
+    }
+
+    // Session TTL must be > 0
+    if auth.session_ttl_min == 0 {
+        return Err("[frontends.http.auth].session_ttl_min must be > 0".to_string());
+    }
+
     Ok(())
 }
 
@@ -410,5 +522,83 @@ port = 8080
         let mut config = ClientConfig::default();
         config.frontends.http_json.auth.tokens = vec!["".to_string()];
         assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn test_validate_rejects_http_auth_enabled_without_passphrases() {
+        let mut config = ClientConfig::default();
+        config.frontends.http.auth.enabled = true;
+        assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn test_validate_accepts_http_auth_with_rx_passphrase() {
+        let mut config = ClientConfig::default();
+        config.frontends.http.auth.enabled = true;
+        config.frontends.http.auth.rx_passphrase = Some("rx-secret".to_string());
+        assert!(config.validate().is_ok());
+    }
+
+    #[test]
+    fn test_validate_accepts_http_auth_with_control_passphrase() {
+        let mut config = ClientConfig::default();
+        config.frontends.http.auth.enabled = true;
+        config.frontends.http.auth.control_passphrase = Some("control-secret".to_string());
+        assert!(config.validate().is_ok());
+    }
+
+    #[test]
+    fn test_validate_accepts_http_auth_with_both_passphrases() {
+        let mut config = ClientConfig::default();
+        config.frontends.http.auth.enabled = true;
+        config.frontends.http.auth.rx_passphrase = Some("rx-secret".to_string());
+        config.frontends.http.auth.control_passphrase = Some("control-secret".to_string());
+        assert!(config.validate().is_ok());
+    }
+
+    #[test]
+    fn test_validate_rejects_empty_rx_passphrase() {
+        let mut config = ClientConfig::default();
+        config.frontends.http.auth.enabled = true;
+        config.frontends.http.auth.rx_passphrase = Some("".to_string());
+        assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn test_validate_rejects_zero_session_ttl() {
+        let mut config = ClientConfig::default();
+        config.frontends.http.auth.enabled = true;
+        config.frontends.http.auth.rx_passphrase = Some("rx-secret".to_string());
+        config.frontends.http.auth.session_ttl_min = 0;
+        assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn test_validate_auth_disabled_ignores_passphrases() {
+        let mut config = ClientConfig::default();
+        config.frontends.http.auth.enabled = false;
+        config.frontends.http.auth.rx_passphrase = Some("".to_string());
+        assert!(config.validate().is_ok());
+    }
+
+    #[test]
+    fn test_http_auth_config_default() {
+        let auth = HttpAuthConfig::default();
+        assert!(!auth.enabled);
+        assert!(auth.rx_passphrase.is_none());
+        assert!(auth.control_passphrase.is_none());
+        assert!(auth.tx_access_control_enabled);
+        assert_eq!(auth.session_ttl_min, 480);
+        assert!(!auth.cookie_secure);
+        assert!(matches!(auth.cookie_same_site, CookieSameSite::Lax));
+    }
+
+    #[test]
+    fn test_http_auth_session_ttl_conversion() {
+        let auth = HttpAuthConfig {
+            session_ttl_min: 60,
+            ..Default::default()
+        };
+        assert_eq!(auth.session_ttl().as_secs(), 3600);
     }
 }

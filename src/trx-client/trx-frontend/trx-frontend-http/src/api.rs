@@ -477,7 +477,11 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
         .service(aprs_js)
         .service(ft8_js)
         .service(wspr_js)
-        .service(cw_js);
+        .service(cw_js)
+        // Auth endpoints
+        .service(crate::server::auth::login)
+        .service(crate::server::auth::logout)
+        .service(crate::server::auth::session_status);
 }
 
 #[get("/")]

@@ -8,13 +8,16 @@ mod api;
 pub mod audio;
 #[path = "status.rs"]
 pub mod status;
+#[path = "auth.rs"]
+pub mod auth;
 
 use std::net::SocketAddr;
 use std::sync::atomic::AtomicUsize;
 use std::sync::Arc;
+use std::time::Duration;
 
 use actix_web::dev::Server;
-use actix_web::{web, App, HttpServer};
+use actix_web::{web, App, HttpServer, middleware::Logger};
 use tokio::signal;
 use tokio::sync::{mpsc, watch};
 use tokio::task::JoinHandle;
@@ -23,6 +26,8 @@ use tracing::{error, info};
 use trx_core::RigRequest;
 use trx_core::RigState;
 use trx_frontend::{FrontendRuntimeContext, FrontendSpawner};
+
+use auth::{AuthConfig, AuthState, SameSite};
 
 /// HTTP frontend implementation.
 pub struct HttpFrontend;
@@ -75,12 +80,39 @@ fn build_server(
     let clients = web::Data::new(Arc::new(AtomicUsize::new(0)));
     let context_data = web::Data::new(context);
 
+    // Create authentication state (default: disabled)
+    let auth_config = AuthConfig::new(
+        false,  // enabled - disabled by default
+        None,   // rx_passphrase
+        None,   // control_passphrase
+        true,   // tx_access_control_enabled
+        Duration::from_secs(480 * 60),  // session_ttl (480 minutes)
+        false,  // cookie_secure
+        SameSite::Lax,  // cookie_same_site
+    );
+    let auth_state = web::Data::new(AuthState::new(auth_config.clone()));
+
+    // Spawn session cleanup task if auth is enabled
+    if auth_config.enabled {
+        let store_cleanup = auth_state.store.clone();
+        tokio::spawn(async move {
+            let mut interval = tokio::time::interval(Duration::from_secs(300)); // 5 minutes
+            loop {
+                interval.tick().await;
+                store_cleanup.cleanup_expired();
+            }
+        });
+    }
+
     let server = HttpServer::new(move || {
         App::new()
             .app_data(state_data.clone())
             .app_data(rig_tx.clone())
             .app_data(clients.clone())
             .app_data(context_data.clone())
+            .app_data(auth_state.clone())
+            .wrap(Logger::default())
+            .wrap(auth::AuthMiddleware)
             .configure(api::configure)
     })
     .shutdown_timeout(1)

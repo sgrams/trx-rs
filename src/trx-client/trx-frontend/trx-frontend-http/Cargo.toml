@@ -20,3 +20,5 @@ actix-ws = "0.3"
 tokio-stream = { version = "0.1", features = ["sync"] }
 futures-util = "0.3"
 bytes = "1"
+rand = "0.8"
+hex = "0.4"
