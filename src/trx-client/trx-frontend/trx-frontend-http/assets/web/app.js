@@ -156,11 +156,16 @@ function applyAuthRestrictions() {
     if (jogWheel) jogWheel.style.opacity = "0.5";
     jogButtons.forEach(btn => btn.disabled = true);
 
-    // Disable plugin enable/disable buttons
+    // Disable plugin enable/disable buttons and clear buttons
     const pluginToggleBtns = [
       "ft8-decode-toggle-btn",
       "wspr-decode-toggle-btn",
-      "cw-auto"
+      "cw-auto",
+      "aprs-clear-btn",
+      "ft8-clear-btn",
+      "wspr-clear-btn",
+      "cw-clear-btn",
+      "sig-clear-btn"
     ];
     pluginToggleBtns.forEach(id => {
       const btn = document.getElementById(id);
