@@ -1288,6 +1288,7 @@ async function initializeApp() {
   if (authStatus.authenticated) {
     // User has valid session
     authRole = authStatus.role;
+    hideAuthGate();
     updateAuthUI();
     applyAuthRestrictions();
     connect();

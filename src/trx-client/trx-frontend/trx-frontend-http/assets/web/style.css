@@ -1,30 +1,30 @@
 :root {
-  --bg: #0d1117;
-  --card-bg: #161b22;
-  --input-bg: #0f1720;
-  --border: #1f2a35;
-  --border-light: #2d3748;
-  --text: #e5e7eb;
-  --text-muted: #9aa4b5;
-  --text-heading: #c5cedd;
-  --btn-bg: #1f2937;
-  --btn-border: #394455;
-  --accent-green: #00d17f;
+  --bg: #070d1a;
+  --card-bg: #0f172a;
+  --input-bg: #0b1324;
+  --border: #22324a;
+  --border-light: #304766;
+  --text: #e7edf9;
+  --text-muted: #91a3bd;
+  --text-heading: #c6d5ea;
+  --btn-bg: #16243a;
+  --btn-border: #3a5274;
+  --accent-green: #c24b1a;
   --accent-yellow: #f0ad4e;
   --accent-red: #e55353;
   --control-height: 2.6rem;
-  --jog-hi: #2a3444;
-  --jog-lo: #1a2230;
+  --jog-hi: #243a5b;
+  --jog-lo: #14233a;
   --jog-shadow: rgba(0,0,0,0.3);
   --jog-inset: rgba(255,255,255,0.05);
-  --audio-level-bg: #1f2937;
-  --audio-level-border: #2d3748;
-  --audio-level-fill-start: #00d17f;
+  --audio-level-bg: #14263f;
+  --audio-level-border: #304766;
+  --audio-level-fill-start: #c24b1a;
   --audio-level-fill-end: #f0ad4e;
-  --filter-bg: #1b2431;
-  --filter-fg: #e5e7eb;
-  --filter-border: #334155;
-  --wavelength-fg: #8f9daf;
+  --filter-bg: #13253e;
+  --filter-fg: #e7edf9;
+  --filter-border: #385577;
+  --wavelength-fg: #8da3be;
   --jog-wheel-size: 83.2px;
 }
 
@@ -39,7 +39,7 @@
   --text-heading: #2d3748;
   --btn-bg: #e6edf8;
   --btn-border: #a9b8cf;
-  --accent-green: #0f9d61;
+  --accent-green: #b04317;
   --accent-yellow: #b57600;
   --accent-red: #cf3f3f;
   --jog-hi: #e6edf8;
@@ -48,7 +48,7 @@
   --jog-inset: rgba(255,255,255,0.75);
   --audio-level-bg: #edf2fb;
   --audio-level-border: #b8c5da;
-  --audio-level-fill-start: #0f9d61;
+  --audio-level-fill-start: #b04317;
   --audio-level-fill-end: #b57600;
   --filter-bg: #eef3fb;
   --filter-fg: #1f2937;
