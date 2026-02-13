@@ -95,6 +95,9 @@ input.status-input, select.status-input { width: 100%; padding: 0.45rem 0.5rem; 
   margin-top: 0.3rem;
   margin-bottom: 0;
 }
+.controls-col-power.label-below-col .label {
+  text-align: right;
+}
 .controls-col.label-below-col > :not(.label) {
   order: 1;
 }
@@ -260,6 +263,9 @@ button:disabled { opacity: 0.6; cursor: not-allowed; }
 }
 .unit-col {
   flex: 0 0 auto;
+}
+.unit-col .label {
+  text-align: right;
 }
 .label-below-row {
   display: flex;
