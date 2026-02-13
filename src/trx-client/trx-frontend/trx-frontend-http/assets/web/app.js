@@ -839,9 +839,10 @@ const mapMarkers = new Set();
 const mapFilter = { aprs: true, ft8: true };
 
 function initAprsMap() {
-  if (aprsMap) return;
   const mapEl = document.getElementById("aprs-map");
   if (!mapEl) return;
+  sizeAprsMapToViewport();
+  if (aprsMap) return;
 
   const hasLocation = serverLat != null && serverLon != null;
   const center = hasLocation ? [serverLat, serverLon] : [20, 0];
@@ -874,6 +875,16 @@ function initAprsMap() {
       applyMapFilter();
     });
   }
+}
+
+function sizeAprsMapToViewport() {
+  const mapEl = document.getElementById("aprs-map");
+  if (!mapEl) return;
+  const topPadding = parseFloat(getComputedStyle(document.body).paddingTop) || 0;
+  const available = Math.max(0, window.innerHeight - topPadding);
+  const target = Math.max(150, Math.floor(available * 0.6));
+  mapEl.style.height = `${target}px`;
+  if (aprsMap) aprsMap.invalidateSize();
 }
 
 function aprsSymbolIcon(symbolTable, symbolCode) {
@@ -985,9 +996,16 @@ document.querySelectorAll(".sub-tab-bar").forEach((bar) => {
     parent.querySelector(`#subtab-${btn.dataset.subtab}`).style.display = "";
     if (btn.dataset.subtab === "map") {
       initAprsMap();
+      sizeAprsMapToViewport();
       if (aprsMap) setTimeout(() => aprsMap.invalidateSize(), 50);
     }
   });
+});
+
+window.addEventListener("resize", () => {
+  const mapTab = document.getElementById("subtab-map");
+  if (!mapTab || mapTab.style.display === "none") return;
+  sizeAprsMapToViewport();
 });
 
 // --- Signal measurement ---
