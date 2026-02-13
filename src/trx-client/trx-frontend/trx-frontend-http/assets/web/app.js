@@ -34,6 +34,7 @@ const serverSubtitle = document.getElementById("server-subtitle");
 const loadingTitle = document.getElementById("loading-title");
 const loadingSub = document.getElementById("loading-sub");
 const headerSigCanvas = document.getElementById("header-sig-canvas");
+const themeToggleBtn = document.getElementById("theme-toggle");
 
 let lastControl;
 let lastTxEn = null;
@@ -61,6 +62,35 @@ let jogAngle = 0;
 let lastClientCount = null;
 let lastLocked = false;
 const originalTitle = document.title;
+const savedTheme = loadSetting("theme", null);
+
+function currentTheme() {
+  return document.documentElement.getAttribute("data-theme") === "light" ? "light" : "dark";
+}
+
+function setTheme(theme) {
+  const next = theme === "light" ? "light" : "dark";
+  document.documentElement.setAttribute("data-theme", next);
+  saveSetting("theme", next);
+  if (themeToggleBtn) {
+    themeToggleBtn.textContent = next === "dark" ? "☀️ Light" : "🌙 Dark";
+    themeToggleBtn.title = next === "dark" ? "Switch to light mode" : "Switch to dark mode";
+  }
+}
+
+if (savedTheme === "light" || savedTheme === "dark") {
+  setTheme(savedTheme);
+} else {
+  const prefersLight = window.matchMedia && window.matchMedia("(prefers-color-scheme: light)").matches;
+  setTheme(prefersLight ? "light" : "dark");
+}
+
+if (themeToggleBtn) {
+  themeToggleBtn.addEventListener("click", () => {
+    setTheme(currentTheme() === "dark" ? "light" : "dark");
+    updateMapBaseLayerForTheme(currentTheme());
+  });
+}
 
 function readyText() {
   return lastClientCount !== null ? `Ready \u00b7 ${lastClientCount} user${lastClientCount !== 1 ? "s" : ""}` : "Ready";
@@ -956,10 +986,41 @@ window.addEventListener("resize", resizeHeaderSignalCanvas);
 
 // --- Leaflet Map (lazy-initialized) ---
 let aprsMap = null;
+let aprsMapBaseLayer = null;
 let aprsMapReceiverMarker = null;
 const stationMarkers = new Map();
 const mapMarkers = new Set();
 const mapFilter = { aprs: true, ft8: true };
+
+function mapTileSpecForTheme(theme) {
+  if (theme === "dark") {
+    return {
+      url: "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",
+      options: {
+        maxZoom: 19,
+        subdomains: "abcd",
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>',
+      },
+    };
+  }
+  return {
+    url: "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
+    options: {
+      maxZoom: 19,
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+    },
+  };
+}
+
+function updateMapBaseLayerForTheme(theme) {
+  if (!aprsMap) return;
+  if (aprsMapBaseLayer) {
+    aprsMap.removeLayer(aprsMapBaseLayer);
+    aprsMapBaseLayer = null;
+  }
+  const spec = mapTileSpecForTheme(theme);
+  aprsMapBaseLayer = L.tileLayer(spec.url, spec.options).addTo(aprsMap);
+}
 
 function initAprsMap() {
   const mapEl = document.getElementById("aprs-map");
@@ -972,10 +1033,7 @@ function initAprsMap() {
   const zoom = hasLocation ? 10 : 2;
 
   aprsMap = L.map("aprs-map").setView(center, zoom);
-  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-    maxZoom: 19,
-    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-  }).addTo(aprsMap);
+  updateMapBaseLayerForTheme(currentTheme());
 
   if (hasLocation) {
     const popupText = serverCallsign ? serverCallsign : "Receiver";
