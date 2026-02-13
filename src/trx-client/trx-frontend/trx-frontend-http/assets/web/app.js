@@ -94,17 +94,40 @@ function updateAuthUI() {
 function applyAuthRestrictions() {
   if (!authRole) return;
 
-  // Hide TX/PTT controls for rx role
+  // Disable TX/PTT/frequency/mode controls for rx role
   if (authRole === "rx") {
     const pttBtn = document.getElementById("ptt-btn");
     const powerBtn = document.getElementById("power-btn");
-    const txLimitRow = document.getElementById("tx-limit-row");
+    const lockBtn = document.getElementById("lock-btn");
+    const freqInput = document.getElementById("freq");
+    const modeSelect = document.getElementById("mode");
+    const txLimitInput = document.getElementById("tx-limit");
+    const txLimitBtn = document.getElementById("tx-limit-btn");
     const txAudioBtn = document.getElementById("tx-audio-btn");
+    const txLimitRow = document.getElementById("tx-limit-row");
+    const jogUp = document.getElementById("jog-up");
+    const jogDown = document.getElementById("jog-down");
+    const jogButtons = document.querySelectorAll(".jog-step button");
 
-    if (pttBtn) pttBtn.style.display = "none";
+    // Disable TX buttons
+    if (pttBtn) pttBtn.disabled = true;
     if (powerBtn) powerBtn.disabled = true;
-    if (txLimitRow) txLimitRow.style.display = "none";
-    if (txAudioBtn) txAudioBtn.style.display = "none";
+    if (lockBtn) lockBtn.disabled = true;
+    if (txAudioBtn) txAudioBtn.disabled = true;
+    if (txLimitBtn) txLimitBtn.disabled = true;
+
+    // Disable frequency/mode inputs
+    if (freqInput) freqInput.disabled = true;
+    if (modeSelect) modeSelect.disabled = true;
+    if (txLimitInput) txLimitInput.disabled = true;
+
+    // Disable jog controls
+    if (jogUp) jogUp.disabled = true;
+    if (jogDown) jogDown.disabled = true;
+    jogButtons.forEach(btn => btn.disabled = true);
+
+    // Hide TX-specific UI but keep controls visible (disabled)
+    if (txLimitRow) txLimitRow.style.opacity = "0.5";
   }
 }
 
