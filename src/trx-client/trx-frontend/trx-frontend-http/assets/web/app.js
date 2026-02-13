@@ -87,6 +87,24 @@ function hideAuthGate() {
   document.getElementById("auth-gate").style.display = "none";
   document.getElementById("loading").style.display = "block";
   document.getElementById("tab-bar").style.display = "";
+
+  // Show Main tab by default and hide all other tabs
+  document.querySelectorAll(".tab-panel").forEach(panel => {
+    panel.style.display = "none";
+  });
+  const mainTab = document.getElementById("tab-main");
+  if (mainTab) {
+    mainTab.style.display = "";
+  }
+
+  // Mark Main tab button as active
+  document.querySelectorAll(".tab-bar .tab").forEach(btn => {
+    btn.classList.remove("active");
+  });
+  const mainTabBtn = document.querySelector(".tab-bar .tab[data-tab='main']");
+  if (mainTabBtn) {
+    mainTabBtn.classList.add("active");
+  }
 }
 
 function showAuthError(msg) {
