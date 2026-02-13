@@ -19,7 +19,6 @@ const vfoPicker = document.getElementById("vfo-picker");
 const signalBar = document.getElementById("signal-bar");
 const signalValue = document.getElementById("signal-value");
 const pttBtn = document.getElementById("ptt-btn");
-const modeBtn = document.getElementById("mode-apply");
 const txLimitInput = document.getElementById("tx-limit");
 const txLimitBtn = document.getElementById("tx-limit-btn");
 const txLimitRow = document.getElementById("tx-limit-row");
@@ -41,7 +40,12 @@ let lastRendered = null;
 let rigName = "Rig";
 let hintTimer = null;
 let sigMeasuring = false;
-let sigSamples = [];
+let sigLastSUnits = null;
+let sigMeasureTimer = null;
+let sigMeasureLastTickMs = 0;
+let sigMeasureAccumMs = 0;
+let sigMeasureWeighted = 0;
+let sigMeasurePeak = null;
 let lastFreqHz = null;
 let jogStep = loadSetting("jogStep", 1000);
 let minFreqStepHz = 1;
@@ -69,7 +73,6 @@ function showHint(msg, duration) {
 let supportedModes = [];
 let supportedBands = [];
 let freqDirty = false;
-let modeDirty = false;
 let initialized = false;
 let lastEventAt = Date.now();
 let es;
@@ -228,7 +231,7 @@ function formatSignal(sUnits) {
 }
 
 function setDisabled(disabled) {
-  [freqEl, modeEl, modeBtn, pttBtn, powerBtn, txLimitInput, txLimitBtn, lockBtn].forEach((el) => {
+  [freqEl, modeEl, pttBtn, powerBtn, txLimitInput, txLimitBtn, lockBtn].forEach((el) => {
     if (el) el.disabled = disabled;
   });
 }
@@ -317,7 +320,7 @@ function render(update) {
       window.updateFt8RfDisplay();
     }
   }
-  if (!modeDirty && update.status && update.status.mode) {
+  if (update.status && update.status.mode) {
     const mode = normalizeMode(update.status.mode);
     modeEl.value = mode ? mode.toUpperCase() : "";
   }
@@ -424,14 +427,12 @@ function render(update) {
   }
   if (update.status && update.status.rx && typeof update.status.rx.sig === "number") {
     const sUnits = dbmToSUnits(update.status.rx.sig);
+    sigLastSUnits = sUnits;
     const pct = sUnits <= 9 ? Math.max(0, Math.min(100, (sUnits / 9) * 100)) : 100;
     signalBar.style.width = `${pct}%`;
     signalValue.textContent = formatSignal(sUnits);
-    if (sigMeasuring) {
-      sigSamples.push(sUnits);
-      sigMeasureBtn.textContent = `Stop (${sigSamples.length})`;
-    }
   } else {
+    sigLastSUnits = null;
     signalBar.style.width = "0%";
     signalValue.textContent = "--";
   }
@@ -756,14 +757,13 @@ jogStepEl.addEventListener("click", (e) => {
   }
 }
 
-modeBtn.addEventListener("click", async () => {
+async function applyModeFromPicker() {
   const mode = modeEl.value || "";
   if (!mode) {
     showHint("Mode missing", 1500);
     return;
   }
-  modeDirty = false;
-  modeBtn.disabled = true;
+  modeEl.disabled = true;
   showHint("Setting mode…");
   try {
     await postPath(`/set_mode?mode=${encodeURIComponent(mode)}`);
@@ -772,13 +772,11 @@ modeBtn.addEventListener("click", async () => {
     showHint("Set mode failed", 2000);
     console.error(err);
   } finally {
-    modeBtn.disabled = false;
+    modeEl.disabled = false;
   }
-});
+}
 
-modeEl.addEventListener("input", () => {
-  modeDirty = true;
-});
+modeEl.addEventListener("change", applyModeFromPicker);
 
 txLimitInput.addEventListener("keydown", (e) => {
   if (e.key === "Enter") {
@@ -997,27 +995,67 @@ const sigMeasureBtn = document.getElementById("sig-measure-btn");
 const sigClearBtn = document.getElementById("sig-clear-btn");
 const sigResult = document.getElementById("sig-result");
 
+function resetSignalMeasurementState() {
+  sigMeasureLastTickMs = 0;
+  sigMeasureAccumMs = 0;
+  sigMeasureWeighted = 0;
+  sigMeasurePeak = null;
+}
+
+function updateSignalMeasurement(nowMs) {
+  if (!sigMeasuring) return;
+  if (sigMeasureLastTickMs === 0) {
+    sigMeasureLastTickMs = nowMs;
+    return;
+  }
+  const dt = Math.max(0, nowMs - sigMeasureLastTickMs);
+  sigMeasureLastTickMs = nowMs;
+  if (!Number.isFinite(sigLastSUnits)) return;
+
+  sigMeasureAccumMs += dt;
+  sigMeasureWeighted += sigLastSUnits * dt;
+  if (sigMeasurePeak === null || sigLastSUnits > sigMeasurePeak) {
+    sigMeasurePeak = sigLastSUnits;
+  }
+}
+
+function stopSignalMeasurement() {
+  if (sigMeasureTimer) {
+    clearInterval(sigMeasureTimer);
+    sigMeasureTimer = null;
+  }
+  sigMeasuring = false;
+  sigMeasureBtn.textContent = "Measure";
+  sigMeasureBtn.style.borderColor = "";
+  sigMeasureBtn.style.color = "";
+}
+
 sigMeasureBtn.addEventListener("click", () => {
   if (!sigMeasuring) {
-    sigSamples = [];
+    resetSignalMeasurementState();
     sigMeasuring = true;
-    sigMeasureBtn.textContent = "Stop (0)";
+    sigMeasureBtn.textContent = "Stop (0.0s)";
     sigMeasureBtn.style.borderColor = "#00d17f";
     sigMeasureBtn.style.color = "#00d17f";
+    sigMeasureTimer = setInterval(() => {
+      const now = Date.now();
+      updateSignalMeasurement(now);
+      sigMeasureBtn.textContent = `Stop (${(sigMeasureAccumMs / 1000).toFixed(1)}s)`;
+    }, 200);
   } else {
-    sigMeasuring = false;
-    sigMeasureBtn.textContent = "Measure";
-    sigMeasureBtn.style.borderColor = "";
-    sigMeasureBtn.style.color = "";
-    if (sigSamples.length > 0) {
-      const avg = sigSamples.reduce((a, b) => a + b, 0) / sigSamples.length;
-      const peak = Math.max(...sigSamples);
-      sigResult.textContent = `Avg ${formatSignal(avg)} / Peak ${formatSignal(peak)} (${sigSamples.length} samples)`;
+    updateSignalMeasurement(Date.now());
+    stopSignalMeasurement();
+    if (sigMeasureAccumMs > 0) {
+      const avg = sigMeasureWeighted / sigMeasureAccumMs;
+      const peak = sigMeasurePeak;
+      sigResult.textContent = `Avg ${formatSignal(avg)} / Peak ${formatSignal(peak)} (${(sigMeasureAccumMs / 1000).toFixed(1)}s)`;
     }
   }
 });
 
 sigClearBtn.addEventListener("click", () => {
+  stopSignalMeasurement();
+  resetSignalMeasurementState();
   sigResult.textContent = "";
 });
 

@@ -41,25 +41,27 @@
             <button type="button" data-step="1">Hz</button>
           </div>
         </div>
-        <div class="jog-container">
-          <button id="jog-down" type="button" class="jog-btn">&minus;</button>
-          <div class="jog-wheel" id="jog-wheel">
-            <div class="jog-indicator" id="jog-indicator"></div>
-          </div>
-          <button id="jog-up" type="button" class="jog-btn">+</button>
-        </div>
       </div>
       <div class="controls-row full-row">
-        <div>
+        <div class="controls-col">
           <div class="label">Mode</div>
           <div class="inline">
             <select class="status-input" id="mode">
               <option value="">--</option>
             </select>
-            <button id="mode-apply" type="button">Set</button>
           </div>
         </div>
-        <div>
+        <div class="controls-col controls-col-center">
+          <div class="label">Tune</div>
+          <div class="jog-container">
+            <button id="jog-down" type="button" class="jog-btn">&minus;</button>
+            <div class="jog-wheel" id="jog-wheel">
+              <div class="jog-indicator" id="jog-indicator"></div>
+            </div>
+            <button id="jog-up" type="button" class="jog-btn">+</button>
+          </div>
+        </div>
+        <div class="controls-col">
           <div class="label">Transmit / Power</div>
           <div class="btn-grid">
             <button id="ptt-btn" type="button">Toggle PTT</button>
