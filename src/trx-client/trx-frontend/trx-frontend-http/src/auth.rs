@@ -360,13 +360,27 @@ pub async fn session_status(
     }
 
     let session_id = extract_session_id(&req);
-    let role = session_id
-        .and_then(|sid| auth_state.store.get(&sid))
-        .map(|r| r.role.as_str().to_string());
+    if let Some(session_record) = session_id.and_then(|sid| auth_state.store.get(&sid)) {
+        // User has valid session
+        return Ok(HttpResponse::Ok().json(SessionStatus {
+            authenticated: true,
+            role: Some(session_record.role.as_str().to_string()),
+        }));
+    }
 
+    // No session - check if rx access is unrestricted
+    if auth_state.config.rx_passphrase.is_none() {
+        // No rx passphrase required - grant rx role to unauthenticated users
+        return Ok(HttpResponse::Ok().json(SessionStatus {
+            authenticated: false,
+            role: Some("rx".to_string()),
+        }));
+    }
+
+    // Auth required but no valid session
     Ok(HttpResponse::Ok().json(SessionStatus {
-        authenticated: role.is_some(),
-        role,
+        authenticated: false,
+        role: None,
     }))
 }
 
@@ -500,6 +514,19 @@ where
 
             // Auth enabled - check role
             let role = get_session_role(req.request(), &auth_state);
+
+            // If rx_passphrase is not set, allow unauthenticated read access
+            let allow_unrestricted_read = auth_state.config.rx_passphrase.is_none();
+            let is_read_route = access == RouteAccess::Read;
+
+            if is_read_route && allow_unrestricted_read {
+                // No rx authentication required - allow read access without role
+                let fut = self.service.call(req);
+                return Box::pin(async move {
+                    let res = fut.await?;
+                    Ok(res)
+                });
+            }
 
             if !access.allows(role) {
                 // Access denied - return 401/403
