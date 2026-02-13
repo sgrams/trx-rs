@@ -990,7 +990,7 @@ let aprsMapBaseLayer = null;
 let aprsMapReceiverMarker = null;
 const stationMarkers = new Map();
 const mapMarkers = new Set();
-const mapFilter = { aprs: true, ft8: true };
+const mapFilter = { aprs: true, ft8: true, wspr: true };
 
 function mapTileSpecForTheme(theme) {
   if (theme === "dark") {
@@ -1044,6 +1044,7 @@ function initAprsMap() {
 
   const aprsFilter = document.getElementById("map-filter-aprs");
   const ft8Filter = document.getElementById("map-filter-ft8");
+  const wsprFilter = document.getElementById("map-filter-wspr");
   if (aprsFilter) {
     aprsFilter.addEventListener("change", () => {
       mapFilter.aprs = aprsFilter.checked;
@@ -1053,6 +1054,12 @@ function initAprsMap() {
   if (ft8Filter) {
     ft8Filter.addEventListener("change", () => {
       mapFilter.ft8 = ft8Filter.checked;
+      applyMapFilter();
+    });
+  }
+  if (wsprFilter) {
+    wsprFilter.addEventListener("change", () => {
+      mapFilter.wspr = wsprFilter.checked;
       applyMapFilter();
     });
   }
@@ -1141,27 +1148,43 @@ function applyMapFilter() {
   if (!aprsMap) return;
   mapMarkers.forEach((marker) => {
     const type = marker.__trxType;
-    const visible = (type === "aprs" && mapFilter.aprs) || (type === "ft8" && mapFilter.ft8);
+    const visible =
+      (type === "aprs" && mapFilter.aprs) ||
+      (type === "ft8" && mapFilter.ft8) ||
+      (type === "wspr" && mapFilter.wspr);
     const onMap = aprsMap.hasLayer(marker);
     if (visible && !onMap) marker.addTo(aprsMap);
     if (!visible && onMap) marker.removeFrom(aprsMap);
   });
 }
 
-window.ft8MapAddLocator = function(message, grid) {
+function escapeMapHtml(input) {
+  return String(input)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll("\"", "&quot;");
+}
+
+window.ft8MapAddLocator = function(message, grids, type = "ft8") {
   if (!aprsMap) initAprsMap();
   if (!aprsMap) return;
-  const bounds = maidenheadToBounds(grid);
-  if (!bounds) return;
-  const popupContent = `<b>${grid}</b><br>${message}`;
-  const marker = L.rectangle(bounds, {
-    color: "#ffb020",
-    weight: 1,
-    fillColor: "#ffb020",
-    fillOpacity: 0.25,
-  }).addTo(aprsMap).bindPopup(popupContent);
-  marker.__trxType = "ft8";
-  mapMarkers.add(marker);
+  if (!Array.isArray(grids) || grids.length === 0) return;
+  const unique = [...new Set(grids.map((g) => String(g).toUpperCase()))];
+  const locatorsLines = unique.map((g) => escapeMapHtml(g)).join("<br>");
+  for (const grid of unique) {
+    const bounds = maidenheadToBounds(grid);
+    if (!bounds) continue;
+    const popupContent = `<b>${escapeMapHtml(grid)}</b><br>${locatorsLines}`;
+    const marker = L.rectangle(bounds, {
+      color: "#ffb020",
+      weight: 1,
+      fillColor: "#ffb020",
+      fillOpacity: 0.25,
+    }).addTo(aprsMap).bindPopup(popupContent);
+    marker.__trxType = type === "wspr" ? "wspr" : "ft8";
+    mapMarkers.add(marker);
+  }
   applyMapFilter();
 };
 

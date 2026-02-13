@@ -70,7 +70,9 @@ function renderFt8Message(message) {
   return out;
 }
 
-function extractFirstGrid(message) {
+function extractAllGrids(message) {
+  const out = [];
+  const seen = new Set();
   let i = 0;
   while (i < message.length) {
     if (isAlphaNum(message[i])) {
@@ -78,13 +80,16 @@ function extractFirstGrid(message) {
       while (j < message.length && isAlphaNum(message[j])) j++;
       const token = message.slice(i, j);
       const grid = token.toUpperCase();
-      if (/^[A-R]{2}\d{2}(?:[A-X]{2})?$/.test(grid)) return grid;
+      if (/^[A-R]{2}\d{2}(?:[A-X]{2})?$/.test(grid) && !seen.has(grid)) {
+        seen.add(grid);
+        out.push(grid);
+      }
       i = j;
     } else {
       i += 1;
     }
   }
-  return null;
+  return out;
 }
 
 function escapeHtml(input) {
@@ -149,9 +154,9 @@ document.getElementById("ft8-clear-btn").addEventListener("click", async () => {
 // --- Server-side FT8 decode handler ---
 window.onServerFt8 = function(msg) {
   ft8Status.textContent = "Receiving";
-  const grid = extractFirstGrid(msg.message || "");
-  if (grid && window.ft8MapAddLocator) {
-    window.ft8MapAddLocator(msg.message, grid);
+  const grids = extractAllGrids((msg.message || "").toString());
+  if (grids.length > 0 && window.ft8MapAddLocator) {
+    window.ft8MapAddLocator(msg.message || "", grids);
   }
   addFt8Message({
     ts_ms: msg.ts_ms,

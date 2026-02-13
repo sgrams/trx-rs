@@ -54,6 +54,20 @@ function escapeWsprHtml(input) {
     .replaceAll("\"", "&quot;");
 }
 
+function extractAllGrids(message) {
+  const out = [];
+  const seen = new Set();
+  const parts = message.toUpperCase().split(/[^A-Z0-9]+/);
+  for (const token of parts) {
+    if (!token) continue;
+    if (/^[A-R]{2}\d{2}(?:[A-X]{2})?$/.test(token) && !seen.has(token)) {
+      seen.add(token);
+      out.push(token);
+    }
+  }
+  return out;
+}
+
 function applyWsprFilterToRow(row) {
   if (!wsprFilterText) {
     row.style.display = "";
@@ -86,11 +100,16 @@ document.getElementById("wspr-clear-btn").addEventListener("click", async () => 
 
 window.onServerWspr = function(msg) {
   wsprStatus.textContent = "Receiving";
+  const raw = (msg.message || "").toString();
+  const grids = extractAllGrids(raw);
+  if (grids.length > 0 && window.ft8MapAddLocator) {
+    window.ft8MapAddLocator(raw, grids, "wspr");
+  }
   addWsprMessage({
     ts_ms: msg.ts_ms,
     snr_db: msg.snr_db,
     dt_s: msg.dt_s,
     freq_hz: msg.freq_hz,
-    message: msg.message,
+    message: raw,
   });
 };
