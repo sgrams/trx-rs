@@ -155,6 +155,21 @@ function applyAuthRestrictions() {
     if (jogWheel) jogWheel.style.opacity = "0.5";
     jogButtons.forEach(btn => btn.disabled = true);
 
+    // Disable plugin enable/disable buttons
+    const pluginToggleBtns = [
+      "ft8-decode-toggle-btn",
+      "wspr-decode-toggle-btn",
+      "cw-auto"
+    ];
+    pluginToggleBtns.forEach(id => {
+      const btn = document.getElementById(id);
+      if (btn && btn.tagName === "BUTTON") {
+        btn.disabled = true;
+      } else if (btn && btn.type === "checkbox") {
+        btn.disabled = true;
+      }
+    });
+
     // Hide TX-specific UI but keep controls visible (disabled)
     if (txLimitRow) txLimitRow.style.opacity = "0.5";
   }
