@@ -132,9 +132,10 @@ impl Default for SessionStore {
 }
 
 /// Cookie SameSite attribute
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum SameSite {
     Strict,
+    #[default]
     Lax,
     None,
 }
@@ -146,12 +147,6 @@ impl SameSite {
             Self::Lax => "Lax",
             Self::None => "None",
         }
-    }
-}
-
-impl Default for SameSite {
-    fn default() -> Self {
-        Self::Lax
     }
 }
 
@@ -260,7 +255,7 @@ pub struct LoginResponse {
 /// Extract session from cookie
 fn extract_session_id(req: &HttpRequest) -> Option<SessionId> {
     req.cookie("trx_http_sid")
-        .and_then(|cookie| Some(cookie.value().to_string()))
+        .map(|cookie| cookie.value().to_string())
 }
 
 /// Get session from request, return role if valid

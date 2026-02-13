@@ -143,21 +143,16 @@ impl Default for AudioBridgeConfig {
 }
 
 /// Cookie SameSite attribute options.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, Default)]
 #[serde(rename_all = "PascalCase")]
 pub enum CookieSameSite {
     /// Strict: cookie only sent in same-site context
     Strict,
     /// Lax: cookie sent with top-level navigation (default)
+    #[default]
     Lax,
     /// None: cookie sent in all contexts (requires Secure=true)
     None,
-}
-
-impl Default for CookieSameSite {
-    fn default() -> Self {
-        Self::Lax
-    }
 }
 
 impl AsRef<str> for CookieSameSite {
