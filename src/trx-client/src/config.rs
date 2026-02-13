@@ -365,8 +365,8 @@ impl ClientConfig {
                     port: 8080,
                     auth: HttpAuthConfig {
                         enabled: false,
-                        rx_passphrase: None,
-                        control_passphrase: None,
+                        rx_passphrase: Some("rx-passphrase-example".to_string()),
+                        control_passphrase: Some("control-passphrase-example".to_string()),
                         tx_access_control_enabled: true,
                         session_ttl_min: 480,
                         cookie_secure: false,
