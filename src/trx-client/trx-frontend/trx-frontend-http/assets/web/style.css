@@ -12,6 +12,7 @@
   --accent-green: #00d17f;
   --accent-yellow: #f0ad4e;
   --accent-red: #e55353;
+  --control-height: 2.6rem;
   --jog-hi: #2a3444;
   --jog-lo: #1a2230;
   --jog-shadow: rgba(0,0,0,0.3);
@@ -57,7 +58,7 @@ body { font-family: sans-serif; margin: 0; min-height: 100vh; box-sizing: border
 .label { color: var(--text-muted); font-size: 0.9rem; margin-bottom: 6px; display: block; }
 .status { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1.1rem 1rem; }
 input.status-input, select.status-input { width: 100%; padding: 0.45rem 0.5rem; font-size: 1rem; border: 1px solid var(--border-light); border-radius: 6px; background: var(--input-bg); color: var(--text); }
-#mode { height: 2.6rem; }
+#mode { height: var(--control-height); }
 #freq { font-family: 'DSEG14 Classic', monospace; font-size: 2rem; padding: 0.5rem 0.6rem; letter-spacing: 0.05em; text-align: center; }
 .controls-row {
   display: grid;
@@ -88,7 +89,7 @@ input.status-input, select.status-input { width: 100%; padding: 0.45rem 0.5rem; 
   grid-template-columns: repeat(3, 1fr);
   gap: 0.5rem;
 }
-.btn-grid button { width: 100%; height: 2.6rem; }
+.btn-grid button { width: 100%; height: var(--control-height); }
 .jog-container {
   display: flex;
   align-items: center;
@@ -168,7 +169,7 @@ input.status-input, select.status-input { width: 100%; padding: 0.45rem 0.5rem; 
   border: none;
   border-right: 1px solid var(--border-light);
   border-radius: 0;
-  height: 2.6rem;
+  height: var(--control-height);
   background: var(--input-bg);
   color: var(--text-muted);
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
@@ -185,7 +186,7 @@ input.status-input, select.status-input { width: 100%; padding: 0.45rem 0.5rem; 
   align-items: center;
   margin-top: 0.4rem;
 }
-button { padding: 0.5rem 0.9rem; border-radius: 6px; border: 1px solid var(--btn-border); background: var(--btn-bg); color: var(--text); cursor: pointer; height: 2.6rem; }
+button { padding: 0.5rem 0.9rem; border-radius: 6px; border: 1px solid var(--btn-border); background: var(--btn-bg); color: var(--text); cursor: pointer; height: var(--control-height); }
 button:disabled { opacity: 0.6; cursor: not-allowed; }
 .hint { color: var(--text-muted); font-size: 0.85rem; }
 .inline { display: flex; gap: 0.5rem; align-items: center; }
@@ -347,6 +348,8 @@ small { color: var(--text-muted); }
 .ft8-filter {
   flex: 1;
   min-width: 10rem;
+  height: var(--control-height);
+  box-sizing: border-box;
   background: var(--filter-bg);
   color: var(--filter-fg);
   border: 1px solid var(--filter-border);

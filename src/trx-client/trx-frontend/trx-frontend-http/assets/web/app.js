@@ -623,7 +623,8 @@ function render(update) {
     const access = update.info.access;
     if (access) {
       if (access.Serial) {
-        document.getElementById("about-rig-access").textContent = `Serial (${access.Serial.port || "?"}, ${access.Serial.baud || "?"} baud)`;
+        const serialPath = access.Serial.path || access.Serial.port || "?";
+        document.getElementById("about-rig-access").textContent = `Serial (${serialPath}, ${access.Serial.baud || "?"} baud)`;
       } else if (access.Tcp) {
         document.getElementById("about-rig-access").textContent = `TCP (${access.Tcp.host || "?"}:${access.Tcp.port || "?"})`;
       } else {
