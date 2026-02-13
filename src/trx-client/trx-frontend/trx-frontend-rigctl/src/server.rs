@@ -218,6 +218,12 @@ async fn process_command(
             Ok(snapshot) => ok_response(dump_state_lines(&snapshot)),
             Err(e) => err_response(&e),
         },
+        "1" | "\\dump_caps" | "dump_caps" | "\\dumpcaps" | "dumpcaps" => {
+            match request_snapshot(rig_tx).await {
+                Ok(snapshot) => dump_caps_response(&snapshot),
+                Err(e) => err_response(&e),
+            }
+        }
         "i" | "I" => {
             let snapshot = match current_snapshot(state_rx) {
                 Some(s) => s,
@@ -345,6 +351,53 @@ fn dump_state_lines(_snapshot: &RigSnapshot) -> Vec<String> {
     ]
 }
 
+fn dump_caps_response(snapshot: &RigSnapshot) -> String {
+    // netrigctl_open expects `setting=value` lines terminated by `done`.
+    // Unknown keys are tolerated by Hamlib, but malformed lines are not.
+    let mut resp = String::new();
+    let push = |buf: &mut String, key: &str, val: String| {
+        buf.push_str(key);
+        buf.push('=');
+        buf.push_str(&val);
+        buf.push('\n');
+    };
+
+    push(&mut resp, "protocol_version", "1".to_string());
+    push(&mut resp, "rig_model", "2".to_string());
+    push(&mut resp, "model_name", snapshot.info.model.clone());
+    push(
+        &mut resp,
+        "mfg_name",
+        snapshot.info.manufacturer.clone(),
+    );
+    push(
+        &mut resp,
+        "backend_version",
+        snapshot.info.revision.clone(),
+    );
+    push(
+        &mut resp,
+        "vfo_count",
+        snapshot.info.capabilities.num_vfos.to_string(),
+    );
+    push(
+        &mut resp,
+        "has_vfo_b",
+        if snapshot.info.capabilities.num_vfos >= 2 {
+            "1".to_string()
+        } else {
+            "0".to_string()
+        },
+    );
+    push(
+        &mut resp,
+        "can_ptt",
+        if snapshot.status.tx.is_some() { "1" } else { "0" }.to_string(),
+    );
+    resp.push_str("done\n");
+    resp
+}
+
 fn active_vfo_label(snapshot: &RigSnapshot) -> String {
     // Normalize to VFOA/VFOB/... for hamlib compatibility.
     snapshot
@@ -404,4 +457,75 @@ fn is_true(s: &str) -> bool {
 
 fn is_false(s: &str) -> bool {
     matches!(s, "0" | "off" | "OFF" | "false" | "False" | "FALSE")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use trx_core::rig::{RigAccessMethod, RigCapabilities, RigInfo, RigStatus, RigTxStatus};
+
+    fn test_snapshot() -> RigSnapshot {
+        RigSnapshot {
+            info: RigInfo {
+                manufacturer: "TRX".to_string(),
+                model: "Virtual".to_string(),
+                revision: "0.1.0".to_string(),
+                capabilities: RigCapabilities {
+                    min_freq_step_hz: 1,
+                    supported_bands: vec![],
+                    supported_modes: vec![RigMode::USB],
+                    num_vfos: 2,
+                    lock: false,
+                    lockable: false,
+                    attenuator: false,
+                    preamp: false,
+                    rit: false,
+                    rpt: false,
+                    split: false,
+                },
+                access: RigAccessMethod::Tcp {
+                    addr: "127.0.0.1:4532".to_string(),
+                },
+            },
+            status: RigStatus {
+                freq: Freq { hz: 7_100_000 },
+                mode: RigMode::USB,
+                tx_en: false,
+                vfo: None,
+                tx: Some(RigTxStatus {
+                    power: None,
+                    limit: None,
+                    swr: None,
+                    alc: None,
+                }),
+                rx: None,
+                lock: None,
+            },
+            band: None,
+            enabled: Some(true),
+            initialized: true,
+            server_callsign: None,
+            server_version: None,
+            server_latitude: None,
+            server_longitude: None,
+            pskreporter_status: None,
+            aprs_decode_enabled: false,
+            cw_decode_enabled: false,
+            ft8_decode_enabled: false,
+            wspr_decode_enabled: false,
+            cw_auto: false,
+            cw_wpm: 0,
+            cw_tone_hz: 0,
+        }
+    }
+
+    #[test]
+    fn dump_caps_is_setting_value_and_ends_with_done() {
+        let response = dump_caps_response(&test_snapshot());
+        let lines: Vec<&str> = response.lines().collect();
+        assert!(lines.iter().all(|line| *line == "done" || line.contains('=')));
+        assert_eq!(lines.last(), Some(&"done"));
+        assert!(response.contains("model_name=Virtual\n"));
+        assert!(response.contains("mfg_name=TRX\n"));
+    }
 }
