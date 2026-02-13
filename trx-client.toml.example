@@ -33,6 +33,36 @@ enabled = true
 listen = "127.0.0.1"
 port = 8080
 
+[frontends.http.auth]
+# Optional passphrase-based authentication for the HTTP frontend
+# Disabled by default to preserve backward compatibility
+
+# Enable authentication (default: false)
+enabled = false
+
+# Read-only passphrase: grants access to status/events/audio (rx role)
+# Leave unset to disable rx access
+# rx_passphrase = "rx-only-passphrase"
+
+# Full control passphrase: grants access to all endpoints including TX/PTT (control role)
+# Leave unset to disable control access
+# control_passphrase = "full-control-passphrase"
+
+# Enforce TX/PTT access control (default: true)
+# When true, TX/PTT endpoints return 404 to authenticated users without control role
+tx_access_control_enabled = true
+
+# Session time-to-live in minutes (default: 480 = 8 hours)
+session_ttl_min = 480
+
+# Set Secure flag on session cookie (default: false)
+# Should be true if served over HTTPS; false for HTTP/localhost
+cookie_secure = false
+
+# Cookie SameSite attribute: Strict, Lax (default), or None
+# Lax is a good balance between security and usability
+cookie_same_site = "Lax"
+
 [frontends.rigctl]
 # Enable rigctl-compatible TCP interface (hamlib compatible)
 enabled = false

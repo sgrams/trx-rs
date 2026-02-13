@@ -10,6 +10,102 @@ function loadSetting(key, fallback) {
   } catch(e) { return fallback; }
 }
 
+// --- Authentication ---
+let authRole = null;  // null (not authenticated), "rx" (read-only), or "control" (full access)
+
+async function checkAuthStatus() {
+  try {
+    const resp = await fetch("/auth/session");
+    if (!resp.ok) return { authenticated: false };
+    const data = await resp.json();
+    return data;
+  } catch (e) {
+    console.error("Auth check failed:", e);
+    return { authenticated: false };
+  }
+}
+
+async function authLogin(passphrase) {
+  try {
+    const resp = await fetch("/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ passphrase }),
+    });
+    if (!resp.ok) {
+      const text = await resp.text();
+      throw new Error(text || "Login failed");
+    }
+    const data = await resp.json();
+    return data;
+  } catch (e) {
+    throw e;
+  }
+}
+
+async function authLogout() {
+  try {
+    const resp = await fetch("/auth/logout", { method: "POST" });
+    if (!resp.ok) throw new Error("Logout failed");
+    authRole = null;
+    location.reload();
+  } catch (e) {
+    console.error("Logout failed:", e);
+  }
+}
+
+function showAuthGate() {
+  document.getElementById("loading").style.display = "none";
+  document.getElementById("content").style.display = "none";
+  document.getElementById("auth-gate").style.display = "block";
+}
+
+function hideAuthGate() {
+  document.getElementById("auth-gate").style.display = "none";
+  document.getElementById("loading").style.display = "block";
+}
+
+function showAuthError(msg) {
+  const el = document.getElementById("auth-error");
+  el.textContent = msg;
+  el.style.display = "block";
+  setTimeout(() => {
+    el.style.display = "none";
+  }, 5000);
+}
+
+function updateAuthUI() {
+  const btn = document.getElementById("logout-btn");
+  const badge = document.getElementById("auth-badge");
+  const badgeRole = document.getElementById("auth-role-badge");
+
+  if (authRole) {
+    btn.style.display = "block";
+    badge.style.display = "block";
+    badgeRole.textContent = authRole === "control" ? "Control (full access)" : "RX (read-only)";
+  } else {
+    btn.style.display = "none";
+    badge.style.display = "none";
+  }
+}
+
+function applyAuthRestrictions() {
+  if (!authRole) return;
+
+  // Hide TX/PTT controls for rx role
+  if (authRole === "rx") {
+    const pttBtn = document.getElementById("ptt-btn");
+    const powerBtn = document.getElementById("power-btn");
+    const txLimitRow = document.getElementById("tx-limit-row");
+    const txAudioBtn = document.getElementById("tx-audio-btn");
+
+    if (pttBtn) pttBtn.style.display = "none";
+    if (powerBtn) powerBtn.disabled = true;
+    if (txLimitRow) txLimitRow.style.display = "none";
+    if (txAudioBtn) txAudioBtn.style.display = "none";
+  }
+}
+
 const freqEl = document.getElementById("freq");
 const wavelengthEl = document.getElementById("wavelength");
 const modeEl = document.getElementById("mode");
@@ -754,10 +850,13 @@ function connect() {
     }
   };
   es.onerror = () => {
-    powerHint.textContent = "Disconnected, retrying…";
-    es.close();
-    pollFreshSnapshot();
-    scheduleReconnect(1000);
+    // Check if this is an auth error by looking at readyState
+    if (es.readyState === EventSource.CLOSED) {
+      powerHint.textContent = "Disconnected, retrying…";
+      es.close();
+      pollFreshSnapshot();
+      scheduleReconnect(1000);
+    }
   };
 
   esHeartbeat = setInterval(() => {
@@ -772,6 +871,13 @@ function connect() {
 
 async function postPath(path) {
   const resp = await fetch(path, { method: "POST" });
+  if (resp.status === 401 || resp.status === 403) {
+    // Auth error - return to login
+    authRole = null;
+    if (es) es.close();
+    showAuthGate();
+    throw new Error("Authentication required");
+  }
   if (!resp.ok) {
     const text = await resp.text();
     throw new Error(text || resp.statusText);
@@ -1015,9 +1121,57 @@ document.querySelector(".tab-bar").addEventListener("click", (e) => {
   document.getElementById(`tab-${btn.dataset.tab}`).style.display = "";
 });
 
-connect();
-resizeHeaderSignalCanvas();
-startHeaderSignalSampling();
+// --- Auth startup sequence ---
+async function initializeApp() {
+  const authStatus = await checkAuthStatus();
+  if (authStatus.authenticated) {
+    authRole = authStatus.role;
+    updateAuthUI();
+    applyAuthRestrictions();
+    connect();
+    resizeHeaderSignalCanvas();
+    startHeaderSignalSampling();
+  } else {
+    showAuthGate();
+  }
+}
+
+// Setup auth form
+document.getElementById("auth-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const passphrase = document.getElementById("auth-passphrase").value;
+  const btn = document.querySelector("#auth-form button[type=submit]");
+  btn.disabled = true;
+  btn.textContent = "Logging in...";
+
+  try {
+    const result = await authLogin(passphrase);
+    authRole = result.role;
+    document.getElementById("auth-passphrase").value = "";
+    hideAuthGate();
+    updateAuthUI();
+    applyAuthRestrictions();
+    connect();
+    resizeHeaderSignalCanvas();
+    startHeaderSignalSampling();
+  } catch (err) {
+    showAuthError("Invalid passphrase");
+    console.error("Login error:", err);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "Login";
+  }
+});
+
+// Setup logout button
+document.getElementById("logout-btn").addEventListener("click", async () => {
+  if (confirm("Are you sure you want to logout?")) {
+    await authLogout();
+  }
+});
+
+// Start the app
+initializeApp();
 window.addEventListener("resize", resizeHeaderSignalCanvas);
 
 // --- Leaflet Map (lazy-initialized) ---

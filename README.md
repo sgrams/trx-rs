@@ -21,6 +21,47 @@ Configuration reference: see `CONFIGURATION.md` for all server/client options an
 - JSON TCP control frontend (`trx-frontend-http-json`)
 - rigctl-compatible TCP frontend (`trx-frontend-rigctl`, listens on 127.0.0.1:4532)
 
+## HTTP Frontend Authentication
+
+The HTTP frontend supports optional passphrase-based authentication with two roles:
+
+- **rx**: Read-only access to status, events, decode history, and audio streams
+- **control**: Full access including transmit control (TX/PTT) and power toggling
+
+Authentication is disabled by default for backward compatibility. When enabled, users must log in via a passphrase before accessing the web UI. Sessions are managed server-side with configurable time-to-live and cookie security settings.
+
+### Configuration
+
+Enable authentication in `trx-client.toml`:
+
+```toml
+[frontends.http.auth]
+enabled = true
+rx_passphrase = "read-only-secret"
+control_passphrase = "full-control-secret"
+session_ttl_min = 480          # 8 hours
+cookie_secure = false          # Set to true for HTTPS
+cookie_same_site = "Lax"
+```
+
+### Security Considerations
+
+- **Local/LAN use**: Default settings are safe for 127.0.0.1 or trusted local networks.
+- **Remote access**: For internet-exposed deployments:
+  - Deploy behind HTTPS (reverse proxy or TLS termination)
+  - Set `cookie_secure = true`
+  - Use strong passphrases (random, 16+ chars)
+  - Consider firewall rules and network segmentation
+- **Passphrase storage**: Passphrases are stored in plaintext in the config file. Protect the config file with appropriate file permissions.
+- **No rate limiting**: The current implementation does not include login rate limiting. For high-security scenarios, deploy behind a reverse proxy with rate limiting.
+
+### Architecture
+
+- **Sessions**: In-memory, expire after configured TTL (default 8 hours)
+- **Cookies**: HttpOnly, configurable Secure and SameSite attributes
+- **Route protection**: Middleware validates session on protected endpoints; public routes (static assets, login) are always accessible
+- **TX/PTT gating**: Control-only endpoints return 404 to rx-authenticated users (when `tx_access_control_enabled=true`)
+
 ## Audio streaming
 
 Bidirectional Opus audio streaming between server, client, and browser.
