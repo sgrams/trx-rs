@@ -48,9 +48,14 @@ async function authLogout() {
     const resp = await fetch("/auth/logout", { method: "POST" });
     if (!resp.ok) throw new Error("Logout failed");
     authRole = null;
-    location.reload();
+    // Disconnect and show auth gate without page reload
+    disconnect();
+    document.getElementById("content").style.display = "none";
+    updateAuthUI();
+    showAuthGate(false);
   } catch (e) {
     console.error("Logout failed:", e);
+    showAuthError("Logout failed");
   }
 }
 
@@ -907,6 +912,27 @@ function connect() {
       scheduleReconnect(250);
     }
   }, 5000);
+}
+
+function disconnect() {
+  // Close event sources
+  if (es) {
+    es.close();
+    es = null;
+  }
+  if (decodeSource) {
+    decodeSource.close();
+    decodeSource = null;
+  }
+  // Clear timers
+  if (esHeartbeat) {
+    clearInterval(esHeartbeat);
+    esHeartbeat = null;
+  }
+  if (reconnectTimer) {
+    clearTimeout(reconnectTimer);
+    reconnectTimer = null;
+  }
 }
 
 async function postPath(path) {
