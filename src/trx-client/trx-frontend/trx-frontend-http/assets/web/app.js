@@ -810,6 +810,11 @@ freqEl.addEventListener("keydown", (e) => {
     applyFreqFromInput();
   }
 });
+freqEl.addEventListener("wheel", (e) => {
+  e.preventDefault();
+  const direction = e.deltaY < 0 ? 1 : -1;
+  jogFreq(direction);
+}, { passive: false });
 
 // --- Jog wheel ---
 const jogWheel = document.getElementById("jog-wheel");
