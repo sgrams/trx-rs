@@ -75,3 +75,19 @@ port = 4739
 # Optional receiver locator (4 or 6-char Maidenhead).
 # If omitted, it is derived from [general].latitude/[general].longitude.
 # receiver_locator = "JO93"
+
+[decode_logs]
+# Optional decoder message logs to files (APRS/CW/FT8/WSPR)
+enabled = false
+
+# Base directory for decoder logs.
+# Default (if omitted): $XDG_DATA_HOME/trx-rs/decoders
+# Fallback: logs/decoders
+# dir = "/path/to/decoder-logs"
+
+# Per-decoder log file names
+# Supported tokens: %YYYY% %MM% %DD%
+aprs_file = "TRXRS-APRS-%YYYY%-%MM%-%DD%.log"
+cw_file = "TRXRS-CW-%YYYY%-%MM%-%DD%.log"
+ft8_file = "TRXRS-FT8-%YYYY%-%MM%-%DD%.log"
+wspr_file = "TRXRS-WSPR-%YYYY%-%MM%-%DD%.log"

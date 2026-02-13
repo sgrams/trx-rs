@@ -35,6 +35,8 @@ pub struct ServerConfig {
     pub audio: AudioConfig,
     /// PSK Reporter uplink configuration
     pub pskreporter: PskReporterConfig,
+    /// Decoder file logging configuration
+    pub decode_logs: DecodeLogsConfig,
 }
 
 /// General application settings.
@@ -231,6 +233,48 @@ impl Default for PskReporterConfig {
     }
 }
 
+fn default_decode_logs_dir() -> String {
+    if let Some(data_dir) = dirs::data_dir() {
+        return data_dir
+            .join("trx-rs")
+            .join("decoders")
+            .to_string_lossy()
+            .to_string();
+    }
+    "logs/decoders".to_string()
+}
+
+/// Server-side decoder file logging configuration.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct DecodeLogsConfig {
+    /// Whether decoder file logging is enabled
+    pub enabled: bool,
+    /// Base directory for log files
+    pub dir: String,
+    /// APRS decoder log filename
+    pub aprs_file: String,
+    /// CW decoder log filename
+    pub cw_file: String,
+    /// FT8 decoder log filename
+    pub ft8_file: String,
+    /// WSPR decoder log filename
+    pub wspr_file: String,
+}
+
+impl Default for DecodeLogsConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            dir: default_decode_logs_dir(),
+            aprs_file: "TRXRS-APRS-%YYYY%-%MM%-%DD%.log".to_string(),
+            cw_file: "TRXRS-CW-%YYYY%-%MM%-%DD%.log".to_string(),
+            ft8_file: "TRXRS-FT8-%YYYY%-%MM%-%DD%.log".to_string(),
+            wspr_file: "TRXRS-WSPR-%YYYY%-%MM%-%DD%.log".to_string(),
+        }
+    }
+}
+
 impl ServerConfig {
     pub fn validate(&self) -> Result<(), String> {
         validate_log_level(self.general.log_level.as_deref())?;
@@ -307,6 +351,21 @@ impl ServerConfig {
             }
         }
 
+        if self.decode_logs.enabled {
+            if self.decode_logs.dir.trim().is_empty() {
+                return Err("[decode_logs].dir must not be empty when enabled".to_string());
+            }
+            if self.decode_logs.aprs_file.trim().is_empty()
+                || self.decode_logs.cw_file.trim().is_empty()
+                || self.decode_logs.ft8_file.trim().is_empty()
+                || self.decode_logs.wspr_file.trim().is_empty()
+            {
+                return Err(
+                    "[decode_logs] file names must not be empty when enabled".to_string(),
+                );
+            }
+        }
+
         Ok(())
     }
 
@@ -346,6 +405,7 @@ impl ServerConfig {
             listen: ListenConfig::default(),
             audio: AudioConfig::default(),
             pskreporter: PskReporterConfig::default(),
+            decode_logs: DecodeLogsConfig::default(),
         };
 
         toml::to_string_pretty(&example).unwrap_or_default()
@@ -478,6 +538,11 @@ mod tests {
         assert_eq!(config.audio.sample_rate, 48000);
         assert!(!config.pskreporter.enabled);
         assert_eq!(config.pskreporter.port, 4739);
+        assert!(!config.decode_logs.enabled);
+        assert!(
+            std::path::Path::new(&config.decode_logs.dir)
+                .ends_with(std::path::Path::new("decoders"))
+        );
     }
 
     #[test]

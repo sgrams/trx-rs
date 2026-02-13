@@ -27,6 +27,7 @@ use trx_wspr::WsprDecoder;
 
 use crate::config::AudioConfig;
 use crate::decode;
+use crate::decode_logs::DecoderLoggers;
 
 const APRS_HISTORY_RETENTION: Duration = Duration::from_secs(24 * 60 * 60);
 const FT8_HISTORY_RETENTION: Duration = Duration::from_secs(24 * 60 * 60);
@@ -609,6 +610,7 @@ pub async fn run_aprs_decoder(
     mut pcm_rx: broadcast::Receiver<Vec<f32>>,
     mut state_rx: watch::Receiver<RigState>,
     decode_tx: broadcast::Sender<DecodedMessage>,
+    decode_logs: Option<Arc<DecoderLoggers>>,
 ) {
     info!("APRS decoder started ({}Hz, {} ch)", sample_rate, channels);
     let mut decoder = decode::aprs::AprsDecoder::new(sample_rate);
@@ -662,6 +664,9 @@ pub async fn run_aprs_decoder(
                         was_active = true;
                         for pkt in decoder.process_samples(&mono) {
                             record_aprs_packet(pkt.clone());
+                            if let Some(logger) = decode_logs.as_ref() {
+                                logger.log_aprs(&pkt);
+                            }
                             let _ = decode_tx.send(DecodedMessage::Aprs(pkt));
                         }
                     }
@@ -703,6 +708,7 @@ pub async fn run_cw_decoder(
     mut pcm_rx: broadcast::Receiver<Vec<f32>>,
     mut state_rx: watch::Receiver<RigState>,
     decode_tx: broadcast::Sender<DecodedMessage>,
+    decode_logs: Option<Arc<DecoderLoggers>>,
 ) {
     info!("CW decoder started ({}Hz, {} ch)", sample_rate, channels);
     let mut decoder = decode::cw::CwDecoder::new(sample_rate);
@@ -785,6 +791,9 @@ pub async fn run_cw_decoder(
 
                         was_active = true;
                         for evt in decoder.process_samples(&mono) {
+                            if let Some(logger) = decode_logs.as_ref() {
+                                logger.log_cw(&evt);
+                            }
                             let _ = decode_tx.send(DecodedMessage::Cw(evt));
                         }
                     }
@@ -872,6 +881,7 @@ pub async fn run_ft8_decoder(
     mut pcm_rx: broadcast::Receiver<Vec<f32>>,
     mut state_rx: watch::Receiver<RigState>,
     decode_tx: broadcast::Sender<DecodedMessage>,
+    decode_logs: Option<Arc<DecoderLoggers>>,
 ) {
     info!("FT8 decoder started ({}Hz, {} ch)", sample_rate, channels);
     let mut decoder = match Ft8Decoder::new(FT8_SAMPLE_RATE) {
@@ -957,6 +967,9 @@ pub async fn run_ft8_decoder(
                                         message: res.text,
                                     };
                                     record_ft8_message(msg.clone());
+                                    if let Some(logger) = decode_logs.as_ref() {
+                                        logger.log_ft8(&msg);
+                                    }
                                     let _ = decode_tx.send(DecodedMessage::Ft8(msg));
                                 }
                             }
@@ -1004,6 +1017,7 @@ pub async fn run_wspr_decoder(
     mut pcm_rx: broadcast::Receiver<Vec<f32>>,
     mut state_rx: watch::Receiver<RigState>,
     decode_tx: broadcast::Sender<DecodedMessage>,
+    decode_logs: Option<Arc<DecoderLoggers>>,
 ) {
     info!("WSPR decoder started ({}Hz, {} ch)", sample_rate, channels);
     let decoder = match WsprDecoder::new() {
@@ -1069,6 +1083,9 @@ pub async fn run_wspr_decoder(
                                             message: res.message,
                                         };
                                         record_wspr_message(msg.clone());
+                                        if let Some(logger) = decode_logs.as_ref() {
+                                            logger.log_wspr(&msg);
+                                        }
                                         let _ = decode_tx.send(DecodedMessage::Wspr(msg));
                                     }
                                 }

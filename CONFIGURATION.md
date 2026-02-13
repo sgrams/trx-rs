@@ -97,6 +97,19 @@ Notes:
 - If `receiver_locator` is omitted, server tries deriving it from `[general].latitude`/`longitude`.
 - PSK Reporter software ID is hardcoded to: `trx-server v<version> by SP2SJG`.
 
+### `[decode_logs]`
+- `enabled` (`bool`, default: `false`)
+- `dir` (`string`, default: `"$XDG_DATA_HOME/trx-rs/decoders"`; fallback: `"logs/decoders"`, must not be empty when enabled)
+- `aprs_file` (`string`, default: `"TRXRS-APRS-%YYYY%-%MM%-%DD%.log"`, must not be empty when enabled)
+- `cw_file` (`string`, default: `"TRXRS-CW-%YYYY%-%MM%-%DD%.log"`, must not be empty when enabled)
+- `ft8_file` (`string`, default: `"TRXRS-FT8-%YYYY%-%MM%-%DD%.log"`, must not be empty when enabled)
+- `wspr_file` (`string`, default: `"TRXRS-WSPR-%YYYY%-%MM%-%DD%.log"`, must not be empty when enabled)
+
+Notes:
+- Decoder logs are server-side and split by decoder name (APRS/CW/FT8/WSPR).
+- Files are appended in JSON Lines format (one JSON object per line).
+- Supported filename date tokens: `%YYYY%`, `%MM%`, `%DD%` (UTC date).
+
 ## `trx-client` Options
 
 ### `[general]`

@@ -16,6 +16,7 @@ toml = { workspace = true }
 tracing = { workspace = true }
 clap = { workspace = true, features = ["derive"] }
 dirs = "6"
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
 bytes = "1"
 cpal = "0.15"
 opus = "0.3"

@@ -5,6 +5,7 @@
 mod audio;
 mod config;
 mod decode;
+mod decode_logs;
 mod error;
 mod listener;
 mod pskreporter;
@@ -33,6 +34,7 @@ use trx_core::rig::state::RigState;
 use trx_core::DynResult;
 
 use config::ServerConfig;
+use decode_logs::DecoderLoggers;
 
 const PKG_DESCRIPTION: &str = concat!(env!("CARGO_PKG_NAME"), " - rig server daemon");
 const RIG_TASK_CHANNEL_BUFFER: usize = 32;
@@ -402,6 +404,14 @@ async fn main() -> DynResult<()> {
             }
         }
 
+        let decoder_logs = match DecoderLoggers::from_config(&cfg.decode_logs) {
+            Ok(v) => v,
+            Err(e) => {
+                warn!("Decoder file logging disabled: {}", e);
+                None
+            }
+        };
+
         if cfg.audio.rx_enabled {
             let _capture_thread =
                 audio::spawn_audio_capture(&cfg.audio, rx_audio_tx.clone(), Some(pcm_tx.clone()));
@@ -413,9 +423,10 @@ async fn main() -> DynResult<()> {
             let aprs_sr = cfg.audio.sample_rate;
             let aprs_ch = cfg.audio.channels;
             let aprs_shutdown_rx = shutdown_rx.clone();
+            let aprs_logs = decoder_logs.clone();
             task_handles.push(tokio::spawn(async move {
                 tokio::select! {
-                    _ = audio::run_aprs_decoder(aprs_sr, aprs_ch as u16, aprs_pcm_rx, aprs_state_rx, aprs_decode_tx) => {}
+                    _ = audio::run_aprs_decoder(aprs_sr, aprs_ch as u16, aprs_pcm_rx, aprs_state_rx, aprs_decode_tx, aprs_logs) => {}
                     _ = wait_for_shutdown(aprs_shutdown_rx) => {}
                 }
             }));
@@ -427,9 +438,10 @@ async fn main() -> DynResult<()> {
             let cw_sr = cfg.audio.sample_rate;
             let cw_ch = cfg.audio.channels;
             let cw_shutdown_rx = shutdown_rx.clone();
+            let cw_logs = decoder_logs.clone();
             task_handles.push(tokio::spawn(async move {
                 tokio::select! {
-                    _ = audio::run_cw_decoder(cw_sr, cw_ch as u16, cw_pcm_rx, cw_state_rx, cw_decode_tx) => {}
+                    _ = audio::run_cw_decoder(cw_sr, cw_ch as u16, cw_pcm_rx, cw_state_rx, cw_decode_tx, cw_logs) => {}
                     _ = wait_for_shutdown(cw_shutdown_rx) => {}
                 }
             }));
@@ -441,9 +453,10 @@ async fn main() -> DynResult<()> {
             let ft8_sr = cfg.audio.sample_rate;
             let ft8_ch = cfg.audio.channels;
             let ft8_shutdown_rx = shutdown_rx.clone();
+            let ft8_logs = decoder_logs.clone();
             task_handles.push(tokio::spawn(async move {
                 tokio::select! {
-                    _ = audio::run_ft8_decoder(ft8_sr, ft8_ch as u16, ft8_pcm_rx, ft8_state_rx, ft8_decode_tx) => {}
+                    _ = audio::run_ft8_decoder(ft8_sr, ft8_ch as u16, ft8_pcm_rx, ft8_state_rx, ft8_decode_tx, ft8_logs) => {}
                     _ = wait_for_shutdown(ft8_shutdown_rx) => {}
                 }
             }));
@@ -455,9 +468,10 @@ async fn main() -> DynResult<()> {
             let wspr_sr = cfg.audio.sample_rate;
             let wspr_ch = cfg.audio.channels;
             let wspr_shutdown_rx = shutdown_rx.clone();
+            let wspr_logs = decoder_logs.clone();
             task_handles.push(tokio::spawn(async move {
                 tokio::select! {
-                    _ = audio::run_wspr_decoder(wspr_sr, wspr_ch as u16, wspr_pcm_rx, wspr_state_rx, wspr_decode_tx) => {}
+                    _ = audio::run_wspr_decoder(wspr_sr, wspr_ch as u16, wspr_pcm_rx, wspr_state_rx, wspr_decode_tx, wspr_logs) => {}
                     _ = wait_for_shutdown(wspr_shutdown_rx) => {}
                 }
             }));
