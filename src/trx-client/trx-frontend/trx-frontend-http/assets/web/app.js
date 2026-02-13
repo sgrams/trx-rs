@@ -961,12 +961,16 @@ function disconnect() {
 
 async function postPath(path) {
   const resp = await fetch(path, { method: "POST" });
-  if (resp.status === 401 || resp.status === 403) {
-    // Auth error - return to login
+  if (resp.status === 401) {
+    // Not authenticated - return to login
     authRole = null;
     if (es) es.close();
     showAuthGate();
     throw new Error("Authentication required");
+  }
+  if (resp.status === 403) {
+    // Authenticated but insufficient permissions - don't redirect
+    throw new Error("Insufficient permissions");
   }
   if (!resp.ok) {
     const text = await resp.text();
