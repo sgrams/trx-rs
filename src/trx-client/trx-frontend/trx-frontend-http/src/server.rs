@@ -17,7 +17,10 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use actix_web::dev::Server;
-use actix_web::{web, App, HttpServer, middleware::Logger};
+use actix_web::{
+    middleware::{DefaultHeaders, Logger},
+    web, App, HttpServer,
+};
 use tokio::signal;
 use tokio::sync::{mpsc, watch};
 use tokio::task::JoinHandle;
@@ -117,7 +120,16 @@ fn build_server(
             .app_data(clients.clone())
             .app_data(context_data.clone())
             .app_data(auth_state.clone())
-            .wrap(Logger::default())
+            .wrap(
+                DefaultHeaders::new()
+                    .add(("Referrer-Policy", "same-origin"))
+                    .add(("Cross-Origin-Resource-Policy", "same-origin"))
+                    .add(("Cross-Origin-Opener-Policy", "same-origin"))
+                    .add(("X-Content-Type-Options", "nosniff")),
+            )
+            // Use "real IP" so reverse-proxy setups can pass client address
+            // via Forwarded / X-Forwarded-For / X-Real-IP headers.
+            .wrap(Logger::new(r#"%{r}a "%r" %s %b "%{Referer}i" "%{User-Agent}i" %T"#))
             .wrap(auth::AuthMiddleware)
             .configure(api::configure)
     })
