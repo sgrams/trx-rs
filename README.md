@@ -2,11 +2,11 @@
   <img src="assets/trx-logo.png" alt="trx-rs logo" width="25%" />
 </div>
 
-# trx-rs (work in progress)
+# trx-rs
 
-This is an early, untested snapshot of a transceiver control stack (core + backend + frontends). Things may change quickly and APIs are not stable yet. Expect rough edges and bugs; use at your own risk and please report issues you hit. Features, tests and docs are still being written (or not).
+A modular transceiver control stack with configurable backends and frontends. The rig task is driven by controller components (state machine, handlers, and policies) with configurable polling and retry behavior via the `[behavior]` section in the config file.
 
-The rig task is now driven by the controller components (state machine, handlers, and policies). Polling and retry behavior are configurable via the `[behavior]` section in the config file.
+**Note**: This is a live project with evolving APIs. Please report issues and feature requests.
 
 Configuration reference: see `CONFIGURATION.md` for all server/client options and defaults.
 
