@@ -109,7 +109,7 @@ impl Default for AudioClientConfig {
     fn default() -> Self {
         Self {
             enabled: true,
-            server_port: 4533,
+            server_port: 4531,
             bridge: AudioBridgeConfig::default(),
         }
     }

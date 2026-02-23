@@ -16,7 +16,7 @@ use trx_core::{RigError, RigResult};
 use trx_protocol::rig_command_to_client;
 use trx_protocol::{ClientCommand, ClientEnvelope, ClientResponse};
 
-const DEFAULT_REMOTE_PORT: u16 = 4532;
+const DEFAULT_REMOTE_PORT: u16 = 4530;
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
 const IO_TIMEOUT: Duration = Duration::from_secs(10);
 const MAX_JSON_LINE_BYTES: usize = 16 * 1024;

@@ -82,7 +82,7 @@ port = 0
 # Enable remote audio stream and decode transport
 enabled = true
 # Remote trx-server audio port
-server_port = 4533
+server_port = 4531
 
 [frontends.audio.bridge]
 # Enable local cpal bridge for WSJT-X virtual audio routing
