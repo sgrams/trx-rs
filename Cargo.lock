@@ -2337,6 +2337,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "trx-cw"
+version = "0.1.0"
+dependencies = [
+ "trx-core",
+]
+
+[[package]]
 name = "trx-frontend"
 version = "0.1.0"
 dependencies = [
@@ -2425,6 +2432,7 @@ dependencies = [
  "trx-aprs",
  "trx-backend",
  "trx-core",
+ "trx-cw",
  "trx-ft8",
  "trx-protocol",
  "trx-wspr",

@@ -23,11 +23,11 @@ use trx_core::audio::{
 use trx_core::decode::{AprsPacket, DecodedMessage, Ft8Message, WsprMessage};
 use trx_core::rig::state::{RigMode, RigState};
 use trx_aprs::AprsDecoder;
+use trx_cw::CwDecoder;
 use trx_ft8::Ft8Decoder;
 use trx_wspr::WsprDecoder;
 
 use crate::config::AudioConfig;
-use crate::decode;
 use crate::decode_logs::DecoderLoggers;
 
 const APRS_HISTORY_RETENTION: Duration = Duration::from_secs(24 * 60 * 60);
@@ -765,7 +765,7 @@ pub async fn run_cw_decoder(
     decode_logs: Option<Arc<DecoderLoggers>>,
 ) {
     info!("CW decoder started ({}Hz, {} ch)", sample_rate, channels);
-    let mut decoder = decode::cw::CwDecoder::new(sample_rate);
+    let mut decoder = CwDecoder::new(sample_rate);
     let mut was_active = false;
     let mut last_reset_seq: u64 = 0;
     let mut active = matches!(state_rx.borrow().status.mode, RigMode::CW | RigMode::CWR);

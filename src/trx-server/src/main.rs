@@ -5,7 +5,6 @@
 mod aprsfi;
 mod audio;
 mod config;
-mod decode;
 mod decode_logs;
 mod error;
 mod listener;

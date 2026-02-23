@@ -25,6 +25,7 @@ trx-app = { path = "../trx-app" }
 trx-backend = { path = "trx-backend" }
 trx-core = { path = "../trx-core" }
 trx-aprs = { path = "../decoders/trx-aprs" }
+trx-cw = { path = "../decoders/trx-cw" }
 trx-ft8 = { path = "../decoders/trx-ft8" }
 trx-wspr = { path = "../decoders/trx-wspr" }
 trx-protocol = { path = "../trx-protocol" }
