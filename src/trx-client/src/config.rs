@@ -480,7 +480,7 @@ mod tests {
         assert!(config.remote.url.is_none());
         assert_eq!(config.remote.poll_interval_ms, 750);
         assert!(config.frontends.audio.enabled);
-        assert_eq!(config.frontends.audio.server_port, 4533);
+        assert_eq!(config.frontends.audio.server_port, 4531);
         assert!(!config.frontends.audio.bridge.enabled);
         assert_eq!(config.frontends.audio.bridge.rx_gain, 1.0);
         assert_eq!(config.frontends.audio.bridge.tx_gain, 1.0);

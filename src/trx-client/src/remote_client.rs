@@ -329,7 +329,7 @@ mod tests {
             parsed,
             RemoteEndpoint {
                 host: "example.local".to_string(),
-                port: 4532
+                port: 4530
             }
         );
     }
