@@ -317,9 +317,13 @@ fn run_capture(
                 let stream_failed = stream_failed.clone();
                 let stream_err_tx = stream_err_tx.clone();
                 move |err| {
-                    input_err_logger.log(&err.to_string());
-                    stream_failed.store(true, Ordering::SeqCst);
-                    let _ = stream_err_tx.try_send(());
+                    // swap ensures only the first error does expensive work;
+                    // subsequent callbacks (can fire millions/s on ALSA EPIPE)
+                    // return immediately after a single atomic op.
+                    if !stream_failed.swap(true, Ordering::SeqCst) {
+                        input_err_logger.log(&err.to_string());
+                        let _ = stream_err_tx.try_send(());
+                    }
                 }
             },
             None,
@@ -503,9 +507,13 @@ fn run_playback(
                 let stream_failed = stream_failed.clone();
                 let stream_err_tx = stream_err_tx.clone();
                 move |err| {
-                    output_err_logger.log(&err.to_string());
-                    stream_failed.store(true, Ordering::SeqCst);
-                    let _ = stream_err_tx.try_send(());
+                    // swap ensures only the first error does expensive work;
+                    // subsequent callbacks (can fire millions/s on ALSA EPIPE)
+                    // return immediately after a single atomic op.
+                    if !stream_failed.swap(true, Ordering::SeqCst) {
+                        output_err_logger.log(&err.to_string());
+                        let _ = stream_err_tx.try_send(());
+                    }
                 }
             },
             None,
@@ -521,10 +529,12 @@ fn run_playback(
             }
         };
 
-        if !playing {
-            // stay paused until packets arrive
-        } else {
-            stream.play()?;
+        if playing {
+            if let Err(e) = stream.play() {
+                warn!("Audio playback: stream.play failed, recreating: {}", e);
+                std::thread::sleep(AUDIO_STREAM_RECOVERY_DELAY);
+                continue;
+            }
         }
 
         loop {
@@ -544,7 +554,10 @@ fn run_playback(
             match rx.try_recv() {
                 Ok(packet) => {
                     if !playing {
-                        stream.play()?;
+                        if let Err(e) = stream.play() {
+                            warn!("Audio playback: stream.play failed, recreating: {}", e);
+                            break;
+                        }
                         playing = true;
                         info!("Audio playback: started");
                     }
