@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: BSD-2-Clause
 
 fn main() {
-    let base = "../../external/ft8_lib";
+    let base = "../../../external/ft8_lib";
     let mut build = cc::Build::new();
     build
         .include(base)

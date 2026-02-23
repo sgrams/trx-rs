@@ -22,6 +22,7 @@ use trx_core::audio::{
 };
 use trx_core::decode::{AprsPacket, DecodedMessage, Ft8Message, WsprMessage};
 use trx_core::rig::state::{RigMode, RigState};
+use trx_aprs::AprsDecoder;
 use trx_ft8::Ft8Decoder;
 use trx_wspr::WsprDecoder;
 
@@ -666,7 +667,7 @@ pub async fn run_aprs_decoder(
     decode_logs: Option<Arc<DecoderLoggers>>,
 ) {
     info!("APRS decoder started ({}Hz, {} ch)", sample_rate, channels);
-    let mut decoder = decode::aprs::AprsDecoder::new(sample_rate);
+    let mut decoder = AprsDecoder::new(sample_rate);
     let mut was_active = false;
     let mut last_reset_seq: u64 = 0;
     let mut active = matches!(state_rx.borrow().status.mode, RigMode::PKT);

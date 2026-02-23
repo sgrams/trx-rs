@@ -1,0 +1,11 @@
+# SPDX-FileCopyrightText: 2026 Stanislaw Grams <stanislawgrams@gmail.com>
+#
+# SPDX-License-Identifier: BSD-2-Clause
+
+[package]
+name = "trx-aprs"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+trx-core = { path = "../../trx-core" }

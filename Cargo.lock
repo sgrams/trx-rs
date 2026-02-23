@@ -2262,6 +2262,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "trx-aprs"
+version = "0.1.0"
+dependencies = [
+ "trx-core",
+]
+
+[[package]]
 name = "trx-backend"
 version = "0.1.0"
 dependencies = [
@@ -2415,6 +2422,7 @@ dependencies = [
  "toml",
  "tracing",
  "trx-app",
+ "trx-aprs",
  "trx-backend",
  "trx-core",
  "trx-ft8",
