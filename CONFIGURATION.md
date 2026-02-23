@@ -63,7 +63,7 @@ Notes:
 ### `[listen]`
 - `enabled` (`bool`, default: `true`)
 - `listen` (`ip`, default: `127.0.0.1`)
-- `port` (`u16`, default: `4532`, must be `> 0` when enabled)
+- `port` (`u16`, default: `4530`, must be `> 0` when enabled)
 
 ### `[listen.auth]`
 - `tokens` (`string[]`, default: `[]`)
@@ -75,7 +75,7 @@ Notes:
 ### `[audio]`
 - `enabled` (`bool`, default: `true`)
 - `listen` (`ip`, default: `127.0.0.1`)
-- `port` (`u16`, default: `4533`, must be `> 0` when enabled)
+- `port` (`u16`, default: `4531`, must be `> 0` when enabled)
 - `rx_enabled` (`bool`, default: `true`)
 - `tx_enabled` (`bool`, default: `true`)
 - `device` (`string`, optional)
@@ -148,7 +148,7 @@ Notes:
 
 ### `[frontends.audio]`
 - `enabled` (`bool`, default: `true`)
-- `server_port` (`u16`, default: `4533`, must be `> 0` when enabled)
+- `server_port` (`u16`, default: `4531`, must be `> 0` when enabled)
 - `bridge.enabled` (`bool`, default: `false`): enables local `cpal` audio bridge
 - `bridge.rx_output_device` (`string`, optional): exact local playback device name
 - `bridge.tx_input_device` (`string`, optional): exact local capture device name
