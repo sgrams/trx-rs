@@ -76,6 +76,17 @@ port = 4739
 # If omitted, it is derived from [general].latitude/[general].longitude.
 # receiver_locator = "JO93"
 
+[aprsfi]
+# Enable APRS-IS IGate uplink (forwards received RF APRS packets to APRS-IS / aprs.fi)
+enabled = false
+
+# APRS-IS server (rotate.aprs.net does DNS round-robin across all tier-2 servers)
+host = "rotate.aprs.net"
+port = 14580
+
+# APRS-IS passcode. -1 = auto-computed from [general].callsign.
+# passcode = -1
+
 [decode_logs]
 # Optional decoder message logs to files (APRS/CW/FT8/WSPR)
 enabled = false

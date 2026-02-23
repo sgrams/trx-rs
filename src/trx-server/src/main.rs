@@ -2,6 +2,7 @@
 //
 // SPDX-License-Identifier: BSD-2-Clause
 
+mod aprsfi;
 mod audio;
 mod config;
 mod decode;
@@ -401,6 +402,23 @@ async fn main() -> DynResult<()> {
                             pr_decode_rx
                         ) => {}
                         _ = wait_for_shutdown(pr_shutdown_rx) => {}
+                    }
+                }));
+            }
+        }
+
+        if cfg.aprsfi.enabled {
+            let callsign = resolved.callsign.clone().unwrap_or_default();
+            if callsign.trim().is_empty() {
+                warn!("APRS-IS IGate enabled but [general].callsign is empty; uplink disabled");
+            } else {
+                let ai_cfg = cfg.aprsfi.clone();
+                let ai_decode_rx = decode_tx.subscribe();
+                let ai_shutdown_rx = shutdown_rx.clone();
+                task_handles.push(tokio::spawn(async move {
+                    tokio::select! {
+                        _ = aprsfi::run_aprsfi_uplink(ai_cfg, callsign, ai_decode_rx) => {}
+                        _ = wait_for_shutdown(ai_shutdown_rx) => {}
                     }
                 }));
             }

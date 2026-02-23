@@ -35,6 +35,8 @@ pub struct ServerConfig {
     pub audio: AudioConfig,
     /// PSK Reporter uplink configuration
     pub pskreporter: PskReporterConfig,
+    /// APRS-IS IGate uplink configuration
+    pub aprsfi: AprsFiConfig,
     /// Decoder file logging configuration
     pub decode_logs: DecodeLogsConfig,
 }
@@ -233,6 +235,31 @@ impl Default for PskReporterConfig {
     }
 }
 
+/// APRS-IS IGate uplink configuration.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct AprsFiConfig {
+    /// Whether APRS-IS IGate uplink is enabled
+    pub enabled: bool,
+    /// APRS-IS server hostname
+    pub host: String,
+    /// APRS-IS server port
+    pub port: u16,
+    /// APRS-IS passcode. -1 = auto-compute from [general].callsign.
+    pub passcode: i32,
+}
+
+impl Default for AprsFiConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            host: "rotate.aprs.net".to_string(),
+            port: 14580,
+            passcode: -1,
+        }
+    }
+}
+
 fn default_decode_logs_dir() -> String {
     if let Some(data_dir) = dirs::data_dir() {
         return data_dir
@@ -351,6 +378,15 @@ impl ServerConfig {
             }
         }
 
+        if self.aprsfi.enabled {
+            if self.aprsfi.host.trim().is_empty() {
+                return Err("[aprsfi].host must not be empty".to_string());
+            }
+            if self.aprsfi.port == 0 {
+                return Err("[aprsfi].port must be > 0".to_string());
+            }
+        }
+
         if self.decode_logs.enabled {
             if self.decode_logs.dir.trim().is_empty() {
                 return Err("[decode_logs].dir must not be empty when enabled".to_string());
@@ -405,6 +441,7 @@ impl ServerConfig {
             listen: ListenConfig::default(),
             audio: AudioConfig::default(),
             pskreporter: PskReporterConfig::default(),
+            aprsfi: AprsFiConfig::default(),
             decode_logs: DecodeLogsConfig::default(),
         };
 
@@ -538,6 +575,10 @@ mod tests {
         assert_eq!(config.audio.sample_rate, 48000);
         assert!(!config.pskreporter.enabled);
         assert_eq!(config.pskreporter.port, 4739);
+        assert!(!config.aprsfi.enabled);
+        assert_eq!(config.aprsfi.host, "rotate.aprs.net");
+        assert_eq!(config.aprsfi.port, 14580);
+        assert_eq!(config.aprsfi.passcode, -1);
         assert!(!config.decode_logs.enabled);
         assert!(
             std::path::Path::new(&config.decode_logs.dir)

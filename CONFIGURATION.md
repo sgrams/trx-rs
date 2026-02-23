@@ -97,6 +97,19 @@ Notes:
 - If `receiver_locator` is omitted, server tries deriving it from `[general].latitude`/`longitude`.
 - PSK Reporter software ID is hardcoded to: `trx-server v<version> by SP2SJG`.
 
+### `[aprsfi]`
+- `enabled` (`bool`, default: `false`)
+- `host` (`string`, default: `"rotate.aprs.net"`, must not be empty when enabled)
+- `port` (`u16`, default: `14580`, must be `> 0` when enabled)
+- `passcode` (`i32`, default: `-1`)
+
+Notes:
+- When `passcode = -1` (the default), the passcode is auto-computed from `[general].callsign` using the standard APRS-IS hash algorithm.
+- `[general].callsign` must be non-empty when `[aprsfi].enabled = true`; otherwise the IGate is silently disabled at startup.
+- Only APRS packets with valid CRC are forwarded; packets from other decoders (FT8, WSPR, CW) are ignored.
+- The IGate reconnects automatically with exponential backoff (1 s → 2 s → … → 60 s) on TCP errors.
+- Requires `[audio].enabled = true` (APRS packets are decoded from audio).
+
 ### `[decode_logs]`
 - `enabled` (`bool`, default: `false`)
 - `dir` (`string`, default: `"$XDG_DATA_HOME/trx-rs/decoders"`; fallback: `"logs/decoders"`, must not be empty when enabled)
