@@ -150,7 +150,7 @@ impl Default for ListenConfig {
         Self {
             enabled: true,
             listen: IpAddr::V4(std::net::Ipv4Addr::LOCALHOST),
-            port: 4532,
+            port: 4530,
             auth: AuthConfig::default(),
         }
     }
@@ -195,7 +195,7 @@ impl Default for AudioConfig {
         Self {
             enabled: true,
             listen: IpAddr::V4(std::net::Ipv4Addr::LOCALHOST),
-            port: 4533,
+            port: 4531,
             rx_enabled: true,
             tx_enabled: true,
             device: None,
