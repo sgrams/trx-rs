@@ -531,10 +531,10 @@ mod tests {
         assert_eq!(config.behavior.poll_interval_ms, 500);
         assert_eq!(config.behavior.max_retries, 3);
         assert!(config.listen.enabled);
-        assert_eq!(config.listen.port, 4532);
+        assert_eq!(config.listen.port, 4530);
         assert!(config.listen.auth.tokens.is_empty());
         assert!(config.audio.enabled);
-        assert_eq!(config.audio.port, 4533);
+        assert_eq!(config.audio.port, 4531);
         assert_eq!(config.audio.sample_rate, 48000);
         assert!(!config.pskreporter.enabled);
         assert_eq!(config.pskreporter.port, 4739);
