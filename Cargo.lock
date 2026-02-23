@@ -2344,6 +2344,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "trx-decode-log"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "dirs",
+ "serde",
+ "serde_json",
+ "tracing",
+ "trx-core",
+]
+
+[[package]]
 name = "trx-frontend"
 version = "0.1.0"
 dependencies = [
@@ -2433,6 +2445,7 @@ dependencies = [
  "trx-backend",
  "trx-core",
  "trx-cw",
+ "trx-decode-log",
  "trx-ft8",
  "trx-protocol",
  "trx-wspr",

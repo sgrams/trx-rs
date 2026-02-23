@@ -5,7 +5,6 @@
 mod aprsfi;
 mod audio;
 mod config;
-mod decode_logs;
 mod error;
 mod listener;
 mod pskreporter;
@@ -34,7 +33,7 @@ use trx_core::rig::state::RigState;
 use trx_core::DynResult;
 
 use config::ServerConfig;
-use decode_logs::DecoderLoggers;
+use trx_decode_log::DecoderLoggers;
 
 const PKG_DESCRIPTION: &str = concat!(env!("CARGO_PKG_NAME"), " - rig server daemon");
 const RIG_TASK_CHANNEL_BUFFER: usize = 32;

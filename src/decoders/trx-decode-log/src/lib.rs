@@ -1,6 +1,11 @@
-// SPDX-FileCopyrightText: 2025 Stanislaw Grams <stanislawgrams@gmail.com>
+// SPDX-FileCopyrightText: 2026 Stanislaw Grams <stanislawgrams@gmail.com>
 //
 // SPDX-License-Identifier: BSD-2-Clause
+
+//! Server-side decoder file logging (APRS / CW / FT8 / WSPR).
+//!
+//! Provides [`DecodeLogsConfig`] for TOML configuration and [`DecoderLoggers`]
+//! for writing JSON-Lines log files with automatic daily rotation.
 
 use std::fs::{create_dir_all, File, OpenOptions};
 use std::io::{BufWriter, Write};
@@ -9,11 +14,61 @@ use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use chrono::Utc;
+use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tracing::warn;
 
-use crate::config::DecodeLogsConfig;
 use trx_core::decode::{AprsPacket, CwEvent, Ft8Message, WsprMessage};
+
+// ---------------------------------------------------------------------------
+// Configuration
+// ---------------------------------------------------------------------------
+
+fn default_decode_logs_dir() -> String {
+    if let Some(data_dir) = dirs::data_dir() {
+        return data_dir
+            .join("trx-rs")
+            .join("decoders")
+            .to_string_lossy()
+            .to_string();
+    }
+    "logs/decoders".to_string()
+}
+
+/// Server-side decoder file logging configuration.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct DecodeLogsConfig {
+    /// Whether decoder file logging is enabled
+    pub enabled: bool,
+    /// Base directory for log files
+    pub dir: String,
+    /// APRS decoder log filename
+    pub aprs_file: String,
+    /// CW decoder log filename
+    pub cw_file: String,
+    /// FT8 decoder log filename
+    pub ft8_file: String,
+    /// WSPR decoder log filename
+    pub wspr_file: String,
+}
+
+impl Default for DecodeLogsConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            dir: default_decode_logs_dir(),
+            aprs_file: "TRXRS-APRS-%YYYY%-%MM%-%DD%.log".to_string(),
+            cw_file: "TRXRS-CW-%YYYY%-%MM%-%DD%.log".to_string(),
+            ft8_file: "TRXRS-FT8-%YYYY%-%MM%-%DD%.log".to_string(),
+            wspr_file: "TRXRS-WSPR-%YYYY%-%MM%-%DD%.log".to_string(),
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// File logger (private)
+// ---------------------------------------------------------------------------
 
 struct DecoderFileLogger {
     base_dir: PathBuf,
@@ -64,7 +119,7 @@ impl DecoderFileLogger {
         })
     }
 
-    fn write_payload<T: serde::Serialize>(&self, payload: &T) {
+    fn write_payload<T: Serialize>(&self, payload: &T) {
         let ts_ms = match SystemTime::now().duration_since(UNIX_EPOCH) {
             Ok(d) => d.as_millis() as u64,
             Err(_) => 0,
@@ -106,6 +161,11 @@ impl DecoderFileLogger {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Public API
+// ---------------------------------------------------------------------------
+
+/// Aggregate logger for all four server-side decoders.
 pub struct DecoderLoggers {
     aprs: DecoderFileLogger,
     cw: DecoderFileLogger,
@@ -114,6 +174,7 @@ pub struct DecoderLoggers {
 }
 
 impl DecoderLoggers {
+    /// Create loggers from config, or return `None` when logging is disabled.
     pub fn from_config(cfg: &DecodeLogsConfig) -> Result<Option<Arc<Self>>, String> {
         if !cfg.enabled {
             return Ok(None);

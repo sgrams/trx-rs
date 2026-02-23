@@ -16,6 +16,7 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 use trx_app::{ConfigError, ConfigFile};
+pub use trx_decode_log::DecodeLogsConfig;
 
 use trx_core::rig::state::RigMode;
 
@@ -256,48 +257,6 @@ impl Default for AprsFiConfig {
             host: "rotate.aprs.net".to_string(),
             port: 14580,
             passcode: -1,
-        }
-    }
-}
-
-fn default_decode_logs_dir() -> String {
-    if let Some(data_dir) = dirs::data_dir() {
-        return data_dir
-            .join("trx-rs")
-            .join("decoders")
-            .to_string_lossy()
-            .to_string();
-    }
-    "logs/decoders".to_string()
-}
-
-/// Server-side decoder file logging configuration.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(default)]
-pub struct DecodeLogsConfig {
-    /// Whether decoder file logging is enabled
-    pub enabled: bool,
-    /// Base directory for log files
-    pub dir: String,
-    /// APRS decoder log filename
-    pub aprs_file: String,
-    /// CW decoder log filename
-    pub cw_file: String,
-    /// FT8 decoder log filename
-    pub ft8_file: String,
-    /// WSPR decoder log filename
-    pub wspr_file: String,
-}
-
-impl Default for DecodeLogsConfig {
-    fn default() -> Self {
-        Self {
-            enabled: false,
-            dir: default_decode_logs_dir(),
-            aprs_file: "TRXRS-APRS-%YYYY%-%MM%-%DD%.log".to_string(),
-            cw_file: "TRXRS-CW-%YYYY%-%MM%-%DD%.log".to_string(),
-            ft8_file: "TRXRS-FT8-%YYYY%-%MM%-%DD%.log".to_string(),
-            wspr_file: "TRXRS-WSPR-%YYYY%-%MM%-%DD%.log".to_string(),
         }
     }
 }

@@ -28,7 +28,7 @@ use trx_ft8::Ft8Decoder;
 use trx_wspr::WsprDecoder;
 
 use crate::config::AudioConfig;
-use crate::decode_logs::DecoderLoggers;
+use trx_decode_log::DecoderLoggers;
 
 const APRS_HISTORY_RETENTION: Duration = Duration::from_secs(24 * 60 * 60);
 const FT8_HISTORY_RETENTION: Duration = Duration::from_secs(24 * 60 * 60);
