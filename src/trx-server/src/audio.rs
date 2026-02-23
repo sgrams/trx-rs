@@ -259,21 +259,6 @@ fn run_capture(
     use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
     use std::sync::mpsc::{RecvTimeoutError, TryRecvError as StdTryRecvError};
 
-    let host = cpal::default_host();
-    let device = if let Some(ref name) = device_name {
-        host.input_devices()?
-            .find(|d| d.name().map(|n| n == *name).unwrap_or(false))
-            .ok_or_else(|| format!("audio input device '{}' not found", name))?
-    } else {
-        host.default_input_device()
-            .ok_or("no default audio input device")?
-    };
-
-    info!(
-        "Audio capture: using device '{}'",
-        device.name().unwrap_or_else(|_| "unknown".into())
-    );
-
     let config = cpal::StreamConfig {
         channels,
         sample_rate: cpal::SampleRate(sample_rate),
@@ -304,6 +289,41 @@ fn run_capture(
     let mut capturing = false;
 
     loop {
+        // Re-enumerate the device on every recovery cycle: after POLLERR the
+        // existing device handle can be stale (especially for USB audio).
+        let host = cpal::default_host();
+        let device = if let Some(ref name) = device_name {
+            match host.input_devices() {
+                Ok(mut devs) => {
+                    match devs.find(|d| d.name().map(|n| n == *name).unwrap_or(false)) {
+                        Some(d) => d,
+                        None => {
+                            warn!("Audio capture: device '{}' not found, retrying", name);
+                            std::thread::sleep(AUDIO_STREAM_RECOVERY_DELAY);
+                            continue;
+                        }
+                    }
+                }
+                Err(e) => {
+                    warn!("Audio capture: failed to enumerate devices, retrying: {}", e);
+                    std::thread::sleep(AUDIO_STREAM_RECOVERY_DELAY);
+                    continue;
+                }
+            }
+        } else {
+            match host.default_input_device() {
+                Some(d) => d,
+                None => {
+                    warn!("Audio capture: no default input device, retrying");
+                    std::thread::sleep(AUDIO_STREAM_RECOVERY_DELAY);
+                    continue;
+                }
+            }
+        };
+        info!(
+            "Audio capture: using device '{}'",
+            device.name().unwrap_or_else(|_| "unknown".into())
+        );
         let (sample_tx, sample_rx) = std::sync::mpsc::sync_channel::<Vec<f32>>(64);
         let (stream_err_tx, stream_err_rx) = std::sync::mpsc::sync_channel::<()>(1);
         let stream_failed = Arc::new(AtomicBool::new(false));
@@ -443,21 +463,6 @@ fn run_playback(
     use std::sync::mpsc::TryRecvError as StdTryRecvError;
     use tokio::sync::mpsc::error::TryRecvError as TokioTryRecvError;
 
-    let host = cpal::default_host();
-    let device = if let Some(ref name) = device_name {
-        host.output_devices()?
-            .find(|d| d.name().map(|n| n == *name).unwrap_or(false))
-            .ok_or_else(|| format!("audio output device '{}' not found", name))?
-    } else {
-        host.default_output_device()
-            .ok_or("no default audio output device")?
-    };
-
-    info!(
-        "Audio playback: using device '{}'",
-        device.name().unwrap_or_else(|_| "unknown".into())
-    );
-
     let config = cpal::StreamConfig {
         channels,
         sample_rate: cpal::SampleRate(sample_rate),
@@ -489,6 +494,41 @@ fn run_playback(
     let mut channel_closed = false;
 
     loop {
+        // Re-enumerate the device on every recovery cycle: after POLLERR the
+        // existing device handle can be stale (especially for USB audio).
+        let host = cpal::default_host();
+        let device = if let Some(ref name) = device_name {
+            match host.output_devices() {
+                Ok(mut devs) => {
+                    match devs.find(|d| d.name().map(|n| n == *name).unwrap_or(false)) {
+                        Some(d) => d,
+                        None => {
+                            warn!("Audio playback: device '{}' not found, retrying", name);
+                            std::thread::sleep(AUDIO_STREAM_RECOVERY_DELAY);
+                            continue;
+                        }
+                    }
+                }
+                Err(e) => {
+                    warn!("Audio playback: failed to enumerate devices, retrying: {}", e);
+                    std::thread::sleep(AUDIO_STREAM_RECOVERY_DELAY);
+                    continue;
+                }
+            }
+        } else {
+            match host.default_output_device() {
+                Some(d) => d,
+                None => {
+                    warn!("Audio playback: no default output device, retrying");
+                    std::thread::sleep(AUDIO_STREAM_RECOVERY_DELAY);
+                    continue;
+                }
+            }
+        };
+        info!(
+            "Audio playback: using device '{}'",
+            device.name().unwrap_or_else(|_| "unknown".into())
+        );
         let (stream_err_tx, stream_err_rx) = std::sync::mpsc::sync_channel::<()>(1);
         let stream_failed = Arc::new(AtomicBool::new(false));
         let stream = match device.build_output_stream(
