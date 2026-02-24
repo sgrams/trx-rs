@@ -40,6 +40,8 @@ pub struct ServerConfig {
     pub aprsfi: AprsFiConfig,
     /// Decoder file logging configuration
     pub decode_logs: DecodeLogsConfig,
+    /// SDR pipeline configuration (used when [rig.access] type = "sdr").
+    pub sdr: SdrConfig,
 }
 
 /// General application settings.
@@ -96,6 +98,8 @@ pub struct AccessConfig {
     pub host: Option<String>,
     /// TCP port (for TCP access)
     pub tcp_port: Option<u16>,
+    /// SoapySDR device args string (for sdr access), e.g. "driver=rtlsdr".
+    pub args: Option<String>,
 }
 
 impl Default for RigConfig {
@@ -261,6 +265,97 @@ impl Default for AprsFiConfig {
     }
 }
 
+
+/// Top-level SDR configuration (only used when [rig.access] type = "sdr").
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct SdrConfig {
+    /// SoapySDR IQ capture sample rate (Hz). Must be supported by the device.
+    pub sample_rate: u32,
+    /// Hardware IF filter bandwidth (Hz).
+    pub bandwidth: u32,
+    /// SDR tunes this many Hz below the dial frequency to keep signal off DC.
+    pub center_offset_hz: i64,
+    /// Gain configuration.
+    pub gain: SdrGainConfig,
+    /// Virtual receiver channels (at least one required when SDR backend is active).
+    pub channels: Vec<SdrChannelConfig>,
+}
+
+impl Default for SdrConfig {
+    fn default() -> Self {
+        Self {
+            sample_rate: 1_920_000,
+            bandwidth: 1_500_000,
+            center_offset_hz: 100_000,
+            gain: SdrGainConfig::default(),
+            channels: Vec::new(),
+        }
+    }
+}
+
+/// Gain control mode for the SDR device.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct SdrGainConfig {
+    /// "auto" (hardware AGC) or "manual" (fixed dB).
+    pub mode: String,
+    /// Gain in dB; effective only when mode = "manual".
+    pub value: f64,
+}
+
+impl Default for SdrGainConfig {
+    fn default() -> Self {
+        Self {
+            mode: "auto".to_string(),
+            value: 30.0,
+        }
+    }
+}
+
+/// One virtual receiver channel within the wideband IQ stream.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct SdrChannelConfig {
+    /// Human-readable identifier used in logs.
+    pub id: String,
+    /// Frequency offset from the dial frequency (Hz). Primary channel should use 0.
+    pub offset_hz: i64,
+    /// Demodulation mode: "auto" (follows RigCat set_mode) or a fixed RigMode string
+    /// (e.g. "USB", "FM").
+    pub mode: String,
+    /// One-sided bandwidth of the post-demod audio BPF (Hz).
+    pub audio_bandwidth_hz: u32,
+    /// FIR filter tap count. Higher = sharper roll-off. Default 64.
+    pub fir_taps: usize,
+    /// CW tone centre frequency in the audio domain (Hz). Default 700.
+    pub cw_center_hz: u32,
+    /// Pre-demod bandwidth for WFM only (Hz). Default 75000.
+    pub wfm_bandwidth_hz: u32,
+    /// Decoder names that receive this channel's PCM frames.
+    /// Valid values: "ft8", "wspr", "aprs", "cw".
+    pub decoders: Vec<String>,
+    /// If true, encode this channel's audio as Opus and stream over TCP.
+    /// At most one channel may set this to true.
+    pub stream_opus: bool,
+}
+
+impl Default for SdrChannelConfig {
+    fn default() -> Self {
+        Self {
+            id: String::new(),
+            offset_hz: 0,
+            mode: "auto".to_string(),
+            audio_bandwidth_hz: 3000,
+            fir_taps: 64,
+            cw_center_hz: 700,
+            wfm_bandwidth_hz: 75_000,
+            decoders: Vec::new(),
+            stream_opus: false,
+        }
+    }
+}
+
 impl ServerConfig {
     pub fn validate(&self) -> Result<(), String> {
         validate_log_level(self.general.log_level.as_deref())?;
@@ -364,6 +459,71 @@ impl ServerConfig {
         Ok(())
     }
 
+    /// Validate SDR-specific config rules (see SDR.md §11).
+    /// Returns a Vec of error strings; empty means valid.
+    pub fn validate_sdr(&self) -> Vec<String> {
+        let mut errors = Vec::new();
+
+        // Only validate if access type is "sdr"
+        let is_sdr = self.rig.access.access_type.as_deref() == Some("sdr");
+        if !is_sdr {
+            return errors;
+        }
+
+        // args must be non-empty
+        if self.rig.access.args.as_deref().map(str::is_empty).unwrap_or(true) {
+            errors.push("[rig.access] args must be non-empty for type = \"sdr\"".into());
+        }
+
+        // sample_rate must be non-zero
+        if self.sdr.sample_rate == 0 {
+            errors.push("[sdr] sample_rate must be > 0".into());
+        }
+
+        // Every channel's IF must fit within the captured bandwidth
+        let half_rate = self.sdr.sample_rate as i64 / 2;
+        for ch in &self.sdr.channels {
+            let channel_if = self.sdr.center_offset_hz + ch.offset_hz;
+            if channel_if.abs() >= half_rate {
+                errors.push(format!(
+                    "[sdr.channels] id=\"{}\" IF frequency {} Hz exceeds Nyquist limit ±{} Hz",
+                    ch.id, channel_if, half_rate
+                ));
+            }
+        }
+
+        // At most one channel may have stream_opus = true
+        let opus_count = self.sdr.channels.iter().filter(|c| c.stream_opus).count();
+        if opus_count > 1 {
+            errors.push(format!(
+                "[sdr.channels] at most one channel may have stream_opus = true (found {})",
+                opus_count
+            ));
+        }
+
+        // tx_enabled must be false with SDR backend
+        if self.audio.tx_enabled {
+            errors.push("[audio] tx_enabled must be false when using the soapysdr backend".into());
+        }
+
+        // Decoder names must not appear in more than one channel
+        let mut seen: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+        for ch in &self.sdr.channels {
+            for dec in &ch.decoders {
+                if let Some(prev_id) = seen.get(dec) {
+                    errors.push(format!(
+                        "[sdr.channels] decoder \"{}\" appears in both \"{}\" and \"{}\""  ,
+                        dec, prev_id, ch.id
+                    ));
+                } else {
+                    seen.insert(dec.clone(), ch.id.clone());
+                }
+            }
+        }
+
+        errors
+    }
+
     /// Load configuration from a specific file path.
     pub fn load_from_file(path: &Path) -> Result<Self, ConfigError> {
         <Self as ConfigFile>::load_from_file(path)
@@ -394,6 +554,7 @@ impl ServerConfig {
                     baud: Some(9600),
                     host: None,
                     tcp_port: None,
+                    args: None,
                 },
             },
             behavior: BehaviorConfig::default(),
@@ -402,6 +563,7 @@ impl ServerConfig {
             pskreporter: PskReporterConfig::default(),
             aprsfi: AprsFiConfig::default(),
             decode_logs: DecodeLogsConfig::default(),
+            sdr: SdrConfig::default(),
         };
 
         toml::to_string_pretty(&example).unwrap_or_default()
@@ -479,9 +641,12 @@ fn validate_access(access: &AccessConfig) -> Result<(), String> {
                 );
             }
         }
+        "sdr" => {
+            // SDR-specific validation is handled by validate_sdr()
+        }
         other => {
             return Err(format!(
-                "[rig.access].type '{}' is invalid (expected 'serial' or 'tcp')",
+                "[rig.access].type '{}' is invalid (expected 'serial', 'tcp', or 'sdr')",
                 other
             ))
         }
