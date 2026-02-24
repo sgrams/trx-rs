@@ -9,7 +9,7 @@ use std::pin::Pin;
 
 use trx_core::radio::freq::{Band, Freq};
 use trx_core::rig::{
-    Rig, RigAccessMethod, RigCapabilities, RigCat, RigInfo, RigStatusFuture,
+    AudioSource, Rig, RigAccessMethod, RigCapabilities, RigCat, RigInfo, RigStatusFuture,
 };
 use trx_core::rig::response::RigError;
 use trx_core::{DynResult, RigMode};
@@ -19,23 +19,71 @@ pub struct SoapySdrRig {
     info: RigInfo,
     freq: Freq,
     mode: RigMode,
+    pipeline: dsp::SdrPipeline,
+    /// Index of the primary channel in `pipeline.channel_dsps`.
+    primary_channel_idx: usize,
 }
 
 impl SoapySdrRig {
-    /// Construct a new `SoapySdrRig` from a SoapySDR device args string.
+    /// Full constructor.  All channel configuration is passed as plain
+    /// parameters so this crate does not need to depend on `trx-server`
+    /// (which is a binary, not a library crate).
     ///
-    /// The `args` value follows SoapySDR's key=value comma-separated convention
-    /// (e.g. `"driver=rtlsdr"` or `"driver=airspy,serial=00000001"`).
-    pub fn new(args: &str) -> DynResult<Self> {
-        tracing::info!("initialising SoapySDR backend (args={:?})", args);
+    /// # Parameters
+    /// - `args`: SoapySDR device args string (e.g. `"driver=rtlsdr"`).
+    ///   Currently reserved — the pipeline uses `MockIqSource`.
+    /// - `channels`: per-channel tuples of
+    ///   `(channel_if_hz, initial_mode, audio_bandwidth_hz, fir_taps)`.
+    /// - `gain_mode`: `"auto"` or `"manual"`.
+    /// - `gain_db`: gain in dB; used when `gain_mode == "manual"`.
+    ///   When `gain_mode == "auto"` hardware AGC is not yet wired, so this
+    ///   value acts as the fallback.
+    /// - `audio_sample_rate`: output PCM rate (Hz).
+    /// - `frame_duration_ms`: output frame length (ms).
+    /// - `initial_freq`: initial dial frequency reported by `get_status`.
+    /// - `initial_mode`: initial demodulation mode.
+    /// - `sdr_sample_rate`: IQ capture rate (Hz).
+    #[allow(clippy::too_many_arguments)]
+    pub fn new_with_config(
+        args: &str,
+        channels: &[(f64, RigMode, u32, usize)],
+        gain_mode: &str,
+        gain_db: f64,
+        audio_sample_rate: u32,
+        frame_duration_ms: u16,
+        initial_freq: Freq,
+        initial_mode: RigMode,
+        sdr_sample_rate: u32,
+    ) -> DynResult<Self> {
+        tracing::info!(
+            "initialising SoapySDR backend (args={:?}, gain_mode={:?}, gain_db={})",
+            args,
+            gain_mode,
+            gain_db,
+        );
+
+        if gain_mode == "auto" {
+            tracing::warn!(
+                "SoapySDR hardware AGC is not yet implemented (pending real SoapySDR device \
+                 wiring); falling back to configured gain of {} dB",
+                gain_db,
+            );
+        }
+
+        let pipeline = dsp::SdrPipeline::start(
+            Box::new(dsp::MockIqSource),
+            sdr_sample_rate,
+            audio_sample_rate,
+            frame_duration_ms,
+            channels,
+        );
 
         let info = RigInfo {
             manufacturer: "SoapySDR".to_string(),
-            model: "Generic SDR".to_string(),
-            revision: "".to_string(),
+            model: args.to_string(),
+            revision: env!("CARGO_PKG_VERSION").to_string(),
             capabilities: RigCapabilities {
                 min_freq_step_hz: 1,
-                // Broad RX-only coverage: DC through 6 GHz as a single band.
                 supported_bands: vec![Band {
                     low_hz: 0,
                     high_hz: 6_000_000_000,
@@ -53,17 +101,15 @@ impl SoapySdrRig {
                     RigMode::PKT,
                 ],
                 num_vfos: 1,
+                lock: false,
                 lockable: false,
                 attenuator: false,
                 preamp: false,
                 rit: false,
                 rpt: false,
                 split: false,
-                lock: false,
             },
-            // There is no serial/TCP access for SDR devices; use a dummy TCP
-            // placeholder so `RigAccessMethod` (which has no SDR variant) can
-            // still carry the args string in a human-readable form.
+            // No serial/TCP access for SDR devices; carry args in addr field.
             access: RigAccessMethod::Tcp {
                 addr: format!("soapysdr:{}", args),
             },
@@ -71,9 +117,28 @@ impl SoapySdrRig {
 
         Ok(Self {
             info,
-            freq: Freq { hz: 14_074_000 },
-            mode: RigMode::USB,
+            freq: initial_freq,
+            mode: initial_mode,
+            pipeline,
+            primary_channel_idx: 0,
         })
+    }
+
+    /// Simple constructor for backward compatibility with the factory function.
+    /// Creates a pipeline with no channels — the DSP loop runs but produces no
+    /// PCM frames.
+    pub fn new(args: &str) -> DynResult<Self> {
+        Self::new_with_config(
+            args,
+            &[],          // no channels — pipeline does nothing
+            "auto",
+            30.0,
+            48_000,
+            20,
+            Freq { hz: 144_300_000 },
+            RigMode::USB,
+            1_920_000,
+        )
     }
 }
 
@@ -84,6 +149,24 @@ impl SoapySdrRig {
 impl Rig for SoapySdrRig {
     fn info(&self) -> &RigInfo {
         &self.info
+    }
+}
+
+// ---------------------------------------------------------------------------
+// AudioSource
+// ---------------------------------------------------------------------------
+
+impl AudioSource for SoapySdrRig {
+    fn subscribe_pcm(&self) -> tokio::sync::broadcast::Receiver<Vec<f32>> {
+        if let Some(sender) = self.pipeline.pcm_senders.get(self.primary_channel_idx) {
+            sender.subscribe()
+        } else {
+            // No channels configured — return a receiver that will never
+            // produce frames (drop the sender immediately).
+            let (tx, rx) = tokio::sync::broadcast::channel(1);
+            drop(tx);
+            rx
+        }
     }
 }
 
@@ -115,7 +198,11 @@ impl RigCat for SoapySdrRig {
     ) -> Pin<Box<dyn std::future::Future<Output = DynResult<()>> + Send + 'a>> {
         Box::pin(async move {
             tracing::debug!("SoapySdrRig: set_mode -> {:?}", mode);
-            self.mode = mode;
+            self.mode = mode.clone();
+            // Update the primary channel's demodulator in the live pipeline.
+            if let Some(dsp_arc) = self.pipeline.channel_dsps.get(self.primary_channel_idx) {
+                dsp_arc.lock().unwrap().set_mode(&mode);
+            }
             Ok(())
         })
     }
@@ -123,8 +210,8 @@ impl RigCat for SoapySdrRig {
     fn get_signal_strength<'a>(
         &'a mut self,
     ) -> Pin<Box<dyn std::future::Future<Output = DynResult<u8>> + Send + 'a>> {
-        // RSSI mapping will be implemented in SDR-07; return 0 for now.
-        Box::pin(async move { Ok(0) })
+        // RSSI from real device pending SDR hardware wiring; return 0 for now.
+        Box::pin(async move { Ok(0u8) })
     }
 
     // -- TX / unsupported methods -------------------------------------------
@@ -134,7 +221,8 @@ impl RigCat for SoapySdrRig {
         _ptt: bool,
     ) -> Pin<Box<dyn std::future::Future<Output = DynResult<()>> + Send + 'a>> {
         Box::pin(async move {
-            Err(Box::new(RigError::not_supported("set_ptt")) as Box<dyn std::error::Error + Send + Sync>)
+            Err(Box::new(RigError::not_supported("set_ptt"))
+                as Box<dyn std::error::Error + Send + Sync>)
         })
     }
 
@@ -142,7 +230,8 @@ impl RigCat for SoapySdrRig {
         &'a mut self,
     ) -> Pin<Box<dyn std::future::Future<Output = DynResult<()>> + Send + 'a>> {
         Box::pin(async move {
-            Err(Box::new(RigError::not_supported("power_on")) as Box<dyn std::error::Error + Send + Sync>)
+            Err(Box::new(RigError::not_supported("power_on"))
+                as Box<dyn std::error::Error + Send + Sync>)
         })
     }
 
@@ -150,7 +239,8 @@ impl RigCat for SoapySdrRig {
         &'a mut self,
     ) -> Pin<Box<dyn std::future::Future<Output = DynResult<()>> + Send + 'a>> {
         Box::pin(async move {
-            Err(Box::new(RigError::not_supported("power_off")) as Box<dyn std::error::Error + Send + Sync>)
+            Err(Box::new(RigError::not_supported("power_off"))
+                as Box<dyn std::error::Error + Send + Sync>)
         })
     }
 
@@ -158,7 +248,8 @@ impl RigCat for SoapySdrRig {
         &'a mut self,
     ) -> Pin<Box<dyn std::future::Future<Output = DynResult<u8>> + Send + 'a>> {
         Box::pin(async move {
-            Err(Box::new(RigError::not_supported("get_tx_power")) as Box<dyn std::error::Error + Send + Sync>)
+            Err(Box::new(RigError::not_supported("get_tx_power"))
+                as Box<dyn std::error::Error + Send + Sync>)
         })
     }
 
@@ -166,7 +257,8 @@ impl RigCat for SoapySdrRig {
         &'a mut self,
     ) -> Pin<Box<dyn std::future::Future<Output = DynResult<u8>> + Send + 'a>> {
         Box::pin(async move {
-            Err(Box::new(RigError::not_supported("get_tx_limit")) as Box<dyn std::error::Error + Send + Sync>)
+            Err(Box::new(RigError::not_supported("get_tx_limit"))
+                as Box<dyn std::error::Error + Send + Sync>)
         })
     }
 
@@ -175,7 +267,8 @@ impl RigCat for SoapySdrRig {
         _limit: u8,
     ) -> Pin<Box<dyn std::future::Future<Output = DynResult<()>> + Send + 'a>> {
         Box::pin(async move {
-            Err(Box::new(RigError::not_supported("set_tx_limit")) as Box<dyn std::error::Error + Send + Sync>)
+            Err(Box::new(RigError::not_supported("set_tx_limit"))
+                as Box<dyn std::error::Error + Send + Sync>)
         })
     }
 
@@ -183,7 +276,8 @@ impl RigCat for SoapySdrRig {
         &'a mut self,
     ) -> Pin<Box<dyn std::future::Future<Output = DynResult<()>> + Send + 'a>> {
         Box::pin(async move {
-            Err(Box::new(RigError::not_supported("toggle_vfo")) as Box<dyn std::error::Error + Send + Sync>)
+            Err(Box::new(RigError::not_supported("toggle_vfo"))
+                as Box<dyn std::error::Error + Send + Sync>)
         })
     }
 
@@ -191,7 +285,8 @@ impl RigCat for SoapySdrRig {
         &'a mut self,
     ) -> Pin<Box<dyn std::future::Future<Output = DynResult<()>> + Send + 'a>> {
         Box::pin(async move {
-            Err(Box::new(RigError::not_supported("lock")) as Box<dyn std::error::Error + Send + Sync>)
+            Err(Box::new(RigError::not_supported("lock"))
+                as Box<dyn std::error::Error + Send + Sync>)
         })
     }
 
@@ -199,13 +294,13 @@ impl RigCat for SoapySdrRig {
         &'a mut self,
     ) -> Pin<Box<dyn std::future::Future<Output = DynResult<()>> + Send + 'a>> {
         Box::pin(async move {
-            Err(Box::new(RigError::not_supported("unlock")) as Box<dyn std::error::Error + Send + Sync>)
+            Err(Box::new(RigError::not_supported("unlock"))
+                as Box<dyn std::error::Error + Send + Sync>)
         })
     }
 
-    /// Returns `None` for now; will be overridden with `Some(self)` in SDR-07
-    /// once the IQ DSP pipeline is in place.
-    fn as_audio_source(&self) -> Option<&dyn trx_core::rig::AudioSource> {
-        None
+    /// Override: this backend provides demodulated PCM audio.
+    fn as_audio_source(&self) -> Option<&dyn AudioSource> {
+        Some(self)
     }
 }
