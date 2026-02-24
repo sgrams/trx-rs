@@ -822,4 +822,200 @@ tokens = ["secret123"]
             assert!(paths.contains(&home_dir.join(".trx-server.toml")));
         }
     }
+
+    // --- SDR-11: validate_sdr() unit tests ---
+
+    fn sdr_config_with_access(args: &str) -> ServerConfig {
+        let mut cfg = ServerConfig::default();
+        cfg.rig.access.access_type = Some("sdr".to_string());
+        cfg.rig.access.args = Some(args.to_string());
+        cfg.audio.tx_enabled = false;
+        cfg.sdr.sample_rate = 1_920_000;
+        cfg.sdr.center_offset_hz = 200_000;
+        cfg
+    }
+
+    fn add_channel(
+        cfg: &mut ServerConfig,
+        id: &str,
+        offset_hz: i64,
+        stream_opus: bool,
+        decoders: Vec<String>,
+    ) {
+        let mut ch = SdrChannelConfig::default();
+        ch.id = id.to_string();
+        ch.offset_hz = offset_hz;
+        ch.stream_opus = stream_opus;
+        ch.decoders = decoders;
+        cfg.sdr.channels.push(ch);
+    }
+
+    #[test]
+    fn test_sdr_validate_ok_minimal() {
+        let mut cfg = sdr_config_with_access("driver=rtlsdr");
+        add_channel(&mut cfg, "primary", 0, false, vec![]);
+        let errors = cfg.validate_sdr();
+        assert!(
+            errors.is_empty(),
+            "expected no errors, got: {:?}",
+            errors
+        );
+    }
+
+    #[test]
+    fn test_sdr_validate_non_sdr_skips() {
+        let cfg = ServerConfig::default();
+        let errors = cfg.validate_sdr();
+        assert!(
+            errors.is_empty(),
+            "expected no errors for non-sdr config, got: {:?}",
+            errors
+        );
+    }
+
+    #[test]
+    fn test_sdr_validate_empty_args() {
+        let cfg = sdr_config_with_access("");
+        let errors = cfg.validate_sdr();
+        assert_eq!(errors.len(), 1, "expected exactly 1 error, got: {:?}", errors);
+        assert!(
+            errors[0].contains("args"),
+            "expected error to mention 'args', got: {}",
+            errors[0]
+        );
+    }
+
+    #[test]
+    fn test_sdr_validate_missing_args() {
+        let mut cfg = sdr_config_with_access("placeholder");
+        cfg.rig.access.args = None;
+        let errors = cfg.validate_sdr();
+        assert_eq!(errors.len(), 1, "expected exactly 1 error, got: {:?}", errors);
+        assert!(
+            errors[0].contains("args"),
+            "expected error to mention 'args', got: {}",
+            errors[0]
+        );
+    }
+
+    #[test]
+    fn test_sdr_validate_zero_sample_rate() {
+        let mut cfg = sdr_config_with_access("driver=rtlsdr");
+        cfg.sdr.sample_rate = 0;
+        let errors = cfg.validate_sdr();
+        assert!(
+            errors.iter().any(|e| e.contains("sample_rate")),
+            "expected error mentioning 'sample_rate', got: {:?}",
+            errors
+        );
+    }
+
+    #[test]
+    fn test_sdr_validate_channel_if_out_of_range() {
+        // sample_rate=1_000_000 => Nyquist=500_000
+        // center_offset_hz=0, offset_hz=600_000 => IF=600_000 > 500_000
+        let mut cfg = sdr_config_with_access("driver=rtlsdr");
+        cfg.sdr.sample_rate = 1_000_000;
+        cfg.sdr.center_offset_hz = 0;
+        add_channel(&mut cfg, "ch_high", 600_000, false, vec![]);
+        let errors = cfg.validate_sdr();
+        assert!(
+            errors
+                .iter()
+                .any(|e| e.contains("ch_high") && (e.contains("Nyquist") || e.contains("exceeds"))),
+            "expected error mentioning channel id and Nyquist/exceeds, got: {:?}",
+            errors
+        );
+    }
+
+    #[test]
+    fn test_sdr_validate_channel_if_negative_out_of_range() {
+        // sample_rate=1_000_000 => Nyquist=500_000
+        // center_offset_hz=0, offset_hz=-600_000 => IF=-600_000, abs=600_000 > 500_000
+        let mut cfg = sdr_config_with_access("driver=rtlsdr");
+        cfg.sdr.sample_rate = 1_000_000;
+        cfg.sdr.center_offset_hz = 0;
+        add_channel(&mut cfg, "ch_low", -600_000, false, vec![]);
+        let errors = cfg.validate_sdr();
+        assert!(
+            errors
+                .iter()
+                .any(|e| e.contains("ch_low") && (e.contains("Nyquist") || e.contains("exceeds"))),
+            "expected error mentioning channel id and Nyquist/exceeds, got: {:?}",
+            errors
+        );
+    }
+
+    #[test]
+    fn test_sdr_validate_channel_if_exactly_nyquist_is_invalid() {
+        // sample_rate=1_000_000 => Nyquist=500_000
+        // IF=500_000 is NOT strictly less than 500_000 => invalid
+        let mut cfg = sdr_config_with_access("driver=rtlsdr");
+        cfg.sdr.sample_rate = 1_000_000;
+        cfg.sdr.center_offset_hz = 0;
+        add_channel(&mut cfg, "ch_nyquist", 500_000, false, vec![]);
+        let errors = cfg.validate_sdr();
+        assert!(
+            errors
+                .iter()
+                .any(|e| e.contains("ch_nyquist") && (e.contains("Nyquist") || e.contains("exceeds"))),
+            "expected error for IF exactly at Nyquist, got: {:?}",
+            errors
+        );
+    }
+
+    #[test]
+    fn test_sdr_validate_dual_stream_opus() {
+        let mut cfg = sdr_config_with_access("driver=rtlsdr");
+        add_channel(&mut cfg, "ch1", 0, true, vec![]);
+        add_channel(&mut cfg, "ch2", 10_000, true, vec![]);
+        let errors = cfg.validate_sdr();
+        assert!(
+            errors.iter().any(|e| e.contains("stream_opus")),
+            "expected error mentioning 'stream_opus', got: {:?}",
+            errors
+        );
+    }
+
+    #[test]
+    fn test_sdr_validate_tx_enabled_with_sdr() {
+        let mut cfg = sdr_config_with_access("driver=rtlsdr");
+        cfg.audio.tx_enabled = true;
+        let errors = cfg.validate_sdr();
+        assert!(
+            errors.iter().any(|e| e.contains("tx_enabled")),
+            "expected error mentioning 'tx_enabled', got: {:?}",
+            errors
+        );
+    }
+
+    #[test]
+    fn test_sdr_validate_duplicate_decoder() {
+        let mut cfg = sdr_config_with_access("driver=rtlsdr");
+        add_channel(&mut cfg, "ch1", 0, false, vec!["ft8".to_string()]);
+        add_channel(&mut cfg, "ch2", 10_000, false, vec!["ft8".to_string()]);
+        let errors = cfg.validate_sdr();
+        assert!(
+            errors
+                .iter()
+                .any(|e| e.contains("ft8") || e.contains("decoder")),
+            "expected error mentioning 'ft8' or 'decoder', got: {:?}",
+            errors
+        );
+    }
+
+    #[test]
+    fn test_sdr_validate_multiple_errors() {
+        let mut cfg = sdr_config_with_access("placeholder");
+        cfg.rig.access.args = None;
+        cfg.sdr.sample_rate = 0;
+        cfg.audio.tx_enabled = true;
+        let errors = cfg.validate_sdr();
+        assert_eq!(
+            errors.len(),
+            3,
+            "expected exactly 3 errors, got: {:?}",
+            errors
+        );
+    }
 }
