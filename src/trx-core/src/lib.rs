@@ -10,6 +10,7 @@ pub mod rig;
 
 pub type DynResult<T> = Result<T, Box<dyn std::error::Error + Send + Sync>>;
 
+pub use rig::AudioSource;
 pub use rig::command::RigCommand;
 pub use rig::request::RigRequest;
 pub use rig::response::{RigError, RigResult};

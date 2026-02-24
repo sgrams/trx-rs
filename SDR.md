@@ -16,7 +16,7 @@ This document specifies the requirements for a SoapySDR-based RX-only backend (`
 
 | ID | Status | Task | Touches |
 |----|--------|------|---------|
-| SDR-01 | `[ ]` | Add `AudioSource` trait to `trx-core`; add `as_audio_source()` default on `RigCat` | `src/trx-core/src/rig/mod.rs` |
+| SDR-01 | `[x]` | Add `AudioSource` trait to `trx-core`; add `as_audio_source()` default on `RigCat` | `src/trx-core/src/rig/mod.rs` |
 | SDR-02 | `[x]` | Add `RigAccess::Sdr { args: String }` variant; register `soapysdr` factory (feature-gated `soapysdr`) | `src/trx-server/trx-backend/src/lib.rs` |
 | SDR-03 | `[ ]` | Add `SdrConfig`, `SdrGainConfig`, `SdrChannelConfig` structs; parse `type = "sdr"` in `AccessConfig`; add `sdr: SdrConfig` to `ServerConfig`; add startup validation rules (§11) | `src/trx-server/src/config.rs` |
 

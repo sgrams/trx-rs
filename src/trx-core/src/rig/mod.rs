@@ -57,6 +57,13 @@ fn default_min_freq_step_hz() -> u64 {
     1
 }
 
+/// Trait for rigs that can provide demodulated PCM audio.
+pub trait AudioSource: Send + Sync {
+    /// Subscribe to demodulated PCM audio from the primary channel.
+    /// Returns a broadcast receiver that yields 20ms frames of mono f32 PCM.
+    fn subscribe_pcm(&self) -> tokio::sync::broadcast::Receiver<Vec<f32>>;
+}
+
 /// Common interface for rig backends.
 pub trait Rig {
     fn info(&self) -> &RigInfo;
@@ -103,6 +110,8 @@ pub trait RigCat: Rig + Send {
     fn lock<'a>(&'a mut self) -> Pin<Box<dyn Future<Output = DynResult<()>> + Send + 'a>>;
 
     fn unlock<'a>(&'a mut self) -> Pin<Box<dyn Future<Output = DynResult<()>> + Send + 'a>>;
+
+    fn as_audio_source(&self) -> Option<&dyn AudioSource> { None }
 }
 
 /// Snapshot of a rig's status that every backend can expose.
