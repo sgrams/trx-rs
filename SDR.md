@@ -40,7 +40,7 @@ This document specifies the requirements for a SoapySDR-based RX-only backend (`
 
 | ID | Status | Task | Touches | Needs |
 |----|--------|------|---------|-------|
-| SDR-10 | `[ ]` | Unit tests for `demod.rs`: known-input tone through each demodulator, check output frequency correct | `…/src/demod.rs` | SDR-05 |
+| SDR-10 | `[x]` | Unit tests for `demod.rs`: known-input tone through each demodulator, check output frequency correct | `…/src/demod.rs` | SDR-05 |
 | SDR-11 | `[ ]` | Unit tests for config validation: channel IF out-of-range, dual `stream_opus`, TX enabled with SDR backend, AGC fallback warning | `src/trx-server/src/config.rs` | SDR-03 |
 
 ---
