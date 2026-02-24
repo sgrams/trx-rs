@@ -34,7 +34,7 @@ This document specifies the requirements for a SoapySDR-based RX-only backend (`
 | ID | Status | Task | Touches | Needs |
 |----|--------|------|---------|-------|
 | SDR-08 | `[ ]` | `main.rs`: after building rig, if `as_audio_source()` is `Some` skip cpal, subscribe each decoder and the Opus encoder to the appropriate channel PCM senders; validate `stream_opus` count ≤ 1 | `src/trx-server/src/main.rs` | SDR-03, SDR-07 |
-| SDR-09 | `[ ]` | Add `trx-backend-soapysdr` to workspace `Cargo.toml`; update `CONFIGURATION.md` with new `[sdr]` / `[[sdr.channels]]` options | `Cargo.toml`, `CONFIGURATION.md` | SDR-04 |
+| SDR-09 | `[x]` | Add `trx-backend-soapysdr` to workspace `Cargo.toml`; update `CONFIGURATION.md` with new `[sdr]` / `[[sdr.channels]]` options | `Cargo.toml`, `CONFIGURATION.md` | SDR-04 |
 
 ### Validation & tests
 

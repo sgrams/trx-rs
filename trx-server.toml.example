@@ -102,3 +102,40 @@ aprs_file = "TRXRS-APRS-%YYYY%-%MM%-%DD%.log"
 cw_file = "TRXRS-CW-%YYYY%-%MM%-%DD%.log"
 ft8_file = "TRXRS-FT8-%YYYY%-%MM%-%DD%.log"
 wspr_file = "TRXRS-WSPR-%YYYY%-%MM%-%DD%.log"
+
+# --- SoapySDR backend example ---
+# To use an SDR device instead of a physical transceiver, set:
+#
+# [rig]
+# model = "soapysdr"
+# initial_freq_hz = 14074000
+# initial_mode = "USB"
+#
+# [rig.access]
+# type = "sdr"
+# args = "driver=rtlsdr"
+#
+# [sdr]
+# sample_rate      = 1920000
+# bandwidth        = 1500000
+# center_offset_hz = 200000
+#
+# [sdr.gain]
+# mode  = "auto"
+# value = 30.0
+#
+# [[sdr.channels]]
+# id               = "primary"
+# offset_hz        = 0
+# mode             = "auto"
+# audio_bandwidth_hz = 3000
+# decoders         = ["ft8", "cw"]
+# stream_opus      = true
+#
+# [[sdr.channels]]
+# id               = "wspr"
+# offset_hz        = 21600
+# mode             = "USB"
+# audio_bandwidth_hz = 3000
+# decoders         = ["wspr"]
+# stream_opus      = false

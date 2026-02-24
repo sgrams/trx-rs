@@ -42,17 +42,20 @@ Notes:
 - `initial_mode` (`string`, default: `"USB"`): one of `LSB|USB|CW|CWR|AM|WFM|FM|DIG|PKT`
 
 ### `[rig.access]`
-- `type` (`string`, default behavior: `serial` if omitted): `serial|tcp`
+- `type` (`string`, default behavior: `serial` if omitted): `serial|tcp|sdr`
 - Serial mode:
-- `port` (`string`)
-- `baud` (`u32`)
+  - `port` (`string`)
+  - `baud` (`u32`)
 - TCP mode:
-- `host` (`string`)
-- `tcp_port` (`u16`)
+  - `host` (`string`)
+  - `tcp_port` (`u16`)
+- SDR mode:
+  - `args` (`string`, required when `type = "sdr"`): SoapySDR device args string (e.g. `"driver=rtlsdr"` or `"driver=airspy,serial=00000001"`). Passed verbatim to `SoapySDR::Device::new()`.
 
 Notes:
 - For `serial`, both `port` and `baud` are required.
 - For `tcp`, both `host` and `tcp_port` are required.
+- For `sdr`, `args` must be non-empty. The `port`, `baud`, `host`, and `tcp_port` fields are ignored.
 
 ### `[behavior]`
 - `poll_interval_ms` (`u64`, default: `500`, must be `> 0`)
@@ -109,6 +112,36 @@ Notes:
 - Only APRS packets with valid CRC are forwarded; packets from other decoders (FT8, WSPR, CW) are ignored.
 - The IGate reconnects automatically with exponential backoff (1 s → 2 s → … → 60 s) on TCP errors.
 - Requires `[audio].enabled = true` (APRS packets are decoded from audio).
+
+### `[sdr]`
+- `sample_rate` (`u32`, default: `1920000`, must be `> 0`): IQ capture rate in Hz. Must be supported by the device.
+- `bandwidth` (`u32`, default: `1500000`): Hardware IF filter bandwidth in Hz.
+- `center_offset_hz` (`i64`, default: `100000`): The SDR tunes this many Hz below the dial frequency to keep the signal off the DC spur. Negative values tune above.
+
+### `[sdr.gain]`
+- `mode` (`string`, default: `"auto"`): `"auto"` enables hardware AGC (falls back to `"manual"` with a warning if the device does not support it); `"manual"` uses the fixed `value`.
+- `value` (`f64`, default: `30.0`): Gain in dB. Used only when `mode = "manual"`.
+
+### `[[sdr.channels]]`
+
+Defines one virtual receiver channel within the wideband IQ stream. At least one channel is required when using the `soapysdr` backend. The **first** channel in the list is the *primary* channel: `set_freq` and `set_mode` from rig control apply to it, and `get_status` reads from it.
+
+- `id` (`string`, default: `""`): Human-readable label used in logs.
+- `offset_hz` (`i64`, default: `0`): Frequency offset from the dial frequency in Hz. Primary channel should be `0`.
+- `mode` (`string`, default: `"auto"`): Demodulation mode. `"auto"` follows the RigCat `set_mode` command; or a fixed mode string: `LSB`, `USB`, `CW`, `CWR`, `AM`, `WFM`, `FM`, `DIG`, `PKT`.
+- `audio_bandwidth_hz` (`u32`, default: `3000`): One-sided bandwidth of the post-demodulation audio BPF in Hz.
+- `fir_taps` (`usize`, default: `64`): FIR filter tap count. Higher values give sharper roll-off at the cost of latency.
+- `cw_center_hz` (`u32`, default: `700`): CW tone centre frequency in the audio domain (Hz).
+- `wfm_bandwidth_hz` (`u32`, default: `75000`): Pre-demodulation filter bandwidth for WFM only (Hz).
+- `decoders` (`string[]`, default: `[]`): Decoder IDs that receive this channel's PCM audio. Valid values: `"ft8"`, `"wspr"`, `"aprs"`, `"cw"`. Each decoder ID may appear in at most one channel.
+- `stream_opus` (`bool`, default: `false`): Encode this channel's audio as Opus and stream to clients over the TCP audio port. At most one channel may set this to `true`.
+
+Notes:
+- Requires `libSoapySDR` installed (`brew install soapysdr` on macOS; `libsoapysdr-dev` on Debian/Ubuntu).
+- The SDR backend is RX-only. `[audio] tx_enabled` must be `false`.
+- Channel IF constraint: `|center_offset_hz + offset_hz| < sample_rate / 2` for every channel; violated channels cause a startup error.
+- `[audio] sample_rate` must match the output audio rate of the SDR pipeline (48000 Hz recommended).
+- Use `trx-server --print-config` to see all defaults. SDR fields appear only if the binary was built with `--features soapysdr`.
 
 ### `[decode_logs]`
 - `enabled` (`bool`, default: `false`)
@@ -180,6 +213,7 @@ Notes:
 - `--rig`, `--access`, positional `RIG_ADDR`
 - `--callsign`
 - `--listen`, `--port` (JSON listener)
+- SDR backend: all SDR options are file-only (`[sdr]` and `[[sdr.channels]]`).
 
 ### `trx-client`
 - `--config`, `--print-config`
