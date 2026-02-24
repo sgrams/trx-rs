@@ -42,6 +42,11 @@ pub struct RigTaskConfig {
     pub server_latitude: Option<f64>,
     pub server_longitude: Option<f64>,
     pub pskreporter_status: Option<String>,
+    /// Pre-built rig backend.  When `Some`, the registry factory is skipped.
+    /// Used by the SDR path in `main.rs` to pass a fully-configured
+    /// `SoapySdrRig` (built with channel config) without duplicating the
+    /// pipeline construction.
+    pub prebuilt_rig: Option<Box<dyn RigCat>>,
 }
 
 impl Default for RigTaskConfig {
@@ -65,6 +70,7 @@ impl Default for RigTaskConfig {
             server_latitude: None,
             server_longitude: None,
             pskreporter_status: None,
+            prebuilt_rig: None,
         }
     }
 }
@@ -94,9 +100,14 @@ pub async fn run_rig_task(
         RigAccess::Sdr { args } => info!("SDR: {}", args),
     }
 
-    let mut rig: Box<dyn RigCat> = config
-        .registry
-        .build_rig(&config.rig_model, config.access)?;
+    let mut rig: Box<dyn RigCat> = if let Some(prebuilt) = config.prebuilt_rig {
+        info!("Using pre-built rig backend (SDR path)");
+        prebuilt
+    } else {
+        config
+            .registry
+            .build_rig(&config.rig_model, config.access)?
+    };
     info!("Rig backend ready");
 
     // Initialize state machine and state

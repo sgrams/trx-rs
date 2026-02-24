@@ -35,6 +35,9 @@ use trx_core::DynResult;
 use config::ServerConfig;
 use trx_decode_log::DecoderLoggers;
 
+#[cfg(feature = "soapysdr")]
+use trx_backend_soapysdr;
+
 const PKG_DESCRIPTION: &str = concat!(env!("CARGO_PKG_NAME"), " - rig server daemon");
 const RIG_TASK_CHANNEL_BUFFER: usize = 32;
 const RETRY_MAX_DELAY_SECS: u64 = 2;
@@ -162,6 +165,10 @@ fn resolve_config(
                 };
                 RigAccess::Tcp { addr }
             }
+            Some("sdr") => {
+                let args = cfg.rig.access.args.clone().unwrap_or_default();
+                RigAccess::Sdr { args }
+            }
             Some(other) => return Err(format!("Unknown access type: {}", other).into()),
         }
     };
@@ -227,6 +234,7 @@ fn build_rig_task_config(
         server_latitude: resolved.latitude,
         server_longitude: resolved.longitude,
         pskreporter_status,
+        prebuilt_rig: None,
     }
 }
 
@@ -239,6 +247,73 @@ async fn wait_for_shutdown(mut shutdown_rx: watch::Receiver<bool>) {
             break;
         }
     }
+}
+
+/// Parse a `RigMode` from a string slice.
+/// Falls back to `initial_mode` when the string is "auto" or unrecognised.
+#[cfg(feature = "soapysdr")]
+fn parse_rig_mode(
+    s: &str,
+    initial_mode: &trx_core::rig::state::RigMode,
+) -> trx_core::rig::state::RigMode {
+    use trx_core::rig::state::RigMode;
+    match s {
+        "LSB" => RigMode::LSB,
+        "USB" => RigMode::USB,
+        "CW" => RigMode::CW,
+        "CWR" => RigMode::CWR,
+        "AM" => RigMode::AM,
+        "WFM" => RigMode::WFM,
+        "FM" => RigMode::FM,
+        "DIG" => RigMode::DIG,
+        "PKT" => RigMode::PKT,
+        _ => initial_mode.clone(),
+    }
+}
+
+/// Build a `SoapySdrRig` with full channel config from `ServerConfig` and
+/// return both the rig box and a PCM receiver subscribed to its primary channel.
+///
+/// Only compiled when the `soapysdr` feature is enabled.
+#[cfg(feature = "soapysdr")]
+fn build_sdr_rig(
+    cfg: &ServerConfig,
+) -> DynResult<(
+    Box<dyn trx_core::rig::RigCat>,
+    tokio::sync::broadcast::Receiver<Vec<f32>>,
+)> {
+    use trx_core::radio::freq::Freq;
+    use trx_core::rig::AudioSource;
+
+    let args = cfg.rig.access.args.as_deref().unwrap_or("");
+    let channels: Vec<(f64, trx_core::rig::state::RigMode, u32, usize)> = cfg
+        .sdr
+        .channels
+        .iter()
+        .map(|ch| {
+            let if_hz = (cfg.sdr.center_offset_hz + ch.offset_hz) as f64;
+            let mode = parse_rig_mode(&ch.mode, &cfg.rig.initial_mode);
+            (if_hz, mode, ch.audio_bandwidth_hz, ch.fir_taps)
+        })
+        .collect();
+
+    let sdr_rig = trx_backend_soapysdr::SoapySdrRig::new_with_config(
+        args,
+        &channels,
+        &cfg.sdr.gain.mode,
+        cfg.sdr.gain.value,
+        cfg.audio.sample_rate,
+        cfg.audio.frame_duration_ms,
+        Freq {
+            hz: cfg.rig.initial_freq_hz,
+        },
+        cfg.rig.initial_mode.clone(),
+        cfg.sdr.sample_rate,
+    )?;
+
+    // Subscribe to the primary channel's PCM broadcast before consuming the rig.
+    let pcm_rx = sdr_rig.subscribe_pcm();
+    Ok((Box::new(sdr_rig) as Box<dyn trx_core::rig::RigCat>, pcm_rx))
 }
 
 #[tokio::main]
@@ -265,6 +340,15 @@ async fn main() -> DynResult<()> {
     };
     cfg.validate()
         .map_err(|e| format!("Invalid server configuration: {}", e))?;
+
+    // Validate SDR-specific configuration rules (see SDR.md §11).
+    let sdr_errors = cfg.validate_sdr();
+    if !sdr_errors.is_empty() {
+        for e in &sdr_errors {
+            tracing::error!("SDR config error: {}", e);
+        }
+        std::process::exit(1);
+    }
 
     init_logging(cfg.general.log_level.as_deref());
 
@@ -302,6 +386,30 @@ async fn main() -> DynResult<()> {
         info!("Callsign: {}", cs);
     }
 
+    // For the SDR access type: build the SoapySdrRig with full channel config
+    // here in main so we can subscribe to its primary-channel PCM sender
+    // before passing the rig to the rig task.  The rig task skips its
+    // registry factory when `prebuilt_rig` is set.
+    //
+    // When the `soapysdr` feature is disabled this block is elided and
+    // `sdr_pcm_rx` is always `None`, preserving the cpal path.
+    #[cfg(feature = "soapysdr")]
+    let (sdr_prebuilt_rig, sdr_pcm_rx): (
+        Option<Box<dyn trx_core::rig::RigCat>>,
+        Option<tokio::sync::broadcast::Receiver<Vec<f32>>>,
+    ) = if cfg.rig.access.access_type.as_deref() == Some("sdr") {
+        let (rig, pcm_rx) = build_sdr_rig(&cfg)?;
+        (Some(rig), Some(pcm_rx))
+    } else {
+        (None, None)
+    };
+
+    #[cfg(not(feature = "soapysdr"))]
+    let (sdr_prebuilt_rig, sdr_pcm_rx): (
+        Option<Box<dyn trx_core::rig::RigCat>>,
+        Option<tokio::sync::broadcast::Receiver<Vec<f32>>>,
+    ) = (None, None);
+
     let (tx, rx) = mpsc::channel::<RigRequest>(RIG_TASK_CHANNEL_BUFFER);
     let mut task_handles: Vec<JoinHandle<()>> = Vec::new();
     let (shutdown_tx, shutdown_rx) = watch::channel(false);
@@ -327,8 +435,14 @@ async fn main() -> DynResult<()> {
     // Keep receivers alive so channels don't close prematurely
     let _state_rx = state_rx;
 
-    let rig_task_config =
+    let mut rig_task_config =
         build_rig_task_config(&resolved, &cfg, std::sync::Arc::new(bootstrap_ctx));
+
+    // Pass pre-built SDR rig to the task so it skips the registry factory.
+    if let Some(prebuilt) = sdr_prebuilt_rig {
+        rig_task_config.prebuilt_rig = Some(prebuilt);
+    }
+
     let rig_shutdown_rx = shutdown_rx.clone();
     task_handles.push(tokio::spawn(async move {
         if let Err(e) = rig_task::run_rig_task(rig_task_config, rx, state_tx, rig_shutdown_rx).await
@@ -437,8 +551,34 @@ async fn main() -> DynResult<()> {
         };
 
         if cfg.audio.rx_enabled {
-            let _capture_thread =
-                audio::spawn_audio_capture(&cfg.audio, rx_audio_tx.clone(), Some(pcm_tx.clone()));
+            if let Some(mut sdr_rx) = sdr_pcm_rx {
+                // SDR path: the backend pipeline provides demodulated PCM,
+                // so cpal capture is skipped entirely.
+                // The SDR PCM frames are bridged into pcm_tx so the existing
+                // decoder spawn code below receives them unchanged.
+                tracing::info!("using SDR audio source — cpal capture disabled");
+                let pcm_tx_clone = pcm_tx.clone();
+                task_handles.push(tokio::spawn(async move {
+                    loop {
+                        match sdr_rx.recv().await {
+                            Ok(frame) => {
+                                let _ = pcm_tx_clone.send(frame);
+                            }
+                            Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
+                                tracing::warn!("SDR audio bridge: dropped {} frames", n);
+                            }
+                            Err(_) => break,
+                        }
+                    }
+                }));
+            } else {
+                // cpal path (existing serial/TCP transceivers)
+                let _capture_thread = audio::spawn_audio_capture(
+                    &cfg.audio,
+                    rx_audio_tx.clone(),
+                    Some(pcm_tx.clone()),
+                );
+            }
 
             // Spawn APRS decoder task
             let aprs_pcm_rx = pcm_tx.subscribe();

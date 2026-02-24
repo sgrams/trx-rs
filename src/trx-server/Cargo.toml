@@ -8,6 +8,9 @@ version = "0.1.0"
 edition = "2021"
 build = "build.rs"
 
+[features]
+soapysdr = ["dep:trx-backend-soapysdr", "trx-backend/soapysdr"]
+
 [dependencies]
 tokio = { workspace = true, features = ["full"] }
 tokio-serial = { workspace = true }
@@ -23,6 +26,7 @@ cpal = "0.15"
 opus = "0.3"
 trx-app = { path = "../trx-app" }
 trx-backend = { path = "trx-backend" }
+trx-backend-soapysdr = { path = "trx-backend/trx-backend-soapysdr", optional = true }
 trx-core = { path = "../trx-core" }
 trx-aprs = { path = "../decoders/trx-aprs" }
 trx-cw = { path = "../decoders/trx-cw" }
