@@ -91,6 +91,7 @@ pub async fn run_rig_task(
     match &config.access {
         RigAccess::Serial { path, baud } => info!("Serial: {} @ {} baud", path, baud),
         RigAccess::Tcp { addr } => info!("TCP CAT: {}", addr),
+        RigAccess::Sdr { args } => info!("SDR: {}", args),
     }
 
     let mut rig: Box<dyn RigCat> = config

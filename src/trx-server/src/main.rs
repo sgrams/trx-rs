@@ -290,6 +290,12 @@ async fn main() -> DynResult<()> {
                 resolved.rig, addr
             );
         }
+        RigAccess::Sdr { args } => {
+            info!(
+                "Starting trx-server (rig: {}, access: sdr {})",
+                resolved.rig, args
+            );
+        }
     }
 
     if let Some(ref cs) = resolved.callsign {

@@ -124,10 +124,7 @@ fn ft450d_factory(access: RigAccess) -> DynResult<Box<dyn RigCat>> {
 #[cfg(feature = "soapysdr")]
 fn soapysdr_factory(access: RigAccess) -> DynResult<Box<dyn RigCat>> {
     match access {
-        RigAccess::Sdr { args } => {
-            // trx_backend_soapysdr will be wired in once SDR-04 lands
-            Err(format!("soapysdr backend not yet implemented (args: {args})").into())
-        }
+        RigAccess::Sdr { args } => Ok(Box::new(trx_backend_soapysdr::SoapySdrRig::new(&args)?)),
         _ => Err("soapysdr backend requires Sdr access type".into()),
     }
 }

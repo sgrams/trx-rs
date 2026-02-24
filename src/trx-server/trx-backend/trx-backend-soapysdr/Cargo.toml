@@ -1,0 +1,22 @@
+# SPDX-FileCopyrightText: 2025 Stanislaw Grams <stanislawgrams@gmail.com>
+#
+# SPDX-License-Identifier: BSD-2-Clause
+
+[package]
+name = "trx-backend-soapysdr"
+version = "0.1.0"
+edition = "2021"
+license = "BSD-2-Clause"
+
+[dependencies]
+trx-core = { path = "../../../trx-core" }
+tokio = { workspace = true, features = ["sync", "rt"] }
+serde = { workspace = true }
+tracing = { workspace = true }
+num-complex = "0.4"
+# soapysdr is an optional system-library dep gated behind a feature
+soapysdr = { version = "0.3", optional = true }
+
+[features]
+default = []
+soapysdr-sys = ["dep:soapysdr"]

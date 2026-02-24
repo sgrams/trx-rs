@@ -24,7 +24,7 @@ This document specifies the requirements for a SoapySDR-based RX-only backend (`
 
 | ID | Status | Task | Touches | Needs |
 |----|--------|------|---------|-------|
-| SDR-04 | `[ ]` | Create crate scaffold: `Cargo.toml` (deps: `soapysdr`, `num-complex`, `tokio`), empty `lib.rs` | `src/trx-server/trx-backend/trx-backend-soapysdr/` | SDR-01, SDR-02 |
+| SDR-04 | `[x]` | Create crate scaffold: `Cargo.toml` (deps: `soapysdr`, `num-complex`, `tokio`), empty `lib.rs` | `src/trx-server/trx-backend/trx-backend-soapysdr/` | SDR-01, SDR-02 |
 | SDR-05 | `[ ]` | Implement `demod.rs`: SSB (USB/LSB), AM envelope, FM quadrature, CW narrow BPF+envelope | `…/src/demod.rs` | SDR-04 |
 | SDR-06 | `[ ]` | Implement `dsp.rs`: IQ broadcast loop (SoapySDR read thread → `broadcast::Sender<Vec<Complex<f32>>>`); per-channel mixer → FIR LPF → decimator → demod → frame accumulator → `broadcast::Sender<Vec<f32>>` | `…/src/dsp.rs` | SDR-04, SDR-05 |
 | SDR-07 | `[ ]` | Implement `SoapySdrRig` in `lib.rs`: `RigCat` (RX methods + `not_supported` stubs for TX), `AudioSource`, gain control (manual/auto with fallback), primary channel freq/mode tracking | `…/src/lib.rs` | SDR-03, SDR-06 |

@@ -11,12 +11,13 @@ edition = "2021"
 default = ["ft817", "ft450d"]
 ft817 = ["dep:trx-backend-ft817"]
 ft450d = ["dep:trx-backend-ft450d"]
-soapysdr = []   # implementation wired in SDR-04
+soapysdr = ["dep:trx-backend-soapysdr"]
 
 [dependencies]
 trx-core = { path = "../../trx-core" }
 trx-backend-ft817 = { path = "trx-backend-ft817", optional = true }
 trx-backend-ft450d = { path = "trx-backend-ft450d", optional = true }
+trx-backend-soapysdr = { path = "./trx-backend-soapysdr", optional = true }
 tokio = { workspace = true, features = ["full"] }
 tokio-serial = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
