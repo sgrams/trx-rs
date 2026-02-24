@@ -11,6 +11,7 @@ edition = "2021"
 default = ["ft817", "ft450d"]
 ft817 = ["dep:trx-backend-ft817"]
 ft450d = ["dep:trx-backend-ft450d"]
+soapysdr = []   # implementation wired in SDR-04
 
 [dependencies]
 trx-core = { path = "../../trx-core" }

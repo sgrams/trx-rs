@@ -19,6 +19,7 @@ use trx_backend_ft817::Ft817;
 pub enum RigAccess {
     Serial { path: String, baud: u32 },
     Tcp { addr: String },
+    Sdr { args: String },
 }
 
 pub type BackendFactory = fn(RigAccess) -> DynResult<Box<dyn RigCat>>;
@@ -94,6 +95,8 @@ pub fn register_builtin_backends_on(context: &mut RegistrationContext) {
     context.register_backend("ft817", ft817_factory);
     #[cfg(feature = "ft450d")]
     context.register_backend("ft450d", ft450d_factory);
+    #[cfg(feature = "soapysdr")]
+    context.register_backend("soapysdr", soapysdr_factory);
 }
 
 fn dummy_factory(_access: RigAccess) -> DynResult<Box<dyn RigCat>> {
@@ -105,6 +108,7 @@ fn ft817_factory(access: RigAccess) -> DynResult<Box<dyn RigCat>> {
     match access {
         RigAccess::Serial { path, baud } => Ok(Box::new(Ft817::new(&path, baud)?)),
         RigAccess::Tcp { .. } => Err("FT-817 only supports serial CAT access".into()),
+        RigAccess::Sdr { .. } => Err("FT-817 only supports serial CAT access".into()),
     }
 }
 
@@ -113,5 +117,17 @@ fn ft450d_factory(access: RigAccess) -> DynResult<Box<dyn RigCat>> {
     match access {
         RigAccess::Serial { path, baud } => Ok(Box::new(Ft450d::new(&path, baud)?)),
         RigAccess::Tcp { .. } => Err("FT-450D only supports serial CAT access".into()),
+        RigAccess::Sdr { .. } => Err("FT-450D only supports serial CAT access".into()),
+    }
+}
+
+#[cfg(feature = "soapysdr")]
+fn soapysdr_factory(access: RigAccess) -> DynResult<Box<dyn RigCat>> {
+    match access {
+        RigAccess::Sdr { args } => {
+            // trx_backend_soapysdr will be wired in once SDR-04 lands
+            Err(format!("soapysdr backend not yet implemented (args: {args})").into())
+        }
+        _ => Err("soapysdr backend requires Sdr access type".into()),
     }
 }
