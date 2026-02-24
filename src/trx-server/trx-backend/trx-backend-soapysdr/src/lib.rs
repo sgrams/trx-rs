@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: BSD-2-Clause
 
 pub mod demod;
+pub mod dsp;
 
 use std::pin::Pin;
 
