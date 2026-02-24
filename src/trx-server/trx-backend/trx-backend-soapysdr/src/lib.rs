@@ -2,6 +2,8 @@
 //
 // SPDX-License-Identifier: BSD-2-Clause
 
+pub mod demod;
+
 use std::pin::Pin;
 
 use trx_core::radio::freq::{Band, Freq};
