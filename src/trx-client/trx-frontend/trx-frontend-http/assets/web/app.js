@@ -746,19 +746,29 @@ function render(update) {
   updateFooterBuildInfo();
 
   initialized = !!update.initialized;
+  const hasUsableSnapshot =
+    !!update.info &&
+    !!update.status &&
+    !!update.status.freq &&
+    typeof update.status.freq.hz === "number";
   if (!initialized) {
     const manu = (update.info && update.info.manufacturer) || rigName || "Rig";
     const model = (update.info && update.info.model) || rigName || "Rig";
     const rev = (update.info && update.info.revision) || "";
     const parts = [manu, model, rev].filter(Boolean).join(" ");
-    loadingTitle.textContent = `Initializing ${parts}…`;
-    loadingSub.textContent = "";
-    console.info("Rig initializing:", { manufacturer: manu, model, revision: rev });
-    loadingEl.style.display = "";
-    if (contentEl) contentEl.style.display = "none";
-    powerHint.textContent = "Initializing rig…";
-    setDisabled(true);
-    return;
+    if (!hasUsableSnapshot) {
+      loadingTitle.textContent = `Initializing ${parts}…`;
+      loadingSub.textContent = "";
+      console.info("Rig initializing:", { manufacturer: manu, model, revision: rev });
+      loadingEl.style.display = "";
+      if (contentEl) contentEl.style.display = "none";
+      powerHint.textContent = "Initializing rig…";
+      setDisabled(true);
+      return;
+    }
+    loadingEl.style.display = "none";
+    if (contentEl) contentEl.style.display = "";
+    powerHint.textContent = "Rig not fully initialized yet";
   } else {
     loadingEl.style.display = "none";
     if (contentEl) contentEl.style.display = "";
