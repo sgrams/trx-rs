@@ -5,6 +5,8 @@
 //! Audio TCP client that connects to the server's audio port and relays
 //! RX/TX Opus frames via broadcast/mpsc channels.
 
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use bytes::Bytes;
@@ -23,7 +25,10 @@ use trx_core::decode::DecodedMessage;
 
 /// Run the audio client with auto-reconnect.
 pub async fn run_audio_client(
-    server_addr: String,
+    server_host: String,
+    default_port: u16,
+    rig_ports: HashMap<String, u16>,
+    selected_rig_id: Arc<Mutex<Option<String>>>,
     rx_tx: broadcast::Sender<Bytes>,
     mut tx_rx: mpsc::Receiver<Bytes>,
     stream_info_tx: watch::Sender<Option<AudioStreamInfo>>,
@@ -38,12 +43,27 @@ pub async fn run_audio_client(
             return;
         }
 
+        let server_addr = resolve_audio_addr(
+            &server_host,
+            default_port,
+            &rig_ports,
+            selected_rig_id
+                .lock()
+                .ok()
+                .and_then(|v| v.clone())
+                .as_deref(),
+        );
         info!("Audio client: connecting to {}", server_addr);
         match TcpStream::connect(&server_addr).await {
             Ok(stream) => {
                 reconnect_delay = Duration::from_secs(1);
                 if let Err(e) = handle_audio_connection(
                     stream,
+                    &server_host,
+                    default_port,
+                    &rig_ports,
+                    &selected_rig_id,
+                    &server_addr,
                     &rx_tx,
                     &mut tx_rx,
                     &stream_info_tx,
@@ -80,6 +100,11 @@ pub async fn run_audio_client(
 
 async fn handle_audio_connection(
     stream: TcpStream,
+    server_host: &str,
+    default_port: u16,
+    rig_ports: &HashMap<String, u16>,
+    selected_rig_id: &Arc<Mutex<Option<String>>>,
+    connected_addr: &str,
     rx_tx: &broadcast::Sender<Bytes>,
     tx_rx: &mut mpsc::Receiver<Bytes>,
     stream_info_tx: &watch::Sender<Option<AudioStreamInfo>>,
@@ -135,6 +160,7 @@ async fn handle_audio_connection(
     });
 
     // Forward TX frames to server
+    let mut rig_check = time::interval(Duration::from_millis(500));
     loop {
         tokio::select! {
             changed = shutdown_rx.changed() => {
@@ -164,8 +190,38 @@ async fn handle_audio_connection(
             _ = &mut rx_handle => {
                 break;
             }
+            _ = rig_check.tick() => {
+                let current_rig = selected_rig_id.lock().ok().and_then(|v| v.clone());
+                let desired_addr = resolve_audio_addr(
+                    server_host,
+                    default_port,
+                    rig_ports,
+                    current_rig.as_deref(),
+                );
+                if desired_addr != connected_addr {
+                    info!(
+                        "Audio client: active rig changed ({} -> {}), reconnecting audio",
+                        connected_addr,
+                        desired_addr
+                    );
+                    break;
+                }
+            }
         }
     }
 
     Ok(())
+}
+
+fn resolve_audio_addr(
+    host: &str,
+    default_port: u16,
+    rig_ports: &HashMap<String, u16>,
+    selected_rig_id: Option<&str>,
+) -> String {
+    let port = selected_rig_id
+        .and_then(|rig_id| rig_ports.get(rig_id))
+        .copied()
+        .unwrap_or(default_port);
+    format!("{}:{}", host, port)
 }

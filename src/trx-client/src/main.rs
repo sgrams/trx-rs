@@ -7,6 +7,7 @@ mod audio_client;
 mod config;
 mod remote_client;
 
+use std::collections::HashMap;
 use std::net::{IpAddr, SocketAddr};
 use std::path::PathBuf;
 use std::ptr::NonNull;
@@ -277,21 +278,23 @@ async fn async_init() -> DynResult<AppState> {
         let (stream_info_tx, stream_info_rx) = watch::channel::<Option<AudioStreamInfo>>(None);
         let (decode_tx, _) = broadcast::channel::<DecodedMessage>(256);
 
-        let audio_addr = format!("{}:{}", remote_host, cfg.frontends.audio.server_port);
-
         frontend_runtime.audio_rx = Some(rx_audio_tx.clone());
         frontend_runtime.audio_tx = Some(tx_audio_tx);
         frontend_runtime.audio_info = Some(stream_info_rx);
         frontend_runtime.decode_rx = Some(decode_tx.clone());
 
         info!(
-            "Audio enabled: connecting to {}, decode channel set",
-            audio_addr
+            "Audio enabled: default port {}, decode channel set",
+            cfg.frontends.audio.server_port
         );
 
+        let audio_rig_ports: HashMap<String, u16> = cfg.frontends.audio.rig_ports.clone();
         let audio_shutdown_rx = shutdown_rx.clone();
         task_handles.push(tokio::spawn(audio_client::run_audio_client(
-            audio_addr,
+            remote_host,
+            cfg.frontends.audio.server_port,
+            audio_rig_ports,
+            frontend_runtime.remote_active_rig_id.clone(),
             rx_audio_tx,
             tx_audio_rx,
             stream_info_tx,

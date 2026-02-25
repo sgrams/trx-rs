@@ -85,6 +85,9 @@ port = 0
 enabled = true
 # Remote trx-server audio port
 server_port = 4531
+# Optional per-rig audio ports for multi-rig servers:
+# rig_ports.ft817 = 4531
+# rig_ports.airspyhf = 4532
 
 [frontends.audio.bridge]
 # Enable local cpal bridge for WSJT-X virtual audio routing

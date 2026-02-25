@@ -11,6 +11,7 @@
 //! 4. `~/.config/trx-rs/client.toml` (XDG config)
 //! 5. `/etc/trx-rs/client.toml` (system-wide)
 
+use std::collections::HashMap;
 use std::net::IpAddr;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -104,6 +105,8 @@ pub struct AudioClientConfig {
     pub enabled: bool,
     /// Audio TCP port on the remote server
     pub server_port: u16,
+    /// Optional per-rig audio port overrides for multi-rig servers.
+    pub rig_ports: HashMap<String, u16>,
     /// Local audio bridge (virtual device integration)
     pub bridge: AudioBridgeConfig,
 }
@@ -113,6 +116,7 @@ impl Default for AudioClientConfig {
         Self {
             enabled: true,
             server_port: 4531,
+            rig_ports: HashMap::new(),
             bridge: AudioBridgeConfig::default(),
         }
     }
@@ -323,6 +327,17 @@ impl ClientConfig {
         if self.frontends.audio.enabled && self.frontends.audio.server_port == 0 {
             return Err("[frontends.audio].server_port must be > 0 when enabled".to_string());
         }
+        for (rig_id, port) in &self.frontends.audio.rig_ports {
+            if rig_id.trim().is_empty() {
+                return Err("[frontends.audio].rig_ports keys must not be empty".to_string());
+            }
+            if *port == 0 {
+                return Err(format!(
+                    "[frontends.audio].rig_ports[\"{}\"] must be > 0",
+                    rig_id
+                ));
+            }
+        }
         if !self.frontends.audio.bridge.rx_gain.is_finite()
             || self.frontends.audio.bridge.rx_gain < 0.0
         {
@@ -492,6 +507,7 @@ mod tests {
         assert_eq!(config.remote.poll_interval_ms, 750);
         assert!(config.frontends.audio.enabled);
         assert_eq!(config.frontends.audio.server_port, 4531);
+        assert!(config.frontends.audio.rig_ports.is_empty());
         assert!(!config.frontends.audio.bridge.enabled);
         assert_eq!(config.frontends.audio.bridge.rx_gain, 1.0);
         assert_eq!(config.frontends.audio.bridge.tx_gain, 1.0);
@@ -549,6 +565,17 @@ port = 8080
     fn test_validate_rejects_empty_http_json_token() {
         let mut config = ClientConfig::default();
         config.frontends.http_json.auth.tokens = vec!["".to_string()];
+        assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn test_validate_rejects_zero_audio_rig_port() {
+        let mut config = ClientConfig::default();
+        config
+            .frontends
+            .audio
+            .rig_ports
+            .insert("ft817".to_string(), 0);
         assert!(config.validate().is_err());
     }
 
