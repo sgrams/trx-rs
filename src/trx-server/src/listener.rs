@@ -244,6 +244,7 @@ async fn handle_client(
                     entries.push(RigEntry {
                         rig_id: handle.rig_id.clone(),
                         state: snapshot,
+                        audio_port: Some(handle.audio_port),
                     });
                 }
             }
@@ -303,7 +304,10 @@ async fn handle_client(
         match time::timeout(IO_TIMEOUT, handle.rig_tx.send(req)).await {
             Ok(Ok(())) => {}
             Ok(Err(e)) => {
-                error!("Failed to send request to rig_task for '{}': {:?}", target_rig_id, e);
+                error!(
+                    "Failed to send request to rig_task for '{}': {:?}",
+                    target_rig_id, e
+                );
                 let resp = ClientResponse {
                     success: false,
                     rig_id: Some(target_rig_id.clone()),
@@ -404,8 +408,8 @@ mod tests {
 
     use trx_core::radio::freq::Band;
     use trx_core::rig::request::RigRequest;
-    use trx_core::rig::{RigAccessMethod, RigCapabilities, RigInfo};
     use trx_core::rig::state::RigState;
+    use trx_core::rig::{RigAccessMethod, RigCapabilities, RigInfo};
 
     fn loopback_addr() -> SocketAddr {
         let listener = std::net::TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).expect("bind");
@@ -458,6 +462,7 @@ mod tests {
             rig_id: "default".to_string(),
             rig_tx,
             state_rx,
+            audio_port: 4531,
         };
         let mut map = HashMap::new();
         map.insert("default".to_string(), handle);
@@ -568,7 +573,11 @@ mod tests {
         reader.read_line(&mut line).await.expect("read");
         let resp: ClientResponse = serde_json::from_str(line.trim_end()).expect("response json");
         assert!(!resp.success);
-        assert!(resp.error.as_deref().unwrap_or("").contains("Unknown rig_id"));
+        assert!(resp
+            .error
+            .as_deref()
+            .unwrap_or("")
+            .contains("Unknown rig_id"));
 
         let _ = shutdown_tx.send(true);
         handle.abort();

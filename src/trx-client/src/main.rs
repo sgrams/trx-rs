@@ -295,6 +295,7 @@ async fn async_init() -> DynResult<AppState> {
             cfg.frontends.audio.server_port,
             audio_rig_ports,
             frontend_runtime.remote_active_rig_id.clone(),
+            frontend_runtime.remote_rigs.clone(),
             rx_audio_tx,
             tx_audio_rx,
             stream_info_tx,

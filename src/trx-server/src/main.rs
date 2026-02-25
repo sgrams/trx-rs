@@ -219,11 +219,9 @@ fn access_from_rig_instance(rig_cfg: &RigInstanceConfig) -> DynResult<RigAccess>
             let args = rig_cfg.rig.access.args.clone().unwrap_or_default();
             Ok(RigAccess::Sdr { args })
         }
-        Some(other) => Err(format!(
-            "Unknown access type '{}' for rig '{}'",
-            other, rig_cfg.id
-        )
-        .into()),
+        Some(other) => {
+            Err(format!("Unknown access type '{}' for rig '{}'", other, rig_cfg.id).into())
+        }
     }
 }
 
@@ -455,7 +453,10 @@ fn spawn_rig_audio_stack(
     if rig_cfg.audio.rx_enabled {
         if let Some(mut sdr_rx) = sdr_pcm_rx {
             // SDR path: the backend pipeline provides demodulated PCM.
-            info!("[{}] using SDR audio source — cpal capture disabled", rig_cfg.id);
+            info!(
+                "[{}] using SDR audio source — cpal capture disabled",
+                rig_cfg.id
+            );
             let pcm_tx_clone = pcm_tx.clone();
             handles.push(tokio::spawn(async move {
                 loop {
@@ -661,7 +662,10 @@ async fn main() -> DynResult<()> {
                 }
             }
         }
-        let callsign = cli.callsign.clone().or_else(|| cfg.general.callsign.clone());
+        let callsign = cli
+            .callsign
+            .clone()
+            .or_else(|| cfg.general.callsign.clone());
         (callsign, cfg.general.latitude, cfg.general.longitude)
     };
 
@@ -799,6 +803,7 @@ async fn main() -> DynResult<()> {
                 rig_id: rig_cfg.id.clone(),
                 rig_tx,
                 state_rx,
+                audio_port: rig_cfg.audio.port,
             },
         );
     }

@@ -55,6 +55,8 @@ pub struct ClientEnvelope {
 pub struct RigEntry {
     pub rig_id: String,
     pub state: RigSnapshot,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub audio_port: Option<u16>,
 }
 
 /// Response sent to network clients over TCP.

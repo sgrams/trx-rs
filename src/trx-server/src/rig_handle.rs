@@ -20,4 +20,6 @@ pub struct RigHandle {
     pub rig_tx: mpsc::Sender<RigRequest>,
     /// Watch the latest rig state for fast GetState/GetRigs responses.
     pub state_rx: watch::Receiver<RigState>,
+    /// Per-rig audio listener TCP port.
+    pub audio_port: u16,
 }

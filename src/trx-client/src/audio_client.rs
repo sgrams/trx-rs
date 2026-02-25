@@ -15,6 +15,7 @@ use tokio::net::TcpStream;
 use tokio::sync::{broadcast, mpsc, watch};
 use tokio::time;
 use tracing::{info, warn};
+use trx_frontend::RemoteRigEntry;
 
 use trx_core::audio::{
     read_audio_msg, write_audio_msg, AudioStreamInfo, AUDIO_MSG_APRS_DECODE, AUDIO_MSG_CW_DECODE,
@@ -29,6 +30,7 @@ pub async fn run_audio_client(
     default_port: u16,
     rig_ports: HashMap<String, u16>,
     selected_rig_id: Arc<Mutex<Option<String>>>,
+    known_rigs: Arc<Mutex<Vec<RemoteRigEntry>>>,
     rx_tx: broadcast::Sender<Bytes>,
     mut tx_rx: mpsc::Receiver<Bytes>,
     stream_info_tx: watch::Sender<Option<AudioStreamInfo>>,
@@ -47,6 +49,7 @@ pub async fn run_audio_client(
             &server_host,
             default_port,
             &rig_ports,
+            &known_rigs,
             selected_rig_id
                 .lock()
                 .ok()
@@ -63,6 +66,7 @@ pub async fn run_audio_client(
                     default_port,
                     &rig_ports,
                     &selected_rig_id,
+                    &known_rigs,
                     &server_addr,
                     &rx_tx,
                     &mut tx_rx,
@@ -104,6 +108,7 @@ async fn handle_audio_connection(
     default_port: u16,
     rig_ports: &HashMap<String, u16>,
     selected_rig_id: &Arc<Mutex<Option<String>>>,
+    known_rigs: &Arc<Mutex<Vec<RemoteRigEntry>>>,
     connected_addr: &str,
     rx_tx: &broadcast::Sender<Bytes>,
     tx_rx: &mut mpsc::Receiver<Bytes>,
@@ -196,6 +201,7 @@ async fn handle_audio_connection(
                     server_host,
                     default_port,
                     rig_ports,
+                    known_rigs,
                     current_rig.as_deref(),
                 );
                 if desired_addr != connected_addr {
@@ -217,11 +223,20 @@ fn resolve_audio_addr(
     host: &str,
     default_port: u16,
     rig_ports: &HashMap<String, u16>,
+    known_rigs: &Arc<Mutex<Vec<RemoteRigEntry>>>,
     selected_rig_id: Option<&str>,
 ) -> String {
     let port = selected_rig_id
-        .and_then(|rig_id| rig_ports.get(rig_id))
-        .copied()
+        .and_then(|rig_id| {
+            rig_ports.get(rig_id).copied().or_else(|| {
+                known_rigs.lock().ok().and_then(|entries| {
+                    entries
+                        .iter()
+                        .find(|entry| entry.rig_id == rig_id)
+                        .and_then(|entry| entry.audio_port)
+                })
+            })
+        })
         .unwrap_or(default_port);
     format!("{}:{}", host, port)
 }

@@ -278,6 +278,7 @@ fn cache_remote_rigs(config: &RemoteClientConfig, rigs: &[RigEntry]) {
             .map(|entry| RemoteRigEntry {
                 rig_id: entry.rig_id.clone(),
                 state: entry.state.clone(),
+                audio_port: entry.audio_port,
             })
             .collect();
     }
@@ -561,6 +562,7 @@ mod tests {
             rigs: Some(vec![RigEntry {
                 rig_id: "default".to_string(),
                 state: snapshot.clone(),
+                audio_port: Some(4531),
             }]),
             error: None,
         })

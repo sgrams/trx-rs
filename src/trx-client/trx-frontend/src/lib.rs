@@ -21,6 +21,7 @@ use trx_core::{DynResult, RigRequest, RigState};
 pub struct RemoteRigEntry {
     pub rig_id: String,
     pub state: RigSnapshot,
+    pub audio_port: Option<u16>,
 }
 
 /// Trait implemented by concrete frontends to expose a runner entrypoint.
