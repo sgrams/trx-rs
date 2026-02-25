@@ -30,4 +30,6 @@ pub enum RigCommand {
     ResetCwDecoder,
     ResetFt8Decoder,
     ResetWsprDecoder,
+    SetBandwidth(u32),
+    SetFirTaps(u32),
 }

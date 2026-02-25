@@ -14,4 +14,4 @@ pub use rig::AudioSource;
 pub use rig::command::RigCommand;
 pub use rig::request::RigRequest;
 pub use rig::response::{RigError, RigResult};
-pub use rig::state::{RigMode, RigSnapshot, RigState};
+pub use rig::state::{RigFilterState, RigMode, RigSnapshot, RigState};

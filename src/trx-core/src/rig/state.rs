@@ -42,6 +42,10 @@ pub struct RigState {
     pub cw_wpm: u32,
     #[serde(default)]
     pub cw_tone_hz: u32,
+    /// Filter state for backends that support runtime filter adjustment.
+    /// Skipped in serde; flows into RigSnapshot via snapshot().
+    #[serde(skip)]
+    pub filter: Option<RigFilterState>,
     #[serde(default, skip_serializing)]
     pub aprs_decode_reset_seq: u64,
     #[serde(default, skip_serializing)]
@@ -127,6 +131,7 @@ impl RigState {
             cw_auto: true,
             cw_wpm: 15,
             cw_tone_hz: 700,
+            filter: None,
             aprs_decode_reset_seq: 0,
             cw_decode_reset_seq: 0,
             ft8_decode_reset_seq: 0,
@@ -186,6 +191,7 @@ impl RigState {
             cw_tone_hz: snapshot.cw_tone_hz,
             ft8_decode_enabled: snapshot.ft8_decode_enabled,
             wspr_decode_enabled: snapshot.wspr_decode_enabled,
+            filter: snapshot.filter,
             aprs_decode_reset_seq: 0,
             cw_decode_reset_seq: 0,
             ft8_decode_reset_seq: 0,
@@ -223,6 +229,7 @@ impl RigState {
             cw_tone_hz: self.cw_tone_hz,
             ft8_decode_enabled: self.ft8_decode_enabled,
             wspr_decode_enabled: self.wspr_decode_enabled,
+            filter: self.filter.clone(),
         })
     }
 
@@ -247,6 +254,14 @@ impl RigState {
             }
         }
     }
+}
+
+/// Current filter/DSP state for backends that support runtime filter adjustment.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RigFilterState {
+    pub bandwidth_hz: u32,
+    pub fir_taps: u32,
+    pub cw_center_hz: u32,
 }
 
 /// Read-only projection of state shared with clients.
@@ -283,4 +298,6 @@ pub struct RigSnapshot {
     pub cw_wpm: u32,
     #[serde(default)]
     pub cw_tone_hz: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub filter: Option<RigFilterState>,
 }

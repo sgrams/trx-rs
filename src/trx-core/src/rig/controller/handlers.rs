@@ -512,7 +512,9 @@ pub fn command_from_rig_command(cmd: RigCommand) -> Box<dyn RigCommandHandler> {
         | RigCommand::ResetAprsDecoder
         | RigCommand::ResetCwDecoder
         | RigCommand::ResetFt8Decoder
-        | RigCommand::ResetWsprDecoder => Box::new(GetSnapshotCommand),
+        | RigCommand::ResetWsprDecoder
+        | RigCommand::SetBandwidth(_)
+        | RigCommand::SetFirTaps(_) => Box::new(GetSnapshotCommand),
     }
 }
 
@@ -553,6 +555,11 @@ mod tests {
                         rit: false,
                         rpt: false,
                         split: false,
+                        tx: true,
+                        tx_limit: true,
+                        vfo_switch: true,
+                        filter_controls: false,
+                        signal_meter: true,
                     },
                     access: RigAccessMethod::Serial {
                         path: "/dev/test".to_string(),
@@ -607,6 +614,11 @@ mod tests {
                         rit: false,
                         rpt: false,
                         split: false,
+                        tx: true,
+                        tx_limit: true,
+                        vfo_switch: true,
+                        filter_controls: false,
+                        signal_meter: true,
                     },
                     access: RigAccessMethod::Serial {
                         path: "/dev/test".to_string(),

@@ -51,6 +51,16 @@ pub struct RigCapabilities {
     pub rit: bool,
     pub rpt: bool,
     pub split: bool,
+    /// Backend supports transmit: PTT, power on/off, TX meters, TX audio.
+    pub tx: bool,
+    /// Backend supports get_tx_limit / set_tx_limit.
+    pub tx_limit: bool,
+    /// Backend supports toggle_vfo.
+    pub vfo_switch: bool,
+    /// Backend supports runtime filter adjustment (bandwidth, FIR taps).
+    pub filter_controls: bool,
+    /// Backend returns a meaningful RX signal strength value.
+    pub signal_meter: bool,
 }
 
 fn default_min_freq_step_hz() -> u64 {
@@ -112,6 +122,27 @@ pub trait RigCat: Rig + Send {
     fn unlock<'a>(&'a mut self) -> Pin<Box<dyn Future<Output = DynResult<()>> + Send + 'a>>;
 
     fn as_audio_source(&self) -> Option<&dyn AudioSource> { None }
+
+    fn set_bandwidth<'a>(
+        &'a mut self,
+        _bandwidth_hz: u32,
+    ) -> Pin<Box<dyn Future<Output = DynResult<()>> + Send + 'a>> {
+        Box::pin(std::future::ready(Err(Box::new(
+            response::RigError::not_supported("set_bandwidth"),
+        ) as Box<dyn std::error::Error + Send + Sync>)))
+    }
+
+    fn set_fir_taps<'a>(
+        &'a mut self,
+        _taps: u32,
+    ) -> Pin<Box<dyn Future<Output = DynResult<()>> + Send + 'a>> {
+        Box::pin(std::future::ready(Err(Box::new(
+            response::RigError::not_supported("set_fir_taps"),
+        ) as Box<dyn std::error::Error + Send + Sync>)))
+    }
+
+    /// Return the current filter state if this backend supports filter controls.
+    fn filter_state(&self) -> Option<state::RigFilterState> { None }
 }
 
 /// Snapshot of a rig's status that every backend can expose.

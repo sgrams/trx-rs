@@ -450,6 +450,11 @@ mod tests {
                 rit: false,
                 rpt: false,
                 split: false,
+                tx: true,
+                tx_limit: true,
+                vfo_switch: true,
+                filter_controls: false,
+                signal_meter: true,
             },
             access: RigAccessMethod::Serial {
                 path: "/dev/test".to_string(),
