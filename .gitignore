@@ -24,3 +24,6 @@ benchmarks/
 # Env
 .env
 .env.*
+
+# Claude Code
+.claude/
