@@ -12,6 +12,7 @@ use trx_core::rig::{
     AudioSource, Rig, RigAccessMethod, RigCapabilities, RigCat, RigInfo, RigStatusFuture,
 };
 use trx_core::rig::response::RigError;
+use trx_core::rig::state::RigFilterState;
 use trx_core::{DynResult, RigMode};
 
 /// RX-only backend for any SoapySDR-compatible device.
@@ -22,6 +23,9 @@ pub struct SoapySdrRig {
     pipeline: dsp::SdrPipeline,
     /// Index of the primary channel in `pipeline.channel_dsps`.
     primary_channel_idx: usize,
+    /// Current filter state of the primary channel (for filter_controls support).
+    bandwidth_hz: u32,
+    fir_taps: u32,
 }
 
 impl SoapySdrRig {
@@ -108,6 +112,11 @@ impl SoapySdrRig {
                 rit: false,
                 rpt: false,
                 split: false,
+                tx: false,
+                tx_limit: false,
+                vfo_switch: false,
+                filter_controls: true,
+                signal_meter: true,
             },
             // No serial/TCP access for SDR devices; carry args in addr field.
             access: RigAccessMethod::Tcp {
@@ -115,12 +124,20 @@ impl SoapySdrRig {
             },
         };
 
+        // Initialise filter state from primary channel config (index 0), or defaults.
+        let (bandwidth_hz, fir_taps) = channels
+            .first()
+            .map(|&(_, _, bw, taps)| (bw, taps as u32))
+            .unwrap_or((3000, 64));
+
         Ok(Self {
             info,
             freq: initial_freq,
             mode: initial_mode,
             pipeline,
             primary_channel_idx: 0,
+            bandwidth_hz,
+            fir_taps,
         })
     }
 
@@ -130,7 +147,7 @@ impl SoapySdrRig {
     pub fn new(args: &str) -> DynResult<Self> {
         Self::new_with_config(
             args,
-            &[],          // no channels — pipeline does nothing
+            &[], // no channels — pipeline does nothing; filter defaults applied in new_with_config
             "auto",
             30.0,
             48_000,
@@ -296,6 +313,36 @@ impl RigCat for SoapySdrRig {
         Box::pin(async move {
             Err(Box::new(RigError::not_supported("unlock"))
                 as Box<dyn std::error::Error + Send + Sync>)
+        })
+    }
+
+    fn set_bandwidth<'a>(
+        &'a mut self,
+        bandwidth_hz: u32,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = DynResult<()>> + Send + 'a>> {
+        Box::pin(async move {
+            tracing::debug!("SoapySdrRig: set_bandwidth -> {} Hz", bandwidth_hz);
+            self.bandwidth_hz = bandwidth_hz;
+            Ok(())
+        })
+    }
+
+    fn set_fir_taps<'a>(
+        &'a mut self,
+        taps: u32,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = DynResult<()>> + Send + 'a>> {
+        Box::pin(async move {
+            tracing::debug!("SoapySdrRig: set_fir_taps -> {}", taps);
+            self.fir_taps = taps;
+            Ok(())
+        })
+    }
+
+    fn filter_state(&self) -> Option<RigFilterState> {
+        Some(RigFilterState {
+            bandwidth_hz: self.bandwidth_hz,
+            fir_taps: self.fir_taps,
+            cw_center_hz: 700,
         })
     }
 

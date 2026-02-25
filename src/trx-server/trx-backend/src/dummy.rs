@@ -104,6 +104,11 @@ impl DummyRig {
                     rit: false,
                     rpt: false,
                     split: false,
+                    tx: true,
+                    tx_limit: true,
+                    vfo_switch: true,
+                    filter_controls: false,
+                    signal_meter: true,
                 },
                 access: RigAccessMethod::Serial {
                     path: "/dev/null".to_string(),
@@ -138,6 +143,35 @@ impl DummyRig {
                 },
             ],
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use trx_core::rig::Rig;
+
+    #[test]
+    fn dummy_has_tx_capabilities() {
+        let rig = DummyRig::new();
+        let caps = &rig.info().capabilities;
+        assert!(caps.tx, "dummy rig should have tx capability");
+        assert!(caps.tx_limit, "dummy rig should have tx_limit capability");
+        assert!(caps.vfo_switch, "dummy rig should have vfo_switch capability");
+        assert!(caps.signal_meter, "dummy rig should have signal_meter capability");
+    }
+
+    #[test]
+    fn dummy_has_no_filter_controls() {
+        let rig = DummyRig::new();
+        let caps = &rig.info().capabilities;
+        assert!(!caps.filter_controls, "dummy rig should not have filter_controls");
+    }
+
+    #[test]
+    fn dummy_filter_state_is_none() {
+        let rig = DummyRig::new();
+        assert!(rig.filter_state().is_none(), "dummy rig should return None for filter_state");
     }
 }
 

@@ -207,6 +207,11 @@ impl Ft817 {
                 rpt: false,
                 split: false,
                 lock: true,
+                tx: true,
+                tx_limit: true,
+                vfo_switch: true,
+                filter_controls: false,
+                signal_meter: true,
             },
             access: RigAccessMethod::Serial {
                 path: path.to_string(),
