@@ -35,6 +35,8 @@ pub enum ClientCommand {
     ResetCwDecoder,
     ResetFt8Decoder,
     ResetWsprDecoder,
+    SetBandwidth { bandwidth_hz: u32 },
+    SetFirTaps { taps: u32 },
 }
 
 /// Envelope for client commands with optional authentication token and rig routing.

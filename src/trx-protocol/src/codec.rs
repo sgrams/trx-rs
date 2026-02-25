@@ -279,4 +279,104 @@ mod tests {
         let json = serde_json::to_string(&resp).unwrap();
         assert!(!json.contains("\"rigs\""), "rigs=None should be omitted from JSON");
     }
+
+    // --- UC-09: filter field serialization tests ---
+
+    #[test]
+    fn filter_field_included_when_some() {
+        use trx_core::RigFilterState;
+        use trx_core::rig::state::RigSnapshot;
+        let snap_json = serde_json::to_string(&RigSnapshot {
+            filter: Some(RigFilterState { bandwidth_hz: 3000, fir_taps: 64, cw_center_hz: 700 }),
+            ..minimal_snapshot()
+        })
+        .unwrap();
+        assert!(snap_json.contains("\"filter\""), "filter=Some should be serialized");
+        assert!(snap_json.contains("\"bandwidth_hz\":3000"));
+        assert!(snap_json.contains("\"fir_taps\":64"));
+    }
+
+    #[test]
+    fn filter_field_omitted_when_none() {
+        use trx_core::rig::state::RigSnapshot;
+        let snap_json = serde_json::to_string(&RigSnapshot {
+            filter: None,
+            ..minimal_snapshot()
+        })
+        .unwrap();
+        assert!(!snap_json.contains("\"filter\""), "filter=None should be omitted from JSON");
+    }
+
+    #[test]
+    fn filter_field_roundtrips() {
+        use trx_core::RigFilterState;
+        use trx_core::rig::state::RigSnapshot;
+        let orig = RigSnapshot {
+            filter: Some(RigFilterState { bandwidth_hz: 12000, fir_taps: 128, cw_center_hz: 700 }),
+            ..minimal_snapshot()
+        };
+        let json = serde_json::to_string(&orig).unwrap();
+        let decoded: RigSnapshot = serde_json::from_str(&json).unwrap();
+        let f = decoded.filter.expect("filter should round-trip");
+        assert_eq!(f.bandwidth_hz, 12000);
+        assert_eq!(f.fir_taps, 128);
+    }
+
+    fn minimal_snapshot() -> trx_core::rig::state::RigSnapshot {
+        use trx_core::radio::freq::{Band, Freq};
+        use trx_core::rig::state::{RigSnapshot, RigMode};
+        use trx_core::rig::{RigAccessMethod, RigCapabilities, RigInfo, RigStatus};
+        RigSnapshot {
+            info: RigInfo {
+                manufacturer: "Test".to_string(),
+                model: "Mock".to_string(),
+                revision: "1".to_string(),
+                capabilities: RigCapabilities {
+                    min_freq_step_hz: 1,
+                    supported_bands: vec![Band { low_hz: 14_000_000, high_hz: 14_350_000, tx_allowed: true }],
+                    supported_modes: vec![RigMode::USB],
+                    num_vfos: 1,
+                    lock: false,
+                    lockable: false,
+                    attenuator: false,
+                    preamp: false,
+                    rit: false,
+                    rpt: false,
+                    split: false,
+                    tx: false,
+                    tx_limit: false,
+                    vfo_switch: false,
+                    filter_controls: true,
+                    signal_meter: true,
+                },
+                access: RigAccessMethod::Tcp { addr: "127.0.0.1:1234".to_string() },
+            },
+            status: RigStatus {
+                freq: Freq { hz: 14_074_000 },
+                mode: RigMode::USB,
+                tx_en: false,
+                vfo: None,
+                tx: None,
+                rx: None,
+                lock: None,
+            },
+            band: None,
+            enabled: None,
+            initialized: true,
+            server_callsign: None,
+            server_version: None,
+            server_build_date: None,
+            server_latitude: None,
+            server_longitude: None,
+            pskreporter_status: None,
+            aprs_decode_enabled: false,
+            cw_decode_enabled: false,
+            ft8_decode_enabled: false,
+            wspr_decode_enabled: false,
+            cw_auto: false,
+            cw_wpm: 0,
+            cw_tone_hz: 0,
+            filter: None,
+        }
+    }
 }
