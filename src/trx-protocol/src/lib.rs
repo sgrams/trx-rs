@@ -16,4 +16,4 @@ pub mod types;
 pub use auth::{NoAuthValidator, SimpleTokenValidator, TokenValidator};
 pub use codec::{mode_to_string, parse_envelope, parse_mode};
 pub use mapping::{client_command_to_rig, rig_command_to_client};
-pub use types::{ClientCommand, ClientEnvelope, ClientResponse};
+pub use types::{ClientCommand, ClientEnvelope, ClientResponse, RigEntry};

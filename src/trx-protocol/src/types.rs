@@ -13,6 +13,7 @@ use trx_core::rig::state::RigSnapshot;
 #[serde(tag = "cmd", rename_all = "snake_case")]
 pub enum ClientCommand {
     GetState,
+    GetRigs,
     SetFreq { freq_hz: u64 },
     SetMode { mode: String },
     SetPtt { ptt: bool },
@@ -36,18 +37,34 @@ pub enum ClientCommand {
     ResetWsprDecoder,
 }
 
-/// Envelope for client commands with optional authentication token.
+/// Envelope for client commands with optional authentication token and rig routing.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ClientEnvelope {
     pub token: Option<String>,
+    /// Target rig ID. When absent, the first/default rig is used (backward compat).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rig_id: Option<String>,
     #[serde(flatten)]
     pub cmd: ClientCommand,
+}
+
+/// One entry in the GetRigs response: a rig's ID and its current snapshot.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct RigEntry {
+    pub rig_id: String,
+    pub state: RigSnapshot,
 }
 
 /// Response sent to network clients over TCP.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ClientResponse {
     pub success: bool,
+    /// The rig this response pertains to. Set by the listener from MR-06 onward.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rig_id: Option<String>,
     pub state: Option<RigSnapshot>,
+    /// Populated only for GetRigs responses.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rigs: Option<Vec<RigEntry>>,
     pub error: Option<String>,
 }

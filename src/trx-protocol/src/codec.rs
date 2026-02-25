@@ -56,7 +56,11 @@ pub fn parse_envelope(input: &str) -> Result<ClientEnvelope, serde_json::Error> 
         Ok(envelope) => Ok(envelope),
         Err(_) => {
             let cmd = serde_json::from_str::<ClientCommand>(input)?;
-            Ok(ClientEnvelope { token: None, cmd })
+            Ok(ClientEnvelope {
+                token: None,
+                rig_id: None,
+                cmd,
+            })
         }
     }
 }
@@ -195,5 +199,84 @@ mod tests {
         let json = r#"{"token":"Bearer abc123xyz","cmd":"get_state"}"#;
         let envelope = parse_envelope(json).unwrap();
         assert_eq!(envelope.token, Some("Bearer abc123xyz".to_string()));
+    }
+
+    // --- MR-09: multi-rig protocol tests ---
+
+    #[test]
+    fn test_parse_envelope_absent_rig_id_defaults_to_none() {
+        let json = r#"{"cmd":"get_state"}"#;
+        let envelope = parse_envelope(json).unwrap();
+        assert_eq!(envelope.rig_id, None, "absent rig_id should parse as None");
+    }
+
+    #[test]
+    fn test_parse_envelope_with_rig_id() {
+        let json = r#"{"rig_id":"hf","cmd":"get_state"}"#;
+        let envelope = parse_envelope(json).unwrap();
+        assert_eq!(envelope.rig_id, Some("hf".to_string()));
+        assert!(matches!(envelope.cmd, ClientCommand::GetState));
+    }
+
+    #[test]
+    fn test_parse_envelope_get_rigs_command() {
+        let json = r#"{"cmd":"get_rigs"}"#;
+        let envelope = parse_envelope(json).unwrap();
+        assert!(matches!(envelope.cmd, ClientCommand::GetRigs));
+        assert_eq!(envelope.rig_id, None);
+    }
+
+    #[test]
+    fn test_parse_envelope_get_rigs_with_rig_id_ignored() {
+        // rig_id is parsed and available even though GetRigs is intercepted
+        // before routing — the listener should ignore it for this command.
+        let json = r#"{"rig_id":"sdr","cmd":"get_rigs"}"#;
+        let envelope = parse_envelope(json).unwrap();
+        assert!(matches!(envelope.cmd, ClientCommand::GetRigs));
+        assert_eq!(envelope.rig_id, Some("sdr".to_string()));
+    }
+
+    #[test]
+    fn test_client_response_rig_id_roundtrip() {
+        use crate::types::ClientResponse;
+        let resp = ClientResponse {
+            success: true,
+            rig_id: Some("hf".to_string()),
+            state: None,
+            rigs: None,
+            error: None,
+        };
+        let json = serde_json::to_string(&resp).unwrap();
+        assert!(json.contains(r#""rig_id":"hf""#));
+        let decoded: ClientResponse = serde_json::from_str(&json).unwrap();
+        assert_eq!(decoded.rig_id, Some("hf".to_string()));
+    }
+
+    #[test]
+    fn test_client_response_omits_rig_id_when_none() {
+        use crate::types::ClientResponse;
+        let resp = ClientResponse {
+            success: false,
+            rig_id: None,
+            state: None,
+            rigs: None,
+            error: Some("bad".to_string()),
+        };
+        let json = serde_json::to_string(&resp).unwrap();
+        assert!(!json.contains("rig_id"), "rig_id=None should be omitted from JSON");
+    }
+
+    #[test]
+    fn test_client_response_omits_rigs_when_none() {
+        use crate::types::ClientResponse;
+        let resp = ClientResponse {
+            success: true,
+            rig_id: Some("server".to_string()),
+            state: None,
+            rigs: None,
+            error: None,
+        };
+        let json = serde_json::to_string(&resp).unwrap();
+        assert!(!json.contains("\"rigs\""), "rigs=None should be omitted from JSON");
     }
 }

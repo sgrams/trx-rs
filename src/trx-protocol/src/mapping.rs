@@ -16,6 +16,9 @@ use crate::types::ClientCommand;
 /// mode strings into RigMode values.
 pub fn client_command_to_rig(cmd: ClientCommand) -> RigCommand {
     match cmd {
+        ClientCommand::GetRigs => {
+            unreachable!("GetRigs is handled in the listener before reaching rig_task")
+        }
         ClientCommand::GetState => RigCommand::GetSnapshot,
         ClientCommand::SetFreq { freq_hz } => RigCommand::SetFreq(Freq { hz: freq_hz }),
         ClientCommand::SetMode { mode } => RigCommand::SetMode(parse_mode(&mode)),
