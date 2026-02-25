@@ -19,6 +19,8 @@ callsign = "N0CALL"
 [remote]
 # Remote trx-server URL (host:port)
 url = "192.168.1.100:9000"
+# Optional target rig ID on a multi-rig server (omit to use server default rig)
+# rig_id = "hf"
 
 # Poll interval in milliseconds
 poll_interval_ms = 750

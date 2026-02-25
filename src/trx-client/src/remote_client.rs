@@ -40,6 +40,7 @@ impl RemoteEndpoint {
 pub struct RemoteClientConfig {
     pub addr: String,
     pub token: Option<String>,
+    pub rig_id: Option<String>,
     pub poll_interval: Duration,
 }
 
@@ -144,11 +145,7 @@ async fn send_command(
     cmd: ClientCommand,
     state_tx: &watch::Sender<RigState>,
 ) -> RigResult<trx_core::RigSnapshot> {
-    let envelope = ClientEnvelope {
-        token: config.token.clone(),
-        rig_id: None,
-        cmd,
-    };
+    let envelope = build_envelope(config, cmd);
 
     let payload = serde_json::to_string(&envelope)
         .map_err(|e| RigError::communication(format!("JSON serialize failed: {e}")))?;
@@ -185,6 +182,14 @@ async fn send_command(
     Err(RigError::communication(
         resp.error.unwrap_or_else(|| "remote error".into()),
     ))
+}
+
+fn build_envelope(config: &RemoteClientConfig, cmd: ClientCommand) -> ClientEnvelope {
+    ClientEnvelope {
+        token: config.token.clone(),
+        rig_id: config.rig_id.clone(),
+        cmd,
+    }
 }
 
 async fn read_limited_line<R: AsyncBufRead + Unpin>(
@@ -476,6 +481,7 @@ mod tests {
             RemoteClientConfig {
                 addr: addr.to_string(),
                 token: None,
+                rig_id: None,
                 poll_interval: Duration::from_millis(100),
             },
             req_rx,
@@ -502,5 +508,18 @@ mod tests {
         .await
         .expect("client shutdown timeout");
         let _ = server.await;
+    }
+
+    #[test]
+    fn build_envelope_includes_rig_id() {
+        let config = RemoteClientConfig {
+            addr: "127.0.0.1:4530".to_string(),
+            token: Some("secret".to_string()),
+            rig_id: Some("sdr".to_string()),
+            poll_interval: Duration::from_millis(500),
+        };
+        let envelope = super::build_envelope(&config, trx_protocol::ClientCommand::GetState);
+        assert_eq!(envelope.token.as_deref(), Some("secret"));
+        assert_eq!(envelope.rig_id.as_deref(), Some("sdr"));
     }
 }

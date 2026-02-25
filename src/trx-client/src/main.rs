@@ -2,8 +2,8 @@
 //
 // SPDX-License-Identifier: BSD-2-Clause
 
-mod audio_client;
 mod audio_bridge;
+mod audio_client;
 mod config;
 mod remote_client;
 
@@ -58,6 +58,9 @@ struct Cli {
     /// Poll interval in milliseconds
     #[arg(long = "poll-interval")]
     poll_interval_ms: Option<u64>,
+    /// Target rig ID on a multi-rig remote server
+    #[arg(long = "rig-id")]
+    rig_id: Option<String>,
     /// Frontend(s) to expose locally (e.g. http,rigctl)
     #[arg(short = 'f', long = "frontend", value_delimiter = ',', num_args = 1..)]
     frontends: Option<Vec<String>>,
@@ -162,8 +165,10 @@ async fn async_init() -> DynResult<AppState> {
     // Set HTTP frontend authentication config
     frontend_runtime.http_auth_enabled = cfg.frontends.http.auth.enabled;
     frontend_runtime.http_auth_rx_passphrase = cfg.frontends.http.auth.rx_passphrase.clone();
-    frontend_runtime.http_auth_control_passphrase = cfg.frontends.http.auth.control_passphrase.clone();
-    frontend_runtime.http_auth_tx_access_control_enabled = cfg.frontends.http.auth.tx_access_control_enabled;
+    frontend_runtime.http_auth_control_passphrase =
+        cfg.frontends.http.auth.control_passphrase.clone();
+    frontend_runtime.http_auth_tx_access_control_enabled =
+        cfg.frontends.http.auth.tx_access_control_enabled;
     frontend_runtime.http_auth_session_ttl_secs = cfg.frontends.http.auth.session_ttl_min * 60;
     frontend_runtime.http_auth_cookie_secure = cfg.frontends.http.auth.cookie_secure;
     frontend_runtime.http_auth_cookie_same_site = match cfg.frontends.http.auth.cookie_same_site {
@@ -183,6 +188,7 @@ async fn async_init() -> DynResult<AppState> {
         parse_remote_url(&remote_url).map_err(|e| format!("Invalid remote URL: {}", e))?;
 
     let remote_token = cli.token.clone().or_else(|| cfg.remote.auth.token.clone());
+    let remote_rig_id = cli.rig_id.clone().or_else(|| cfg.remote.rig_id.clone());
 
     let poll_interval_ms = cli.poll_interval_ms.unwrap_or(cfg.remote.poll_interval_ms);
 
@@ -248,6 +254,7 @@ async fn async_init() -> DynResult<AppState> {
     let remote_cfg = RemoteClientConfig {
         addr: remote_endpoint.connect_addr(),
         token: remote_token,
+        rig_id: remote_rig_id,
         poll_interval: Duration::from_millis(poll_interval_ms),
     };
     let remote_shutdown_rx = shutdown_rx.clone();

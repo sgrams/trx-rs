@@ -55,6 +55,8 @@ impl Default for GeneralConfig {
 pub struct RemoteConfig {
     /// Remote URL (host:port or tcp://host:port).
     pub url: Option<String>,
+    /// Optional target rig ID on the remote multi-rig server.
+    pub rig_id: Option<String>,
     /// Remote auth settings.
     pub auth: RemoteAuthConfig,
     /// Poll interval in milliseconds.
@@ -65,6 +67,7 @@ impl Default for RemoteConfig {
     fn default() -> Self {
         Self {
             url: None,
+            rig_id: None,
             auth: RemoteAuthConfig::default(),
             poll_interval_ms: 750,
         }
@@ -300,6 +303,11 @@ impl ClientConfig {
                 return Err("[remote].url must not be empty when set".to_string());
             }
         }
+        if let Some(rig_id) = &self.remote.rig_id {
+            if rig_id.trim().is_empty() {
+                return Err("[remote].rig_id must not be empty when set".to_string());
+            }
+        }
         if let Some(token) = &self.remote.auth.token {
             if token.trim().is_empty() {
                 return Err("[remote.auth].token must not be empty when set".to_string());
@@ -315,11 +323,13 @@ impl ClientConfig {
         if self.frontends.audio.enabled && self.frontends.audio.server_port == 0 {
             return Err("[frontends.audio].server_port must be > 0 when enabled".to_string());
         }
-        if !self.frontends.audio.bridge.rx_gain.is_finite() || self.frontends.audio.bridge.rx_gain < 0.0
+        if !self.frontends.audio.bridge.rx_gain.is_finite()
+            || self.frontends.audio.bridge.rx_gain < 0.0
         {
             return Err("[frontends.audio.bridge].rx_gain must be finite and >= 0".to_string());
         }
-        if !self.frontends.audio.bridge.tx_gain.is_finite() || self.frontends.audio.bridge.tx_gain < 0.0
+        if !self.frontends.audio.bridge.tx_gain.is_finite()
+            || self.frontends.audio.bridge.tx_gain < 0.0
         {
             return Err("[frontends.audio.bridge].tx_gain must be finite and >= 0".to_string());
         }
@@ -353,6 +363,7 @@ impl ClientConfig {
             },
             remote: RemoteConfig {
                 url: Some("192.168.1.100:9000".to_string()),
+                rig_id: Some("hf".to_string()),
                 auth: RemoteAuthConfig {
                     token: Some("my-token".to_string()),
                 },
@@ -494,6 +505,7 @@ callsign = "W1AW"
 
 [remote]
 url = "192.168.1.100:9000"
+rig_id = "hf"
 auth.token = "my-token"
 poll_interval_ms = 500
 
@@ -507,6 +519,7 @@ port = 8080
         let config: ClientConfig = toml::from_str(toml_str).unwrap();
         assert_eq!(config.general.callsign, Some("W1AW".to_string()));
         assert_eq!(config.remote.url, Some("192.168.1.100:9000".to_string()));
+        assert_eq!(config.remote.rig_id, Some("hf".to_string()));
         assert_eq!(config.remote.auth.token, Some("my-token".to_string()));
         assert_eq!(config.remote.poll_interval_ms, 500);
         assert!(config.frontends.http.enabled);
@@ -522,6 +535,13 @@ port = 8080
     fn test_validate_rejects_zero_poll_interval() {
         let mut config = ClientConfig::default();
         config.remote.poll_interval_ms = 0;
+        assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn test_validate_rejects_empty_remote_rig_id() {
+        let mut config = ClientConfig::default();
+        config.remote.rig_id = Some("  ".to_string());
         assert!(config.validate().is_err());
     }
 
