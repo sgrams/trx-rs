@@ -14,7 +14,14 @@ use tokio::task::JoinHandle;
 
 use trx_core::audio::AudioStreamInfo;
 use trx_core::decode::{AprsPacket, CwEvent, DecodedMessage, Ft8Message, WsprMessage};
+use trx_core::rig::state::RigSnapshot;
 use trx_core::{DynResult, RigRequest, RigState};
+
+#[derive(Clone, Debug)]
+pub struct RemoteRigEntry {
+    pub rig_id: String,
+    pub state: RigSnapshot,
+}
 
 /// Trait implemented by concrete frontends to expose a runner entrypoint.
 pub trait FrontendSpawner {
@@ -140,6 +147,10 @@ pub struct FrontendRuntimeContext {
     pub http_auth_cookie_secure: bool,
     /// HTTP frontend auth cookie same-site policy
     pub http_auth_cookie_same_site: String,
+    /// Currently selected remote rig id (used by remote client routing).
+    pub remote_active_rig_id: Arc<Mutex<Option<String>>>,
+    /// Cached remote rig list from GetRigs polling.
+    pub remote_rigs: Arc<Mutex<Vec<RemoteRigEntry>>>,
 }
 
 impl FrontendRuntimeContext {
@@ -165,6 +176,8 @@ impl FrontendRuntimeContext {
             http_auth_session_ttl_secs: 480 * 60,
             http_auth_cookie_secure: false,
             http_auth_cookie_same_site: "Lax".to_string(),
+            remote_active_rig_id: Arc::new(Mutex::new(None)),
+            remote_rigs: Arc::new(Mutex::new(Vec::new())),
         }
     }
 }

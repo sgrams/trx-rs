@@ -277,6 +277,8 @@ const loadingTitle = document.getElementById("loading-title");
 const loadingSub = document.getElementById("loading-sub");
 const headerSigCanvas = document.getElementById("header-sig-canvas");
 const themeToggleBtn = document.getElementById("theme-toggle");
+const rigSwitchSelect = document.getElementById("rig-switch-select");
+const rigSwitchBtn = document.getElementById("rig-switch-btn");
 
 let lastControl;
 let lastTxEn = null;
@@ -303,6 +305,7 @@ function vfoColor(idx) {
 let jogAngle = 0;
 let lastClientCount = null;
 let lastLocked = false;
+let lastRigIds = [];
 const originalTitle = document.title;
 const savedTheme = loadSetting("theme", null);
 
@@ -941,6 +944,33 @@ function render(update) {
   if (typeof update.clients === "number") {
     document.getElementById("about-clients").textContent = update.clients;
   }
+  if (typeof update.active_rig_id === "string" && update.active_rig_id.length > 0) {
+    document.getElementById("about-active-rig").textContent = update.active_rig_id;
+  }
+  if (Array.isArray(update.rig_ids)) {
+    lastRigIds = update.rig_ids.filter((id) => typeof id === "string" && id.length > 0);
+    document.getElementById("about-rig-list").textContent = lastRigIds.length ? lastRigIds.join(", ") : "--";
+    if (rigSwitchSelect) {
+      const selectedBefore = rigSwitchSelect.value;
+      rigSwitchSelect.innerHTML = "";
+      lastRigIds.forEach((id) => {
+        const opt = document.createElement("option");
+        opt.value = id;
+        opt.textContent = id;
+        rigSwitchSelect.appendChild(opt);
+      });
+      const preferred = (typeof update.active_rig_id === "string" && lastRigIds.includes(update.active_rig_id))
+        ? update.active_rig_id
+        : selectedBefore;
+      if (preferred && lastRigIds.includes(preferred)) {
+        rigSwitchSelect.value = preferred;
+      }
+      rigSwitchSelect.disabled = lastRigIds.length === 0;
+      if (rigSwitchBtn) {
+        rigSwitchBtn.disabled = lastRigIds.length === 0 || authRole === "rx";
+      }
+    }
+  }
   if (typeof update.rigctl_clients === "number") {
     document.getElementById("about-rigctl-clients").textContent = update.rigctl_clients;
   }
@@ -1078,6 +1108,36 @@ async function postPath(path) {
     throw new Error(text || resp.statusText);
   }
   return resp;
+}
+
+async function switchRig() {
+  if (!rigSwitchSelect || !rigSwitchSelect.value) {
+    showHint("No rig selected", 1500);
+    return;
+  }
+  if (authRole === "rx") {
+    showHint("Control role required", 1500);
+    return;
+  }
+  if (!lastRigIds.includes(rigSwitchSelect.value)) {
+    showHint("Unknown rig", 1500);
+    return;
+  }
+  if (rigSwitchBtn) rigSwitchBtn.disabled = true;
+  showHint("Switching rig…");
+  try {
+    await postPath(`/select_rig?rig_id=${encodeURIComponent(rigSwitchSelect.value)}`);
+    showHint("Rig switch requested", 1500);
+  } catch (err) {
+    showHint("Rig switch failed", 2000);
+    console.error(err);
+  } finally {
+    if (rigSwitchBtn) rigSwitchBtn.disabled = authRole === "rx";
+  }
+}
+
+if (rigSwitchBtn) {
+  rigSwitchBtn.addEventListener("click", switchRig);
 }
 
 powerBtn.addEventListener("click", async () => {

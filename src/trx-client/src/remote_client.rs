@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: BSD-2-Clause
 
 use std::time::Duration;
+use std::{sync::Arc, sync::Mutex};
 
 use tokio::io::{AsyncBufRead, AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::TcpStream;
@@ -13,7 +14,9 @@ use tracing::{info, warn};
 use trx_core::rig::request::RigRequest;
 use trx_core::rig::state::RigState;
 use trx_core::{RigError, RigResult};
+use trx_frontend::RemoteRigEntry;
 use trx_protocol::rig_command_to_client;
+use trx_protocol::types::RigEntry;
 use trx_protocol::{ClientCommand, ClientEnvelope, ClientResponse};
 
 const DEFAULT_REMOTE_PORT: u16 = 4530;
@@ -40,7 +43,8 @@ impl RemoteEndpoint {
 pub struct RemoteClientConfig {
     pub addr: String,
     pub token: Option<String>,
-    pub rig_id: Option<String>,
+    pub selected_rig_id: Arc<Mutex<Option<String>>>,
+    pub known_rigs: Arc<Mutex<Vec<RemoteRigEntry>>>,
     pub poll_interval: Duration,
 }
 
@@ -118,7 +122,9 @@ async fn handle_connection(
                     continue;
                 }
                 last_poll = Instant::now();
-                if let Err(e) = send_command(config, &mut writer, &mut reader, ClientCommand::GetState, state_tx).await {
+                if let Err(e) =
+                    refresh_remote_snapshot(config, &mut writer, &mut reader, state_tx).await
+                {
                     warn!("Remote poll failed: {}", e);
                 }
             }
@@ -187,8 +193,97 @@ async fn send_command(
 fn build_envelope(config: &RemoteClientConfig, cmd: ClientCommand) -> ClientEnvelope {
     ClientEnvelope {
         token: config.token.clone(),
-        rig_id: config.rig_id.clone(),
+        rig_id: selected_rig_id(config),
         cmd,
+    }
+}
+
+async fn refresh_remote_snapshot(
+    config: &RemoteClientConfig,
+    writer: &mut tokio::net::tcp::OwnedWriteHalf,
+    reader: &mut BufReader<tokio::net::tcp::OwnedReadHalf>,
+    state_tx: &watch::Sender<RigState>,
+) -> RigResult<()> {
+    let rigs = send_get_rigs(config, writer, reader).await?;
+    cache_remote_rigs(config, &rigs);
+    if rigs.is_empty() {
+        return Err(RigError::communication("GetRigs returned no rigs"));
+    }
+
+    let selected = selected_rig_id(config);
+    let fallback = &rigs[0];
+    let target = selected
+        .as_deref()
+        .and_then(|id| rigs.iter().find(|entry| entry.rig_id == id))
+        .unwrap_or(fallback);
+
+    if selected.as_deref() != Some(target.rig_id.as_str()) {
+        set_selected_rig_id(config, Some(target.rig_id.clone()));
+    }
+
+    let _ = state_tx.send(RigState::from_snapshot(target.state.clone()));
+    Ok(())
+}
+
+async fn send_get_rigs(
+    config: &RemoteClientConfig,
+    writer: &mut tokio::net::tcp::OwnedWriteHalf,
+    reader: &mut BufReader<tokio::net::tcp::OwnedReadHalf>,
+) -> RigResult<Vec<RigEntry>> {
+    let envelope = build_envelope(config, ClientCommand::GetRigs);
+    let payload = serde_json::to_string(&envelope)
+        .map_err(|e| RigError::communication(format!("JSON serialize failed: {e}")))?;
+
+    time::timeout(
+        IO_TIMEOUT,
+        writer.write_all(format!("{}\n", payload).as_bytes()),
+    )
+    .await
+    .map_err(|_| RigError::communication(format!("write timed out after {:?}", IO_TIMEOUT)))?
+    .map_err(|e| RigError::communication(format!("write failed: {e}")))?;
+    time::timeout(IO_TIMEOUT, writer.flush())
+        .await
+        .map_err(|_| RigError::communication(format!("flush timed out after {:?}", IO_TIMEOUT)))?
+        .map_err(|e| RigError::communication(format!("flush failed: {e}")))?;
+
+    let line = time::timeout(IO_TIMEOUT, read_limited_line(reader, MAX_JSON_LINE_BYTES))
+        .await
+        .map_err(|_| RigError::communication(format!("read timed out after {:?}", IO_TIMEOUT)))?
+        .map_err(|e| RigError::communication(format!("read failed: {e}")))?;
+    let line = line.ok_or_else(|| RigError::communication("connection closed by remote"))?;
+
+    let resp: ClientResponse = serde_json::from_str(line.trim_end())
+        .map_err(|e| RigError::communication(format!("invalid response: {e}")))?;
+    if resp.success {
+        return resp
+            .rigs
+            .ok_or_else(|| RigError::communication("missing rigs list in GetRigs response"));
+    }
+
+    Err(RigError::communication(
+        resp.error.unwrap_or_else(|| "remote error".into()),
+    ))
+}
+
+fn cache_remote_rigs(config: &RemoteClientConfig, rigs: &[RigEntry]) {
+    if let Ok(mut guard) = config.known_rigs.lock() {
+        *guard = rigs
+            .iter()
+            .map(|entry| RemoteRigEntry {
+                rig_id: entry.rig_id.clone(),
+                state: entry.state.clone(),
+            })
+            .collect();
+    }
+}
+
+fn selected_rig_id(config: &RemoteClientConfig) -> Option<String> {
+    config.selected_rig_id.lock().ok().and_then(|g| g.clone())
+}
+
+fn set_selected_rig_id(config: &RemoteClientConfig, value: Option<String>) {
+    if let Ok(mut guard) = config.selected_rig_id.lock() {
+        *guard = value;
     }
 }
 
@@ -316,6 +411,7 @@ fn parse_port(port_str: &str) -> Result<u16, String> {
 #[cfg(test)]
 mod tests {
     use super::{parse_remote_url, RemoteClientConfig, RemoteEndpoint};
+    use std::sync::{Arc, Mutex};
     use std::time::Duration;
 
     use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
@@ -326,6 +422,7 @@ mod tests {
     use trx_core::rig::state::RigSnapshot;
     use trx_core::rig::{RigAccessMethod, RigCapabilities, RigInfo, RigStatus, RigTxStatus};
     use trx_core::{RigMode, RigState};
+    use trx_protocol::types::RigEntry;
     use trx_protocol::ClientResponse;
 
     #[test]
@@ -441,11 +538,15 @@ mod tests {
     async fn reconnects_and_updates_state_after_drop() {
         let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
         let addr = listener.local_addr().expect("local addr");
+        let snapshot = sample_snapshot();
         let response = serde_json::to_string(&ClientResponse {
             success: true,
-            rig_id: None,
-            state: Some(sample_snapshot()),
-            rigs: None,
+            rig_id: Some("server".to_string()),
+            state: None,
+            rigs: Some(vec![RigEntry {
+                rig_id: "default".to_string(),
+                state: snapshot.clone(),
+            }]),
             error: None,
         })
         .expect("serialize response")
@@ -481,7 +582,8 @@ mod tests {
             RemoteClientConfig {
                 addr: addr.to_string(),
                 token: None,
-                rig_id: None,
+                selected_rig_id: Arc::new(Mutex::new(None)),
+                known_rigs: Arc::new(Mutex::new(Vec::new())),
                 poll_interval: Duration::from_millis(100),
             },
             req_rx,
@@ -515,7 +617,8 @@ mod tests {
         let config = RemoteClientConfig {
             addr: "127.0.0.1:4530".to_string(),
             token: Some("secret".to_string()),
-            rig_id: Some("sdr".to_string()),
+            selected_rig_id: Arc::new(Mutex::new(Some("sdr".to_string()))),
+            known_rigs: Arc::new(Mutex::new(Vec::new())),
             poll_interval: Duration::from_millis(500),
         };
         let envelope = super::build_envelope(&config, trx_protocol::ClientCommand::GetState);

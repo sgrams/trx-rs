@@ -16,7 +16,7 @@ use tokio_stream::wrappers::{IntervalStream, WatchStream};
 use trx_core::radio::freq::Freq;
 use trx_core::rig::{RigAccessMethod, RigCapabilities, RigInfo};
 use trx_core::{RigCommand, RigRequest, RigSnapshot, RigState};
-use trx_frontend::FrontendRuntimeContext;
+use trx_frontend::{FrontendRuntimeContext, RemoteRigEntry};
 use trx_protocol::{parse_mode, ClientResponse};
 
 use crate::server::status;
@@ -42,6 +42,8 @@ fn inject_frontend_meta(
     http_clients: usize,
     rigctl_clients: usize,
     rigctl_addr: Option<String>,
+    active_rig_id: Option<String>,
+    rig_ids: Vec<String>,
 ) -> String {
     let mut value: serde_json::Value = match serde_json::from_str(json) {
         Ok(v) => v,
@@ -59,6 +61,10 @@ fn inject_frontend_meta(
     if let Some(addr) = rigctl_addr {
         map.insert("rigctl_addr".to_string(), serde_json::json!(addr));
     }
+    if let Some(rig_id) = active_rig_id {
+        map.insert("active_rig_id".to_string(), serde_json::json!(rig_id));
+    }
+    map.insert("rig_ids".to_string(), serde_json::json!(rig_ids));
 
     serde_json::to_string(&value).unwrap_or_else(|_| json.to_string())
 }
@@ -70,6 +76,23 @@ fn rigctl_addr_from_context(context: &FrontendRuntimeContext) -> Option<String> 
         .ok()
         .and_then(|v| *v)
         .map(|addr| addr.to_string())
+}
+
+fn active_rig_id_from_context(context: &FrontendRuntimeContext) -> Option<String> {
+    context
+        .remote_active_rig_id
+        .lock()
+        .ok()
+        .and_then(|v| v.clone())
+}
+
+fn rig_ids_from_context(context: &FrontendRuntimeContext) -> Vec<String> {
+    context
+        .remote_rigs
+        .lock()
+        .ok()
+        .map(|entries| entries.iter().map(|r| r.rig_id.clone()).collect())
+        .unwrap_or_default()
 }
 
 #[get("/events")]
@@ -91,6 +114,8 @@ pub async fn events(
         count,
         context.rigctl_clients.load(Ordering::Relaxed),
         rigctl_addr_from_context(context.get_ref().as_ref()),
+        active_rig_id_from_context(context.get_ref().as_ref()),
+        rig_ids_from_context(context.get_ref().as_ref()),
     );
     let initial_stream =
         once(async move { Ok::<Bytes, Error>(Bytes::from(format!("data: {initial_json}\n\n"))) });
@@ -108,6 +133,8 @@ pub async fn events(
                         counter.load(Ordering::Relaxed),
                         context.rigctl_clients.load(Ordering::Relaxed),
                         rigctl_addr_from_context(context.as_ref()),
+                        active_rig_id_from_context(context.as_ref()),
+                        rig_ids_from_context(context.as_ref()),
                     );
                     Ok::<Bytes, Error>(Bytes::from(format!("data: {json}\n\n")))
                 })
@@ -471,9 +498,90 @@ pub async fn clear_cw_decode(
     send_command(&rig_tx, RigCommand::ResetCwDecoder).await
 }
 
+#[derive(serde::Serialize)]
+struct RigListItem {
+    rig_id: String,
+    manufacturer: String,
+    model: String,
+    initialized: bool,
+}
+
+#[derive(serde::Serialize)]
+struct RigListResponse {
+    active_rig_id: Option<String>,
+    rigs: Vec<RigListItem>,
+}
+
+fn build_rig_list_payload(context: &FrontendRuntimeContext) -> RigListResponse {
+    let active_rig_id = active_rig_id_from_context(context);
+    let rigs = context
+        .remote_rigs
+        .lock()
+        .ok()
+        .map(|entries| entries.iter().map(map_rig_entry).collect())
+        .unwrap_or_default();
+    RigListResponse {
+        active_rig_id,
+        rigs,
+    }
+}
+
+fn map_rig_entry(entry: &RemoteRigEntry) -> RigListItem {
+    RigListItem {
+        rig_id: entry.rig_id.clone(),
+        manufacturer: entry.state.info.manufacturer.clone(),
+        model: entry.state.info.model.clone(),
+        initialized: entry.state.initialized,
+    }
+}
+
+#[get("/rigs")]
+pub async fn list_rigs(
+    context: web::Data<Arc<FrontendRuntimeContext>>,
+) -> Result<HttpResponse, Error> {
+    Ok(HttpResponse::Ok().json(build_rig_list_payload(context.get_ref().as_ref())))
+}
+
+#[derive(serde::Deserialize)]
+pub struct SelectRigQuery {
+    pub rig_id: String,
+}
+
+#[post("/select_rig")]
+pub async fn select_rig(
+    query: web::Query<SelectRigQuery>,
+    context: web::Data<Arc<FrontendRuntimeContext>>,
+) -> Result<HttpResponse, Error> {
+    let rig_id = query.rig_id.trim();
+    if rig_id.is_empty() {
+        return Err(actix_web::error::ErrorBadRequest(
+            "rig_id must not be empty",
+        ));
+    }
+
+    let known = context
+        .remote_rigs
+        .lock()
+        .ok()
+        .map(|entries| entries.iter().any(|entry| entry.rig_id == rig_id))
+        .unwrap_or(false);
+    if !known {
+        return Err(actix_web::error::ErrorBadRequest(format!(
+            "unknown rig_id: {rig_id}"
+        )));
+    }
+
+    if let Ok(mut active) = context.remote_active_rig_id.lock() {
+        *active = Some(rig_id.to_string());
+    }
+
+    Ok(HttpResponse::Ok().json(build_rig_list_payload(context.get_ref().as_ref())))
+}
+
 pub fn configure(cfg: &mut web::ServiceConfig) {
     cfg.service(index)
         .service(status_api)
+        .service(list_rigs)
         .service(events)
         .service(decode_events)
         .service(toggle_power)
@@ -497,6 +605,7 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
         .service(clear_cw_decode)
         .service(clear_ft8_decode)
         .service(clear_wspr_decode)
+        .service(select_rig)
         .service(crate::server::audio::audio_ws)
         .service(favicon)
         .service(logo)

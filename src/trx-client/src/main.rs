@@ -189,6 +189,9 @@ async fn async_init() -> DynResult<AppState> {
 
     let remote_token = cli.token.clone().or_else(|| cfg.remote.auth.token.clone());
     let remote_rig_id = cli.rig_id.clone().or_else(|| cfg.remote.rig_id.clone());
+    if let Ok(mut guard) = frontend_runtime.remote_active_rig_id.lock() {
+        *guard = remote_rig_id.clone();
+    }
 
     let poll_interval_ms = cli.poll_interval_ms.unwrap_or(cfg.remote.poll_interval_ms);
 
@@ -254,7 +257,8 @@ async fn async_init() -> DynResult<AppState> {
     let remote_cfg = RemoteClientConfig {
         addr: remote_endpoint.connect_addr(),
         token: remote_token,
-        rig_id: remote_rig_id,
+        selected_rig_id: frontend_runtime.remote_active_rig_id.clone(),
+        known_rigs: frontend_runtime.remote_rigs.clone(),
         poll_interval: Duration::from_millis(poll_interval_ms),
     };
     let remote_shutdown_rx = shutdown_rx.clone();

@@ -9,15 +9,15 @@
 //! - `Control`: full access including TX/PTT control
 
 use actix_web::{
+    cookie::Cookie,
     dev::{forward_ready, Service, ServiceRequest, ServiceResponse, Transform},
-    get, post, web, Error, HttpRequest, HttpResponse, Responder, cookie::Cookie,
+    get, post, web, Error, HttpRequest, HttpResponse, Responder,
 };
 use futures_util::future::LocalBoxFuture;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 use std::time::{Duration, SystemTime};
-
 
 /// Unique session identifier (hex-encoded 128-bit random)
 pub type SessionId = String;
@@ -309,12 +309,10 @@ pub async fn login(
     let ttl_secs = auth_state.config.session_ttl.as_secs() as i64;
     cookie.set_max_age(actix_web::cookie::time::Duration::seconds(ttl_secs));
 
-    Ok(HttpResponse::Ok()
-        .cookie(cookie)
-        .json(LoginResponse {
-            authenticated: true,
-            role: role.as_str().to_string(),
-        }))
+    Ok(HttpResponse::Ok().cookie(cookie).json(LoginResponse {
+        authenticated: true,
+        role: role.as_str().to_string(),
+    }))
 }
 
 /// POST /auth/logout
@@ -338,11 +336,9 @@ pub async fn logout(
     cookie.set_http_only(true);
     cookie.set_max_age(actix_web::cookie::time::Duration::seconds(0));
 
-    Ok(HttpResponse::Ok()
-        .cookie(cookie)
-        .json(serde_json::json!({
-            "logged_out": true
-        })))
+    Ok(HttpResponse::Ok().cookie(cookie).json(serde_json::json!({
+        "logged_out": true
+    })))
 }
 
 /// GET /auth/session
@@ -424,10 +420,12 @@ impl RouteAccess {
 
         // Read-only routes
         if path == "/status"
+            || path == "/rigs"
             || path == "/events"
             || path == "/decode"
             || path == "/audio"
             || path.starts_with("/status?")
+            || path.starts_with("/rigs?")
             || path.starts_with("/events?")
             || path.starts_with("/decode?")
             || path.starts_with("/audio?")
@@ -498,9 +496,7 @@ where
         }
 
         // For protected routes, check auth
-        let auth_state = req
-            .app_data::<web::Data<AuthState>>()
-            .cloned();
+        let auth_state = req.app_data::<web::Data<AuthState>>().cloned();
 
         if let Some(auth_state) = auth_state {
             if !auth_state.config.enabled {
@@ -586,6 +582,7 @@ mod tests {
     #[test]
     fn test_route_access_read_paths() {
         assert_eq!(RouteAccess::from_path("/status"), RouteAccess::Read);
+        assert_eq!(RouteAccess::from_path("/rigs"), RouteAccess::Read);
         assert_eq!(RouteAccess::from_path("/events"), RouteAccess::Read);
         assert_eq!(RouteAccess::from_path("/decode"), RouteAccess::Read);
         assert_eq!(RouteAccess::from_path("/audio"), RouteAccess::Read);
@@ -593,14 +590,8 @@ mod tests {
 
     #[test]
     fn test_route_access_control_paths() {
-        assert_eq!(
-            RouteAccess::from_path("/set_freq"),
-            RouteAccess::Control
-        );
-        assert_eq!(
-            RouteAccess::from_path("/set_mode"),
-            RouteAccess::Control
-        );
+        assert_eq!(RouteAccess::from_path("/set_freq"), RouteAccess::Control);
+        assert_eq!(RouteAccess::from_path("/set_mode"), RouteAccess::Control);
     }
 
     #[test]

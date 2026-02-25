@@ -19,6 +19,7 @@ use trx_frontend::{FrontendRuntimeContext, FrontendSpawner};
 use trx_protocol::auth::{SimpleTokenValidator, TokenValidator};
 use trx_protocol::codec::parse_envelope;
 use trx_protocol::mapping;
+use trx_protocol::types::{ClientCommand, RigEntry};
 use trx_protocol::ClientResponse;
 
 const IO_TIMEOUT: Duration = Duration::from_secs(10);
@@ -125,6 +126,30 @@ async fn handle_client(
             continue;
         }
 
+        if let Some(rig_id) = envelope.rig_id.as_ref() {
+            if let Ok(mut active) = context.remote_active_rig_id.lock() {
+                *active = Some(rig_id.clone());
+            }
+        }
+
+        if matches!(&envelope.cmd, ClientCommand::GetRigs) {
+            let resp = ClientResponse {
+                success: true,
+                rig_id: Some("client".to_string()),
+                state: None,
+                rigs: Some(snapshot_remote_rigs(context.as_ref())),
+                error: None,
+            };
+            send_response(&mut writer, &resp).await?;
+            continue;
+        }
+
+        let active_rig_id = context
+            .remote_active_rig_id
+            .lock()
+            .ok()
+            .and_then(|v| v.clone());
+
         let rig_cmd = mapping::client_command_to_rig(envelope.cmd);
 
         let (resp_tx, resp_rx) = oneshot::channel();
@@ -139,7 +164,7 @@ async fn handle_client(
                 error!("Failed to send request to rig_task: {:?}", e);
                 let resp = ClientResponse {
                     success: false,
-                    rig_id: None,
+                    rig_id: active_rig_id.clone(),
                     state: None,
                     rigs: None,
                     error: Some("Internal error: rig task not available".into()),
@@ -150,7 +175,7 @@ async fn handle_client(
             Err(_) => {
                 let resp = ClientResponse {
                     success: false,
-                    rig_id: None,
+                    rig_id: active_rig_id.clone(),
                     state: None,
                     rigs: None,
                     error: Some("Internal error: request queue timeout".into()),
@@ -164,7 +189,7 @@ async fn handle_client(
             Ok(Ok(Ok(snapshot))) => {
                 let resp = ClientResponse {
                     success: true,
-                    rig_id: None,
+                    rig_id: active_rig_id.clone(),
                     state: Some(snapshot),
                     rigs: None,
                     error: None,
@@ -174,7 +199,7 @@ async fn handle_client(
             Ok(Ok(Err(err))) => {
                 let resp = ClientResponse {
                     success: false,
-                    rig_id: None,
+                    rig_id: active_rig_id.clone(),
                     state: None,
                     rigs: None,
                     error: Some(err.message),
@@ -185,7 +210,7 @@ async fn handle_client(
                 error!("Rig response oneshot recv error: {:?}", e);
                 let resp = ClientResponse {
                     success: false,
-                    rig_id: None,
+                    rig_id: active_rig_id.clone(),
                     state: None,
                     rigs: None,
                     error: Some("Internal error waiting for rig response".into()),
@@ -195,7 +220,7 @@ async fn handle_client(
             Err(_) => {
                 let resp = ClientResponse {
                     success: false,
-                    rig_id: None,
+                    rig_id: active_rig_id.clone(),
                     state: None,
                     rigs: None,
                     error: Some("Request timed out waiting for rig response".into()),
@@ -206,6 +231,23 @@ async fn handle_client(
     }
 
     Ok(())
+}
+
+fn snapshot_remote_rigs(context: &FrontendRuntimeContext) -> Vec<RigEntry> {
+    context
+        .remote_rigs
+        .lock()
+        .ok()
+        .map(|entries| {
+            entries
+                .iter()
+                .map(|entry| RigEntry {
+                    rig_id: entry.rig_id.clone(),
+                    state: entry.state.clone(),
+                })
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 async fn read_limited_line<R: AsyncBufRead + Unpin>(
