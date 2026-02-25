@@ -142,6 +142,7 @@ pub async fn run_rig_task(
     // Initial setup: get rig info
     let rig_info = rig.info().clone();
     state.rig_info = Some(rig_info);
+    state.filter = rig.filter_state();
     if let Some(info) = state.rig_info.as_ref() {
         info!(
             "Rig info: {} {} {}",
@@ -422,6 +423,26 @@ async fn process_command(
         RigCommand::ResetWsprDecoder => {
             ctx.histories.clear_wspr_history();
             ctx.state.wspr_decode_reset_seq += 1;
+            let _ = ctx.state_tx.send(ctx.state.clone());
+            return snapshot_from(ctx.state);
+        }
+        RigCommand::SetBandwidth(hz) => {
+            if let Err(e) = ctx.rig.set_bandwidth(hz).await {
+                return Err(RigError::communication(format!("set_bandwidth: {e}")));
+            }
+            if let Some(f) = ctx.state.filter.as_mut() {
+                f.bandwidth_hz = hz;
+            }
+            let _ = ctx.state_tx.send(ctx.state.clone());
+            return snapshot_from(ctx.state);
+        }
+        RigCommand::SetFirTaps(taps) => {
+            if let Err(e) = ctx.rig.set_fir_taps(taps).await {
+                return Err(RigError::communication(format!("set_fir_taps: {e}")));
+            }
+            if let Some(f) = ctx.state.filter.as_mut() {
+                f.fir_taps = taps;
+            }
             let _ = ctx.state_tx.send(ctx.state.clone());
             return snapshot_from(ctx.state);
         }

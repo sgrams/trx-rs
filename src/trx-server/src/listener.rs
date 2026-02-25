@@ -437,6 +437,11 @@ mod tests {
                 rit: false,
                 rpt: false,
                 split: false,
+                tx: true,
+                tx_limit: true,
+                vfo_switch: true,
+                filter_controls: false,
+                signal_meter: true,
             },
             access: RigAccessMethod::Tcp {
                 addr: "127.0.0.1:1234".to_string(),
