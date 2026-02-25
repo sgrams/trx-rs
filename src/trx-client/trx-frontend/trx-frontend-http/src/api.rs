@@ -27,6 +27,7 @@ const FAVICON_BYTES: &[u8] = include_bytes!(concat!(
 ));
 const LOGO_BYTES: &[u8] =
     include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/assets/trx-logo.png"));
+const REQUEST_TIMEOUT: Duration = Duration::from_secs(15);
 
 #[get("/status")]
 pub async fn status_api(
@@ -714,7 +715,7 @@ async fn send_command(
             actix_web::error::ErrorInternalServerError(format!("failed to send to rig: {e:?}"))
         })?;
 
-    let resp = tokio::time::timeout(Duration::from_secs(8), resp_rx)
+    let resp = tokio::time::timeout(REQUEST_TIMEOUT, resp_rx)
         .await
         .map_err(|_| actix_web::error::ErrorGatewayTimeout("rig response timeout"))?;
 

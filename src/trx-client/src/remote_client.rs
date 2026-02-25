@@ -21,7 +21,7 @@ use trx_protocol::{ClientCommand, ClientEnvelope, ClientResponse};
 
 const DEFAULT_REMOTE_PORT: u16 = 4530;
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
-const IO_TIMEOUT: Duration = Duration::from_secs(10);
+const IO_TIMEOUT: Duration = Duration::from_secs(15);
 const MAX_JSON_LINE_BYTES: usize = 16 * 1024;
 
 #[derive(Clone, Debug, PartialEq, Eq)]

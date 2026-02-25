@@ -6,12 +6,12 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
 
+use std::sync::atomic::Ordering;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{mpsc, oneshot, watch};
 use tokio::task::JoinHandle;
 use tokio::time::timeout;
-use std::sync::atomic::Ordering;
 use tracing::{debug, error, info, warn};
 use trx_protocol::{mode_to_string, parse_mode};
 
@@ -130,12 +130,10 @@ async fn process_command(
             Err(e) => err_response(&e),
         },
         "F" | "\\set_freq" => match parts.next().and_then(parse_freq_hz_arg) {
-            Some(freq) => {
-                match send_set_freq_with_compat_retry(rig_tx, freq).await {
-                    Ok(_) => ok_only(op, extended),
-                    Err(e) => err_response(&e),
-                }
-            }
+            Some(freq) => match send_set_freq_with_compat_retry(rig_tx, freq).await {
+                Ok(_) => ok_only(op, extended),
+                Err(e) => err_response(&e),
+            },
             None => err_response("expected frequency in Hz"),
         },
         "l" | "\\get_level" => {
@@ -162,13 +160,11 @@ async fn process_command(
             }
         }
         "t" | "\\get_ptt" | "get_ptt" => match request_snapshot(rig_tx).await {
-            Ok(snapshot) => {
-                ok_response(
-                    op,
-                    extended,
-                    [if snapshot.status.tx_en { "1" } else { "0" }.to_string()],
-                )
-            }
+            Ok(snapshot) => ok_response(
+                op,
+                extended,
+                [if snapshot.status.tx_en { "1" } else { "0" }.to_string()],
+            ),
             Err(e) => err_response(&e),
         },
         "T" | "\\set_ptt" | "set_ptt" => match parse_ptt_tokens(parts.collect()) {
@@ -345,7 +341,7 @@ async fn send_rig_command(
         .await
         .map_err(|e| format!("failed to send to rig: {e:?}"))?;
 
-    match timeout(Duration::from_secs(5), resp_rx).await {
+    match timeout(Duration::from_secs(15), resp_rx).await {
         Ok(Ok(Ok(snapshot))) => Ok(snapshot),
         Ok(Ok(Err(err))) => Err(err.message),
         Ok(Err(e)) => Err(format!("rig response error: {e:?}")),
@@ -451,16 +447,8 @@ fn dump_caps_response(op: &str, extended: bool, snapshot: &RigSnapshot) -> Strin
     push(&mut resp, "protocol_version", "1".to_string());
     push(&mut resp, "rig_model", "2".to_string());
     push(&mut resp, "model_name", snapshot.info.model.clone());
-    push(
-        &mut resp,
-        "mfg_name",
-        snapshot.info.manufacturer.clone(),
-    );
-    push(
-        &mut resp,
-        "backend_version",
-        snapshot.info.revision.clone(),
-    );
+    push(&mut resp, "mfg_name", snapshot.info.manufacturer.clone());
+    push(&mut resp, "backend_version", snapshot.info.revision.clone());
     push(
         &mut resp,
         "vfo_count",
@@ -486,7 +474,11 @@ fn dump_caps_response(op: &str, extended: bool, snapshot: &RigSnapshot) -> Strin
     );
     resp.push_str("done\n");
     if extended {
-        ok_response(op, true, resp.lines().map(|s| s.to_string()).collect::<Vec<_>>())
+        ok_response(
+            op,
+            true,
+            resp.lines().map(|s| s.to_string()).collect::<Vec<_>>(),
+        )
     } else {
         resp
     }
@@ -514,11 +506,7 @@ async fn set_vfo_target(target: &str, rig_tx: &mpsc::Sender<RigRequest>) -> Resu
         return Ok(());
     }
 
-    let supports_toggle = snapshot
-        .info
-        .capabilities
-        .num_vfos
-        >= 2
+    let supports_toggle = snapshot.info.capabilities.num_vfos >= 2
         && snapshot
             .status
             .vfo
@@ -681,7 +669,9 @@ mod tests {
     fn dump_caps_is_setting_value_and_ends_with_done() {
         let response = dump_caps_response("dump_caps", false, &test_snapshot());
         let lines: Vec<&str> = response.lines().collect();
-        assert!(lines.iter().all(|line| *line == "done" || line.contains('=')));
+        assert!(lines
+            .iter()
+            .all(|line| *line == "done" || line.contains('=')));
         assert_eq!(lines.last(), Some(&"done"));
         assert!(response.contains("model_name=Virtual\n"));
         assert!(response.contains("mfg_name=TRX\n"));
@@ -719,10 +709,7 @@ mod tests {
     #[test]
     fn parse_ptt_tokens_accepts_optional_vfo_prefix() {
         assert_eq!(parse_ptt_tokens(vec!["1"]), Some("1".to_string()));
-        assert_eq!(
-            parse_ptt_tokens(vec!["VFOA", "1"]),
-            Some("1".to_string())
-        );
+        assert_eq!(parse_ptt_tokens(vec!["VFOA", "1"]), Some("1".to_string()));
         assert_eq!(
             parse_ptt_tokens(vec!["VFOB", "ON_DATA"]),
             Some("ON_DATA".to_string())
