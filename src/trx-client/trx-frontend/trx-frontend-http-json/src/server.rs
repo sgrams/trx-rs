@@ -103,7 +103,9 @@ async fn handle_client(
                 error!("Invalid JSON from {}: {} / {:?}", addr, trimmed, e);
                 let resp = ClientResponse {
                     success: false,
+                    rig_id: None,
                     state: None,
+                    rigs: None,
                     error: Some(format!("Invalid JSON: {}", e)),
                 };
                 send_response(&mut writer, &resp).await?;
@@ -114,7 +116,9 @@ async fn handle_client(
         if let Err(err) = authorize(&envelope.token, &context) {
             let resp = ClientResponse {
                 success: false,
+                rig_id: None,
                 state: None,
+                rigs: None,
                 error: Some(err),
             };
             send_response(&mut writer, &resp).await?;
@@ -135,7 +139,9 @@ async fn handle_client(
                 error!("Failed to send request to rig_task: {:?}", e);
                 let resp = ClientResponse {
                     success: false,
+                    rig_id: None,
                     state: None,
+                    rigs: None,
                     error: Some("Internal error: rig task not available".into()),
                 };
                 send_response(&mut writer, &resp).await?;
@@ -144,7 +150,9 @@ async fn handle_client(
             Err(_) => {
                 let resp = ClientResponse {
                     success: false,
+                    rig_id: None,
                     state: None,
+                    rigs: None,
                     error: Some("Internal error: request queue timeout".into()),
                 };
                 send_response(&mut writer, &resp).await?;
@@ -156,7 +164,9 @@ async fn handle_client(
             Ok(Ok(Ok(snapshot))) => {
                 let resp = ClientResponse {
                     success: true,
+                    rig_id: None,
                     state: Some(snapshot),
+                    rigs: None,
                     error: None,
                 };
                 send_response(&mut writer, &resp).await?;
@@ -164,7 +174,9 @@ async fn handle_client(
             Ok(Ok(Err(err))) => {
                 let resp = ClientResponse {
                     success: false,
+                    rig_id: None,
                     state: None,
+                    rigs: None,
                     error: Some(err.message),
                 };
                 send_response(&mut writer, &resp).await?;
@@ -173,7 +185,9 @@ async fn handle_client(
                 error!("Rig response oneshot recv error: {:?}", e);
                 let resp = ClientResponse {
                     success: false,
+                    rig_id: None,
                     state: None,
+                    rigs: None,
                     error: Some("Internal error waiting for rig response".into()),
                 };
                 send_response(&mut writer, &resp).await?;
@@ -181,7 +195,9 @@ async fn handle_client(
             Err(_) => {
                 let resp = ClientResponse {
                     success: false,
+                    rig_id: None,
                     state: None,
+                    rigs: None,
                     error: Some("Request timed out waiting for rig response".into()),
                 };
                 send_response(&mut writer, &resp).await?;
@@ -309,6 +325,11 @@ mod tests {
                     rit: false,
                     rpt: false,
                     split: false,
+                    tx: true,
+                    tx_limit: true,
+                    vfo_switch: true,
+                    filter_controls: false,
+                    signal_meter: true,
                 },
                 access: RigAccessMethod::Tcp {
                     addr: "127.0.0.1:1234".to_string(),
@@ -344,6 +365,7 @@ mod tests {
             cw_auto: true,
             cw_wpm: 15,
             cw_tone_hz: 700,
+            filter: None,
         }
     }
 

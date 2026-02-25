@@ -219,6 +219,38 @@ function applyAuthRestrictions() {
   }
 }
 
+function applyCapabilities(caps) {
+  if (!caps) return;
+
+  // PTT / TX controls
+  const pttBtn = document.getElementById("ptt-btn");
+  const txMetersRow = document.getElementById("tx-meters");
+  if (pttBtn) pttBtn.style.display = caps.tx ? "" : "none";
+  if (txMetersRow) txMetersRow.style.display = caps.tx ? "" : "none";
+
+  // TX limit row
+  const txLimitRow = document.getElementById("tx-limit-row");
+  if (txLimitRow && !caps.tx_limit) txLimitRow.style.display = "none";
+
+  // VFO row
+  const vfoRow = document.getElementById("vfo-row");
+  if (vfoRow) vfoRow.style.display = caps.vfo_switch ? "" : "none";
+
+  // Signal meter row
+  const sigRow = document.querySelector(".full-row.label-below-row");
+  // Find signal row by content check rather than class (it may share classes)
+  document.querySelectorAll(".full-row.label-below-row").forEach(row => {
+    const label = row.querySelector(".label span");
+    if (label && label.textContent === "Signal") {
+      row.style.display = caps.signal_meter ? "" : "none";
+    }
+  });
+
+  // Filters panel
+  const filtersPanel = document.getElementById("filters-panel");
+  if (filtersPanel) filtersPanel.style.display = caps.filter_controls ? "" : "none";
+}
+
 const freqEl = document.getElementById("freq");
 const wavelengthEl = document.getElementById("wavelength");
 const modeEl = document.getElementById("mode");
@@ -706,6 +738,20 @@ function render(update) {
   if (update.info && update.info.capabilities) {
     updateJogStepSupport(update.info.capabilities);
     updateSupportedBands(update.info.capabilities);
+    applyCapabilities(update.info.capabilities);
+  }
+  // Sync filter state (SDR backends only)
+  if (update.filter) {
+    const bwSlider = document.getElementById("bw-slider");
+    const bwValue = document.getElementById("bw-value");
+    const firSelect = document.getElementById("fir-taps-select");
+    if (bwSlider && typeof update.filter.bandwidth_hz === "number") {
+      bwSlider.value = update.filter.bandwidth_hz;
+      if (bwValue) bwValue.textContent = (update.filter.bandwidth_hz / 1000).toFixed(1) + " kHz";
+    }
+    if (firSelect && typeof update.filter.fir_taps === "number") {
+      firSelect.value = String(update.filter.fir_taps);
+    }
   }
   if (update.status && update.status.freq && typeof update.status.freq.hz === "number") {
     lastFreqHz = update.status.freq.hz;
@@ -1259,6 +1305,41 @@ lockBtn.addEventListener("click", async () => {
     lockBtn.disabled = false;
   }
 });
+
+// --- Filter controls ---
+(function () {
+  const bwSlider = document.getElementById("bw-slider");
+  const bwValue = document.getElementById("bw-value");
+  const firSelect = document.getElementById("fir-taps-select");
+
+  if (bwSlider) {
+    bwSlider.addEventListener("input", () => {
+      const hz = Number(bwSlider.value);
+      if (bwValue) bwValue.textContent = (hz / 1000).toFixed(1) + " kHz";
+    });
+    bwSlider.addEventListener("change", async () => {
+      const hz = Number(bwSlider.value);
+      try {
+        await postPath(`/set_bandwidth?hz=${encodeURIComponent(hz)}`);
+      } catch (err) {
+        showHint("Bandwidth set failed", 2000);
+        console.error(err);
+      }
+    });
+  }
+
+  if (firSelect) {
+    firSelect.addEventListener("change", async () => {
+      const taps = Number(firSelect.value);
+      try {
+        await postPath(`/set_fir_taps?taps=${encodeURIComponent(taps)}`);
+      } catch (err) {
+        showHint("FIR taps set failed", 2000);
+        console.error(err);
+      }
+    });
+  }
+})();
 
 // --- Tab navigation ---
 document.querySelector(".tab-bar").addEventListener("click", (e) => {

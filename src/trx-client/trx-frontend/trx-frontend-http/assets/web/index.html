@@ -133,6 +133,26 @@
           <button id="tx-limit-btn" type="button">Set</button>
         </div>
       </div>
+      <div id="filters-panel" style="display:none;">
+        <div class="label"><span>Filters</span></div>
+        <div class="inline" style="gap: 0.8rem; flex-wrap: wrap; align-items: center;">
+          <label style="display:flex; align-items:center; gap:0.4rem;">
+            <span style="color:var(--text-muted); font-size:0.85rem; white-space:nowrap;">BW</span>
+            <input type="range" id="bw-slider" min="1000" max="500000" step="1000" value="3000" style="width:120px;" />
+            <span id="bw-value" style="min-width:4rem; font-size:0.9rem;">3.0 kHz</span>
+          </label>
+          <label style="display:flex; align-items:center; gap:0.4rem;">
+            <span style="color:var(--text-muted); font-size:0.85rem; white-space:nowrap;">FIR taps</span>
+            <select id="fir-taps-select" class="status-input" style="width:auto; height:var(--control-height);">
+              <option value="16">16</option>
+              <option value="32">32</option>
+              <option value="64" selected>64</option>
+              <option value="128">128</option>
+              <option value="256">256</option>
+            </select>
+          </label>
+        </div>
+      </div>
     </div>
     <div class="full-row label-below-row" id="audio-row">
       <div class="label"><span>Audio</span></div>

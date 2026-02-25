@@ -633,6 +633,11 @@ mod tests {
                     rit: false,
                     rpt: false,
                     split: false,
+                    tx: true,
+                    tx_limit: true,
+                    vfo_switch: true,
+                    filter_controls: false,
+                    signal_meter: true,
                 },
                 access: RigAccessMethod::Tcp {
                     addr: "127.0.0.1:4532".to_string(),
@@ -668,6 +673,7 @@ mod tests {
             cw_auto: false,
             cw_wpm: 0,
             cw_tone_hz: 0,
+            filter: None,
         }
     }
 

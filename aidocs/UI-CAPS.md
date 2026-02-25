@@ -15,30 +15,30 @@ This document specifies how `trx-client`'s HTTP frontend adapts its controls to 
 
 | ID | Status | Task | Files | Needs |
 |----|--------|------|-------|-------|
-| UC-01 | `[ ]` | Extend `RigCapabilities` with `tx`, `tx_limit`, `vfo_switch`, `filter_controls`, `signal_meter` bool flags | `src/trx-core/src/rig/state.rs` | — |
-| UC-02 | `[ ]` | Update capability declarations in all backends to set new flags | `src/trx-server/trx-backend/trx-backend-ft817/src/lib.rs`, `trx-backend-ft450d/src/lib.rs`, `trx-backend-soapysdr/src/lib.rs` | UC-01 |
-| UC-03 | `[ ]` | Add `RigFilterState` struct; add `filter: Option<RigFilterState>` to `RigSnapshot`; populate from SDR rig state | `src/trx-core/src/rig/state.rs`, `src/trx-server/trx-backend/trx-backend-soapysdr/src/lib.rs` | — |
-| UC-04 | `[ ]` | Add `SetBandwidth`, `SetFirTaps` to `ClientCommand`; add mapping arms; update `rig_task.rs` to dispatch them | `src/trx-protocol/src/types.rs`, `mapping.rs`, `src/trx-server/src/rig_task.rs` | UC-03 |
+| UC-01 | `[x]` | Extend `RigCapabilities` with `tx`, `tx_limit`, `vfo_switch`, `filter_controls`, `signal_meter` bool flags | `src/trx-core/src/rig/state.rs` | — |
+| UC-02 | `[x]` | Update capability declarations in all backends to set new flags | `src/trx-server/trx-backend/trx-backend-ft817/src/lib.rs`, `trx-backend-ft450d/src/lib.rs`, `trx-backend-soapysdr/src/lib.rs` | UC-01 |
+| UC-03 | `[x]` | Add `RigFilterState` struct; add `filter: Option<RigFilterState>` to `RigSnapshot`; populate from SDR rig state | `src/trx-core/src/rig/state.rs`, `src/trx-server/trx-backend/trx-backend-soapysdr/src/lib.rs` | — |
+| UC-04 | `[x]` | Add `SetBandwidth`, `SetFirTaps` to `ClientCommand`; add mapping arms; update `rig_task.rs` to dispatch them | `src/trx-protocol/src/types.rs`, `mapping.rs`, `src/trx-server/src/rig_task.rs` | UC-03 |
 
 ### HTTP layer
 
 | ID | Status | Task | Files | Needs |
 |----|--------|------|-------|-------|
-| UC-05 | `[ ]` | Add `/set_bandwidth` and `/set_fir_taps` HTTP endpoints | `src/trx-client/trx-frontend/trx-frontend-http/src/api.rs` | UC-04 |
+| UC-05 | `[x]` | Add `/set_bandwidth` and `/set_fir_taps` HTTP endpoints | `src/trx-client/trx-frontend/trx-frontend-http/src/api.rs` | UC-04 |
 
 ### Frontend
 
 | ID | Status | Task | Files | Needs |
 |----|--------|------|-------|-------|
-| UC-06 | `[ ]` | Read `state.info.capabilities` on each SSE event; toggle visibility of TX controls, meter rows, VFO button, lock button | `assets/web/app.js` | UC-01, UC-02 |
-| UC-07 | `[ ]` | Add "Filters" control panel (bandwidth, FIR taps, CW tone Hz); show only when `capabilities.filter_controls` | `assets/web/index.html`, `assets/web/app.js` | UC-05, UC-06 |
+| UC-06 | `[x]` | Read `state.info.capabilities` on each SSE event; toggle visibility of TX controls, meter rows, VFO button, lock button | `assets/web/app.js` | UC-01, UC-02 |
+| UC-07 | `[x]` | Add "Filters" control panel (bandwidth, FIR taps, CW tone Hz); show only when `capabilities.filter_controls` | `assets/web/index.html`, `assets/web/app.js` | UC-05, UC-06 |
 
 ### Tests
 
 | ID | Status | Task | Files | Needs |
 |----|--------|------|-------|-------|
-| UC-08 | `[ ]` | Unit tests: SDR backend declares `tx=false`, `filter_controls=true`; FT-817/450D declare `tx=true`, `filter_controls=false` | `src/trx-server/trx-backend/trx-backend-soapysdr/src/lib.rs`, `trx-backend-ft817`, `trx-backend-ft450d` | UC-02 |
-| UC-09 | `[ ]` | Protocol round-trip test: `RigSnapshot` serialises `filter` field when `Some`, omits it when `None` | `src/trx-protocol/src/codec.rs` or `types.rs` | UC-03 |
+| UC-08 | `[x]` | Unit tests: SDR backend declares `tx=false`, `filter_controls=true`; FT-817/450D declare `tx=true`, `filter_controls=false` | `src/trx-server/trx-backend/trx-backend-soapysdr/src/lib.rs`, `trx-backend-ft817`, `trx-backend-ft450d` | UC-02 |
+| UC-09 | `[x]` | Protocol round-trip test: `RigSnapshot` serialises `filter` field when `Some`, omits it when `None` | `src/trx-protocol/src/codec.rs` or `types.rs` | UC-03 |
 
 ---
 

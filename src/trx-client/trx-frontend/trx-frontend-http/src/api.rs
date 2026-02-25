@@ -334,6 +334,32 @@ pub async fn set_tx_limit(
     send_command(&rig_tx, RigCommand::SetTxLimit(query.limit)).await
 }
 
+#[derive(serde::Deserialize)]
+pub struct BandwidthQuery {
+    pub hz: u32,
+}
+
+#[post("/set_bandwidth")]
+pub async fn set_bandwidth(
+    query: web::Query<BandwidthQuery>,
+    rig_tx: web::Data<mpsc::Sender<RigRequest>>,
+) -> Result<HttpResponse, Error> {
+    send_command(&rig_tx, RigCommand::SetBandwidth(query.hz)).await
+}
+
+#[derive(serde::Deserialize)]
+pub struct FirTapsQuery {
+    pub taps: u32,
+}
+
+#[post("/set_fir_taps")]
+pub async fn set_fir_taps(
+    query: web::Query<FirTapsQuery>,
+    rig_tx: web::Data<mpsc::Sender<RigRequest>>,
+) -> Result<HttpResponse, Error> {
+    send_command(&rig_tx, RigCommand::SetFirTaps(query.taps)).await
+}
+
 #[post("/toggle_aprs_decode")]
 pub async fn toggle_aprs_decode(
     state: web::Data<watch::Receiver<RigState>>,
@@ -458,6 +484,8 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
         .service(set_mode)
         .service(set_ptt)
         .service(set_tx_limit)
+        .service(set_bandwidth)
+        .service(set_fir_taps)
         .service(toggle_aprs_decode)
         .service(toggle_cw_decode)
         .service(set_cw_auto)
@@ -584,12 +612,16 @@ async fn send_command(
     match resp {
         Ok(Ok(snapshot)) => Ok(HttpResponse::Ok().json(ClientResponse {
             success: true,
+            rig_id: None,
             state: Some(snapshot),
+            rigs: None,
             error: None,
         })),
         Ok(Err(err)) => Ok(HttpResponse::BadRequest().json(ClientResponse {
             success: false,
+            rig_id: None,
             state: None,
+            rigs: None,
             error: Some(err.message),
         })),
         Err(e) => Err(actix_web::error::ErrorInternalServerError(format!(
@@ -636,6 +668,7 @@ async fn wait_for_view(mut rx: watch::Receiver<RigState>) -> Result<RigSnapshot,
         cw_tone_hz: state.cw_tone_hz,
         ft8_decode_enabled: state.ft8_decode_enabled,
         wspr_decode_enabled: state.wspr_decode_enabled,
+        filter: state.filter.clone(),
     })
 }
 
@@ -665,6 +698,11 @@ impl From<RigInfoPlaceholder> for RigInfo {
                 rit: false,
                 rpt: false,
                 split: false,
+                tx: false,
+                tx_limit: false,
+                vfo_switch: false,
+                filter_controls: false,
+                signal_meter: false,
             },
             access: RigAccessMethod::Serial {
                 path: "".into(),

@@ -146,6 +146,7 @@ async fn send_command(
 ) -> RigResult<trx_core::RigSnapshot> {
     let envelope = ClientEnvelope {
         token: config.token.clone(),
+        rig_id: None,
         cmd,
     };
 
@@ -386,6 +387,11 @@ mod tests {
                     rit: false,
                     rpt: false,
                     split: false,
+                    tx: true,
+                    tx_limit: true,
+                    vfo_switch: true,
+                    filter_controls: false,
+                    signal_meter: true,
                 },
                 access: RigAccessMethod::Tcp {
                     addr: "127.0.0.1:1234".to_string(),
@@ -421,6 +427,7 @@ mod tests {
             cw_auto: true,
             cw_wpm: 15,
             cw_tone_hz: 700,
+            filter: None,
         }
     }
 
@@ -431,7 +438,9 @@ mod tests {
         let addr = listener.local_addr().expect("local addr");
         let response = serde_json::to_string(&ClientResponse {
             success: true,
+            rig_id: None,
             state: Some(sample_snapshot()),
+            rigs: None,
             error: None,
         })
         .expect("serialize response")
