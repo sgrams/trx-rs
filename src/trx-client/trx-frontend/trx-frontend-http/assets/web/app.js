@@ -362,6 +362,36 @@ function populateRigPicker(selectEl, rigIds, activeRigId, disabled) {
   selectEl.disabled = disabled;
 }
 
+function applyRigList(activeRigId, rigIds) {
+  if (!Array.isArray(rigIds)) return;
+  lastRigIds = rigIds.filter((id) => typeof id === "string" && id.length > 0);
+  const aboutList = document.getElementById("about-rig-list");
+  if (aboutList) {
+    aboutList.textContent = lastRigIds.length ? lastRigIds.join(", ") : "--";
+  }
+  if (typeof activeRigId === "string" && activeRigId.length > 0) {
+    const aboutActive = document.getElementById("about-active-rig");
+    if (aboutActive) aboutActive.textContent = activeRigId;
+  }
+  const disableSwitch = lastRigIds.length === 0 || authRole === "rx";
+  populateRigPicker(rigSwitchSelect, lastRigIds, activeRigId, lastRigIds.length === 0);
+  populateRigPicker(headerRigSwitchSelect, lastRigIds, activeRigId, lastRigIds.length === 0);
+  if (rigSwitchBtn) rigSwitchBtn.disabled = disableSwitch;
+  if (headerRigSwitchBtn) headerRigSwitchBtn.disabled = disableSwitch;
+}
+
+async function refreshRigList() {
+  try {
+    const resp = await fetch("/rigs", { cache: "no-store" });
+    if (!resp.ok) return;
+    const data = await resp.json();
+    const rigIds = Array.isArray(data.rigs) ? data.rigs.map((r) => r && r.rig_id).filter(Boolean) : [];
+    applyRigList(data.active_rig_id, rigIds);
+  } catch (e) {
+    // Non-fatal: SSE/status path still drives main UI.
+  }
+}
+
 function showHint(msg, duration) {
   powerHint.textContent = msg;
   if (hintTimer) clearTimeout(hintTimer);
@@ -969,13 +999,7 @@ function render(update) {
     document.getElementById("about-active-rig").textContent = update.active_rig_id;
   }
   if (Array.isArray(update.rig_ids)) {
-    lastRigIds = update.rig_ids.filter((id) => typeof id === "string" && id.length > 0);
-    document.getElementById("about-rig-list").textContent = lastRigIds.length ? lastRigIds.join(", ") : "--";
-    const disableSwitch = lastRigIds.length === 0 || authRole === "rx";
-    populateRigPicker(rigSwitchSelect, lastRigIds, update.active_rig_id, lastRigIds.length === 0);
-    populateRigPicker(headerRigSwitchSelect, lastRigIds, update.active_rig_id, lastRigIds.length === 0);
-    if (rigSwitchBtn) rigSwitchBtn.disabled = disableSwitch;
-    if (headerRigSwitchBtn) headerRigSwitchBtn.disabled = disableSwitch;
+    applyRigList(update.active_rig_id, update.rig_ids);
   }
   if (typeof update.rigctl_clients === "number") {
     document.getElementById("about-rigctl-clients").textContent = update.rigctl_clients;
@@ -1022,6 +1046,7 @@ async function pollFreshSnapshot() {
     if (!resp.ok) return;
     const data = await resp.json();
     render(data);
+    refreshRigList();
     lastEventAt = Date.now();
   } catch (e) {
     // Ignore network errors; connect() retry loop handles reconnection.
@@ -1040,6 +1065,7 @@ function connect() {
   lastEventAt = Date.now();
   es.onopen = () => {
     pollFreshSnapshot();
+    refreshRigList();
   };
   es.onmessage = (evt) => {
     try {
@@ -1134,6 +1160,7 @@ async function switchRigFromSelect(selectEl) {
   showHint("Switching rig…");
   try {
     await postPath(`/select_rig?rig_id=${encodeURIComponent(selectEl.value)}`);
+    refreshRigList();
     showHint("Rig switch requested", 1500);
   } catch (err) {
     showHint("Rig switch failed", 2000);

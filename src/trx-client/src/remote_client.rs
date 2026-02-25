@@ -108,6 +108,12 @@ async fn handle_connection(
     let mut poll_interval = time::interval(config.poll_interval);
     let mut last_poll = Instant::now();
 
+    // Prime rig list/state immediately after connect so frontends can render
+    // rig selectors without waiting for the first poll interval.
+    if let Err(e) = refresh_remote_snapshot(config, &mut writer, &mut reader, state_tx).await {
+        warn!("Initial remote snapshot refresh failed: {}", e);
+    }
+
     loop {
         tokio::select! {
             changed = shutdown_rx.changed() => {
