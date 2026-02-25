@@ -20,28 +20,74 @@ pub use trx_decode_log::DecodeLogsConfig;
 
 use trx_core::rig::state::RigMode;
 
+/// Per-rig instance configuration for multi-rig setups.
+///
+/// Each entry in `[[rigs]]` becomes one of these.  The flat top-level
+/// `[rig]` / `[audio]` / `[sdr]` / `[pskreporter]` / `[aprsfi]` /
+/// `[behavior]` / `[decode_logs]` fields are still supported via
+/// `ServerConfig::resolved_rigs()` which synthesises a single-element list
+/// with `id = "default"` when `rigs` is empty.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct RigInstanceConfig {
+    /// Stable rig identifier used in protocol routing.
+    pub id: String,
+    /// Rig backend configuration.
+    pub rig: RigConfig,
+    /// Polling and retry behavior.
+    pub behavior: BehaviorConfig,
+    /// Audio streaming configuration for this rig.
+    pub audio: AudioConfig,
+    /// SDR pipeline configuration (only used when [rigs.rig.access] type = "sdr").
+    pub sdr: SdrConfig,
+    /// PSK Reporter uplink for this rig.
+    pub pskreporter: PskReporterConfig,
+    /// APRS-IS IGate uplink for this rig.
+    pub aprsfi: AprsFiConfig,
+    /// Decoder file logging for this rig.
+    pub decode_logs: DecodeLogsConfig,
+}
+
+impl Default for RigInstanceConfig {
+    fn default() -> Self {
+        Self {
+            id: "default".to_string(),
+            rig: RigConfig::default(),
+            behavior: BehaviorConfig::default(),
+            audio: AudioConfig::default(),
+            sdr: SdrConfig::default(),
+            pskreporter: PskReporterConfig::default(),
+            aprsfi: AprsFiConfig::default(),
+            decode_logs: DecodeLogsConfig::default(),
+        }
+    }
+}
+
 /// Top-level server configuration structure.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct ServerConfig {
     /// General settings
     pub general: GeneralConfig,
-    /// Rig backend configuration
+    /// Rig backend configuration (legacy flat; use [[rigs]] for multi-rig)
     pub rig: RigConfig,
-    /// Polling and retry behavior
+    /// Polling and retry behavior (legacy flat)
     pub behavior: BehaviorConfig,
     /// TCP listener configuration
     pub listen: ListenConfig,
-    /// Audio streaming configuration
+    /// Audio streaming configuration (legacy flat)
     pub audio: AudioConfig,
-    /// PSK Reporter uplink configuration
+    /// PSK Reporter uplink configuration (legacy flat)
     pub pskreporter: PskReporterConfig,
-    /// APRS-IS IGate uplink configuration
+    /// APRS-IS IGate uplink configuration (legacy flat)
     pub aprsfi: AprsFiConfig,
-    /// Decoder file logging configuration
+    /// Decoder file logging configuration (legacy flat)
     pub decode_logs: DecodeLogsConfig,
-    /// SDR pipeline configuration (used when [rig.access] type = "sdr").
+    /// SDR pipeline configuration (legacy flat; used when [rig.access] type = "sdr").
     pub sdr: SdrConfig,
+    /// Multi-rig instance list. When non-empty, takes priority over the flat fields.
+    #[serde(rename = "rigs", default)]
+    pub rigs: Vec<RigInstanceConfig>,
 }
 
 /// General application settings.
@@ -441,6 +487,33 @@ impl ServerConfig {
             }
         }
 
+        // Multi-rig uniqueness checks.
+        if !self.rigs.is_empty() {
+            let mut seen_ids: std::collections::HashSet<String> =
+                std::collections::HashSet::new();
+            let mut seen_ports: std::collections::HashSet<u16> =
+                std::collections::HashSet::new();
+            for rig in &self.rigs {
+                if rig.id.trim().is_empty() {
+                    return Err("[[rigs]] entry has an empty id".to_string());
+                }
+                if !seen_ids.insert(rig.id.clone()) {
+                    return Err(format!(
+                        "[[rigs]] duplicate rig id: \"{}\"",
+                        rig.id
+                    ));
+                }
+                if rig.audio.enabled {
+                    if !seen_ports.insert(rig.audio.port) {
+                        return Err(format!(
+                            "[[rigs]] duplicate audio port {} (rig id: \"{}\")",
+                            rig.audio.port, rig.id
+                        ));
+                    }
+                }
+            }
+        }
+
         if self.decode_logs.enabled {
             if self.decode_logs.dir.trim().is_empty() {
                 return Err("[decode_logs].dir must not be empty when enabled".to_string());
@@ -535,6 +608,27 @@ impl ServerConfig {
         <Self as ConfigFile>::load_from_default_paths()
     }
 
+    /// Return the effective list of rig instances to spawn.
+    ///
+    /// When `[[rigs]]` entries are present they are returned as-is.
+    /// Otherwise the legacy flat `[rig]` / `[audio]` / … fields are synthesised
+    /// into a single `RigInstanceConfig` with `id = "default"`.
+    pub fn resolved_rigs(&self) -> Vec<RigInstanceConfig> {
+        if !self.rigs.is_empty() {
+            return self.rigs.clone();
+        }
+        vec![RigInstanceConfig {
+            id: "default".to_string(),
+            rig: self.rig.clone(),
+            behavior: self.behavior.clone(),
+            audio: self.audio.clone(),
+            sdr: self.sdr.clone(),
+            pskreporter: self.pskreporter.clone(),
+            aprsfi: self.aprsfi.clone(),
+            decode_logs: self.decode_logs.clone(),
+        }]
+    }
+
     /// Generate an example configuration as a TOML string.
     pub fn example_toml() -> String {
         let example = ServerConfig {
@@ -564,6 +658,7 @@ impl ServerConfig {
             aprsfi: AprsFiConfig::default(),
             decode_logs: DecodeLogsConfig::default(),
             sdr: SdrConfig::default(),
+            rigs: Vec::new(),
         };
 
         toml::to_string_pretty(&example).unwrap_or_default()
@@ -1016,6 +1111,169 @@ tokens = ["secret123"]
             3,
             "expected exactly 3 errors, got: {:?}",
             errors
+        );
+    }
+
+    // --- MR-08: multi-rig config tests ---
+
+    #[test]
+    fn test_resolved_rigs_legacy_flat_fields() {
+        let mut cfg = ServerConfig::default();
+        cfg.rig.model = Some("ft817".to_string());
+        cfg.rig.access.access_type = Some("serial".to_string());
+        cfg.rig.access.port = Some("/dev/ttyUSB0".to_string());
+        cfg.rig.access.baud = Some(9600);
+
+        let rigs = cfg.resolved_rigs();
+        assert_eq!(rigs.len(), 1);
+        assert_eq!(rigs[0].id, "default");
+        assert_eq!(rigs[0].rig.model, Some("ft817".to_string()));
+    }
+
+    #[test]
+    fn test_resolved_rigs_multi_rig_toml() {
+        let toml_str = r#"
+[general]
+callsign = "W1AW"
+
+[[rigs]]
+id = "hf"
+
+[rigs.rig]
+model = "ft450d"
+initial_freq_hz = 14074000
+
+[rigs.rig.access]
+type = "serial"
+port = "/dev/ttyUSB0"
+baud = 9600
+
+[rigs.audio]
+port = 4531
+
+[[rigs]]
+id = "sdr"
+
+[rigs.rig]
+model = "soapysdr"
+
+[rigs.rig.access]
+type = "sdr"
+args = "driver=rtlsdr"
+
+[rigs.audio]
+port = 4532
+"#;
+        let cfg: ServerConfig = toml::from_str(toml_str).unwrap();
+        let rigs = cfg.resolved_rigs();
+        assert_eq!(rigs.len(), 2);
+        assert_eq!(rigs[0].id, "hf");
+        assert_eq!(rigs[0].rig.model, Some("ft450d".to_string()));
+        assert_eq!(rigs[0].audio.port, 4531);
+        assert_eq!(rigs[1].id, "sdr");
+        assert_eq!(rigs[1].rig.model, Some("soapysdr".to_string()));
+        assert_eq!(rigs[1].audio.port, 4532);
+    }
+
+    #[test]
+    fn test_validate_rejects_duplicate_rig_ids() {
+        let toml_str = r#"
+[[rigs]]
+id = "rig1"
+[rigs.rig]
+model = "ft817"
+[rigs.rig.access]
+type = "serial"
+port = "/dev/ttyUSB0"
+baud = 9600
+[rigs.audio]
+port = 4531
+
+[[rigs]]
+id = "rig1"
+[rigs.rig]
+model = "ft450d"
+[rigs.rig.access]
+type = "serial"
+port = "/dev/ttyUSB1"
+baud = 9600
+[rigs.audio]
+port = 4532
+"#;
+        let cfg: ServerConfig = toml::from_str(toml_str).unwrap();
+        let result = cfg.validate();
+        assert!(result.is_err());
+        assert!(
+            result.unwrap_err().contains("duplicate rig id"),
+            "expected error about duplicate rig id"
+        );
+    }
+
+    #[test]
+    fn test_validate_rejects_duplicate_audio_ports() {
+        let toml_str = r#"
+[[rigs]]
+id = "rig1"
+[rigs.rig]
+model = "ft817"
+[rigs.rig.access]
+type = "serial"
+port = "/dev/ttyUSB0"
+baud = 9600
+[rigs.audio]
+port = 4531
+
+[[rigs]]
+id = "rig2"
+[rigs.rig]
+model = "ft450d"
+[rigs.rig.access]
+type = "serial"
+port = "/dev/ttyUSB1"
+baud = 9600
+[rigs.audio]
+port = 4531
+"#;
+        let cfg: ServerConfig = toml::from_str(toml_str).unwrap();
+        let result = cfg.validate();
+        assert!(result.is_err());
+        assert!(
+            result.unwrap_err().contains("duplicate audio port"),
+            "expected error about duplicate audio port"
+        );
+    }
+
+    #[test]
+    fn test_validate_accepts_multi_rig_unique_ids_and_ports() {
+        let toml_str = r#"
+[[rigs]]
+id = "hf"
+[rigs.rig]
+model = "ft450d"
+[rigs.rig.access]
+type = "serial"
+port = "/dev/ttyUSB0"
+baud = 9600
+[rigs.audio]
+port = 4531
+
+[[rigs]]
+id = "sdr"
+[rigs.rig]
+model = "soapysdr"
+[rigs.rig.access]
+type = "sdr"
+args = "driver=rtlsdr"
+[rigs.audio]
+port = 4532
+"#;
+        let cfg: ServerConfig = toml::from_str(toml_str).unwrap();
+        // validate() uses the flat [rig] field for rig-level checks; multi-rig
+        // validation focuses on ID/port uniqueness. The flat [rig] is default
+        // (no model), so the access check is skipped when both fields are absent.
+        assert!(
+            cfg.validate().is_ok(),
+            "expected Ok for valid multi-rig config"
         );
     }
 }

@@ -8,12 +8,15 @@ mod config;
 mod error;
 mod listener;
 mod pskreporter;
+mod rig_handle;
 mod rig_task;
 
+use std::collections::HashMap;
 use std::collections::HashSet;
 use std::net::{IpAddr, SocketAddr};
 use std::path::PathBuf;
 use std::ptr::NonNull;
+use std::sync::Arc;
 use std::time::Duration;
 
 use bytes::Bytes;
@@ -32,7 +35,9 @@ use trx_core::rig::request::RigRequest;
 use trx_core::rig::state::RigState;
 use trx_core::DynResult;
 
-use config::ServerConfig;
+use audio::DecoderHistories;
+use config::{RigInstanceConfig, ServerConfig};
+use rig_handle::RigHandle;
 use trx_decode_log::DecoderLoggers;
 
 #[cfg(feature = "soapysdr")]
@@ -101,7 +106,7 @@ fn parse_serial_addr(addr: &str) -> DynResult<(String, u32)> {
     Ok((path.to_string(), baud))
 }
 
-/// Resolved configuration after merging config file and CLI arguments.
+/// Resolved configuration for the first/only rig (legacy single-rig CLI path).
 struct ResolvedConfig {
     rig: String,
     access: RigAccess,
@@ -190,51 +195,35 @@ fn resolve_config(
     })
 }
 
-fn build_rig_task_config(
-    resolved: &ResolvedConfig,
-    cfg: &ServerConfig,
-    registry: std::sync::Arc<RegistrationContext>,
-) -> rig_task::RigTaskConfig {
-    let pskreporter_status = if cfg.pskreporter.enabled {
-        let has_locator = cfg.pskreporter.receiver_locator.is_some()
-            || (resolved.latitude.is_some() && resolved.longitude.is_some());
-        if has_locator {
-            Some(format!(
-                "Enabled ({}:{})",
-                cfg.pskreporter.host, cfg.pskreporter.port
-            ))
-        } else {
-            Some(format!(
-                "Enabled but inactive (missing locator source) ({}:{})",
-                cfg.pskreporter.host, cfg.pskreporter.port
-            ))
+/// Derive a `RigAccess` from a rig instance config's access fields.
+fn access_from_rig_instance(rig_cfg: &RigInstanceConfig) -> DynResult<RigAccess> {
+    match rig_cfg.rig.access.access_type.as_deref() {
+        Some("serial") | None => {
+            let path = rig_cfg
+                .rig
+                .access
+                .port
+                .clone()
+                .unwrap_or_else(|| "/dev/ttyUSB0".to_string());
+            let baud = rig_cfg.rig.access.baud.unwrap_or(9600);
+            Ok(RigAccess::Serial { path, baud })
         }
-    } else {
-        Some("Disabled".to_string())
-    };
-
-    rig_task::RigTaskConfig {
-        registry,
-        rig_model: resolved.rig.clone(),
-        access: resolved.access.clone(),
-        polling: AdaptivePolling::new(
-            Duration::from_millis(cfg.behavior.poll_interval_ms),
-            Duration::from_millis(cfg.behavior.poll_interval_tx_ms),
-        ),
-        retry: ExponentialBackoff::new(
-            cfg.behavior.max_retries.max(1),
-            Duration::from_millis(cfg.behavior.retry_base_delay_ms),
-            Duration::from_secs(RETRY_MAX_DELAY_SECS),
-        ),
-        initial_freq_hz: cfg.rig.initial_freq_hz,
-        initial_mode: cfg.rig.initial_mode.clone(),
-        server_callsign: resolved.callsign.clone(),
-        server_version: Some(env!("CARGO_PKG_VERSION").to_string()),
-        server_build_date: Some(env!("TRX_SERVER_BUILD_DATE").to_string()),
-        server_latitude: resolved.latitude,
-        server_longitude: resolved.longitude,
-        pskreporter_status,
-        prebuilt_rig: None,
+        Some("tcp") => {
+            let host = rig_cfg.rig.access.host.clone().unwrap_or_default();
+            let port = rig_cfg.rig.access.tcp_port.unwrap_or(0);
+            Ok(RigAccess::Tcp {
+                addr: format!("{}:{}", host, port),
+            })
+        }
+        Some("sdr") => {
+            let args = rig_cfg.rig.access.args.clone().unwrap_or_default();
+            Ok(RigAccess::Sdr { args })
+        }
+        Some(other) => Err(format!(
+            "Unknown access type '{}' for rig '{}'",
+            other, rig_cfg.id
+        )
+        .into()),
     }
 }
 
@@ -271,13 +260,10 @@ fn parse_rig_mode(
     }
 }
 
-/// Build a `SoapySdrRig` with full channel config from `ServerConfig` and
-/// return both the rig box and a PCM receiver subscribed to its primary channel.
-///
-/// Only compiled when the `soapysdr` feature is enabled.
+/// Build a `SoapySdrRig` with full channel config from a `RigInstanceConfig`.
 #[cfg(feature = "soapysdr")]
-fn build_sdr_rig(
-    cfg: &ServerConfig,
+fn build_sdr_rig_from_instance(
+    rig_cfg: &RigInstanceConfig,
 ) -> DynResult<(
     Box<dyn trx_core::rig::RigCat>,
     tokio::sync::broadcast::Receiver<Vec<f32>>,
@@ -285,14 +271,14 @@ fn build_sdr_rig(
     use trx_core::radio::freq::Freq;
     use trx_core::rig::AudioSource;
 
-    let args = cfg.rig.access.args.as_deref().unwrap_or("");
-    let channels: Vec<(f64, trx_core::rig::state::RigMode, u32, usize)> = cfg
+    let args = rig_cfg.rig.access.args.as_deref().unwrap_or("");
+    let channels: Vec<(f64, trx_core::rig::state::RigMode, u32, usize)> = rig_cfg
         .sdr
         .channels
         .iter()
         .map(|ch| {
-            let if_hz = (cfg.sdr.center_offset_hz + ch.offset_hz) as f64;
-            let mode = parse_rig_mode(&ch.mode, &cfg.rig.initial_mode);
+            let if_hz = (rig_cfg.sdr.center_offset_hz + ch.offset_hz) as f64;
+            let mode = parse_rig_mode(&ch.mode, &rig_cfg.rig.initial_mode);
             (if_hz, mode, ch.audio_bandwidth_hz, ch.fir_taps)
         })
         .collect();
@@ -300,28 +286,290 @@ fn build_sdr_rig(
     let sdr_rig = trx_backend_soapysdr::SoapySdrRig::new_with_config(
         args,
         &channels,
-        &cfg.sdr.gain.mode,
-        cfg.sdr.gain.value,
-        cfg.audio.sample_rate,
-        cfg.audio.frame_duration_ms,
+        &rig_cfg.sdr.gain.mode,
+        rig_cfg.sdr.gain.value,
+        rig_cfg.audio.sample_rate,
+        rig_cfg.audio.frame_duration_ms,
         Freq {
-            hz: cfg.rig.initial_freq_hz,
+            hz: rig_cfg.rig.initial_freq_hz,
         },
-        cfg.rig.initial_mode.clone(),
-        cfg.sdr.sample_rate,
+        rig_cfg.rig.initial_mode.clone(),
+        rig_cfg.sdr.sample_rate,
     )?;
 
-    // Subscribe to the primary channel's PCM broadcast before consuming the rig.
     let pcm_rx = sdr_rig.subscribe_pcm();
     Ok((Box::new(sdr_rig) as Box<dyn trx_core::rig::RigCat>, pcm_rx))
 }
 
+/// Build a `RigTaskConfig` for a single rig instance.
+fn build_rig_task_config(
+    rig_cfg: &RigInstanceConfig,
+    rig_model: String,
+    access: RigAccess,
+    callsign: Option<String>,
+    latitude: Option<f64>,
+    longitude: Option<f64>,
+    registry: Arc<RegistrationContext>,
+    histories: Arc<DecoderHistories>,
+) -> rig_task::RigTaskConfig {
+    let pskreporter_status = if rig_cfg.pskreporter.enabled {
+        let has_locator = rig_cfg.pskreporter.receiver_locator.is_some()
+            || (latitude.is_some() && longitude.is_some());
+        if has_locator {
+            Some(format!(
+                "Enabled ({}:{})",
+                rig_cfg.pskreporter.host, rig_cfg.pskreporter.port
+            ))
+        } else {
+            Some(format!(
+                "Enabled but inactive (missing locator source) ({}:{})",
+                rig_cfg.pskreporter.host, rig_cfg.pskreporter.port
+            ))
+        }
+    } else {
+        Some("Disabled".to_string())
+    };
+
+    rig_task::RigTaskConfig {
+        registry,
+        rig_id: rig_cfg.id.clone(),
+        rig_model,
+        access,
+        polling: AdaptivePolling::new(
+            Duration::from_millis(rig_cfg.behavior.poll_interval_ms),
+            Duration::from_millis(rig_cfg.behavior.poll_interval_tx_ms),
+        ),
+        retry: ExponentialBackoff::new(
+            rig_cfg.behavior.max_retries.max(1),
+            Duration::from_millis(rig_cfg.behavior.retry_base_delay_ms),
+            Duration::from_secs(RETRY_MAX_DELAY_SECS),
+        ),
+        initial_freq_hz: rig_cfg.rig.initial_freq_hz,
+        initial_mode: rig_cfg.rig.initial_mode.clone(),
+        server_callsign: callsign,
+        server_version: Some(env!("CARGO_PKG_VERSION").to_string()),
+        server_build_date: Some(env!("TRX_SERVER_BUILD_DATE").to_string()),
+        server_latitude: latitude,
+        server_longitude: longitude,
+        pskreporter_status,
+        histories,
+        prebuilt_rig: None,
+    }
+}
+
+/// Spawn all audio-related tasks for one rig instance.
+///
+/// `sdr_pcm_rx` carries a live SDR PCM receiver when the rig uses the
+/// SoapySDR backend; `None` selects the cpal capture path.
+fn spawn_rig_audio_stack(
+    rig_cfg: &RigInstanceConfig,
+    state_rx: watch::Receiver<RigState>,
+    shutdown_rx: &watch::Receiver<bool>,
+    histories: Arc<DecoderHistories>,
+    callsign: Option<String>,
+    latitude: Option<f64>,
+    longitude: Option<f64>,
+    listen_override: Option<IpAddr>,
+    sdr_pcm_rx: Option<broadcast::Receiver<Vec<f32>>>,
+) -> Vec<JoinHandle<()>> {
+    let mut handles: Vec<JoinHandle<()>> = Vec::new();
+
+    if !rig_cfg.audio.enabled {
+        return handles;
+    }
+
+    let audio_listen = SocketAddr::from((
+        listen_override.unwrap_or(rig_cfg.audio.listen),
+        rig_cfg.audio.port,
+    ));
+    let stream_info = AudioStreamInfo {
+        sample_rate: rig_cfg.audio.sample_rate,
+        channels: rig_cfg.audio.channels,
+        frame_duration_ms: rig_cfg.audio.frame_duration_ms,
+    };
+
+    let (rx_audio_tx, _) = broadcast::channel::<Bytes>(256);
+    let (tx_audio_tx, tx_audio_rx) = mpsc::channel::<Bytes>(64);
+
+    // PCM tap for server-side decoders
+    let (pcm_tx, _) = broadcast::channel::<Vec<f32>>(64);
+    // Decoded messages broadcast
+    let (decode_tx, _) = broadcast::channel::<trx_core::decode::DecodedMessage>(256);
+
+    if rig_cfg.pskreporter.enabled {
+        let cs = callsign.clone().unwrap_or_default();
+        if cs.trim().is_empty() {
+            warn!(
+                "[{}] PSK Reporter enabled but [general].callsign is empty; uplink disabled",
+                rig_cfg.id
+            );
+        } else {
+            let pr_cfg = rig_cfg.pskreporter.clone();
+            let pr_state_rx = state_rx.clone();
+            let pr_decode_rx = decode_tx.subscribe();
+            let pr_shutdown_rx = shutdown_rx.clone();
+            handles.push(tokio::spawn(async move {
+                tokio::select! {
+                    _ = pskreporter::run_pskreporter_uplink(
+                        pr_cfg,
+                        cs,
+                        latitude,
+                        longitude,
+                        pr_state_rx,
+                        pr_decode_rx
+                    ) => {}
+                    _ = wait_for_shutdown(pr_shutdown_rx) => {}
+                }
+            }));
+        }
+    }
+
+    if rig_cfg.aprsfi.enabled {
+        let cs = callsign.clone().unwrap_or_default();
+        if cs.trim().is_empty() {
+            warn!(
+                "[{}] APRS-IS IGate enabled but [general].callsign is empty; uplink disabled",
+                rig_cfg.id
+            );
+        } else {
+            let ai_cfg = rig_cfg.aprsfi.clone();
+            let ai_decode_rx = decode_tx.subscribe();
+            let ai_shutdown_rx = shutdown_rx.clone();
+            handles.push(tokio::spawn(async move {
+                tokio::select! {
+                    _ = aprsfi::run_aprsfi_uplink(ai_cfg, cs, ai_decode_rx) => {}
+                    _ = wait_for_shutdown(ai_shutdown_rx) => {}
+                }
+            }));
+        }
+    }
+
+    let decoder_logs = match DecoderLoggers::from_config(&rig_cfg.decode_logs) {
+        Ok(v) => v,
+        Err(e) => {
+            warn!("[{}] Decoder file logging disabled: {}", rig_cfg.id, e);
+            None
+        }
+    };
+
+    if rig_cfg.audio.rx_enabled {
+        if let Some(mut sdr_rx) = sdr_pcm_rx {
+            // SDR path: the backend pipeline provides demodulated PCM.
+            info!("[{}] using SDR audio source — cpal capture disabled", rig_cfg.id);
+            let pcm_tx_clone = pcm_tx.clone();
+            handles.push(tokio::spawn(async move {
+                loop {
+                    match sdr_rx.recv().await {
+                        Ok(frame) => {
+                            let _ = pcm_tx_clone.send(frame);
+                        }
+                        Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
+                            tracing::warn!("SDR audio bridge: dropped {} frames", n);
+                        }
+                        Err(_) => break,
+                    }
+                }
+            }));
+        } else {
+            // cpal path (serial/TCP transceivers)
+            let _capture_thread = audio::spawn_audio_capture(
+                &rig_cfg.audio,
+                rx_audio_tx.clone(),
+                Some(pcm_tx.clone()),
+            );
+        }
+
+        // Spawn APRS decoder task
+        let aprs_pcm_rx = pcm_tx.subscribe();
+        let aprs_state_rx = state_rx.clone();
+        let aprs_decode_tx = decode_tx.clone();
+        let aprs_sr = rig_cfg.audio.sample_rate;
+        let aprs_ch = rig_cfg.audio.channels;
+        let aprs_shutdown_rx = shutdown_rx.clone();
+        let aprs_logs = decoder_logs.clone();
+        let aprs_histories = histories.clone();
+        handles.push(tokio::spawn(async move {
+            tokio::select! {
+                _ = audio::run_aprs_decoder(aprs_sr, aprs_ch as u16, aprs_pcm_rx, aprs_state_rx, aprs_decode_tx, aprs_logs, aprs_histories) => {}
+                _ = wait_for_shutdown(aprs_shutdown_rx) => {}
+            }
+        }));
+
+        // Spawn CW decoder task (no histories needed — CW has no persistent history)
+        let cw_pcm_rx = pcm_tx.subscribe();
+        let cw_state_rx = state_rx.clone();
+        let cw_decode_tx = decode_tx.clone();
+        let cw_sr = rig_cfg.audio.sample_rate;
+        let cw_ch = rig_cfg.audio.channels;
+        let cw_shutdown_rx = shutdown_rx.clone();
+        let cw_logs = decoder_logs.clone();
+        handles.push(tokio::spawn(async move {
+            tokio::select! {
+                _ = audio::run_cw_decoder(cw_sr, cw_ch as u16, cw_pcm_rx, cw_state_rx, cw_decode_tx, cw_logs) => {}
+                _ = wait_for_shutdown(cw_shutdown_rx) => {}
+            }
+        }));
+
+        // Spawn FT8 decoder task
+        let ft8_pcm_rx = pcm_tx.subscribe();
+        let ft8_state_rx = state_rx.clone();
+        let ft8_decode_tx = decode_tx.clone();
+        let ft8_sr = rig_cfg.audio.sample_rate;
+        let ft8_ch = rig_cfg.audio.channels;
+        let ft8_shutdown_rx = shutdown_rx.clone();
+        let ft8_logs = decoder_logs.clone();
+        let ft8_histories = histories.clone();
+        handles.push(tokio::spawn(async move {
+            tokio::select! {
+                _ = audio::run_ft8_decoder(ft8_sr, ft8_ch as u16, ft8_pcm_rx, ft8_state_rx, ft8_decode_tx, ft8_logs, ft8_histories) => {}
+                _ = wait_for_shutdown(ft8_shutdown_rx) => {}
+            }
+        }));
+
+        // Spawn WSPR decoder task
+        let wspr_pcm_rx = pcm_tx.subscribe();
+        let wspr_state_rx = state_rx.clone();
+        let wspr_decode_tx = decode_tx.clone();
+        let wspr_sr = rig_cfg.audio.sample_rate;
+        let wspr_ch = rig_cfg.audio.channels;
+        let wspr_shutdown_rx = shutdown_rx.clone();
+        let wspr_logs = decoder_logs.clone();
+        let wspr_histories = histories.clone();
+        handles.push(tokio::spawn(async move {
+            tokio::select! {
+                _ = audio::run_wspr_decoder(wspr_sr, wspr_ch as u16, wspr_pcm_rx, wspr_state_rx, wspr_decode_tx, wspr_logs, wspr_histories) => {}
+                _ = wait_for_shutdown(wspr_shutdown_rx) => {}
+            }
+        }));
+    }
+
+    if rig_cfg.audio.tx_enabled {
+        let _playback_thread = audio::spawn_audio_playback(&rig_cfg.audio, tx_audio_rx);
+    }
+
+    let audio_shutdown_rx = shutdown_rx.clone();
+    let audio_histories = histories;
+    handles.push(tokio::spawn(async move {
+        if let Err(e) = audio::run_audio_listener(
+            audio_listen,
+            rx_audio_tx,
+            tx_audio_tx,
+            stream_info,
+            decode_tx,
+            audio_shutdown_rx,
+            audio_histories,
+        )
+        .await
+        {
+            error!("Audio listener error: {:?}", e);
+        }
+    }));
+
+    handles
+}
+
 #[tokio::main]
 async fn main() -> DynResult<()> {
-    // Phase 3B: Create bootstrap context for explicit initialization.
-    // This replaces reliance on global mutable state, though currently
-    // built-in backends still register on globals for plugin compatibility.
-    // Full de-globalization would require threading context through rig_task and listener.
     let mut bootstrap_ctx = RegistrationContext::new();
     register_builtin_backends_on(&mut bootstrap_ctx);
 
@@ -341,7 +589,7 @@ async fn main() -> DynResult<()> {
     cfg.validate()
         .map_err(|e| format!("Invalid server configuration: {}", e))?;
 
-    // Validate SDR-specific configuration rules (see SDR.md §11).
+    // Validate SDR-specific configuration rules.
     let sdr_errors = cfg.validate_sdr();
     if !sdr_errors.is_empty() {
         for e in &sdr_errors {
@@ -359,98 +607,203 @@ async fn main() -> DynResult<()> {
         info!("Loaded configuration from {}", path.display());
     }
 
-    let resolved = resolve_config(&cli, &cfg, &bootstrap_ctx)?;
+    let registry = Arc::new(bootstrap_ctx);
 
-    match &resolved.access {
-        RigAccess::Serial { path, baud } => {
-            info!(
-                "Starting trx-server (rig: {}, access: serial {} @ {} baud)",
-                resolved.rig, path, baud
-            );
-        }
-        RigAccess::Tcp { addr } => {
-            info!(
-                "Starting trx-server (rig: {}, access: tcp {})",
-                resolved.rig, addr
-            );
-        }
-        RigAccess::Sdr { args } => {
-            info!(
-                "Starting trx-server (rig: {}, access: sdr {})",
-                resolved.rig, args
-            );
-        }
-    }
+    // --- Resolve the effective rig list ---
+    //
+    // Legacy path: no [[rigs]] → synthesise from flat fields + CLI overrides.
+    // Multi-rig path: [[rigs]] entries are used as-is; CLI rig/access flags
+    // are ignored (no unambiguous target).
+    let mut resolved_rigs = cfg.resolved_rigs();
 
-    if let Some(ref cs) = resolved.callsign {
+    let (callsign, latitude, longitude) = if cfg.rigs.is_empty() {
+        // Apply CLI overrides to the first (only) rig.
+        let legacy = resolve_config(&cli, &cfg, &registry)?;
+
+        let first = resolved_rigs
+            .first_mut()
+            .expect("resolved_rigs always has ≥1 entry");
+
+        first.rig.model = Some(legacy.rig.clone());
+        match &legacy.access {
+            RigAccess::Serial { path, baud } => {
+                first.rig.access.access_type = Some("serial".to_string());
+                first.rig.access.port = Some(path.clone());
+                first.rig.access.baud = Some(*baud);
+            }
+            RigAccess::Tcp { addr } => {
+                first.rig.access.access_type = Some("tcp".to_string());
+                // Split "host:port" back into parts.
+                if let Some(colon) = addr.rfind(':') {
+                    first.rig.access.host = Some(addr[..colon].to_string());
+                    first.rig.access.tcp_port = addr[colon + 1..].parse().ok();
+                }
+            }
+            RigAccess::Sdr { args } => {
+                first.rig.access.access_type = Some("sdr".to_string());
+                first.rig.access.args = Some(args.clone());
+            }
+        }
+        (legacy.callsign, legacy.latitude, legacy.longitude)
+    } else {
+        // Multi-rig path: validate all rig models are registered.
+        for rig_cfg in &resolved_rigs {
+            if let Some(ref model) = rig_cfg.rig.model {
+                let norm = normalize_name(model);
+                if !registry.is_backend_registered(&norm) {
+                    return Err(format!(
+                        "Unknown rig model '{}' for rig '{}' (available: {})",
+                        norm,
+                        rig_cfg.id,
+                        registry.registered_backends().join(", ")
+                    )
+                    .into());
+                }
+            }
+        }
+        let callsign = cli.callsign.clone().or_else(|| cfg.general.callsign.clone());
+        (callsign, cfg.general.latitude, cfg.general.longitude)
+    };
+
+    info!(
+        "Starting trx-server with {} rig(s): {}",
+        resolved_rigs.len(),
+        resolved_rigs
+            .iter()
+            .map(|r| r.id.as_str())
+            .collect::<Vec<_>>()
+            .join(", ")
+    );
+    if let Some(ref cs) = callsign {
         info!("Callsign: {}", cs);
     }
 
-    // For the SDR access type: build the SoapySdrRig with full channel config
-    // here in main so we can subscribe to its primary-channel PCM sender
-    // before passing the rig to the rig task.  The rig task skips its
-    // registry factory when `prebuilt_rig` is set.
-    //
-    // When the `soapysdr` feature is disabled this block is elided and
-    // `sdr_pcm_rx` is always `None`, preserving the cpal path.
-    #[cfg(feature = "soapysdr")]
-    let (sdr_prebuilt_rig, sdr_pcm_rx): (
-        Option<Box<dyn trx_core::rig::RigCat>>,
-        Option<tokio::sync::broadcast::Receiver<Vec<f32>>>,
-    ) = if cfg.rig.access.access_type.as_deref() == Some("sdr") {
-        let (rig, pcm_rx) = build_sdr_rig(&cfg)?;
-        (Some(rig), Some(pcm_rx))
-    } else {
-        (None, None)
-    };
-
-    #[cfg(not(feature = "soapysdr"))]
-    let (sdr_prebuilt_rig, sdr_pcm_rx): (
-        Option<Box<dyn trx_core::rig::RigCat>>,
-        Option<tokio::sync::broadcast::Receiver<Vec<f32>>>,
-    ) = (None, None);
-
-    let (tx, rx) = mpsc::channel::<RigRequest>(RIG_TASK_CHANNEL_BUFFER);
     let mut task_handles: Vec<JoinHandle<()>> = Vec::new();
     let (shutdown_tx, shutdown_rx) = watch::channel(false);
-    let initial_state = RigState::new_with_metadata(
-        resolved.callsign.clone(),
-        Some(env!("CARGO_PKG_VERSION").to_string()),
-        Some(env!("TRX_SERVER_BUILD_DATE").to_string()),
-        resolved.latitude,
-        resolved.longitude,
-        cfg.rig.initial_freq_hz,
-        cfg.rig.initial_mode.clone(),
-    );
-    let mut initial_state = initial_state;
-    initial_state.pskreporter_status = if cfg.pskreporter.enabled {
-        Some(format!(
-            "Enabled ({}:{})",
-            cfg.pskreporter.host, cfg.pskreporter.port
-        ))
-    } else {
-        Some("Disabled".to_string())
-    };
-    let (state_tx, state_rx) = watch::channel(initial_state);
-    // Keep receivers alive so channels don't close prematurely
-    let _state_rx = state_rx;
 
-    let mut rig_task_config =
-        build_rig_task_config(&resolved, &cfg, std::sync::Arc::new(bootstrap_ctx));
+    // The first rig id is the default for backward-compat clients that omit rig_id.
+    let default_rig_id = resolved_rigs
+        .first()
+        .map(|r| r.id.clone())
+        .unwrap_or_else(|| "default".to_string());
 
-    // Pass pre-built SDR rig to the task so it skips the registry factory.
-    if let Some(prebuilt) = sdr_prebuilt_rig {
-        rig_task_config.prebuilt_rig = Some(prebuilt);
+    let mut rig_handles: HashMap<String, RigHandle> = HashMap::new();
+
+    for rig_cfg in &resolved_rigs {
+        let rig_model = normalize_name(rig_cfg.rig.model.as_deref().unwrap_or(""));
+
+        let access = access_from_rig_instance(rig_cfg)?;
+
+        match &access {
+            RigAccess::Serial { path, baud } => {
+                info!(
+                    "[{}] Starting (rig: {}, access: serial {} @ {} baud)",
+                    rig_cfg.id, rig_model, path, baud
+                );
+            }
+            RigAccess::Tcp { addr } => {
+                info!(
+                    "[{}] Starting (rig: {}, access: tcp {})",
+                    rig_cfg.id, rig_model, addr
+                );
+            }
+            RigAccess::Sdr { args } => {
+                info!(
+                    "[{}] Starting (rig: {}, access: sdr {})",
+                    rig_cfg.id, rig_model, args
+                );
+            }
+        }
+
+        // Build SDR rig when applicable.
+        #[cfg(feature = "soapysdr")]
+        let (sdr_prebuilt_rig, sdr_pcm_rx): (
+            Option<Box<dyn trx_core::rig::RigCat>>,
+            Option<broadcast::Receiver<Vec<f32>>>,
+        ) = if rig_cfg.rig.access.access_type.as_deref() == Some("sdr") {
+            let (rig, pcm_rx) = build_sdr_rig_from_instance(rig_cfg)?;
+            (Some(rig), Some(pcm_rx))
+        } else {
+            (None, None)
+        };
+
+        #[cfg(not(feature = "soapysdr"))]
+        let (sdr_prebuilt_rig, sdr_pcm_rx): (
+            Option<Box<dyn trx_core::rig::RigCat>>,
+            Option<broadcast::Receiver<Vec<f32>>>,
+        ) = (None, None);
+
+        let histories = DecoderHistories::new();
+
+        let (rig_tx, rig_rx) = mpsc::channel::<RigRequest>(RIG_TASK_CHANNEL_BUFFER);
+        let mut initial_state = RigState::new_with_metadata(
+            callsign.clone(),
+            Some(env!("CARGO_PKG_VERSION").to_string()),
+            Some(env!("TRX_SERVER_BUILD_DATE").to_string()),
+            latitude,
+            longitude,
+            rig_cfg.rig.initial_freq_hz,
+            rig_cfg.rig.initial_mode.clone(),
+        );
+        initial_state.pskreporter_status = if rig_cfg.pskreporter.enabled {
+            Some(format!(
+                "Enabled ({}:{})",
+                rig_cfg.pskreporter.host, rig_cfg.pskreporter.port
+            ))
+        } else {
+            Some("Disabled".to_string())
+        };
+        let (state_tx, state_rx) = watch::channel(initial_state);
+
+        let mut task_config = build_rig_task_config(
+            rig_cfg,
+            rig_model,
+            access,
+            callsign.clone(),
+            latitude,
+            longitude,
+            Arc::clone(&registry),
+            histories.clone(),
+        );
+        if let Some(prebuilt) = sdr_prebuilt_rig {
+            task_config.prebuilt_rig = Some(prebuilt);
+        }
+
+        // Spawn rig task.
+        let rig_shutdown_rx = shutdown_rx.clone();
+        task_handles.push(tokio::spawn(async move {
+            if let Err(e) =
+                rig_task::run_rig_task(task_config, rig_rx, state_tx, rig_shutdown_rx).await
+            {
+                error!("Rig task error: {:?}", e);
+            }
+        }));
+
+        // Spawn audio stack.
+        let audio_handles = spawn_rig_audio_stack(
+            rig_cfg,
+            state_rx.clone(),
+            &shutdown_rx,
+            histories.clone(),
+            callsign.clone(),
+            latitude,
+            longitude,
+            cli.listen,
+            sdr_pcm_rx,
+        );
+        task_handles.extend(audio_handles);
+
+        rig_handles.insert(
+            rig_cfg.id.clone(),
+            RigHandle {
+                rig_id: rig_cfg.id.clone(),
+                rig_tx,
+                state_rx,
+            },
+        );
     }
 
-    let rig_shutdown_rx = shutdown_rx.clone();
-    task_handles.push(tokio::spawn(async move {
-        if let Err(e) = rig_task::run_rig_task(rig_task_config, rx, state_tx, rig_shutdown_rx).await
-        {
-            error!("Rig task error: {:?}", e);
-        }
-    }));
-
+    // Start JSON TCP listener.
     if cfg.listen.enabled {
         let listen_ip = cli.listen.unwrap_or(cfg.listen.listen);
         let listen_port = cli.port.unwrap_or(cfg.listen.port);
@@ -463,15 +816,14 @@ async fn main() -> DynResult<()> {
             .filter(|t| !t.is_empty())
             .cloned()
             .collect();
-        let rig_tx = tx.clone();
-        let state_rx_listener = _state_rx.clone();
+        let rigs_arc = Arc::new(rig_handles);
         let listener_shutdown_rx = shutdown_rx.clone();
         task_handles.push(tokio::spawn(async move {
             if let Err(e) = listener::run_listener(
                 listen_addr,
-                rig_tx,
+                rigs_arc,
+                default_rig_id,
                 auth_tokens,
-                state_rx_listener,
                 listener_shutdown_rx,
             )
             .await
@@ -481,190 +833,9 @@ async fn main() -> DynResult<()> {
         }));
     }
 
-    if cfg.audio.enabled {
-        let audio_listen =
-            SocketAddr::from((cli.listen.unwrap_or(cfg.audio.listen), cfg.audio.port));
-        let stream_info = AudioStreamInfo {
-            sample_rate: cfg.audio.sample_rate,
-            channels: cfg.audio.channels,
-            frame_duration_ms: cfg.audio.frame_duration_ms,
-        };
-
-        let (rx_audio_tx, _) = broadcast::channel::<Bytes>(256);
-        let (tx_audio_tx, tx_audio_rx) = mpsc::channel::<Bytes>(64);
-
-        // PCM tap for server-side decoders
-        let (pcm_tx, _) = broadcast::channel::<Vec<f32>>(64);
-        // Decoded messages broadcast
-        let (decode_tx, _) = broadcast::channel::<trx_core::decode::DecodedMessage>(256);
-
-        if cfg.pskreporter.enabled {
-            let callsign = resolved.callsign.clone().unwrap_or_default();
-            if callsign.trim().is_empty() {
-                warn!("PSK Reporter enabled but [general].callsign is empty; uplink disabled");
-            } else {
-                let pr_cfg = cfg.pskreporter.clone();
-                let pr_state_rx = _state_rx.clone();
-                let pr_decode_rx = decode_tx.subscribe();
-                let pr_shutdown_rx = shutdown_rx.clone();
-                let latitude = resolved.latitude;
-                let longitude = resolved.longitude;
-                task_handles.push(tokio::spawn(async move {
-                    tokio::select! {
-                        _ = pskreporter::run_pskreporter_uplink(
-                            pr_cfg,
-                            callsign,
-                            latitude,
-                            longitude,
-                            pr_state_rx,
-                            pr_decode_rx
-                        ) => {}
-                        _ = wait_for_shutdown(pr_shutdown_rx) => {}
-                    }
-                }));
-            }
-        }
-
-        if cfg.aprsfi.enabled {
-            let callsign = resolved.callsign.clone().unwrap_or_default();
-            if callsign.trim().is_empty() {
-                warn!("APRS-IS IGate enabled but [general].callsign is empty; uplink disabled");
-            } else {
-                let ai_cfg = cfg.aprsfi.clone();
-                let ai_decode_rx = decode_tx.subscribe();
-                let ai_shutdown_rx = shutdown_rx.clone();
-                task_handles.push(tokio::spawn(async move {
-                    tokio::select! {
-                        _ = aprsfi::run_aprsfi_uplink(ai_cfg, callsign, ai_decode_rx) => {}
-                        _ = wait_for_shutdown(ai_shutdown_rx) => {}
-                    }
-                }));
-            }
-        }
-
-        let decoder_logs = match DecoderLoggers::from_config(&cfg.decode_logs) {
-            Ok(v) => v,
-            Err(e) => {
-                warn!("Decoder file logging disabled: {}", e);
-                None
-            }
-        };
-
-        if cfg.audio.rx_enabled {
-            if let Some(mut sdr_rx) = sdr_pcm_rx {
-                // SDR path: the backend pipeline provides demodulated PCM,
-                // so cpal capture is skipped entirely.
-                // The SDR PCM frames are bridged into pcm_tx so the existing
-                // decoder spawn code below receives them unchanged.
-                tracing::info!("using SDR audio source — cpal capture disabled");
-                let pcm_tx_clone = pcm_tx.clone();
-                task_handles.push(tokio::spawn(async move {
-                    loop {
-                        match sdr_rx.recv().await {
-                            Ok(frame) => {
-                                let _ = pcm_tx_clone.send(frame);
-                            }
-                            Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
-                                tracing::warn!("SDR audio bridge: dropped {} frames", n);
-                            }
-                            Err(_) => break,
-                        }
-                    }
-                }));
-            } else {
-                // cpal path (existing serial/TCP transceivers)
-                let _capture_thread = audio::spawn_audio_capture(
-                    &cfg.audio,
-                    rx_audio_tx.clone(),
-                    Some(pcm_tx.clone()),
-                );
-            }
-
-            // Spawn APRS decoder task
-            let aprs_pcm_rx = pcm_tx.subscribe();
-            let aprs_state_rx = _state_rx.clone();
-            let aprs_decode_tx = decode_tx.clone();
-            let aprs_sr = cfg.audio.sample_rate;
-            let aprs_ch = cfg.audio.channels;
-            let aprs_shutdown_rx = shutdown_rx.clone();
-            let aprs_logs = decoder_logs.clone();
-            task_handles.push(tokio::spawn(async move {
-                tokio::select! {
-                    _ = audio::run_aprs_decoder(aprs_sr, aprs_ch as u16, aprs_pcm_rx, aprs_state_rx, aprs_decode_tx, aprs_logs) => {}
-                    _ = wait_for_shutdown(aprs_shutdown_rx) => {}
-                }
-            }));
-
-            // Spawn CW decoder task
-            let cw_pcm_rx = pcm_tx.subscribe();
-            let cw_state_rx = _state_rx.clone();
-            let cw_decode_tx = decode_tx.clone();
-            let cw_sr = cfg.audio.sample_rate;
-            let cw_ch = cfg.audio.channels;
-            let cw_shutdown_rx = shutdown_rx.clone();
-            let cw_logs = decoder_logs.clone();
-            task_handles.push(tokio::spawn(async move {
-                tokio::select! {
-                    _ = audio::run_cw_decoder(cw_sr, cw_ch as u16, cw_pcm_rx, cw_state_rx, cw_decode_tx, cw_logs) => {}
-                    _ = wait_for_shutdown(cw_shutdown_rx) => {}
-                }
-            }));
-
-            // Spawn FT8 decoder task
-            let ft8_pcm_rx = pcm_tx.subscribe();
-            let ft8_state_rx = _state_rx.clone();
-            let ft8_decode_tx = decode_tx.clone();
-            let ft8_sr = cfg.audio.sample_rate;
-            let ft8_ch = cfg.audio.channels;
-            let ft8_shutdown_rx = shutdown_rx.clone();
-            let ft8_logs = decoder_logs.clone();
-            task_handles.push(tokio::spawn(async move {
-                tokio::select! {
-                    _ = audio::run_ft8_decoder(ft8_sr, ft8_ch as u16, ft8_pcm_rx, ft8_state_rx, ft8_decode_tx, ft8_logs) => {}
-                    _ = wait_for_shutdown(ft8_shutdown_rx) => {}
-                }
-            }));
-
-            // Spawn WSPR decoder task
-            let wspr_pcm_rx = pcm_tx.subscribe();
-            let wspr_state_rx = _state_rx.clone();
-            let wspr_decode_tx = decode_tx.clone();
-            let wspr_sr = cfg.audio.sample_rate;
-            let wspr_ch = cfg.audio.channels;
-            let wspr_shutdown_rx = shutdown_rx.clone();
-            let wspr_logs = decoder_logs.clone();
-            task_handles.push(tokio::spawn(async move {
-                tokio::select! {
-                    _ = audio::run_wspr_decoder(wspr_sr, wspr_ch as u16, wspr_pcm_rx, wspr_state_rx, wspr_decode_tx, wspr_logs) => {}
-                    _ = wait_for_shutdown(wspr_shutdown_rx) => {}
-                }
-            }));
-        }
-        if cfg.audio.tx_enabled {
-            let _playback_thread = audio::spawn_audio_playback(&cfg.audio, tx_audio_rx);
-        }
-
-        let audio_shutdown_rx = shutdown_rx.clone();
-        task_handles.push(tokio::spawn(async move {
-            if let Err(e) = audio::run_audio_listener(
-                audio_listen,
-                rx_audio_tx,
-                tx_audio_tx,
-                stream_info,
-                decode_tx,
-                audio_shutdown_rx,
-            )
-            .await
-            {
-                error!("Audio listener error: {:?}", e);
-            }
-        }));
-    }
-
     signal::ctrl_c().await?;
     info!("Ctrl+C received, shutting down");
     let _ = shutdown_tx.send(true);
-    drop(tx);
     tokio::time::sleep(Duration::from_millis(400)).await;
 
     for handle in &task_handles {

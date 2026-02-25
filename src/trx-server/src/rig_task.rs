@@ -24,12 +24,14 @@ use trx_core::rig::state::{RigMode, RigSnapshot, RigState};
 use trx_core::rig::{RigCat, RigRxStatus, RigTxStatus};
 use trx_core::{DynResult, RigError, RigResult};
 
-use crate::audio;
+use crate::audio::DecoderHistories;
 use crate::error::is_invalid_bcd_error;
 
 /// Configuration for the rig task.
 pub struct RigTaskConfig {
     pub registry: Arc<RegistrationContext>,
+    /// Stable rig identifier (matches the key in the listener's HashMap).
+    pub rig_id: String,
     pub rig_model: String,
     pub access: RigAccess,
     pub polling: AdaptivePolling,
@@ -42,6 +44,9 @@ pub struct RigTaskConfig {
     pub server_latitude: Option<f64>,
     pub server_longitude: Option<f64>,
     pub pskreporter_status: Option<String>,
+    /// Per-rig decoder history store.  Used by Reset* commands to clear the
+    /// history and by the audio listener to serve history on connection.
+    pub histories: Arc<DecoderHistories>,
     /// Pre-built rig backend.  When `Some`, the registry factory is skipped.
     /// Used by the SDR path in `main.rs` to pass a fully-configured
     /// `SoapySdrRig` (built with channel config) without duplicating the
@@ -55,6 +60,7 @@ impl Default for RigTaskConfig {
         trx_backend::register_builtin_backends_on(&mut registry);
         Self {
             registry: Arc::new(registry),
+            rig_id: "default".to_string(),
             rig_model: "ft817".to_string(),
             access: RigAccess::Serial {
                 path: "/dev/ttyUSB0".to_string(),
@@ -70,6 +76,7 @@ impl Default for RigTaskConfig {
             server_latitude: None,
             server_longitude: None,
             pskreporter_status: None,
+            histories: DecoderHistories::new(),
             prebuilt_rig: None,
         }
     }
@@ -93,7 +100,8 @@ pub async fn run_rig_task(
     state_tx: watch::Sender<RigState>,
     mut shutdown_rx: watch::Receiver<bool>,
 ) -> DynResult<()> {
-    info!("Opening rig backend {}", config.rig_model);
+    let histories = config.histories.clone();
+    info!("[{}] Opening rig backend {}", config.rig_id, config.rig_model);
     match &config.access {
         RigAccess::Serial { path, baud } => info!("Serial: {} @ {} baud", path, baud),
         RigAccess::Tcp { addr } => info!("TCP CAT: {}", addr),
@@ -317,6 +325,7 @@ pub async fn run_rig_task(
                         last_power_on: &mut last_power_on,
                         state_tx: &state_tx,
                         retry,
+                        histories: &histories,
                     };
                     let result = process_command(cmd, &mut cmd_ctx).await;
 
@@ -347,6 +356,7 @@ struct CommandExecContext<'a> {
     last_power_on: &'a mut Option<Instant>,
     state_tx: &'a watch::Sender<RigState>,
     retry: &'a ExponentialBackoff,
+    histories: &'a Arc<DecoderHistories>,
 }
 
 async fn process_command(
@@ -393,7 +403,7 @@ async fn process_command(
             return snapshot_from(ctx.state);
         }
         RigCommand::ResetAprsDecoder => {
-            audio::clear_aprs_history();
+            ctx.histories.clear_aprs_history();
             ctx.state.aprs_decode_reset_seq += 1;
             let _ = ctx.state_tx.send(ctx.state.clone());
             return snapshot_from(ctx.state);
@@ -404,13 +414,13 @@ async fn process_command(
             return snapshot_from(ctx.state);
         }
         RigCommand::ResetFt8Decoder => {
-            audio::clear_ft8_history();
+            ctx.histories.clear_ft8_history();
             ctx.state.ft8_decode_reset_seq += 1;
             let _ = ctx.state_tx.send(ctx.state.clone());
             return snapshot_from(ctx.state);
         }
         RigCommand::ResetWsprDecoder => {
-            audio::clear_wspr_history();
+            ctx.histories.clear_wspr_history();
             ctx.state.wspr_decode_reset_seq += 1;
             let _ = ctx.state_tx.send(ctx.state.clone());
             return snapshot_from(ctx.state);

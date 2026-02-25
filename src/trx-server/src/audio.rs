@@ -6,9 +6,9 @@
 
 use std::net::SocketAddr;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, OnceLock};
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
-use std::{collections::VecDeque, sync::Mutex};
+use std::collections::VecDeque;
 
 use bytes::Bytes;
 use tokio::net::{TcpListener, TcpStream};
@@ -118,103 +118,112 @@ fn classify_stream_error(err: &str) -> &'static str {
     }
 }
 
-fn aprs_history() -> &'static Mutex<VecDeque<(Instant, AprsPacket)>> {
-    static HISTORY: OnceLock<Mutex<VecDeque<(Instant, AprsPacket)>>> = OnceLock::new();
-    HISTORY.get_or_init(|| Mutex::new(VecDeque::new()))
+/// Per-rig decoder history store.
+///
+/// Replaces the previous process-wide `OnceLock` statics so that each rig
+/// instance can maintain its own independent history.  Pass an
+/// `Arc<DecoderHistories>` into every decoder task and into the audio listener.
+pub struct DecoderHistories {
+    aprs: Mutex<VecDeque<(Instant, AprsPacket)>>,
+    ft8: Mutex<VecDeque<(Instant, Ft8Message)>>,
+    wspr: Mutex<VecDeque<(Instant, WsprMessage)>>,
 }
 
-fn prune_aprs_history(history: &mut VecDeque<(Instant, AprsPacket)>) {
-    let cutoff = Instant::now() - APRS_HISTORY_RETENTION;
-    while let Some((ts, _)) = history.front() {
-        if *ts < cutoff {
-            history.pop_front();
-        } else {
-            break;
+impl DecoderHistories {
+    pub fn new() -> Arc<Self> {
+        Arc::new(Self {
+            aprs: Mutex::new(VecDeque::new()),
+            ft8: Mutex::new(VecDeque::new()),
+            wspr: Mutex::new(VecDeque::new()),
+        })
+    }
+
+    // --- APRS ---
+
+    fn prune_aprs(history: &mut VecDeque<(Instant, AprsPacket)>) {
+        let cutoff = Instant::now() - APRS_HISTORY_RETENTION;
+        while let Some((ts, _)) = history.front() {
+            if *ts < cutoff {
+                history.pop_front();
+            } else {
+                break;
+            }
         }
     }
-}
 
-pub fn record_aprs_packet(pkt: AprsPacket) {
-    let mut history = aprs_history().lock().expect("aprs history mutex poisoned");
-    history.push_back((Instant::now(), pkt));
-    prune_aprs_history(&mut history);
-}
+    pub fn record_aprs_packet(&self, pkt: AprsPacket) {
+        let mut h = self.aprs.lock().expect("aprs history mutex poisoned");
+        h.push_back((Instant::now(), pkt));
+        Self::prune_aprs(&mut h);
+    }
 
-pub fn snapshot_aprs_history() -> Vec<AprsPacket> {
-    let mut history = aprs_history().lock().expect("aprs history mutex poisoned");
-    prune_aprs_history(&mut history);
-    history.iter().map(|(_, pkt)| pkt.clone()).collect()
-}
+    pub fn snapshot_aprs_history(&self) -> Vec<AprsPacket> {
+        let mut h = self.aprs.lock().expect("aprs history mutex poisoned");
+        Self::prune_aprs(&mut h);
+        h.iter().map(|(_, pkt)| pkt.clone()).collect()
+    }
 
-pub fn clear_aprs_history() {
-    let mut history = aprs_history().lock().expect("aprs history mutex poisoned");
-    history.clear();
-}
+    pub fn clear_aprs_history(&self) {
+        self.aprs.lock().expect("aprs history mutex poisoned").clear();
+    }
 
-fn ft8_history() -> &'static Mutex<VecDeque<(Instant, Ft8Message)>> {
-    static HISTORY: OnceLock<Mutex<VecDeque<(Instant, Ft8Message)>>> = OnceLock::new();
-    HISTORY.get_or_init(|| Mutex::new(VecDeque::new()))
-}
+    // --- FT8 ---
 
-fn prune_ft8_history(history: &mut VecDeque<(Instant, Ft8Message)>) {
-    let cutoff = Instant::now() - FT8_HISTORY_RETENTION;
-    while let Some((ts, _)) = history.front() {
-        if *ts < cutoff {
-            history.pop_front();
-        } else {
-            break;
+    fn prune_ft8(history: &mut VecDeque<(Instant, Ft8Message)>) {
+        let cutoff = Instant::now() - FT8_HISTORY_RETENTION;
+        while let Some((ts, _)) = history.front() {
+            if *ts < cutoff {
+                history.pop_front();
+            } else {
+                break;
+            }
         }
     }
-}
 
-pub fn record_ft8_message(msg: Ft8Message) {
-    let mut history = ft8_history().lock().expect("ft8 history mutex poisoned");
-    history.push_back((Instant::now(), msg));
-    prune_ft8_history(&mut history);
-}
+    pub fn record_ft8_message(&self, msg: Ft8Message) {
+        let mut h = self.ft8.lock().expect("ft8 history mutex poisoned");
+        h.push_back((Instant::now(), msg));
+        Self::prune_ft8(&mut h);
+    }
 
-pub fn snapshot_ft8_history() -> Vec<Ft8Message> {
-    let mut history = ft8_history().lock().expect("ft8 history mutex poisoned");
-    prune_ft8_history(&mut history);
-    history.iter().map(|(_, msg)| msg.clone()).collect()
-}
+    pub fn snapshot_ft8_history(&self) -> Vec<Ft8Message> {
+        let mut h = self.ft8.lock().expect("ft8 history mutex poisoned");
+        Self::prune_ft8(&mut h);
+        h.iter().map(|(_, msg)| msg.clone()).collect()
+    }
 
-pub fn clear_ft8_history() {
-    let mut history = ft8_history().lock().expect("ft8 history mutex poisoned");
-    history.clear();
-}
+    pub fn clear_ft8_history(&self) {
+        self.ft8.lock().expect("ft8 history mutex poisoned").clear();
+    }
 
-fn wspr_history() -> &'static Mutex<VecDeque<(Instant, WsprMessage)>> {
-    static HISTORY: OnceLock<Mutex<VecDeque<(Instant, WsprMessage)>>> = OnceLock::new();
-    HISTORY.get_or_init(|| Mutex::new(VecDeque::new()))
-}
+    // --- WSPR ---
 
-fn prune_wspr_history(history: &mut VecDeque<(Instant, WsprMessage)>) {
-    let cutoff = Instant::now() - WSPR_HISTORY_RETENTION;
-    while let Some((ts, _)) = history.front() {
-        if *ts < cutoff {
-            history.pop_front();
-        } else {
-            break;
+    fn prune_wspr(history: &mut VecDeque<(Instant, WsprMessage)>) {
+        let cutoff = Instant::now() - WSPR_HISTORY_RETENTION;
+        while let Some((ts, _)) = history.front() {
+            if *ts < cutoff {
+                history.pop_front();
+            } else {
+                break;
+            }
         }
     }
-}
 
-pub fn snapshot_wspr_history() -> Vec<WsprMessage> {
-    let mut history = wspr_history().lock().expect("wspr history mutex poisoned");
-    prune_wspr_history(&mut history);
-    history.iter().map(|(_, msg)| msg.clone()).collect()
-}
+    pub fn record_wspr_message(&self, msg: WsprMessage) {
+        let mut h = self.wspr.lock().expect("wspr history mutex poisoned");
+        h.push_back((Instant::now(), msg));
+        Self::prune_wspr(&mut h);
+    }
 
-pub fn clear_wspr_history() {
-    let mut history = wspr_history().lock().expect("wspr history mutex poisoned");
-    history.clear();
-}
+    pub fn snapshot_wspr_history(&self) -> Vec<WsprMessage> {
+        let mut h = self.wspr.lock().expect("wspr history mutex poisoned");
+        Self::prune_wspr(&mut h);
+        h.iter().map(|(_, msg)| msg.clone()).collect()
+    }
 
-pub fn record_wspr_message(msg: WsprMessage) {
-    let mut history = wspr_history().lock().expect("wspr history mutex poisoned");
-    history.push_back((Instant::now(), msg));
-    prune_wspr_history(&mut history);
+    pub fn clear_wspr_history(&self) {
+        self.wspr.lock().expect("wspr history mutex poisoned").clear();
+    }
 }
 
 /// Spawn the audio capture thread.
@@ -665,6 +674,7 @@ pub async fn run_aprs_decoder(
     mut state_rx: watch::Receiver<RigState>,
     decode_tx: broadcast::Sender<DecodedMessage>,
     decode_logs: Option<Arc<DecoderLoggers>>,
+    histories: Arc<DecoderHistories>,
 ) {
     info!("APRS decoder started ({}Hz, {} ch)", sample_rate, channels);
     let mut decoder = AprsDecoder::new(sample_rate);
@@ -717,7 +727,7 @@ pub async fn run_aprs_decoder(
 
                         was_active = true;
                         for pkt in decoder.process_samples(&mono) {
-                            record_aprs_packet(pkt.clone());
+                            histories.record_aprs_packet(pkt.clone());
                             if let Some(logger) = decode_logs.as_ref() {
                                 logger.log_aprs(&pkt);
                             }
@@ -936,6 +946,7 @@ pub async fn run_ft8_decoder(
     mut state_rx: watch::Receiver<RigState>,
     decode_tx: broadcast::Sender<DecodedMessage>,
     decode_logs: Option<Arc<DecoderLoggers>>,
+    histories: Arc<DecoderHistories>,
 ) {
     info!("FT8 decoder started ({}Hz, {} ch)", sample_rate, channels);
     let mut decoder = match Ft8Decoder::new(FT8_SAMPLE_RATE) {
@@ -1020,7 +1031,7 @@ pub async fn run_ft8_decoder(
                                         freq_hz: res.freq_hz,
                                         message: res.text,
                                     };
-                                    record_ft8_message(msg.clone());
+                                    histories.record_ft8_message(msg.clone());
                                     if let Some(logger) = decode_logs.as_ref() {
                                         logger.log_ft8(&msg);
                                     }
@@ -1072,6 +1083,7 @@ pub async fn run_wspr_decoder(
     mut state_rx: watch::Receiver<RigState>,
     decode_tx: broadcast::Sender<DecodedMessage>,
     decode_logs: Option<Arc<DecoderLoggers>>,
+    histories: Arc<DecoderHistories>,
 ) {
     info!("WSPR decoder started ({}Hz, {} ch)", sample_rate, channels);
     let decoder = match WsprDecoder::new() {
@@ -1136,7 +1148,7 @@ pub async fn run_wspr_decoder(
                                             freq_hz: res.freq_hz,
                                             message: res.message,
                                         };
-                                        record_wspr_message(msg.clone());
+                                        histories.record_wspr_message(msg.clone());
                                         if let Some(logger) = decode_logs.as_ref() {
                                             logger.log_wspr(&msg);
                                         }
@@ -1209,6 +1221,7 @@ pub async fn run_audio_listener(
     stream_info: AudioStreamInfo,
     decode_tx: broadcast::Sender<DecodedMessage>,
     mut shutdown_rx: watch::Receiver<bool>,
+    histories: Arc<DecoderHistories>,
 ) -> std::io::Result<()> {
     let listener = TcpListener::bind(addr).await?;
     info!("Audio listener on {}", addr);
@@ -1224,9 +1237,10 @@ pub async fn run_audio_listener(
                 let info = stream_info.clone();
                 let decode_tx = decode_tx.clone();
                 let client_shutdown_rx = shutdown_rx.clone();
+                let client_histories = histories.clone();
 
                 tokio::spawn(async move {
-                    if let Err(e) = handle_audio_client(socket, peer, rx_audio, tx_audio, info, decode_tx, client_shutdown_rx).await {
+                    if let Err(e) = handle_audio_client(socket, peer, rx_audio, tx_audio, info, decode_tx, client_shutdown_rx, client_histories).await {
                         warn!("Audio client {} error: {:?}", peer, e);
                     }
                     info!("Audio client {} disconnected", peer);
@@ -1255,6 +1269,7 @@ async fn handle_audio_client(
     stream_info: AudioStreamInfo,
     decode_tx: broadcast::Sender<DecodedMessage>,
     mut shutdown_rx: watch::Receiver<bool>,
+    histories: Arc<DecoderHistories>,
 ) -> std::io::Result<()> {
     let (reader, writer) = socket.into_split();
     let mut reader = tokio::io::BufReader::new(reader);
@@ -1265,7 +1280,7 @@ async fn handle_audio_client(
     write_audio_msg(&mut writer, AUDIO_MSG_STREAM_INFO, &info_json).await?;
 
     // Send APRS history to newly connected client.
-    let history = snapshot_aprs_history();
+    let history = histories.snapshot_aprs_history();
     for pkt in history {
         let msg = DecodedMessage::Aprs(pkt);
         let msg_type = AUDIO_MSG_APRS_DECODE;
@@ -1274,7 +1289,7 @@ async fn handle_audio_client(
         }
     }
     // Send FT8 history to newly connected client.
-    let history = snapshot_ft8_history();
+    let history = histories.snapshot_ft8_history();
     for msg in history {
         let msg = DecodedMessage::Ft8(msg);
         let msg_type = AUDIO_MSG_FT8_DECODE;
@@ -1283,7 +1298,7 @@ async fn handle_audio_client(
         }
     }
     // Send WSPR history to newly connected client.
-    let history = snapshot_wspr_history();
+    let history = histories.snapshot_wspr_history();
     for msg in history {
         let msg = DecodedMessage::Wspr(msg);
         let msg_type = AUDIO_MSG_WSPR_DECODE;
