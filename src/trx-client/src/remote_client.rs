@@ -211,11 +211,11 @@ async fn refresh_remote_snapshot(
     }
 
     let selected = selected_rig_id(config);
-    let fallback = &rigs[0];
     let target = selected
         .as_deref()
         .and_then(|id| rigs.iter().find(|entry| entry.rig_id == id))
-        .unwrap_or(fallback);
+        .or_else(|| choose_default_rig(rigs.as_slice()))
+        .ok_or_else(|| RigError::communication("GetRigs returned no selectable rig"))?;
 
     if selected.as_deref() != Some(target.rig_id.as_str()) {
         set_selected_rig_id(config, Some(target.rig_id.clone()));
@@ -285,6 +285,15 @@ fn set_selected_rig_id(config: &RemoteClientConfig, value: Option<String>) {
     if let Ok(mut guard) = config.selected_rig_id.lock() {
         *guard = value;
     }
+}
+
+fn choose_default_rig(rigs: &[RigEntry]) -> Option<&RigEntry> {
+    rigs.iter().max_by_key(|entry| {
+        let tx_capable = entry.state.info.capabilities.tx;
+        let initialized = entry.state.initialized;
+        // Prefer initialized TX-capable rigs; tie-break by rig_id for deterministic choice.
+        (tx_capable, initialized, entry.rig_id.as_str())
+    })
 }
 
 async fn read_limited_line<R: AsyncBufRead + Unpin>(

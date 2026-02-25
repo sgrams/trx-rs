@@ -279,6 +279,8 @@ const headerSigCanvas = document.getElementById("header-sig-canvas");
 const themeToggleBtn = document.getElementById("theme-toggle");
 const rigSwitchSelect = document.getElementById("rig-switch-select");
 const rigSwitchBtn = document.getElementById("rig-switch-btn");
+const headerRigSwitchSelect = document.getElementById("header-rig-switch-select");
+const headerRigSwitchBtn = document.getElementById("header-rig-switch-btn");
 
 let lastControl;
 let lastTxEn = null;
@@ -339,6 +341,25 @@ if (themeToggleBtn) {
 
 function readyText() {
   return lastClientCount !== null ? `Ready \u00b7 ${lastClientCount} user${lastClientCount !== 1 ? "s" : ""}` : "Ready";
+}
+
+function populateRigPicker(selectEl, rigIds, activeRigId, disabled) {
+  if (!selectEl) return;
+  const selectedBefore = selectEl.value;
+  selectEl.innerHTML = "";
+  rigIds.forEach((id) => {
+    const opt = document.createElement("option");
+    opt.value = id;
+    opt.textContent = id;
+    selectEl.appendChild(opt);
+  });
+  const preferred = (typeof activeRigId === "string" && rigIds.includes(activeRigId))
+    ? activeRigId
+    : selectedBefore;
+  if (preferred && rigIds.includes(preferred)) {
+    selectEl.value = preferred;
+  }
+  selectEl.disabled = disabled;
 }
 
 function showHint(msg, duration) {
@@ -950,26 +971,11 @@ function render(update) {
   if (Array.isArray(update.rig_ids)) {
     lastRigIds = update.rig_ids.filter((id) => typeof id === "string" && id.length > 0);
     document.getElementById("about-rig-list").textContent = lastRigIds.length ? lastRigIds.join(", ") : "--";
-    if (rigSwitchSelect) {
-      const selectedBefore = rigSwitchSelect.value;
-      rigSwitchSelect.innerHTML = "";
-      lastRigIds.forEach((id) => {
-        const opt = document.createElement("option");
-        opt.value = id;
-        opt.textContent = id;
-        rigSwitchSelect.appendChild(opt);
-      });
-      const preferred = (typeof update.active_rig_id === "string" && lastRigIds.includes(update.active_rig_id))
-        ? update.active_rig_id
-        : selectedBefore;
-      if (preferred && lastRigIds.includes(preferred)) {
-        rigSwitchSelect.value = preferred;
-      }
-      rigSwitchSelect.disabled = lastRigIds.length === 0;
-      if (rigSwitchBtn) {
-        rigSwitchBtn.disabled = lastRigIds.length === 0 || authRole === "rx";
-      }
-    }
+    const disableSwitch = lastRigIds.length === 0 || authRole === "rx";
+    populateRigPicker(rigSwitchSelect, lastRigIds, update.active_rig_id, lastRigIds.length === 0);
+    populateRigPicker(headerRigSwitchSelect, lastRigIds, update.active_rig_id, lastRigIds.length === 0);
+    if (rigSwitchBtn) rigSwitchBtn.disabled = disableSwitch;
+    if (headerRigSwitchBtn) headerRigSwitchBtn.disabled = disableSwitch;
   }
   if (typeof update.rigctl_clients === "number") {
     document.getElementById("about-rigctl-clients").textContent = update.rigctl_clients;
@@ -1110,8 +1116,8 @@ async function postPath(path) {
   return resp;
 }
 
-async function switchRig() {
-  if (!rigSwitchSelect || !rigSwitchSelect.value) {
+async function switchRigFromSelect(selectEl) {
+  if (!selectEl || !selectEl.value) {
     showHint("No rig selected", 1500);
     return;
   }
@@ -1119,25 +1125,31 @@ async function switchRig() {
     showHint("Control role required", 1500);
     return;
   }
-  if (!lastRigIds.includes(rigSwitchSelect.value)) {
+  if (!lastRigIds.includes(selectEl.value)) {
     showHint("Unknown rig", 1500);
     return;
   }
   if (rigSwitchBtn) rigSwitchBtn.disabled = true;
+  if (headerRigSwitchBtn) headerRigSwitchBtn.disabled = true;
   showHint("Switching rig…");
   try {
-    await postPath(`/select_rig?rig_id=${encodeURIComponent(rigSwitchSelect.value)}`);
+    await postPath(`/select_rig?rig_id=${encodeURIComponent(selectEl.value)}`);
     showHint("Rig switch requested", 1500);
   } catch (err) {
     showHint("Rig switch failed", 2000);
     console.error(err);
   } finally {
-    if (rigSwitchBtn) rigSwitchBtn.disabled = authRole === "rx";
+    const disableSwitch = lastRigIds.length === 0 || authRole === "rx";
+    if (rigSwitchBtn) rigSwitchBtn.disabled = disableSwitch;
+    if (headerRigSwitchBtn) headerRigSwitchBtn.disabled = disableSwitch;
   }
 }
 
 if (rigSwitchBtn) {
-  rigSwitchBtn.addEventListener("click", switchRig);
+  rigSwitchBtn.addEventListener("click", () => switchRigFromSelect(rigSwitchSelect));
+}
+if (headerRigSwitchBtn) {
+  headerRigSwitchBtn.addEventListener("click", () => switchRigFromSelect(headerRigSwitchSelect));
 }
 
 powerBtn.addEventListener("click", async () => {
