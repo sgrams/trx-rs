@@ -54,6 +54,9 @@ pub struct ClientEnvelope {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct RigEntry {
     pub rig_id: String,
+    /// Display name for the rig (long name from config, or rig_id if not set).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub display_name: Option<String>,
     pub state: RigSnapshot,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub audio_port: Option<u16>,
