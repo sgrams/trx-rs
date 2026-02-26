@@ -6,10 +6,10 @@
 mod api;
 #[path = "audio.rs"]
 pub mod audio;
-#[path = "status.rs"]
-pub mod status;
 #[path = "auth.rs"]
 pub mod auth;
+#[path = "status.rs"]
+pub mod status;
 
 use std::net::SocketAddr;
 use std::sync::atomic::AtomicUsize;
@@ -86,7 +86,7 @@ fn build_server(
     let same_site = match context.http_auth_cookie_same_site.as_str() {
         "Strict" => SameSite::Strict,
         "None" => SameSite::None,
-        _ => SameSite::Lax,  // default
+        _ => SameSite::Lax, // default
     };
     let auth_config = AuthConfig::new(
         context.http_auth_enabled,
@@ -129,7 +129,9 @@ fn build_server(
             )
             // Use "real IP" so reverse-proxy setups can pass client address
             // via Forwarded / X-Forwarded-For / X-Real-IP headers.
-            .wrap(Logger::new(r#"%{r}a "%r" %s %b "%{Referer}i" "%{User-Agent}i" %T"#))
+            .wrap(Logger::new(
+                r#"%{r}a "%r" %s %b "%{Referer}i" "%{User-Agent}i" %T"#,
+            ))
             .wrap(auth::AuthMiddleware)
             .configure(api::configure)
     })

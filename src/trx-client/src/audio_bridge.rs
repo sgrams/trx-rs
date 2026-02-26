@@ -63,7 +63,8 @@ pub fn spawn_audio_bridge(
             let playback_cfg = cfg.clone();
             let playback_info = info.clone();
             let playback = std::thread::spawn(move || {
-                if let Err(e) = run_playback(playback_cfg, playback_info, rx_bridge_rx, playback_stop)
+                if let Err(e) =
+                    run_playback(playback_cfg, playback_info, rx_bridge_rx, playback_stop)
                 {
                     warn!("Audio bridge playback stopped: {}", e);
                 }
@@ -143,7 +144,8 @@ fn run_playback(
         buffer_size: cpal::BufferSize::Default,
     };
     let channels = stream_cfg.channels as usize;
-    let frame_samples = (info.sample_rate as usize * info.frame_duration_ms as usize / 1000) * channels;
+    let frame_samples =
+        (info.sample_rate as usize * info.frame_duration_ms as usize / 1000) * channels;
 
     let opus_channels = match stream_cfg.channels {
         1 => opus::Channels::Mono,
@@ -153,7 +155,9 @@ fn run_playback(
     let mut decoder = opus::Decoder::new(info.sample_rate, opus_channels)?;
     let mut pcm_buf = vec![0f32; 5760 * channels];
 
-    let ring = Arc::new(Mutex::new(VecDeque::<f32>::with_capacity(frame_samples * 8)));
+    let ring = Arc::new(Mutex::new(VecDeque::<f32>::with_capacity(
+        frame_samples * 8,
+    )));
     let ring_cb = ring.clone();
     let rx_gain = cfg.rx_gain.max(0.0);
 
@@ -218,14 +222,16 @@ fn run_capture(
         buffer_size: cpal::BufferSize::Default,
     };
     let channels = stream_cfg.channels as usize;
-    let frame_samples = (info.sample_rate as usize * info.frame_duration_ms as usize / 1000) * channels;
+    let frame_samples =
+        (info.sample_rate as usize * info.frame_duration_ms as usize / 1000) * channels;
 
     let opus_channels = match stream_cfg.channels {
         1 => opus::Channels::Mono,
         2 => opus::Channels::Stereo,
         _ => return Err(format!("unsupported channel count {}", stream_cfg.channels).into()),
     };
-    let mut encoder = opus::Encoder::new(info.sample_rate, opus_channels, opus::Application::Audio)?;
+    let mut encoder =
+        opus::Encoder::new(info.sample_rate, opus_channels, opus::Application::Audio)?;
     encoder.set_bitrate(opus::Bitrate::Bits(24_000))?;
     let mut opus_buf = vec![0u8; 4096];
 
