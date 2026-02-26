@@ -289,6 +289,8 @@ const loadingTitle = document.getElementById("loading-title");
 const loadingSub = document.getElementById("loading-sub");
 const headerSigCanvas = document.getElementById("header-sig-canvas");
 const themeToggleBtn = document.getElementById("theme-toggle");
+const rigSwitchSelect = document.getElementById("rig-switch-select");
+const rigSwitchBtn = document.getElementById("rig-switch-btn");
 const headerRigSwitchSelect = document.getElementById("header-rig-switch-select");
 const headerRigSwitchBtn = document.getElementById("header-rig-switch-btn");
 
