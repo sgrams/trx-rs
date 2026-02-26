@@ -12,7 +12,6 @@ default = ["ft817", "ft450d"]
 ft817 = ["dep:trx-backend-ft817"]
 ft450d = ["dep:trx-backend-ft450d"]
 soapysdr = ["dep:trx-backend-soapysdr"]
-soapysdr-sys = ["soapysdr", "trx-backend-soapysdr/soapysdr-sys"]
 
 [dependencies]
 trx-core = { path = "../../trx-core" }

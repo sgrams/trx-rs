@@ -14,9 +14,4 @@ tokio = { workspace = true, features = ["sync", "rt"] }
 serde = { workspace = true }
 tracing = { workspace = true }
 num-complex = "0.4"
-# soapysdr is an optional system-library dep gated behind a feature
-soapysdr = { version = "0.3", optional = true }
-
-[features]
-default = []
-soapysdr-sys = ["dep:soapysdr"]
+soapysdr = "0.3"
