@@ -4,17 +4,18 @@
 
 //! Audio capture, playback, and TCP streaming for trx-server.
 
+use std::collections::VecDeque;
 use std::net::SocketAddr;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
-use std::collections::VecDeque;
 
 use bytes::Bytes;
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{broadcast, mpsc, watch};
 use tracing::{error, info, warn};
 
+use trx_aprs::AprsDecoder;
 use trx_core::audio::{
     read_audio_msg, write_audio_msg, AudioStreamInfo, AUDIO_MSG_APRS_DECODE, AUDIO_MSG_CW_DECODE,
     AUDIO_MSG_FT8_DECODE, AUDIO_MSG_RX_FRAME, AUDIO_MSG_STREAM_INFO, AUDIO_MSG_TX_FRAME,
@@ -22,7 +23,6 @@ use trx_core::audio::{
 };
 use trx_core::decode::{AprsPacket, DecodedMessage, Ft8Message, WsprMessage};
 use trx_core::rig::state::{RigMode, RigState};
-use trx_aprs::AprsDecoder;
 use trx_cw::CwDecoder;
 use trx_ft8::Ft8Decoder;
 use trx_wspr::WsprDecoder;
@@ -164,7 +164,10 @@ impl DecoderHistories {
     }
 
     pub fn clear_aprs_history(&self) {
-        self.aprs.lock().expect("aprs history mutex poisoned").clear();
+        self.aprs
+            .lock()
+            .expect("aprs history mutex poisoned")
+            .clear();
     }
 
     // --- FT8 ---
@@ -222,7 +225,10 @@ impl DecoderHistories {
     }
 
     pub fn clear_wspr_history(&self) {
-        self.wspr.lock().expect("wspr history mutex poisoned").clear();
+        self.wspr
+            .lock()
+            .expect("wspr history mutex poisoned")
+            .clear();
     }
 }
 
@@ -315,7 +321,10 @@ fn run_capture(
                     }
                 }
                 Err(e) => {
-                    warn!("Audio capture: failed to enumerate devices, retrying: {}", e);
+                    warn!(
+                        "Audio capture: failed to enumerate devices, retrying: {}",
+                        e
+                    );
                     std::thread::sleep(AUDIO_STREAM_RECOVERY_DELAY);
                     continue;
                 }
@@ -520,7 +529,10 @@ fn run_playback(
                     }
                 }
                 Err(e) => {
-                    warn!("Audio playback: failed to enumerate devices, retrying: {}", e);
+                    warn!(
+                        "Audio playback: failed to enumerate devices, retrying: {}",
+                        e
+                    );
                     std::thread::sleep(AUDIO_STREAM_RECOVERY_DELAY);
                     continue;
                 }

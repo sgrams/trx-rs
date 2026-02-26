@@ -311,7 +311,6 @@ impl Default for AprsFiConfig {
     }
 }
 
-
 /// Top-level SDR configuration (only used when [rig.access] type = "sdr").
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
@@ -489,19 +488,14 @@ impl ServerConfig {
 
         // Multi-rig uniqueness checks.
         if !self.rigs.is_empty() {
-            let mut seen_ids: std::collections::HashSet<String> =
-                std::collections::HashSet::new();
-            let mut seen_ports: std::collections::HashSet<u16> =
-                std::collections::HashSet::new();
+            let mut seen_ids: std::collections::HashSet<String> = std::collections::HashSet::new();
+            let mut seen_ports: std::collections::HashSet<u16> = std::collections::HashSet::new();
             for rig in &self.rigs {
                 if rig.id.trim().is_empty() {
                     return Err("[[rigs]] entry has an empty id".to_string());
                 }
                 if !seen_ids.insert(rig.id.clone()) {
-                    return Err(format!(
-                        "[[rigs]] duplicate rig id: \"{}\"",
-                        rig.id
-                    ));
+                    return Err(format!("[[rigs]] duplicate rig id: \"{}\"", rig.id));
                 }
                 if rig.audio.enabled {
                     if !seen_ports.insert(rig.audio.port) {
@@ -523,9 +517,7 @@ impl ServerConfig {
                 || self.decode_logs.ft8_file.trim().is_empty()
                 || self.decode_logs.wspr_file.trim().is_empty()
             {
-                return Err(
-                    "[decode_logs] file names must not be empty when enabled".to_string(),
-                );
+                return Err("[decode_logs] file names must not be empty when enabled".to_string());
             }
         }
 
@@ -544,7 +536,14 @@ impl ServerConfig {
         }
 
         // args must be non-empty
-        if self.rig.access.args.as_deref().map(str::is_empty).unwrap_or(true) {
+        if self
+            .rig
+            .access
+            .args
+            .as_deref()
+            .map(str::is_empty)
+            .unwrap_or(true)
+        {
             errors.push("[rig.access] args must be non-empty for type = \"sdr\"".into());
         }
 
@@ -585,7 +584,7 @@ impl ServerConfig {
             for dec in &ch.decoders {
                 if let Some(prev_id) = seen.get(dec) {
                     errors.push(format!(
-                        "[sdr.channels] decoder \"{}\" appears in both \"{}\" and \"{}\""  ,
+                        "[sdr.channels] decoder \"{}\" appears in both \"{}\" and \"{}\"",
                         dec, prev_id, ch.id
                     ));
                 } else {
@@ -799,10 +798,8 @@ mod tests {
         assert_eq!(config.aprsfi.port, 14580);
         assert_eq!(config.aprsfi.passcode, -1);
         assert!(!config.decode_logs.enabled);
-        assert!(
-            std::path::Path::new(&config.decode_logs.dir)
-                .ends_with(std::path::Path::new("decoders"))
-        );
+        assert!(std::path::Path::new(&config.decode_logs.dir)
+            .ends_with(std::path::Path::new("decoders")));
     }
 
     #[test]
@@ -950,11 +947,7 @@ tokens = ["secret123"]
         let mut cfg = sdr_config_with_access("driver=rtlsdr");
         add_channel(&mut cfg, "primary", 0, false, vec![]);
         let errors = cfg.validate_sdr();
-        assert!(
-            errors.is_empty(),
-            "expected no errors, got: {:?}",
-            errors
-        );
+        assert!(errors.is_empty(), "expected no errors, got: {:?}", errors);
     }
 
     #[test]
@@ -972,7 +965,12 @@ tokens = ["secret123"]
     fn test_sdr_validate_empty_args() {
         let cfg = sdr_config_with_access("");
         let errors = cfg.validate_sdr();
-        assert_eq!(errors.len(), 1, "expected exactly 1 error, got: {:?}", errors);
+        assert_eq!(
+            errors.len(),
+            1,
+            "expected exactly 1 error, got: {:?}",
+            errors
+        );
         assert!(
             errors[0].contains("args"),
             "expected error to mention 'args', got: {}",
@@ -985,7 +983,12 @@ tokens = ["secret123"]
         let mut cfg = sdr_config_with_access("placeholder");
         cfg.rig.access.args = None;
         let errors = cfg.validate_sdr();
-        assert_eq!(errors.len(), 1, "expected exactly 1 error, got: {:?}", errors);
+        assert_eq!(
+            errors.len(),
+            1,
+            "expected exactly 1 error, got: {:?}",
+            errors
+        );
         assert!(
             errors[0].contains("args"),
             "expected error to mention 'args', got: {}",
@@ -1053,7 +1056,8 @@ tokens = ["secret123"]
         assert!(
             errors
                 .iter()
-                .any(|e| e.contains("ch_nyquist") && (e.contains("Nyquist") || e.contains("exceeds"))),
+                .any(|e| e.contains("ch_nyquist")
+                    && (e.contains("Nyquist") || e.contains("exceeds"))),
             "expected error for IF exactly at Nyquist, got: {:?}",
             errors
         );

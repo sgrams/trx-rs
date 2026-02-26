@@ -101,7 +101,10 @@ pub async fn run_rig_task(
     mut shutdown_rx: watch::Receiver<bool>,
 ) -> DynResult<()> {
     let histories = config.histories.clone();
-    info!("[{}] Opening rig backend {}", config.rig_id, config.rig_model);
+    info!(
+        "[{}] Opening rig backend {}",
+        config.rig_id, config.rig_model
+    );
     match &config.access {
         RigAccess::Serial { path, baud } => info!("Serial: {} @ {} baud", path, baud),
         RigAccess::Tcp { addr } => info!("TCP CAT: {}", addr),

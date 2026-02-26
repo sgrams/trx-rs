@@ -25,7 +25,11 @@ pub fn compute_passcode(callsign: &str) -> u16 {
     // Strip SSID
     let base = callsign.split('-').next().unwrap_or(callsign);
     // First 10 chars, uppercase
-    let upper: String = base.chars().take(10).map(|c| c.to_ascii_uppercase()).collect();
+    let upper: String = base
+        .chars()
+        .take(10)
+        .map(|c| c.to_ascii_uppercase())
+        .collect();
     let bytes = upper.as_bytes();
 
     let mut hash: u16 = 0x73e2;
@@ -126,7 +130,10 @@ pub async fn run_aprsfi_uplink(
             line.clear();
             match reader.read_line(&mut line).await {
                 Ok(0) => {
-                    warn!("APRS-IS IGate: connection closed before logresp from {}:{}", cfg.host, cfg.port);
+                    warn!(
+                        "APRS-IS IGate: connection closed before logresp from {}:{}",
+                        cfg.host, cfg.port
+                    );
                     break;
                 }
                 Ok(_) => {
@@ -137,7 +144,10 @@ pub async fn run_aprsfi_uplink(
                     }
                 }
                 Err(e) => {
-                    warn!("APRS-IS IGate: error reading logresp from {}:{}: {}", cfg.host, cfg.port, e);
+                    warn!(
+                        "APRS-IS IGate: error reading logresp from {}:{}: {}",
+                        cfg.host, cfg.port, e
+                    );
                     break;
                 }
             }

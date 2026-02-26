@@ -40,9 +40,6 @@ use config::{RigInstanceConfig, ServerConfig};
 use rig_handle::RigHandle;
 use trx_decode_log::DecoderLoggers;
 
-#[cfg(feature = "soapysdr")]
-use trx_backend_soapysdr;
-
 const PKG_DESCRIPTION: &str = concat!(env!("CARGO_PKG_NAME"), " - rig server daemon");
 const RIG_TASK_CHANNEL_BUFFER: usize = 32;
 const RETRY_MAX_DELAY_SECS: u64 = 2;
