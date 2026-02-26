@@ -798,6 +798,7 @@ async fn main() -> DynResult<()> {
             rig_cfg.id.clone(),
             RigHandle {
                 rig_id: rig_cfg.id.clone(),
+                display_name: rig_cfg.display_name().to_string(),
                 rig_tx,
                 state_rx,
                 audio_port: rig_cfg.audio.port,

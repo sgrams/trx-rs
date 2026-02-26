@@ -16,6 +16,8 @@ use trx_core::rig::state::RigState;
 pub struct RigHandle {
     /// Stable rig identifier, matches the key in the HashMap.
     pub rig_id: String,
+    /// Display name for the rig (from config, or rig_id if not set).
+    pub display_name: String,
     /// Send commands to the rig task.
     pub rig_tx: mpsc::Sender<RigRequest>,
     /// Watch the latest rig state for fast GetState/GetRigs responses.

@@ -243,6 +243,7 @@ async fn handle_client(
                 if let Some(snapshot) = state.snapshot() {
                     entries.push(RigEntry {
                         rig_id: handle.rig_id.clone(),
+                        display_name: Some(handle.display_name.clone()),
                         state: snapshot,
                         audio_port: Some(handle.audio_port),
                     });

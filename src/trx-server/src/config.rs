@@ -32,6 +32,9 @@ use trx_core::rig::state::RigMode;
 pub struct RigInstanceConfig {
     /// Stable rig identifier used in protocol routing.
     pub id: String,
+    /// Display name for the rig (e.g., "HF Transceiver", "VHF/UHF SDR").
+    /// If not specified, defaults to the rig id.
+    pub name: Option<String>,
     /// Rig backend configuration.
     pub rig: RigConfig,
     /// Polling and retry behavior.
@@ -52,6 +55,7 @@ impl Default for RigInstanceConfig {
     fn default() -> Self {
         Self {
             id: "default".to_string(),
+            name: None,
             rig: RigConfig::default(),
             behavior: BehaviorConfig::default(),
             audio: AudioConfig::default(),
@@ -60,6 +64,14 @@ impl Default for RigInstanceConfig {
             aprsfi: AprsFiConfig::default(),
             decode_logs: DecodeLogsConfig::default(),
         }
+    }
+}
+
+impl RigInstanceConfig {
+    /// Get the display name for this rig.
+    /// Returns the configured name if set, otherwise the id.
+    pub fn display_name(&self) -> &str {
+        self.name.as_deref().unwrap_or(&self.id)
     }
 }
 
@@ -618,6 +630,7 @@ impl ServerConfig {
         }
         vec![RigInstanceConfig {
             id: "default".to_string(),
+            name: None,
             rig: self.rig.clone(),
             behavior: self.behavior.clone(),
             audio: self.audio.clone(),
