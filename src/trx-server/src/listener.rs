@@ -461,6 +461,7 @@ mod tests {
         let _state_tx = state_tx;
         let handle = RigHandle {
             rig_id: "default".to_string(),
+            display_name: "Default Rig".to_string(),
             rig_tx,
             state_rx,
             audio_port: 4531,

@@ -54,7 +54,7 @@ pub struct RigInstanceConfig {
 impl Default for RigInstanceConfig {
     fn default() -> Self {
         Self {
-            id: "default".to_string(),
+            id: String::new(),  // Empty by default so auto-generation triggers in resolved_rigs()
             name: None,
             rig: RigConfig::default(),
             behavior: BehaviorConfig::default(),
