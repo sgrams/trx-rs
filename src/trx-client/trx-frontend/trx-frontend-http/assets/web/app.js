@@ -80,6 +80,12 @@ function showAuthGate(allowGuest = false) {
   document.getElementById("auth-gate").style.display = "block";
   document.getElementById("tab-bar").style.display = "none";
 
+  // Hide rig picker since no rigs are accessible without auth
+  const rigSwitch = document.querySelector(".header-rig-switch");
+  if (rigSwitch) {
+    rigSwitch.style.display = "none";
+  }
+
   // Hide all tab panels
   document.querySelectorAll(".tab-panel").forEach(panel => {
     panel.style.display = "none";
@@ -96,6 +102,12 @@ function hideAuthGate() {
   document.getElementById("auth-gate").style.display = "none";
   document.getElementById("loading").style.display = "block";
   document.getElementById("tab-bar").style.display = "";
+
+  // Show rig picker again now that user is authenticated
+  const rigSwitch = document.querySelector(".header-rig-switch");
+  if (rigSwitch) {
+    rigSwitch.style.display = "";
+  }
 
   // Show Main tab by default and hide all other tabs
   document.querySelectorAll(".tab-panel").forEach(panel => {
