@@ -8,11 +8,11 @@ pub mod dsp;
 use std::pin::Pin;
 
 use trx_core::radio::freq::{Band, Freq};
+use trx_core::rig::response::RigError;
+use trx_core::rig::state::RigFilterState;
 use trx_core::rig::{
     AudioSource, Rig, RigAccessMethod, RigCapabilities, RigCat, RigInfo, RigStatusFuture,
 };
-use trx_core::rig::response::RigError;
-use trx_core::rig::state::RigFilterState;
 use trx_core::{DynResult, RigMode};
 
 /// RX-only backend for any SoapySDR-compatible device.

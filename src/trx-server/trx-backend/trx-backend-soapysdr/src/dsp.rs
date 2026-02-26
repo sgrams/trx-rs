@@ -321,8 +321,7 @@ impl SdrPipeline {
     ) -> Self {
         // Broadcast channel capacity: 64 IQ blocks.
         const IQ_BROADCAST_CAPACITY: usize = 64;
-        let (iq_tx, _iq_rx) =
-            broadcast::channel::<Vec<Complex<f32>>>(IQ_BROADCAST_CAPACITY);
+        let (iq_tx, _iq_rx) = broadcast::channel::<Vec<Complex<f32>>>(IQ_BROADCAST_CAPACITY);
 
         // PCM broadcast capacity: enough for several frames of latency.
         const PCM_BROADCAST_CAPACITY: usize = 32;
@@ -468,13 +467,13 @@ mod tests {
     fn channel_dsp_processes_silence() {
         let (pcm_tx, _pcm_rx) = broadcast::channel::<Vec<f32>>(8);
         let mut dsp = ChannelDsp::new(
-            0.0,       // channel_if_hz
+            0.0, // channel_if_hz
             &RigMode::USB,
-            48_000,    // sdr_sample_rate
-            8_000,     // audio_sample_rate  (decim = 6)
-            20,        // frame_duration_ms → frame_size = 160
-            3000,      // audio_bandwidth_hz
-            31,        // fir_taps
+            48_000, // sdr_sample_rate
+            8_000,  // audio_sample_rate  (decim = 6)
+            20,     // frame_duration_ms → frame_size = 160
+            3000,   // audio_bandwidth_hz
+            31,     // fir_taps
             pcm_tx,
         );
 
@@ -486,16 +485,7 @@ mod tests {
     #[test]
     fn channel_dsp_set_mode() {
         let (pcm_tx, _) = broadcast::channel::<Vec<f32>>(8);
-        let mut dsp = ChannelDsp::new(
-            0.0,
-            &RigMode::USB,
-            48_000,
-            8_000,
-            20,
-            3000,
-            31,
-            pcm_tx,
-        );
+        let mut dsp = ChannelDsp::new(0.0, &RigMode::USB, 48_000, 8_000, 20, 3000, 31, pcm_tx);
         assert_eq!(dsp.demodulator, Demodulator::Usb);
         dsp.set_mode(&RigMode::FM);
         assert_eq!(dsp.demodulator, Demodulator::Fm);
@@ -516,13 +506,7 @@ mod tests {
 
     #[test]
     fn pipeline_empty_channels() {
-        let pipeline = SdrPipeline::start(
-            Box::new(MockIqSource),
-            1_920_000,
-            48_000,
-            20,
-            &[],
-        );
+        let pipeline = SdrPipeline::start(Box::new(MockIqSource), 1_920_000, 48_000, 20, &[]);
         assert_eq!(pipeline.pcm_senders.len(), 0);
         assert_eq!(pipeline.channel_dsps.len(), 0);
     }

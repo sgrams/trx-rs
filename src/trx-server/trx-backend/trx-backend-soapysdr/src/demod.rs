@@ -94,11 +94,7 @@ fn demod_am(samples: &[Complex<f32>]) -> Vec<f32> {
     let mut output: Vec<f32> = mag.iter().map(|&m| m - mean).collect();
 
     // Normalise peak to ≤ 1.0 (only if max > 1.0, to avoid amplifying noise).
-    let max_abs = output
-        .iter()
-        .copied()
-        .map(f32::abs)
-        .fold(0.0_f32, f32::max);
+    let max_abs = output.iter().copied().map(f32::abs).fold(0.0_f32, f32::max);
     if max_abs > 1.0 {
         let inv = 1.0 / max_abs;
         for sample in &mut output {
@@ -241,7 +237,7 @@ mod tests {
             Complex::new(0.0, 0.0),
             Complex::new(1.0, 0.0),
         ];
-        let expected = vec![-0.5_f32, 0.5, -0.5, 0.5];
+        let expected = [-0.5_f32, 0.5, -0.5, 0.5];
         let out = Demodulator::Am.demodulate(&input);
         assert_eq!(out.len(), 4);
         for (i, (&got, &exp)) in out.iter().zip(expected.iter()).enumerate() {
@@ -259,8 +255,8 @@ mod tests {
         // First sample is 0.0 by convention.
         assert_approx_eq(out[0], 0.0, 1e-6, "FM tone sample 0 (zero by convention)");
         // Remaining samples should be approximately 0.5.
-        for i in 1..out.len() {
-            assert_approx_eq(out[i], 0.5, 0.01, &format!("FM tone sample {}", i));
+        for (i, &sample) in out.iter().enumerate().skip(1) {
+            assert_approx_eq(sample, 0.5, 0.01, &format!("FM tone sample {}", i));
         }
     }
 
@@ -300,8 +296,14 @@ mod tests {
         assert_eq!(Demodulator::for_mode(&RigMode::WFM), Demodulator::Wfm);
         assert_eq!(Demodulator::for_mode(&RigMode::CW), Demodulator::Cw);
         assert_eq!(Demodulator::for_mode(&RigMode::CWR), Demodulator::Cw);
-        assert_eq!(Demodulator::for_mode(&RigMode::DIG), Demodulator::Passthrough);
-        assert_eq!(Demodulator::for_mode(&RigMode::PKT), Demodulator::Passthrough);
+        assert_eq!(
+            Demodulator::for_mode(&RigMode::DIG),
+            Demodulator::Passthrough
+        );
+        assert_eq!(
+            Demodulator::for_mode(&RigMode::PKT),
+            Demodulator::Passthrough
+        );
     }
 
     // Test 9: All demodulators return an empty Vec for empty input without panicking.
