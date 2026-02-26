@@ -214,7 +214,7 @@ ftx_message_rc_t ftx_message_encode_std(ftx_message_t* msg, ftx_callsign_hash_in
         }
     }
 
-    char* slash_de = strchr(call_de, '/');
+    const char* slash_de = strchr(call_de, '/');
     uint8_t icq = (uint8_t)equals(call_to, "CQ") || starts_with(call_to, "CQ ");
     if (slash_de && (slash_de - call_de >= 2) && icq && !(equals(slash_de, "/P") || equals(slash_de, "/R")))
     {
