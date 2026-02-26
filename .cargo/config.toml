@@ -1,0 +1,7 @@
+# Enable CPU optimizations for better performance
+# Set target-cpu to native to use all available CPU features on the build machine
+
+[build]
+# Use native CPU features (AVX2, SSE4.2, etc.) for maximum performance
+# This enables better vectorization in rustc and dependencies
+rustflags = ["-C", "target-cpu=native", "-C", "opt-level=3"]
