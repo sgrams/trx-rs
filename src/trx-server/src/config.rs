@@ -503,11 +503,11 @@ impl ServerConfig {
             let mut seen_ids: std::collections::HashSet<String> = std::collections::HashSet::new();
             let mut seen_ports: std::collections::HashSet<u16> = std::collections::HashSet::new();
             for rig in &self.rigs {
-                if rig.id.trim().is_empty() {
-                    return Err("[[rigs]] entry has an empty id".to_string());
-                }
-                if !seen_ids.insert(rig.id.clone()) {
-                    return Err(format!("[[rigs]] duplicate rig id: \"{}\"", rig.id));
+                // Check for explicit duplicate IDs (empty IDs are auto-generated later).
+                if !rig.id.trim().is_empty() {
+                    if !seen_ids.insert(rig.id.clone()) {
+                        return Err(format!("[[rigs]] duplicate rig id: \"{}\"", rig.id));
+                    }
                 }
                 if rig.audio.enabled {
                     if !seen_ports.insert(rig.audio.port) {
@@ -626,7 +626,31 @@ impl ServerConfig {
     /// into a single `RigInstanceConfig` with `id = "default"`.
     pub fn resolved_rigs(&self) -> Vec<RigInstanceConfig> {
         if !self.rigs.is_empty() {
-            return self.rigs.clone();
+            // Auto-generate IDs for rigs that don't have explicit ones.
+            return self
+                .rigs
+                .iter()
+                .enumerate()
+                .map(|(idx, rig)| {
+                    let id = if rig.id.trim().is_empty() {
+                        // Generate ID from model name with counter.
+                        let model = rig
+                            .rig
+                            .model
+                            .as_deref()
+                            .unwrap_or("unknown")
+                            .to_lowercase();
+                        format!("{}_{}", model, idx)
+                    } else {
+                        rig.id.clone()
+                    };
+
+                    RigInstanceConfig {
+                        id,
+                        ..rig.clone()
+                    }
+                })
+                .collect();
         }
         vec![RigInstanceConfig {
             id: "default".to_string(),
