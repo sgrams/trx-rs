@@ -377,11 +377,18 @@ const IQ_BLOCK_SIZE: usize = 4096;
 /// subscribers.
 fn iq_read_loop(
     mut source: Box<dyn IqSource>,
-    _sdr_sample_rate: u32,
+    sdr_sample_rate: u32,
     channel_dsps: Vec<Arc<Mutex<ChannelDsp>>>,
     iq_tx: broadcast::Sender<Vec<Complex<f32>>>,
 ) {
     let mut block = vec![Complex::new(0.0_f32, 0.0_f32); IQ_BLOCK_SIZE];
+    // Estimate time per block: IQ_BLOCK_SIZE samples at sdr_sample_rate Hz.
+    // This is used to throttle MockIqSource to avoid busy-looping.
+    let block_duration_ms = if sdr_sample_rate > 0 {
+        (IQ_BLOCK_SIZE as f64 / sdr_sample_rate as f64 * 1000.0) as u64
+    } else {
+        1
+    };
 
     loop {
         let n = match source.read_into(&mut block) {
@@ -414,6 +421,11 @@ fn iq_read_loop(
                 }
             }
         }
+
+        // Throttle to avoid busy-looping when using MockIqSource.
+        // Real hardware would naturally have this timing;
+        // the mock needs artificial throttling.
+        std::thread::sleep(std::time::Duration::from_millis(block_duration_ms));
     }
 }
 
