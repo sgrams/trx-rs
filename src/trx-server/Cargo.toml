@@ -10,7 +10,8 @@ build = "build.rs"
 
 [features]
 default = ["soapysdr"]
-soapysdr = ["dep:trx-backend-soapysdr", "trx-backend/soapysdr"]
+soapysdr = ["trx-backend/soapysdr"]
+soapysdr-sys = ["soapysdr", "trx-backend/soapysdr-sys"]
 
 [dependencies]
 tokio = { workspace = true, features = ["full"] }

@@ -5,6 +5,9 @@
 pub mod demod;
 pub mod dsp;
 
+#[cfg(feature = "soapysdr-sys")]
+pub mod real_iq_source;
+
 use std::pin::Pin;
 
 use trx_core::radio::freq::{Band, Freq};
@@ -35,7 +38,8 @@ impl SoapySdrRig {
     ///
     /// # Parameters
     /// - `args`: SoapySDR device args string (e.g. `"driver=rtlsdr"`).
-    ///   Currently reserved — the pipeline uses `MockIqSource`.
+    ///   When `soapysdr-sys` feature is enabled, opens a real device.
+    ///   Otherwise, uses `MockIqSource` for testing.
     /// - `channels`: per-channel tuples of
     ///   `(channel_if_hz, initial_mode, audio_bandwidth_hz, fir_taps)`.
     /// - `gain_mode`: `"auto"` or `"manual"`.
@@ -68,14 +72,37 @@ impl SoapySdrRig {
 
         if gain_mode == "auto" {
             tracing::warn!(
-                "SoapySDR hardware AGC is not yet implemented (pending real SoapySDR device \
-                 wiring); falling back to configured gain of {} dB",
+                "SoapySDR hardware AGC is not yet implemented; falling back to configured \
+                 gain of {} dB",
                 gain_db,
             );
         }
 
+        // Create IQ source: real device or mock depending on feature flag.
+        let iq_source: Box<dyn dsp::IqSource> = {
+            #[cfg(feature = "soapysdr-sys")]
+            {
+                let device = real_iq_source::RealIqSource::new(
+                    args,
+                    initial_freq.hz() as f64,
+                    sdr_sample_rate as f64,
+                    1_500_000.0, // default 1.5 MHz bandwidth
+                    gain_db,
+                )?;
+                Box::new(device)
+            }
+            #[cfg(not(feature = "soapysdr-sys"))]
+            {
+                tracing::warn!(
+                    "soapysdr-sys feature not enabled; using MockIqSource (silence). \
+                     Compile with --features soapysdr to use real hardware."
+                );
+                Box::new(dsp::MockIqSource)
+            }
+        };
+
         let pipeline = dsp::SdrPipeline::start(
-            Box::new(dsp::MockIqSource),
+            iq_source,
             sdr_sample_rate,
             audio_sample_rate,
             frame_duration_ms,
