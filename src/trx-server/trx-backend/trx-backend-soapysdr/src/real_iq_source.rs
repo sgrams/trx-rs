@@ -13,7 +13,10 @@ use crate::dsp::IqSource;
 ///
 /// Reads IQ samples directly from a SoapySDR-compatible device.
 pub struct RealIqSource {
-    _device: Device,
+    /// Device is held here to keep it alive for the lifetime of this source.
+    /// Direct reads are not yet implemented; see read_into() TODO.
+    #[allow(dead_code)]
+    device: Device,
     buffer: Vec<Complex<f32>>,
 }
 
@@ -39,12 +42,38 @@ impl RealIqSource {
         tracing::info!("Initializing SoapySDR device with args: {}", args);
 
         // Create device from arguments string.
-        let device = Device::new(args).map_err(|e| {
-            format!(
-                "Failed to open SoapySDR device (args={}): {}",
-                args, e
-            )
-        })?;
+        let device = match Device::new(args) {
+            Ok(dev) => dev,
+            Err(e) => {
+                // First attempt failed - try fallback strategies
+                tracing::warn!(
+                    "Failed to open device with args '{}': {}. Attempting fallback...",
+                    args, e
+                );
+
+                // Try with empty args as fallback (grab first available device)
+                match Device::new("") {
+                    Ok(dev) => {
+                        tracing::warn!(
+                            "Successfully opened a device with empty args (fallback). \
+                             Note: this may not be the intended device. \
+                             If this is incorrect, check SoapySDR environment variables and plugins."
+                        );
+                        dev
+                    }
+                    Err(fallback_err) => {
+                        return Err(format!(
+                            "Failed to open SoapySDR device:\n  \
+                             Original args '{}': {}\n  \
+                             Fallback (empty args): {}\n  \
+                             Troubleshooting: Check that SoapySDR is installed and plugins are loaded. \
+                             Try running SoapySDRUtil --probe to verify device availability.",
+                            args, e, fallback_err
+                        ));
+                    }
+                }
+            }
+        };
 
         tracing::info!("SoapySDR device opened successfully");
 
@@ -107,7 +136,7 @@ impl RealIqSource {
         tracing::info!("RealIqSource initialized successfully");
 
         Ok(Self {
-            _device: device,
+            device,
             buffer,
         })
     }
@@ -116,11 +145,19 @@ impl RealIqSource {
 impl IqSource for RealIqSource {
     fn read_into(&mut self, buf: &mut [Complex<f32>]) -> Result<usize, String> {
         let max_samples = buf.len().min(4096);
-        self.buffer.truncate(max_samples);
-        self.buffer.resize(max_samples, Complex::new(0.0, 0.0));
 
         // TODO: Implement actual streaming read from device
-        // For now, fill with zeros to test the architecture
+        // Currently the soapysdr 0.3 crate may not expose direct IQ streaming APIs.
+        // This would require either:
+        // 1. Using unsafe FFI to access the underlying SoapySDR C API
+        // 2. Upgrading to a newer soapysdr crate version with streaming support
+        // 3. Implementing a custom streaming wrapper around soapysdr-sys
+        //
+        // For now, return zero-filled buffer to allow architecture to work
+        // while we wait for proper streaming implementation.
+
+        self.buffer.truncate(max_samples);
+        self.buffer.resize(max_samples, Complex::new(0.0, 0.0));
         buf[..max_samples].copy_from_slice(&self.buffer[..max_samples]);
         Ok(max_samples)
     }
