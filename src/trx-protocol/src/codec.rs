@@ -263,7 +263,10 @@ mod tests {
             error: Some("bad".to_string()),
         };
         let json = serde_json::to_string(&resp).unwrap();
-        assert!(!json.contains("rig_id"), "rig_id=None should be omitted from JSON");
+        assert!(
+            !json.contains("rig_id"),
+            "rig_id=None should be omitted from JSON"
+        );
     }
 
     #[test]
@@ -277,21 +280,31 @@ mod tests {
             error: None,
         };
         let json = serde_json::to_string(&resp).unwrap();
-        assert!(!json.contains("\"rigs\""), "rigs=None should be omitted from JSON");
+        assert!(
+            !json.contains("\"rigs\""),
+            "rigs=None should be omitted from JSON"
+        );
     }
 
     // --- UC-09: filter field serialization tests ---
 
     #[test]
     fn filter_field_included_when_some() {
-        use trx_core::RigFilterState;
         use trx_core::rig::state::RigSnapshot;
+        use trx_core::RigFilterState;
         let snap_json = serde_json::to_string(&RigSnapshot {
-            filter: Some(RigFilterState { bandwidth_hz: 3000, fir_taps: 64, cw_center_hz: 700 }),
+            filter: Some(RigFilterState {
+                bandwidth_hz: 3000,
+                fir_taps: 64,
+                cw_center_hz: 700,
+            }),
             ..minimal_snapshot()
         })
         .unwrap();
-        assert!(snap_json.contains("\"filter\""), "filter=Some should be serialized");
+        assert!(
+            snap_json.contains("\"filter\""),
+            "filter=Some should be serialized"
+        );
         assert!(snap_json.contains("\"bandwidth_hz\":3000"));
         assert!(snap_json.contains("\"fir_taps\":64"));
     }
@@ -304,15 +317,22 @@ mod tests {
             ..minimal_snapshot()
         })
         .unwrap();
-        assert!(!snap_json.contains("\"filter\""), "filter=None should be omitted from JSON");
+        assert!(
+            !snap_json.contains("\"filter\""),
+            "filter=None should be omitted from JSON"
+        );
     }
 
     #[test]
     fn filter_field_roundtrips() {
-        use trx_core::RigFilterState;
         use trx_core::rig::state::RigSnapshot;
+        use trx_core::RigFilterState;
         let orig = RigSnapshot {
-            filter: Some(RigFilterState { bandwidth_hz: 12000, fir_taps: 128, cw_center_hz: 700 }),
+            filter: Some(RigFilterState {
+                bandwidth_hz: 12000,
+                fir_taps: 128,
+                cw_center_hz: 700,
+            }),
             ..minimal_snapshot()
         };
         let json = serde_json::to_string(&orig).unwrap();
@@ -324,7 +344,7 @@ mod tests {
 
     fn minimal_snapshot() -> trx_core::rig::state::RigSnapshot {
         use trx_core::radio::freq::{Band, Freq};
-        use trx_core::rig::state::{RigSnapshot, RigMode};
+        use trx_core::rig::state::{RigMode, RigSnapshot};
         use trx_core::rig::{RigAccessMethod, RigCapabilities, RigInfo, RigStatus};
         RigSnapshot {
             info: RigInfo {
@@ -333,7 +353,11 @@ mod tests {
                 revision: "1".to_string(),
                 capabilities: RigCapabilities {
                     min_freq_step_hz: 1,
-                    supported_bands: vec![Band { low_hz: 14_000_000, high_hz: 14_350_000, tx_allowed: true }],
+                    supported_bands: vec![Band {
+                        low_hz: 14_000_000,
+                        high_hz: 14_350_000,
+                        tx_allowed: true,
+                    }],
                     supported_modes: vec![RigMode::USB],
                     num_vfos: 1,
                     lock: false,
@@ -349,7 +373,9 @@ mod tests {
                     filter_controls: true,
                     signal_meter: true,
                 },
-                access: RigAccessMethod::Tcp { addr: "127.0.0.1:1234".to_string() },
+                access: RigAccessMethod::Tcp {
+                    addr: "127.0.0.1:1234".to_string(),
+                },
             },
             status: RigStatus {
                 freq: Freq { hz: 14_074_000 },
