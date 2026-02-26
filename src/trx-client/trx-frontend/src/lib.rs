@@ -20,6 +20,7 @@ use trx_core::{DynResult, RigRequest, RigState};
 #[derive(Clone, Debug)]
 pub struct RemoteRigEntry {
     pub rig_id: String,
+    pub display_name: Option<String>,
     pub state: RigSnapshot,
     pub audio_port: Option<u16>,
 }

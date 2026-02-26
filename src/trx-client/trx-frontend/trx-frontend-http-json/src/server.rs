@@ -243,6 +243,7 @@ fn snapshot_remote_rigs(context: &FrontendRuntimeContext) -> Vec<RigEntry> {
                 .iter()
                 .map(|entry| RigEntry {
                     rig_id: entry.rig_id.clone(),
+                    display_name: entry.display_name.clone(),
                     state: entry.state.clone(),
                     audio_port: entry.audio_port,
                 })
