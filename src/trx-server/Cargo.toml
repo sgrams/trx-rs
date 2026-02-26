@@ -9,6 +9,7 @@ edition = "2021"
 build = "build.rs"
 
 [features]
+default = ["soapysdr"]
 soapysdr = ["dep:trx-backend-soapysdr", "trx-backend/soapysdr"]
 
 [dependencies]
