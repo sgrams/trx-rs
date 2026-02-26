@@ -278,7 +278,7 @@ fn build_sdr_rig_from_instance(
         })
         .collect();
 
-    let sdr_rig = trx_backend_soapysdr::SoapySdrRig::new_with_config(
+    let sdr_rig = trx_backend::SoapySdrRig::new_with_config(
         args,
         &channels,
         &rig_cfg.sdr.gain.mode,

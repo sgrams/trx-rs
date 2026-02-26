@@ -27,7 +27,6 @@ cpal = "0.15"
 opus = "0.3"
 trx-app = { path = "../trx-app" }
 trx-backend = { path = "trx-backend", features = ["soapysdr"] }
-trx-backend-soapysdr = { path = "trx-backend/trx-backend-soapysdr" }
 trx-core = { path = "../trx-core" }
 trx-aprs = { path = "../decoders/trx-aprs" }
 trx-cw = { path = "../decoders/trx-cw" }

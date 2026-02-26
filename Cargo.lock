@@ -2525,7 +2525,6 @@ dependencies = [
  "trx-app",
  "trx-aprs",
  "trx-backend",
- "trx-backend-soapysdr",
  "trx-core",
  "trx-cw",
  "trx-decode-log",
