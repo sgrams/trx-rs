@@ -121,28 +121,34 @@ pub trait RigCat: Rig + Send {
 
     fn unlock<'a>(&'a mut self) -> Pin<Box<dyn Future<Output = DynResult<()>> + Send + 'a>>;
 
-    fn as_audio_source(&self) -> Option<&dyn AudioSource> { None }
+    fn as_audio_source(&self) -> Option<&dyn AudioSource> {
+        None
+    }
 
     fn set_bandwidth<'a>(
         &'a mut self,
         _bandwidth_hz: u32,
     ) -> Pin<Box<dyn Future<Output = DynResult<()>> + Send + 'a>> {
-        Box::pin(std::future::ready(Err(Box::new(
-            response::RigError::not_supported("set_bandwidth"),
-        ) as Box<dyn std::error::Error + Send + Sync>)))
+        Box::pin(std::future::ready(Err(
+            Box::new(response::RigError::not_supported("set_bandwidth"))
+                as Box<dyn std::error::Error + Send + Sync>,
+        )))
     }
 
     fn set_fir_taps<'a>(
         &'a mut self,
         _taps: u32,
     ) -> Pin<Box<dyn Future<Output = DynResult<()>> + Send + 'a>> {
-        Box::pin(std::future::ready(Err(Box::new(
-            response::RigError::not_supported("set_fir_taps"),
-        ) as Box<dyn std::error::Error + Send + Sync>)))
+        Box::pin(std::future::ready(Err(
+            Box::new(response::RigError::not_supported("set_fir_taps"))
+                as Box<dyn std::error::Error + Send + Sync>,
+        )))
     }
 
     /// Return the current filter state if this backend supports filter controls.
-    fn filter_state(&self) -> Option<state::RigFilterState> { None }
+    fn filter_state(&self) -> Option<state::RigFilterState> {
+        None
+    }
 }
 
 /// Snapshot of a rig's status that every backend can expose.
