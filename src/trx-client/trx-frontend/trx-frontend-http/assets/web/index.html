@@ -116,96 +116,101 @@
           </div>
         </div>
       </div>
-      <div class="controls-row full-row">
-        <div class="controls-col label-below-col">
-          <div class="label"><span>Mode</span></div>
-          <div class="inline">
-            <select class="status-input" id="mode"></select>
-          </div>
-        </div>
-        <div class="controls-col controls-col-center">
-          <div class="jog-container">
-            <button id="jog-down" type="button" class="jog-btn">&minus;</button>
-            <div class="jog-wheel" id="jog-wheel">
-              <div class="jog-indicator" id="jog-indicator"></div>
+      <div class="full-row controls-tray-shell">
+        <div class="controls-tray-scroll">
+          <div class="controls-tray">
+            <div class="controls-row full-row">
+              <div class="controls-col label-below-col">
+                <div class="label"><span>Mode</span></div>
+                <div class="inline">
+                  <select class="status-input" id="mode"></select>
+                </div>
+              </div>
+              <div class="controls-col controls-col-center">
+                <div class="jog-container">
+                  <button id="jog-down" type="button" class="jog-btn">&minus;</button>
+                  <div class="jog-wheel" id="jog-wheel">
+                    <div class="jog-indicator" id="jog-indicator"></div>
+                  </div>
+                  <button id="jog-up" type="button" class="jog-btn">+</button>
+                </div>
+              </div>
+              <div class="controls-col controls-col-wfm label-below-col" id="wfm-controls-col" style="display:none;">
+                <div class="inline wfm-controls-inline">
+                  <label class="wfm-control">Deemphasis
+                    <select id="wfm-deemphasis" class="status-input">
+                      <option value="50">50 uS</option>
+                      <option value="75">75 uS</option>
+                    </select>
+                  </label>
+                  <label class="wfm-control">Audio
+                    <select id="wfm-audio-mode" class="status-input">
+                      <option value="stereo">Stereo</option>
+                      <option value="mono">Mono</option>
+                    </select>
+                  </label>
+                </div>
+                <div class="label"><span>WFM</span></div>
+              </div>
+              <div class="controls-col controls-col-power label-below-col" id="tx-power-col">
+                <div class="label"><span>Transmit / Power</span></div>
+                <div class="btn-grid">
+                  <button id="ptt-btn" type="button">Toggle PTT</button>
+                  <button id="power-btn" type="button">Toggle Power</button>
+                  <button id="lock-btn" type="button">Lock</button>
+                </div>
+              </div>
             </div>
-            <button id="jog-up" type="button" class="jog-btn">+</button>
+            <div class="full-row label-below-row" id="vfo-row">
+              <div class="label"><span>VFO</span></div>
+              <div class="vfo-picker" id="vfo-picker"></div>
+            </div>
+            <div class="full-row label-below-row">
+              <div class="label"><span>Signal</span></div>
+              <div class="signal" style="gap: 1rem;">
+                <div class="signal-bar"><div class="signal-bar-fill" id="signal-bar"></div></div>
+                <div class="signal-value" id="signal-value">--</div>
+              </div>
+              <div class="signal-measure">
+                <button id="sig-measure-btn" type="button">Measure</button>
+                <button id="sig-clear-btn" type="button">Clear</button>
+                <span id="sig-result"></span>
+              </div>
+            </div>
+            <div class="full-row label-below-row" id="tx-meters" style="display:none;">
+              <div class="label"><span>TX Meters</span></div>
+              <div class="meter" style="gap: 1rem; margin-bottom: 0.4rem;">
+                <div class="meter-bar"><div class="meter-fill" id="pwr-bar"></div></div>
+                <div class="meter-value" id="pwr-value">PWR --</div>
+              </div>
+              <div class="meter" style="gap: 1rem;">
+                <div class="meter-bar"><div class="meter-fill" id="swr-bar"></div></div>
+                <div class="meter-value" id="swr-value">SWR --</div>
+              </div>
+            </div>
+            <div id="tx-limit-row" style="display:none;">
+              <div class="label"><span>TX Limit — units depend on rig (percentage/watts)</span></div>
+              <div class="inline">
+                <input class="status-input" id="tx-limit" type="number" min="0" max="255" step="1" value="" placeholder="--" />
+                <button id="tx-limit-btn" type="button">Set</button>
+              </div>
+            </div>
+            <div class="full-row label-below-row" id="audio-row">
+              <div class="label"><span>Audio</span></div>
+              <div class="inline" style="gap: 0.6rem; flex-wrap: wrap; align-items: center;">
+                <button id="rx-audio-btn" type="button">RX Audio</button>
+                <button id="tx-audio-btn" type="button">TX Audio</button>
+                <label class="vol-label">RX<input type="range" id="rx-vol" min="0" max="100" value="80" class="vol-slider" /><small class="vol-pct" id="rx-vol-pct">80%</small></label>
+                <label class="vol-label">TX<input type="range" id="tx-vol" min="0" max="100" value="80" class="vol-slider" /><small class="vol-pct" id="tx-vol-pct">80%</small></label>
+                <div id="audio-level">
+                  <div id="audio-level-fill"></div>
+                </div>
+                <small id="audio-status" style="min-width: 60px;">Off</small>
+              </div>
+            </div>
           </div>
         </div>
-        <div class="controls-col controls-col-wfm label-below-col" id="wfm-controls-col" style="display:none;">
-          <div class="inline wfm-controls-inline">
-            <label class="wfm-control">Deemphasis
-              <select id="wfm-deemphasis" class="status-input">
-                <option value="50">50 uS</option>
-                <option value="75">75 uS</option>
-              </select>
-            </label>
-            <label class="wfm-control">Audio
-              <select id="wfm-audio-mode" class="status-input">
-                <option value="stereo">Stereo</option>
-                <option value="mono">Mono</option>
-              </select>
-            </label>
-          </div>
-          <div class="label"><span>WFM</span></div>
-        </div>
-        <div class="controls-col controls-col-power label-below-col" id="tx-power-col">
-          <div class="label"><span>Transmit / Power</span></div>
-          <div class="btn-grid">
-            <button id="ptt-btn" type="button">Toggle PTT</button>
-            <button id="power-btn" type="button">Toggle Power</button>
-            <button id="lock-btn" type="button">Lock</button>
-          </div>
-        </div>
       </div>
-      <div class="full-row label-below-row" id="vfo-row">
-        <div class="label"><span>VFO</span></div>
-        <div class="vfo-picker" id="vfo-picker"></div>
-      </div>
-      <div class="full-row label-below-row">
-        <div class="label"><span>Signal</span></div>
-        <div class="signal" style="gap: 1rem;">
-          <div class="signal-bar"><div class="signal-bar-fill" id="signal-bar"></div></div>
-          <div class="signal-value" id="signal-value">--</div>
-        </div>
-        <div class="signal-measure">
-          <button id="sig-measure-btn" type="button">Measure</button>
-          <button id="sig-clear-btn" type="button">Clear</button>
-          <span id="sig-result"></span>
-        </div>
-      </div>
-      <div class="full-row label-below-row" id="tx-meters" style="display:none;">
-        <div class="label"><span>TX Meters</span></div>
-        <div class="meter" style="gap: 1rem; margin-bottom: 0.4rem;">
-          <div class="meter-bar"><div class="meter-fill" id="pwr-bar"></div></div>
-          <div class="meter-value" id="pwr-value">PWR --</div>
-        </div>
-        <div class="meter" style="gap: 1rem;">
-          <div class="meter-bar"><div class="meter-fill" id="swr-bar"></div></div>
-          <div class="meter-value" id="swr-value">SWR --</div>
-        </div>
-      </div>
-      <div id="tx-limit-row" style="display:none;">
-        <div class="label"><span>TX Limit — units depend on rig (percentage/watts)</span></div>
-        <div class="inline">
-          <input class="status-input" id="tx-limit" type="number" min="0" max="255" step="1" value="" placeholder="--" />
-          <button id="tx-limit-btn" type="button">Set</button>
-        </div>
-      </div>
-    </div>
-    <div class="full-row label-below-row" id="audio-row">
-      <div class="label"><span>Audio</span></div>
-      <div class="inline" style="gap: 0.6rem; flex-wrap: wrap; align-items: center;">
-        <button id="rx-audio-btn" type="button">RX Audio</button>
-        <button id="tx-audio-btn" type="button">TX Audio</button>
-        <label class="vol-label">RX<input type="range" id="rx-vol" min="0" max="100" value="80" class="vol-slider" /><small class="vol-pct" id="rx-vol-pct">80%</small></label>
-        <label class="vol-label">TX<input type="range" id="tx-vol" min="0" max="100" value="80" class="vol-slider" /><small class="vol-pct" id="tx-vol-pct">80%</small></label>
-        <div id="audio-level">
-          <div id="audio-level-fill"></div>
-        </div>
-        <small id="audio-status" style="min-width: 60px;">Off</small>
-      </div>
-    </div>
     </div>
     </div>
     <div id="tab-plugins" class="tab-panel" style="display:none;">
