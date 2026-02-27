@@ -517,8 +517,20 @@ fn spawn_rig_audio_stack(
                 loop {
                     match sdr_rx.recv().await {
                         Ok(frame) => {
-                            let _ = pcm_tx_clone.send(frame.clone());
-                            match encoder.encode_float(&frame, &mut opus_buf) {
+                            let pcm_frame = match sdr_channels {
+                                1 => frame,
+                                2 => {
+                                    let mut stereo = Vec::with_capacity(frame.len() * 2);
+                                    for sample in frame {
+                                        stereo.push(sample);
+                                        stereo.push(sample);
+                                    }
+                                    stereo
+                                }
+                                _ => unreachable!("validated above"),
+                            };
+                            let _ = pcm_tx_clone.send(pcm_frame.clone());
+                            match encoder.encode_float(&pcm_frame, &mut opus_buf) {
                                 Ok(len) => {
                                     let pkt = Bytes::copy_from_slice(&opus_buf[..len]);
                                     let _ = rx_audio_tx_sdr.send(pkt);
