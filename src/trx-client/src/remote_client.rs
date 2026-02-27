@@ -40,7 +40,7 @@ impl RemoteEndpoint {
     }
 }
 
-const SPECTRUM_POLL_INTERVAL: Duration = Duration::from_millis(200);
+const SPECTRUM_POLL_INTERVAL: Duration = Duration::from_millis(100);
 
 pub struct RemoteClientConfig {
     pub addr: String,

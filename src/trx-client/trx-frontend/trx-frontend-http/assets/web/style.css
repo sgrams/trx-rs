@@ -27,7 +27,7 @@
   --wavelength-fg: #8da3be;
   --spectrum-bg: #0a0f18;
   --jog-wheel-size: 83.2px;
-  --header-waterfall-overlap: 3.2rem;
+  --header-waterfall-overlap: 3.8rem;
 }
 
 [data-theme="light"] {
@@ -667,7 +667,7 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   .card { padding: 0.7rem 0.7rem 1rem; }
   button { min-height: 2.8rem; font-size: 0.95rem; }
   input.status-input, select.status-input { font-size: 1.1rem; }
-  :root { --header-waterfall-overlap: 2.2rem; }
+  :root { --header-waterfall-overlap: 2.6rem; }
   .controls-tray { width: max(100%, 52rem); padding-left: 0.85rem; padding-right: 0.85rem; }
   .freq-inline { gap: 0.5rem; }
   .freq-inline { flex-wrap: wrap; }

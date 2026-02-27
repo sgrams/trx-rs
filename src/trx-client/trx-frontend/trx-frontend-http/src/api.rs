@@ -301,7 +301,7 @@ pub async fn spectrum(
     let context_updates = context.get_ref().clone();
     let mut last_revision: Option<u64> = None;
     let updates =
-        IntervalStream::new(time::interval(Duration::from_millis(200))).filter_map(move |_| {
+        IntervalStream::new(time::interval(Duration::from_millis(100))).filter_map(move |_| {
             let context = context_updates.clone();
             std::future::ready({
                 let next = context
