@@ -7,10 +7,11 @@ pub mod dsp;
 pub mod real_iq_source;
 
 use std::pin::Pin;
+use std::sync::{Arc, Mutex};
 
 use trx_core::radio::freq::{Band, Freq};
 use trx_core::rig::response::RigError;
-use trx_core::rig::state::RigFilterState;
+use trx_core::rig::state::{RigFilterState, SpectrumData};
 use trx_core::rig::{
     AudioSource, Rig, RigAccessMethod, RigCapabilities, RigCat, RigInfo, RigStatusFuture,
 };
@@ -27,6 +28,8 @@ pub struct SoapySdrRig {
     /// Current filter state of the primary channel (for filter_controls support).
     bandwidth_hz: u32,
     fir_taps: u32,
+    /// Shared spectrum magnitude buffer populated by the IQ read loop.
+    spectrum_buf: Arc<Mutex<Option<Vec<f32>>>>,
 }
 
 impl SoapySdrRig {
@@ -141,6 +144,8 @@ impl SoapySdrRig {
             .map(|&(_, _, bw, taps)| (bw, taps as u32))
             .unwrap_or((3000, 64));
 
+        let spectrum_buf = pipeline.spectrum_buf.clone();
+
         Ok(Self {
             info,
             freq: initial_freq,
@@ -149,6 +154,7 @@ impl SoapySdrRig {
             primary_channel_idx: 0,
             bandwidth_hz,
             fir_taps,
+            spectrum_buf,
         })
     }
 
@@ -354,6 +360,15 @@ impl RigCat for SoapySdrRig {
             bandwidth_hz: self.bandwidth_hz,
             fir_taps: self.fir_taps,
             cw_center_hz: 700,
+        })
+    }
+
+    fn get_spectrum(&self) -> Option<SpectrumData> {
+        let bins = self.spectrum_buf.lock().ok()?.clone()?;
+        Some(SpectrumData {
+            bins,
+            center_hz: self.freq.hz,
+            sample_rate: self.pipeline.sdr_sample_rate,
         })
     }
 

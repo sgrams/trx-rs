@@ -403,6 +403,10 @@ impl ChannelDsp {
 pub struct SdrPipeline {
     pub pcm_senders: Vec<broadcast::Sender<Vec<f32>>>,
     pub channel_dsps: Vec<Arc<Mutex<ChannelDsp>>>,
+    /// Latest FFT magnitude bins (dBFS, FFT-shifted), updated ~10 Hz.
+    pub spectrum_buf: Arc<Mutex<Option<Vec<f32>>>>,
+    /// SDR capture sample rate, needed by `SoapySdrRig::get_spectrum`.
+    pub sdr_sample_rate: u32,
 }
 
 impl SdrPipeline {
@@ -438,17 +442,21 @@ impl SdrPipeline {
         }
 
         let thread_dsps: Vec<Arc<Mutex<ChannelDsp>>> = channel_dsps.clone();
+        let spectrum_buf: Arc<Mutex<Option<Vec<f32>>>> = Arc::new(Mutex::new(None));
+        let thread_spectrum_buf = spectrum_buf.clone();
 
         std::thread::Builder::new()
             .name("sdr-iq-read".to_string())
             .spawn(move || {
-                iq_read_loop(source, sdr_sample_rate, thread_dsps, iq_tx);
+                iq_read_loop(source, sdr_sample_rate, thread_dsps, iq_tx, thread_spectrum_buf);
             })
             .expect("failed to spawn sdr-iq-read thread");
 
         Self {
             pcm_senders,
             channel_dsps,
+            spectrum_buf,
+            sdr_sample_rate,
         }
     }
 }
@@ -459,11 +467,18 @@ impl SdrPipeline {
 
 pub const IQ_BLOCK_SIZE: usize = 4096;
 
+/// Number of FFT bins for the spectrum display.
+const SPECTRUM_FFT_SIZE: usize = 1024;
+
+/// Update the spectrum buffer every this many IQ blocks (~10 Hz at 1.92 MHz / 4096 block).
+const SPECTRUM_UPDATE_BLOCKS: usize = 4;
+
 fn iq_read_loop(
     mut source: Box<dyn IqSource>,
     sdr_sample_rate: u32,
     channel_dsps: Vec<Arc<Mutex<ChannelDsp>>>,
     iq_tx: broadcast::Sender<Vec<Complex<f32>>>,
+    spectrum_buf: Arc<Mutex<Option<Vec<f32>>>>,
 ) {
     let mut block = vec![Complex::new(0.0_f32, 0.0_f32); IQ_BLOCK_SIZE];
     let block_duration_ms = if sdr_sample_rate > 0 {
@@ -471,10 +486,18 @@ fn iq_read_loop(
     } else {
         1
     };
-    // Blocking sources (real hardware) already pace the loop inside read_into.
-    // Non-blocking sources (MockIqSource) need an explicit sleep to avoid
-    // busy-spinning at 100 % CPU.
     let throttle = !source.is_blocking();
+
+    // Pre-compute Hann window coefficients.
+    let hann_window: Vec<f32> = (0..SPECTRUM_FFT_SIZE)
+        .map(|i| {
+            0.5 * (1.0 - (2.0 * PI * i as f32 / (SPECTRUM_FFT_SIZE - 1) as f32).cos())
+        })
+        .collect();
+
+    let mut planner = FftPlanner::<f32>::new();
+    let fft = planner.plan_fft_forward(SPECTRUM_FFT_SIZE);
+    let mut spectrum_counter: usize = 0;
 
     loop {
         let n = match source.read_into(&mut block) {
@@ -501,6 +524,35 @@ fn iq_read_loop(
                 Err(e) => {
                     tracing::error!("channel DSP mutex poisoned: {}", e);
                 }
+            }
+        }
+
+        // Periodically compute and store a spectrum snapshot.
+        spectrum_counter += 1;
+        if spectrum_counter >= SPECTRUM_UPDATE_BLOCKS {
+            spectrum_counter = 0;
+            let take = n.min(SPECTRUM_FFT_SIZE);
+            let mut buf: Vec<FftComplex<f32>> = samples[..take]
+                .iter()
+                .enumerate()
+                .map(|(i, s)| FftComplex::new(s.re * hann_window[i], s.im * hann_window[i]))
+                .collect();
+            buf.resize(SPECTRUM_FFT_SIZE, FftComplex::new(0.0, 0.0));
+            fft.process(&mut buf);
+
+            // FFT-shift: rearrange so negative frequencies come first (DC in centre).
+            let half = SPECTRUM_FFT_SIZE / 2;
+            let bins: Vec<f32> = buf[half..]
+                .iter()
+                .chain(buf[..half].iter())
+                .map(|c| {
+                    let mag = (c.re * c.re + c.im * c.im).sqrt() / SPECTRUM_FFT_SIZE as f32;
+                    20.0 * (mag.max(1e-10_f32)).log10()
+                })
+                .collect();
+
+            if let Ok(mut guard) = spectrum_buf.lock() {
+                *guard = Some(bins);
             }
         }
 

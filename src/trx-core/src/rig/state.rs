@@ -46,6 +46,10 @@ pub struct RigState {
     /// Skipped in serde; flows into RigSnapshot via snapshot().
     #[serde(skip)]
     pub filter: Option<RigFilterState>,
+    /// Latest spectrum frame from SDR backends.
+    /// Skipped in serde (not part of persistent state); flows into RigSnapshot on demand.
+    #[serde(skip)]
+    pub spectrum: Option<SpectrumData>,
     #[serde(default, skip_serializing)]
     pub aprs_decode_reset_seq: u64,
     #[serde(default, skip_serializing)]
@@ -132,6 +136,7 @@ impl RigState {
             cw_wpm: 15,
             cw_tone_hz: 700,
             filter: None,
+            spectrum: None,
             aprs_decode_reset_seq: 0,
             cw_decode_reset_seq: 0,
             ft8_decode_reset_seq: 0,
@@ -192,6 +197,7 @@ impl RigState {
             ft8_decode_enabled: snapshot.ft8_decode_enabled,
             wspr_decode_enabled: snapshot.wspr_decode_enabled,
             filter: snapshot.filter,
+            spectrum: None, // spectrum flows through /api/spectrum, not persistent state
             aprs_decode_reset_seq: 0,
             cw_decode_reset_seq: 0,
             ft8_decode_reset_seq: 0,
@@ -230,6 +236,7 @@ impl RigState {
             ft8_decode_enabled: self.ft8_decode_enabled,
             wspr_decode_enabled: self.wspr_decode_enabled,
             filter: self.filter.clone(),
+            spectrum: self.spectrum.clone(),
         })
     }
 
@@ -262,6 +269,17 @@ pub struct RigFilterState {
     pub bandwidth_hz: u32,
     pub fir_taps: u32,
     pub cw_center_hz: u32,
+}
+
+/// Spectrum data from SDR backends (FFT magnitude over the full capture bandwidth).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SpectrumData {
+    /// FFT magnitude bins in dBFS, FFT-shifted so DC (centre frequency) is at index N/2.
+    pub bins: Vec<f32>,
+    /// Centre frequency of the SDR capture in Hz.
+    pub center_hz: u64,
+    /// SDR capture sample rate in Hz; the displayed span is ±sample_rate/2.
+    pub sample_rate: u32,
 }
 
 /// Read-only projection of state shared with clients.
@@ -300,4 +318,6 @@ pub struct RigSnapshot {
     pub cw_tone_hz: u32,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub filter: Option<RigFilterState>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub spectrum: Option<SpectrumData>,
 }

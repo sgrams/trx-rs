@@ -449,6 +449,13 @@ async fn process_command(
             let _ = ctx.state_tx.send(ctx.state.clone());
             return snapshot_from(ctx.state);
         }
+        RigCommand::GetSpectrum => {
+            // Fetch current spectrum and embed it in a one-shot snapshot.
+            ctx.state.spectrum = ctx.rig.get_spectrum();
+            let result = snapshot_from(ctx.state);
+            ctx.state.spectrum = None; // don't persist in ongoing state
+            return result;
+        }
         _ => {} // fall through to normal rig handler
     }
 

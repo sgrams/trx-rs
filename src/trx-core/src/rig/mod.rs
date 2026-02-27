@@ -149,6 +149,11 @@ pub trait RigCat: Rig + Send {
     fn filter_state(&self) -> Option<state::RigFilterState> {
         None
     }
+
+    /// Return the latest spectrum frame if this backend supports spectrum output.
+    fn get_spectrum(&self) -> Option<state::SpectrumData> {
+        None
+    }
 }
 
 /// Snapshot of a rig's status that every backend can expose.

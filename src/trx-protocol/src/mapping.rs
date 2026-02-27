@@ -47,6 +47,7 @@ pub fn client_command_to_rig(cmd: ClientCommand) -> RigCommand {
         ClientCommand::ResetWsprDecoder => RigCommand::ResetWsprDecoder,
         ClientCommand::SetBandwidth { bandwidth_hz } => RigCommand::SetBandwidth(bandwidth_hz),
         ClientCommand::SetFirTaps { taps } => RigCommand::SetFirTaps(taps),
+        ClientCommand::GetSpectrum => RigCommand::GetSpectrum,
     }
 }
 
@@ -86,6 +87,7 @@ pub fn rig_command_to_client(cmd: RigCommand) -> ClientCommand {
         RigCommand::ResetWsprDecoder => ClientCommand::ResetWsprDecoder,
         RigCommand::SetBandwidth(bandwidth_hz) => ClientCommand::SetBandwidth { bandwidth_hz },
         RigCommand::SetFirTaps(taps) => ClientCommand::SetFirTaps { taps },
+        RigCommand::GetSpectrum => ClientCommand::GetSpectrum,
     }
 }
 

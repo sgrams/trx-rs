@@ -514,7 +514,8 @@ pub fn command_from_rig_command(cmd: RigCommand) -> Box<dyn RigCommandHandler> {
         | RigCommand::ResetFt8Decoder
         | RigCommand::ResetWsprDecoder
         | RigCommand::SetBandwidth(_)
-        | RigCommand::SetFirTaps(_) => Box::new(GetSnapshotCommand),
+        | RigCommand::SetFirTaps(_)
+        | RigCommand::GetSpectrum => Box::new(GetSnapshotCommand),
     }
 }
 
