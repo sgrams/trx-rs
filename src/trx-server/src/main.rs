@@ -488,11 +488,11 @@ fn spawn_rig_audio_stack(
                 "[{}] using SDR audio source — cpal capture disabled",
                 rig_cfg.id
             );
-            let pcm_tx_clone     = pcm_tx.clone();
-            let rx_audio_tx_sdr  = rx_audio_tx.clone();
-            let sdr_sample_rate  = rig_cfg.audio.sample_rate;
-            let sdr_channels     = rig_cfg.audio.channels;
-            let sdr_bitrate_bps  = rig_cfg.audio.bitrate_bps;
+            let pcm_tx_clone = pcm_tx.clone();
+            let rx_audio_tx_sdr = rx_audio_tx.clone();
+            let sdr_sample_rate = rig_cfg.audio.sample_rate;
+            let sdr_channels = rig_cfg.audio.channels;
+            let sdr_bitrate_bps = rig_cfg.audio.bitrate_bps;
             handles.push(tokio::spawn(async move {
                 let opus_ch = match sdr_channels {
                     1 => opus::Channels::Mono,
@@ -502,17 +502,14 @@ fn spawn_rig_audio_stack(
                         return;
                     }
                 };
-                let mut encoder = match opus::Encoder::new(
-                    sdr_sample_rate,
-                    opus_ch,
-                    opus::Application::Audio,
-                ) {
-                    Ok(e) => e,
-                    Err(e) => {
-                        tracing::error!("SDR audio: Opus encoder init failed: {}", e);
-                        return;
-                    }
-                };
+                let mut encoder =
+                    match opus::Encoder::new(sdr_sample_rate, opus_ch, opus::Application::Audio) {
+                        Ok(e) => e,
+                        Err(e) => {
+                            tracing::error!("SDR audio: Opus encoder init failed: {}", e);
+                            return;
+                        }
+                    };
                 if let Err(e) = encoder.set_bitrate(opus::Bitrate::Bits(sdr_bitrate_bps as i32)) {
                     tracing::warn!("SDR audio: set_bitrate failed: {}", e);
                 }

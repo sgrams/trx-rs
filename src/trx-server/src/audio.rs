@@ -479,9 +479,14 @@ pub fn spawn_audio_playback(
     let device_name = cfg.device.clone();
 
     std::thread::spawn(move || {
-        if let Err(e) =
-            run_playback(sample_rate, channels, frame_duration_ms, device_name, rx, shutdown_rx)
-        {
+        if let Err(e) = run_playback(
+            sample_rate,
+            channels,
+            frame_duration_ms,
+            device_name,
+            rx,
+            shutdown_rx,
+        ) {
             error!("Audio playback thread error: {}", e);
         }
     })

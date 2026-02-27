@@ -172,10 +172,8 @@ impl BlockFirFilter {
         let ifft = planner.plan_fft_inverse(fft_size);
 
         // Pre-compute H(f) = FFT of zero-padded coefficients.
-        let mut h_buf: Vec<FftComplex<f32>> = coeffs
-            .iter()
-            .map(|&c| FftComplex::new(c, 0.0))
-            .collect();
+        let mut h_buf: Vec<FftComplex<f32>> =
+            coeffs.iter().map(|&c| FftComplex::new(c, 0.0)).collect();
         h_buf.resize(fft_size, FftComplex::new(0.0, 0.0));
         fft.process(&mut h_buf);
 
@@ -384,8 +382,7 @@ impl ChannelDsp {
             mixed_q[idx] = sample.re * lo_im + sample.im * lo_re;
         }
         // Advance phase with wrap to avoid precision loss.
-        self.mixer_phase =
-            (phase_start + n as f64 * phase_inc).rem_euclid(std::f64::consts::TAU);
+        self.mixer_phase = (phase_start + n as f64 * phase_inc).rem_euclid(std::f64::consts::TAU);
 
         // --- 2. FFT FIR (overlap-save) --------------------------------------
         let filtered_i = self.lpf_i.filter_block(&mixed_i);
@@ -471,8 +468,7 @@ impl SdrPipeline {
         let thread_dsps: Vec<Arc<Mutex<ChannelDsp>>> = channel_dsps.clone();
         let spectrum_buf: Arc<Mutex<Option<Vec<f32>>>> = Arc::new(Mutex::new(None));
         let thread_spectrum_buf = spectrum_buf.clone();
-        let retune_cmd: Arc<std::sync::Mutex<Option<f64>>> =
-            Arc::new(std::sync::Mutex::new(None));
+        let retune_cmd: Arc<std::sync::Mutex<Option<f64>>> = Arc::new(std::sync::Mutex::new(None));
         let thread_retune_cmd = retune_cmd.clone();
 
         std::thread::Builder::new()
@@ -529,9 +525,7 @@ fn iq_read_loop(
 
     // Pre-compute Hann window coefficients.
     let hann_window: Vec<f32> = (0..SPECTRUM_FFT_SIZE)
-        .map(|i| {
-            0.5 * (1.0 - (2.0 * PI * i as f32 / (SPECTRUM_FFT_SIZE - 1) as f32).cos())
-        })
+        .map(|i| 0.5 * (1.0 - (2.0 * PI * i as f32 / (SPECTRUM_FFT_SIZE - 1) as f32).cos()))
         .collect();
 
     let mut planner = FftPlanner::<f32>::new();
@@ -683,16 +677,7 @@ mod tests {
     #[test]
     fn channel_dsp_processes_silence() {
         let (pcm_tx, _pcm_rx) = broadcast::channel::<Vec<f32>>(8);
-        let mut dsp = ChannelDsp::new(
-            0.0,
-            &RigMode::USB,
-            48_000,
-            8_000,
-            20,
-            3000,
-            31,
-            pcm_tx,
-        );
+        let mut dsp = ChannelDsp::new(0.0, &RigMode::USB, 48_000, 8_000, 20, 3000, 31, pcm_tx);
         let block = vec![Complex::new(0.0_f32, 0.0_f32); 4096];
         dsp.process_block(&block);
     }

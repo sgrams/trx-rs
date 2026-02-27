@@ -2426,6 +2426,10 @@ let _bwDragEdge     = null; // "left" | "right" | null
 let _bwDragStartX   = 0;
 let _bwDragStartBwHz = 0;
 
+function spectrumBgColor() {
+  return currentTheme() === "light" ? "#eef3fb" : "#0a0f18";
+}
+
 // Returns { loHz, hiHz, visLoHz, visHiHz, fullSpanHz, visSpanHz } and clamps
 // panFrac so the view never scrolls past the edges.
 function spectrumVisibleRange(data) {
@@ -2506,7 +2510,7 @@ function stopSpectrumStreaming() {
 function clearSpectrumCanvas() {
   if (!spectrumCanvas) return;
   const ctx = spectrumCanvas.getContext("2d");
-  ctx.fillStyle = "#0a0f18";
+  ctx.fillStyle = spectrumBgColor();
   ctx.fillRect(0, 0, spectrumCanvas.width, spectrumCanvas.height);
 }
 
@@ -2530,7 +2534,7 @@ function drawSpectrum(data) {
   const n     = bins.length;
 
   // Background
-  ctx.fillStyle = "#0a0f18";
+  ctx.fillStyle = spectrumBgColor();
   ctx.fillRect(0, 0, W, H);
 
   if (!n) return;
@@ -2628,7 +2632,7 @@ function drawSpectrum(data) {
       ctx.closePath();
       ctx.fill();
       // Tab text
-      ctx.fillStyle = "#0a0f18";
+      ctx.fillStyle = spectrumBgColor();
       ctx.textAlign = "left";
       ctx.fillText(bwText, tabX + PAD, TAB_H - 4 * dpr);
       ctx.restore();

@@ -54,7 +54,7 @@ pub struct RigInstanceConfig {
 impl Default for RigInstanceConfig {
     fn default() -> Self {
         Self {
-            id: String::new(),  // Empty by default so auto-generation triggers in resolved_rigs()
+            id: String::new(), // Empty by default so auto-generation triggers in resolved_rigs()
             name: None,
             rig: RigConfig::default(),
             behavior: BehaviorConfig::default(),
@@ -634,21 +634,13 @@ impl ServerConfig {
                 .map(|(idx, rig)| {
                     let id = if rig.id.trim().is_empty() {
                         // Generate ID from model name with counter.
-                        let model = rig
-                            .rig
-                            .model
-                            .as_deref()
-                            .unwrap_or("unknown")
-                            .to_lowercase();
+                        let model = rig.rig.model.as_deref().unwrap_or("unknown").to_lowercase();
                         format!("{}_{}", model, idx)
                     } else {
                         rig.id.clone()
                     };
 
-                    RigInstanceConfig {
-                        id,
-                        ..rig.clone()
-                    }
+                    RigInstanceConfig { id, ..rig.clone() }
                 })
                 .collect();
         }

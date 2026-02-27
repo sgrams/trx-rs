@@ -25,6 +25,7 @@
   --filter-fg: #e7edf9;
   --filter-border: #385577;
   --wavelength-fg: #8da3be;
+  --spectrum-bg: #0a0f18;
   --jog-wheel-size: 83.2px;
 }
 
@@ -54,6 +55,7 @@
   --filter-fg: #1f2937;
   --filter-border: #b8c5da;
   --wavelength-fg: #6b7280;
+  --spectrum-bg: #eef3fb;
 }
 
 body { font-family: sans-serif; margin: 0; min-height: 100vh; box-sizing: border-box; display: flex; align-items: flex-start; justify-content: center; padding-top: 2em; background: var(--bg); color: var(--text); }
@@ -193,7 +195,7 @@ input.status-input, select.status-input { width: 100%; padding: 0.45rem 0.5rem; 
   border-right: 1px solid var(--border-light);
   border-radius: 0;
   height: 100%;
-  padding: 0 0.8rem;
+  padding: 0 0.65rem;
   font-size: 0.92rem;
   background: var(--input-bg);
   color: var(--text-muted);
@@ -238,8 +240,9 @@ button:disabled { opacity: 0.6; cursor: not-allowed; }
 .hint { color: var(--text-muted); font-size: 0.85rem; }
 .inline { display: flex; gap: 0.5rem; align-items: center; }
 .freq-inline {
+  gap: 0.35rem;
   align-items: flex-start;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
 }
 .freq-field {
   display: grid;
@@ -253,6 +256,10 @@ button:disabled { opacity: 0.6; cursor: not-allowed; }
 .frequency-col {
   flex: 1 1 auto;
   min-width: 0;
+}
+.center-frequency-col {
+  flex: 0 1 8.75rem;
+  min-width: 7.75rem;
 }
 .frequency-col input.status-input {
   width: 100%;
@@ -285,7 +292,7 @@ button:disabled { opacity: 0.6; cursor: not-allowed; }
   order: 1;
 }
 .wavelength-display {
-  min-width: 6.2rem;
+  min-width: 5.2rem;
   height: 3.35rem;
   padding: 0 0.7rem;
   border: 1px solid var(--border-light);
@@ -568,6 +575,8 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   .card { padding: 1rem; }
   button { min-height: 2.8rem; font-size: 0.95rem; }
   input.status-input, select.status-input { font-size: 1.1rem; }
+  .freq-inline { gap: 0.5rem; }
+  .freq-inline { flex-wrap: wrap; }
   .header-text { width: auto; min-width: 0; flex: 0 1 auto; }
   .header-signal-wrap { display: none; }
   .header-right { align-items: flex-end; }
@@ -599,7 +608,7 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   display: block;
   width: 100%;
   height: 160px;
-  background: #0a0f18;
+  background: var(--spectrum-bg);
   border-radius: 6px 6px 0 0;
   cursor: crosshair;
   touch-action: none;
