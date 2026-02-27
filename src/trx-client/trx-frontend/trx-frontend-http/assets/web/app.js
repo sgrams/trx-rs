@@ -238,10 +238,12 @@ function applyCapabilities(caps) {
 
   // PTT / TX controls
   const pttBtn = document.getElementById("ptt-btn");
+  const txPowerCol = document.getElementById("tx-power-col");
   const txMetersRow = document.getElementById("tx-meters");
   const txAudioBtn = document.getElementById("tx-audio-btn");
   const txVolSlider = document.getElementById("tx-vol");
   const txVolControl = txVolSlider ? txVolSlider.closest(".vol-label") : null;
+  if (txPowerCol) txPowerCol.style.display = caps.tx ? "" : "none";
   if (pttBtn) pttBtn.style.display = caps.tx ? "" : "none";
   if (txMetersRow) txMetersRow.style.display = caps.tx ? "" : "none";
   if (txAudioBtn) txAudioBtn.style.display = caps.tx ? "" : "none";
