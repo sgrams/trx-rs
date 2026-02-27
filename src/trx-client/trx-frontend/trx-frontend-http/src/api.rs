@@ -299,9 +299,9 @@ pub async fn spectrum(
     context: web::Data<Arc<FrontendRuntimeContext>>,
 ) -> Result<HttpResponse, Error> {
     let context_updates = context.get_ref().clone();
-    let updates = IntervalStream::new(time::interval(Duration::from_millis(200))).scan(
-        None::<String>,
-        move |last_json, _| {
+    let mut last_json: Option<String> = None;
+    let updates =
+        IntervalStream::new(time::interval(Duration::from_millis(200))).filter_map(move |_| {
             let context = context_updates.clone();
             std::future::ready({
                 let next_json = context
@@ -313,11 +313,11 @@ pub async fn spectrum(
                 let payload = match (last_json.as_ref(), next_json) {
                     (Some(prev), Some(next)) if prev == &next => None,
                     (_, Some(next)) => {
-                        *last_json = Some(next.clone());
+                        last_json = Some(next.clone());
                         Some(next)
                     }
                     (Some(_), None) => {
-                        *last_json = None;
+                        last_json = None;
                         Some("null".to_string())
                     }
                     (None, None) => None,
@@ -325,8 +325,7 @@ pub async fn spectrum(
 
                 payload.map(|json| Ok::<Bytes, Error>(Bytes::from(format!("data: {json}\n\n"))))
             })
-        },
-    );
+        });
 
     let pings = IntervalStream::new(time::interval(Duration::from_secs(15)))
         .map(|_| Ok::<Bytes, Error>(Bytes::from(": ping\n\n")));
