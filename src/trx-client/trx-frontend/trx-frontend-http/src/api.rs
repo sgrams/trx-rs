@@ -311,7 +311,7 @@ pub async fn spectrum(
                     .map(|g| g.snapshot());
 
                 let payload = match next {
-                    Some((revision, frame)) if last_revision == Some(revision) => None,
+                    Some((revision, _frame)) if last_revision == Some(revision) => None,
                     Some((revision, Some(frame))) => {
                         last_revision = Some(revision);
                         serde_json::to_string(&frame).ok()
