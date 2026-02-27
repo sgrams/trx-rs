@@ -873,7 +873,7 @@ function render(update) {
     const firSelect = document.getElementById("fir-taps-select");
     if (bwSlider && typeof update.filter.bandwidth_hz === "number") {
       bwSlider.value = update.filter.bandwidth_hz;
-      if (bwValue) bwValue.textContent = (update.filter.bandwidth_hz / 1000).toFixed(1) + " kHz";
+      if (bwValue) bwValue.textContent = formatBwLabel(update.filter.bandwidth_hz);
     }
     if (firSelect && typeof update.filter.fir_taps === "number") {
       firSelect.value = String(update.filter.fir_taps);
@@ -893,6 +893,13 @@ function render(update) {
   if (update.status && update.status.mode) {
     const mode = normalizeMode(update.status.mode);
     modeEl.value = mode ? mode.toUpperCase() : "";
+    // When filter panel is active (SDR backend), update the BW slider range
+    // to match the new mode — but only if the server hasn't already sent a
+    // filter state that overrides it.
+    const fp = document.getElementById("filters-panel");
+    if (fp && fp.style.display !== "none" && !update.filter) {
+      applyBwDefaultForMode(mode, false);
+    }
   }
   const modeUpper = update.status && update.status.mode ? normalizeMode(update.status.mode).toUpperCase() : "";
   const aprsStatus = document.getElementById("aprs-status");
@@ -1423,6 +1430,8 @@ async function applyModeFromPicker() {
   try {
     await postPath(`/set_mode?mode=${encodeURIComponent(mode)}`);
     showHint("Mode set", 1500);
+    // Apply sensible default bandwidth for the new mode and push to server.
+    await applyBwDefaultForMode(mode, true);
   } catch (err) {
     showHint("Set mode failed", 2000);
     console.error(err);
@@ -1475,6 +1484,46 @@ lockBtn.addEventListener("click", async () => {
 });
 
 // --- Filter controls ---
+
+// Per-mode defaults: [default bandwidth Hz, min Hz, max Hz, step Hz]
+const MODE_BW_DEFAULTS = {
+  CW:     [500,    50,    2_000,  50],
+  CWR:    [500,    50,    2_000,  50],
+  LSB:    [2_700,  300,   6_000,  100],
+  USB:    [2_700,  300,   6_000,  100],
+  AM:     [6_000,  500,   15_000, 500],
+  FM:     [12_500, 2_500, 25_000, 500],
+  WFM:    [75_000, 50_000,200_000,5_000],
+  DIG:    [3_000,  300,   6_000,  100],
+  PKT:    [3_000,  300,   6_000,  100],
+};
+const MODE_BW_FALLBACK = [3_000, 300, 500_000, 100];
+
+function mwDefaultsForMode(mode) {
+  return MODE_BW_DEFAULTS[(mode || "").toUpperCase()] || MODE_BW_FALLBACK;
+}
+
+function formatBwLabel(hz) {
+  if (hz >= 1000) return (hz / 1000).toFixed(hz % 1000 === 0 ? 0 : 1) + " kHz";
+  return hz + " Hz";
+}
+
+// Apply mode-specific BW slider defaults and optionally send to server.
+async function applyBwDefaultForMode(mode, sendToServer) {
+  const bwSlider = document.getElementById("bw-slider");
+  const bwValue  = document.getElementById("bw-value");
+  if (!bwSlider) return;
+  const [def, min, max, step] = mwDefaultsForMode(mode);
+  bwSlider.min  = String(min);
+  bwSlider.max  = String(max);
+  bwSlider.step = String(step);
+  bwSlider.value = String(def);
+  if (bwValue) bwValue.textContent = formatBwLabel(def);
+  if (sendToServer) {
+    try { await postPath(`/set_bandwidth?hz=${def}`); } catch (_) {}
+  }
+}
+
 (function () {
   const bwSlider = document.getElementById("bw-slider");
   const bwValue = document.getElementById("bw-value");
@@ -1483,7 +1532,7 @@ lockBtn.addEventListener("click", async () => {
   if (bwSlider) {
     bwSlider.addEventListener("input", () => {
       const hz = Number(bwSlider.value);
-      if (bwValue) bwValue.textContent = (hz / 1000).toFixed(1) + " kHz";
+      if (bwValue) bwValue.textContent = formatBwLabel(hz);
     });
     bwSlider.addEventListener("change", async () => {
       const hz = Number(bwSlider.value);
