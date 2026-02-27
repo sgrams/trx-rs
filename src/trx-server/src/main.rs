@@ -482,16 +482,54 @@ fn spawn_rig_audio_stack(
     if rig_cfg.audio.rx_enabled {
         if let Some(mut sdr_rx) = sdr_pcm_rx {
             // SDR path: the backend pipeline provides demodulated PCM.
+            // Forward raw PCM to server-side decoders AND Opus-encode it for
+            // TCP audio clients (browser RX audio).
             info!(
                 "[{}] using SDR audio source — cpal capture disabled",
                 rig_cfg.id
             );
-            let pcm_tx_clone = pcm_tx.clone();
+            let pcm_tx_clone     = pcm_tx.clone();
+            let rx_audio_tx_sdr  = rx_audio_tx.clone();
+            let sdr_sample_rate  = rig_cfg.audio.sample_rate;
+            let sdr_channels     = rig_cfg.audio.channels;
+            let sdr_bitrate_bps  = rig_cfg.audio.bitrate_bps;
             handles.push(tokio::spawn(async move {
+                let opus_ch = match sdr_channels {
+                    1 => opus::Channels::Mono,
+                    2 => opus::Channels::Stereo,
+                    n => {
+                        tracing::error!("SDR audio: unsupported channel count {}", n);
+                        return;
+                    }
+                };
+                let mut encoder = match opus::Encoder::new(
+                    sdr_sample_rate,
+                    opus_ch,
+                    opus::Application::Audio,
+                ) {
+                    Ok(e) => e,
+                    Err(e) => {
+                        tracing::error!("SDR audio: Opus encoder init failed: {}", e);
+                        return;
+                    }
+                };
+                if let Err(e) = encoder.set_bitrate(opus::Bitrate::Bits(sdr_bitrate_bps as i32)) {
+                    tracing::warn!("SDR audio: set_bitrate failed: {}", e);
+                }
+                let mut opus_buf = vec![0u8; 4096];
                 loop {
                     match sdr_rx.recv().await {
                         Ok(frame) => {
-                            let _ = pcm_tx_clone.send(frame);
+                            let _ = pcm_tx_clone.send(frame.clone());
+                            match encoder.encode_float(&frame, &mut opus_buf) {
+                                Ok(len) => {
+                                    let pkt = Bytes::copy_from_slice(&opus_buf[..len]);
+                                    let _ = rx_audio_tx_sdr.send(pkt);
+                                }
+                                Err(e) => {
+                                    tracing::warn!("SDR audio: Opus encode error: {}", e);
+                                }
+                            }
                         }
                         Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
                             tracing::warn!("SDR audio bridge: dropped {} frames", n);
