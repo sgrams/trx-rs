@@ -811,16 +811,29 @@ function render(update) {
   // Server subtitle: "trx-server vX.Y.Z hosted by CALL"
   if (serverSubtitle) {
     if (update.server_version && update.server_callsign) {
-      serverSubtitle.textContent = `trx-server v${update.server_version} hosted by ${update.server_callsign}`;
+      const safeCallsign = escapeMapHtml(update.server_callsign);
+      const encodedCallsign = encodeURIComponent(update.server_callsign);
+      serverSubtitle.innerHTML =
+        `trx-server v${update.server_version} hosted by <a href="https://qrzcq.com/call/${encodedCallsign}" target="_blank" rel="noopener">${safeCallsign}</a>`;
     } else if (update.server_version) {
       serverSubtitle.textContent = `trx-server v${update.server_version}`;
     } else if (update.server_callsign) {
-      serverSubtitle.textContent = `trx-server hosted by ${update.server_callsign}`;
+      const safeCallsign = escapeMapHtml(update.server_callsign);
+      const encodedCallsign = encodeURIComponent(update.server_callsign);
+      serverSubtitle.innerHTML =
+        `trx-server hosted by <a href="https://qrzcq.com/call/${encodedCallsign}" target="_blank" rel="noopener">${safeCallsign}</a>`;
     }
   }
   updateRigSubtitle(update.active_rig_id);
   if (ownerSubtitle) {
-    ownerSubtitle.textContent = `Owner: ${ownerCallsign || "--"}`;
+    if (ownerCallsign) {
+      const safeOwner = escapeMapHtml(ownerCallsign);
+      const encodedOwner = encodeURIComponent(ownerCallsign);
+      ownerSubtitle.innerHTML =
+        `Owner: <a href="https://qrzcq.com/call/${encodedOwner}" target="_blank" rel="noopener">${safeOwner}</a>`;
+    } else {
+      ownerSubtitle.textContent = "Owner: --";
+    }
   }
   setDisabled(false);
   if (update.info && update.info.capabilities && Array.isArray(update.info.capabilities.supported_modes)) {
