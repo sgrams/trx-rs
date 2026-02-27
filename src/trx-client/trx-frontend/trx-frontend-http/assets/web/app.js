@@ -313,7 +313,9 @@ const rigSubtitle = document.getElementById("rig-subtitle");
 const ownerSubtitle = document.getElementById("owner-subtitle");
 const loadingTitle = document.getElementById("loading-title");
 const loadingSub = document.getElementById("loading-sub");
-const headerSigCanvas = document.getElementById("header-sig-canvas");
+const overviewCanvas = document.getElementById("overview-canvas");
+const overviewLabel = document.getElementById("overview-label");
+const overviewPeakHoldEl = document.getElementById("overview-peak-hold");
 const themeToggleBtn = document.getElementById("theme-toggle");
 const rigSwitchSelect = document.getElementById("rig-switch-select");
 const rigSwitchBtn = document.getElementById("rig-switch-btn");
@@ -364,6 +366,18 @@ function setTheme(theme) {
   }
 }
 
+if (overviewPeakHoldEl) {
+  if (!Number.isFinite(overviewPeakHoldMs) || overviewPeakHoldMs <= 0) {
+    overviewPeakHoldMs = 2000;
+  }
+  overviewPeakHoldEl.value = String(overviewPeakHoldMs);
+  overviewPeakHoldEl.addEventListener("change", () => {
+    overviewPeakHoldMs = Math.max(0, Number(overviewPeakHoldEl.value) || 0);
+    saveSetting("overviewPeakHoldMs", overviewPeakHoldMs);
+    scheduleOverviewDraw();
+  });
+}
+
 if (savedTheme === "light" || savedTheme === "dark") {
   setTheme(savedTheme);
 } else {
@@ -375,6 +389,7 @@ if (themeToggleBtn) {
   themeToggleBtn.addEventListener("click", () => {
     setTheme(currentTheme() === "dark" ? "light" : "dark");
     updateMapBaseLayerForTheme(currentTheme());
+    scheduleOverviewDraw();
   });
 }
 
@@ -464,139 +479,170 @@ let lastEventAt = Date.now();
 let es;
 let esHeartbeat;
 let reconnectTimer = null;
-let headerSigSamples = [];
-let headerSigTimer = null;
+let overviewSignalSamples = [];
+let overviewSignalTimer = null;
+let overviewWaterfallRows = [];
+let overviewDrawPending = false;
 const HEADER_SIG_WINDOW_MS = 10_000;
+let overviewPeakHoldMs = Number(loadSetting("overviewPeakHoldMs", 2000));
 
 function resizeHeaderSignalCanvas() {
-  if (!headerSigCanvas) return;
-  const cssW = Math.floor(headerSigCanvas.clientWidth);
-  const cssH = Math.floor(headerSigCanvas.clientHeight);
+  if (!overviewCanvas) return;
+  const cssW = Math.floor(overviewCanvas.clientWidth);
+  const cssH = Math.floor(overviewCanvas.clientHeight);
   if (cssW <= 0 || cssH <= 0) return;
   const dpr = window.devicePixelRatio || 1;
   const nextW = Math.floor(cssW * dpr);
   const nextH = Math.floor(cssH * dpr);
-  if (headerSigCanvas.width !== nextW || headerSigCanvas.height !== nextH) {
-    headerSigCanvas.width = nextW;
-    headerSigCanvas.height = nextH;
+  if (overviewCanvas.width !== nextW || overviewCanvas.height !== nextH) {
+    overviewCanvas.width = nextW;
+    overviewCanvas.height = nextH;
+    trimOverviewWaterfallRows();
   }
   drawHeaderSignalGraph();
+}
+
+function scheduleOverviewDraw() {
+  if (!overviewCanvas || overviewDrawPending) return;
+  overviewDrawPending = true;
+  requestAnimationFrame(() => {
+    overviewDrawPending = false;
+    drawHeaderSignalGraph();
+  });
 }
 
 function pushHeaderSignalSample(sUnits) {
-  if (!headerSigCanvas) return;
+  if (!overviewCanvas) return;
   const now = Date.now();
   const sample = Number.isFinite(sUnits) ? Math.max(0, Math.min(20, sUnits)) : 0;
-  headerSigSamples.push({ t: now, v: sample });
-  while (headerSigSamples.length && now - headerSigSamples[0].t > HEADER_SIG_WINDOW_MS) {
-    headerSigSamples.shift();
+  overviewSignalSamples.push({ t: now, v: sample });
+  while (overviewSignalSamples.length && now - overviewSignalSamples[0].t > HEADER_SIG_WINDOW_MS) {
+    overviewSignalSamples.shift();
   }
-  drawHeaderSignalGraph();
+  scheduleOverviewDraw();
+}
+
+function trimOverviewWaterfallRows() {
+  if (!overviewCanvas) return;
+  const dpr = window.devicePixelRatio || 1;
+  const maxRows = Math.max(1, Math.floor(overviewCanvas.height / dpr));
+  while (overviewWaterfallRows.length > maxRows) {
+    overviewWaterfallRows.shift();
+  }
+}
+
+function pushOverviewWaterfallFrame(data) {
+  if (!overviewCanvas || !data || !Array.isArray(data.bins) || data.bins.length === 0) return;
+  overviewWaterfallRows.push(data.bins.slice());
+  trimOverviewWaterfallRows();
+  scheduleOverviewDraw();
 }
 
 function startHeaderSignalSampling() {
-  if (!headerSigCanvas || headerSigTimer) return;
-  headerSigTimer = setInterval(() => {
+  if (!overviewCanvas || overviewSignalTimer) return;
+  overviewSignalTimer = setInterval(() => {
     pushHeaderSignalSample(Number.isFinite(sigLastSUnits) ? sigLastSUnits : 0);
   }, 120);
 }
 
 function drawHeaderSignalGraph() {
-  if (!headerSigCanvas) return;
-  const ctx = headerSigCanvas.getContext("2d");
+  if (!overviewCanvas) return;
+  const ctx = overviewCanvas.getContext("2d");
   if (!ctx) return;
   const isLight = currentTheme() === "light";
   const dpr = window.devicePixelRatio || 1;
-  const w = headerSigCanvas.width / dpr;
-  const h = headerSigCanvas.height / dpr;
+  const w = overviewCanvas.width / dpr;
+  const h = overviewCanvas.height / dpr;
   if (w <= 0 || h <= 0) return;
 
   ctx.save();
   ctx.scale(dpr, dpr);
   ctx.clearRect(0, 0, w, h);
+  if (lastSpectrumData && overviewWaterfallRows.length > 0) {
+    if (overviewLabel) overviewLabel.textContent = "Waterfall";
+    drawOverviewWaterfall(ctx, w, h, isLight);
+  } else {
+    if (overviewLabel) overviewLabel.textContent = "Signal History";
+    drawOverviewSignalHistory(ctx, w, h, isLight);
+  }
+  ctx.restore();
+}
 
-  // Soft horizontal guides for readability.
-  ctx.strokeStyle = isLight ? "rgba(71, 85, 105, 0.26)" : "rgba(148, 163, 184, 0.16)";
+function drawOverviewWaterfall(ctx, w, h, isLight) {
+  const rows = overviewWaterfallRows.slice(-Math.max(1, Math.floor(h)));
+  if (rows.length === 0) return;
+  const rowH = h / rows.length;
+  for (let rowIdx = 0; rowIdx < rows.length; rowIdx++) {
+    const bins = rows[rowIdx];
+    if (!Array.isArray(bins) || bins.length === 0) continue;
+    const y = h - (rows.length - rowIdx) * rowH;
+    for (let x = 0; x < w; x++) {
+      const binIdx = Math.floor((x / Math.max(1, w - 1)) * (bins.length - 1));
+      ctx.fillStyle = waterfallColor(bins[binIdx], isLight);
+      ctx.fillRect(x, y, 1.25, rowH + 1);
+    }
+  }
+}
+
+function drawOverviewSignalHistory(ctx, w, h, isLight) {
+  const now = Date.now();
+  const samples = overviewSignalSamples.filter((sample) => now - sample.t <= HEADER_SIG_WINDOW_MS);
+  if (samples.length === 0) return;
+
+  const maxVal = 20;
+  const windowStart = now - HEADER_SIG_WINDOW_MS;
+  const toX = (t) => ((t - windowStart) / HEADER_SIG_WINDOW_MS) * w;
+  const toY = (v) => h - (Math.max(0, Math.min(maxVal, v)) / maxVal) * (h - 3) - 1.5;
+
+  ctx.strokeStyle = isLight ? "rgba(71, 85, 105, 0.14)" : "rgba(148, 163, 184, 0.12)";
   ctx.lineWidth = 1;
-  for (let i = 1; i <= 3; i++) {
-    const y = Math.round((h * i) / 4) + 0.5;
+  for (const val of [0, 9, 18]) {
+    const y = toY(val);
     ctx.beginPath();
     ctx.moveTo(0, y);
     ctx.lineTo(w, y);
     ctx.stroke();
   }
 
-  // Minimal S-unit scale markers.
-  const yFor = (v) => h - (Math.max(0, Math.min(20, v)) / 20) * (h - 2) - 1;
-  ctx.fillStyle = isLight ? "rgba(30, 41, 59, 0.62)" : "rgba(154, 164, 181, 0.55)";
-  ctx.font = "10px sans-serif";
-  ctx.textAlign = "right";
-  ctx.textBaseline = "middle";
-  [["S9+", 18], ["S9", 9], ["S0", 0]].forEach(([label, val]) => {
-    const y = yFor(val);
-    ctx.fillText(label, w - 4, y);
-    ctx.strokeStyle = isLight ? "rgba(51, 65, 85, 0.22)" : "rgba(154, 164, 181, 0.22)";
-    ctx.beginPath();
-    ctx.moveTo(2, y + 0.5);
-    ctx.lineTo(w - 36, y + 0.5);
-    ctx.stroke();
+  ctx.beginPath();
+  samples.forEach((sample, idx) => {
+    const x = toX(sample.t);
+    const y = toY(sample.v);
+    if (idx === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
   });
+  ctx.strokeStyle = isLight ? "rgba(17, 94, 89, 0.95)" : "rgba(94, 234, 212, 0.92)";
+  ctx.lineWidth = 1.6;
+  ctx.stroke();
 
-  if (headerSigSamples.length > 1) {
-    const maxVal = 20; // includes S9+ scale overshoot.
-    const toY = (v) => h - (Math.max(0, Math.min(maxVal, v)) / maxVal) * (h - 2) - 1;
-    const now = Date.now();
-    const windowStart = now - HEADER_SIG_WINDOW_MS;
-    const toX = (t) => ((t - windowStart) / HEADER_SIG_WINDOW_MS) * w;
-    const strengthGrad = ctx.createLinearGradient(0, h, 0, 0);
-    const fillGrad = ctx.createLinearGradient(0, h, 0, 0);
-    if (isLight) {
-      // Higher-contrast palette for bright backgrounds.
-      strengthGrad.addColorStop(0.0, "rgba(0, 86, 255, 0.95)");   // weak: deep blue
-      strengthGrad.addColorStop(0.5, "rgba(0, 179, 255, 0.95)");
-      strengthGrad.addColorStop(0.8, "rgba(255, 133, 0, 0.97)");
-      strengthGrad.addColorStop(1.0, "rgba(224, 36, 36, 0.98)");  // strong: red
-      fillGrad.addColorStop(0.0, "rgba(0, 86, 255, 0.18)");
-      fillGrad.addColorStop(0.5, "rgba(0, 179, 255, 0.20)");
-      fillGrad.addColorStop(0.8, "rgba(255, 133, 0, 0.22)");
-      fillGrad.addColorStop(1.0, "rgba(224, 36, 36, 0.24)");
-    } else {
-      strengthGrad.addColorStop(0.0, "rgba(64, 120, 255, 0.88)"); // weak: blue
-      strengthGrad.addColorStop(0.5, "rgba(106, 186, 255, 0.9)");
-      strengthGrad.addColorStop(0.8, "rgba(255, 166, 77, 0.9)");
-      strengthGrad.addColorStop(1.0, "rgba(255, 78, 78, 0.92)"); // strong: red
-      fillGrad.addColorStop(0.0, "rgba(64, 120, 255, 0.12)");
-      fillGrad.addColorStop(0.5, "rgba(106, 186, 255, 0.16)");
-      fillGrad.addColorStop(0.8, "rgba(255, 166, 77, 0.18)");
-      fillGrad.addColorStop(1.0, "rgba(255, 78, 78, 0.2)");
+  const holdMs = Math.max(0, Number.isFinite(overviewPeakHoldMs) ? overviewPeakHoldMs : 0);
+  if (holdMs > 0) {
+    ctx.beginPath();
+    for (let i = 0; i < samples.length; i++) {
+      let peak = samples[i].v;
+      for (let j = i; j >= 0; j--) {
+        if (samples[i].t - samples[j].t > holdMs) break;
+        if (samples[j].v > peak) peak = samples[j].v;
+      }
+      const x = toX(samples[i].t);
+      const y = toY(peak);
+      if (i === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
     }
-
-    ctx.beginPath();
-    headerSigSamples.forEach((sample, i) => {
-      const x = toX(sample.t);
-      const y = toY(sample.v);
-      if (i === 0) ctx.moveTo(x, y);
-      else ctx.lineTo(x, y);
-    });
-    ctx.lineTo(w, h);
-    ctx.lineTo(0, h);
-    ctx.closePath();
-    ctx.fillStyle = fillGrad;
-    ctx.fill();
-
-    ctx.beginPath();
-    headerSigSamples.forEach((sample, i) => {
-      const x = toX(sample.t);
-      const y = toY(sample.v);
-      if (i === 0) ctx.moveTo(x, y);
-      else ctx.lineTo(x, y);
-    });
-    ctx.strokeStyle = strengthGrad;
-    ctx.lineWidth = 1.25;
+    ctx.strokeStyle = isLight ? "rgba(217, 119, 6, 0.9)" : "rgba(251, 191, 36, 0.88)";
+    ctx.lineWidth = 1;
     ctx.stroke();
   }
+}
 
-  ctx.restore();
+function waterfallColor(db, isLight) {
+  const clamped = Math.max(-120, Math.min(-10, Number.isFinite(db) ? db : -120));
+  const t = (clamped + 120) / 110;
+  const hue = isLight ? 210 - t * 175 : 225 - t * 195;
+  const sat = isLight ? 82 : 88;
+  const light = isLight ? 92 - t * 52 : 16 + t * 52;
+  const alpha = isLight ? 0.42 + t * 0.38 : 0.28 + t * 0.58;
+  return `hsla(${hue}, ${sat}%, ${light}%, ${alpha})`;
 }
 
 function formatFreq(hz) {
@@ -2578,11 +2624,14 @@ function startSpectrumStreaming() {
   spectrumSource.onmessage = (evt) => {
     if (evt.data === "null") {
       lastSpectrumData = null;
+      overviewWaterfallRows = [];
+      scheduleOverviewDraw();
       clearSpectrumCanvas();
       return;
     }
     try {
       lastSpectrumData = JSON.parse(evt.data);
+      pushOverviewWaterfallFrame(lastSpectrumData);
       refreshCenterFreqDisplay();
       scheduleSpectrumDraw();
     } catch (_) {}
@@ -2607,6 +2656,8 @@ function stopSpectrumStreaming() {
   }
   spectrumDrawPending = false;
   lastSpectrumData = null;
+  overviewWaterfallRows = [];
+  scheduleOverviewDraw();
   clearSpectrumCanvas();
 }
 

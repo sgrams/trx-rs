@@ -332,7 +332,7 @@ button:disabled { opacity: 0.6; cursor: not-allowed; }
 small { color: var(--text-muted); }
 .header {
   display: grid;
-  grid-template-columns: 16em 1fr auto;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   column-gap: 1.5em;
   margin-bottom: 0.25rem;
@@ -343,20 +343,42 @@ small { color: var(--text-muted); }
   flex: 0 0 16em;
 }
 .title { font-size: 1.4rem; font-weight: 700; display: inline-flex; align-items: center; gap: 0.35rem; }
-.header-signal-wrap {
+.overview-strip {
   width: 100%;
-  min-width: 160px;
-  height: clamp(2.6rem, 8vh, 4.5rem);
-  margin: 0;
-  border: 1px solid color-mix(in srgb, var(--border-light) 55%, transparent);
-  border-radius: 8px;
-  background: color-mix(in srgb, var(--input-bg) 72%, transparent);
-  opacity: 0.45;
-  overflow: hidden;
+  margin: 0.35rem 0 0.95rem;
 }
-#header-sig-canvas {
+.overview-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.25rem;
+}
+.overview-label {
+  color: var(--text-heading);
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.overview-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  white-space: nowrap;
+}
+.overview-control .status-input {
+  width: auto;
+  min-width: 4.6rem;
+  padding-top: 0.22rem;
+  padding-bottom: 0.22rem;
+  font-size: 0.85rem;
+}
+#overview-canvas {
   width: 100%;
-  height: 100%;
+  height: clamp(4.2rem, 11vh, 6.25rem);
   display: block;
 }
 .header-right {
@@ -598,10 +620,10 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   .freq-inline { gap: 0.5rem; }
   .freq-inline { flex-wrap: wrap; }
   .header-text { width: auto; min-width: 0; flex: 0 1 auto; }
-  .header-signal-wrap { display: none; }
   .header-right { align-items: flex-end; }
   .header-rig-switch { width: 100%; justify-content: flex-end; }
   .header-rig-switch select { min-width: 6.5rem; }
+  .overview-toolbar { flex-wrap: wrap; }
   .controls-row { grid-template-columns: 1fr auto; }
   .controls-col-wfm { grid-column: 1 / -1; }
   .controls-col-power { grid-column: 1 / -1; }
