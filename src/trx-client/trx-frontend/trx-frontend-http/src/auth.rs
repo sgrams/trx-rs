@@ -423,11 +423,13 @@ impl RouteAccess {
             || path == "/rigs"
             || path == "/events"
             || path == "/decode"
+            || path == "/spectrum"
             || path == "/audio"
             || path.starts_with("/status?")
             || path.starts_with("/rigs?")
             || path.starts_with("/events?")
             || path.starts_with("/decode?")
+            || path.starts_with("/spectrum?")
             || path.starts_with("/audio?")
         {
             return Self::Read;
@@ -585,6 +587,7 @@ mod tests {
         assert_eq!(RouteAccess::from_path("/rigs"), RouteAccess::Read);
         assert_eq!(RouteAccess::from_path("/events"), RouteAccess::Read);
         assert_eq!(RouteAccess::from_path("/decode"), RouteAccess::Read);
+        assert_eq!(RouteAccess::from_path("/spectrum"), RouteAccess::Read);
         assert_eq!(RouteAccess::from_path("/audio"), RouteAccess::Read);
     }
 

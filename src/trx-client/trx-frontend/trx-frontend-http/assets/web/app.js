@@ -267,11 +267,11 @@ function applyCapabilities(caps) {
     if (caps.filter_controls) {
       spectrumPanel.style.display = "";
       if (centerFreqField) centerFreqField.style.display = "";
-      startSpectrumPolling();
+      startSpectrumStreaming();
     } else {
       spectrumPanel.style.display = "none";
       if (centerFreqField) centerFreqField.style.display = "none";
-      stopSpectrumPolling();
+      stopSpectrumStreaming();
     }
   }
 }
@@ -1193,6 +1193,7 @@ function disconnect() {
     decodeSource.close();
     decodeSource = null;
   }
+  stopSpectrumStreaming();
   // Clear timers
   if (esHeartbeat) {
     clearInterval(esHeartbeat);
@@ -2399,7 +2400,8 @@ window.addEventListener("beforeunload", () => {
 const spectrumCanvas  = document.getElementById("spectrum-canvas");
 const spectrumFreqAxis = document.getElementById("spectrum-freq-axis");
 const spectrumTooltip = document.getElementById("spectrum-tooltip");
-let spectrumPollTimer = null;
+let spectrumSource = null;
+let spectrumReconnectTimer = null;
 let lastSpectrumData  = null;
 
 // Zoom / pan state.  zoom >= 1; panFrac in [0,1] is the fraction of the full
@@ -2446,28 +2448,50 @@ function formatSpectrumFreq(hz) {
   return hz.toFixed(0) + " Hz";
 }
 
-// ── Polling ──────────────────────────────────────────────────────────────────
-function startSpectrumPolling() {
-  if (spectrumPollTimer !== null) return;
-  spectrumPollTimer = setInterval(fetchSpectrum, 200);
-  fetchSpectrum();
+// ── Streaming ────────────────────────────────────────────────────────────────
+function scheduleSpectrumReconnect() {
+  if (spectrumReconnectTimer !== null) return;
+  spectrumReconnectTimer = setTimeout(() => {
+    spectrumReconnectTimer = null;
+    startSpectrumStreaming();
+  }, 1000);
 }
 
-function stopSpectrumPolling() {
-  if (spectrumPollTimer !== null) { clearInterval(spectrumPollTimer); spectrumPollTimer = null; }
+function startSpectrumStreaming() {
+  if (spectrumSource !== null) return;
+  spectrumSource = new EventSource("/spectrum");
+  spectrumSource.onmessage = (evt) => {
+    if (evt.data === "null") {
+      lastSpectrumData = null;
+      clearSpectrumCanvas();
+      return;
+    }
+    try {
+      lastSpectrumData = JSON.parse(evt.data);
+      refreshCenterFreqDisplay();
+      drawSpectrum(lastSpectrumData);
+    } catch (_) {}
+  };
+  spectrumSource.onerror = () => {
+    if (spectrumSource) {
+      spectrumSource.close();
+      spectrumSource = null;
+    }
+    scheduleSpectrumReconnect();
+  };
+}
+
+function stopSpectrumStreaming() {
+  if (spectrumSource !== null) {
+    spectrumSource.close();
+    spectrumSource = null;
+  }
+  if (spectrumReconnectTimer !== null) {
+    clearTimeout(spectrumReconnectTimer);
+    spectrumReconnectTimer = null;
+  }
   lastSpectrumData = null;
   clearSpectrumCanvas();
-}
-
-async function fetchSpectrum() {
-  try {
-    const resp = await fetch("/spectrum", { cache: "no-store" });
-    if (resp.status === 204) { lastSpectrumData = null; clearSpectrumCanvas(); return; }
-    if (!resp.ok) return;
-    lastSpectrumData = await resp.json();
-    refreshCenterFreqDisplay();
-    drawSpectrum(lastSpectrumData);
-  } catch (_) {}
 }
 
 // ── Rendering ────────────────────────────────────────────────────────────────

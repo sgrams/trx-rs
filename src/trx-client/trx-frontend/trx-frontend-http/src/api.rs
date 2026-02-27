@@ -291,20 +291,53 @@ impl<I> futures_util::Stream for DropStream<I> {
     }
 }
 
-/// Lightweight polling endpoint for spectrum data.
-/// Returns the latest `SpectrumData` as JSON, or 204 No Content if unavailable.
+/// SSE stream for spectrum data.
+/// Emits JSON `SpectrumData` payloads when the latest frame changes.
+/// Emits `null` when spectrum data becomes unavailable.
 #[get("/spectrum")]
 pub async fn spectrum(
     context: web::Data<Arc<FrontendRuntimeContext>>,
-) -> Result<impl Responder, Error> {
-    let data = context.spectrum.lock().ok().and_then(|g| g.clone());
-    match data {
-        Some(s) => Ok(HttpResponse::Ok()
-            .insert_header((header::CONTENT_TYPE, "application/json"))
-            .insert_header((header::CACHE_CONTROL, "no-cache"))
-            .json(s)),
-        None => Ok(HttpResponse::NoContent().finish()),
-    }
+) -> Result<HttpResponse, Error> {
+    let context_updates = context.get_ref().clone();
+    let updates = IntervalStream::new(time::interval(Duration::from_millis(200))).scan(
+        None::<String>,
+        move |last_json, _| {
+            let context = context_updates.clone();
+            std::future::ready({
+                let next_json = context
+                    .spectrum
+                    .lock()
+                    .ok()
+                    .and_then(|g| g.as_ref().and_then(|s| serde_json::to_string(s).ok()));
+
+                let payload = match (last_json.as_ref(), next_json) {
+                    (Some(prev), Some(next)) if prev == &next => None,
+                    (_, Some(next)) => {
+                        *last_json = Some(next.clone());
+                        Some(next)
+                    }
+                    (Some(_), None) => {
+                        *last_json = None;
+                        Some("null".to_string())
+                    }
+                    (None, None) => None,
+                };
+
+                payload.map(|json| Ok::<Bytes, Error>(Bytes::from(format!("data: {json}\n\n"))))
+            })
+        },
+    );
+
+    let pings = IntervalStream::new(time::interval(Duration::from_secs(15)))
+        .map(|_| Ok::<Bytes, Error>(Bytes::from(": ping\n\n")));
+
+    let stream = select(pings, updates);
+
+    Ok(HttpResponse::Ok()
+        .insert_header((header::CONTENT_TYPE, "text/event-stream"))
+        .insert_header((header::CACHE_CONTROL, "no-cache"))
+        .insert_header((header::CONNECTION, "keep-alive"))
+        .streaming(stream))
 }
 
 #[post("/toggle_power")]
