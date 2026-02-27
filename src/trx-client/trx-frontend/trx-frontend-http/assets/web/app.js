@@ -2719,19 +2719,17 @@ if (spectrumCanvas) {
   spectrumCanvas.addEventListener("wheel", (e) => {
     e.preventDefault();
     if (!lastSpectrumData) return;
+    if (e.ctrlKey) {
+      const direction = e.deltaY < 0 ? 1 : -1;
+      jogFreq(direction);
+      return;
+    }
     const rect   = spectrumCanvas.getBoundingClientRect();
     const cssX   = e.clientX - rect.left;
     const factor = e.deltaY < 0 ? 1.25 : 1 / 1.25;
     spectrumZoomAt(cssX, rect.width, lastSpectrumData, factor);
     drawSpectrum(lastSpectrumData);
   }, { passive: false });
-
-  // Double-click → reset zoom/pan
-  spectrumCanvas.addEventListener("dblclick", () => {
-    spectrumZoom    = 1;
-    spectrumPanFrac = 0.5;
-    if (lastSpectrumData) drawSpectrum(lastSpectrumData);
-  });
 }
 
 // ── BW strip edge hit-test (CSS pixels) ──────────────────────────────────────
