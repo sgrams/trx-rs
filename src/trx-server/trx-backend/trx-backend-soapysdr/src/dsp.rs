@@ -38,6 +38,12 @@ pub trait IqSource: Send + 'static {
     fn is_blocking(&self) -> bool {
         false
     }
+
+    /// Retune the hardware center frequency.  Default implementation is a
+    /// no-op (used by `MockIqSource`).
+    fn set_center_freq(&mut self, _hz: f64) -> Result<(), String> {
+        Ok(())
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -252,6 +258,8 @@ pub struct ChannelDsp {
     lpf_i: BlockFirFilter,
     /// FFT-based FIR low-pass filter applied to Q component before decimation.
     lpf_q: BlockFirFilter,
+    /// SDR capture sample rate — kept for filter rebuilds.
+    sdr_sample_rate: u32,
     /// Decimation factor: `sdr_sample_rate / audio_sample_rate`.
     pub decim_factor: usize,
     /// Accumulator for output PCM frames.
@@ -312,6 +320,7 @@ impl ChannelDsp {
             demodulator: Demodulator::for_mode(mode),
             lpf_i: BlockFirFilter::new(cutoff_norm, taps, IQ_BLOCK_SIZE),
             lpf_q: BlockFirFilter::new(cutoff_norm, taps, IQ_BLOCK_SIZE),
+            sdr_sample_rate,
             decim_factor,
             frame_buf: Vec::with_capacity(frame_size * 2),
             frame_size,
@@ -324,6 +333,21 @@ impl ChannelDsp {
 
     pub fn set_mode(&mut self, mode: &RigMode) {
         self.demodulator = Demodulator::for_mode(mode);
+    }
+
+    /// Rebuild the FIR low-pass filters with new bandwidth and tap count.
+    ///
+    /// Changes take effect on the next call to `process_block`.
+    pub fn set_filter(&mut self, bandwidth_hz: u32, taps: usize) {
+        let cutoff_norm = if self.sdr_sample_rate == 0 {
+            0.1
+        } else {
+            (bandwidth_hz as f32 / 2.0) / self.sdr_sample_rate as f32
+        }
+        .min(0.499);
+        let taps = taps.max(1);
+        self.lpf_i = BlockFirFilter::new(cutoff_norm, taps, IQ_BLOCK_SIZE);
+        self.lpf_q = BlockFirFilter::new(cutoff_norm, taps, IQ_BLOCK_SIZE);
     }
 
     /// Process a block of raw IQ samples through the full DSP chain.
@@ -407,6 +431,9 @@ pub struct SdrPipeline {
     pub spectrum_buf: Arc<Mutex<Option<Vec<f32>>>>,
     /// SDR capture sample rate, needed by `SoapySdrRig::get_spectrum`.
     pub sdr_sample_rate: u32,
+    /// Write `Some(hz)` here to retune the hardware center frequency.
+    /// The IQ read loop picks it up on the next iteration.
+    pub retune_cmd: Arc<std::sync::Mutex<Option<f64>>>,
 }
 
 impl SdrPipeline {
@@ -444,11 +471,21 @@ impl SdrPipeline {
         let thread_dsps: Vec<Arc<Mutex<ChannelDsp>>> = channel_dsps.clone();
         let spectrum_buf: Arc<Mutex<Option<Vec<f32>>>> = Arc::new(Mutex::new(None));
         let thread_spectrum_buf = spectrum_buf.clone();
+        let retune_cmd: Arc<std::sync::Mutex<Option<f64>>> =
+            Arc::new(std::sync::Mutex::new(None));
+        let thread_retune_cmd = retune_cmd.clone();
 
         std::thread::Builder::new()
             .name("sdr-iq-read".to_string())
             .spawn(move || {
-                iq_read_loop(source, sdr_sample_rate, thread_dsps, iq_tx, thread_spectrum_buf);
+                iq_read_loop(
+                    source,
+                    sdr_sample_rate,
+                    thread_dsps,
+                    iq_tx,
+                    thread_spectrum_buf,
+                    thread_retune_cmd,
+                );
             })
             .expect("failed to spawn sdr-iq-read thread");
 
@@ -457,6 +494,7 @@ impl SdrPipeline {
             channel_dsps,
             spectrum_buf,
             sdr_sample_rate,
+            retune_cmd,
         }
     }
 }
@@ -479,6 +517,7 @@ fn iq_read_loop(
     channel_dsps: Vec<Arc<Mutex<ChannelDsp>>>,
     iq_tx: broadcast::Sender<Vec<Complex<f32>>>,
     spectrum_buf: Arc<Mutex<Option<Vec<f32>>>>,
+    retune_cmd: Arc<std::sync::Mutex<Option<f64>>>,
 ) {
     let mut block = vec![Complex::new(0.0_f32, 0.0_f32); IQ_BLOCK_SIZE];
     let block_duration_ms = if sdr_sample_rate > 0 {
@@ -500,6 +539,17 @@ fn iq_read_loop(
     let mut spectrum_counter: usize = 0;
 
     loop {
+        // Apply any pending hardware retune before the next read.
+        if let Ok(mut cmd) = retune_cmd.try_lock() {
+            if let Some(hz) = cmd.take() {
+                if let Err(e) = source.set_center_freq(hz) {
+                    tracing::warn!("SDR retune to {:.0} Hz failed: {}", hz, e);
+                } else {
+                    tracing::info!("SDR retuned to {:.0} Hz", hz);
+                }
+            }
+        }
+
         let n = match source.read_into(&mut block) {
             Ok(n) => n,
             Err(e) => {

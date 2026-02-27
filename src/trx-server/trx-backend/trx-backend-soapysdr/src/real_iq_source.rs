@@ -150,13 +150,6 @@ impl RealIqSource {
             is_blocking: true,
         })
     }
-
-    /// Retune the SDR hardware center frequency without recreating the stream.
-    pub fn set_center_freq(&self, freq_hz: f64) -> Result<(), String> {
-        self.device
-            .set_frequency(soapysdr::Direction::Rx, 0, freq_hz, ())
-            .map_err(|e| format!("Failed to retune center frequency: {}", e))
-    }
 }
 
 impl IqSource for RealIqSource {
@@ -172,5 +165,11 @@ impl IqSource for RealIqSource {
 
     fn is_blocking(&self) -> bool {
         self.is_blocking
+    }
+
+    fn set_center_freq(&mut self, hz: f64) -> Result<(), String> {
+        self.device
+            .set_frequency(soapysdr::Direction::Rx, 0, hz, ())
+            .map_err(|e| format!("Failed to retune SDR center frequency: {}", e))
     }
 }

@@ -233,6 +233,20 @@ async fn wait_for_shutdown(mut shutdown_rx: watch::Receiver<bool>) {
     }
 }
 
+/// Sensible default audio filter bandwidth (Hz) for each demodulation mode.
+#[cfg(feature = "soapysdr")]
+fn default_audio_bandwidth_for_mode(mode: &trx_core::rig::state::RigMode) -> u32 {
+    use trx_core::rig::state::RigMode;
+    match mode {
+        RigMode::LSB | RigMode::USB | RigMode::PKT | RigMode::DIG => 3_000,
+        RigMode::CW | RigMode::CWR => 500,
+        RigMode::AM => 6_000,
+        RigMode::FM => 12_500,
+        RigMode::WFM => 75_000,
+        RigMode::Other(_) => 3_000,
+    }
+}
+
 /// Parse a `RigMode` from a string slice.
 /// Falls back to `initial_mode` when the string is "auto" or unrecognised.
 #[cfg(feature = "soapysdr")]
@@ -267,7 +281,7 @@ fn build_sdr_rig_from_instance(
     use trx_core::rig::AudioSource;
 
     let args = rig_cfg.rig.access.args.as_deref().unwrap_or("");
-    let channels: Vec<(f64, trx_core::rig::state::RigMode, u32, usize)> = rig_cfg
+    let mut channels: Vec<(f64, trx_core::rig::state::RigMode, u32, usize)> = rig_cfg
         .sdr
         .channels
         .iter()
@@ -277,6 +291,22 @@ fn build_sdr_rig_from_instance(
             (if_hz, mode, ch.audio_bandwidth_hz, ch.fir_taps)
         })
         .collect();
+
+    // Ensure at least one demodulation channel so audio is available.
+    if channels.is_empty() {
+        tracing::warn!(
+            "[{}] No [[sdr.channels]] configured; adding a default primary channel. \
+             Add [[sdr.channels]] to your config for full control.",
+            rig_cfg.id
+        );
+        let default_bw = default_audio_bandwidth_for_mode(&rig_cfg.rig.initial_mode);
+        channels.push((
+            rig_cfg.sdr.center_offset_hz as f64,
+            rig_cfg.rig.initial_mode.clone(),
+            default_bw,
+            64,
+        ));
+    }
 
     let sdr_rig = trx_backend::SoapySdrRig::new_with_config(
         args,
@@ -290,6 +320,8 @@ fn build_sdr_rig_from_instance(
         },
         rig_cfg.rig.initial_mode.clone(),
         rig_cfg.sdr.sample_rate,
+        rig_cfg.sdr.bandwidth,
+        rig_cfg.sdr.center_offset_hz,
     )?;
 
     let pcm_rx = sdr_rig.subscribe_pcm();
