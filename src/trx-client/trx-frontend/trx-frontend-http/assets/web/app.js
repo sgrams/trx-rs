@@ -77,8 +77,16 @@ function showAuthGate(allowGuest = false) {
   if (!authEnabled) return;
   document.getElementById("loading").style.display = "none";
   document.getElementById("content").style.display = "none";
-  document.getElementById("auth-gate").style.display = "block";
+  const authGate = document.getElementById("auth-gate");
+  authGate.style.display = "flex";
+  authGate.style.flexDirection = "column";
+  authGate.style.justifyContent = "center";
+  authGate.style.alignItems = "stretch";
   document.getElementById("tab-bar").style.display = "none";
+  const overviewStrip = document.querySelector(".overview-strip");
+  if (overviewStrip) {
+    overviewStrip.style.display = "none";
+  }
 
   // Hide rig picker since no rigs are accessible without auth
   const rigSwitch = document.querySelector(".header-rig-switch");
@@ -99,9 +107,14 @@ function showAuthGate(allowGuest = false) {
 }
 
 function hideAuthGate() {
-  document.getElementById("auth-gate").style.display = "none";
+  const authGate = document.getElementById("auth-gate");
+  authGate.style.display = "none";
   document.getElementById("loading").style.display = "block";
   document.getElementById("tab-bar").style.display = "";
+  const overviewStrip = document.querySelector(".overview-strip");
+  if (overviewStrip) {
+    overviewStrip.style.display = "";
+  }
 
   // Show rig picker again now that user is authenticated
   const rigSwitch = document.querySelector(".header-rig-switch");
@@ -864,8 +877,9 @@ function render(update) {
     !!update.status.freq &&
     typeof update.status.freq.hz === "number";
   if (!initialized) {
-    const manu = (update.info && update.info.manufacturer) || rigName || "Rig";
-    const model = (update.info && update.info.model) || rigName || "Rig";
+    const fallbackRigName = originalTitle || "Rig";
+    const manu = (update.info && update.info.manufacturer) || fallbackRigName;
+    const model = (update.info && update.info.model) || fallbackRigName;
     const rev = (update.info && update.info.revision) || "";
     const parts = [manu, model, rev].filter(Boolean).join(" ");
     if (!hasUsableSnapshot) {
