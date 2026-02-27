@@ -1601,7 +1601,7 @@ async function applyBandwidthFromInput() {
   const clamped = Math.max(minBw, Math.min(maxBw, next));
   currentBandwidthHz = clamped;
   syncBandwidthInput(clamped);
-  if (lastSpectrumData) drawSpectrum(lastSpectrumData);
+  if (lastSpectrumData) scheduleSpectrumDraw();
   try { await postPath(`/set_bandwidth?hz=${clamped}`); } catch (_) {}
 }
 
@@ -2497,6 +2497,8 @@ const spectrumTooltip = document.getElementById("spectrum-tooltip");
 let spectrumSource = null;
 let spectrumReconnectTimer = null;
 let lastSpectrumData  = null;
+let spectrumDrawPending = false;
+let spectrumAxisKey = "";
 
 // Zoom / pan state.  zoom >= 1; panFrac in [0,1] is the fraction of the full
 // bandwidth at the centre of the visible window.
@@ -2567,7 +2569,7 @@ function startSpectrumStreaming() {
     try {
       lastSpectrumData = JSON.parse(evt.data);
       refreshCenterFreqDisplay();
-      drawSpectrum(lastSpectrumData);
+      scheduleSpectrumDraw();
     } catch (_) {}
   };
   spectrumSource.onerror = () => {
@@ -2588,6 +2590,7 @@ function stopSpectrumStreaming() {
     clearTimeout(spectrumReconnectTimer);
     spectrumReconnectTimer = null;
   }
+  spectrumDrawPending = false;
   lastSpectrumData = null;
   clearSpectrumCanvas();
 }
@@ -2598,6 +2601,15 @@ function clearSpectrumCanvas() {
   const ctx = spectrumCanvas.getContext("2d");
   ctx.fillStyle = spectrumBgColor();
   ctx.fillRect(0, 0, spectrumCanvas.width, spectrumCanvas.height);
+}
+
+function scheduleSpectrumDraw() {
+  if (spectrumDrawPending) return;
+  spectrumDrawPending = true;
+  requestAnimationFrame(() => {
+    spectrumDrawPending = false;
+    if (lastSpectrumData) drawSpectrum(lastSpectrumData);
+  });
 }
 
 function drawSpectrum(data) {
@@ -2773,6 +2785,14 @@ function updateSpectrumFreqAxis(range) {
   const ideal = spanHz / 5;
   const stepHz = targets.reduce((best, s) =>
     Math.abs(s - ideal) < Math.abs(best - ideal) ? s : best, targets[0]);
+  const axisKey = [
+    Math.round(range.visLoHz),
+    Math.round(range.visHiHz),
+    Math.round(stepHz),
+    spectrumFreqAxis.clientWidth || 0,
+  ].join(":");
+  if (axisKey === spectrumAxisKey) return;
+  spectrumAxisKey = axisKey;
 
   const firstHz = Math.ceil(range.visLoHz / stepHz) * stepHz;
   spectrumFreqAxis.innerHTML = "";
@@ -2818,7 +2838,7 @@ if (spectrumCanvas) {
     const cssX   = e.clientX - rect.left;
     const factor = e.deltaY < 0 ? 1.25 : 1 / 1.25;
     spectrumZoomAt(cssX, rect.width, lastSpectrumData, factor);
-    drawSpectrum(lastSpectrumData);
+    scheduleSpectrumDraw();
   }, { passive: false });
 }
 
@@ -2872,7 +2892,7 @@ if (spectrumCanvas) {
       newBw = Math.round(Math.max(minBw, Math.min(maxBw, newBw)));
       currentBandwidthHz = newBw;
       syncBandwidthInput(newBw);
-      drawSpectrum(lastSpectrumData);
+      scheduleSpectrumDraw();
       return;
     }
     if (!_sDragStart || !lastSpectrumData) return;
@@ -2880,7 +2900,7 @@ if (spectrumCanvas) {
     const dx    = e.clientX - _sDragStart.clientX;
     if (Math.abs(dx) > 3) _sDragMoved = true;
     spectrumPanFrac = _sDragStart.panFrac - (dx / rect.width) / spectrumZoom;
-    drawSpectrum(lastSpectrumData);
+    scheduleSpectrumDraw();
   });
 
   window.addEventListener("mouseup", async () => {
@@ -2936,11 +2956,11 @@ if (spectrumCanvas) {
       // Pan contribution from mid shift
       const dxMid = newMidX - _sTouch.midX;
       spectrumPanFrac -= (dxMid / rect.width) / spectrumZoom;
-      drawSpectrum(lastSpectrumData);
+      scheduleSpectrumDraw();
     } else if (_sTouch.type === "pan" && e.touches.length === 1) {
       const dx = e.touches[0].clientX - _sTouch.clientX;
       spectrumPanFrac = _sTouch.panFrac - (dx / rect.width) / spectrumZoom;
-      drawSpectrum(lastSpectrumData);
+      scheduleSpectrumDraw();
     }
   }, { passive: false });
 
@@ -2994,7 +3014,7 @@ if (spectrumCanvas) {
       const v = Number(floorInput.value);
       if (!isNaN(v)) {
         spectrumFloor = v;
-        if (lastSpectrumData) drawSpectrum(lastSpectrumData);
+        if (lastSpectrumData) scheduleSpectrumDraw();
       }
     });
   }
@@ -3009,7 +3029,7 @@ if (spectrumCanvas) {
       spectrumFloor = Math.floor(noise / 10) * 10 - 10;
       spectrumRange = Math.max(60, Math.ceil((peak - spectrumFloor) / 10) * 10 + 10);
       if (floorInput) floorInput.value = spectrumFloor;
-      drawSpectrum(lastSpectrumData);
+      scheduleSpectrumDraw();
     });
   }
 })();
