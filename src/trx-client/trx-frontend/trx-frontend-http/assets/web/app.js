@@ -1693,6 +1693,7 @@ document.querySelector(".tab-bar").addEventListener("click", (e) => {
 
 // --- Auth startup sequence ---
 async function initializeApp() {
+  showAuthGate(false);
   const authStatus = await checkAuthStatus();
   authEnabled = !authStatus.auth_disabled;
 
