@@ -58,6 +58,14 @@
       <div id="loading-sub" style="color:#9aa4b5;"></div>
     </div>
     <div id="content" style="display:none;">
+    <div id="spectrum-panel" style="display:none;">
+      <div class="spectrum-wrap">
+        <canvas id="spectrum-canvas"></canvas>
+        <div id="spectrum-tooltip"></div>
+        <div id="spectrum-freq-axis"></div>
+      </div>
+      <div id="spectrum-hint">Scroll to zoom &middot; Drag to pan &middot; Double-click to reset</div>
+    </div>
     <div class="status">
       <div class="full-row freq-row">
         <div class="inline freq-inline">
@@ -156,13 +164,6 @@
               <option value="256">256</option>
             </select>
           </label>
-        </div>
-      </div>
-      <div id="spectrum-panel" style="display:none;">
-        <div class="label"><span>Spectrum</span></div>
-        <div class="spectrum-wrap">
-          <canvas id="spectrum-canvas"></canvas>
-          <div id="spectrum-freq-axis"></div>
         </div>
       </div>
     </div>

@@ -2342,12 +2342,50 @@ window.addEventListener("beforeunload", () => {
   }
 });
 
-// ── Spectrum display ────────────────────────────────────────────────────────
-const spectrumCanvas = document.getElementById("spectrum-canvas");
-const spectrumFreqAxis = document.getElementById("spectrum-freq-axis");
-let spectrumPollTimer = null;
-let lastSpectrumData = null;
 
+// ── Spectrum display ─────────────────────────────────────────────────────────
+const spectrumCanvas  = document.getElementById("spectrum-canvas");
+const spectrumFreqAxis = document.getElementById("spectrum-freq-axis");
+const spectrumTooltip = document.getElementById("spectrum-tooltip");
+let spectrumPollTimer = null;
+let lastSpectrumData  = null;
+
+// Zoom / pan state.  zoom >= 1; panFrac in [0,1] is the fraction of the full
+// bandwidth at the centre of the visible window.
+let spectrumZoom    = 1;
+let spectrumPanFrac = 0.5;
+
+// Returns { loHz, hiHz, visLoHz, visHiHz, fullSpanHz, visSpanHz } and clamps
+// panFrac so the view never scrolls past the edges.
+function spectrumVisibleRange(data) {
+  const fullSpanHz = data.sample_rate;
+  const loHz       = data.center_hz - fullSpanHz / 2;
+  const halfVis    = 0.5 / spectrumZoom;
+  spectrumPanFrac  = Math.min(Math.max(spectrumPanFrac, halfVis), 1 - halfVis);
+  const visCenterHz = loHz + spectrumPanFrac * fullSpanHz;
+  const visSpanHz   = fullSpanHz / spectrumZoom;
+  return {
+    loHz,
+    hiHz: loHz + fullSpanHz,
+    visLoHz:   visCenterHz - visSpanHz / 2,
+    visHiHz:   visCenterHz + visSpanHz / 2,
+    fullSpanHz,
+    visSpanHz,
+  };
+}
+
+function canvasXToHz(cssX, cssW, range) {
+  return range.visLoHz + (cssX / cssW) * range.visSpanHz;
+}
+
+// Format a frequency according to the current jog-step unit.
+function formatSpectrumFreq(hz) {
+  if (jogStep >= 1_000_000) return (hz / 1e6).toFixed(3) + " MHz";
+  if (jogStep >= 1_000)     return (hz / 1e3).toFixed(3) + " kHz";
+  return hz.toFixed(0) + " Hz";
+}
+
+// ── Polling ──────────────────────────────────────────────────────────────────
 function startSpectrumPolling() {
   if (spectrumPollTimer !== null) return;
   spectrumPollTimer = setInterval(fetchSpectrum, 200);
@@ -2355,10 +2393,7 @@ function startSpectrumPolling() {
 }
 
 function stopSpectrumPolling() {
-  if (spectrumPollTimer !== null) {
-    clearInterval(spectrumPollTimer);
-    spectrumPollTimer = null;
-  }
+  if (spectrumPollTimer !== null) { clearInterval(spectrumPollTimer); spectrumPollTimer = null; }
   lastSpectrumData = null;
   clearSpectrumCanvas();
 }
@@ -2366,56 +2401,51 @@ function stopSpectrumPolling() {
 async function fetchSpectrum() {
   try {
     const resp = await fetch("/spectrum", { cache: "no-store" });
-    if (resp.status === 204) {
-      lastSpectrumData = null;
-      clearSpectrumCanvas();
-      return;
-    }
+    if (resp.status === 204) { lastSpectrumData = null; clearSpectrumCanvas(); return; }
     if (!resp.ok) return;
-    const data = await resp.json();
-    lastSpectrumData = data;
-    drawSpectrum(data);
-  } catch (_) {
-    // ignore fetch errors (connection lost etc.)
-  }
+    lastSpectrumData = await resp.json();
+    drawSpectrum(lastSpectrumData);
+  } catch (_) {}
 }
 
+// ── Rendering ────────────────────────────────────────────────────────────────
 function clearSpectrumCanvas() {
   if (!spectrumCanvas) return;
   const ctx = spectrumCanvas.getContext("2d");
-  const w = spectrumCanvas.width, h = spectrumCanvas.height;
-  ctx.clearRect(0, 0, w, h);
   ctx.fillStyle = "#0a0f18";
-  ctx.fillRect(0, 0, w, h);
+  ctx.fillRect(0, 0, spectrumCanvas.width, spectrumCanvas.height);
 }
 
 function drawSpectrum(data) {
   if (!spectrumCanvas) return;
-  const dpr = window.devicePixelRatio || 1;
-  const cssW = spectrumCanvas.clientWidth || 600;
-  const cssH = spectrumCanvas.clientHeight || 120;
+
+  // HiDPI sizing
+  const dpr  = window.devicePixelRatio || 1;
+  const cssW = spectrumCanvas.clientWidth  || 640;
+  const cssH = spectrumCanvas.clientHeight || 160;
   const W = Math.round(cssW * dpr);
   const H = Math.round(cssH * dpr);
   if (spectrumCanvas.width !== W || spectrumCanvas.height !== H) {
-    spectrumCanvas.width = W;
+    spectrumCanvas.width  = W;
     spectrumCanvas.height = H;
   }
 
-  const ctx = spectrumCanvas.getContext("2d");
+  const ctx   = spectrumCanvas.getContext("2d");
+  const range = spectrumVisibleRange(data);
+  const bins  = data.bins;
+  const n     = bins.length;
+
   // Background
   ctx.fillStyle = "#0a0f18";
   ctx.fillRect(0, 0, W, H);
 
-  const bins = data.bins;
-  const n = bins.length;
   if (!n) return;
 
-  // dBFS range for display
-  const DB_MIN = -80;
-  const DB_MAX = 0;
-  const dbRange = DB_MAX - DB_MIN;
+  const DB_MIN  = -80, DB_MAX = 0, dbRange = DB_MAX - DB_MIN;
+  const fullSpanHz = data.sample_rate;
+  const loHz       = data.center_hz - fullSpanHz / 2;
 
-  // Grid lines (horizontal dBFS)
+  // Horizontal dBFS grid
   ctx.strokeStyle = "rgba(255,255,255,0.06)";
   ctx.lineWidth = 1;
   for (let db = DB_MIN; db <= DB_MAX; db += 20) {
@@ -2423,89 +2453,220 @@ function drawSpectrum(data) {
     ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke();
   }
 
+  // Map bin index → screen x (bins outside the visible window go off-screen and are clipped)
+  function binX(i) {
+    const hz = loHz + (i / (n - 1)) * fullSpanHz;
+    return ((hz - range.visLoHz) / range.visSpanHz) * W;
+  }
+  function binY(i) {
+    const db = Math.max(DB_MIN, Math.min(DB_MAX, bins[i]));
+    return H * (1 - (db - DB_MIN) / dbRange);
+  }
+
+  // Spectrum fill
+  ctx.save();
+  ctx.beginPath();
+  ctx.moveTo(binX(0), H);
+  for (let i = 0; i < n; i++) ctx.lineTo(binX(i), binY(i));
+  ctx.lineTo(binX(n - 1), H);
+  ctx.closePath();
+  ctx.fillStyle = "rgba(0,230,118,0.10)";
+  ctx.fill();
+  ctx.restore();
+
   // Spectrum line
+  ctx.save();
   ctx.beginPath();
   ctx.strokeStyle = "#00e676";
-  ctx.lineWidth = Math.max(1, dpr);
+  ctx.lineWidth   = Math.max(1, dpr);
   for (let i = 0; i < n; i++) {
-    const x = (i / (n - 1)) * W;
-    const db = Math.max(DB_MIN, Math.min(DB_MAX, bins[i]));
-    const y = H * (1 - (db - DB_MIN) / dbRange);
-    if (i === 0) ctx.moveTo(x, y);
-    else ctx.lineTo(x, y);
+    const x = binX(i), y = binY(i);
+    i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
   }
   ctx.stroke();
-
-  // Fill under spectrum line
-  ctx.lineTo(W, H); ctx.lineTo(0, H); ctx.closePath();
-  ctx.fillStyle = "rgba(0,230,118,0.08)";
-  ctx.fill();
+  ctx.restore();
 
   // Tuned-frequency marker
-  if (lastFreqHz != null && data.center_hz && data.sample_rate) {
-    const halfBw = data.sample_rate / 2;
-    const loHz = data.center_hz - halfBw;
-    const hiHz = data.center_hz + halfBw;
-    const frac = (lastFreqHz - loHz) / (hiHz - loHz);
-    if (frac >= 0 && frac <= 1) {
-      const xf = Math.round(frac * W);
+  if (lastFreqHz != null) {
+    const xf = ((lastFreqHz - range.visLoHz) / range.visSpanHz) * W;
+    if (xf >= 0 && xf <= W) {
       ctx.save();
       ctx.setLineDash([4 * dpr, 4 * dpr]);
       ctx.strokeStyle = "#ff1744";
-      ctx.lineWidth = Math.max(1, dpr);
+      ctx.lineWidth   = Math.max(1, dpr);
       ctx.beginPath(); ctx.moveTo(xf, 0); ctx.lineTo(xf, H); ctx.stroke();
       ctx.restore();
     }
   }
 
-  // Frequency axis labels
-  updateSpectrumFreqAxis(data);
+  updateSpectrumFreqAxis(range);
 }
 
-function updateSpectrumFreqAxis(data) {
-  if (!spectrumFreqAxis || !data.center_hz || !data.sample_rate) return;
-  const halfBw = data.sample_rate / 2;
-  const loHz = data.center_hz - halfBw;
-  const hiHz = data.center_hz + halfBw;
+function updateSpectrumFreqAxis(range) {
+  if (!spectrumFreqAxis) return;
+  const spanHz = range.visSpanHz;
+  // Pick a step that gives ~5 labels
+  const targets = [100, 200, 500, 1e3, 2e3, 5e3, 10e3, 20e3, 50e3,
+                   100e3, 200e3, 500e3, 1e6, 2e6, 5e6, 10e6];
+  const ideal = spanHz / 5;
+  const stepHz = targets.reduce((best, s) =>
+    Math.abs(s - ideal) < Math.abs(best - ideal) ? s : best, targets[0]);
 
-  // Choose label step: aim for ~5 labels
-  const spanMHz = (hiHz - loHz) / 1e6;
-  let stepMHz = 1;
-  if (spanMHz <= 1) stepMHz = 0.1;
-  else if (spanMHz <= 2) stepMHz = 0.2;
-  else if (spanMHz <= 5) stepMHz = 0.5;
-  else if (spanMHz <= 10) stepMHz = 1;
-  else if (spanMHz <= 20) stepMHz = 2;
-  else stepMHz = 5;
-
-  const stepHz = stepMHz * 1e6;
-  const firstHz = Math.ceil(loHz / stepHz) * stepHz;
-
-  // Rebuild axis spans
+  const firstHz = Math.ceil(range.visLoHz / stepHz) * stepHz;
   spectrumFreqAxis.innerHTML = "";
-  for (let hz = firstHz; hz <= hiHz; hz += stepHz) {
-    const frac = (hz - loHz) / (hiHz - loHz);
-    const pct = (frac * 100).toFixed(2);
+  for (let hz = firstHz; hz <= range.visHiHz + stepHz * 0.01; hz += stepHz) {
+    const frac = (hz - range.visLoHz) / range.visSpanHz;
+    if (frac < 0 || frac > 1) continue;
     const label = hz >= 1e6
-      ? (hz / 1e6).toFixed(stepMHz < 1 ? 1 : 0) + " MHz"
-      : (hz / 1e3).toFixed(0) + " kHz";
+      ? (hz / 1e6).toFixed(stepHz < 1e6 ? (stepHz < 100e3 ? 3 : 1) : 0) + " M"
+      : hz >= 1e3
+        ? (hz / 1e3).toFixed(stepHz < 1e3 ? 1 : 0) + " k"
+        : hz.toFixed(0);
     const span = document.createElement("span");
     span.textContent = label;
-    span.style.left = pct + "%";
+    span.style.left  = (frac * 100).toFixed(2) + "%";
     spectrumFreqAxis.appendChild(span);
   }
 }
 
-// Click on spectrum canvas → tune to that frequency
+// ── Zoom helpers ──────────────────────────────────────────────────────────────
+function spectrumZoomAt(cssX, cssW, data, factor) {
+  const range   = spectrumVisibleRange(data);
+  const hzAtCursor = canvasXToHz(cssX, cssW, range);
+  const frac    = cssX / cssW;
+  spectrumZoom  = Math.max(1, Math.min(64, spectrumZoom * factor));
+  // Recompute so the pixel under the cursor keeps the same frequency
+  const newVisSpan    = data.sample_rate / spectrumZoom;
+  const newVisCenter  = hzAtCursor + (0.5 - frac) * newVisSpan;
+  const loHz          = data.center_hz - data.sample_rate / 2;
+  spectrumPanFrac     = (newVisCenter - loHz) / data.sample_rate;
+}
+
+// ── Scroll to zoom ────────────────────────────────────────────────────────────
+if (spectrumCanvas) {
+  spectrumCanvas.addEventListener("wheel", (e) => {
+    e.preventDefault();
+    if (!lastSpectrumData) return;
+    const rect   = spectrumCanvas.getBoundingClientRect();
+    const cssX   = e.clientX - rect.left;
+    const factor = e.deltaY < 0 ? 1.25 : 1 / 1.25;
+    spectrumZoomAt(cssX, rect.width, lastSpectrumData, factor);
+    drawSpectrum(lastSpectrumData);
+  }, { passive: false });
+
+  // Double-click → reset zoom/pan
+  spectrumCanvas.addEventListener("dblclick", () => {
+    spectrumZoom    = 1;
+    spectrumPanFrac = 0.5;
+    if (lastSpectrumData) drawSpectrum(lastSpectrumData);
+  });
+}
+
+// ── Mouse drag to pan ─────────────────────────────────────────────────────────
+let _sDragStart = null;  // { clientX, panFrac }
+let _sDragMoved = false;
+
+if (spectrumCanvas) {
+  spectrumCanvas.addEventListener("mousedown", (e) => {
+    if (e.button !== 0) return;
+    _sDragStart = { clientX: e.clientX, panFrac: spectrumPanFrac };
+    _sDragMoved = false;
+  });
+  window.addEventListener("mousemove", (e) => {
+    if (!_sDragStart || !lastSpectrumData) return;
+    const rect  = spectrumCanvas.getBoundingClientRect();
+    const dx    = e.clientX - _sDragStart.clientX;
+    if (Math.abs(dx) > 3) _sDragMoved = true;
+    spectrumPanFrac = _sDragStart.panFrac - (dx / rect.width) / spectrumZoom;
+    drawSpectrum(lastSpectrumData);
+  });
+  window.addEventListener("mouseup", () => { _sDragStart = null; });
+}
+
+// ── Touch: pinch-to-zoom + single-finger pan ──────────────────────────────────
+let _sTouch = null;
+
+if (spectrumCanvas) {
+  spectrumCanvas.addEventListener("touchstart", (e) => {
+    e.preventDefault();
+    if (e.touches.length === 2) {
+      const t0 = e.touches[0], t1 = e.touches[1];
+      _sTouch = {
+        type:    "pinch",
+        dist:    Math.hypot(t1.clientX - t0.clientX, t1.clientY - t0.clientY),
+        midX:    (t0.clientX + t1.clientX) / 2,
+        zoom:    spectrumZoom,
+        panFrac: spectrumPanFrac,
+      };
+    } else if (e.touches.length === 1) {
+      _sTouch = { type: "pan", clientX: e.touches[0].clientX, panFrac: spectrumPanFrac };
+    }
+  }, { passive: false });
+
+  spectrumCanvas.addEventListener("touchmove", (e) => {
+    e.preventDefault();
+    if (!_sTouch || !lastSpectrumData) return;
+    const rect = spectrumCanvas.getBoundingClientRect();
+    if (_sTouch.type === "pinch" && e.touches.length === 2) {
+      const t0 = e.touches[0], t1 = e.touches[1];
+      const newDist = Math.hypot(t1.clientX - t0.clientX, t1.clientY - t0.clientY);
+      const newMidX = (t0.clientX + t1.clientX) / 2;
+      const scale   = newDist / _sTouch.dist;
+      const newZoom = Math.max(1, Math.min(64, _sTouch.zoom * scale));
+      const loHz    = lastSpectrumData.center_hz - lastSpectrumData.sample_rate / 2;
+      // Compute Hz under original midpoint in original view
+      const oldVisSpan   = lastSpectrumData.sample_rate / _sTouch.zoom;
+      const oldVisLo     = loHz + _sTouch.panFrac * lastSpectrumData.sample_rate - oldVisSpan / 2;
+      const midFrac      = (_sTouch.midX - rect.left) / rect.width;
+      const midHz        = oldVisLo + midFrac * oldVisSpan;
+      const newVisSpan   = lastSpectrumData.sample_rate / newZoom;
+      const newVisCenter = midHz + (0.5 - midFrac) * newVisSpan;
+      spectrumZoom    = newZoom;
+      spectrumPanFrac = (newVisCenter - loHz) / lastSpectrumData.sample_rate;
+      // Pan contribution from mid shift
+      const dxMid = newMidX - _sTouch.midX;
+      spectrumPanFrac -= (dxMid / rect.width) / spectrumZoom;
+      drawSpectrum(lastSpectrumData);
+    } else if (_sTouch.type === "pan" && e.touches.length === 1) {
+      const dx = e.touches[0].clientX - _sTouch.clientX;
+      spectrumPanFrac = _sTouch.panFrac - (dx / rect.width) / spectrumZoom;
+      drawSpectrum(lastSpectrumData);
+    }
+  }, { passive: false });
+
+  spectrumCanvas.addEventListener("touchend", () => { _sTouch = null; });
+}
+
+// ── Hover tooltip ─────────────────────────────────────────────────────────────
+if (spectrumCanvas) {
+  spectrumCanvas.addEventListener("mousemove", (e) => {
+    if (!lastSpectrumData || !spectrumTooltip) return;
+    const rect  = spectrumCanvas.getBoundingClientRect();
+    const cssX  = e.clientX - rect.left;
+    const range = spectrumVisibleRange(lastSpectrumData);
+    const hz    = canvasXToHz(cssX, rect.width, range);
+    spectrumTooltip.textContent = formatSpectrumFreq(hz);
+    spectrumTooltip.style.display = "block";
+    // Keep tooltip inside canvas
+    const tw = spectrumTooltip.offsetWidth;
+    let tx = cssX + 10;
+    if (tx + tw > rect.width) tx = cssX - tw - 10;
+    spectrumTooltip.style.left = tx + "px";
+    spectrumTooltip.style.top  = Math.max(0, e.clientY - rect.top - 28) + "px";
+  });
+  spectrumCanvas.addEventListener("mouseleave", () => {
+    if (spectrumTooltip) spectrumTooltip.style.display = "none";
+  });
+}
+
+// ── Click to tune (only when not dragging) ────────────────────────────────────
 if (spectrumCanvas) {
   spectrumCanvas.addEventListener("click", (e) => {
-    if (!lastSpectrumData || !lastSpectrumData.center_hz || !lastSpectrumData.sample_rate) return;
-    const rect = spectrumCanvas.getBoundingClientRect();
-    const frac = (e.clientX - rect.left) / rect.width;
-    const halfBw = lastSpectrumData.sample_rate / 2;
-    const loHz = lastSpectrumData.center_hz - halfBw;
-    const hiHz = lastSpectrumData.center_hz + halfBw;
-    const targetHz = Math.round(loHz + frac * (hiHz - loHz));
-    setFreq(targetHz);
+    if (_sDragMoved) { _sDragMoved = false; return; }
+    if (!lastSpectrumData) return;
+    const rect  = spectrumCanvas.getBoundingClientRect();
+    const range = spectrumVisibleRange(lastSpectrumData);
+    const targetHz = Math.round(canvasXToHz(e.clientX - rect.left, rect.width, range));
+    postPath(`/set_freq?hz=${targetHz}`).catch(() => {});
   });
 }

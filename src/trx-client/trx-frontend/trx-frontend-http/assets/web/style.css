@@ -586,17 +586,22 @@ button:focus-visible, input:focus-visible, select:focus-visible {
 
 
 /* ── Spectrum display ─────────────────────────────────────────────────── */
+#spectrum-panel {
+  margin-bottom: 0.9rem;
+}
 .spectrum-wrap {
   position: relative;
   width: 100%;
+  user-select: none;
 }
 #spectrum-canvas {
   display: block;
   width: 100%;
-  height: 120px;
+  height: 160px;
   background: #0a0f18;
-  border-radius: 4px;
+  border-radius: 6px 6px 0 0;
   cursor: crosshair;
+  touch-action: none;
 }
 #spectrum-freq-axis {
   position: relative;
@@ -604,10 +609,35 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   width: 100%;
   font-size: 0.7rem;
   color: var(--text-muted);
-  user-select: none;
+  background: var(--bg-secondary);
+  border-radius: 0 0 6px 6px;
+  border: 1px solid var(--border);
+  border-top: none;
 }
 #spectrum-freq-axis span {
   position: absolute;
   transform: translateX(-50%);
   white-space: nowrap;
+  top: 2px;
+}
+#spectrum-tooltip {
+  display: none;
+  position: absolute;
+  pointer-events: none;
+  background: rgba(10,15,24,0.85);
+  color: #00e676;
+  font-size: 0.75rem;
+  font-family: monospace;
+  padding: 2px 6px;
+  border-radius: 4px;
+  border: 1px solid rgba(0,230,118,0.3);
+  white-space: nowrap;
+  z-index: 10;
+}
+#spectrum-hint {
+  font-size: 0.68rem;
+  color: var(--text-muted);
+  text-align: right;
+  margin-top: 2px;
+  opacity: 0.6;
 }
