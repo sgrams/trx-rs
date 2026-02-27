@@ -468,6 +468,19 @@ pub async fn set_fir_taps(
     send_command(&rig_tx, RigCommand::SetFirTaps(query.taps)).await
 }
 
+#[derive(serde::Deserialize)]
+pub struct WfmDeemphasisQuery {
+    pub us: u32,
+}
+
+#[post("/set_wfm_deemphasis")]
+pub async fn set_wfm_deemphasis(
+    query: web::Query<WfmDeemphasisQuery>,
+    rig_tx: web::Data<mpsc::Sender<RigRequest>>,
+) -> Result<HttpResponse, Error> {
+    send_command(&rig_tx, RigCommand::SetWfmDeemphasis(query.us)).await
+}
+
 #[post("/toggle_aprs_decode")]
 pub async fn toggle_aprs_decode(
     state: web::Data<watch::Receiver<RigState>>,
@@ -679,6 +692,7 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
         .service(set_tx_limit)
         .service(set_bandwidth)
         .service(set_fir_taps)
+        .service(set_wfm_deemphasis)
         .service(toggle_aprs_decode)
         .service(toggle_cw_decode)
         .service(set_cw_auto)

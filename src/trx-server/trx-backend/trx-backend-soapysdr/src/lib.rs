@@ -37,6 +37,8 @@ pub struct SoapySdrRig {
     center_hz: i64,
     /// Used to send hardware retune commands to the IQ read loop.
     retune_cmd: Arc<std::sync::Mutex<Option<f64>>>,
+    /// Current WFM deemphasis setting in microseconds.
+    wfm_deemphasis_us: u32,
 }
 
 impl SoapySdrRig {
@@ -111,6 +113,7 @@ impl SoapySdrRig {
             audio_sample_rate,
             audio_channels,
             frame_duration_ms,
+            75,
             channels,
         );
 
@@ -177,6 +180,7 @@ impl SoapySdrRig {
             center_offset_hz,
             center_hz: hardware_center_hz,
             retune_cmd,
+            wfm_deemphasis_us: 75,
         })
     }
 
@@ -290,6 +294,25 @@ impl RigCat for SoapySdrRig {
             // Update the primary channel's demodulator in the live pipeline.
             if let Some(dsp_arc) = self.pipeline.channel_dsps.get(self.primary_channel_idx) {
                 dsp_arc.lock().unwrap().set_mode(&mode);
+            }
+            Ok(())
+        })
+    }
+
+    fn set_wfm_deemphasis<'a>(
+        &'a mut self,
+        deemphasis_us: u32,
+    ) -> Pin<Box<dyn std::future::Future<Output = DynResult<()>> + Send + 'a>> {
+        Box::pin(async move {
+            let deemphasis_us = match deemphasis_us {
+                50 | 75 => deemphasis_us,
+                other => {
+                    return Err(format!("unsupported WFM deemphasis {}", other).into());
+                }
+            };
+            self.wfm_deemphasis_us = deemphasis_us;
+            if let Some(dsp_arc) = self.pipeline.channel_dsps.get(self.primary_channel_idx) {
+                dsp_arc.lock().unwrap().set_wfm_deemphasis(deemphasis_us);
             }
             Ok(())
         })
@@ -426,15 +449,22 @@ impl RigCat for SoapySdrRig {
             bandwidth_hz: self.bandwidth_hz,
             fir_taps: self.fir_taps,
             cw_center_hz: 700,
+            wfm_deemphasis_us: self.wfm_deemphasis_us,
         })
     }
 
     fn get_spectrum(&self) -> Option<SpectrumData> {
         let bins = self.spectrum_buf.lock().ok()?.clone()?;
+        let rds = self
+            .pipeline
+            .channel_dsps
+            .get(self.primary_channel_idx)
+            .and_then(|dsp| dsp.lock().ok().and_then(|d| d.rds_data()));
         Some(SpectrumData {
             bins,
             center_hz: self.center_hz.max(0) as u64,
             sample_rate: self.pipeline.sdr_sample_rate,
+            rds,
         })
     }
 

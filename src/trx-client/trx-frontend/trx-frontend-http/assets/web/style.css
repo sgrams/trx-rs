@@ -79,7 +79,7 @@ input.status-input, select.status-input { width: 100%; padding: 0.45rem 0.5rem; 
 #freq { font-family: 'DSEG14 Classic', monospace; font-size: 2rem; padding: 0.5rem 0.6rem; letter-spacing: 0.05em; text-align: center; }
 .controls-row {
   display: grid;
-  grid-template-columns: 1fr auto 1fr;
+  grid-template-columns: minmax(0, 1fr) auto auto minmax(0, 1fr);
   gap: 1rem;
   align-items: start;
 }
@@ -113,6 +113,26 @@ input.status-input, select.status-input { width: 100%; padding: 0.45rem 0.5rem; 
   justify-self: center;
   width: auto;
   align-items: center;
+}
+.controls-col-wfm.label-below-col .label {
+  justify-content: flex-start;
+}
+.wfm-controls-inline {
+  gap: 0.6rem;
+  justify-content: flex-start;
+}
+.wfm-control {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  white-space: nowrap;
+}
+.wfm-control .status-input {
+  min-width: 4.6rem;
+  width: auto;
+  font-size: 0.9rem;
 }
 .controls-col-center::after {
   content: "";
@@ -583,9 +603,11 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   .header-rig-switch { width: 100%; justify-content: flex-end; }
   .header-rig-switch select { min-width: 6.5rem; }
   .controls-row { grid-template-columns: 1fr auto; }
+  .controls-col-wfm { grid-column: 1 / -1; }
   .controls-col-power { grid-column: 1 / -1; }
   .controls-col.label-below-col .inline,
   .controls-col.label-below-col .btn-grid { margin-top: 0; }
+  .wfm-controls-inline { flex-wrap: wrap; }
   .ft8-controls { flex-wrap: wrap; }
   #ft8-decode-toggle-btn, #wspr-decode-toggle-btn { white-space: nowrap; }
   .jog-container { flex-wrap: wrap; }

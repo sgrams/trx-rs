@@ -10,6 +10,7 @@ license = "BSD-2-Clause"
 
 [dependencies]
 trx-core = { path = "../../../trx-core" }
+trx-rds = { path = "../../../decoders/trx-rds" }
 tokio = { workspace = true, features = ["sync", "rt"] }
 serde = { workspace = true }
 tracing = { workspace = true }

@@ -297,6 +297,7 @@ mod tests {
                 bandwidth_hz: 3000,
                 fir_taps: 64,
                 cw_center_hz: 700,
+                wfm_deemphasis_us: 75,
             }),
             ..minimal_snapshot()
         })
@@ -332,6 +333,7 @@ mod tests {
                 bandwidth_hz: 12000,
                 fir_taps: 128,
                 cw_center_hz: 700,
+                wfm_deemphasis_us: 50,
             }),
             ..minimal_snapshot()
         };
@@ -340,6 +342,7 @@ mod tests {
         let f = decoded.filter.expect("filter should round-trip");
         assert_eq!(f.bandwidth_hz, 12000);
         assert_eq!(f.fir_taps, 128);
+        assert_eq!(f.wfm_deemphasis_us, 50);
     }
 
     fn minimal_snapshot() -> trx_core::rig::state::RigSnapshot {

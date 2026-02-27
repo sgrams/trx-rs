@@ -449,6 +449,16 @@ async fn process_command(
             let _ = ctx.state_tx.send(ctx.state.clone());
             return snapshot_from(ctx.state);
         }
+        RigCommand::SetWfmDeemphasis(deemphasis_us) => {
+            if let Err(e) = ctx.rig.set_wfm_deemphasis(deemphasis_us).await {
+                return Err(RigError::communication(format!("set_wfm_deemphasis: {e}")));
+            }
+            if let Some(f) = ctx.state.filter.as_mut() {
+                f.wfm_deemphasis_us = deemphasis_us;
+            }
+            let _ = ctx.state_tx.send(ctx.state.clone());
+            return snapshot_from(ctx.state);
+        }
         RigCommand::SetCenterFreq(freq) => {
             if let Err(e) = ctx.rig.set_center_freq(freq).await {
                 return Err(RigError::communication(format!("set_center_freq: {e}")));

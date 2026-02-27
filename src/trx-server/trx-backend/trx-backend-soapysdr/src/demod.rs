@@ -3,7 +3,8 @@
 // SPDX-License-Identifier: BSD-2-Clause
 
 use num_complex::Complex;
-use trx_core::rig::state::RigMode;
+use trx_core::rig::state::{RdsData, RigMode};
+use trx_rds::RdsDecoder;
 
 #[derive(Debug, Clone)]
 struct OnePoleLowPass {
@@ -50,6 +51,7 @@ impl Deemphasis {
 #[derive(Debug, Clone)]
 pub struct WfmStereoDecoder {
     output_channels: usize,
+    rds_decoder: RdsDecoder,
     pilot_phase: f32,
     pilot_freq: f32,
     pilot_freq_err: f32,
@@ -65,11 +67,18 @@ pub struct WfmStereoDecoder {
 }
 
 impl WfmStereoDecoder {
-    pub fn new(composite_rate: u32, audio_rate: u32, output_channels: usize) -> Self {
+    pub fn new(
+        composite_rate: u32,
+        audio_rate: u32,
+        output_channels: usize,
+        deemphasis_us: u32,
+    ) -> Self {
         let composite_rate_f = composite_rate.max(1) as f32;
         let output_decim = (composite_rate / audio_rate.max(1)).max(1) as usize;
+        let deemphasis_us = deemphasis_us as f32;
         Self {
             output_channels: output_channels.max(1),
+            rds_decoder: RdsDecoder::new(composite_rate),
             pilot_phase: 0.0,
             pilot_freq: 2.0 * std::f32::consts::PI * 19_000.0 / composite_rate_f,
             pilot_freq_err: 0.0,
@@ -77,9 +86,9 @@ impl WfmStereoDecoder {
             pilot_q_lp: OnePoleLowPass::new(composite_rate_f, 400.0),
             sum_lp: OnePoleLowPass::new(composite_rate_f, 15_000.0),
             diff_lp: OnePoleLowPass::new(composite_rate_f, 15_000.0),
-            deemph_m: Deemphasis::new(audio_rate.max(1) as f32, 75.0),
-            deemph_l: Deemphasis::new(audio_rate.max(1) as f32, 75.0),
-            deemph_r: Deemphasis::new(audio_rate.max(1) as f32, 75.0),
+            deemph_m: Deemphasis::new(audio_rate.max(1) as f32, deemphasis_us),
+            deemph_l: Deemphasis::new(audio_rate.max(1) as f32, deemphasis_us),
+            deemph_r: Deemphasis::new(audio_rate.max(1) as f32, deemphasis_us),
             output_decim,
             output_counter: 0,
         }
@@ -90,6 +99,7 @@ impl WfmStereoDecoder {
         if composite.is_empty() {
             return Vec::new();
         }
+        let _ = self.rds_decoder.process_samples(&composite);
 
         let mut output = Vec::with_capacity(
             (composite.len() / self.output_decim.max(1)) * self.output_channels.max(1),
@@ -128,6 +138,10 @@ impl WfmStereoDecoder {
         }
 
         output
+    }
+
+    pub fn rds_data(&self) -> Option<RdsData> {
+        self.rds_decoder.snapshot()
     }
 }
 

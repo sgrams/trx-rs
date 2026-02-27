@@ -2432,6 +2432,7 @@ dependencies = [
  "tokio",
  "tracing",
  "trx-core",
+ "trx-rds",
 ]
 
 [[package]]
@@ -2552,6 +2553,13 @@ version = "0.1.0"
 dependencies = [
  "serde",
  "serde_json",
+ "trx-core",
+]
+
+[[package]]
+name = "trx-rds"
+version = "0.1.0"
+dependencies = [
  "trx-core",
 ]
 

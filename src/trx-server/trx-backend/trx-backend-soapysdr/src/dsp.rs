@@ -18,7 +18,7 @@ use num_complex::Complex;
 use rustfft::num_complex::Complex as FftComplex;
 use rustfft::{Fft, FftPlanner};
 use tokio::sync::broadcast;
-use trx_core::rig::state::RigMode;
+use trx_core::rig::state::{RdsData, RigMode};
 
 use crate::demod::{Demodulator, WfmStereoDecoder};
 
@@ -266,6 +266,8 @@ pub struct ChannelDsp {
     audio_bandwidth_hz: u32,
     /// FIR tap count used when rebuilding filters.
     fir_taps: usize,
+    /// WFM deemphasis time constant in microseconds.
+    wfm_deemphasis_us: u32,
     /// Decimation factor: `sdr_sample_rate / audio_sample_rate`.
     pub decim_factor: usize,
     /// Number of PCM channels emitted in each frame.
@@ -338,6 +340,7 @@ impl ChannelDsp {
                 channel_sample_rate,
                 self.audio_sample_rate,
                 self.output_channels,
+                self.wfm_deemphasis_us,
             ))
         } else {
             None
@@ -354,6 +357,7 @@ impl ChannelDsp {
         output_channels: usize,
         frame_duration_ms: u16,
         audio_bandwidth_hz: u32,
+        wfm_deemphasis_us: u32,
         fir_taps: usize,
         pcm_tx: broadcast::Sender<Vec<f32>>,
     ) -> Self {
@@ -390,6 +394,7 @@ impl ChannelDsp {
             audio_sample_rate,
             audio_bandwidth_hz,
             fir_taps: taps,
+            wfm_deemphasis_us,
             decim_factor,
             output_channels,
             frame_buf: Vec::with_capacity(frame_size + output_channels),
@@ -403,6 +408,7 @@ impl ChannelDsp {
                     channel_sample_rate,
                     audio_sample_rate,
                     output_channels,
+                    wfm_deemphasis_us,
                 ))
             } else {
                 None
@@ -423,6 +429,15 @@ impl ChannelDsp {
         self.audio_bandwidth_hz = bandwidth_hz;
         self.fir_taps = taps.max(1);
         self.rebuild_filters();
+    }
+
+    pub fn set_wfm_deemphasis(&mut self, deemphasis_us: u32) {
+        self.wfm_deemphasis_us = deemphasis_us;
+        self.rebuild_filters();
+    }
+
+    pub fn rds_data(&self) -> Option<RdsData> {
+        self.wfm_decoder.as_ref().and_then(WfmStereoDecoder::rds_data)
     }
 
     /// Process a block of raw IQ samples through the full DSP chain.
@@ -521,6 +536,7 @@ impl SdrPipeline {
         audio_sample_rate: u32,
         output_channels: usize,
         frame_duration_ms: u16,
+        wfm_deemphasis_us: u32,
         channels: &[(f64, RigMode, u32, usize)],
     ) -> Self {
         const IQ_BROADCAST_CAPACITY: usize = 64;
@@ -541,6 +557,7 @@ impl SdrPipeline {
                 output_channels,
                 frame_duration_ms,
                 audio_bandwidth_hz,
+                wfm_deemphasis_us,
                 fir_taps,
                 pcm_tx.clone(),
             );
@@ -760,7 +777,8 @@ mod tests {
     #[test]
     fn channel_dsp_processes_silence() {
         let (pcm_tx, _pcm_rx) = broadcast::channel::<Vec<f32>>(8);
-        let mut dsp = ChannelDsp::new(0.0, &RigMode::USB, 48_000, 8_000, 1, 20, 3000, 31, pcm_tx);
+        let mut dsp =
+            ChannelDsp::new(0.0, &RigMode::USB, 48_000, 8_000, 1, 20, 3000, 75, 31, pcm_tx);
         let block = vec![Complex::new(0.0_f32, 0.0_f32); 4096];
         dsp.process_block(&block);
     }
@@ -768,7 +786,8 @@ mod tests {
     #[test]
     fn channel_dsp_set_mode() {
         let (pcm_tx, _) = broadcast::channel::<Vec<f32>>(8);
-        let mut dsp = ChannelDsp::new(0.0, &RigMode::USB, 48_000, 8_000, 1, 20, 3000, 31, pcm_tx);
+        let mut dsp =
+            ChannelDsp::new(0.0, &RigMode::USB, 48_000, 8_000, 1, 20, 3000, 75, 31, pcm_tx);
         assert_eq!(dsp.demodulator, Demodulator::Usb);
         dsp.set_mode(&RigMode::FM);
         assert_eq!(dsp.demodulator, Demodulator::Fm);
@@ -782,6 +801,7 @@ mod tests {
             48_000,
             1,
             20,
+            75,
             &[(200_000.0, RigMode::USB, 3000, 64)],
         );
         assert_eq!(pipeline.pcm_senders.len(), 1);
@@ -790,7 +810,7 @@ mod tests {
 
     #[test]
     fn pipeline_empty_channels() {
-        let pipeline = SdrPipeline::start(Box::new(MockIqSource), 1_920_000, 48_000, 1, 20, &[]);
+        let pipeline = SdrPipeline::start(Box::new(MockIqSource), 1_920_000, 48_000, 1, 20, 75, &[]);
         assert_eq!(pipeline.pcm_senders.len(), 0);
         assert_eq!(pipeline.channel_dsps.len(), 0);
     }

@@ -889,6 +889,9 @@ function render(update) {
   if (update.filter && typeof update.filter.bandwidth_hz === "number") {
     currentBandwidthHz = update.filter.bandwidth_hz;
     syncBandwidthInput(currentBandwidthHz);
+    if (wfmDeemphasisEl && typeof update.filter.wfm_deemphasis_us === "number") {
+      wfmDeemphasisEl.value = String(update.filter.wfm_deemphasis_us);
+    }
   }
   if (update.status && update.status.freq && typeof update.status.freq.hz === "number") {
     lastFreqHz = update.status.freq.hz;
@@ -904,7 +907,7 @@ function render(update) {
   if (update.status && update.status.mode) {
     const mode = normalizeMode(update.status.mode);
     modeEl.value = mode ? mode.toUpperCase() : "";
-    updateWfmAudioModeControl();
+    updateWfmControls();
     // When filter panel is active (SDR backend), update the BW slider range
     // to match the new mode — but only if the server hasn't already sent a
     // filter state that overrides it.
@@ -1475,6 +1478,7 @@ async function applyModeFromPicker() {
     showHint("Mode missing", 1500);
     return;
   }
+  updateWfmControls();
   modeEl.disabled = true;
   showHint("Setting mode…");
   try {
@@ -2052,7 +2056,8 @@ const txAudioBtn = document.getElementById("tx-audio-btn");
 const audioStatus = document.getElementById("audio-status");
 const audioLevelFill = document.getElementById("audio-level-fill");
 const audioRow = document.getElementById("audio-row");
-const wfmAudioModeWrap = document.getElementById("wfm-audio-mode-wrap");
+const wfmControlsCol = document.getElementById("wfm-controls-col");
+const wfmDeemphasisEl = document.getElementById("wfm-deemphasis");
 const wfmAudioModeEl = document.getElementById("wfm-audio-mode");
 
 // Hide audio row if audio is not configured on the server
@@ -2080,6 +2085,8 @@ let txTimeoutTimer = null;
 let txTimeoutRemaining = 0;
 let txTimeoutInterval = null;
 const hasWebCodecs = typeof AudioDecoder !== "undefined" && typeof AudioEncoder !== "undefined";
+const MAX_RX_BUFFER_SECS = 0.25;
+const TARGET_RX_BUFFER_SECS = 0.04;
 
 if (wfmAudioModeEl) {
   wfmAudioModeEl.value = loadSetting("wfmAudioMode", "stereo");
@@ -2087,12 +2094,16 @@ if (wfmAudioModeEl) {
     saveSetting("wfmAudioMode", wfmAudioModeEl.value);
   });
 }
+if (wfmDeemphasisEl) {
+  wfmDeemphasisEl.addEventListener("change", () => {
+    postPath(`/set_wfm_deemphasis?us=${encodeURIComponent(wfmDeemphasisEl.value)}`).catch(() => {});
+  });
+}
 
-function updateWfmAudioModeControl() {
-  if (!wfmAudioModeWrap) return;
+function updateWfmControls() {
+  if (!wfmControlsCol) return;
   const mode = (modeEl && modeEl.value ? modeEl.value : "").toUpperCase();
-  const channels = (streamInfo && streamInfo.channels) || 1;
-  wfmAudioModeWrap.style.display = mode === "WFM" && channels >= 2 ? "" : "none";
+  wfmControlsCol.style.display = mode === "WFM" ? "" : "none";
 }
 
 // Show compatibility warning for non-Chromium browsers
@@ -2148,8 +2159,9 @@ function startRxAudio() {
       // Stream info JSON
       try {
         streamInfo = JSON.parse(evt.data);
-        updateWfmAudioModeControl();
+        updateWfmControls();
         audioCtx = new AudioContext({ sampleRate: streamInfo.sample_rate || 48000 });
+        audioCtx.resume().catch(() => {});
         rxGainNode = audioCtx.createGain();
         rxGainNode.gain.value = rxVolSlider.value / 100;
         rxGainNode.connect(audioCtx.destination);
@@ -2214,6 +2226,9 @@ function startRxAudio() {
             src.buffer = ab;
             src.connect(rxGainNode);
             const now = audioCtx.currentTime;
+            if (nextPlayTime && nextPlayTime - now > MAX_RX_BUFFER_SECS) {
+              nextPlayTime = now + TARGET_RX_BUFFER_SECS;
+            }
             const schedTime = Math.max(now, (nextPlayTime || now));
             src.start(schedTime);
             nextPlayTime = schedTime + ab.duration;
@@ -2249,7 +2264,7 @@ function startRxAudio() {
     if (txActive) { stopTxAudio(); }
     rxActive = false;
     streamInfo = null;
-    updateWfmAudioModeControl();
+    updateWfmControls();
     rxAudioBtn.style.borderColor = "";
     rxAudioBtn.style.color = "";
     audioStatus.textContent = "Off";
@@ -2272,7 +2287,7 @@ function stopRxAudio() {
   streamInfo = null;
   if (audioWs) { audioWs.close(); audioWs = null; }
   if (audioCtx) { audioCtx.close(); audioCtx = null; }
-  updateWfmAudioModeControl();
+  updateWfmControls();
   rxGainNode = null;
   if (opusDecoder) {
     try { opusDecoder.close(); } catch(e) {}

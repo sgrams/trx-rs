@@ -269,6 +269,12 @@ pub struct RigFilterState {
     pub bandwidth_hz: u32,
     pub fir_taps: u32,
     pub cw_center_hz: u32,
+    #[serde(default = "default_wfm_deemphasis_us")]
+    pub wfm_deemphasis_us: u32,
+}
+
+fn default_wfm_deemphasis_us() -> u32 {
+    75
 }
 
 /// Spectrum data from SDR backends (FFT magnitude over the full capture bandwidth).
@@ -280,6 +286,22 @@ pub struct SpectrumData {
     pub center_hz: u64,
     /// SDR capture sample rate in Hz; the displayed span is ±sample_rate/2.
     pub sample_rate: u32,
+    /// Decoded Radio Data System state, when available for WFM.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rds: Option<RdsData>,
+}
+
+/// Live RDS metadata decoded from a WFM broadcast.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct RdsData {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pi: Option<u16>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub program_service: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pty: Option<u8>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pty_name: Option<String>,
 }
 
 /// Read-only projection of state shared with clients.
