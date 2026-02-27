@@ -14,4 +14,5 @@ tokio = { workspace = true, features = ["sync", "rt"] }
 serde = { workspace = true }
 tracing = { workspace = true }
 num-complex = "0.4"
+rustfft = "6"
 soapysdr = "0.3"
