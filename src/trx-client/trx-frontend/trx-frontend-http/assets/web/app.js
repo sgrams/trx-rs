@@ -285,6 +285,8 @@ const swrValue = document.getElementById("swr-value");
 const loadingEl = document.getElementById("loading");
 const contentEl = document.getElementById("content");
 const serverSubtitle = document.getElementById("server-subtitle");
+const rigSubtitle = document.getElementById("rig-subtitle");
+const ownerSubtitle = document.getElementById("owner-subtitle");
 const loadingTitle = document.getElementById("loading-title");
 const loadingSub = document.getElementById("loading-sub");
 const headerSigCanvas = document.getElementById("header-sig-canvas");
@@ -297,7 +299,6 @@ const headerRigSwitchBtn = document.getElementById("header-rig-switch-btn");
 let lastControl;
 let lastTxEn = null;
 let lastRendered = null;
-let rigName = "Rig";
 let hintTimer = null;
 let sigMeasuring = false;
 let sigLastSUnits = null;
@@ -729,6 +730,8 @@ function setDisabled(disabled) {
 let serverVersion = null;
 let serverBuildDate = null;
 let serverCallsign = null;
+let ownerCallsign = null;
+let rigDisplayName = null;
 let serverLat = null;
 let serverLon = null;
 
@@ -741,17 +744,20 @@ function updateFooterBuildInfo() {
 }
 
 function updateTitle() {
-  let title = rigName || "Rig";
-  if (serverCallsign) title = `${serverCallsign}'s ${title}`;
-  document.getElementById("rig-title").textContent = title;
+  document.getElementById("rig-title").textContent = originalTitle;
 }
 
 function render(update) {
   if (!update) return;
-  if (update.info && update.info.model) rigName = update.info.model;
+  if (update.info && typeof update.info.model === "string" && update.info.model.length > 0) {
+    rigDisplayName = update.info.model;
+  }
   if (update.server_version) serverVersion = update.server_version;
   if (update.server_build_date) serverBuildDate = update.server_build_date;
   if (update.server_callsign) serverCallsign = update.server_callsign;
+  if (typeof update.owner_callsign === "string" && update.owner_callsign.length > 0) {
+    ownerCallsign = update.owner_callsign;
+  }
   if (update.server_latitude != null) serverLat = update.server_latitude;
   if (update.server_longitude != null) serverLon = update.server_longitude;
   updateTitle();
@@ -786,16 +792,20 @@ function render(update) {
     if (contentEl) contentEl.style.display = "";
   }
   // Server subtitle: "trx-server vX.Y.Z hosted by CALL"
-  if (update.server_version || update.server_callsign) {
-    let parts = "trx-server";
-    if (update.server_version) parts += ` v${update.server_version}`;
-    if (update.server_callsign) {
-      const cs = update.server_callsign;
-      serverSubtitle.innerHTML = `${parts} hosted by <a href="https://www.qrzcq.com/call/${encodeURIComponent(cs)}" target="_blank" rel="noopener">${cs}</a>`;
-      document.title = `${cs} - ${originalTitle}`;
-    } else {
-      serverSubtitle.textContent = parts;
+  if (serverSubtitle) {
+    if (update.server_version && update.server_callsign) {
+      serverSubtitle.textContent = `trx-server v${update.server_version} hosted by ${update.server_callsign}`;
+    } else if (update.server_version) {
+      serverSubtitle.textContent = `trx-server v${update.server_version}`;
+    } else if (update.server_callsign) {
+      serverSubtitle.textContent = `trx-server hosted by ${update.server_callsign}`;
     }
+  }
+  if (rigSubtitle) {
+    rigSubtitle.textContent = `Rig: ${rigDisplayName || "--"}`;
+  }
+  if (ownerSubtitle) {
+    ownerSubtitle.textContent = `Owner: ${ownerCallsign || "--"}`;
   }
   setDisabled(false);
   if (update.info && update.info.capabilities && Array.isArray(update.info.capabilities.supported_modes)) {

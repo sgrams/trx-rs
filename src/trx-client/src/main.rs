@@ -238,6 +238,7 @@ async fn async_init() -> DynResult<AppState> {
         .callsign
         .clone()
         .or_else(|| cfg.general.callsign.clone());
+    frontend_runtime.owner_callsign = callsign.clone();
 
     info!(
         "Starting trx-client (remote: {}, frontends: {})",

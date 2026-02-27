@@ -153,6 +153,8 @@ pub struct FrontendRuntimeContext {
     pub remote_active_rig_id: Arc<Mutex<Option<String>>>,
     /// Cached remote rig list from GetRigs polling.
     pub remote_rigs: Arc<Mutex<Vec<RemoteRigEntry>>>,
+    /// Owner callsign from trx-client config/CLI for frontend display.
+    pub owner_callsign: Option<String>,
 }
 
 impl FrontendRuntimeContext {
@@ -180,6 +182,7 @@ impl FrontendRuntimeContext {
             http_auth_cookie_same_site: "Lax".to_string(),
             remote_active_rig_id: Arc::new(Mutex::new(None)),
             remote_rigs: Arc::new(Mutex::new(Vec::new())),
+            owner_callsign: None,
         }
     }
 }

@@ -32,9 +32,23 @@ const REQUEST_TIMEOUT: Duration = Duration::from_secs(15);
 #[get("/status")]
 pub async fn status_api(
     state: web::Data<watch::Receiver<RigState>>,
+    clients: web::Data<Arc<AtomicUsize>>,
+    context: web::Data<Arc<FrontendRuntimeContext>>,
 ) -> Result<impl Responder, Error> {
     let state = wait_for_view(state.get_ref().clone()).await?;
-    Ok(HttpResponse::Ok().json(state))
+    let json = serde_json::to_string(&state).map_err(actix_web::error::ErrorInternalServerError)?;
+    let json = inject_frontend_meta(
+        &json,
+        clients.load(Ordering::Relaxed),
+        context.rigctl_clients.load(Ordering::Relaxed),
+        rigctl_addr_from_context(context.get_ref().as_ref()),
+        active_rig_id_from_context(context.get_ref().as_ref()),
+        rig_ids_from_context(context.get_ref().as_ref()),
+        owner_callsign_from_context(context.get_ref().as_ref()),
+    );
+    Ok(HttpResponse::Ok()
+        .insert_header((header::CONTENT_TYPE, "application/json"))
+        .body(json))
 }
 
 /// Inject `"clients": N` into a JSON object string.
@@ -45,6 +59,7 @@ fn inject_frontend_meta(
     rigctl_addr: Option<String>,
     active_rig_id: Option<String>,
     rig_ids: Vec<String>,
+    owner_callsign: Option<String>,
 ) -> String {
     let mut value: serde_json::Value = match serde_json::from_str(json) {
         Ok(v) => v,
@@ -66,6 +81,9 @@ fn inject_frontend_meta(
         map.insert("active_rig_id".to_string(), serde_json::json!(rig_id));
     }
     map.insert("rig_ids".to_string(), serde_json::json!(rig_ids));
+    if let Some(owner) = owner_callsign {
+        map.insert("owner_callsign".to_string(), serde_json::json!(owner));
+    }
 
     serde_json::to_string(&value).unwrap_or_else(|_| json.to_string())
 }
@@ -96,6 +114,10 @@ fn rig_ids_from_context(context: &FrontendRuntimeContext) -> Vec<String> {
         .unwrap_or_default()
 }
 
+fn owner_callsign_from_context(context: &FrontendRuntimeContext) -> Option<String> {
+    context.owner_callsign.clone()
+}
+
 #[get("/events")]
 pub async fn events(
     state: web::Data<watch::Receiver<RigState>>,
@@ -117,6 +139,7 @@ pub async fn events(
         rigctl_addr_from_context(context.get_ref().as_ref()),
         active_rig_id_from_context(context.get_ref().as_ref()),
         rig_ids_from_context(context.get_ref().as_ref()),
+        owner_callsign_from_context(context.get_ref().as_ref()),
     );
     let initial_stream =
         once(async move { Ok::<Bytes, Error>(Bytes::from(format!("data: {initial_json}\n\n"))) });
@@ -136,6 +159,7 @@ pub async fn events(
                         rigctl_addr_from_context(context.as_ref()),
                         active_rig_id_from_context(context.as_ref()),
                         rig_ids_from_context(context.as_ref()),
+                        owner_callsign_from_context(context.as_ref()),
                     );
                     Ok::<Bytes, Error>(Bytes::from(format!("data: {json}\n\n")))
                 })
