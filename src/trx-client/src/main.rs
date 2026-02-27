@@ -262,6 +262,7 @@ async fn async_init() -> DynResult<AppState> {
         selected_rig_id: frontend_runtime.remote_active_rig_id.clone(),
         known_rigs: frontend_runtime.remote_rigs.clone(),
         poll_interval: Duration::from_millis(poll_interval_ms),
+        spectrum: frontend_runtime.spectrum.clone(),
     };
     let remote_shutdown_rx = shutdown_rx.clone();
     task_handles.push(tokio::spawn(async move {

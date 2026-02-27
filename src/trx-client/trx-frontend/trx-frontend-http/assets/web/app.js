@@ -261,6 +261,18 @@ function applyCapabilities(caps) {
   // Filters panel
   const filtersPanel = document.getElementById("filters-panel");
   if (filtersPanel) filtersPanel.style.display = caps.filter_controls ? "" : "none";
+
+  // Spectrum panel (SDR-only)
+  const spectrumPanel = document.getElementById("spectrum-panel");
+  if (spectrumPanel) {
+    if (caps.filter_controls) {
+      spectrumPanel.style.display = "";
+      startSpectrumPolling();
+    } else {
+      spectrumPanel.style.display = "none";
+      stopSpectrumPolling();
+    }
+  }
 }
 
 const freqEl = document.getElementById("freq");
@@ -2329,3 +2341,171 @@ window.addEventListener("beforeunload", () => {
     navigator.sendBeacon("/set_ptt?ptt=false", "");
   }
 });
+
+// ── Spectrum display ────────────────────────────────────────────────────────
+const spectrumCanvas = document.getElementById("spectrum-canvas");
+const spectrumFreqAxis = document.getElementById("spectrum-freq-axis");
+let spectrumPollTimer = null;
+let lastSpectrumData = null;
+
+function startSpectrumPolling() {
+  if (spectrumPollTimer !== null) return;
+  spectrumPollTimer = setInterval(fetchSpectrum, 200);
+  fetchSpectrum();
+}
+
+function stopSpectrumPolling() {
+  if (spectrumPollTimer !== null) {
+    clearInterval(spectrumPollTimer);
+    spectrumPollTimer = null;
+  }
+  lastSpectrumData = null;
+  clearSpectrumCanvas();
+}
+
+async function fetchSpectrum() {
+  try {
+    const resp = await fetch("/spectrum", { cache: "no-store" });
+    if (resp.status === 204) {
+      lastSpectrumData = null;
+      clearSpectrumCanvas();
+      return;
+    }
+    if (!resp.ok) return;
+    const data = await resp.json();
+    lastSpectrumData = data;
+    drawSpectrum(data);
+  } catch (_) {
+    // ignore fetch errors (connection lost etc.)
+  }
+}
+
+function clearSpectrumCanvas() {
+  if (!spectrumCanvas) return;
+  const ctx = spectrumCanvas.getContext("2d");
+  const w = spectrumCanvas.width, h = spectrumCanvas.height;
+  ctx.clearRect(0, 0, w, h);
+  ctx.fillStyle = "#0a0f18";
+  ctx.fillRect(0, 0, w, h);
+}
+
+function drawSpectrum(data) {
+  if (!spectrumCanvas) return;
+  const dpr = window.devicePixelRatio || 1;
+  const cssW = spectrumCanvas.clientWidth || 600;
+  const cssH = spectrumCanvas.clientHeight || 120;
+  const W = Math.round(cssW * dpr);
+  const H = Math.round(cssH * dpr);
+  if (spectrumCanvas.width !== W || spectrumCanvas.height !== H) {
+    spectrumCanvas.width = W;
+    spectrumCanvas.height = H;
+  }
+
+  const ctx = spectrumCanvas.getContext("2d");
+  // Background
+  ctx.fillStyle = "#0a0f18";
+  ctx.fillRect(0, 0, W, H);
+
+  const bins = data.bins;
+  const n = bins.length;
+  if (!n) return;
+
+  // dBFS range for display
+  const DB_MIN = -80;
+  const DB_MAX = 0;
+  const dbRange = DB_MAX - DB_MIN;
+
+  // Grid lines (horizontal dBFS)
+  ctx.strokeStyle = "rgba(255,255,255,0.06)";
+  ctx.lineWidth = 1;
+  for (let db = DB_MIN; db <= DB_MAX; db += 20) {
+    const y = Math.round(H * (1 - (db - DB_MIN) / dbRange));
+    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke();
+  }
+
+  // Spectrum line
+  ctx.beginPath();
+  ctx.strokeStyle = "#00e676";
+  ctx.lineWidth = Math.max(1, dpr);
+  for (let i = 0; i < n; i++) {
+    const x = (i / (n - 1)) * W;
+    const db = Math.max(DB_MIN, Math.min(DB_MAX, bins[i]));
+    const y = H * (1 - (db - DB_MIN) / dbRange);
+    if (i === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
+  }
+  ctx.stroke();
+
+  // Fill under spectrum line
+  ctx.lineTo(W, H); ctx.lineTo(0, H); ctx.closePath();
+  ctx.fillStyle = "rgba(0,230,118,0.08)";
+  ctx.fill();
+
+  // Tuned-frequency marker
+  if (lastFreqHz != null && data.center_hz && data.sample_rate) {
+    const halfBw = data.sample_rate / 2;
+    const loHz = data.center_hz - halfBw;
+    const hiHz = data.center_hz + halfBw;
+    const frac = (lastFreqHz - loHz) / (hiHz - loHz);
+    if (frac >= 0 && frac <= 1) {
+      const xf = Math.round(frac * W);
+      ctx.save();
+      ctx.setLineDash([4 * dpr, 4 * dpr]);
+      ctx.strokeStyle = "#ff1744";
+      ctx.lineWidth = Math.max(1, dpr);
+      ctx.beginPath(); ctx.moveTo(xf, 0); ctx.lineTo(xf, H); ctx.stroke();
+      ctx.restore();
+    }
+  }
+
+  // Frequency axis labels
+  updateSpectrumFreqAxis(data);
+}
+
+function updateSpectrumFreqAxis(data) {
+  if (!spectrumFreqAxis || !data.center_hz || !data.sample_rate) return;
+  const halfBw = data.sample_rate / 2;
+  const loHz = data.center_hz - halfBw;
+  const hiHz = data.center_hz + halfBw;
+
+  // Choose label step: aim for ~5 labels
+  const spanMHz = (hiHz - loHz) / 1e6;
+  let stepMHz = 1;
+  if (spanMHz <= 1) stepMHz = 0.1;
+  else if (spanMHz <= 2) stepMHz = 0.2;
+  else if (spanMHz <= 5) stepMHz = 0.5;
+  else if (spanMHz <= 10) stepMHz = 1;
+  else if (spanMHz <= 20) stepMHz = 2;
+  else stepMHz = 5;
+
+  const stepHz = stepMHz * 1e6;
+  const firstHz = Math.ceil(loHz / stepHz) * stepHz;
+
+  // Rebuild axis spans
+  spectrumFreqAxis.innerHTML = "";
+  for (let hz = firstHz; hz <= hiHz; hz += stepHz) {
+    const frac = (hz - loHz) / (hiHz - loHz);
+    const pct = (frac * 100).toFixed(2);
+    const label = hz >= 1e6
+      ? (hz / 1e6).toFixed(stepMHz < 1 ? 1 : 0) + " MHz"
+      : (hz / 1e3).toFixed(0) + " kHz";
+    const span = document.createElement("span");
+    span.textContent = label;
+    span.style.left = pct + "%";
+    spectrumFreqAxis.appendChild(span);
+  }
+}
+
+// Click on spectrum canvas → tune to that frequency
+if (spectrumCanvas) {
+  spectrumCanvas.addEventListener("click", (e) => {
+    if (!lastSpectrumData || !lastSpectrumData.center_hz || !lastSpectrumData.sample_rate) return;
+    const rect = spectrumCanvas.getBoundingClientRect();
+    const frac = (e.clientX - rect.left) / rect.width;
+    const halfBw = lastSpectrumData.sample_rate / 2;
+    const loHz = lastSpectrumData.center_hz - halfBw;
+    const hiHz = lastSpectrumData.center_hz + halfBw;
+    const targetHz = Math.round(loHz + frac * (hiHz - loHz));
+    setFreq(targetHz);
+  });
+}

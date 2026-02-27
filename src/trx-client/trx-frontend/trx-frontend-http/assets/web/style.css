@@ -583,3 +583,31 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   .vfo-picker button { border-right: none; border-bottom: 1px solid var(--border-light); }
   .vfo-picker button:last-child { border-bottom: none; }
 }
+
+
+/* ── Spectrum display ─────────────────────────────────────────────────── */
+.spectrum-wrap {
+  position: relative;
+  width: 100%;
+}
+#spectrum-canvas {
+  display: block;
+  width: 100%;
+  height: 120px;
+  background: #0a0f18;
+  border-radius: 4px;
+  cursor: crosshair;
+}
+#spectrum-freq-axis {
+  position: relative;
+  height: 18px;
+  width: 100%;
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  user-select: none;
+}
+#spectrum-freq-axis span {
+  position: absolute;
+  transform: translateX(-50%);
+  white-space: nowrap;
+}

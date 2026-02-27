@@ -662,6 +662,7 @@ mod tests {
             cw_wpm: 0,
             cw_tone_hz: 0,
             filter: None,
+            spectrum: None,
         }
     }
 

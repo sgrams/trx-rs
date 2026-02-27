@@ -291,6 +291,22 @@ impl<I> futures_util::Stream for DropStream<I> {
     }
 }
 
+/// Lightweight polling endpoint for spectrum data.
+/// Returns the latest `SpectrumData` as JSON, or 204 No Content if unavailable.
+#[get("/spectrum")]
+pub async fn spectrum(
+    context: web::Data<Arc<FrontendRuntimeContext>>,
+) -> Result<impl Responder, Error> {
+    let data = context.spectrum.lock().ok().and_then(|g| g.clone());
+    match data {
+        Some(s) => Ok(HttpResponse::Ok()
+            .insert_header((header::CONTENT_TYPE, "application/json"))
+            .insert_header((header::CACHE_CONTROL, "no-cache"))
+            .json(s)),
+        None => Ok(HttpResponse::NoContent().finish()),
+    }
+}
+
 #[post("/toggle_power")]
 pub async fn toggle_power(
     state: web::Data<watch::Receiver<RigState>>,
@@ -611,6 +627,7 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
         .service(list_rigs)
         .service(events)
         .service(decode_events)
+        .service(spectrum)
         .service(toggle_power)
         .service(toggle_vfo)
         .service(lock_panel)
@@ -805,6 +822,7 @@ async fn wait_for_view(mut rx: watch::Receiver<RigState>) -> Result<RigSnapshot,
         ft8_decode_enabled: state.ft8_decode_enabled,
         wspr_decode_enabled: state.wspr_decode_enabled,
         filter: state.filter.clone(),
+        spectrum: None,
     })
 }
 

@@ -410,6 +410,7 @@ mod tests {
             cw_wpm: 15,
             cw_tone_hz: 700,
             filter: None,
+            spectrum: None,
         }
     }
 

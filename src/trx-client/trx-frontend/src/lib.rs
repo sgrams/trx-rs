@@ -14,7 +14,7 @@ use tokio::task::JoinHandle;
 
 use trx_core::audio::AudioStreamInfo;
 use trx_core::decode::{AprsPacket, CwEvent, DecodedMessage, Ft8Message, WsprMessage};
-use trx_core::rig::state::RigSnapshot;
+use trx_core::rig::state::{RigSnapshot, SpectrumData};
 use trx_core::{DynResult, RigRequest, RigState};
 
 #[derive(Clone, Debug)]
@@ -155,6 +155,8 @@ pub struct FrontendRuntimeContext {
     pub remote_rigs: Arc<Mutex<Vec<RemoteRigEntry>>>,
     /// Owner callsign from trx-client config/CLI for frontend display.
     pub owner_callsign: Option<String>,
+    /// Latest spectrum frame from the active SDR rig; None for non-SDR backends.
+    pub spectrum: Arc<Mutex<Option<SpectrumData>>>,
 }
 
 impl FrontendRuntimeContext {
@@ -183,6 +185,7 @@ impl FrontendRuntimeContext {
             remote_active_rig_id: Arc::new(Mutex::new(None)),
             remote_rigs: Arc::new(Mutex::new(Vec::new())),
             owner_callsign: None,
+            spectrum: Arc::new(Mutex::new(None)),
         }
     }
 }

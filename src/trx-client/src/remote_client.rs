@@ -12,7 +12,7 @@ use tokio::time::{self, Instant};
 use tracing::{info, warn};
 
 use trx_core::rig::request::RigRequest;
-use trx_core::rig::state::RigState;
+use trx_core::rig::state::{RigState, SpectrumData};
 use trx_core::{RigError, RigResult};
 use trx_frontend::RemoteRigEntry;
 use trx_protocol::rig_command_to_client;
@@ -40,12 +40,16 @@ impl RemoteEndpoint {
     }
 }
 
+const SPECTRUM_POLL_INTERVAL: Duration = Duration::from_millis(200);
+
 pub struct RemoteClientConfig {
     pub addr: String,
     pub token: Option<String>,
     pub selected_rig_id: Arc<Mutex<Option<String>>>,
     pub known_rigs: Arc<Mutex<Vec<RemoteRigEntry>>>,
     pub poll_interval: Duration,
+    /// Shared buffer updated by spectrum polling; None when backend has no spectrum.
+    pub spectrum: Arc<Mutex<Option<SpectrumData>>>,
 }
 
 pub async fn run_remote_client(
@@ -107,6 +111,10 @@ async fn handle_connection(
     let mut reader = BufReader::new(reader);
     let mut poll_interval = time::interval(config.poll_interval);
     let mut last_poll = Instant::now();
+    let mut spectrum_interval = time::interval(SPECTRUM_POLL_INTERVAL);
+    let mut last_spectrum_poll = Instant::now()
+        .checked_sub(SPECTRUM_POLL_INTERVAL)
+        .unwrap_or_else(Instant::now);
 
     // Prime rig list/state immediately after connect so frontends can render
     // rig selectors without waiting for the first poll interval.
@@ -132,6 +140,27 @@ async fn handle_connection(
                     refresh_remote_snapshot(config, &mut writer, &mut reader, state_tx).await
                 {
                     warn!("Remote poll failed: {}", e);
+                }
+            }
+            _ = spectrum_interval.tick() => {
+                if last_spectrum_poll.elapsed() < SPECTRUM_POLL_INTERVAL {
+                    continue;
+                }
+                last_spectrum_poll = Instant::now();
+                match send_command_no_state_update(config, &mut writer, &mut reader,
+                    ClientCommand::GetSpectrum).await
+                {
+                    Ok(snapshot) => {
+                        if let Ok(mut guard) = config.spectrum.lock() {
+                            *guard = snapshot.spectrum;
+                        }
+                    }
+                    Err(_) => {
+                        // Backend may not support spectrum; clear buffer silently.
+                        if let Ok(mut guard) = config.spectrum.lock() {
+                            *guard = None;
+                        }
+                    }
                 }
             }
             req = rx.recv() => {
@@ -191,6 +220,46 @@ async fn send_command(
         return Err(RigError::communication("missing snapshot"));
     }
 
+    Err(RigError::communication(
+        resp.error.unwrap_or_else(|| "remote error".into()),
+    ))
+}
+
+/// Like `send_command` but does NOT update the main `state_tx` watch channel.
+/// Used for spectrum polling to avoid triggering spurious SSE updates.
+async fn send_command_no_state_update(
+    config: &RemoteClientConfig,
+    writer: &mut tokio::net::tcp::OwnedWriteHalf,
+    reader: &mut BufReader<tokio::net::tcp::OwnedReadHalf>,
+    cmd: ClientCommand,
+) -> RigResult<trx_core::RigSnapshot> {
+    let envelope = build_envelope(config, cmd);
+    let payload = serde_json::to_string(&envelope)
+        .map_err(|e| RigError::communication(format!("JSON serialize failed: {e}")))?;
+    time::timeout(
+        IO_TIMEOUT,
+        writer.write_all(format!("{}\n", payload).as_bytes()),
+    )
+    .await
+    .map_err(|_| RigError::communication(format!("write timed out after {:?}", IO_TIMEOUT)))?
+    .map_err(|e| RigError::communication(format!("write failed: {e}")))?;
+    time::timeout(IO_TIMEOUT, writer.flush())
+        .await
+        .map_err(|_| RigError::communication(format!("flush timed out after {:?}", IO_TIMEOUT)))?
+        .map_err(|e| RigError::communication(format!("flush failed: {e}")))?;
+    let line = time::timeout(IO_TIMEOUT, read_limited_line(reader, MAX_JSON_LINE_BYTES))
+        .await
+        .map_err(|_| RigError::communication(format!("read timed out after {:?}", IO_TIMEOUT)))?
+        .map_err(|e| RigError::communication(format!("read failed: {e}")))?;
+    let line = line.ok_or_else(|| RigError::communication("connection closed by remote"))?;
+    let resp: ClientResponse = serde_json::from_str(line.trim_end())
+        .map_err(|e| RigError::communication(format!("invalid response: {e}")))?;
+    if resp.success {
+        if let Some(snapshot) = resp.state {
+            return Ok(snapshot);
+        }
+        return Err(RigError::communication("missing snapshot"));
+    }
     Err(RigError::communication(
         resp.error.unwrap_or_else(|| "remote error".into()),
     ))
@@ -547,6 +616,7 @@ mod tests {
             cw_wpm: 15,
             cw_tone_hz: 700,
             filter: None,
+            spectrum: None,
         }
     }
 
@@ -562,6 +632,7 @@ mod tests {
             state: None,
             rigs: Some(vec![RigEntry {
                 rig_id: "default".to_string(),
+                display_name: None,
                 state: snapshot.clone(),
                 audio_port: Some(4531),
             }]),
@@ -603,6 +674,7 @@ mod tests {
                 selected_rig_id: Arc::new(Mutex::new(None)),
                 known_rigs: Arc::new(Mutex::new(Vec::new())),
                 poll_interval: Duration::from_millis(100),
+                spectrum: Arc::new(Mutex::new(None)),
             },
             req_rx,
             state_tx,
@@ -638,6 +710,7 @@ mod tests {
             selected_rig_id: Arc::new(Mutex::new(Some("sdr".to_string()))),
             known_rigs: Arc::new(Mutex::new(Vec::new())),
             poll_interval: Duration::from_millis(500),
+            spectrum: Arc::new(Mutex::new(None)),
         };
         let envelope = super::build_envelope(&config, trx_protocol::ClientCommand::GetState);
         assert_eq!(envelope.token.as_deref(), Some("secret"));
