@@ -12,9 +12,9 @@ use tokio::time::{self, Instant};
 use tracing::{info, warn};
 
 use trx_core::rig::request::RigRequest;
-use trx_core::rig::state::{RigState, SpectrumData};
+use trx_core::rig::state::RigState;
 use trx_core::{RigError, RigResult};
-use trx_frontend::RemoteRigEntry;
+use trx_frontend::{RemoteRigEntry, SharedSpectrum};
 use trx_protocol::rig_command_to_client;
 use trx_protocol::types::RigEntry;
 use trx_protocol::{ClientCommand, ClientEnvelope, ClientResponse};
@@ -49,7 +49,7 @@ pub struct RemoteClientConfig {
     pub known_rigs: Arc<Mutex<Vec<RemoteRigEntry>>>,
     pub poll_interval: Duration,
     /// Shared buffer updated by spectrum polling; None when backend has no spectrum.
-    pub spectrum: Arc<Mutex<Option<SpectrumData>>>,
+    pub spectrum: Arc<Mutex<SharedSpectrum>>,
 }
 
 pub async fn run_remote_client(
@@ -152,13 +152,13 @@ async fn handle_connection(
                 {
                     Ok(snapshot) => {
                         if let Ok(mut guard) = config.spectrum.lock() {
-                            *guard = snapshot.spectrum;
+                            guard.replace(snapshot.spectrum);
                         }
                     }
                     Err(_) => {
                         // Backend may not support spectrum; clear buffer silently.
                         if let Ok(mut guard) = config.spectrum.lock() {
-                            *guard = None;
+                            guard.replace(None);
                         }
                     }
                 }
@@ -674,7 +674,7 @@ mod tests {
                 selected_rig_id: Arc::new(Mutex::new(None)),
                 known_rigs: Arc::new(Mutex::new(Vec::new())),
                 poll_interval: Duration::from_millis(100),
-                spectrum: Arc::new(Mutex::new(None)),
+                spectrum: Arc::new(Mutex::new(SharedSpectrum::default())),
             },
             req_rx,
             state_tx,
@@ -710,7 +710,7 @@ mod tests {
             selected_rig_id: Arc::new(Mutex::new(Some("sdr".to_string()))),
             known_rigs: Arc::new(Mutex::new(Vec::new())),
             poll_interval: Duration::from_millis(500),
-            spectrum: Arc::new(Mutex::new(None)),
+            spectrum: Arc::new(Mutex::new(SharedSpectrum::default())),
         };
         let envelope = super::build_envelope(&config, trx_protocol::ClientCommand::GetState);
         assert_eq!(envelope.token.as_deref(), Some("secret"));

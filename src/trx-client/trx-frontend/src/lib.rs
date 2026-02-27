@@ -36,6 +36,23 @@ pub trait FrontendSpawner {
     ) -> JoinHandle<()>;
 }
 
+#[derive(Debug, Default)]
+pub struct SharedSpectrum {
+    revision: u64,
+    frame: Option<SpectrumData>,
+}
+
+impl SharedSpectrum {
+    pub fn replace(&mut self, frame: Option<SpectrumData>) {
+        self.revision = self.revision.wrapping_add(1);
+        self.frame = frame;
+    }
+
+    pub fn snapshot(&self) -> (u64, Option<SpectrumData>) {
+        (self.revision, self.frame.clone())
+    }
+}
+
 pub type FrontendSpawnFn = fn(
     watch::Receiver<RigState>,
     mpsc::Sender<RigRequest>,
@@ -156,7 +173,7 @@ pub struct FrontendRuntimeContext {
     /// Owner callsign from trx-client config/CLI for frontend display.
     pub owner_callsign: Option<String>,
     /// Latest spectrum frame from the active SDR rig; None for non-SDR backends.
-    pub spectrum: Arc<Mutex<Option<SpectrumData>>>,
+    pub spectrum: Arc<Mutex<SharedSpectrum>>,
 }
 
 impl FrontendRuntimeContext {
@@ -185,7 +202,7 @@ impl FrontendRuntimeContext {
             remote_active_rig_id: Arc::new(Mutex::new(None)),
             remote_rigs: Arc::new(Mutex::new(Vec::new())),
             owner_callsign: None,
-            spectrum: Arc::new(Mutex::new(None)),
+            spectrum: Arc::new(Mutex::new(SharedSpectrum::default())),
         }
     }
 }

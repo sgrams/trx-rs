@@ -299,28 +299,33 @@ pub async fn spectrum(
     context: web::Data<Arc<FrontendRuntimeContext>>,
 ) -> Result<HttpResponse, Error> {
     let context_updates = context.get_ref().clone();
-    let mut last_json: Option<String> = None;
+    let mut last_revision: Option<u64> = None;
     let updates =
         IntervalStream::new(time::interval(Duration::from_millis(200))).filter_map(move |_| {
             let context = context_updates.clone();
             std::future::ready({
-                let next_json = context
+                let next = context
                     .spectrum
                     .lock()
                     .ok()
-                    .and_then(|g| g.as_ref().and_then(|s| serde_json::to_string(s).ok()));
+                    .map(|g| g.snapshot());
 
-                let payload = match (last_json.as_ref(), next_json) {
-                    (Some(prev), Some(next)) if prev == &next => None,
-                    (_, Some(next)) => {
-                        last_json = Some(next.clone());
-                        Some(next)
+                let payload = match next {
+                    Some((revision, frame)) if last_revision == Some(revision) => None,
+                    Some((revision, Some(frame))) => {
+                        last_revision = Some(revision);
+                        serde_json::to_string(&frame).ok()
                     }
-                    (Some(_), None) => {
-                        last_json = None;
+                    Some((revision, None)) => {
+                        last_revision = Some(revision);
                         Some("null".to_string())
                     }
-                    (None, None) => None,
+                    None if last_revision.is_some() => {
+                        // Lock poisoning is transient; retry instead of breaking stream semantics.
+                        last_revision = None;
+                        Some("null".to_string())
+                    }
+                    None => None,
                 };
 
                 payload.map(|json| Ok::<Bytes, Error>(Bytes::from(format!("data: {json}\n\n"))))
