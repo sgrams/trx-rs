@@ -905,6 +905,7 @@ function render(update) {
   if (update.status && update.status.mode) {
     const mode = normalizeMode(update.status.mode);
     modeEl.value = mode ? mode.toUpperCase() : "";
+    updateWfmAudioModeControl();
     // When filter panel is active (SDR backend), update the BW slider range
     // to match the new mode — but only if the server hasn't already sent a
     // filter state that overrides it.
@@ -2007,6 +2008,8 @@ const txAudioBtn = document.getElementById("tx-audio-btn");
 const audioStatus = document.getElementById("audio-status");
 const audioLevelFill = document.getElementById("audio-level-fill");
 const audioRow = document.getElementById("audio-row");
+const wfmAudioModeWrap = document.getElementById("wfm-audio-mode-wrap");
+const wfmAudioModeEl = document.getElementById("wfm-audio-mode");
 
 // Hide audio row if audio is not configured on the server
 fetch("/audio", { method: "GET" }).then((r) => {
@@ -2033,6 +2036,20 @@ let txTimeoutTimer = null;
 let txTimeoutRemaining = 0;
 let txTimeoutInterval = null;
 const hasWebCodecs = typeof AudioDecoder !== "undefined" && typeof AudioEncoder !== "undefined";
+
+if (wfmAudioModeEl) {
+  wfmAudioModeEl.value = loadSetting("wfmAudioMode", "stereo");
+  wfmAudioModeEl.addEventListener("change", () => {
+    saveSetting("wfmAudioMode", wfmAudioModeEl.value);
+  });
+}
+
+function updateWfmAudioModeControl() {
+  if (!wfmAudioModeWrap) return;
+  const mode = (modeEl && modeEl.value ? modeEl.value : "").toUpperCase();
+  const channels = (streamInfo && streamInfo.channels) || 1;
+  wfmAudioModeWrap.style.display = mode === "WFM" && channels >= 2 ? "" : "none";
+}
 
 // Show compatibility warning for non-Chromium browsers
 if (!hasWebCodecs) {
@@ -2087,6 +2104,7 @@ function startRxAudio() {
       // Stream info JSON
       try {
         streamInfo = JSON.parse(evt.data);
+        updateWfmAudioModeControl();
         audioCtx = new AudioContext({ sampleRate: streamInfo.sample_rate || 48000 });
         rxGainNode = audioCtx.createGain();
         rxGainNode.gain.value = rxVolSlider.value / 100;
@@ -2122,13 +2140,31 @@ function startRxAudio() {
           output: (frame) => {
             const buf = new Float32Array(frame.numberOfFrames * frame.numberOfChannels);
             frame.copyTo(buf, { planeIndex: 0 });
-            const ab = audioCtx.createBuffer(frame.numberOfChannels, frame.numberOfFrames, frame.sampleRate);
-            for (let ch = 0; ch < frame.numberOfChannels; ch++) {
-              const chData = new Float32Array(frame.numberOfFrames);
+            const forceMono = frame.numberOfChannels >= 2
+              && wfmAudioModeEl
+              && wfmAudioModeEl.value === "mono"
+              && modeEl
+              && (modeEl.value || "").toUpperCase() === "WFM";
+            const outChannels = forceMono ? 1 : frame.numberOfChannels;
+            const ab = audioCtx.createBuffer(outChannels, frame.numberOfFrames, frame.sampleRate);
+            if (forceMono) {
+              const monoData = new Float32Array(frame.numberOfFrames);
               for (let i = 0; i < frame.numberOfFrames; i++) {
-                chData[i] = buf[i * frame.numberOfChannels + ch];
+                let sum = 0;
+                for (let ch = 0; ch < frame.numberOfChannels; ch++) {
+                  sum += buf[i * frame.numberOfChannels + ch];
+                }
+                monoData[i] = sum / frame.numberOfChannels;
               }
-              ab.copyToChannel(chData, ch);
+              ab.copyToChannel(monoData, 0);
+            } else {
+              for (let ch = 0; ch < frame.numberOfChannels; ch++) {
+                const chData = new Float32Array(frame.numberOfFrames);
+                for (let i = 0; i < frame.numberOfFrames; i++) {
+                  chData[i] = buf[i * frame.numberOfChannels + ch];
+                }
+                ab.copyToChannel(chData, ch);
+              }
             }
             const src = audioCtx.createBufferSource();
             src.buffer = ab;
@@ -2168,6 +2204,8 @@ function startRxAudio() {
     // If TX was active when WS closed, release PTT
     if (txActive) { stopTxAudio(); }
     rxActive = false;
+    streamInfo = null;
+    updateWfmAudioModeControl();
     rxAudioBtn.style.borderColor = "";
     rxAudioBtn.style.color = "";
     audioStatus.textContent = "Off";
@@ -2187,8 +2225,10 @@ function startRxAudio() {
 
 function stopRxAudio() {
   rxActive = false;
+  streamInfo = null;
   if (audioWs) { audioWs.close(); audioWs = null; }
   if (audioCtx) { audioCtx.close(); audioCtx = null; }
+  updateWfmAudioModeControl();
   rxGainNode = null;
   if (opusDecoder) {
     try { opusDecoder.close(); } catch(e) {}
