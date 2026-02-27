@@ -654,10 +654,24 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   color: var(--text-muted);
 }
 #spectrum-bw-label {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
   font-size: 0.78rem;
   color: var(--accent-yellow);
   font-weight: 600;
-  min-width: 5rem;
+  min-width: 0;
+}
+#spectrum-bw-input {
+  width: 5.25rem;
+  padding: 1px 4px;
+  font-size: 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--input-bg);
+  color: var(--text);
+  text-align: right;
+  height: 1.5rem;
 }
 #spectrum-level-row {
   display: flex;

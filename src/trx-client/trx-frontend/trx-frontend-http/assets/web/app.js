@@ -888,8 +888,7 @@ function render(update) {
   // Sync filter state (SDR backends only)
   if (update.filter && typeof update.filter.bandwidth_hz === "number") {
     currentBandwidthHz = update.filter.bandwidth_hz;
-    const bwLabel = document.getElementById("spectrum-bw-label");
-    if (bwLabel) bwLabel.textContent = "BW: " + formatBwLabel(currentBandwidthHz);
+    syncBandwidthInput(currentBandwidthHz);
   }
   if (update.status && update.status.freq && typeof update.status.freq.hz === "number") {
     lastFreqHz = update.status.freq.hz;
@@ -1544,7 +1543,7 @@ const MODE_BW_DEFAULTS = {
   USB:    [2_700,  300,   6_000,  100],
   AM:     [6_000,  500,   15_000, 500],
   FM:     [12_500, 2_500, 25_000, 500],
-  WFM:    [75_000, 50_000,300_000,5_000],
+  WFM:    [180_000, 50_000,300_000,5_000],
   DIG:    [3_000,  300,   6_000,  100],
   PKT:    [3_000,  300,  25_000,  100],
 };
@@ -1561,16 +1560,46 @@ function formatBwLabel(hz) {
 
 // Current receive bandwidth (Hz) — updated by server sync and BW drag.
 let currentBandwidthHz = 3_000;
+const spectrumBwInput = document.getElementById("spectrum-bw-input");
+
+function syncBandwidthInput(hz) {
+  if (!spectrumBwInput || !Number.isFinite(hz) || hz <= 0) return;
+  spectrumBwInput.value = String(Math.round(hz));
+}
 
 // Apply mode-specific BW default and optionally push to server.
 async function applyBwDefaultForMode(mode, sendToServer) {
   const [def] = mwDefaultsForMode(mode);
   currentBandwidthHz = def;
-  const bwLabel = document.getElementById("spectrum-bw-label");
-  if (bwLabel) bwLabel.textContent = "BW: " + formatBwLabel(def);
+  syncBandwidthInput(def);
   if (sendToServer) {
     try { await postPath(`/set_bandwidth?hz=${def}`); } catch (_) {}
   }
+}
+
+async function applyBandwidthFromInput() {
+  if (!spectrumBwInput) return;
+  const [, minBw, maxBw] = mwDefaultsForMode(modeEl ? modeEl.value : "USB");
+  const next = Math.round(Number(spectrumBwInput.value));
+  if (!Number.isFinite(next) || next <= 0) {
+    syncBandwidthInput(currentBandwidthHz);
+    return;
+  }
+  const clamped = Math.max(minBw, Math.min(maxBw, next));
+  currentBandwidthHz = clamped;
+  syncBandwidthInput(clamped);
+  if (lastSpectrumData) drawSpectrum(lastSpectrumData);
+  try { await postPath(`/set_bandwidth?hz=${clamped}`); } catch (_) {}
+}
+
+if (spectrumBwInput) {
+  spectrumBwInput.addEventListener("change", () => { applyBandwidthFromInput(); });
+  spectrumBwInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      applyBandwidthFromInput();
+    }
+  });
 }
 
 // --- Tab navigation ---
@@ -2827,8 +2856,7 @@ if (spectrumCanvas) {
       const [, minBw, maxBw] = mwDefaultsForMode(modeEl ? modeEl.value : "USB");
       newBw = Math.round(Math.max(minBw, Math.min(maxBw, newBw)));
       currentBandwidthHz = newBw;
-      const bwLabel = document.getElementById("spectrum-bw-label");
-      if (bwLabel) bwLabel.textContent = "BW: " + formatBwLabel(newBw);
+      syncBandwidthInput(newBw);
       drawSpectrum(lastSpectrumData);
       return;
     }
