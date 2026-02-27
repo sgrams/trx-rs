@@ -653,17 +653,21 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   font-size: 0.78rem;
   color: var(--text-muted);
 }
+#spectrum-bw-row {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
 #spectrum-bw-label {
   display: flex;
   align-items: center;
   gap: 0.3rem;
-  font-size: 0.78rem;
-  color: var(--accent-yellow);
-  font-weight: 600;
+  font-size: 0.75rem;
+  color: var(--text-muted);
   min-width: 0;
 }
 #spectrum-bw-input {
-  width: 5.25rem;
+  width: 4.5rem;
   padding: 1px 4px;
   font-size: 0.75rem;
   border: 1px solid var(--border);
@@ -672,6 +676,12 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   color: var(--text);
   text-align: right;
   height: 1.5rem;
+}
+#spectrum-bw-set-btn {
+  height: 1.5rem;
+  min-height: 0;
+  padding: 0 8px;
+  font-size: 0.73rem;
 }
 #spectrum-level-row {
   display: flex;

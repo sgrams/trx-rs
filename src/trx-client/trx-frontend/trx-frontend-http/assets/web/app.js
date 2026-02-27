@@ -1561,10 +1561,22 @@ function formatBwLabel(hz) {
 // Current receive bandwidth (Hz) — updated by server sync and BW drag.
 let currentBandwidthHz = 3_000;
 const spectrumBwInput = document.getElementById("spectrum-bw-input");
+const spectrumBwSetBtn = document.getElementById("spectrum-bw-set-btn");
+
+function formatBandwidthInputKhz(hz) {
+  const khz = hz / 1000;
+  if (Math.abs(Math.round(khz) - khz) < 0.0001) return String(Math.round(khz));
+  if (Math.abs(Math.round(khz * 10) - khz * 10) < 0.0001) return khz.toFixed(1);
+  return khz.toFixed(2);
+}
 
 function syncBandwidthInput(hz) {
   if (!spectrumBwInput || !Number.isFinite(hz) || hz <= 0) return;
-  spectrumBwInput.value = String(Math.round(hz));
+  const [, minBw, maxBw, stepBw] = mwDefaultsForMode(modeEl ? modeEl.value : "USB");
+  spectrumBwInput.min = String(minBw / 1000);
+  spectrumBwInput.max = String(maxBw / 1000);
+  spectrumBwInput.step = String(stepBw / 1000);
+  spectrumBwInput.value = formatBandwidthInputKhz(hz);
 }
 
 // Apply mode-specific BW default and optionally push to server.
@@ -1580,7 +1592,8 @@ async function applyBwDefaultForMode(mode, sendToServer) {
 async function applyBandwidthFromInput() {
   if (!spectrumBwInput) return;
   const [, minBw, maxBw] = mwDefaultsForMode(modeEl ? modeEl.value : "USB");
-  const next = Math.round(Number(spectrumBwInput.value));
+  const nextKhz = Number(spectrumBwInput.value);
+  const next = Math.round(nextKhz * 1000);
   if (!Number.isFinite(next) || next <= 0) {
     syncBandwidthInput(currentBandwidthHz);
     return;
@@ -1593,13 +1606,15 @@ async function applyBandwidthFromInput() {
 }
 
 if (spectrumBwInput) {
-  spectrumBwInput.addEventListener("change", () => { applyBandwidthFromInput(); });
   spectrumBwInput.addEventListener("keydown", (e) => {
     if (e.key === "Enter") {
       e.preventDefault();
       applyBandwidthFromInput();
     }
   });
+}
+if (spectrumBwSetBtn) {
+  spectrumBwSetBtn.addEventListener("click", () => { applyBandwidthFromInput(); });
 }
 
 // --- Tab navigation ---
