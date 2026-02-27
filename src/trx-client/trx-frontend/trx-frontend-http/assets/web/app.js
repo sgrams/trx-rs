@@ -258,10 +258,6 @@ function applyCapabilities(caps) {
     }
   });
 
-  // Filters panel
-  const filtersPanel = document.getElementById("filters-panel");
-  if (filtersPanel) filtersPanel.style.display = caps.filter_controls ? "" : "none";
-
   // Spectrum panel (SDR-only)
   const spectrumPanel = document.getElementById("spectrum-panel");
   if (spectrumPanel) {
@@ -867,17 +863,10 @@ function render(update) {
     applyCapabilities(update.info.capabilities);
   }
   // Sync filter state (SDR backends only)
-  if (update.filter) {
-    const bwSlider = document.getElementById("bw-slider");
-    const bwValue = document.getElementById("bw-value");
-    const firSelect = document.getElementById("fir-taps-select");
-    if (bwSlider && typeof update.filter.bandwidth_hz === "number") {
-      bwSlider.value = update.filter.bandwidth_hz;
-      if (bwValue) bwValue.textContent = formatBwLabel(update.filter.bandwidth_hz);
-    }
-    if (firSelect && typeof update.filter.fir_taps === "number") {
-      firSelect.value = String(update.filter.fir_taps);
-    }
+  if (update.filter && typeof update.filter.bandwidth_hz === "number") {
+    currentBandwidthHz = update.filter.bandwidth_hz;
+    const bwLabel = document.getElementById("spectrum-bw-label");
+    if (bwLabel) bwLabel.textContent = "BW: " + formatBwLabel(currentBandwidthHz);
   }
   if (update.status && update.status.freq && typeof update.status.freq.hz === "number") {
     lastFreqHz = update.status.freq.hz;
@@ -896,8 +885,9 @@ function render(update) {
     // When filter panel is active (SDR backend), update the BW slider range
     // to match the new mode — but only if the server hasn't already sent a
     // filter state that overrides it.
-    const fp = document.getElementById("filters-panel");
-    if (fp && fp.style.display !== "none" && !update.filter) {
+    // When SDR backend is active (spectrum visible), apply BW default for new
+    // mode — but only if the server hasn't already pushed a filter_state.
+    if (lastSpectrumData && !update.filter) {
       applyBwDefaultForMode(mode, false);
     }
   }
@@ -1508,55 +1498,19 @@ function formatBwLabel(hz) {
   return hz + " Hz";
 }
 
-// Apply mode-specific BW slider defaults and optionally send to server.
+// Current receive bandwidth (Hz) — updated by server sync and BW drag.
+let currentBandwidthHz = 3_000;
+
+// Apply mode-specific BW default and optionally push to server.
 async function applyBwDefaultForMode(mode, sendToServer) {
-  const bwSlider = document.getElementById("bw-slider");
-  const bwValue  = document.getElementById("bw-value");
-  if (!bwSlider) return;
-  const [def, min, max, step] = mwDefaultsForMode(mode);
-  bwSlider.min  = String(min);
-  bwSlider.max  = String(max);
-  bwSlider.step = String(step);
-  bwSlider.value = String(def);
-  if (bwValue) bwValue.textContent = formatBwLabel(def);
+  const [def] = mwDefaultsForMode(mode);
+  currentBandwidthHz = def;
+  const bwLabel = document.getElementById("spectrum-bw-label");
+  if (bwLabel) bwLabel.textContent = "BW: " + formatBwLabel(def);
   if (sendToServer) {
     try { await postPath(`/set_bandwidth?hz=${def}`); } catch (_) {}
   }
 }
-
-(function () {
-  const bwSlider = document.getElementById("bw-slider");
-  const bwValue = document.getElementById("bw-value");
-  const firSelect = document.getElementById("fir-taps-select");
-
-  if (bwSlider) {
-    bwSlider.addEventListener("input", () => {
-      const hz = Number(bwSlider.value);
-      if (bwValue) bwValue.textContent = formatBwLabel(hz);
-    });
-    bwSlider.addEventListener("change", async () => {
-      const hz = Number(bwSlider.value);
-      try {
-        await postPath(`/set_bandwidth?hz=${encodeURIComponent(hz)}`);
-      } catch (err) {
-        showHint("Bandwidth set failed", 2000);
-        console.error(err);
-      }
-    });
-  }
-
-  if (firSelect) {
-    firSelect.addEventListener("change", async () => {
-      const taps = Number(firSelect.value);
-      try {
-        await postPath(`/set_fir_taps?taps=${encodeURIComponent(taps)}`);
-      } catch (err) {
-        showHint("FIR taps set failed", 2000);
-        console.error(err);
-      }
-    });
-  }
-})();
 
 // --- Tab navigation ---
 document.querySelector(".tab-bar").addEventListener("click", (e) => {
@@ -2404,6 +2358,15 @@ let lastSpectrumData  = null;
 let spectrumZoom    = 1;
 let spectrumPanFrac = 0.5;
 
+// Y-axis level: floor = bottom dB value shown; range = total dB span.
+let spectrumFloor = -100;
+let spectrumRange = 80;
+
+// BW-strip drag state.
+let _bwDragEdge     = null; // "left" | "right" | null
+let _bwDragStartX   = 0;
+let _bwDragStartBwHz = 0;
+
 // Returns { loHz, hiHz, visLoHz, visHiHz, fullSpanHz, visSpanHz } and clamps
 // panFrac so the view never scrolls past the edges.
 function spectrumVisibleRange(data) {
@@ -2490,29 +2453,107 @@ function drawSpectrum(data) {
 
   if (!n) return;
 
-  const DB_MIN  = -80, DB_MAX = 0, dbRange = DB_MAX - DB_MIN;
+  const DB_MIN  = spectrumFloor;
+  const DB_MAX  = spectrumFloor + spectrumRange;
+  const dbRange = DB_MAX - DB_MIN;
   const fullSpanHz = data.sample_rate;
   const loHz       = data.center_hz - fullSpanHz / 2;
 
-  // Horizontal dBFS grid
+  // Horizontal dB grid lines
   ctx.strokeStyle = "rgba(255,255,255,0.06)";
   ctx.lineWidth = 1;
-  for (let db = DB_MIN; db <= DB_MAX; db += 20) {
+  const gridStep = spectrumRange > 100 ? 20 : 10;
+  for (let db = Math.ceil(DB_MIN / gridStep) * gridStep; db <= DB_MAX; db += gridStep) {
     const y = Math.round(H * (1 - (db - DB_MIN) / dbRange));
     ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke();
   }
 
-  // Map bin index → screen x (bins outside the visible window go off-screen and are clipped)
-  function binX(i) {
-    const hz = loHz + (i / (n - 1)) * fullSpanHz;
+  // Y-axis dB labels (left side)
+  ctx.save();
+  ctx.font = `${Math.round(9 * dpr)}px monospace`;
+  ctx.fillStyle = "rgba(180,200,220,0.45)";
+  ctx.textAlign = "left";
+  for (let db = Math.ceil(DB_MIN / gridStep) * gridStep; db <= DB_MAX; db += gridStep) {
+    const y = Math.round(H * (1 - (db - DB_MIN) / dbRange));
+    if (y > 8 * dpr && y < H - 2 * dpr) {
+      ctx.fillText(`${db}`, 4 * dpr, y - 2 * dpr);
+    }
+  }
+  ctx.restore();
+
+  // Coordinate helpers
+  function hzToX(hz) {
     return ((hz - range.visLoHz) / range.visSpanHz) * W;
+  }
+  function binX(i) {
+    return hzToX(loHz + (i / (n - 1)) * fullSpanHz);
   }
   function binY(i) {
     const db = Math.max(DB_MIN, Math.min(DB_MAX, bins[i]));
     return H * (1 - (db - DB_MIN) / dbRange);
   }
 
-  // Spectrum fill
+  // ── BW strip (drawn before spectrum so traces appear on top) ──────────────
+  if (lastFreqHz != null && currentBandwidthHz > 0) {
+    const halfBw = currentBandwidthHz / 2;
+    const xL = hzToX(lastFreqHz - halfBw);
+    const xR = hzToX(lastFreqHz + halfBw);
+    const stripW = xR - xL;
+
+    if (stripW > 1) {
+      // Warm amber gradient fill
+      const grd = ctx.createLinearGradient(xL, 0, xR, 0);
+      grd.addColorStop(0,   "rgba(240,173,78,0.05)");
+      grd.addColorStop(0.2, "rgba(240,173,78,0.14)");
+      grd.addColorStop(0.5, "rgba(240,173,78,0.19)");
+      grd.addColorStop(0.8, "rgba(240,173,78,0.14)");
+      grd.addColorStop(1,   "rgba(240,173,78,0.05)");
+      ctx.fillStyle = grd;
+      ctx.fillRect(xL, 0, stripW, H);
+
+      // Edge handle bars
+      const EDGE = 5 * dpr;
+      ctx.fillStyle = "rgba(240,173,78,0.30)";
+      ctx.fillRect(xL, 0, EDGE, H);
+      ctx.fillRect(xR - EDGE, 0, EDGE, H);
+
+      // Edge border lines
+      ctx.strokeStyle = "rgba(240,173,78,0.70)";
+      ctx.lineWidth = 1.5 * dpr;
+      ctx.beginPath(); ctx.moveTo(xL, 0); ctx.lineTo(xL, H); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(xR, 0); ctx.lineTo(xR, H); ctx.stroke();
+
+      // Top bookmark tab centered on the dial frequency
+      const xMid = hzToX(lastFreqHz);
+      const bwText = formatBwLabel(currentBandwidthHz);
+      ctx.save();
+      ctx.font = `bold ${Math.round(10 * dpr)}px sans-serif`;
+      const tw = ctx.measureText(bwText).width;
+      const PAD  = 6 * dpr;
+      const TAB_H = 16 * dpr;
+      const tabX = Math.max(0, Math.min(W - tw - PAD * 2, xMid - (tw + PAD * 2) / 2));
+      const r = 3 * dpr;
+      // Rounded-top tab shape (flat bottom)
+      ctx.fillStyle = "rgba(240,173,78,0.85)";
+      ctx.beginPath();
+      ctx.moveTo(tabX + r, 0);
+      ctx.lineTo(tabX + tw + PAD * 2 - r, 0);
+      ctx.arcTo(tabX + tw + PAD * 2, 0, tabX + tw + PAD * 2, r, r);
+      ctx.lineTo(tabX + tw + PAD * 2, TAB_H);
+      ctx.lineTo(tabX, TAB_H);
+      ctx.lineTo(tabX, r);
+      ctx.arcTo(tabX, 0, tabX + r, 0, r);
+      ctx.closePath();
+      ctx.fill();
+      // Tab text
+      ctx.fillStyle = "#0a0f18";
+      ctx.textAlign = "left";
+      ctx.fillText(bwText, tabX + PAD, TAB_H - 4 * dpr);
+      ctx.restore();
+    }
+  }
+
+  // ── Spectrum fill ─────────────────────────────────────────────────────────
   ctx.save();
   ctx.beginPath();
   ctx.moveTo(binX(0), H);
@@ -2523,7 +2564,7 @@ function drawSpectrum(data) {
   ctx.fill();
   ctx.restore();
 
-  // Spectrum line
+  // ── Spectrum line ─────────────────────────────────────────────────────────
   ctx.save();
   ctx.beginPath();
   ctx.strokeStyle = "#00e676";
@@ -2535,9 +2576,9 @@ function drawSpectrum(data) {
   ctx.stroke();
   ctx.restore();
 
-  // Tuned-frequency marker
+  // ── Tuned-frequency marker ────────────────────────────────────────────────
   if (lastFreqHz != null) {
-    const xf = ((lastFreqHz - range.visLoHz) / range.visSpanHz) * W;
+    const xf = hzToX(lastFreqHz);
     if (xf >= 0 && xf <= W) {
       ctx.save();
       ctx.setLineDash([4 * dpr, 4 * dpr]);
@@ -2611,17 +2652,60 @@ if (spectrumCanvas) {
   });
 }
 
-// ── Mouse drag to pan ─────────────────────────────────────────────────────────
+// ── BW strip edge hit-test (CSS pixels) ──────────────────────────────────────
+function getBwEdgeHit(cssX, cssW, range) {
+  if (!lastFreqHz || !currentBandwidthHz || !lastSpectrumData) return null;
+  const halfBw = currentBandwidthHz / 2;
+  const xL = ((lastFreqHz - halfBw - range.visLoHz) / range.visSpanHz) * cssW;
+  const xR = ((lastFreqHz + halfBw - range.visLoHz) / range.visSpanHz) * cssW;
+  const HIT = 8;
+  if (Math.abs(cssX - xL) < HIT) return "left";
+  if (Math.abs(cssX - xR) < HIT) return "right";
+  return null;
+}
+
+// ── Mouse drag to pan / BW resize ─────────────────────────────────────────────
 let _sDragStart = null;  // { clientX, panFrac }
 let _sDragMoved = false;
 
 if (spectrumCanvas) {
   spectrumCanvas.addEventListener("mousedown", (e) => {
     if (e.button !== 0) return;
+    if (lastSpectrumData) {
+      const rect  = spectrumCanvas.getBoundingClientRect();
+      const cssX  = e.clientX - rect.left;
+      const range = spectrumVisibleRange(lastSpectrumData);
+      const edge  = getBwEdgeHit(cssX, rect.width, range);
+      if (edge) {
+        _bwDragEdge      = edge;
+        _bwDragStartX    = cssX;
+        _bwDragStartBwHz = currentBandwidthHz;
+        _sDragStart      = null;
+        _sDragMoved      = true; // suppress click-to-tune
+        return;
+      }
+    }
     _sDragStart = { clientX: e.clientX, panFrac: spectrumPanFrac };
     _sDragMoved = false;
   });
+
   window.addEventListener("mousemove", (e) => {
+    if (_bwDragEdge && lastSpectrumData) {
+      const rect  = spectrumCanvas.getBoundingClientRect();
+      const cssX  = e.clientX - rect.left;
+      const range = spectrumVisibleRange(lastSpectrumData);
+      const dxHz  = ((cssX - _bwDragStartX) / rect.width) * range.visSpanHz;
+      let newBw   = _bwDragEdge === "right"
+        ? _bwDragStartBwHz + dxHz * 2
+        : _bwDragStartBwHz - dxHz * 2;
+      const [, minBw, maxBw] = mwDefaultsForMode(modeEl ? modeEl.value : "USB");
+      newBw = Math.round(Math.max(minBw, Math.min(maxBw, newBw)));
+      currentBandwidthHz = newBw;
+      const bwLabel = document.getElementById("spectrum-bw-label");
+      if (bwLabel) bwLabel.textContent = "BW: " + formatBwLabel(newBw);
+      drawSpectrum(lastSpectrumData);
+      return;
+    }
     if (!_sDragStart || !lastSpectrumData) return;
     const rect  = spectrumCanvas.getBoundingClientRect();
     const dx    = e.clientX - _sDragStart.clientX;
@@ -2629,7 +2713,15 @@ if (spectrumCanvas) {
     spectrumPanFrac = _sDragStart.panFrac - (dx / rect.width) / spectrumZoom;
     drawSpectrum(lastSpectrumData);
   });
-  window.addEventListener("mouseup", () => { _sDragStart = null; });
+
+  window.addEventListener("mouseup", async () => {
+    if (_bwDragEdge) {
+      try { await postPath(`/set_bandwidth?hz=${Math.round(currentBandwidthHz)}`); } catch (_) {}
+      _bwDragEdge = null;
+      return;
+    }
+    _sDragStart = null;
+  });
 }
 
 // ── Touch: pinch-to-zoom + single-finger pan ──────────────────────────────────
@@ -2686,17 +2778,19 @@ if (spectrumCanvas) {
   spectrumCanvas.addEventListener("touchend", () => { _sTouch = null; });
 }
 
-// ── Hover tooltip ─────────────────────────────────────────────────────────────
+// ── Hover tooltip + cursor ────────────────────────────────────────────────────
 if (spectrumCanvas) {
   spectrumCanvas.addEventListener("mousemove", (e) => {
     if (!lastSpectrumData || !spectrumTooltip) return;
     const rect  = spectrumCanvas.getBoundingClientRect();
     const cssX  = e.clientX - rect.left;
     const range = spectrumVisibleRange(lastSpectrumData);
-    const hz    = canvasXToHz(cssX, rect.width, range);
+    // Change cursor when hovering near BW strip edges
+    const edge = getBwEdgeHit(cssX, rect.width, range);
+    spectrumCanvas.style.cursor = edge ? "ew-resize" : "crosshair";
+    const hz = canvasXToHz(cssX, rect.width, range);
     spectrumTooltip.textContent = formatSpectrumFreq(hz);
     spectrumTooltip.style.display = "block";
-    // Keep tooltip inside canvas
     const tw = spectrumTooltip.offsetWidth;
     let tx = cssX + 10;
     if (tx + tw > rect.width) tx = cssX - tw - 10;
@@ -2705,6 +2799,7 @@ if (spectrumCanvas) {
   });
   spectrumCanvas.addEventListener("mouseleave", () => {
     if (spectrumTooltip) spectrumTooltip.style.display = "none";
+    spectrumCanvas.style.cursor = "crosshair";
   });
 }
 
@@ -2719,3 +2814,33 @@ if (spectrumCanvas) {
     postPath(`/set_freq?hz=${targetHz}`).catch(() => {});
   });
 }
+
+// ── Spectrum floor input + Auto level ────────────────────────────────────────
+(function () {
+  const floorInput = document.getElementById("spectrum-floor-input");
+  const autoBtn    = document.getElementById("spectrum-auto-btn");
+
+  if (floorInput) {
+    floorInput.addEventListener("change", () => {
+      const v = Number(floorInput.value);
+      if (!isNaN(v)) {
+        spectrumFloor = v;
+        if (lastSpectrumData) drawSpectrum(lastSpectrumData);
+      }
+    });
+  }
+
+  if (autoBtn) {
+    autoBtn.addEventListener("click", () => {
+      if (!lastSpectrumData) return;
+      const sorted = [...lastSpectrumData.bins].sort((a, b) => a - b);
+      // Use 15th-percentile as noise floor, peak for top
+      const noise = sorted[Math.floor(sorted.length * 0.15)];
+      const peak  = sorted[sorted.length - 1];
+      spectrumFloor = Math.floor(noise / 10) * 10 - 10;
+      spectrumRange = Math.max(60, Math.ceil((peak - spectrumFloor) / 10) * 10 + 10);
+      if (floorInput) floorInput.value = spectrumFloor;
+      drawSpectrum(lastSpectrumData);
+    });
+  }
+})();

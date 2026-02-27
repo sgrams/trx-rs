@@ -634,6 +634,50 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   white-space: nowrap;
   z-index: 10;
 }
+#spectrum-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 3px 4px 0;
+  gap: 0.6rem;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+#spectrum-bw-label {
+  font-size: 0.78rem;
+  color: var(--accent-yellow);
+  font-weight: 600;
+  min-width: 5rem;
+}
+#spectrum-level-row {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+#spectrum-floor-label {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+#spectrum-floor-input {
+  width: 3.4rem;
+  padding: 1px 4px;
+  font-size: 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--input-bg);
+  color: var(--text);
+  text-align: right;
+  height: 1.5rem;
+}
+#spectrum-auto-btn {
+  height: 1.5rem;
+  min-height: 0;
+  padding: 0 8px;
+  font-size: 0.73rem;
+}
 #spectrum-hint {
   font-size: 0.68rem;
   color: var(--text-muted);

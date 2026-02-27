@@ -64,7 +64,14 @@
         <div id="spectrum-tooltip"></div>
         <div id="spectrum-freq-axis"></div>
       </div>
-      <div id="spectrum-hint">Scroll to zoom &middot; Drag to pan &middot; Double-click to reset</div>
+      <div id="spectrum-controls">
+        <span id="spectrum-bw-label">BW: --</span>
+        <div id="spectrum-level-row">
+          <label id="spectrum-floor-label">Floor <input type="number" id="spectrum-floor-input" value="-100" step="5" /> dB</label>
+          <button id="spectrum-auto-btn" type="button">Auto</button>
+        </div>
+      </div>
+      <div id="spectrum-hint">Scroll to zoom &middot; Drag to pan &middot; Double-click to reset &middot; Drag BW edges to resize</div>
     </div>
     <div class="status">
       <div class="full-row freq-row">
@@ -144,26 +151,6 @@
         <div class="inline">
           <input class="status-input" id="tx-limit" type="number" min="0" max="255" step="1" value="" placeholder="--" />
           <button id="tx-limit-btn" type="button">Set</button>
-        </div>
-      </div>
-      <div id="filters-panel" style="display:none;">
-        <div class="label"><span>Filters</span></div>
-        <div class="inline" style="gap: 0.8rem; flex-wrap: wrap; align-items: center;">
-          <label style="display:flex; align-items:center; gap:0.4rem;">
-            <span style="color:var(--text-muted); font-size:0.85rem; white-space:nowrap;">BW</span>
-            <input type="range" id="bw-slider" min="1000" max="500000" step="1000" value="3000" style="width:120px;" />
-            <span id="bw-value" style="min-width:4rem; font-size:0.9rem;">3.0 kHz</span>
-          </label>
-          <label style="display:flex; align-items:center; gap:0.4rem;">
-            <span style="color:var(--text-muted); font-size:0.85rem; white-space:nowrap;">FIR taps</span>
-            <select id="fir-taps-select" class="status-input" style="width:auto; height:var(--control-height);">
-              <option value="16">16</option>
-              <option value="32">32</option>
-              <option value="64" selected>64</option>
-              <option value="128">128</option>
-              <option value="256">256</option>
-            </select>
-          </label>
         </div>
       </div>
     </div>
