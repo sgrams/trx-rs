@@ -491,6 +491,7 @@ pub fn command_from_rig_command(cmd: RigCommand) -> Box<dyn RigCommandHandler> {
     match cmd {
         RigCommand::GetSnapshot => Box::new(GetSnapshotCommand),
         RigCommand::SetFreq(freq) => Box::new(SetFreqCommand::new(freq)),
+        RigCommand::SetCenterFreq(_) => Box::new(GetSnapshotCommand),
         RigCommand::SetMode(mode) => Box::new(SetModeCommand::new(mode)),
         RigCommand::SetPtt(ptt) => Box::new(SetPttCommand::new(ptt)),
         RigCommand::PowerOn => Box::new(PowerOnCommand),

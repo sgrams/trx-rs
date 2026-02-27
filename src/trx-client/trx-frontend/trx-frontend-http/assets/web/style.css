@@ -239,6 +239,7 @@ button:disabled { opacity: 0.6; cursor: not-allowed; }
 .inline { display: flex; gap: 0.5rem; align-items: center; }
 .freq-inline {
   align-items: flex-start;
+  flex-wrap: wrap;
 }
 .freq-field {
   display: grid;
@@ -253,7 +254,7 @@ button:disabled { opacity: 0.6; cursor: not-allowed; }
   flex: 1 1 auto;
   min-width: 0;
 }
-.frequency-col #freq {
+.frequency-col input.status-input {
   width: 100%;
   height: 3.35rem;
   box-sizing: border-box;

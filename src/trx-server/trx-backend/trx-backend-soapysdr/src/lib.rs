@@ -33,6 +33,8 @@ pub struct SoapySdrRig {
     /// How many Hz below the dial frequency the SDR hardware is actually tuned.
     /// The DSP mixer compensates for this offset to demodulate the dial frequency.
     center_offset_hz: i64,
+    /// Actual hardware center frequency currently tuned on the SDR.
+    center_hz: i64,
     /// Used to send hardware retune commands to the IQ read loop.
     retune_cmd: Arc<std::sync::Mutex<Option<f64>>>,
 }
@@ -94,14 +96,13 @@ impl SoapySdrRig {
         let hardware_center_hz = initial_freq.hz as i64 - center_offset_hz;
 
         // Create real IQ source from hardware device.
-        let iq_source: Box<dyn dsp::IqSource> =
-            Box::new(real_iq_source::RealIqSource::new(
-                args,
-                hardware_center_hz as f64,
-                sdr_sample_rate as f64,
-                bandwidth_hz as f64,
-                gain_db,
-            )?);
+        let iq_source: Box<dyn dsp::IqSource> = Box::new(real_iq_source::RealIqSource::new(
+            args,
+            hardware_center_hz as f64,
+            sdr_sample_rate as f64,
+            bandwidth_hz as f64,
+            gain_db,
+        )?);
 
         let pipeline = dsp::SdrPipeline::start(
             iq_source,
@@ -172,6 +173,7 @@ impl SoapySdrRig {
             fir_taps,
             spectrum_buf,
             center_offset_hz,
+            center_hz: hardware_center_hz,
             retune_cmd,
         })
     }
@@ -242,10 +244,34 @@ impl RigCat for SoapySdrRig {
         Box::pin(async move {
             tracing::debug!("SoapySdrRig: set_freq -> {} Hz", freq.hz);
             self.freq = freq;
-            // Retune the hardware center to keep the dial frequency off-DC.
-            let hardware_hz = freq.hz as i64 - self.center_offset_hz;
+            let half_span_hz = i128::from(self.pipeline.sdr_sample_rate) / 2;
+            let current_center_hz = i128::from(self.center_hz);
+            let target_hz = i128::from(freq.hz);
+            let within_current_span = target_hz >= current_center_hz - half_span_hz
+                && target_hz <= current_center_hz + half_span_hz;
+
+            if !within_current_span {
+                // Only retune when the requested dial frequency leaves the
+                // currently captured SDR bandwidth.
+                let hardware_hz = freq.hz as i64 - self.center_offset_hz;
+                self.center_hz = hardware_hz;
+                if let Ok(mut cmd) = self.retune_cmd.lock() {
+                    *cmd = Some(hardware_hz as f64);
+                }
+            }
+            Ok(())
+        })
+    }
+
+    fn set_center_freq<'a>(
+        &'a mut self,
+        freq: Freq,
+    ) -> Pin<Box<dyn std::future::Future<Output = DynResult<()>> + Send + 'a>> {
+        Box::pin(async move {
+            tracing::debug!("SoapySdrRig: set_center_freq -> {} Hz", freq.hz);
+            self.center_hz = freq.hz as i64;
             if let Ok(mut cmd) = self.retune_cmd.lock() {
-                *cmd = Some(hardware_hz as f64);
+                *cmd = Some(self.center_hz as f64);
             }
             Ok(())
         })
@@ -402,11 +428,9 @@ impl RigCat for SoapySdrRig {
 
     fn get_spectrum(&self) -> Option<SpectrumData> {
         let bins = self.spectrum_buf.lock().ok()?.clone()?;
-        // Report the actual hardware center frequency, not the dial frequency.
-        let center_hz = (self.freq.hz as i64 - self.center_offset_hz) as u64;
         Some(SpectrumData {
             bins,
-            center_hz,
+            center_hz: self.center_hz.max(0) as u64,
             sample_rate: self.pipeline.sdr_sample_rate,
         })
     }

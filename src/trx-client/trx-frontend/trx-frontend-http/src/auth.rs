@@ -591,6 +591,10 @@ mod tests {
     #[test]
     fn test_route_access_control_paths() {
         assert_eq!(RouteAccess::from_path("/set_freq"), RouteAccess::Control);
+        assert_eq!(
+            RouteAccess::from_path("/set_center_freq"),
+            RouteAccess::Control
+        );
         assert_eq!(RouteAccess::from_path("/set_mode"), RouteAccess::Control);
     }
 

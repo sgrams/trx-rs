@@ -449,6 +449,13 @@ async fn process_command(
             let _ = ctx.state_tx.send(ctx.state.clone());
             return snapshot_from(ctx.state);
         }
+        RigCommand::SetCenterFreq(freq) => {
+            if let Err(e) = ctx.rig.set_center_freq(freq).await {
+                return Err(RigError::communication(format!("set_center_freq: {e}")));
+            }
+            *ctx.poll_pause_until = Some(Instant::now() + Duration::from_millis(200));
+            return snapshot_from(ctx.state);
+        }
         RigCommand::GetSpectrum => {
             // Fetch current spectrum and embed it in a one-shot snapshot.
             ctx.state.spectrum = ctx.rig.get_spectrum();

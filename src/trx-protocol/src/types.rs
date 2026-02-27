@@ -15,6 +15,7 @@ pub enum ClientCommand {
     GetState,
     GetRigs,
     SetFreq { freq_hz: u64 },
+    SetCenterFreq { freq_hz: u64 },
     SetMode { mode: String },
     SetPtt { ptt: bool },
     PowerOn,

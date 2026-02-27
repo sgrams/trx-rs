@@ -88,6 +88,16 @@ pub trait RigCat: Rig + Send {
         freq: Freq,
     ) -> Pin<Box<dyn Future<Output = DynResult<()>> + Send + 'a>>;
 
+    fn set_center_freq<'a>(
+        &'a mut self,
+        _freq: Freq,
+    ) -> Pin<Box<dyn Future<Output = DynResult<()>> + Send + 'a>> {
+        Box::pin(std::future::ready(Err(
+            Box::new(response::RigError::not_supported("set_center_freq"))
+                as Box<dyn std::error::Error + Send + Sync>,
+        )))
+    }
+
     fn set_mode<'a>(
         &'a mut self,
         mode: RigMode,

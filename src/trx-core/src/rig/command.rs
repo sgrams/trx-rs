@@ -10,6 +10,7 @@ use crate::RigMode;
 pub enum RigCommand {
     GetSnapshot,
     SetFreq(Freq),
+    SetCenterFreq(Freq),
     SetMode(RigMode),
     SetPtt(bool),
     PowerOn,

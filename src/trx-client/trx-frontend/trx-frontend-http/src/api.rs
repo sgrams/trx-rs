@@ -355,6 +355,14 @@ pub async fn set_freq(
     send_command(&rig_tx, RigCommand::SetFreq(Freq { hz: query.hz })).await
 }
 
+#[post("/set_center_freq")]
+pub async fn set_center_freq(
+    query: web::Query<FreqQuery>,
+    rig_tx: web::Data<mpsc::Sender<RigRequest>>,
+) -> Result<HttpResponse, Error> {
+    send_command(&rig_tx, RigCommand::SetCenterFreq(Freq { hz: query.hz })).await
+}
+
 #[derive(serde::Deserialize)]
 pub struct ModeQuery {
     pub mode: String,
@@ -633,6 +641,7 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
         .service(lock_panel)
         .service(unlock_panel)
         .service(set_freq)
+        .service(set_center_freq)
         .service(set_mode)
         .service(set_ptt)
         .service(set_tx_limit)

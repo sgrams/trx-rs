@@ -21,6 +21,7 @@ pub fn client_command_to_rig(cmd: ClientCommand) -> RigCommand {
         }
         ClientCommand::GetState => RigCommand::GetSnapshot,
         ClientCommand::SetFreq { freq_hz } => RigCommand::SetFreq(Freq { hz: freq_hz }),
+        ClientCommand::SetCenterFreq { freq_hz } => RigCommand::SetCenterFreq(Freq { hz: freq_hz }),
         ClientCommand::SetMode { mode } => RigCommand::SetMode(parse_mode(&mode)),
         ClientCommand::SetPtt { ptt } => RigCommand::SetPtt(ptt),
         ClientCommand::PowerOn => RigCommand::PowerOn,
@@ -59,6 +60,7 @@ pub fn rig_command_to_client(cmd: RigCommand) -> ClientCommand {
     match cmd {
         RigCommand::GetSnapshot => ClientCommand::GetState,
         RigCommand::SetFreq(freq) => ClientCommand::SetFreq { freq_hz: freq.hz },
+        RigCommand::SetCenterFreq(freq) => ClientCommand::SetCenterFreq { freq_hz: freq.hz },
         RigCommand::SetMode(mode) => ClientCommand::SetMode {
             mode: mode_to_string(&mode),
         },

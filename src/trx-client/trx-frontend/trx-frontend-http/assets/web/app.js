@@ -173,6 +173,7 @@ function applyAuthRestrictions() {
     const powerBtn = document.getElementById("power-btn");
     const lockBtn = document.getElementById("lock-btn");
     const freqInput = document.getElementById("freq");
+    const centerFreqInput = document.getElementById("center-freq");
     const modeSelect = document.getElementById("mode");
     const txLimitInput = document.getElementById("tx-limit");
     const txLimitBtn = document.getElementById("tx-limit-btn");
@@ -193,6 +194,7 @@ function applyAuthRestrictions() {
 
     // Disable frequency/mode inputs
     if (freqInput) freqInput.disabled = true;
+    if (centerFreqInput) centerFreqInput.disabled = true;
     if (modeSelect) modeSelect.disabled = true;
     if (txLimitInput) txLimitInput.disabled = true;
 
@@ -260,18 +262,22 @@ function applyCapabilities(caps) {
 
   // Spectrum panel (SDR-only)
   const spectrumPanel = document.getElementById("spectrum-panel");
+  const centerFreqField = document.getElementById("center-freq-field");
   if (spectrumPanel) {
     if (caps.filter_controls) {
       spectrumPanel.style.display = "";
+      if (centerFreqField) centerFreqField.style.display = "";
       startSpectrumPolling();
     } else {
       spectrumPanel.style.display = "none";
+      if (centerFreqField) centerFreqField.style.display = "none";
       stopSpectrumPolling();
     }
   }
 }
 
 const freqEl = document.getElementById("freq");
+const centerFreqEl = document.getElementById("center-freq");
 const wavelengthEl = document.getElementById("wavelength");
 const modeEl = document.getElementById("mode");
 const bandLabel = document.getElementById("band-label");
@@ -316,6 +322,7 @@ let sigMeasureAccumMs = 0;
 let sigMeasureWeighted = 0;
 let sigMeasurePeak = null;
 let lastFreqHz = null;
+let centerFreqDirty = false;
 let jogStep = loadSetting("jogStep", 1000);
 let minFreqStepHz = 1;
 const VFO_COLORS = ["var(--accent-green)", "var(--accent-yellow)"];
@@ -619,6 +626,11 @@ function refreshFreqDisplay() {
   refreshWavelengthDisplay(lastFreqHz);
 }
 
+function refreshCenterFreqDisplay() {
+  if (!centerFreqEl || !lastSpectrumData || centerFreqDirty) return;
+  centerFreqEl.value = formatFreqForStep(lastSpectrumData.center_hz, jogStep);
+}
+
 function parseFreqInput(val, defaultStep) {
   if (!val) return null;
   const trimmed = val.trim().toLowerCase();
@@ -701,6 +713,7 @@ function updateJogStepSupport(cap) {
   });
 
   refreshFreqDisplay();
+  refreshCenterFreqDisplay();
 }
 
 function normalizeMode(modeVal) {
@@ -751,7 +764,7 @@ function formatSignal(sUnits) {
 }
 
 function setDisabled(disabled) {
-  [freqEl, modeEl, pttBtn, powerBtn, txLimitInput, txLimitBtn, lockBtn].forEach((el) => {
+  [freqEl, centerFreqEl, modeEl, pttBtn, powerBtn, txLimitInput, txLimitBtn, lockBtn].forEach((el) => {
     if (el) el.disabled = disabled;
   });
 }
@@ -1299,6 +1312,32 @@ async function applyFreqFromInput() {
   }
 }
 
+async function applyCenterFreqFromInput() {
+  if (!centerFreqEl) return;
+  const parsedRaw = parseFreqInput(centerFreqEl.value, jogStep);
+  const parsed = alignFreqToRigStep(parsedRaw);
+  if (parsed === null) {
+    showHint("Central freq missing", 1500);
+    return;
+  }
+  if (!freqAllowed(parsed)) {
+    showHint("Out of supported bands", 1500);
+    return;
+  }
+  centerFreqDirty = false;
+  centerFreqEl.disabled = true;
+  showHint("Setting central frequency…");
+  try {
+    await postPath(`/set_center_freq?hz=${parsed}`);
+    showHint("Central freq set", 1500);
+  } catch (err) {
+    showHint("Set central freq failed", 2000);
+    console.error(err);
+  } finally {
+    centerFreqEl.disabled = false;
+  }
+}
+
 freqEl.addEventListener("keydown", (e) => {
   freqDirty = true;
   if (e.key === "Enter") {
@@ -1306,6 +1345,15 @@ freqEl.addEventListener("keydown", (e) => {
     applyFreqFromInput();
   }
 });
+if (centerFreqEl) {
+  centerFreqEl.addEventListener("keydown", (e) => {
+    centerFreqDirty = true;
+    if (e.key === "Enter") {
+      e.preventDefault();
+      applyCenterFreqFromInput();
+    }
+  });
+}
 freqEl.addEventListener("wheel", (e) => {
   e.preventDefault();
   const direction = e.deltaY < 0 ? 1 : -1;
@@ -1394,6 +1442,7 @@ jogStepEl.addEventListener("click", (e) => {
   btn.classList.add("active");
   saveSetting("jogStep", jogStep);
   refreshFreqDisplay();
+  refreshCenterFreqDisplay();
 });
 
 // Restore active jog step button from saved setting
@@ -2416,6 +2465,7 @@ async function fetchSpectrum() {
     if (resp.status === 204) { lastSpectrumData = null; clearSpectrumCanvas(); return; }
     if (!resp.ok) return;
     lastSpectrumData = await resp.json();
+    refreshCenterFreqDisplay();
     drawSpectrum(lastSpectrumData);
   } catch (_) {}
 }
