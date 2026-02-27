@@ -34,7 +34,10 @@ impl Demodulator {
             RigMode::FM => Self::Fm,
             RigMode::WFM => Self::Wfm,
             RigMode::CW | RigMode::CWR => Self::Cw,
-            RigMode::DIG | RigMode::PKT => Self::Passthrough,
+            RigMode::DIG => Self::Passthrough,
+            // VHF/UHF packet radio (APRS, AX.25) is FM-encoded AFSK.
+            // FM-demodulate the signal before passing audio to the APRS decoder.
+            RigMode::PKT => Self::Fm,
             RigMode::Other(_) => Self::Usb,
         }
     }
@@ -300,10 +303,7 @@ mod tests {
             Demodulator::for_mode(&RigMode::DIG),
             Demodulator::Passthrough
         );
-        assert_eq!(
-            Demodulator::for_mode(&RigMode::PKT),
-            Demodulator::Passthrough
-        );
+        assert_eq!(Demodulator::for_mode(&RigMode::PKT), Demodulator::Fm);
     }
 
     // Test 9: All demodulators return an empty Vec for empty input without panicking.

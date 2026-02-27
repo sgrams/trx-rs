@@ -31,6 +31,13 @@ pub trait IqSource: Send + 'static {
     /// Read the next block of IQ samples into `buf`.
     /// Returns the number of samples written, or an error string.
     fn read_into(&mut self, buf: &mut [Complex<f32>]) -> Result<usize, String>;
+
+    /// Returns `true` when `read_into` blocks until samples are ready
+    /// (i.e. hardware-backed sources).  The read loop uses this to skip the
+    /// extra throttle sleep that is only needed for non-blocking mock sources.
+    fn is_blocking(&self) -> bool {
+        false
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -464,6 +471,10 @@ fn iq_read_loop(
     } else {
         1
     };
+    // Blocking sources (real hardware) already pace the loop inside read_into.
+    // Non-blocking sources (MockIqSource) need an explicit sleep to avoid
+    // busy-spinning at 100 % CPU.
+    let throttle = !source.is_blocking();
 
     loop {
         let n = match source.read_into(&mut block) {
@@ -493,12 +504,9 @@ fn iq_read_loop(
             }
         }
 
-        // Throttle only when source is faster than real time (e.g. MockIqSource).
-        // Real hardware naturally blocks in read_into; sleeping here would
-        // double-throttle it.  We detect "faster than real time" by checking
-        // whether the source returned immediately (always true for mock,
-        // never for blocking hardware reads).
-        std::thread::sleep(std::time::Duration::from_millis(block_duration_ms));
+        if throttle {
+            std::thread::sleep(std::time::Duration::from_millis(block_duration_ms));
+        }
     }
 }
 
