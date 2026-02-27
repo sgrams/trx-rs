@@ -239,8 +239,16 @@ function applyCapabilities(caps) {
   // PTT / TX controls
   const pttBtn = document.getElementById("ptt-btn");
   const txMetersRow = document.getElementById("tx-meters");
+  const txAudioBtn = document.getElementById("tx-audio-btn");
+  const txVolSlider = document.getElementById("tx-vol");
+  const txVolControl = txVolSlider ? txVolSlider.closest(".vol-label") : null;
   if (pttBtn) pttBtn.style.display = caps.tx ? "" : "none";
   if (txMetersRow) txMetersRow.style.display = caps.tx ? "" : "none";
+  if (txAudioBtn) txAudioBtn.style.display = caps.tx ? "" : "none";
+  if (txVolControl) txVolControl.style.display = caps.tx ? "" : "none";
+  if (!caps.tx && typeof stopTxAudio === "function" && txActive) {
+    stopTxAudio();
+  }
 
   // TX limit row
   const txLimitRow = document.getElementById("tx-limit-row");
