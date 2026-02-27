@@ -334,6 +334,7 @@ const rigSwitchSelect = document.getElementById("rig-switch-select");
 const rigSwitchBtn = document.getElementById("rig-switch-btn");
 const headerRigSwitchSelect = document.getElementById("header-rig-switch-select");
 const headerRigSwitchBtn = document.getElementById("header-rig-switch-btn");
+let overviewPeakHoldMs = Number(loadSetting("overviewPeakHoldMs", 2000));
 
 let lastControl;
 let lastTxEn = null;
@@ -497,7 +498,6 @@ let overviewSignalTimer = null;
 let overviewWaterfallRows = [];
 let overviewDrawPending = false;
 const HEADER_SIG_WINDOW_MS = 10_000;
-let overviewPeakHoldMs = Number(loadSetting("overviewPeakHoldMs", 2000));
 
 function resizeHeaderSignalCanvas() {
   if (!overviewCanvas) return;
