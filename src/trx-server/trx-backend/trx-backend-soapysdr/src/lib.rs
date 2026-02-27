@@ -69,6 +69,7 @@ impl SoapySdrRig {
         gain_mode: &str,
         gain_db: f64,
         audio_sample_rate: u32,
+        audio_channels: usize,
         frame_duration_ms: u16,
         initial_freq: Freq,
         initial_mode: RigMode,
@@ -108,6 +109,7 @@ impl SoapySdrRig {
             iq_source,
             sdr_sample_rate,
             audio_sample_rate,
+            audio_channels,
             frame_duration_ms,
             channels,
         );
@@ -188,6 +190,7 @@ impl SoapySdrRig {
             "auto",
             30.0,
             48_000,
+            1,
             20,
             Freq { hz: 144_300_000 },
             RigMode::USB,

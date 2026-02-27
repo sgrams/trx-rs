@@ -20,7 +20,7 @@ use rustfft::{Fft, FftPlanner};
 use tokio::sync::broadcast;
 use trx_core::rig::state::RigMode;
 
-use crate::demod::Demodulator;
+use crate::demod::{Demodulator, WfmStereoDecoder};
 
 // ---------------------------------------------------------------------------
 // IQ source abstraction
@@ -252,14 +252,24 @@ pub struct ChannelDsp {
     pub channel_if_hz: f64,
     /// Current demodulator (can be swapped via `set_mode`).
     pub demodulator: Demodulator,
+    /// Current rig mode so the decimation pipeline can be rebuilt.
+    mode: RigMode,
     /// FFT-based FIR low-pass filter applied to I component before decimation.
     lpf_i: BlockFirFilter,
     /// FFT-based FIR low-pass filter applied to Q component before decimation.
     lpf_q: BlockFirFilter,
     /// SDR capture sample rate — kept for filter rebuilds.
     sdr_sample_rate: u32,
+    /// Output audio sample rate.
+    audio_sample_rate: u32,
+    /// Requested audio bandwidth.
+    audio_bandwidth_hz: u32,
+    /// FIR tap count used when rebuilding filters.
+    fir_taps: usize,
     /// Decimation factor: `sdr_sample_rate / audio_sample_rate`.
     pub decim_factor: usize,
+    /// Number of PCM channels emitted in each frame.
+    output_channels: usize,
     /// Accumulator for output PCM frames.
     pub frame_buf: Vec<f32>,
     /// Target frame size in samples.
@@ -272,40 +282,97 @@ pub struct ChannelDsp {
     pub mixer_phase_inc: f64,
     /// Decimation counter.
     decim_counter: usize,
+    /// Dedicated WFM decoder that preserves the FM composite baseband.
+    wfm_decoder: Option<WfmStereoDecoder>,
 }
 
 impl ChannelDsp {
+    fn pipeline_rates(
+        mode: &RigMode,
+        sdr_sample_rate: u32,
+        audio_sample_rate: u32,
+        audio_bandwidth_hz: u32,
+    ) -> (usize, u32) {
+        if sdr_sample_rate == 0 {
+            return (1, audio_sample_rate.max(1));
+        }
+
+        let target_rate = if *mode == RigMode::WFM {
+            audio_bandwidth_hz.max(audio_sample_rate.saturating_mul(4)).max(228_000)
+        } else {
+            audio_sample_rate.max(1)
+        };
+        let decim_factor = (sdr_sample_rate / target_rate.max(1)).max(1) as usize;
+        let channel_sample_rate = (sdr_sample_rate / decim_factor as u32).max(1);
+        (decim_factor, channel_sample_rate)
+    }
+
+    fn rebuild_filters(&mut self) {
+        let (_, channel_sample_rate) = Self::pipeline_rates(
+            &self.mode,
+            self.sdr_sample_rate,
+            self.audio_sample_rate,
+            self.audio_bandwidth_hz,
+        );
+        let cutoff_hz = self
+            .audio_bandwidth_hz
+            .min(channel_sample_rate.saturating_sub(1)) as f32
+            / 2.0;
+        let cutoff_norm = if self.sdr_sample_rate == 0 {
+            0.1
+        } else {
+            (cutoff_hz / self.sdr_sample_rate as f32).min(0.499)
+        };
+        self.lpf_i = BlockFirFilter::new(cutoff_norm, self.fir_taps, IQ_BLOCK_SIZE);
+        self.lpf_q = BlockFirFilter::new(cutoff_norm, self.fir_taps, IQ_BLOCK_SIZE);
+        self.decim_factor = Self::pipeline_rates(
+            &self.mode,
+            self.sdr_sample_rate,
+            self.audio_sample_rate,
+            self.audio_bandwidth_hz,
+        )
+        .0;
+        self.decim_counter = 0;
+        self.wfm_decoder = if self.mode == RigMode::WFM {
+            Some(WfmStereoDecoder::new(
+                channel_sample_rate,
+                self.audio_sample_rate,
+                self.output_channels,
+            ))
+        } else {
+            None
+        };
+        self.frame_buf.clear();
+    }
+
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         channel_if_hz: f64,
         mode: &RigMode,
         sdr_sample_rate: u32,
         audio_sample_rate: u32,
+        output_channels: usize,
         frame_duration_ms: u16,
         audio_bandwidth_hz: u32,
         fir_taps: usize,
         pcm_tx: broadcast::Sender<Vec<f32>>,
     ) -> Self {
-        let decim_factor = if audio_sample_rate == 0 || sdr_sample_rate == 0 {
-            1
-        } else {
-            (sdr_sample_rate / audio_sample_rate).max(1) as usize
-        };
-
+        let output_channels = output_channels.max(1);
         let frame_size = if audio_sample_rate == 0 || frame_duration_ms == 0 {
-            960
+            960 * output_channels
         } else {
-            (audio_sample_rate as usize * frame_duration_ms as usize) / 1000
+            (audio_sample_rate as usize * frame_duration_ms as usize * output_channels) / 1000
         };
 
+        let taps = fir_taps.max(1);
+        let (decim_factor, channel_sample_rate) =
+            Self::pipeline_rates(mode, sdr_sample_rate, audio_sample_rate, audio_bandwidth_hz);
+        let cutoff_hz = audio_bandwidth_hz.min(channel_sample_rate.saturating_sub(1)) as f32 / 2.0;
         let cutoff_norm = if sdr_sample_rate == 0 {
             0.1
         } else {
-            (audio_bandwidth_hz as f32 / 2.0) / sdr_sample_rate as f32
-        }
-        .min(0.499);
-
-        let taps = fir_taps.max(1);
+            (cutoff_hz / sdr_sample_rate as f32).min(0.499)
+        };
 
         let mixer_phase_inc = if sdr_sample_rate == 0 {
             0.0
@@ -316,36 +383,46 @@ impl ChannelDsp {
         Self {
             channel_if_hz,
             demodulator: Demodulator::for_mode(mode),
+            mode: mode.clone(),
             lpf_i: BlockFirFilter::new(cutoff_norm, taps, IQ_BLOCK_SIZE),
             lpf_q: BlockFirFilter::new(cutoff_norm, taps, IQ_BLOCK_SIZE),
             sdr_sample_rate,
+            audio_sample_rate,
+            audio_bandwidth_hz,
+            fir_taps: taps,
             decim_factor,
-            frame_buf: Vec::with_capacity(frame_size * 2),
+            output_channels,
+            frame_buf: Vec::with_capacity(frame_size + output_channels),
             frame_size,
             pcm_tx,
             mixer_phase: 0.0,
             mixer_phase_inc,
             decim_counter: 0,
+            wfm_decoder: if *mode == RigMode::WFM {
+                Some(WfmStereoDecoder::new(
+                    channel_sample_rate,
+                    audio_sample_rate,
+                    output_channels,
+                ))
+            } else {
+                None
+            },
         }
     }
 
     pub fn set_mode(&mut self, mode: &RigMode) {
+        self.mode = mode.clone();
         self.demodulator = Demodulator::for_mode(mode);
+        self.rebuild_filters();
     }
 
     /// Rebuild the FIR low-pass filters with new bandwidth and tap count.
     ///
     /// Changes take effect on the next call to `process_block`.
     pub fn set_filter(&mut self, bandwidth_hz: u32, taps: usize) {
-        let cutoff_norm = if self.sdr_sample_rate == 0 {
-            0.1
-        } else {
-            (bandwidth_hz as f32 / 2.0) / self.sdr_sample_rate as f32
-        }
-        .min(0.499);
-        let taps = taps.max(1);
-        self.lpf_i = BlockFirFilter::new(cutoff_norm, taps, IQ_BLOCK_SIZE);
-        self.lpf_q = BlockFirFilter::new(cutoff_norm, taps, IQ_BLOCK_SIZE);
+        self.audio_bandwidth_hz = bandwidth_hz;
+        self.fir_taps = taps.max(1);
+        self.rebuild_filters();
     }
 
     /// Process a block of raw IQ samples through the full DSP chain.
@@ -406,7 +483,11 @@ impl ChannelDsp {
         }
 
         // --- 4. Demodulate --------------------------------------------------
-        let audio = self.demodulator.demodulate(&decimated);
+        let audio = if let Some(decoder) = self.wfm_decoder.as_mut() {
+            decoder.process_iq(&decimated)
+        } else {
+            self.demodulator.demodulate(&decimated)
+        };
 
         // --- 5. Emit complete PCM frames ------------------------------------
         self.frame_buf.extend_from_slice(&audio);
@@ -438,6 +519,7 @@ impl SdrPipeline {
         source: Box<dyn IqSource>,
         sdr_sample_rate: u32,
         audio_sample_rate: u32,
+        output_channels: usize,
         frame_duration_ms: u16,
         channels: &[(f64, RigMode, u32, usize)],
     ) -> Self {
@@ -456,6 +538,7 @@ impl SdrPipeline {
                 mode,
                 sdr_sample_rate,
                 audio_sample_rate,
+                output_channels,
                 frame_duration_ms,
                 audio_bandwidth_hz,
                 fir_taps,
@@ -677,7 +760,7 @@ mod tests {
     #[test]
     fn channel_dsp_processes_silence() {
         let (pcm_tx, _pcm_rx) = broadcast::channel::<Vec<f32>>(8);
-        let mut dsp = ChannelDsp::new(0.0, &RigMode::USB, 48_000, 8_000, 20, 3000, 31, pcm_tx);
+        let mut dsp = ChannelDsp::new(0.0, &RigMode::USB, 48_000, 8_000, 1, 20, 3000, 31, pcm_tx);
         let block = vec![Complex::new(0.0_f32, 0.0_f32); 4096];
         dsp.process_block(&block);
     }
@@ -685,7 +768,7 @@ mod tests {
     #[test]
     fn channel_dsp_set_mode() {
         let (pcm_tx, _) = broadcast::channel::<Vec<f32>>(8);
-        let mut dsp = ChannelDsp::new(0.0, &RigMode::USB, 48_000, 8_000, 20, 3000, 31, pcm_tx);
+        let mut dsp = ChannelDsp::new(0.0, &RigMode::USB, 48_000, 8_000, 1, 20, 3000, 31, pcm_tx);
         assert_eq!(dsp.demodulator, Demodulator::Usb);
         dsp.set_mode(&RigMode::FM);
         assert_eq!(dsp.demodulator, Demodulator::Fm);
@@ -697,6 +780,7 @@ mod tests {
             Box::new(MockIqSource),
             1_920_000,
             48_000,
+            1,
             20,
             &[(200_000.0, RigMode::USB, 3000, 64)],
         );
@@ -706,7 +790,7 @@ mod tests {
 
     #[test]
     fn pipeline_empty_channels() {
-        let pipeline = SdrPipeline::start(Box::new(MockIqSource), 1_920_000, 48_000, 20, &[]);
+        let pipeline = SdrPipeline::start(Box::new(MockIqSource), 1_920_000, 48_000, 1, 20, &[]);
         assert_eq!(pipeline.pcm_senders.len(), 0);
         assert_eq!(pipeline.channel_dsps.len(), 0);
     }

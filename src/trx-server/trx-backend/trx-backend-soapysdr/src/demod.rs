@@ -5,6 +5,132 @@
 use num_complex::Complex;
 use trx_core::rig::state::RigMode;
 
+#[derive(Debug, Clone)]
+struct OnePoleLowPass {
+    alpha: f32,
+    y: f32,
+}
+
+impl OnePoleLowPass {
+    fn new(sample_rate: f32, cutoff_hz: f32) -> Self {
+        let sr = sample_rate.max(1.0);
+        let cutoff = cutoff_hz.clamp(1.0, sr * 0.49);
+        let dt = 1.0 / sr;
+        let rc = 1.0 / (2.0 * std::f32::consts::PI * cutoff);
+        let alpha = dt / (rc + dt);
+        Self { alpha, y: 0.0 }
+    }
+
+    fn process(&mut self, x: f32) -> f32 {
+        self.y += self.alpha * (x - self.y);
+        self.y
+    }
+}
+
+#[derive(Debug, Clone)]
+struct Deemphasis {
+    alpha: f32,
+    y: f32,
+}
+
+impl Deemphasis {
+    fn new(sample_rate: f32, tau_us: f32) -> Self {
+        let sr = sample_rate.max(1.0);
+        let tau = (tau_us.max(1.0)) * 1e-6;
+        let alpha = 1.0 - (-1.0 / (sr * tau)).exp();
+        Self { alpha, y: 0.0 }
+    }
+
+    fn process(&mut self, x: f32) -> f32 {
+        self.y += self.alpha * (x - self.y);
+        self.y
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct WfmStereoDecoder {
+    output_channels: usize,
+    pilot_phase: f32,
+    pilot_freq: f32,
+    pilot_freq_err: f32,
+    pilot_i_lp: OnePoleLowPass,
+    pilot_q_lp: OnePoleLowPass,
+    sum_lp: OnePoleLowPass,
+    diff_lp: OnePoleLowPass,
+    deemph_m: Deemphasis,
+    deemph_l: Deemphasis,
+    deemph_r: Deemphasis,
+    output_decim: usize,
+    output_counter: usize,
+}
+
+impl WfmStereoDecoder {
+    pub fn new(composite_rate: u32, audio_rate: u32, output_channels: usize) -> Self {
+        let composite_rate_f = composite_rate.max(1) as f32;
+        let output_decim = (composite_rate / audio_rate.max(1)).max(1) as usize;
+        Self {
+            output_channels: output_channels.max(1),
+            pilot_phase: 0.0,
+            pilot_freq: 2.0 * std::f32::consts::PI * 19_000.0 / composite_rate_f,
+            pilot_freq_err: 0.0,
+            pilot_i_lp: OnePoleLowPass::new(composite_rate_f, 400.0),
+            pilot_q_lp: OnePoleLowPass::new(composite_rate_f, 400.0),
+            sum_lp: OnePoleLowPass::new(composite_rate_f, 15_000.0),
+            diff_lp: OnePoleLowPass::new(composite_rate_f, 15_000.0),
+            deemph_m: Deemphasis::new(audio_rate.max(1) as f32, 75.0),
+            deemph_l: Deemphasis::new(audio_rate.max(1) as f32, 75.0),
+            deemph_r: Deemphasis::new(audio_rate.max(1) as f32, 75.0),
+            output_decim,
+            output_counter: 0,
+        }
+    }
+
+    pub fn process_iq(&mut self, samples: &[Complex<f32>]) -> Vec<f32> {
+        let composite = demod_fm(samples);
+        if composite.is_empty() {
+            return Vec::new();
+        }
+
+        let mut output = Vec::with_capacity(
+            (composite.len() / self.output_decim.max(1)) * self.output_channels.max(1),
+        );
+
+        for x in composite {
+            let (sin_p, cos_p) = self.pilot_phase.sin_cos();
+            let i = self.pilot_i_lp.process(x * cos_p);
+            let q = self.pilot_q_lp.process(x * -sin_p);
+            let phase_err = q.atan2(i);
+            self.pilot_freq_err = (self.pilot_freq_err + phase_err * 0.00002).clamp(-0.02, 0.02);
+            self.pilot_phase += self.pilot_freq + self.pilot_freq_err + phase_err * 0.0015;
+            self.pilot_phase = self.pilot_phase.rem_euclid(std::f32::consts::TAU);
+
+            let pilot_mag = (i * i + q * q).sqrt();
+            let stereo_blend = (pilot_mag * 40.0).clamp(0.0, 1.0);
+
+            let sum = self.sum_lp.process(x);
+            let stereo_carrier = (2.0 * self.pilot_phase).cos() * 2.0;
+            let diff = self.diff_lp.process(x * stereo_carrier) * stereo_blend;
+
+            self.output_counter += 1;
+            if self.output_counter < self.output_decim {
+                continue;
+            }
+            self.output_counter = 0;
+
+            if self.output_channels >= 2 {
+                let left = self.deemph_l.process((sum + diff) * 0.5).clamp(-1.0, 1.0);
+                let right = self.deemph_r.process((sum - diff) * 0.5).clamp(-1.0, 1.0);
+                output.push(left);
+                output.push(right);
+            } else {
+                output.push(self.deemph_m.process(sum).clamp(-1.0, 1.0));
+            }
+        }
+
+        output
+    }
+}
+
 /// Selects the demodulation algorithm for a channel.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Demodulator {

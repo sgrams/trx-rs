@@ -242,7 +242,7 @@ fn default_audio_bandwidth_for_mode(mode: &trx_core::rig::state::RigMode) -> u32
         RigMode::CW | RigMode::CWR => 500,
         RigMode::AM => 6_000,
         RigMode::FM => 12_500,
-        RigMode::WFM => 75_000,
+        RigMode::WFM => 180_000,
         RigMode::Other(_) => 3_000,
     }
 }
@@ -314,6 +314,7 @@ fn build_sdr_rig_from_instance(
         &rig_cfg.sdr.gain.mode,
         rig_cfg.sdr.gain.value,
         rig_cfg.audio.sample_rate,
+        rig_cfg.audio.channels as usize,
         rig_cfg.audio.frame_duration_ms,
         Freq {
             hz: rig_cfg.rig.initial_freq_hz,
@@ -492,6 +493,9 @@ fn spawn_rig_audio_stack(
             let rx_audio_tx_sdr = rx_audio_tx.clone();
             let sdr_sample_rate = rig_cfg.audio.sample_rate;
             let sdr_channels = rig_cfg.audio.channels;
+            let sdr_frame_samples = (rig_cfg.audio.sample_rate as usize
+                * rig_cfg.audio.frame_duration_ms as usize)
+                / 1000;
             let sdr_bitrate_bps = rig_cfg.audio.bitrate_bps;
             handles.push(tokio::spawn(async move {
                 let opus_ch = match sdr_channels {
@@ -520,12 +524,16 @@ fn spawn_rig_audio_stack(
                             let pcm_frame = match sdr_channels {
                                 1 => frame,
                                 2 => {
-                                    let mut stereo = Vec::with_capacity(frame.len() * 2);
-                                    for sample in frame {
-                                        stereo.push(sample);
-                                        stereo.push(sample);
+                                    if frame.len() >= sdr_frame_samples * 2 {
+                                        frame
+                                    } else {
+                                        let mut stereo = Vec::with_capacity(frame.len() * 2);
+                                        for sample in frame {
+                                            stereo.push(sample);
+                                            stereo.push(sample);
+                                        }
+                                        stereo
                                     }
-                                    stereo
                                 }
                                 _ => unreachable!("validated above"),
                             };
