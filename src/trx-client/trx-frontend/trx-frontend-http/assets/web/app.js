@@ -625,14 +625,24 @@ function drawOverviewSignalHistory(ctx, w, h, isLight) {
   const toX = (t) => ((t - windowStart) / HEADER_SIG_WINDOW_MS) * w;
   const toY = (v) => h - (Math.max(0, Math.min(maxVal, v)) / maxVal) * (h - 3) - 1.5;
 
+  const gridMarkers = [
+    { val: 0, label: "S0" },
+    { val: 9, label: "S9" },
+    { val: 18, label: "S9+" },
+  ];
   ctx.strokeStyle = isLight ? "rgba(71, 85, 105, 0.14)" : "rgba(148, 163, 184, 0.12)";
   ctx.lineWidth = 1;
-  for (const val of [0, 9, 18]) {
-    const y = toY(val);
+  ctx.font = "11px sans-serif";
+  ctx.fillStyle = isLight ? "rgba(51, 65, 85, 0.72)" : "rgba(203, 213, 225, 0.72)";
+  ctx.textAlign = "left";
+  ctx.textBaseline = "middle";
+  for (const marker of gridMarkers) {
+    const y = toY(marker.val);
     ctx.beginPath();
     ctx.moveTo(0, y);
     ctx.lineTo(w, y);
     ctx.stroke();
+    ctx.fillText(marker.label, 6, Math.max(8, Math.min(h - 8, y)));
   }
 
   ctx.beginPath();

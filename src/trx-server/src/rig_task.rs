@@ -318,6 +318,7 @@ pub async fn run_rig_task(
                 // Process each request
                 while let Some(RigRequest { cmd, respond_to }) = batch.pop() {
                     let cmd_label = format!("{:?}", cmd);
+                    let log_command = !matches!(&cmd, RigCommand::GetSpectrum);
                     let started = Instant::now();
 
                     let mut cmd_ctx = CommandExecContext {
@@ -335,11 +336,13 @@ pub async fn run_rig_task(
 
                     let _ = respond_to.send(result);
 
-                    let elapsed = started.elapsed();
-                    if elapsed > Duration::from_millis(500) {
-                        warn!("Rig command {} took {:?}", cmd_label, elapsed);
-                    } else {
-                        debug!("Rig command {} completed in {:?}", cmd_label, elapsed);
+                    if log_command {
+                        let elapsed = started.elapsed();
+                        if elapsed > Duration::from_millis(500) {
+                            warn!("Rig command {} took {:?}", cmd_label, elapsed);
+                        } else {
+                            debug!("Rig command {} completed in {:?}", cmd_label, elapsed);
+                        }
                     }
                 }
             },
