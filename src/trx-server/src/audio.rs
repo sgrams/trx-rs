@@ -241,6 +241,7 @@ pub fn spawn_audio_capture(
     cfg: &AudioConfig,
     tx: broadcast::Sender<Bytes>,
     pcm_tx: Option<broadcast::Sender<Vec<f32>>>,
+    shutdown_rx: watch::Receiver<bool>,
 ) -> std::thread::JoinHandle<()> {
     let sample_rate = cfg.sample_rate;
     let channels = cfg.channels as u16;
@@ -257,6 +258,7 @@ pub fn spawn_audio_capture(
             device_name,
             tx,
             pcm_tx,
+            shutdown_rx,
         ) {
             error!("Audio capture thread error: {}", e);
         }
@@ -271,6 +273,7 @@ fn run_capture(
     device_name: Option<String>,
     tx: broadcast::Sender<Bytes>,
     pcm_tx: Option<broadcast::Sender<Vec<f32>>>,
+    shutdown_rx: watch::Receiver<bool>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
     use std::sync::mpsc::{RecvTimeoutError, TryRecvError as StdTryRecvError};
@@ -305,6 +308,11 @@ fn run_capture(
     let mut capturing = false;
 
     loop {
+        if *shutdown_rx.borrow() {
+            info!("Audio capture: shutdown signal received, exiting");
+            return Ok(());
+        }
+
         // Re-enumerate the device on every recovery cycle: after POLLERR the
         // existing device handle can be stale (especially for USB audio).
         let host = cpal::default_host();
@@ -383,6 +391,11 @@ fn run_capture(
         }
 
         loop {
+            if *shutdown_rx.borrow() {
+                info!("Audio capture: shutdown signal received, exiting");
+                return Ok(());
+            }
+
             match stream_err_rx.try_recv() {
                 Ok(()) | Err(StdTryRecvError::Disconnected) => {
                     warn!("Audio capture: backend stream error, recreating");
@@ -458,6 +471,7 @@ fn run_capture(
 pub fn spawn_audio_playback(
     cfg: &AudioConfig,
     rx: mpsc::Receiver<Bytes>,
+    shutdown_rx: watch::Receiver<bool>,
 ) -> std::thread::JoinHandle<()> {
     let sample_rate = cfg.sample_rate;
     let channels = cfg.channels as u16;
@@ -465,7 +479,9 @@ pub fn spawn_audio_playback(
     let device_name = cfg.device.clone();
 
     std::thread::spawn(move || {
-        if let Err(e) = run_playback(sample_rate, channels, frame_duration_ms, device_name, rx) {
+        if let Err(e) =
+            run_playback(sample_rate, channels, frame_duration_ms, device_name, rx, shutdown_rx)
+        {
             error!("Audio playback thread error: {}", e);
         }
     })
@@ -477,6 +493,7 @@ fn run_playback(
     frame_duration_ms: u16,
     device_name: Option<String>,
     mut rx: mpsc::Receiver<Bytes>,
+    shutdown_rx: watch::Receiver<bool>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
     use std::sync::mpsc::TryRecvError as StdTryRecvError;
@@ -513,6 +530,11 @@ fn run_playback(
     let mut channel_closed = false;
 
     loop {
+        if *shutdown_rx.borrow() {
+            info!("Audio playback: shutdown signal received, exiting");
+            return Ok(());
+        }
+
         // Re-enumerate the device on every recovery cycle: after POLLERR the
         // existing device handle can be stale (especially for USB audio).
         let host = cpal::default_host();
@@ -600,6 +622,11 @@ fn run_playback(
         }
 
         loop {
+            if *shutdown_rx.borrow() {
+                info!("Audio playback: shutdown signal received, exiting");
+                return Ok(());
+            }
+
             match stream_err_rx.try_recv() {
                 Ok(()) | Err(StdTryRecvError::Disconnected) => {
                     warn!("Audio playback: backend stream error, recreating");

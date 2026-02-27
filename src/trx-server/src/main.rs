@@ -474,6 +474,7 @@ fn spawn_rig_audio_stack(
                 &rig_cfg.audio,
                 rx_audio_tx.clone(),
                 Some(pcm_tx.clone()),
+                shutdown_rx.clone(),
             );
         }
 
@@ -542,7 +543,8 @@ fn spawn_rig_audio_stack(
     }
 
     if rig_cfg.audio.tx_enabled {
-        let _playback_thread = audio::spawn_audio_playback(&rig_cfg.audio, tx_audio_rx);
+        let _playback_thread =
+            audio::spawn_audio_playback(&rig_cfg.audio, tx_audio_rx, shutdown_rx.clone());
     }
 
     let audio_shutdown_rx = shutdown_rx.clone();
