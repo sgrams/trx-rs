@@ -2600,7 +2600,7 @@ let spectrumZoom    = 1;
 let spectrumPanFrac = 0.5;
 
 // Y-axis level: floor = bottom dB value shown; range = total dB span.
-let spectrumFloor = -100;
+let spectrumFloor = -115;
 let spectrumRange = 80;
 
 // BW-strip drag state.

@@ -375,7 +375,7 @@ button:disabled { opacity: 0.6; cursor: not-allowed; }
 small { color: var(--text-muted); }
 .header {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-columns: auto minmax(0, 1fr);
   align-items: center;
   column-gap: 1rem;
   margin-bottom: -0.45rem;
@@ -439,12 +439,6 @@ small { color: var(--text-muted); }
   gap: 0;
   flex-shrink: 0;
 }
-.header-actions {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  flex-shrink: 0;
-}
 .top-bar-actions {
   display: flex;
   align-items: center;
@@ -472,50 +466,13 @@ small { color: var(--text-muted); }
   font-size: 0.78rem;
   white-space: nowrap;
 }
-.header-logo { height: 4.6em; width: auto; flex-shrink: 0; filter: drop-shadow(0 4px 12px rgba(0,0,0,0.35)); }
-.button-group {
-  display: flex;
-  gap: 0;
-  align-items: center;
-}
-
-.button-group .theme-toggle-btn {
-  border-radius: 0;
-  margin-left: -1px;
-}
-
-.button-group .theme-toggle-btn:first-child {
-  border-radius: 999px 0 0 999px;
-  margin-left: 0;
-}
-
-.button-group .theme-toggle-btn:last-child:not(:first-child) {
-  border-radius: 0 999px 999px 0;
-}
-
-.theme-toggle-btn {
-  height: 1.7rem;
-  min-height: 1.7rem;
+.header-bar-btn {
+  height: 2rem;
   padding: 0 0.65rem;
-  font-size: 0.76rem;
-  font-weight: 700;
-  letter-spacing: 0.02em;
-  border-radius: 999px;
-  border: 1px solid var(--btn-border);
-  background: linear-gradient(135deg, color-mix(in srgb, var(--btn-bg) 82%, #ffffff), var(--btn-bg));
-  color: var(--text);
-  cursor: pointer;
-  transition: all 150ms ease;
+  font-size: 0.78rem;
+  white-space: nowrap;
 }
-
-.theme-toggle-btn:hover {
-  opacity: 0.9;
-}
-[data-theme="light"] .theme-toggle-btn {
-  background: linear-gradient(135deg, #0f172a, #334155);
-  border-color: #334155;
-  color: #f8fafc;
-}
+.header-logo { height: 4.6em; width: auto; flex-shrink: 0; filter: drop-shadow(0 4px 12px rgba(0,0,0,0.35)); }
 .subtitle { color: var(--text-muted); font-size: 0.95rem; }
 .subtitle a { color: var(--accent-green); text-decoration: none; }
 .subtitle a:hover { text-decoration: underline; }
@@ -711,7 +668,6 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   .freq-inline { flex-wrap: wrap; }
   .header-text { width: auto; min-width: 0; flex: 0 1 auto; }
   .header-left { justify-content: flex-end; }
-  .header-actions { justify-content: flex-end; }
   .tab-bar { flex-wrap: wrap; }
   .top-bar-actions { width: 100%; justify-content: space-between; }
   .header-rig-switch { width: auto; justify-content: flex-end; }
