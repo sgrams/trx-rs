@@ -526,6 +526,7 @@ pub async fn clear_cw_decode(
 #[derive(serde::Serialize)]
 struct RigListItem {
     rig_id: String,
+    display_name: Option<String>,
     manufacturer: String,
     model: String,
     initialized: bool,
@@ -554,6 +555,7 @@ fn build_rig_list_payload(context: &FrontendRuntimeContext) -> RigListResponse {
 fn map_rig_entry(entry: &RemoteRigEntry) -> RigListItem {
     RigListItem {
         rig_id: entry.rig_id.clone(),
+        display_name: entry.display_name.clone(),
         manufacturer: entry.state.info.manufacturer.clone(),
         model: entry.state.info.model.clone(),
         initialized: entry.state.initialized,

@@ -321,6 +321,7 @@ let jogAngle = 0;
 let lastClientCount = null;
 let lastLocked = false;
 let lastRigIds = [];
+let lastRigDisplayNames = {};
 const originalTitle = document.title;
 const savedTheme = loadSetting("theme", null);
 
@@ -375,9 +376,18 @@ function populateRigPicker(selectEl, rigIds, activeRigId, disabled) {
   selectEl.disabled = disabled;
 }
 
-function applyRigList(activeRigId, rigIds) {
+function updateRigSubtitle(activeRigId) {
+  if (!rigSubtitle) return;
+  const name = (activeRigId && lastRigDisplayNames[activeRigId]) || activeRigId || "--";
+  rigSubtitle.textContent = `Rig: ${name}`;
+}
+
+function applyRigList(activeRigId, rigIds, displayNames) {
   if (!Array.isArray(rigIds)) return;
   lastRigIds = rigIds.filter((id) => typeof id === "string" && id.length > 0);
+  if (displayNames && typeof displayNames === "object") {
+    lastRigDisplayNames = { ...displayNames };
+  }
   const aboutList = document.getElementById("about-rig-list");
   if (aboutList) {
     aboutList.textContent = lastRigIds.length ? lastRigIds.join(", ") : "--";
@@ -391,6 +401,7 @@ function applyRigList(activeRigId, rigIds) {
   populateRigPicker(headerRigSwitchSelect, lastRigIds, activeRigId, lastRigIds.length === 0);
   if (rigSwitchBtn) rigSwitchBtn.disabled = disableSwitch;
   if (headerRigSwitchBtn) headerRigSwitchBtn.disabled = disableSwitch;
+  updateRigSubtitle(activeRigId);
 }
 
 async function refreshRigList() {
@@ -398,8 +409,18 @@ async function refreshRigList() {
     const resp = await fetch("/rigs", { cache: "no-store" });
     if (!resp.ok) return;
     const data = await resp.json();
-    const rigIds = Array.isArray(data.rigs) ? data.rigs.map((r) => r && r.rig_id).filter(Boolean) : [];
-    applyRigList(data.active_rig_id, rigIds);
+    const rigs = Array.isArray(data.rigs) ? data.rigs : [];
+    const rigIds = rigs.map((r) => r && r.rig_id).filter(Boolean);
+    const displayNames = {};
+    rigs.forEach((r) => {
+      if (!r || !r.rig_id) return;
+      if (typeof r.display_name === "string" && r.display_name.length > 0) {
+        displayNames[r.rig_id] = r.display_name;
+      } else {
+        displayNames[r.rig_id] = r.rig_id;
+      }
+    });
+    applyRigList(data.active_rig_id, rigIds, displayNames);
   } catch (e) {
     // Non-fatal: SSE/status path still drives main UI.
   }
@@ -731,7 +752,6 @@ let serverVersion = null;
 let serverBuildDate = null;
 let serverCallsign = null;
 let ownerCallsign = null;
-let rigDisplayName = null;
 let serverLat = null;
 let serverLon = null;
 
@@ -749,9 +769,6 @@ function updateTitle() {
 
 function render(update) {
   if (!update) return;
-  if (update.info && typeof update.info.model === "string" && update.info.model.length > 0) {
-    rigDisplayName = update.info.model;
-  }
   if (update.server_version) serverVersion = update.server_version;
   if (update.server_build_date) serverBuildDate = update.server_build_date;
   if (update.server_callsign) serverCallsign = update.server_callsign;
@@ -801,9 +818,7 @@ function render(update) {
       serverSubtitle.textContent = `trx-server hosted by ${update.server_callsign}`;
     }
   }
-  if (rigSubtitle) {
-    rigSubtitle.textContent = `Rig: ${rigDisplayName || "--"}`;
-  }
+  updateRigSubtitle(update.active_rig_id);
   if (ownerSubtitle) {
     ownerSubtitle.textContent = `Owner: ${ownerCallsign || "--"}`;
   }
