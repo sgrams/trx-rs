@@ -544,6 +544,20 @@ function trimOverviewWaterfallRows() {
   }
 }
 
+function overviewVisibleBinWindow(data, binCount) {
+  if (!data || !Number.isFinite(data.sample_rate) || binCount <= 1) {
+    return { startIdx: 0, endIdx: Math.max(0, binCount - 1) };
+  }
+  const range = spectrumVisibleRange(data);
+  const fullLoHz = data.center_hz - data.sample_rate / 2;
+  const startFrac = (range.visLoHz - fullLoHz) / data.sample_rate;
+  const endFrac = (range.visHiHz - fullLoHz) / data.sample_rate;
+  const maxIdx = binCount - 1;
+  const startIdx = Math.max(0, Math.min(maxIdx, Math.floor(startFrac * maxIdx)));
+  const endIdx = Math.max(startIdx, Math.min(maxIdx, Math.ceil(endFrac * maxIdx)));
+  return { startIdx, endIdx };
+}
+
 function pushOverviewWaterfallFrame(data) {
   if (!overviewCanvas || !data || !Array.isArray(data.bins) || data.bins.length === 0) return;
   overviewWaterfallRows.push(data.bins.slice());
@@ -585,14 +599,18 @@ function drawOverviewWaterfall(ctx, w, h, isLight) {
   const rows = overviewWaterfallRows.slice(-Math.max(1, Math.floor(h)));
   if (rows.length === 0) return;
   const rowH = h / rows.length;
+  const columnStep = Math.max(1, Math.ceil(w / 320));
   for (let rowIdx = 0; rowIdx < rows.length; rowIdx++) {
     const bins = rows[rowIdx];
     if (!Array.isArray(bins) || bins.length === 0) continue;
+    const { startIdx, endIdx } = overviewVisibleBinWindow(lastSpectrumData, bins.length);
+    const spanBins = Math.max(1, endIdx - startIdx);
     const y = h - (rows.length - rowIdx) * rowH;
-    for (let x = 0; x < w; x++) {
-      const binIdx = Math.floor((x / Math.max(1, w - 1)) * (bins.length - 1));
+    for (let x = 0; x < w; x += columnStep) {
+      const frac = x / Math.max(1, w - 1);
+      const binIdx = Math.min(endIdx, startIdx + Math.floor(frac * spanBins));
       ctx.fillStyle = waterfallColor(bins[binIdx], isLight);
-      ctx.fillRect(x, y, 1.25, rowH + 1);
+      ctx.fillRect(x, y, columnStep + 0.75, rowH + 1);
     }
   }
 }
@@ -2689,7 +2707,10 @@ function scheduleSpectrumDraw() {
   spectrumDrawPending = true;
   requestAnimationFrame(() => {
     spectrumDrawPending = false;
-    if (lastSpectrumData) drawSpectrum(lastSpectrumData);
+    if (lastSpectrumData) {
+      drawSpectrum(lastSpectrumData);
+      if (overviewWaterfallRows.length > 0) scheduleOverviewDraw();
+    }
   });
 }
 

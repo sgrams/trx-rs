@@ -22,10 +22,7 @@
           <select id="header-rig-switch-select" aria-label="Select active rig"></select>
           <button id="header-rig-switch-btn" type="button">Switch Rig</button>
         </div>
-        <div class="button-group">
-          <button id="theme-toggle" class="theme-toggle-btn" type="button" aria-label="Toggle dark or light theme">Light</button>
-          <button id="header-auth-btn" class="theme-toggle-btn" type="button" style="display:none;" aria-label="Login or Logout">Login</button>
-        </div>
+        <button id="header-auth-btn" class="theme-toggle-btn" type="button" style="display:none;" aria-label="Login or Logout">Login</button>
       </div>
     </div>
     <div class="header">
@@ -38,24 +35,12 @@
         <div class="subtitle" id="rig-subtitle" style="font-weight: 700;">Rig: --</div>
         <div class="subtitle" id="owner-subtitle">Owner: --</div>
       </div>
-    </div>
-    <!-- Auth gate (hidden by default, shown if auth is required) -->
-    <div id="auth-gate" style="display:none; max-width: 30rem; margin: 0 auto 0.9rem; padding: 1.25rem 0 1.5rem; text-align: center;">
-      <div style="margin-bottom: 1.5rem;">
-        <div style="font-size: 1.1rem; font-weight: 600; margin-bottom: 0.5rem;">Access Required</div>
-        <div style="color: var(--text-muted);">Enter passphrase to continue</div>
+      <div class="header-actions">
+        <button id="theme-toggle" class="theme-toggle-btn" type="button" aria-label="Toggle dark or light theme">Light</button>
       </div>
-      <form id="auth-form" style="margin: 1.5rem 0;">
-        <input type="password" id="auth-passphrase" placeholder="Passphrase" autocomplete="off" style="width: 100%; padding: 0.65rem 0.75rem; margin-bottom: 1rem; border: 1px solid var(--border-light); border-radius: 0.45rem; background: var(--input-bg); color: var(--text); font-size: 1rem; box-sizing: border-box;" />
-        <button type="submit" style="width: 100%; padding: 0.65rem 0.75rem; background: var(--accent-green); color: #fff; border: none; border-radius: 0.45rem; font-weight: 700; cursor: pointer; font-size: 1rem; box-sizing: border-box;">Login</button>
-      </form>
-      <button id="auth-guest-btn" type="button" style="width: 100%; padding: 0.65rem 0.75rem; background: var(--btn-bg); color: var(--text); border: 1px solid var(--border-light); border-radius: 0.45rem; font-weight: 600; cursor: pointer; font-size: 1rem; box-sizing: border-box; margin-top: 0.5rem; display: none;">Continue as Guest</button>
-      <div id="auth-error" style="color: #ff6b6b; font-size: 0.9rem; margin-top: 1rem; display: none;"></div>
-      <div id="auth-role" style="margin-top: 1rem; color: var(--text-muted); font-size: 0.85rem; display: none;"></div>
     </div>
     <div class="overview-strip">
       <div class="overview-toolbar">
-        <span class="overview-label" id="overview-label">Signal History</span>
         <label class="overview-control">Peak Hold
           <select id="overview-peak-hold" class="status-input">
             <option value="500">0.5 s</option>
@@ -64,8 +49,23 @@
             <option value="5000">5 s</option>
           </select>
         </label>
+        <span class="overview-label" id="overview-label">Signal History</span>
       </div>
       <canvas id="overview-canvas" aria-hidden="true"></canvas>
+    </div>
+    <!-- Auth gate (hidden by default, shown if auth is required) -->
+    <div id="auth-gate" style="display:none; max-width: 30rem; margin: 0 auto 0.9rem; padding: 1.25rem 0 1.5rem; text-align: center;">
+      <div style="margin-bottom: 1.5rem;">
+        <div style="font-size: 1.1rem; font-weight: 600; margin-bottom: 0.5rem;">Access Required</div>
+        <div style="color: var(--text-muted);">Enter passphrase to continue</div>
+      </div>
+      <form id="auth-form" style="margin: 1rem 0 0.35rem;">
+        <input type="password" id="auth-passphrase" placeholder="Passphrase" autocomplete="off" style="width: 100%; padding: 0.65rem 0.75rem; margin-bottom: 1rem; border: 1px solid var(--border-light); border-radius: 0.45rem; background: var(--input-bg); color: var(--text); font-size: 1rem; box-sizing: border-box;" />
+        <button type="submit" style="width: 100%; padding: 0.65rem 0.75rem; background: var(--accent-green); color: #fff; border: none; border-radius: 0.45rem; font-weight: 700; cursor: pointer; font-size: 1rem; box-sizing: border-box;">Login</button>
+      </form>
+      <button id="auth-guest-btn" type="button" style="width: 100%; padding: 0.65rem 0.75rem; background: var(--btn-bg); color: var(--text); border: 1px solid var(--border-light); border-radius: 0.45rem; font-weight: 600; cursor: pointer; font-size: 1rem; box-sizing: border-box; margin-top: 0; display: none;">Continue as Guest</button>
+      <div id="auth-error" style="color: #ff6b6b; font-size: 0.9rem; margin-top: 1rem; display: none;"></div>
+      <div id="auth-role" style="margin-top: 1rem; color: var(--text-muted); font-size: 0.85rem; display: none;"></div>
     </div>
     <div id="tab-main" class="tab-panel">
     <div id="loading" style="text-align:center; padding:2rem 0;">
