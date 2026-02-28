@@ -226,7 +226,7 @@ pub async fn audio_ws(
     let (response, mut session, mut msg_stream) = actix_ws::handle(&req, body)?;
 
     actix_web::rt::spawn(async move {
-        let info = loop {
+        let mut current_info = loop {
             if let Some(info) = info_rx.borrow().clone() {
                 break info;
             }
@@ -236,7 +236,7 @@ pub async fn audio_ws(
             }
         };
 
-        let info_json = match serde_json::to_string(&info) {
+        let info_json = match serde_json::to_string(&current_info) {
             Ok(j) => j,
             Err(_) => {
                 let _ = session.close(None).await;
@@ -247,34 +247,56 @@ pub async fn audio_ws(
             return;
         }
 
-        let mut rx_session = session.clone();
-        let rx_handle = actix_web::rt::spawn(async move {
-            loop {
-                match rx_sub.recv().await {
-                    Ok(packet) => {
-                        if rx_session.binary(packet).await.is_err() {
-                            break;
+        loop {
+            tokio::select! {
+                changed = info_rx.changed() => {
+                    match changed {
+                        Ok(()) => {
+                            let Some(next_info) = info_rx.borrow().clone() else {
+                                continue;
+                            };
+                            let changed = next_info.sample_rate != current_info.sample_rate
+                                || next_info.channels != current_info.channels
+                                || next_info.frame_duration_ms != current_info.frame_duration_ms;
+                            if changed {
+                                current_info = next_info;
+                                let info_json = match serde_json::to_string(&current_info) {
+                                    Ok(j) => j,
+                                    Err(_) => break,
+                                };
+                                if session.text(info_json).await.is_err() {
+                                    break;
+                                }
+                            }
                         }
+                        Err(_) => break,
                     }
-                    Err(broadcast::error::RecvError::Lagged(n)) => {
-                        warn!("Audio WS: dropped {} RX frames", n);
+                }
+                packet = rx_sub.recv() => {
+                    match packet {
+                        Ok(packet) => {
+                            if session.binary(packet).await.is_err() {
+                                break;
+                            }
+                        }
+                        Err(broadcast::error::RecvError::Lagged(n)) => {
+                            warn!("Audio WS: dropped {} RX frames", n);
+                        }
+                        Err(broadcast::error::RecvError::Closed) => break,
                     }
-                    Err(broadcast::error::RecvError::Closed) => break,
                 }
-            }
-        });
-
-        while let Some(Ok(msg)) = msg_stream.recv().await {
-            match msg {
-                Message::Binary(data) => {
-                    let _ = tx_sender.send(Bytes::from(data.to_vec())).await;
+                msg = msg_stream.recv() => {
+                    match msg {
+                        Some(Ok(Message::Binary(data))) => {
+                            let _ = tx_sender.send(Bytes::from(data.to_vec())).await;
+                        }
+                        Some(Ok(Message::Close(_))) => break,
+                        Some(Ok(_)) => {}
+                        Some(Err(_)) | None => break,
+                    }
                 }
-                Message::Close(_) => break,
-                _ => {}
             }
         }
-
-        rx_handle.abort();
         let _ = session.close(None).await;
     });
 

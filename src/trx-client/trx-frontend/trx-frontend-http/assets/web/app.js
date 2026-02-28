@@ -2642,6 +2642,40 @@ function clearTxTimeout() {
   txTimeoutRemaining = 0;
 }
 
+function resetRxDecoder() {
+  if (opusDecoder) {
+    try { opusDecoder.close(); } catch (e) {}
+    opusDecoder = null;
+  }
+  nextPlayTime = 0;
+}
+
+function configureRxStream(nextInfo) {
+  const nextSampleRate = (nextInfo && nextInfo.sample_rate) || 48000;
+  const sampleRateChanged = !audioCtx || audioCtx.sampleRate !== nextSampleRate;
+  streamInfo = nextInfo;
+  updateWfmControls();
+  resetRxDecoder();
+  if (sampleRateChanged && audioCtx) {
+    audioCtx.close().catch(() => {});
+    audioCtx = null;
+    rxGainNode = null;
+  }
+  if (!audioCtx) {
+    audioCtx = new AudioContext({ sampleRate: nextSampleRate });
+    audioCtx.resume().catch(() => {});
+  }
+  if (!rxGainNode) {
+    rxGainNode = audioCtx.createGain();
+    rxGainNode.connect(audioCtx.destination);
+  }
+  rxGainNode.gain.value = rxVolSlider.value / 100;
+  rxActive = true;
+  rxAudioBtn.style.borderColor = "#00d17f";
+  rxAudioBtn.style.color = "#00d17f";
+  audioStatus.textContent = "RX";
+}
+
 function startRxAudio() {
   if (rxActive) { stopRxAudio(); return; }
   if (!hasWebCodecs) {
@@ -2661,17 +2695,7 @@ function startRxAudio() {
     if (typeof evt.data === "string") {
       // Stream info JSON
       try {
-        streamInfo = JSON.parse(evt.data);
-        updateWfmControls();
-        audioCtx = new AudioContext({ sampleRate: streamInfo.sample_rate || 48000 });
-        audioCtx.resume().catch(() => {});
-        rxGainNode = audioCtx.createGain();
-        rxGainNode.gain.value = rxVolSlider.value / 100;
-        rxGainNode.connect(audioCtx.destination);
-        rxActive = true;
-        rxAudioBtn.style.borderColor = "#00d17f";
-        rxAudioBtn.style.color = "#00d17f";
-        audioStatus.textContent = "RX";
+        configureRxStream(JSON.parse(evt.data));
       } catch (e) {
         console.error("Audio stream info parse error", e);
       }
