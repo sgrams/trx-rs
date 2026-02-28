@@ -28,9 +28,9 @@ const STEREO_PILOT_NOTCH_Q: f32 = 12.0;
 /// Narrow 19 kHz band-pass used to derive zero-crossings for switching stereo demod.
 const PILOT_BPF_Q: f32 = 20.0;
 /// Fixed phase trim on the recovered L-R channel to compensate pilot-path delay.
-const STEREO_SEPARATION_PHASE_TRIM: f32 = 0.0;
+const STEREO_SEPARATION_PHASE_TRIM: f32 = 0.012;
 /// Fixed gain trim on the recovered L-R channel.
-const STEREO_SEPARATION_GAIN: f32 = 1.0;
+const STEREO_SEPARATION_GAIN: f32 = 1.006;
 
 /// 4-point Hermite cubic interpolation.
 ///
@@ -576,10 +576,12 @@ impl WfmStereoDecoder {
                 };
                 let left_corr = (sum_i + diff_denoised) * 0.5;
                 let right_corr = (sum_i - diff_denoised) * 0.5;
-                let left = self.dc_l
+                let left = self
+                    .dc_l
                     .process(self.pilot_notch_l.process(self.deemph_l.process(left_corr)))
                     .clamp(-1.0, 1.0);
-                let right = self.dc_r
+                let right = self
+                    .dc_r
                     .process(self.pilot_notch_r.process(self.deemph_r.process(right_corr)))
                     .clamp(-1.0, 1.0);
                 output.push(left);
