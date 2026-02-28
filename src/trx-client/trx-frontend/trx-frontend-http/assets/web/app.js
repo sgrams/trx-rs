@@ -390,6 +390,20 @@ function currentTheme() {
   return document.documentElement.getAttribute("data-theme") === "light" ? "light" : "dark";
 }
 
+function updateDocumentTitle(rds = null) {
+  if (!Number.isFinite(lastFreqHz)) {
+    document.title = originalTitle;
+    return;
+  }
+  const parts = [formatFreq(lastFreqHz)];
+  const ps = rds?.program_service;
+  if (ps && ps.length > 0) {
+    parts.push(ps);
+  }
+  parts.push(originalTitle);
+  document.title = parts.join(" - ");
+}
+
 function setTheme(theme) {
   const next = theme === "light" ? "light" : "dark";
   document.documentElement.setAttribute("data-theme", next);
@@ -957,6 +971,7 @@ function applyLocalTunedFrequency(hz, forceDisplay = false) {
     resetRdsDisplay();
   }
   lastFreqHz = hz;
+  updateDocumentTitle(lastSpectrumData?.rds ?? null);
   refreshWavelengthDisplay(lastFreqHz);
   if (forceDisplay) {
     freqDirty = false;
@@ -1136,8 +1151,10 @@ function updateFooterBuildInfo() {
 
 function updateTitle() {
   const titleEl = document.getElementById("rig-title");
-  if (!titleEl) return;
-  titleEl.textContent = serverVersion ? `trx-rs v${serverVersion}` : "trx-rs";
+  if (titleEl) {
+    titleEl.textContent = serverVersion ? `trx-rs v${serverVersion}` : "trx-rs";
+  }
+  updateDocumentTitle(lastSpectrumData?.rds ?? null);
 }
 
 function render(update) {
@@ -3281,6 +3298,42 @@ function buildRdsRawPayload(rds) {
   };
 }
 
+function formatRdsAfMHz(hz) {
+  return `${(hz / 1_000_000).toFixed(1)} MHz`;
+}
+
+async function tuneRdsAlternativeFrequency(hz) {
+  if (!Number.isFinite(hz) || hz <= 0) return;
+  const targetHz = Math.round(hz);
+  try {
+    await postPath(`/set_freq?hz=${targetHz}`);
+    applyLocalTunedFrequency(targetHz);
+    showHint(`Tuned ${formatRdsAfMHz(targetHz)}`, 1200);
+  } catch (_) {
+    showHint("Set freq failed", 1500);
+  }
+}
+
+function renderRdsAlternativeFrequencies(list) {
+  const afEl = document.getElementById("rds-af-list");
+  if (!afEl) return;
+  if (!Array.isArray(list) || list.length === 0) {
+    afEl.textContent = "--";
+    return;
+  }
+  afEl.innerHTML = "";
+  for (const hz of list) {
+    if (!Number.isFinite(hz) || hz <= 0) continue;
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "rds-af-btn";
+    btn.dataset.hz = String(Math.round(hz));
+    btn.textContent = formatRdsAfMHz(hz);
+    afEl.appendChild(btn);
+  }
+  if (!afEl.childElementCount) afEl.textContent = "--";
+}
+
 async function copyRdsPsToClipboard() {
   const rds = lastSpectrumData?.rds;
   const ps = rds?.program_service;
@@ -3328,8 +3381,19 @@ const rdsRawCopyBtn = document.getElementById("rds-raw-copy-btn");
 if (rdsRawCopyBtn) {
   rdsRawCopyBtn.addEventListener("click", () => { copyRdsRawToClipboard(); });
 }
+const rdsAfListEl = document.getElementById("rds-af-list");
+if (rdsAfListEl) {
+  rdsAfListEl.addEventListener("click", (event) => {
+    const btn = event.target instanceof HTMLElement ? event.target.closest(".rds-af-btn") : null;
+    const hz = Number(btn?.dataset?.hz);
+    if (btn && Number.isFinite(hz)) {
+      tuneRdsAlternativeFrequency(hz);
+    }
+  });
+}
 
 function updateRdsPsOverlay(rds) {
+  updateDocumentTitle(rds);
   // Overview strip overlay
   if (rdsPsOverlay) {
     const ps = rds?.program_service;
@@ -3377,6 +3441,7 @@ function updateRdsPsOverlay(rds) {
   const compEl     = document.getElementById("rds-compressed");
   const headEl     = document.getElementById("rds-artificial-head");
   const dynPtyEl   = document.getElementById("rds-dynamic-pty");
+  const afEl       = document.getElementById("rds-af-list");
   const rtEl       = document.getElementById("rds-radio-text");
   const rawEl      = document.getElementById("rds-raw");
   if (!statusEl) return;
@@ -3401,6 +3466,7 @@ function updateRdsPsOverlay(rds) {
     if (compEl) compEl.textContent = "--";
     if (headEl) headEl.textContent = "--";
     if (dynPtyEl) dynPtyEl.textContent = "--";
+    if (afEl) afEl.textContent = "--";
     if (rtEl) rtEl.textContent = "--";
     if (rawEl && lastSpectrumData) {
       const { bins: _b, ...rest } = lastSpectrumData;
@@ -3427,6 +3493,7 @@ function updateRdsPsOverlay(rds) {
   if (compEl) compEl.textContent = formatRdsFlag(rds.compressed);
   if (headEl) headEl.textContent = formatRdsFlag(rds.artificial_head);
   if (dynPtyEl) dynPtyEl.textContent = formatRdsFlag(rds.dynamic_pty);
+  renderRdsAlternativeFrequencies(rds.alternative_frequencies_hz);
   if (rtEl) rtEl.textContent = rds.radio_text ?? "--";
   rawEl.textContent = JSON.stringify(buildRdsRawPayload(rds), null, 2);
 }

@@ -320,6 +320,8 @@ pub struct RdsData {
     pub compressed: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub dynamic_pty: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub alternative_frequencies_hz: Option<Vec<u32>>,
 }
 
 /// Read-only projection of state shared with clients.

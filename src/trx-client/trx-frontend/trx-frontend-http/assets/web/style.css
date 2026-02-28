@@ -812,6 +812,21 @@ small { color: var(--text-muted); }
 .rds-value { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; font-size: 0.95rem; color: var(--text); }
 .rds-ps { font-size: 1.1rem; font-weight: 600; letter-spacing: 0.08em; color: var(--accent-green); }
 .rds-text { white-space: normal; overflow-wrap: anywhere; line-height: 1.35; }
+.rds-af-list { display: flex; flex-wrap: wrap; gap: 0.35rem; align-items: center; }
+.rds-af-btn {
+  height: 1.7rem;
+  padding: 0 0.55rem;
+  border: 1px solid var(--border-light);
+  border-radius: 999px;
+  background: var(--input-bg);
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+}
+.rds-af-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
 .rds-no-signal { color: var(--text-muted); }
 .rds-decoding { color: var(--accent-green); }
 .rds-raw-header { display: flex; align-items: center; justify-content: space-between; gap: 0.6rem; margin-bottom: 0.3rem; }

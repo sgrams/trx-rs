@@ -305,6 +305,12 @@ impl Candidate {
         let group_type = ((block_b >> 12) & 0x0f) as u8;
         let version_b = ((block_b >> 11) & 0x1) != 0;
         if group_type == 0 {
+            if !version_b && block_c_kind == BlockKind::C {
+                let [af0, af1] = block_c.to_be_bytes();
+                if self.process_af_pair(af0, af1) {
+                    changed = true;
+                }
+            }
             let ta = ((block_b >> 4) & 0x1) != 0;
             if self.state.traffic_announcement != Some(ta) {
                 self.state.traffic_announcement = Some(ta);
@@ -420,6 +426,45 @@ impl Candidate {
 
         self.score = self.score.saturating_add(1);
         changed.then(|| self.state.clone())
+    }
+
+    fn process_af_pair(&mut self, af0: u8, af1: u8) -> bool {
+        let mut changed = false;
+        if !is_af_count_code(af0) {
+            changed |= self.record_af_code(af0);
+        }
+        if !is_af_count_code(af1) {
+            changed |= self.record_af_code(af1);
+        }
+        changed
+    }
+
+    fn record_af_code(&mut self, code: u8) -> bool {
+        let Some(hz) = af_code_to_hz(code) else {
+            return false;
+        };
+        let afs = self
+            .state
+            .alternative_frequencies_hz
+            .get_or_insert_with(Vec::new);
+        if afs.contains(&hz) {
+            return false;
+        }
+        afs.push(hz);
+        afs.sort_unstable();
+        true
+    }
+}
+
+fn is_af_count_code(code: u8) -> bool {
+    (224..=249).contains(&code)
+}
+
+fn af_code_to_hz(code: u8) -> Option<u32> {
+    if (1..=204).contains(&code) {
+        Some(87_500_000 + u32::from(code) * 100_000)
+    } else {
+        None
     }
 }
 
