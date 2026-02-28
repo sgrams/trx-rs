@@ -671,6 +671,7 @@ function resizeHeaderSignalCanvas() {
     _wfResetOffscreen();
     trimOverviewWaterfallRows();
   }
+  positionRdsPsOverlay();
   drawHeaderSignalGraph();
 }
 
@@ -751,6 +752,7 @@ function drawHeaderSignalGraph() {
     drawOverviewSignalHistory(ctx, w, h, pal);
   }
   ctx.restore();
+  positionRdsPsOverlay();
 }
 
 function _wfDrawRows(oct, rows, startRowIdx, endRowIdx, iW, iH, pal) {
@@ -927,8 +929,32 @@ function refreshFreqDisplay() {
   refreshWavelengthDisplay(lastFreqHz);
 }
 
+function positionRdsPsOverlay() {
+  if (!rdsPsOverlay || !lastSpectrumData || lastFreqHz == null || !overviewCanvas) return;
+  const width = overviewCanvas.clientWidth || overviewCanvas.width || 0;
+  if (width <= 0) {
+    return;
+  }
+  const range = spectrumVisibleRange(lastSpectrumData);
+  if (!Number.isFinite(range.visLoHz) || !Number.isFinite(range.visSpanHz) || range.visSpanHz <= 0) {
+    return;
+  }
+  const rel = (lastFreqHz - range.visLoHz) / range.visSpanHz;
+  const clamped = Math.max(0.06, Math.min(0.94, rel));
+  rdsPsOverlay.style.left = `${clamped * width}px`;
+}
+
+function resetRdsDisplay() {
+  rdsFrameCount = 0;
+  updateRdsPsOverlay(null);
+}
+
 function applyLocalTunedFrequency(hz) {
   if (!Number.isFinite(hz)) return;
+  const freqChanged = lastFreqHz !== hz;
+  if (freqChanged) {
+    resetRdsDisplay();
+  }
   lastFreqHz = hz;
   refreshWavelengthDisplay(lastFreqHz);
   if (!freqDirty) {
@@ -941,6 +967,7 @@ function applyLocalTunedFrequency(hz) {
   if (lastSpectrumData) {
     scheduleSpectrumDraw();
   }
+  positionRdsPsOverlay();
 }
 
 function refreshCenterFreqDisplay() {
@@ -3150,6 +3177,7 @@ function updateRdsPsOverlay(rds) {
     const ps = rds?.program_service?.trim();
     if (ps) {
       rdsPsOverlay.textContent = ps;
+      positionRdsPsOverlay();
       rdsPsOverlay.style.display = "";
     } else {
       rdsPsOverlay.style.display = "none";

@@ -502,6 +502,12 @@ impl ChannelDsp {
         self.wfm_decoder.as_ref().and_then(WfmStereoDecoder::rds_data)
     }
 
+    pub fn reset_rds(&mut self) {
+        if let Some(decoder) = &mut self.wfm_decoder {
+            decoder.reset_rds();
+        }
+    }
+
     /// Process a block of raw IQ samples through the full DSP chain.
     ///
     /// 1. **Batch mixer**: compute the full LO signal for the block at once,

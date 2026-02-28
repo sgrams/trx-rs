@@ -294,6 +294,7 @@ impl Candidate {
 
 #[derive(Debug, Clone)]
 pub struct RdsDecoder {
+    sample_rate_hz: u32,
     carrier_phase: f32,
     carrier_inc: f32,
     i_lp: OnePoleLowPass,
@@ -314,6 +315,7 @@ impl RdsDecoder {
             ));
         }
         Self {
+            sample_rate_hz: sample_rate.max(1),
             carrier_phase: 0.0,
             carrier_inc: TAU * RDS_SUBCARRIER_HZ / sample_rate_f,
             i_lp: OnePoleLowPass::new(sample_rate_f, 3_000.0),
@@ -341,6 +343,10 @@ impl RdsDecoder {
             }
         }
         self.best_state.as_ref()
+    }
+
+    pub fn reset(&mut self) {
+        *self = Self::new(self.sample_rate_hz);
     }
 
     pub fn snapshot(&self) -> Option<RdsData> {

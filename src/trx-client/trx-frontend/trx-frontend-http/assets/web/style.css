@@ -451,18 +451,29 @@ small { color: var(--text-muted); }
 #rds-ps-overlay {
   display: none;
   position: absolute;
-  top: calc(var(--header-waterfall-overlap) + clamp(4.2rem, 11vh, 6.25rem) / 2);
+  top: 0.35rem;
   left: 50%;
-  transform: translate(-50%, -50%);
+  transform: translate(-50%, 0);
   z-index: 2;
   pointer-events: none;
   font-family: 'DSEG14 Classic', monospace;
-  font-size: 2rem;
-  letter-spacing: 0.05em;
+  font-size: clamp(1rem, 2.2vw, 1.45rem);
+  letter-spacing: 0.08em;
   color: var(--text-heading);
-  opacity: 0.88;
-  text-shadow: 0 1px 8px color-mix(in srgb, var(--bg) 60%, transparent);
+  padding: 0.22rem 0.6rem 0.16rem;
+  border: 1px solid color-mix(in srgb, var(--border-light) 72%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--card-bg) 52%, transparent);
+  backdrop-filter: blur(14px) saturate(135%);
+  -webkit-backdrop-filter: blur(14px) saturate(135%);
+  box-shadow:
+    0 8px 18px color-mix(in srgb, #000000 16%, transparent),
+    inset 0 1px 0 color-mix(in srgb, #ffffff 10%, transparent);
+  text-shadow: 0 1px 10px color-mix(in srgb, var(--bg) 68%, transparent);
   white-space: nowrap;
+  max-width: min(88vw, 22rem);
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .overview-toolbar {
   display: flex;

@@ -149,6 +149,10 @@ impl WfmStereoDecoder {
     pub fn rds_data(&self) -> Option<RdsData> {
         self.rds_decoder.snapshot()
     }
+
+    pub fn reset_rds(&mut self) {
+        self.rds_decoder.reset();
+    }
 }
 
 /// Selects the demodulation algorithm for a channel.

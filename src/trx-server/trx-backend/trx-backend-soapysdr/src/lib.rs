@@ -252,6 +252,7 @@ impl RigCat for SoapySdrRig {
     ) -> Pin<Box<dyn std::future::Future<Output = DynResult<()>> + Send + 'a>> {
         Box::pin(async move {
             tracing::debug!("SoapySdrRig: set_freq -> {} Hz", freq.hz);
+            let freq_changed = self.freq.hz != freq.hz;
             self.freq = freq;
             let half_span_hz = i128::from(self.pipeline.sdr_sample_rate) / 2;
             let current_center_hz = i128::from(self.center_hz);
@@ -271,7 +272,11 @@ impl RigCat for SoapySdrRig {
 
             if let Some(dsp_arc) = self.pipeline.channel_dsps.get(self.primary_channel_idx) {
                 let channel_if_hz = (self.freq.hz as i64 - self.center_hz) as f64;
-                dsp_arc.lock().unwrap().set_channel_if_hz(channel_if_hz);
+                let mut dsp = dsp_arc.lock().unwrap();
+                dsp.set_channel_if_hz(channel_if_hz);
+                if freq_changed {
+                    dsp.reset_rds();
+                }
             }
             Ok(())
         })
