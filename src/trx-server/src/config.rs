@@ -331,6 +331,8 @@ pub struct SdrConfig {
     pub sample_rate: u32,
     /// Hardware IF filter bandwidth (Hz).
     pub bandwidth: u32,
+    /// WFM deemphasis time constant in microseconds (50 or 75).
+    pub wfm_deemphasis_us: u32,
     /// SDR tunes this many Hz below the dial frequency to keep signal off DC.
     pub center_offset_hz: i64,
     /// Gain configuration.
@@ -344,6 +346,7 @@ impl Default for SdrConfig {
         Self {
             sample_rate: 1_920_000,
             bandwidth: 1_500_000,
+            wfm_deemphasis_us: 50,
             center_offset_hz: 100_000,
             gain: SdrGainConfig::default(),
             channels: Vec::new(),

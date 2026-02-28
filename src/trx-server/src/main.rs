@@ -316,6 +316,7 @@ fn build_sdr_rig_from_instance(
         rig_cfg.audio.sample_rate,
         rig_cfg.audio.channels as usize,
         rig_cfg.audio.frame_duration_ms,
+        rig_cfg.sdr.wfm_deemphasis_us,
         Freq {
             hz: rig_cfg.rig.initial_freq_hz,
         },

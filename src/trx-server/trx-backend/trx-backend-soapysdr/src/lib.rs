@@ -73,6 +73,7 @@ impl SoapySdrRig {
         audio_sample_rate: u32,
         audio_channels: usize,
         frame_duration_ms: u16,
+        wfm_deemphasis_us: u32,
         initial_freq: Freq,
         initial_mode: RigMode,
         sdr_sample_rate: u32,
@@ -113,7 +114,7 @@ impl SoapySdrRig {
             audio_sample_rate,
             audio_channels,
             frame_duration_ms,
-            75,
+            wfm_deemphasis_us,
             channels,
         );
 
@@ -180,7 +181,7 @@ impl SoapySdrRig {
             center_offset_hz,
             center_hz: hardware_center_hz,
             retune_cmd,
-            wfm_deemphasis_us: 75,
+            wfm_deemphasis_us,
         })
     }
 
@@ -196,6 +197,7 @@ impl SoapySdrRig {
             48_000,
             1,
             20,
+            50,
             Freq { hz: 144_300_000 },
             RigMode::USB,
             1_920_000,
@@ -266,6 +268,11 @@ impl RigCat for SoapySdrRig {
                     *cmd = Some(hardware_hz as f64);
                 }
             }
+
+            if let Some(dsp_arc) = self.pipeline.channel_dsps.get(self.primary_channel_idx) {
+                let channel_if_hz = (self.freq.hz as i64 - self.center_hz) as f64;
+                dsp_arc.lock().unwrap().set_channel_if_hz(channel_if_hz);
+            }
             Ok(())
         })
     }
@@ -279,6 +286,10 @@ impl RigCat for SoapySdrRig {
             self.center_hz = freq.hz as i64;
             if let Ok(mut cmd) = self.retune_cmd.lock() {
                 *cmd = Some(self.center_hz as f64);
+            }
+            if let Some(dsp_arc) = self.pipeline.channel_dsps.get(self.primary_channel_idx) {
+                let channel_if_hz = (self.freq.hz as i64 - self.center_hz) as f64;
+                dsp_arc.lock().unwrap().set_channel_if_hz(channel_if_hz);
             }
             Ok(())
         })

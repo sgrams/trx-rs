@@ -296,6 +296,15 @@ pub struct ChannelDsp {
 }
 
 impl ChannelDsp {
+    pub fn set_channel_if_hz(&mut self, channel_if_hz: f64) {
+        self.channel_if_hz = channel_if_hz;
+        self.mixer_phase_inc = if self.sdr_sample_rate == 0 {
+            0.0
+        } else {
+            2.0 * std::f64::consts::PI * channel_if_hz / self.sdr_sample_rate as f64
+        };
+    }
+
     fn pipeline_rates(
         mode: &RigMode,
         sdr_sample_rate: u32,
