@@ -1281,6 +1281,9 @@ function render(update) {
       wfmStFlagEl.classList.toggle("wfm-st-flag-mono", !detected);
     }
   }
+  if (sdrGainControlsEl && typeof update.show_sdr_gain_control === "boolean") {
+    sdrGainControlsEl.style.display = update.show_sdr_gain_control ? "" : "none";
+  }
   if (update.status && update.status.freq && typeof update.status.freq.hz === "number") {
     applyLocalTunedFrequency(update.status.freq.hz, true);
   }
@@ -2574,6 +2577,7 @@ const audioRow = document.getElementById("audio-row");
 const wfmControlsCol = document.getElementById("wfm-controls-col");
 const wfmDeemphasisEl = document.getElementById("wfm-deemphasis");
 const wfmAudioModeEl = document.getElementById("wfm-audio-mode");
+const sdrGainControlsEl = document.getElementById("sdr-gain-controls");
 const sdrGainEl = document.getElementById("sdr-gain-db");
 const sdrGainSetBtn = document.getElementById("sdr-gain-set");
 const wfmStFlagEl = document.getElementById("wfm-st-flag");

@@ -165,10 +165,12 @@
                       <option value="mono">Mono</option>
                     </select>
                   </label>
-                  <label class="wfm-control">RF Gain
-                    <input id="sdr-gain-db" class="status-input" type="number" min="0" max="60" step="1" inputmode="decimal">
-                  </label>
-                  <button id="sdr-gain-set" type="button" class="status-input">Set</button>
+                  <div class="inline" id="sdr-gain-controls">
+                    <label class="wfm-control">RF Gain
+                      <input id="sdr-gain-db" class="status-input" type="number" min="0" max="60" step="1" inputmode="decimal">
+                    </label>
+                    <button id="sdr-gain-set" type="button" class="status-input">Set</button>
+                  </div>
                   <label class="wfm-control wfm-st-flag-wrap" aria-label="Stereo pilot status">
                     <span id="wfm-st-flag" class="wfm-st-flag wfm-st-flag-mono">MO</span>
                   </label>

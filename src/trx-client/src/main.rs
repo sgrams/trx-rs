@@ -177,6 +177,7 @@ async fn async_init() -> DynResult<AppState> {
         config::CookieSameSite::Lax => "Lax".to_string(),
         config::CookieSameSite::None => "None".to_string(),
     };
+    frontend_runtime.http_show_sdr_gain_control = cfg.frontends.http.show_sdr_gain_control;
 
     // Resolve remote URL: CLI > config [remote] section > error
     let remote_url = cli
@@ -189,7 +190,11 @@ async fn async_init() -> DynResult<AppState> {
         parse_remote_url(&remote_url).map_err(|e| format!("Invalid remote URL: {}", e))?;
 
     let remote_token = cli.token.clone().or_else(|| cfg.remote.auth.token.clone());
-    let remote_rig_id = cli.rig_id.clone().or_else(|| cfg.remote.rig_id.clone());
+    let remote_rig_id = cli
+        .rig_id
+        .clone()
+        .or_else(|| cfg.frontends.http.default_rig_id.clone())
+        .or_else(|| cfg.remote.rig_id.clone());
     if let Ok(mut guard) = frontend_runtime.remote_active_rig_id.lock() {
         *guard = remote_rig_id.clone();
     }

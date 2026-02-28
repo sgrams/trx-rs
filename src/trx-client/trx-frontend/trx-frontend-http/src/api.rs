@@ -45,6 +45,7 @@ pub async fn status_api(
         active_rig_id_from_context(context.get_ref().as_ref()),
         rig_ids_from_context(context.get_ref().as_ref()),
         owner_callsign_from_context(context.get_ref().as_ref()),
+        show_sdr_gain_control_from_context(context.get_ref().as_ref()),
     );
     Ok(HttpResponse::Ok()
         .insert_header((header::CONTENT_TYPE, "application/json"))
@@ -60,6 +61,7 @@ fn inject_frontend_meta(
     active_rig_id: Option<String>,
     rig_ids: Vec<String>,
     owner_callsign: Option<String>,
+    show_sdr_gain_control: bool,
 ) -> String {
     let mut value: serde_json::Value = match serde_json::from_str(json) {
         Ok(v) => v,
@@ -84,6 +86,10 @@ fn inject_frontend_meta(
     if let Some(owner) = owner_callsign {
         map.insert("owner_callsign".to_string(), serde_json::json!(owner));
     }
+    map.insert(
+        "show_sdr_gain_control".to_string(),
+        serde_json::json!(show_sdr_gain_control),
+    );
 
     serde_json::to_string(&value).unwrap_or_else(|_| json.to_string())
 }
@@ -118,6 +124,10 @@ fn owner_callsign_from_context(context: &FrontendRuntimeContext) -> Option<Strin
     context.owner_callsign.clone()
 }
 
+fn show_sdr_gain_control_from_context(context: &FrontendRuntimeContext) -> bool {
+    context.http_show_sdr_gain_control
+}
+
 #[get("/events")]
 pub async fn events(
     state: web::Data<watch::Receiver<RigState>>,
@@ -140,6 +150,7 @@ pub async fn events(
         active_rig_id_from_context(context.get_ref().as_ref()),
         rig_ids_from_context(context.get_ref().as_ref()),
         owner_callsign_from_context(context.get_ref().as_ref()),
+        show_sdr_gain_control_from_context(context.get_ref().as_ref()),
     );
     let initial_stream =
         once(async move { Ok::<Bytes, Error>(Bytes::from(format!("data: {initial_json}\n\n"))) });
@@ -160,6 +171,7 @@ pub async fn events(
                         active_rig_id_from_context(context.as_ref()),
                         rig_ids_from_context(context.as_ref()),
                         owner_callsign_from_context(context.as_ref()),
+                        show_sdr_gain_control_from_context(context.as_ref()),
                     );
                     Ok::<Bytes, Error>(Bytes::from(format!("data: {json}\n\n")))
                 })

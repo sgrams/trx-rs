@@ -228,6 +228,10 @@ pub struct HttpFrontendConfig {
     pub listen: IpAddr,
     /// Listen port
     pub port: u16,
+    /// Default rig selected in the web UI on startup.
+    pub default_rig_id: Option<String>,
+    /// Whether to expose the RF Gain control in the web UI.
+    pub show_sdr_gain_control: bool,
     /// Authentication settings
     pub auth: HttpAuthConfig,
 }
@@ -238,6 +242,8 @@ impl Default for HttpFrontendConfig {
             enabled: true,
             listen: IpAddr::from([127, 0, 0, 1]),
             port: 8080,
+            default_rig_id: None,
+            show_sdr_gain_control: true,
             auth: HttpAuthConfig::default(),
         }
     }
@@ -328,6 +334,11 @@ impl ClientConfig {
 
         if self.frontends.http.enabled && self.frontends.http.port == 0 {
             return Err("[frontends.http].port must be > 0 when enabled".to_string());
+        }
+        if let Some(rig_id) = &self.frontends.http.default_rig_id {
+            if rig_id.trim().is_empty() {
+                return Err("[frontends.http].default_rig_id must not be empty when set".to_string());
+            }
         }
         if self.frontends.rigctl.enabled && self.frontends.rigctl.rig_ports.is_empty() {
             return Err(
@@ -420,6 +431,8 @@ impl ClientConfig {
                     enabled: true,
                     listen: IpAddr::from([127, 0, 0, 1]),
                     port: 8080,
+                    default_rig_id: Some("hf".to_string()),
+                    show_sdr_gain_control: true,
                     auth: HttpAuthConfig {
                         enabled: false,
                         rx_passphrase: Some("rx-passphrase-example".to_string()),
