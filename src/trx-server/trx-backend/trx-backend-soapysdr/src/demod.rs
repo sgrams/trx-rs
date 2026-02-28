@@ -260,6 +260,52 @@ impl BiquadNotch {
     }
 }
 
+/// Three-band stereo blend for WFM.
+///
+/// Splits the L-R diff signal into three bands at audio rate and applies
+/// SNR-dependent blending per band.  Weaker pilot → more aggressive noise
+/// reduction at higher frequencies while low frequencies retain more stereo.
+///
+/// | Band      | Frequency   | Blend factor |
+/// |-----------|-------------|--------------|
+/// | Low       | 0 – 2 kHz   | `blend`      |
+/// | Mid       | 2 – 8 kHz   | `blend²`     |
+/// | High      | 8 – 15 kHz  | `blend⁴`     |
+#[derive(Debug, Clone)]
+struct MultibandStereoBlend {
+    /// 2nd-order Butterworth LPF at the low/mid crossover (2 kHz).
+    lo_lp: BiquadLowPass,
+    /// 2nd-order Butterworth LPF at the mid/high crossover (8 kHz).
+    hi_lp: BiquadLowPass,
+}
+
+impl MultibandStereoBlend {
+    fn new(audio_rate: f32) -> Self {
+        // Q = 1/√2 ≈ 0.7071 — maximally flat (Butterworth) 2nd-order response.
+        let q = std::f32::consts::FRAC_1_SQRT_2;
+        Self {
+            lo_lp: BiquadLowPass::new(audio_rate, 2_000.0, q),
+            hi_lp: BiquadLowPass::new(audio_rate, 8_000.0, q),
+        }
+    }
+
+    /// Apply multiband blend to a single diff sample.
+    ///
+    /// `blend` is the pilot SNR estimate in [0, 1] (0 = mono, 1 = full stereo).
+    fn process(&mut self, diff: f32, blend: f32) -> f32 {
+        // Band-split via complementary LPFs.
+        let lo = self.lo_lp.process(diff);        // 0 – 2 kHz
+        let lo_hi = self.hi_lp.process(diff);     // 0 – 8 kHz
+        let mid = lo_hi - lo;                      // 2 – 8 kHz
+        let hi = diff - lo_hi;                     // 8 – 15 kHz
+
+        let blend2 = blend * blend;
+        let blend4 = blend2 * blend2;
+
+        lo * blend + mid * blend2 + hi * blend4
+    }
+}
+
 impl OnePoleLowPass {
     fn new(sample_rate: f32, cutoff_hz: f32) -> Self {
         let sr = sample_rate.max(1.0);
@@ -322,9 +368,14 @@ pub struct WfmStereoDecoder {
     deemph_m: Deemphasis,
     deemph_l: Deemphasis,
     deemph_r: Deemphasis,
+    /// Multiband stereo blending applied at audio rate to the L-R diff channel.
+    diff_denoise: MultibandStereoBlend,
     /// Previous filtered sum/diff composite samples used for linear interpolation.
     prev_sum: f32,
+    /// Unblended L-R diff at the previous composite sample, for interpolation.
     prev_diff: f32,
+    /// Pilot blend value at the previous composite sample, for interpolation.
+    prev_blend: f32,
     /// Fractional phase increment per composite sample = audio_rate / composite_rate.
     /// Avoids integer-division rate error when composite_rate is not an exact
     /// multiple of audio_rate (e.g. 250 kHz composite → 48 kHz audio).
@@ -367,8 +418,10 @@ impl WfmStereoDecoder {
             deemph_m: Deemphasis::new(audio_rate.max(1) as f32, deemphasis_us),
             deemph_l: Deemphasis::new(audio_rate.max(1) as f32, deemphasis_us),
             deemph_r: Deemphasis::new(audio_rate.max(1) as f32, deemphasis_us),
+            diff_denoise: MultibandStereoBlend::new(audio_rate.max(1) as f32),
             prev_sum: 0.0,
             prev_diff: 0.0,
+            prev_blend: 0.0,
             output_phase_inc,
             output_phase: 0.0,
         }
@@ -407,17 +460,19 @@ impl WfmStereoDecoder {
             // --- L+R (sum): 4th-order Butterworth + pilot notch ---
             let sum = self.sum_notch.process(self.sum_lpf2.process(self.sum_lpf1.process(x)));
 
-            // --- L-R (diff): 38 kHz demod + 4th-order Butterworth ---
+            // --- L-R (diff): 38 kHz demod + 4th-order Butterworth (unblended) ---
+            // Blend is applied per-band at audio rate in the emit step below.
             let stereo_carrier = (2.0 * self.pilot_phase).cos() * 2.0;
-            let diff = self.diff_lpf2.process(self.diff_lpf1.process(x * stereo_carrier))
-                * stereo_blend;
+            let diff = self.diff_lpf2.process(self.diff_lpf1.process(x * stereo_carrier));
 
             // --- Linear interpolation resampling ---
-            // Track previous filtered values every composite sample for interpolation.
+            // Track previous filtered values and blend every composite sample.
             let prev_sum = self.prev_sum;
             let prev_diff = self.prev_diff;
+            let prev_blend = self.prev_blend;
             self.prev_sum = sum;
             self.prev_diff = diff;
+            self.prev_blend = stereo_blend;
 
             let prev_phase = self.output_phase;
             self.output_phase += self.output_phase_inc;
@@ -431,14 +486,21 @@ impl WfmStereoDecoder {
             let frac = ((1.0 - prev_phase) / self.output_phase_inc) as f32;
             let sum_i = prev_sum + frac * (sum - prev_sum);
             let diff_i = prev_diff + frac * (diff - prev_diff);
+            // Interpolate pilot blend for smooth stereo transitions at audio rate.
+            let blend_i = prev_blend + frac * (stereo_blend - prev_blend);
 
             // --- Deemphasis + DC block + output ---
             if self.output_channels >= 2 {
+                // Apply multiband stereo denoising at audio rate.
+                // Higher frequency bands of the diff are attenuated more aggressively
+                // when the pilot is weak, reducing stereo noise without collapsing
+                // the low-frequency stereo image.
+                let diff_denoised = self.diff_denoise.process(diff_i, blend_i);
                 let left = self.dc_l
-                    .process(self.deemph_l.process((sum_i + diff_i) * 0.5))
+                    .process(self.deemph_l.process((sum_i + diff_denoised) * 0.5))
                     .clamp(-1.0, 1.0);
                 let right = self.dc_r
-                    .process(self.deemph_r.process((sum_i - diff_i) * 0.5))
+                    .process(self.deemph_r.process((sum_i - diff_denoised) * 0.5))
                     .clamp(-1.0, 1.0);
                 output.push(left);
                 output.push(right);
