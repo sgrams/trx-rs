@@ -8,9 +8,11 @@ use trx_core::rig::state::RdsData;
 
 const RDS_SUBCARRIER_HZ: f32 = 57_000.0;
 const RDS_SYMBOL_RATE: f32 = 1_187.5;
+const RDS_PSK_SYMBOL_RATE: f32 = RDS_SYMBOL_RATE * 2.0;
 const RDS_POLY: u16 = 0x1B9;
 const SEARCH_REG_MASK: u32 = (1 << 26) - 1;
 const PHASE_CANDIDATES: usize = 8;
+const BIPHASE_CLOCK_WINDOW: usize = 128;
 
 const OFFSET_A: u16 = 0x0FC;
 const OFFSET_B: u16 = 0x198;
@@ -63,7 +65,11 @@ struct Candidate {
     sym_i_acc: f32,
     sym_q_acc: f32,
     sym_count: u16,
-    prev_sym: Option<(f32, f32)>,
+    prev_psk_symbol: Option<(f32, f32)>,
+    clock_history: [f32; BIPHASE_CLOCK_WINDOW],
+    clock: usize,
+    clock_polarity: usize,
+    prev_input_bit: bool,
     search_reg: u32,
     search_bits: u8,
     locked: bool,
@@ -82,11 +88,15 @@ impl Candidate {
     fn new(sample_rate: f32, phase_offset: f32) -> Self {
         Self {
             clock_phase: phase_offset,
-            clock_inc: RDS_SYMBOL_RATE / sample_rate.max(1.0),
+            clock_inc: RDS_PSK_SYMBOL_RATE / sample_rate.max(1.0),
             sym_i_acc: 0.0,
             sym_q_acc: 0.0,
             sym_count: 0,
-            prev_sym: None,
+            prev_psk_symbol: None,
+            clock_history: [0.0; BIPHASE_CLOCK_WINDOW],
+            clock: 0,
+            clock_polarity: 0,
+            prev_input_bit: false,
             search_reg: 0,
             search_bits: 0,
             locked: false,
@@ -118,13 +128,42 @@ impl Candidate {
         self.sym_q_acc = 0.0;
         self.sym_count = 0;
 
-        let update = if let Some((prev_i, prev_q)) = self.prev_sym {
-            let dot = symbol.0 * prev_i + symbol.1 * prev_q;
-            self.push_bit((dot < 0.0) as u8)
+        let update = if let Some((prev_i, prev_q)) = self.prev_psk_symbol {
+            let biphase_i = (symbol.0 - prev_i) * 0.5;
+            let biphase_q = (symbol.1 - prev_q) * 0.5;
+            let magnitude = (biphase_i * biphase_i + biphase_q * biphase_q).sqrt();
+            let emit_bit = self.clock % 2 == self.clock_polarity;
+            self.clock_history[self.clock] = magnitude;
+            self.clock = (self.clock + 1) % BIPHASE_CLOCK_WINDOW;
+
+            if self.clock == 0 {
+                let mut even_sum = 0.0;
+                let mut odd_sum = 0.0;
+                let mut idx = 0;
+                while idx < BIPHASE_CLOCK_WINDOW {
+                    even_sum += self.clock_history[idx];
+                    odd_sum += self.clock_history[idx + 1];
+                    idx += 2;
+                }
+                if odd_sum > even_sum {
+                    self.clock_polarity = 1;
+                } else if even_sum > odd_sum {
+                    self.clock_polarity = 0;
+                }
+            }
+
+            if emit_bit {
+                let input_bit = biphase_i >= 0.0;
+                let bit = (input_bit != self.prev_input_bit) as u8;
+                self.prev_input_bit = input_bit;
+                self.push_bit(bit)
+            } else {
+                None
+            }
         } else {
             None
         };
-        self.prev_sym = Some(symbol);
+        self.prev_psk_symbol = Some(symbol);
         update
     }
 
