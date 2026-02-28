@@ -14,10 +14,6 @@ const SEARCH_REG_MASK: u32 = (1 << 26) - 1;
 const PHASE_CANDIDATES: usize = 8;
 const BIPHASE_CLOCK_WINDOW: usize = 128;
 const RDS_BASEBAND_LP_HZ: f32 = 3_000.0;
-const PS_VOTE_COMMIT_SCORE: u8 = 2;
-const TIMING_PHASE_GAIN: f32 = 0.08;
-const TIMING_RATE_GAIN: f32 = 0.0008;
-const TIMING_RATE_SPAN: f32 = 0.03;
 
 const OFFSET_A: u16 = 0x0FC;
 const OFFSET_B: u16 = 0x198;
@@ -66,15 +62,10 @@ enum ExpectBlock {
 #[derive(Debug, Clone)]
 struct Candidate {
     clock_phase: f32,
-    nominal_clock_inc: f32,
     clock_inc: f32,
     sym_i_acc: f32,
     sym_q_acc: f32,
     sym_count: u16,
-    early_energy_acc: f32,
-    early_energy_count: u16,
-    late_energy_acc: f32,
-    late_energy_count: u16,
     prev_psk_symbol: Option<(f32, f32)>,
     clock_history: [f32; BIPHASE_CLOCK_WINDOW],
     clock: usize,
@@ -89,28 +80,19 @@ struct Candidate {
     block_a: u16,
     block_b: u16,
     score: u32,
-    block_conf_sum: f32,
-    block_conf_count: u8,
     state: RdsData,
     ps_bytes: [u8; 8],
     ps_seen: [bool; 4],
-    ps_vote_bytes: [u8; 8],
-    ps_vote_score: [u8; 8],
 }
 
 impl Candidate {
     fn new(sample_rate: f32, phase_offset: f32) -> Self {
         Self {
             clock_phase: phase_offset,
-            nominal_clock_inc: RDS_PSK_SYMBOL_RATE / sample_rate.max(1.0),
             clock_inc: RDS_PSK_SYMBOL_RATE / sample_rate.max(1.0),
             sym_i_acc: 0.0,
             sym_q_acc: 0.0,
             sym_count: 0,
-            early_energy_acc: 0.0,
-            early_energy_count: 0,
-            late_energy_acc: 0.0,
-            late_energy_count: 0,
             prev_psk_symbol: None,
             clock_history: [0.0; BIPHASE_CLOCK_WINDOW],
             clock: 0,
@@ -125,28 +107,16 @@ impl Candidate {
             block_a: 0,
             block_b: 0,
             score: 0,
-            block_conf_sum: 0.0,
-            block_conf_count: 0,
             state: RdsData::default(),
             ps_bytes: [b' '; 8],
             ps_seen: [false; 4],
-            ps_vote_bytes: [b' '; 8],
-            ps_vote_score: [0; 8],
         }
     }
 
-    fn process_sample(&mut self, i: f32, q: f32, quality: f32) -> Option<RdsData> {
+    fn process_sample(&mut self, i: f32, q: f32) -> Option<RdsData> {
         self.sym_i_acc += i;
         self.sym_q_acc += q;
         self.sym_count = self.sym_count.saturating_add(1);
-        let energy = (i * i + q * q).sqrt();
-        if self.clock_phase < 0.5 {
-            self.early_energy_acc += energy;
-            self.early_energy_count = self.early_energy_count.saturating_add(1);
-        } else {
-            self.late_energy_acc += energy;
-            self.late_energy_count = self.late_energy_count.saturating_add(1);
-        }
         self.clock_phase += self.clock_inc;
         if self.clock_phase < 1.0 {
             return None;
@@ -158,17 +128,6 @@ impl Candidate {
         self.sym_i_acc = 0.0;
         self.sym_q_acc = 0.0;
         self.sym_count = 0;
-        let early_avg = self.early_energy_acc / f32::from(self.early_energy_count.max(1));
-        let late_avg = self.late_energy_acc / f32::from(self.late_energy_count.max(1));
-        self.early_energy_acc = 0.0;
-        self.early_energy_count = 0;
-        self.late_energy_acc = 0.0;
-        self.late_energy_count = 0;
-        let timing_err = (late_avg - early_avg) / (late_avg + early_avg + 1e-6);
-        self.clock_phase = (self.clock_phase - timing_err * TIMING_PHASE_GAIN).clamp(0.0, 0.999);
-        let min_inc = self.nominal_clock_inc * (1.0 - TIMING_RATE_SPAN);
-        let max_inc = self.nominal_clock_inc * (1.0 + TIMING_RATE_SPAN);
-        self.clock_inc = (self.clock_inc - timing_err * TIMING_RATE_GAIN).clamp(min_inc, max_inc);
 
         let update = if let Some((prev_i, prev_q)) = self.prev_psk_symbol {
             let biphase_i = (symbol.0 - prev_i) * 0.5;
@@ -177,8 +136,6 @@ impl Candidate {
             let emit_bit = self.clock % 2 == self.clock_polarity;
             self.clock_history[self.clock] = magnitude;
             self.clock = (self.clock + 1) % BIPHASE_CLOCK_WINDOW;
-            let quality = quality.clamp(0.0, 1.0);
-            let bit_confidence = magnitude * quality;
 
             if self.clock == 0 {
                 let mut even_sum = 0.0;
@@ -200,7 +157,7 @@ impl Candidate {
                 let input_bit = biphase_i >= 0.0;
                 let bit = (input_bit != self.prev_input_bit) as u8;
                 self.prev_input_bit = input_bit;
-                self.push_bit_with_confidence(bit, bit_confidence)
+                self.push_bit(bit)
             } else {
                 None
             }
@@ -211,17 +168,10 @@ impl Candidate {
         update
     }
 
-    #[cfg(test)]
     fn push_bit(&mut self, bit: u8) -> Option<RdsData> {
-        self.push_bit_with_confidence(bit, 1.0)
-    }
-
-    fn push_bit_with_confidence(&mut self, bit: u8, confidence: f32) -> Option<RdsData> {
         if self.locked {
             self.block_reg = ((self.block_reg << 1) | u32::from(bit)) & SEARCH_REG_MASK;
             self.block_bits = self.block_bits.saturating_add(1);
-            self.block_conf_sum += confidence;
-            self.block_conf_count = self.block_conf_count.saturating_add(1);
             if self.block_bits < 26 {
                 return None;
             }
@@ -246,8 +196,6 @@ impl Candidate {
         self.expect = ExpectBlock::B;
         self.block_reg = 0;
         self.block_bits = 0;
-        self.block_conf_sum = 0.0;
-        self.block_conf_count = 0;
         self.block_a = data;
         self.state.pi = Some(data);
         None
@@ -264,28 +212,23 @@ impl Candidate {
             (ExpectBlock::B, BlockKind::B) => {
                 self.block_b = data;
                 self.expect = ExpectBlock::C;
-                self.reset_block_confidence();
                 None
             }
             (ExpectBlock::C, BlockKind::C | BlockKind::CPrime) => {
                 self.expect = ExpectBlock::D;
-                self.reset_block_confidence();
                 None
             }
             (ExpectBlock::D, BlockKind::D) => {
                 self.locked = false;
                 self.search_bits = 0;
                 self.search_reg = 0;
-                let conf = self.take_block_confidence();
-                self.process_group(self.block_a, self.block_b, data, conf)
+                self.process_group(self.block_a, self.block_b, data)
             }
             (_, BlockKind::A) => {
                 self.locked = true;
                 self.expect = ExpectBlock::B;
                 self.block_reg = 0;
                 self.block_bits = 0;
-                self.block_conf_sum = 0.0;
-                self.block_conf_count = 0;
                 self.block_a = data;
                 self.state.pi = Some(data);
                 None
@@ -302,8 +245,6 @@ impl Candidate {
         self.expect = ExpectBlock::B;
         self.block_reg = 0;
         self.block_bits = 0;
-        self.block_conf_sum = 0.0;
-        self.block_conf_count = 0;
         self.search_reg = word;
         self.search_bits = 26;
         if let Some((data, kind)) = decode_block(word) {
@@ -311,55 +252,13 @@ impl Candidate {
                 self.locked = true;
                 self.search_reg = 0;
                 self.search_bits = 0;
-                self.block_conf_sum = 0.0;
-                self.block_conf_count = 0;
                 self.block_a = data;
                 self.state.pi = Some(data);
             }
         }
     }
 
-    fn reset_block_confidence(&mut self) {
-        self.block_conf_sum = 0.0;
-        self.block_conf_count = 0;
-    }
-
-    fn take_block_confidence(&mut self) -> f32 {
-        let count = self.block_conf_count.max(1) as f32;
-        let confidence = self.block_conf_sum / count;
-        self.reset_block_confidence();
-        confidence
-    }
-
-    fn observe_ps_byte(&mut self, idx: usize, byte: u8, weight: u8) -> bool {
-        let clean = sanitize_text_byte(byte);
-        let weight = weight.max(1);
-        if self.ps_vote_score[idx] == 0 {
-            self.ps_vote_bytes[idx] = clean;
-            self.ps_vote_score[idx] = weight;
-        } else if self.ps_vote_bytes[idx] == clean {
-            self.ps_vote_score[idx] = self.ps_vote_score[idx].saturating_add(weight).min(16);
-        } else if weight >= self.ps_vote_score[idx] {
-            self.ps_vote_bytes[idx] = clean;
-            self.ps_vote_score[idx] = 1;
-        } else {
-            self.ps_vote_score[idx] = self.ps_vote_score[idx].saturating_sub(weight);
-        }
-
-        if self.ps_vote_score[idx] >= PS_VOTE_COMMIT_SCORE && self.ps_bytes[idx] != self.ps_vote_bytes[idx] {
-            self.ps_bytes[idx] = self.ps_vote_bytes[idx];
-            return true;
-        }
-        false
-    }
-
-    fn process_group(
-        &mut self,
-        block_a: u16,
-        block_b: u16,
-        block_d: u16,
-        group_confidence: f32,
-    ) -> Option<RdsData> {
+    fn process_group(&mut self, block_a: u16, block_b: u16, block_d: u16) -> Option<RdsData> {
         let mut changed = false;
         if self.state.pi != Some(block_a) {
             self.state.pi = Some(block_a);
@@ -377,15 +276,9 @@ impl Candidate {
         if group_type == 0 {
             let segment = usize::from((block_b & 0x0003) as u8);
             let [b0, b1] = block_d.to_be_bytes();
-            let vote_weight = ((group_confidence * 8.0).round() as u8).clamp(1, 4);
-            let left_idx = segment * 2;
-            let right_idx = left_idx + 1;
-            let left_committed = self.observe_ps_byte(left_idx, b0, vote_weight);
-            let right_committed = self.observe_ps_byte(right_idx, b1, vote_weight);
-            if left_committed || right_committed || self.ps_seen[segment] {
-                self.ps_seen[segment] = self.ps_vote_score[left_idx] >= PS_VOTE_COMMIT_SCORE
-                    && self.ps_vote_score[right_idx] >= PS_VOTE_COMMIT_SCORE;
-            }
+            self.ps_bytes[segment * 2] = sanitize_text_byte(b0);
+            self.ps_bytes[segment * 2 + 1] = sanitize_text_byte(b1);
+            self.ps_seen[segment] = true;
             if self.ps_seen.iter().all(|seen| *seen) {
                 let ps = String::from_utf8_lossy(&self.ps_bytes).trim_end().to_string();
                 if !ps.is_empty() && self.state.program_service.as_deref() != Some(ps.as_str()) {
@@ -395,8 +288,7 @@ impl Candidate {
             }
         }
 
-        let score_bump = ((group_confidence * 6.0).round() as u32).max(1);
-        self.score = self.score.saturating_add(score_bump);
+        self.score = self.score.saturating_add(1);
         changed.then(|| self.state.clone())
     }
 }
@@ -436,13 +328,14 @@ impl RdsDecoder {
     }
 
     pub fn process_sample(&mut self, sample: f32, quality: f32) -> Option<&RdsData> {
+        let _ = quality;
         let (sin_p, cos_p) = self.carrier_phase.sin_cos();
         self.carrier_phase = (self.carrier_phase + self.carrier_inc).rem_euclid(TAU);
         let mixed_i = self.i_lp.process(sample * cos_p * 2.0);
         let mixed_q = self.q_lp.process(sample * -sin_p * 2.0);
 
         for candidate in &mut self.candidates {
-            if let Some(update) = candidate.process_sample(mixed_i, mixed_q, quality) {
+            if let Some(update) = candidate.process_sample(mixed_i, mixed_q) {
                 if candidate.score >= self.best_score {
                     self.best_score = candidate.score;
                     self.best_state = Some(update);
