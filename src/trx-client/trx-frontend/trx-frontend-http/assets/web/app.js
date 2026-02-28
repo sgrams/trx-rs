@@ -926,7 +926,7 @@ function refreshWavelengthDisplay(hz) {
 
 function refreshFreqDisplay() {
   if (lastFreqHz == null || freqDirty) return;
-  freqEl.value = formatFreqForStep(lastFreqHz, jogStep);
+  freqEl.value = formatFreqForStep(lastFreqHz, jogUnit);
   refreshWavelengthDisplay(lastFreqHz);
 }
 
@@ -976,7 +976,7 @@ function applyLocalTunedFrequency(hz, forceDisplay = false) {
 
 function refreshCenterFreqDisplay() {
   if (!centerFreqEl || !lastSpectrumData || centerFreqDirty) return;
-  centerFreqEl.value = formatFreqForStep(lastSpectrumData.center_hz, jogStep);
+  centerFreqEl.value = formatFreqForStep(lastSpectrumData.center_hz, jogUnit);
 }
 
 function parseFreqInput(val, defaultStep) {
@@ -1640,7 +1640,7 @@ pttBtn.addEventListener("click", async () => {
 });
 
 async function applyFreqFromInput() {
-  const parsedRaw = parseFreqInput(freqEl.value, jogStep);
+  const parsedRaw = parseFreqInput(freqEl.value, jogUnit);
   const parsed = alignFreqToRigStep(parsedRaw);
   if (parsed === null) {
     showHint("Freq missing", 1500);
@@ -1667,7 +1667,7 @@ async function applyFreqFromInput() {
 
 async function applyCenterFreqFromInput() {
   if (!centerFreqEl) return;
-  const parsedRaw = parseFreqInput(centerFreqEl.value, jogStep);
+  const parsedRaw = parseFreqInput(centerFreqEl.value, jogUnit);
   const parsed = alignFreqToRigStep(parsedRaw);
   if (parsed === null) {
     showHint("Central freq missing", 1500);
@@ -1731,7 +1731,7 @@ function applyJogStep() {
 }
 
 function setJogDivisor(divisor) {
-  const next = divisor === 10 || divisor === 100 ? divisor : 1;
+  const next = divisor === 10 ? 10 : 1;
   jogMult = next;
   if (jogMultEl) {
     jogMultEl.querySelectorAll("button[data-mult]").forEach((b) => {
@@ -3127,8 +3127,8 @@ function visibleSpectrumPeakIndices(data, limit = 24) {
 
 // Format a frequency according to the current jog-step unit.
 function formatSpectrumFreq(hz) {
-  if (jogStep >= 1_000_000) return (hz / 1e6).toFixed(3) + " MHz";
-  if (jogStep >= 1_000)     return (hz / 1e3).toFixed(3) + " kHz";
+  if (jogUnit >= 1_000_000) return (hz / 1e6).toFixed(3) + " MHz";
+  if (jogUnit >= 1_000)     return (hz / 1e3).toFixed(3) + " kHz";
   return hz.toFixed(0) + " Hz";
 }
 
