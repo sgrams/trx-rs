@@ -2964,7 +2964,7 @@ function canvasXToHz(cssX, cssW, range) {
   return range.visLoHz + (cssX / cssW) * range.visSpanHz;
 }
 
-function nearestSpectrumPeakHz(cssX, cssW, data) {
+function nearestSpectrumPeak(cssX, cssW, data) {
   if (!data || !Array.isArray(data.bins) || data.bins.length === 0 || cssW <= 0) {
     return null;
   }
@@ -3017,7 +3017,15 @@ function nearestSpectrumPeakHz(cssX, cssW, data) {
     }
   }
 
-  return Math.round(fullLoHz + (snappedIdx / maxIdx) * data.sample_rate);
+  return {
+    index: snappedIdx,
+    hz: Math.round(fullLoHz + (snappedIdx / maxIdx) * data.sample_rate),
+    db: bins[snappedIdx],
+  };
+}
+
+function nearestSpectrumPeakHz(cssX, cssW, data) {
+  return nearestSpectrumPeak(cssX, cssW, data)?.hz ?? null;
 }
 
 // Format a frequency according to the current jog-step unit.
@@ -3485,11 +3493,16 @@ if (spectrumCanvas) {
     const edge = getBwEdgeHit(cssX, rect.width, range);
     spectrumCanvas.style.cursor = edge ? "ew-resize" : "crosshair";
     const hz = canvasXToHz(cssX, rect.width, range);
-    const peakHz = edge ? null : nearestSpectrumPeakHz(cssX, rect.width, lastSpectrumData);
+    const peak = edge ? null : nearestSpectrumPeak(cssX, rect.width, lastSpectrumData);
+    const peakHz = peak?.hz ?? null;
+    const peakDb = peak && Number.isFinite(peak.db) ? `${peak.db.toFixed(1)} dB` : null;
     if (peakHz != null && Math.abs(peakHz - hz) >= Math.max(minFreqStepHz, 10)) {
-      spectrumTooltip.textContent = `Peak ${formatSpectrumFreq(peakHz)}`;
+      spectrumTooltip.textContent = peakDb
+        ? `Peak ${formatSpectrumFreq(peakHz)} · ${peakDb}`
+        : `Peak ${formatSpectrumFreq(peakHz)}`;
     } else {
-      spectrumTooltip.textContent = formatSpectrumFreq(peakHz ?? hz);
+      const baseText = formatSpectrumFreq(peakHz ?? hz);
+      spectrumTooltip.textContent = peakDb ? `${baseText} · ${peakDb}` : baseText;
     }
     spectrumTooltip.style.display = "block";
     const tw = spectrumTooltip.offsetWidth;
