@@ -32,6 +32,9 @@ const PILOT_BPF_Q: f32 = 20.0;
 const STEREO_SEPARATION_PHASE_TRIM: f32 = 0.012;
 /// Fixed gain trim on the recovered L-R channel.
 const STEREO_SEPARATION_GAIN: f32 = 1.006;
+/// Extra headroom in the stereo matrix to reduce stereo-only clipping/IMD on
+/// strong program material. This keeps bass excursions from flattening treble.
+const STEREO_MATRIX_GAIN: f32 = 0.42;
 /// Fractional-resampler FIR taps for WFM audio reconstruction.
 const WFM_RESAMP_TAPS: usize = 6;
 /// Polyphase slots for the WFM fractional FIR resampler.
@@ -603,8 +606,8 @@ impl WfmStereoDecoder {
             // --- Deemphasis + DC block + output ---
             if self.output_channels >= 2 && self.stereo_enabled {
                 let diff = diff_i * blend_i;
-                let left_corr = (sum_i + diff) * 0.5;
-                let right_corr = (sum_i - diff) * 0.5;
+                let left_corr = (sum_i + diff) * STEREO_MATRIX_GAIN;
+                let right_corr = (sum_i - diff) * STEREO_MATRIX_GAIN;
                 let left = self
                     .dc_l
                     .process(self.deemph_l.process(left_corr))
