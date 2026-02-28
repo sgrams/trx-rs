@@ -2880,6 +2880,62 @@ function canvasXToHz(cssX, cssW, range) {
   return range.visLoHz + (cssX / cssW) * range.visSpanHz;
 }
 
+function nearestSpectrumPeakHz(cssX, cssW, data) {
+  if (!data || !Array.isArray(data.bins) || data.bins.length === 0 || cssW <= 0) {
+    return null;
+  }
+
+  const bins = data.bins;
+  const maxIdx = bins.length - 1;
+  const range = spectrumVisibleRange(data);
+  const fullLoHz = data.center_hz - data.sample_rate / 2;
+  const targetHz = canvasXToHz(cssX, cssW, range);
+  const targetIdx = Math.max(
+    0,
+    Math.min(maxIdx, Math.round(((targetHz - fullLoHz) / data.sample_rate) * maxIdx)),
+  );
+
+  const visStartIdx = Math.max(
+    0,
+    Math.min(maxIdx, Math.floor(((range.visLoHz - fullLoHz) / data.sample_rate) * maxIdx)),
+  );
+  const visEndIdx = Math.max(
+    visStartIdx,
+    Math.min(maxIdx, Math.ceil(((range.visHiHz - fullLoHz) / data.sample_rate) * maxIdx)),
+  );
+  const visSpanBins = Math.max(1, visEndIdx - visStartIdx);
+  const searchRadius = Math.max(3, Math.min(80, Math.round((24 / cssW) * visSpanBins)));
+  const searchLo = Math.max(1, targetIdx - searchRadius);
+  const searchHi = Math.min(maxIdx - 1, targetIdx + searchRadius);
+
+  let windowMax = -Infinity;
+  const localPeaks = [];
+  for (let i = searchLo; i <= searchHi; i++) {
+    const val = bins[i];
+    if (val > windowMax) windowMax = val;
+    if (val >= bins[i - 1] && val >= bins[i + 1]) {
+      localPeaks.push(i);
+    }
+  }
+
+  const candidates = localPeaks.filter((i) => bins[i] >= windowMax - 6);
+  const ranked = (candidates.length ? candidates : localPeaks).sort((a, b) => {
+    const dist = Math.abs(a - targetIdx) - Math.abs(b - targetIdx);
+    if (dist !== 0) return dist;
+    return bins[b] - bins[a];
+  });
+
+  let snappedIdx = ranked[0];
+  if (snappedIdx == null) {
+    snappedIdx = targetIdx;
+    for (let i = searchLo; i <= searchHi; i++) {
+      if (bins[i] > bins[snappedIdx]) snappedIdx = i;
+    }
+  }
+
+  return Math.round(fullLoHz + (snappedIdx / maxIdx) * data.sample_rate);
+}
+
 // Format a frequency according to the current jog-step unit.
 function formatSpectrumFreq(hz) {
   if (jogStep >= 1_000_000) return (hz / 1e6).toFixed(3) + " MHz";
@@ -3364,8 +3420,10 @@ if (spectrumCanvas) {
     if (_sDragMoved) { _sDragMoved = false; return; }
     if (!lastSpectrumData) return;
     const rect  = spectrumCanvas.getBoundingClientRect();
+    const cssX = e.clientX - rect.left;
     const range = spectrumVisibleRange(lastSpectrumData);
-    const targetHz = Math.round(canvasXToHz(e.clientX - rect.left, rect.width, range));
+    const targetHz = nearestSpectrumPeakHz(cssX, rect.width, lastSpectrumData)
+      ?? Math.round(canvasXToHz(cssX, rect.width, range));
     postPath(`/set_freq?hz=${targetHz}`).catch(() => {});
   });
 }
