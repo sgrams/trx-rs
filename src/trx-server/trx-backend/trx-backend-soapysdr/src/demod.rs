@@ -34,7 +34,11 @@ const STEREO_SEPARATION_PHASE_TRIM: f32 = 0.015;
 const STEREO_SEPARATION_GAIN: f32 = 1.006;
 /// Extra headroom in the stereo matrix to reduce stereo-only clipping/IMD on
 /// strong program material. This keeps bass excursions from flattening treble.
-const STEREO_MATRIX_GAIN: f32 = 0.42;
+const STEREO_MATRIX_GAIN: f32 = 0.30;
+/// Gentle high-pass memory for the stereo L-R path.
+/// This trims only very low-frequency difference energy that can eat headroom
+/// and modulate higher-frequency stereo detail.
+const STEREO_DIFF_DC_R: f32 = 0.9995;
 /// Fractional-resampler FIR taps for WFM audio reconstruction.
 const WFM_RESAMP_TAPS: usize = 6;
 /// Polyphase slots for the WFM fractional FIR resampler.
@@ -419,6 +423,9 @@ pub struct WfmStereoDecoder {
     /// Quadrature companion of the L-R path used for phase trim / crosstalk adjustment.
     diff_q_lpf1: BiquadLowPass,
     diff_q_lpf2: BiquadLowPass,
+    /// Gentle high-pass on the stereo-difference path to reduce bass-driven IMD.
+    diff_dc: DcBlocker,
+    diff_q_dc: DcBlocker,
     /// DC blockers on audio outputs — remove carrier-offset DC from the FM discriminator.
     dc_m: DcBlocker,
     dc_l: DcBlocker,
@@ -487,6 +494,8 @@ impl WfmStereoDecoder {
             diff_lpf2: BiquadLowPass::new(composite_rate_f, STEREO_DIFF_BW_HZ, BW4_Q2),
             diff_q_lpf1: BiquadLowPass::new(composite_rate_f, STEREO_DIFF_BW_HZ, BW4_Q1),
             diff_q_lpf2: BiquadLowPass::new(composite_rate_f, STEREO_DIFF_BW_HZ, BW4_Q2),
+            diff_dc: DcBlocker::new(STEREO_DIFF_DC_R),
+            diff_q_dc: DcBlocker::new(STEREO_DIFF_DC_R),
             dc_m: DcBlocker::new(0.9999),
             dc_l: DcBlocker::new(0.9999),
             dc_r: DcBlocker::new(0.9999),
@@ -567,10 +576,12 @@ impl WfmStereoDecoder {
             // --- L-R (diff): 38 kHz demod + 4th-order Butterworth (unblended) ---
             // Blend is applied per-band at audio rate in the emit step below.
             let (sin_2p, cos_2p) = (2.0 * pilot_phase_est).sin_cos();
-            let diff_i = self.diff_lpf2.process(self.diff_lpf1.process(x * (cos_2p * 2.0)));
+            let diff_i = self
+                .diff_dc
+                .process(self.diff_lpf2.process(self.diff_lpf1.process(x * (cos_2p * 2.0))));
             let diff_q = self
-                .diff_q_lpf2
-                .process(self.diff_q_lpf1.process(x * (-sin_2p * 2.0)));
+                .diff_q_dc
+                .process(self.diff_q_lpf2.process(self.diff_q_lpf1.process(x * (-sin_2p * 2.0))));
 
             // --- Polyphase FIR fractional resampling ---
             // This uses a short windowed-sinc bank instead of cubic interpolation
