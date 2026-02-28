@@ -3269,12 +3269,31 @@ async function copyRdsPsToClipboard() {
   }
 }
 
+async function copyRdsRawToClipboard() {
+  const rawEl = document.getElementById("rds-raw");
+  const rawText = rawEl?.textContent ?? "";
+  if (!rawText || rawText === "--") {
+    showHint("No RDS JSON", 1200);
+    return;
+  }
+  try {
+    await navigator.clipboard.writeText(rawText);
+    showHint("RDS JSON copied", 1200);
+  } catch (_) {
+    showHint("Clipboard failed", 1500);
+  }
+}
+
 if (rdsPsOverlay) {
   rdsPsOverlay.addEventListener("click", () => { copyRdsPsToClipboard(); });
 }
 const rdsPsValueEl = document.getElementById("rds-ps");
 if (rdsPsValueEl) {
   rdsPsValueEl.addEventListener("click", () => { copyRdsPsToClipboard(); });
+}
+const rdsRawCopyBtn = document.getElementById("rds-raw-copy-btn");
+if (rdsRawCopyBtn) {
+  rdsRawCopyBtn.addEventListener("click", () => { copyRdsRawToClipboard(); });
 }
 
 function updateRdsPsOverlay(rds) {

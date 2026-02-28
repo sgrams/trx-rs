@@ -814,7 +814,10 @@ small { color: var(--text-muted); }
 .rds-text { white-space: normal; overflow-wrap: anywhere; line-height: 1.35; }
 .rds-no-signal { color: var(--text-muted); }
 .rds-decoding { color: var(--accent-green); }
+.rds-raw-header { display: flex; align-items: center; justify-content: space-between; gap: 0.6rem; margin-bottom: 0.3rem; }
 .rds-raw-label { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-muted); margin-bottom: 0.3rem; }
+.rds-raw-header .rds-raw-label { margin-bottom: 0; }
+#rds-raw-copy-btn { height: 1.65rem; padding: 0 0.55rem; font-size: 0.72rem; }
 .rds-raw { background: var(--input-bg); border: 1px solid var(--border-light); border-radius: 6px; padding: 0.5rem 0.6rem; font-size: 0.8rem; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; color: var(--text); white-space: pre; overflow-x: auto; margin: 0; }
 
 .cw-controls { display: flex; gap: 0.6rem; align-items: center; margin-bottom: 0.75rem; }
