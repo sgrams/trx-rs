@@ -985,15 +985,17 @@ function updateJogStepSupport(cap) {
     .filter((s) => Number.isFinite(s) && s > 0);
   if (steps.length === 0) return;
 
-  const current = Number(jogStep);
+  const current = Number(jogUnit);
   const desired =
     Number.isFinite(current) && current >= minFreqStepHz ? current : Math.max(steps[0], minFreqStepHz);
 
-  jogStep = steps.reduce((best, s) => (Math.abs(s - desired) < Math.abs(best - desired) ? s : best), steps[0]);
+  jogUnit = steps.reduce((best, s) => (Math.abs(s - desired) < Math.abs(best - desired) ? s : best), steps[0]);
+  jogStep = Math.max(jogUnit * jogMult, minFreqStepHz);
+  saveSetting("jogUnit", jogUnit);
   saveSetting("jogStep", jogStep);
 
   buttons.forEach((btn) => {
-    btn.classList.toggle("active", Number(btn.dataset.step) === jogStep);
+    btn.classList.toggle("active", Number(btn.dataset.step) === jogUnit);
   });
 
   refreshFreqDisplay();
