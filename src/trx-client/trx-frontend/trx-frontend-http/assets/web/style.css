@@ -123,6 +123,7 @@ body {
 input.status-input, select.status-input { width: 100%; padding: 0.45rem 0.5rem; font-size: 1rem; border: 1px solid var(--border-light); border-radius: 6px; background: var(--input-bg); color: var(--text); }
 #mode { height: var(--control-height); }
 #freq { font-family: 'DSEG14 Classic', monospace; font-size: 2rem; padding: 0.5rem 0.6rem; letter-spacing: 0.05em; text-align: center; }
+#center-freq { color: var(--wavelength-fg); }
 .controls-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto auto minmax(0, 1fr);
