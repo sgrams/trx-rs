@@ -267,7 +267,7 @@ impl Default for AudioConfig {
             sample_rate: 48000,
             channels: 1,
             frame_duration_ms: 20,
-            bitrate_bps: 24000,
+            bitrate_bps: 192000,
         }
     }
 }

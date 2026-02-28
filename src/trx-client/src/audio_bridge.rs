@@ -232,7 +232,7 @@ fn run_capture(
     };
     let mut encoder =
         opus::Encoder::new(info.sample_rate, opus_channels, opus::Application::Audio)?;
-    encoder.set_bitrate(opus::Bitrate::Bits(24_000))?;
+    encoder.set_bitrate(opus::Bitrate::Bits(cfg.bitrate_bps as i32))?;
     let mut opus_buf = vec![0u8; 4096];
 
     let (sample_tx, sample_rx) = std_mpsc::sync_channel::<Vec<f32>>(64);
@@ -251,8 +251,9 @@ fn run_capture(
 
     stream.play()?;
     info!(
-        "Audio bridge capture active on '{}'",
-        device.name().unwrap_or_else(|_| "unknown".to_string())
+        "Audio bridge capture active on '{}' ({} bps)",
+        device.name().unwrap_or_else(|_| "unknown".to_string()),
+        cfg.bitrate_bps
     );
 
     let tx_gain = cfg.tx_gain.max(0.0);

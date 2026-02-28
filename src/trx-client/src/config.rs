@@ -132,6 +132,8 @@ pub struct AudioBridgeConfig {
     pub rx_output_device: Option<String>,
     /// Local input device for TX uplink capture.
     pub tx_input_device: Option<String>,
+    /// Opus bitrate in bits per second for TX uplink capture.
+    pub bitrate_bps: u32,
     /// RX playback gain multiplier.
     pub rx_gain: f32,
     /// TX capture gain multiplier.
@@ -144,6 +146,7 @@ impl Default for AudioBridgeConfig {
             enabled: false,
             rx_output_device: None,
             tx_input_device: None,
+            bitrate_bps: 192000,
             rx_gain: 1.0,
             tx_gain: 1.0,
         }
@@ -366,6 +369,9 @@ impl ClientConfig {
             || self.frontends.audio.bridge.tx_gain < 0.0
         {
             return Err("[frontends.audio.bridge].tx_gain must be finite and >= 0".to_string());
+        }
+        if self.frontends.audio.bridge.bitrate_bps == 0 {
+            return Err("[frontends.audio.bridge].bitrate_bps must be > 0".to_string());
         }
         validate_tokens(
             "[frontends.http_json.auth].tokens",
