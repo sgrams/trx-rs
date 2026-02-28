@@ -172,4 +172,22 @@ impl IqSource for RealIqSource {
             .set_frequency(soapysdr::Direction::Rx, 0, hz, ())
             .map_err(|e| format!("Failed to retune SDR center frequency: {}", e))
     }
+
+    fn handle_read_error(&mut self, err: &str) -> Result<bool, String> {
+        let err_lc = err.to_ascii_lowercase();
+        let is_overrun = err_lc.contains("overflow") || err_lc.contains("overrun");
+        if !is_overrun {
+            return Ok(false);
+        }
+
+        tracing::warn!("SoapySDR RX overflow detected; restarting RX stream");
+        self.stream
+            .deactivate(None)
+            .map_err(|e| format!("Failed to deactivate RX stream after overflow: {}", e))?;
+        std::thread::sleep(std::time::Duration::from_millis(25));
+        self.stream
+            .activate(None)
+            .map_err(|e| format!("Failed to reactivate RX stream after overflow: {}", e))?;
+        Ok(true)
+    }
 }
