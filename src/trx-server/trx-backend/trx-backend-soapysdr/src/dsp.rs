@@ -365,6 +365,14 @@ pub struct ChannelDsp {
 }
 
 impl ChannelDsp {
+    fn clamp_bandwidth_for_mode(mode: &RigMode, bandwidth_hz: u32) -> u32 {
+        if *mode == RigMode::WFM {
+            bandwidth_hz.min(192_000)
+        } else {
+            bandwidth_hz
+        }
+    }
+
     pub fn set_channel_if_hz(&mut self, channel_if_hz: f64) {
         self.channel_if_hz = channel_if_hz;
         self.mixer_phase_inc = if self.sdr_sample_rate == 0 {
@@ -385,7 +393,7 @@ impl ChannelDsp {
         }
 
         let target_rate = if *mode == RigMode::WFM {
-            audio_bandwidth_hz.max(audio_sample_rate.saturating_mul(4)).max(228_000)
+            audio_bandwidth_hz.max(audio_sample_rate.saturating_mul(4)).max(192_000)
         } else {
             audio_sample_rate.max(1)
         };
@@ -395,6 +403,7 @@ impl ChannelDsp {
     }
 
     fn rebuild_filters(&mut self, reset_wfm_decoder: bool) {
+        self.audio_bandwidth_hz = Self::clamp_bandwidth_for_mode(&self.mode, self.audio_bandwidth_hz);
         let (next_decim_factor, channel_sample_rate) = Self::pipeline_rates(
             &self.mode,
             self.sdr_sample_rate,
@@ -459,6 +468,7 @@ impl ChannelDsp {
         pcm_tx: broadcast::Sender<Vec<f32>>,
     ) -> Self {
         let output_channels = output_channels.max(1);
+        let audio_bandwidth_hz = Self::clamp_bandwidth_for_mode(mode, audio_bandwidth_hz);
         let frame_size = if audio_sample_rate == 0 || frame_duration_ms == 0 {
             960 * output_channels
         } else {
@@ -557,7 +567,7 @@ impl ChannelDsp {
     ///
     /// Changes take effect on the next call to `process_block`.
     pub fn set_filter(&mut self, bandwidth_hz: u32, taps: usize) {
-        self.audio_bandwidth_hz = bandwidth_hz;
+        self.audio_bandwidth_hz = Self::clamp_bandwidth_for_mode(&self.mode, bandwidth_hz);
         self.fir_taps = taps.max(1);
         self.rebuild_filters(false);
     }
