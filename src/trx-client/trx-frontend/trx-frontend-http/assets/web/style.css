@@ -487,6 +487,14 @@ small { color: var(--text-muted); }
   letter-spacing: 0.08em;
   white-space: pre;
 }
+.rds-ps-fallback {
+  display: block;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: clamp(0.72rem, 1.4vw, 0.95rem);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
 .rds-ps-meta {
   display: block;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;

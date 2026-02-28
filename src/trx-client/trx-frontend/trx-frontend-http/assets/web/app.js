@@ -3271,11 +3271,12 @@ function updateRdsPsOverlay(rds) {
       const mainText = hasPs
         ? formatOverlayPs(ps)
         : formatOverlayPi(rds?.pi);
+      const mainClass = hasPs ? "rds-ps-main" : "rds-ps-fallback";
       const metaText = hasPs
         ? `${formatOverlayPi(rds?.pi)} · ${formatOverlayPty(rds?.pty, rds?.pty_name)}`
         : (rds?.pty_name ?? (rds?.pty != null ? String(rds.pty) : ""));
       rdsPsOverlay.innerHTML =
-        `<span class="rds-ps-main">${escapeMapHtml(mainText)}</span>` +
+        `<span class="${mainClass}">${escapeMapHtml(mainText)}</span>` +
         `<span class="rds-ps-meta">${escapeMapHtml(metaText)}</span>`;
       positionRdsPsOverlay();
       rdsPsOverlay.style.display = "flex";
