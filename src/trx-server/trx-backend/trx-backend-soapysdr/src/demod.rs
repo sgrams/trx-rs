@@ -133,15 +133,14 @@ impl SoftAgc {
         }
     }
 
-    pub(crate) fn process(&mut self, x: f32) -> f32 {
+    fn update_gain(&mut self, level: f32) -> f32 {
         // Update envelope tracker (peak-hold with attack/release).
-        let abs_x = x.abs();
-        let env_coeff = if abs_x > self.envelope {
+        let env_coeff = if level > self.envelope {
             self.attack_coeff
         } else {
             self.release_coeff
         };
-        self.envelope += env_coeff * (abs_x - self.envelope);
+        self.envelope += env_coeff * (level - self.envelope);
 
         // Compute desired gain; fast response when reducing, slow when recovering.
         if self.envelope > 1e-6 {
@@ -154,7 +153,20 @@ impl SoftAgc {
             self.gain += gain_coeff * (desired - self.gain);
         }
 
-        (x * self.gain).clamp(-1.0, 1.0)
+        self.gain
+    }
+
+    pub(crate) fn process(&mut self, x: f32) -> f32 {
+        let gain = self.update_gain(x.abs());
+        (x * gain).clamp(-1.0, 1.0)
+    }
+
+    pub(crate) fn process_pair(&mut self, left: f32, right: f32) -> (f32, f32) {
+        let gain = self.update_gain(left.abs().max(right.abs()));
+        (
+            (left * gain).clamp(-1.0, 1.0),
+            (right * gain).clamp(-1.0, 1.0),
+        )
     }
 }
 
@@ -378,6 +390,7 @@ pub struct WfmStereoDecoder {
     pilot_freq: f32,
     pilot_i_lp: OnePoleLowPass,
     pilot_q_lp: OnePoleLowPass,
+    pilot_abs_lp: OnePoleLowPass,
     pilot_bpf: BiquadBandPass,
     /// 4th-order Butterworth cascade for L+R (two 2nd-order stages, Q = BW4_Q1/BW4_Q2).
     sum_lpf1: BiquadLowPass,
@@ -455,6 +468,7 @@ impl WfmStereoDecoder {
             pilot_freq: 2.0 * std::f32::consts::PI * PILOT_HZ / composite_rate_f,
             pilot_i_lp: OnePoleLowPass::new(composite_rate_f, 400.0),
             pilot_q_lp: OnePoleLowPass::new(composite_rate_f, 400.0),
+            pilot_abs_lp: OnePoleLowPass::new(composite_rate_f, 400.0),
             pilot_bpf: BiquadBandPass::new(composite_rate_f, PILOT_HZ, PILOT_BPF_Q),
             // 4th-order Butterworth: two cascaded biquads with BW4_Q1/BW4_Q2.
             // At 19 kHz (pilot): ≈ −12 dB; at 38 kHz (DSB carrier): ≈ −32 dB.
@@ -513,8 +527,11 @@ impl WfmStereoDecoder {
             self.pilot_phase += self.pilot_freq;
             self.pilot_phase = self.pilot_phase.rem_euclid(std::f32::consts::TAU);
 
-            let pilot_mag = (i * i + q * q).sqrt().max(pilot_tone.abs());
-            let stereo_blend = (pilot_mag * 40.0).clamp(0.0, 1.0);
+            let pilot_mag = (i * i + q * q).sqrt();
+            let pilot_abs = self.pilot_abs_lp.process(pilot_tone.abs());
+            let pilot_coherence = (pilot_mag / (pilot_abs + 1e-4)).clamp(0.0, 1.0);
+            let pilot_lock = ((pilot_coherence - 0.4) / 0.2).clamp(0.0, 1.0);
+            let stereo_blend = (pilot_mag * pilot_lock * 120.0).clamp(0.0, 1.0);
             let detect_coeff = if stereo_blend > self.stereo_detect_level {
                 0.0008
             } else {
@@ -1017,6 +1034,67 @@ mod tests {
         assert!(
             separation_db > 20.0,
             "stereo separation too low: {separation_db:.1} dB (L_rms={l_rms:.6}, R_rms={r_rms:.6})"
+        );
+    }
+
+    #[test]
+    fn test_wfm_no_pilot_stays_mono_detect() {
+        use std::f32::consts::TAU;
+
+        let composite_rate: u32 = 240_000;
+        let audio_rate: u32 = 48_000;
+        let fs = composite_rate as f32;
+        let duration_secs = 0.5_f32;
+        let num_samples = (fs * duration_secs) as usize;
+
+        let audio_freq = 1000.0_f32;
+        let mut composite = vec![0.0_f32; num_samples];
+        for (n, sample) in composite.iter_mut().enumerate() {
+            let t = n as f32 / fs;
+            *sample = (TAU * audio_freq * t).sin();
+        }
+
+        let deviation_hz = 75_000.0_f32;
+        let mod_index = TAU * deviation_hz / fs;
+        let mut phase: f32 = 0.0;
+        let mut iq = Vec::with_capacity(num_samples);
+        for &c in &composite {
+            phase += mod_index * c;
+            iq.push(Complex::from_polar(1.0, phase));
+        }
+
+        let mut decoder = WfmStereoDecoder::new(
+            composite_rate,
+            audio_rate,
+            2,
+            true,
+            50,
+            false,
+        );
+        let output = decoder.process_iq(&iq);
+
+        assert!(
+            !decoder.stereo_detected(),
+            "decoder should not detect stereo without a 19 kHz pilot"
+        );
+
+        let skip_samples = (0.2 * audio_rate as f32) as usize;
+        let stereo_pairs = output.len() / 2;
+        assert!(stereo_pairs > skip_samples + 100);
+
+        let mut diff_energy = 0.0_f64;
+        let mut count = 0_u64;
+        for i in skip_samples..stereo_pairs {
+            let l = output[2 * i] as f64;
+            let r = output[2 * i + 1] as f64;
+            let d = l - r;
+            diff_energy += d * d;
+            count += 1;
+        }
+        let diff_rms = (diff_energy / count as f64).sqrt();
+        assert!(
+            diff_rms < 0.01,
+            "mono signal without pilot should not develop audible stereo difference: diff_rms={diff_rms:.6}"
         );
     }
 
