@@ -323,10 +323,14 @@ impl ChannelDsp {
             self.audio_sample_rate,
             self.audio_bandwidth_hz,
         );
-        let cutoff_hz = self
-            .audio_bandwidth_hz
-            .min(channel_sample_rate.saturating_sub(1)) as f32
-            / 2.0;
+        // For WFM, widen the IQ filter enough to pass the RDS subcarrier at
+        // 57 kHz (requires cutoff ≥ 65 kHz → bandwidth ≥ 130 kHz).
+        let iq_filter_bw = if self.mode == RigMode::WFM {
+            self.audio_bandwidth_hz.max(130_000)
+        } else {
+            self.audio_bandwidth_hz
+        };
+        let cutoff_hz = iq_filter_bw.min(channel_sample_rate.saturating_sub(1)) as f32 / 2.0;
         let cutoff_norm = if self.sdr_sample_rate == 0 {
             0.1
         } else {
@@ -384,7 +388,14 @@ impl ChannelDsp {
         let taps = fir_taps.max(1);
         let (decim_factor, channel_sample_rate) =
             Self::pipeline_rates(mode, sdr_sample_rate, audio_sample_rate, audio_bandwidth_hz);
-        let cutoff_hz = audio_bandwidth_hz.min(channel_sample_rate.saturating_sub(1)) as f32 / 2.0;
+        // For WFM, widen the IQ filter enough to pass the RDS subcarrier at
+        // 57 kHz (requires cutoff ≥ 65 kHz → bandwidth ≥ 130 kHz).
+        let iq_filter_bw = if *mode == RigMode::WFM {
+            audio_bandwidth_hz.max(130_000)
+        } else {
+            audio_bandwidth_hz
+        };
+        let cutoff_hz = iq_filter_bw.min(channel_sample_rate.saturating_sub(1)) as f32 / 2.0;
         let cutoff_norm = if sdr_sample_rate == 0 {
             0.1
         } else {
