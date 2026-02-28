@@ -33,6 +33,7 @@ pub enum RigCommand {
     ResetWsprDecoder,
     SetBandwidth(u32),
     SetFirTaps(u32),
+    SetSdrGain(f64),
     SetWfmDeemphasis(u32),
     SetWfmStereo(bool),
     GetSpectrum,

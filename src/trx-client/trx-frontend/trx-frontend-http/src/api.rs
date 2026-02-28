@@ -474,6 +474,19 @@ pub async fn set_fir_taps(
 }
 
 #[derive(serde::Deserialize)]
+pub struct SdrGainQuery {
+    pub db: f64,
+}
+
+#[post("/set_sdr_gain")]
+pub async fn set_sdr_gain(
+    query: web::Query<SdrGainQuery>,
+    rig_tx: web::Data<mpsc::Sender<RigRequest>>,
+) -> Result<HttpResponse, Error> {
+    send_command(&rig_tx, RigCommand::SetSdrGain(query.db)).await
+}
+
+#[derive(serde::Deserialize)]
 pub struct WfmDeemphasisQuery {
     pub us: u32,
 }
@@ -710,6 +723,7 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
         .service(set_tx_limit)
         .service(set_bandwidth)
         .service(set_fir_taps)
+        .service(set_sdr_gain)
         .service(set_wfm_deemphasis)
         .service(set_wfm_stereo)
         .service(toggle_aprs_decode)

@@ -297,6 +297,7 @@ mod tests {
                 bandwidth_hz: 3000,
                 fir_taps: 64,
                 cw_center_hz: 700,
+                sdr_gain_db: Some(12.0),
                 wfm_deemphasis_us: 75,
                 wfm_stereo: true,
                 wfm_stereo_detected: false,
@@ -335,6 +336,7 @@ mod tests {
                 bandwidth_hz: 12000,
                 fir_taps: 128,
                 cw_center_hz: 700,
+                sdr_gain_db: Some(18.0),
                 wfm_deemphasis_us: 50,
                 wfm_stereo: true,
                 wfm_stereo_detected: true,
@@ -346,6 +348,7 @@ mod tests {
         let f = decoded.filter.expect("filter should round-trip");
         assert_eq!(f.bandwidth_hz, 12000);
         assert_eq!(f.fir_taps, 128);
+        assert_eq!(f.sdr_gain_db, Some(18.0));
         assert_eq!(f.wfm_deemphasis_us, 50);
         assert!(f.wfm_stereo_detected);
     }

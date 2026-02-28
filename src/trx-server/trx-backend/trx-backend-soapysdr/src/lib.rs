@@ -41,6 +41,10 @@ pub struct SoapySdrRig {
     wfm_deemphasis_us: u32,
     /// Whether WFM stereo decode is enabled.
     wfm_stereo: bool,
+    /// Requested hardware gain setting in dB.
+    gain_db: f64,
+    /// Optional hard ceiling for the applied hardware gain in dB.
+    max_gain_db: Option<f64>,
 }
 
 impl SoapySdrRig {
@@ -200,6 +204,8 @@ impl SoapySdrRig {
             retune_cmd,
             wfm_deemphasis_us,
             wfm_stereo: true,
+            gain_db,
+            max_gain_db,
         })
     }
 
@@ -348,6 +354,29 @@ impl RigCat for SoapySdrRig {
             self.wfm_deemphasis_us = deemphasis_us;
             if let Some(dsp_arc) = self.pipeline.channel_dsps.get(self.primary_channel_idx) {
                 dsp_arc.lock().unwrap().set_wfm_deemphasis(deemphasis_us);
+            }
+            Ok(())
+        })
+    }
+
+    fn set_sdr_gain<'a>(
+        &'a mut self,
+        gain_db: f64,
+    ) -> Pin<Box<dyn std::future::Future<Output = DynResult<()>> + Send + 'a>> {
+        Box::pin(async move {
+            if !gain_db.is_finite() {
+                return Err("gain must be finite".into());
+            }
+            if gain_db < 0.0 {
+                return Err("gain must be >= 0".into());
+            }
+            self.gain_db = gain_db;
+            let effective_gain_db = self
+                .max_gain_db
+                .map(|max_gain| gain_db.min(max_gain))
+                .unwrap_or(gain_db);
+            if let Ok(mut cmd) = self.pipeline.gain_cmd.lock() {
+                *cmd = Some(effective_gain_db);
             }
             Ok(())
         })
@@ -503,6 +532,11 @@ impl RigCat for SoapySdrRig {
             bandwidth_hz: self.bandwidth_hz,
             fir_taps: self.fir_taps,
             cw_center_hz: 700,
+            sdr_gain_db: Some(
+                self.max_gain_db
+                    .map(|max_gain| self.gain_db.min(max_gain))
+                    .unwrap_or(self.gain_db),
+            ),
             wfm_deemphasis_us: self.wfm_deemphasis_us,
             wfm_stereo: self.wfm_stereo,
             wfm_stereo_detected,

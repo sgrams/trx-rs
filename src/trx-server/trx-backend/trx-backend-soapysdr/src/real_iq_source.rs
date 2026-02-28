@@ -173,6 +173,12 @@ impl IqSource for RealIqSource {
             .map_err(|e| format!("Failed to retune SDR center frequency: {}", e))
     }
 
+    fn set_gain(&mut self, gain_db: f64) -> Result<(), String> {
+        self.device
+            .set_gain(soapysdr::Direction::Rx, 0, gain_db)
+            .map_err(|e| format!("Failed to set SDR gain: {}", e))
+    }
+
     fn handle_read_error(&mut self, err: &str) -> Result<bool, String> {
         let err_lc = err.to_ascii_lowercase();
         let is_overrun = err_lc.contains("overflow") || err_lc.contains("overrun");

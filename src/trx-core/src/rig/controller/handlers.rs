@@ -516,6 +516,7 @@ pub fn command_from_rig_command(cmd: RigCommand) -> Box<dyn RigCommandHandler> {
         | RigCommand::ResetWsprDecoder
         | RigCommand::SetBandwidth(_)
         | RigCommand::SetFirTaps(_)
+        | RigCommand::SetSdrGain(_)
         | RigCommand::SetWfmDeemphasis(_)
         | RigCommand::SetWfmStereo(_)
         | RigCommand::GetSpectrum => Box::new(GetSnapshotCommand),

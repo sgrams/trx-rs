@@ -45,6 +45,12 @@ pub trait IqSource: Send + 'static {
         Ok(())
     }
 
+    /// Apply a new hardware receive gain in dB. Default implementation is a
+    /// no-op for non-hardware sources.
+    fn set_gain(&mut self, _gain_db: f64) -> Result<(), String> {
+        Ok(())
+    }
+
     /// Gives a source-specific implementation a chance to recover from a
     /// read error (for example, by rearming a hardware stream after overflow).
     /// Returns `true` when an active recovery action was attempted.
@@ -740,6 +746,9 @@ pub struct SdrPipeline {
     /// Write `Some(hz)` here to retune the hardware center frequency.
     /// The IQ read loop picks it up on the next iteration.
     pub retune_cmd: Arc<std::sync::Mutex<Option<f64>>>,
+    /// Write `Some(gain_db)` here to adjust the hardware RX gain.
+    /// The IQ read loop picks it up on the next iteration.
+    pub gain_cmd: Arc<std::sync::Mutex<Option<f64>>>,
 }
 
 impl SdrPipeline {
@@ -785,6 +794,8 @@ impl SdrPipeline {
         let thread_spectrum_buf = spectrum_buf.clone();
         let retune_cmd: Arc<std::sync::Mutex<Option<f64>>> = Arc::new(std::sync::Mutex::new(None));
         let thread_retune_cmd = retune_cmd.clone();
+        let gain_cmd: Arc<std::sync::Mutex<Option<f64>>> = Arc::new(std::sync::Mutex::new(None));
+        let thread_gain_cmd = gain_cmd.clone();
 
         std::thread::Builder::new()
             .name("sdr-iq-read".to_string())
@@ -796,6 +807,7 @@ impl SdrPipeline {
                     iq_tx,
                     thread_spectrum_buf,
                     thread_retune_cmd,
+                    thread_gain_cmd,
                 );
             })
             .expect("failed to spawn sdr-iq-read thread");
@@ -806,6 +818,7 @@ impl SdrPipeline {
             spectrum_buf,
             sdr_sample_rate,
             retune_cmd,
+            gain_cmd,
         }
     }
 }
@@ -829,6 +842,7 @@ fn iq_read_loop(
     iq_tx: broadcast::Sender<Vec<Complex<f32>>>,
     spectrum_buf: Arc<Mutex<Option<Vec<f32>>>>,
     retune_cmd: Arc<std::sync::Mutex<Option<f64>>>,
+    gain_cmd: Arc<std::sync::Mutex<Option<f64>>>,
 ) {
     let mut block = vec![Complex::new(0.0_f32, 0.0_f32); IQ_BLOCK_SIZE];
     let block_duration_ms = if sdr_sample_rate > 0 {
@@ -856,6 +870,15 @@ fn iq_read_loop(
                     tracing::warn!("SDR retune to {:.0} Hz failed: {}", hz, e);
                 } else {
                     tracing::info!("SDR retuned to {:.0} Hz", hz);
+                }
+            }
+        }
+        if let Ok(mut cmd) = gain_cmd.try_lock() {
+            if let Some(gain_db) = cmd.take() {
+                if let Err(e) = source.set_gain(gain_db) {
+                    tracing::warn!("SDR gain change to {:.1} dB failed: {}", gain_db, e);
+                } else {
+                    tracing::info!("SDR gain updated to {:.1} dB", gain_db);
                 }
             }
         }

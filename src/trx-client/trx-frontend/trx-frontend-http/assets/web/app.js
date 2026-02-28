@@ -1257,6 +1257,13 @@ function render(update) {
   if (update.filter && typeof update.filter.bandwidth_hz === "number") {
     currentBandwidthHz = update.filter.bandwidth_hz;
     syncBandwidthInput(currentBandwidthHz);
+    if (
+      sdrGainEl
+      && typeof update.filter.sdr_gain_db === "number"
+      && document.activeElement !== sdrGainEl
+    ) {
+      sdrGainEl.value = String(Math.round(update.filter.sdr_gain_db));
+    }
     if (wfmDeemphasisEl && typeof update.filter.wfm_deemphasis_us === "number") {
       wfmDeemphasisEl.value = String(update.filter.wfm_deemphasis_us);
     }
@@ -2567,6 +2574,8 @@ const audioRow = document.getElementById("audio-row");
 const wfmControlsCol = document.getElementById("wfm-controls-col");
 const wfmDeemphasisEl = document.getElementById("wfm-deemphasis");
 const wfmAudioModeEl = document.getElementById("wfm-audio-mode");
+const sdrGainEl = document.getElementById("sdr-gain-db");
+const sdrGainSetBtn = document.getElementById("sdr-gain-set");
 const wfmStFlagEl = document.getElementById("wfm-st-flag");
 
 // Hide audio row if audio is not configured on the server
@@ -2609,6 +2618,23 @@ if (wfmAudioModeEl) {
 if (wfmDeemphasisEl) {
   wfmDeemphasisEl.addEventListener("change", () => {
     postPath(`/set_wfm_deemphasis?us=${encodeURIComponent(wfmDeemphasisEl.value)}`).catch(() => {});
+  });
+}
+function submitSdrGain() {
+  if (!sdrGainEl) return;
+  const parsed = Number.parseFloat(sdrGainEl.value);
+  if (!Number.isFinite(parsed) || parsed < 0) return;
+  postPath(`/set_sdr_gain?db=${encodeURIComponent(parsed)}`).catch(() => {});
+}
+if (sdrGainSetBtn) {
+  sdrGainSetBtn.addEventListener("click", submitSdrGain);
+}
+if (sdrGainEl) {
+  sdrGainEl.addEventListener("keydown", (ev) => {
+    if (ev.key === "Enter") {
+      ev.preventDefault();
+      submitSdrGain();
+    }
   });
 }
 function updateWfmControls() {
