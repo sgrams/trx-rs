@@ -271,10 +271,16 @@ pub struct RigFilterState {
     pub cw_center_hz: u32,
     #[serde(default = "default_wfm_deemphasis_us")]
     pub wfm_deemphasis_us: u32,
+    #[serde(default = "default_wfm_denoise")]
+    pub wfm_denoise: bool,
 }
 
 fn default_wfm_deemphasis_us() -> u32 {
     75
+}
+
+fn default_wfm_denoise() -> bool {
+    true
 }
 
 /// Spectrum data from SDR backends (FFT magnitude over the full capture bandwidth).

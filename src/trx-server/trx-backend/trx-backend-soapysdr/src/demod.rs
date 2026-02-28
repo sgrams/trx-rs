@@ -370,6 +370,8 @@ pub struct WfmStereoDecoder {
     deemph_r: Deemphasis,
     /// Multiband stereo blending applied at audio rate to the L-R diff channel.
     diff_denoise: MultibandStereoBlend,
+    /// Whether multiband stereo denoising is active.
+    denoise_enabled: bool,
     /// Previous filtered sum/diff composite samples used for linear interpolation.
     prev_sum: f32,
     /// Unblended L-R diff at the previous composite sample, for interpolation.
@@ -391,6 +393,7 @@ impl WfmStereoDecoder {
         audio_rate: u32,
         output_channels: usize,
         deemphasis_us: u32,
+        denoise_enabled: bool,
     ) -> Self {
         let composite_rate_f = composite_rate.max(1) as f32;
         let output_phase_inc = audio_rate.max(1) as f64 / composite_rate.max(1) as f64;
@@ -419,6 +422,7 @@ impl WfmStereoDecoder {
             deemph_l: Deemphasis::new(audio_rate.max(1) as f32, deemphasis_us),
             deemph_r: Deemphasis::new(audio_rate.max(1) as f32, deemphasis_us),
             diff_denoise: MultibandStereoBlend::new(audio_rate.max(1) as f32),
+            denoise_enabled,
             prev_sum: 0.0,
             prev_diff: 0.0,
             prev_blend: 0.0,
@@ -491,11 +495,15 @@ impl WfmStereoDecoder {
 
             // --- Deemphasis + DC block + output ---
             if self.output_channels >= 2 {
-                // Apply multiband stereo denoising at audio rate.
-                // Higher frequency bands of the diff are attenuated more aggressively
-                // when the pilot is weak, reducing stereo noise without collapsing
-                // the low-frequency stereo image.
-                let diff_denoised = self.diff_denoise.process(diff_i, blend_i);
+                // Apply multiband or single-band stereo blend at audio rate.
+                let diff_denoised = if self.denoise_enabled {
+                    // Multiband: attenuates high-frequency diff more aggressively
+                    // when the pilot is weak, preserving the low-frequency stereo image.
+                    self.diff_denoise.process(diff_i, blend_i)
+                } else {
+                    // Single-band: uniform blend across all frequencies.
+                    diff_i * blend_i
+                };
                 let left = self.dc_l
                     .process(self.deemph_l.process((sum_i + diff_denoised) * 0.5))
                     .clamp(-1.0, 1.0);
@@ -514,6 +522,10 @@ impl WfmStereoDecoder {
         }
 
         output
+    }
+
+    pub fn set_denoise_enabled(&mut self, enabled: bool) {
+        self.denoise_enabled = enabled;
     }
 
     pub fn rds_data(&self) -> Option<RdsData> {

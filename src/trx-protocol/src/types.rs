@@ -39,6 +39,7 @@ pub enum ClientCommand {
     SetBandwidth { bandwidth_hz: u32 },
     SetFirTaps { taps: u32 },
     SetWfmDeemphasis { deemphasis_us: u32 },
+    SetWfmDenoise { enabled: bool },
     GetSpectrum,
 }
 

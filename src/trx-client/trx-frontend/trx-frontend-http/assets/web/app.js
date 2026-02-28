@@ -1252,6 +1252,12 @@ function render(update) {
     if (wfmDeemphasisEl && typeof update.filter.wfm_deemphasis_us === "number") {
       wfmDeemphasisEl.value = String(update.filter.wfm_deemphasis_us);
     }
+    if (wfmDenoiseBtn && typeof update.filter.wfm_denoise === "boolean") {
+      const on = update.filter.wfm_denoise;
+      wfmDenoiseBtn.textContent = on ? "On" : "Off";
+      wfmDenoiseBtn.style.borderColor = on ? "" : "var(--accent-warn, #f0a500)";
+      wfmDenoiseBtn.style.color = on ? "" : "var(--accent-warn, #f0a500)";
+    }
   }
   if (update.status && update.status.freq && typeof update.status.freq.hz === "number") {
     applyLocalTunedFrequency(update.status.freq.hz, true);
@@ -2546,6 +2552,7 @@ const audioRow = document.getElementById("audio-row");
 const wfmControlsCol = document.getElementById("wfm-controls-col");
 const wfmDeemphasisEl = document.getElementById("wfm-deemphasis");
 const wfmAudioModeEl = document.getElementById("wfm-audio-mode");
+const wfmDenoiseBtn = document.getElementById("wfm-denoise-btn");
 
 // Hide audio row if audio is not configured on the server
 fetch("/audio", { method: "GET" }).then((r) => {
@@ -2585,6 +2592,11 @@ if (wfmAudioModeEl) {
 if (wfmDeemphasisEl) {
   wfmDeemphasisEl.addEventListener("change", () => {
     postPath(`/set_wfm_deemphasis?us=${encodeURIComponent(wfmDeemphasisEl.value)}`).catch(() => {});
+  });
+}
+if (wfmDenoiseBtn) {
+  wfmDenoiseBtn.addEventListener("click", () => {
+    postPath("/toggle_wfm_denoise").catch(() => {});
   });
 }
 

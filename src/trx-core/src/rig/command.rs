@@ -34,5 +34,6 @@ pub enum RigCommand {
     SetBandwidth(u32),
     SetFirTaps(u32),
     SetWfmDeemphasis(u32),
+    SetWfmDenoise(bool),
     GetSpectrum,
 }

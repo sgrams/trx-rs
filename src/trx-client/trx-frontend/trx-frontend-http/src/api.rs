@@ -486,6 +486,21 @@ pub async fn set_wfm_deemphasis(
     send_command(&rig_tx, RigCommand::SetWfmDeemphasis(query.us)).await
 }
 
+#[post("/toggle_wfm_denoise")]
+pub async fn toggle_wfm_denoise(
+    state: web::Data<watch::Receiver<RigState>>,
+    rig_tx: web::Data<mpsc::Sender<RigRequest>>,
+) -> Result<HttpResponse, Error> {
+    let enabled = state
+        .get_ref()
+        .borrow()
+        .filter
+        .as_ref()
+        .map(|f| f.wfm_denoise)
+        .unwrap_or(true);
+    send_command(&rig_tx, RigCommand::SetWfmDenoise(!enabled)).await
+}
+
 #[post("/toggle_aprs_decode")]
 pub async fn toggle_aprs_decode(
     state: web::Data<watch::Receiver<RigState>>,
@@ -698,6 +713,7 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
         .service(set_bandwidth)
         .service(set_fir_taps)
         .service(set_wfm_deemphasis)
+        .service(toggle_wfm_denoise)
         .service(toggle_aprs_decode)
         .service(toggle_cw_decode)
         .service(set_cw_auto)

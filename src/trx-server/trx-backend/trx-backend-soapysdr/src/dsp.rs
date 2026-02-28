@@ -309,6 +309,8 @@ pub struct ChannelDsp {
     fir_taps: usize,
     /// WFM deemphasis time constant in microseconds.
     wfm_deemphasis_us: u32,
+    /// Whether multiband stereo denoising is enabled for WFM.
+    wfm_denoise: bool,
     /// Decimation factor: `sdr_sample_rate / audio_sample_rate`.
     pub decim_factor: usize,
     /// Number of PCM channels emitted in each frame.
@@ -409,6 +411,7 @@ impl ChannelDsp {
                     self.audio_sample_rate,
                     self.output_channels,
                     self.wfm_deemphasis_us,
+                    self.wfm_denoise,
                 ));
             }
         } else {
@@ -429,6 +432,7 @@ impl ChannelDsp {
         frame_duration_ms: u16,
         audio_bandwidth_hz: u32,
         wfm_deemphasis_us: u32,
+        wfm_denoise: bool,
         fir_taps: usize,
         pcm_tx: broadcast::Sender<Vec<f32>>,
     ) -> Self {
@@ -473,6 +477,7 @@ impl ChannelDsp {
             audio_bandwidth_hz,
             fir_taps: taps,
             wfm_deemphasis_us,
+            wfm_denoise,
             decim_factor,
             output_channels,
             frame_buf: Vec::with_capacity(frame_size + output_channels),
@@ -493,6 +498,7 @@ impl ChannelDsp {
                     audio_sample_rate,
                     output_channels,
                     wfm_deemphasis_us,
+                    wfm_denoise,
                 ))
             } else {
                 None
@@ -536,6 +542,13 @@ impl ChannelDsp {
     pub fn set_wfm_deemphasis(&mut self, deemphasis_us: u32) {
         self.wfm_deemphasis_us = deemphasis_us;
         self.rebuild_filters(true);
+    }
+
+    pub fn set_wfm_denoise(&mut self, enabled: bool) {
+        self.wfm_denoise = enabled;
+        if let Some(decoder) = &mut self.wfm_decoder {
+            decoder.set_denoise_enabled(enabled);
+        }
     }
 
     pub fn rds_data(&self) -> Option<RdsData> {
@@ -676,6 +689,7 @@ impl SdrPipeline {
         output_channels: usize,
         frame_duration_ms: u16,
         wfm_deemphasis_us: u32,
+        wfm_denoise: bool,
         channels: &[(f64, RigMode, u32, usize)],
     ) -> Self {
         const IQ_BROADCAST_CAPACITY: usize = 64;
@@ -697,6 +711,7 @@ impl SdrPipeline {
                 frame_duration_ms,
                 audio_bandwidth_hz,
                 wfm_deemphasis_us,
+                wfm_denoise,
                 fir_taps,
                 pcm_tx.clone(),
             );
@@ -945,7 +960,7 @@ mod tests {
     fn channel_dsp_processes_silence() {
         let (pcm_tx, _pcm_rx) = broadcast::channel::<Vec<f32>>(8);
         let mut dsp =
-            ChannelDsp::new(0.0, &RigMode::USB, 48_000, 8_000, 1, 20, 3000, 75, 31, pcm_tx);
+            ChannelDsp::new(0.0, &RigMode::USB, 48_000, 8_000, 1, 20, 3000, 75, true, 31, pcm_tx);
         let block = vec![Complex::new(0.0_f32, 0.0_f32); 4096];
         dsp.process_block(&block);
     }
@@ -954,7 +969,7 @@ mod tests {
     fn channel_dsp_set_mode() {
         let (pcm_tx, _) = broadcast::channel::<Vec<f32>>(8);
         let mut dsp =
-            ChannelDsp::new(0.0, &RigMode::USB, 48_000, 8_000, 1, 20, 3000, 75, 31, pcm_tx);
+            ChannelDsp::new(0.0, &RigMode::USB, 48_000, 8_000, 1, 20, 3000, 75, true, 31, pcm_tx);
         assert_eq!(dsp.demodulator, Demodulator::Usb);
         dsp.set_mode(&RigMode::FM);
         assert_eq!(dsp.demodulator, Demodulator::Fm);
@@ -969,6 +984,7 @@ mod tests {
             1,
             20,
             75,
+            true,
             &[(200_000.0, RigMode::USB, 3000, 64)],
         );
         assert_eq!(pipeline.pcm_senders.len(), 1);
@@ -977,7 +993,7 @@ mod tests {
 
     #[test]
     fn pipeline_empty_channels() {
-        let pipeline = SdrPipeline::start(Box::new(MockIqSource), 1_920_000, 48_000, 1, 20, 75, &[]);
+        let pipeline = SdrPipeline::start(Box::new(MockIqSource), 1_920_000, 48_000, 1, 20, 75, true, &[]);
         assert_eq!(pipeline.pcm_senders.len(), 0);
         assert_eq!(pipeline.channel_dsps.len(), 0);
     }
