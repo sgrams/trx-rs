@@ -186,6 +186,12 @@ input.status-input, select.status-input { width: 100%; padding: 0.45rem 0.5rem; 
   width: auto;
   font-size: 0.9rem;
 }
+.wfm-control button.status-input {
+  padding: 0.45rem 0.5rem;
+  height: auto;
+  line-height: 1.2;
+  box-sizing: border-box;
+}
 .controls-col-center::after {
   content: "";
   display: block;
