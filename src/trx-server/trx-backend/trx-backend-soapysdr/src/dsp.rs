@@ -267,12 +267,15 @@ impl BlockFirFilter {
 /// 500 ms / 5 s only reacts to slow carrier-amplitude fading, not audio.
 ///
 /// CW uses a fast attack/release to follow individual dots and dashes.
+/// WFM uses a linked downward-only peak limiter (max gain = 1.0) so louder
+/// stations are tamed without boosting quieter ones.
 /// All other modes use 5 ms / 500 ms, suitable for SSB voice and FM.
 fn agc_for_mode(mode: &RigMode, audio_sample_rate: u32) -> SoftAgc {
     let sr = audio_sample_rate.max(1) as f32;
     match mode {
         RigMode::CW | RigMode::CWR => SoftAgc::new(sr, 1.0, 50.0, 0.5, 30.0),
         RigMode::AM => SoftAgc::new(sr, 500.0, 5_000.0, 0.5, 30.0),
+        RigMode::WFM => SoftAgc::new(sr, 0.2, 80.0, 0.92, 0.0),
         _ => SoftAgc::new(sr, 5.0, 500.0, 0.5, 30.0),
     }
 }
