@@ -80,10 +80,17 @@ struct Candidate {
     block_bits: u8,
     block_a: u16,
     block_b: u16,
+    block_c: u16,
+    block_c_kind: BlockKind,
     score: u32,
     state: RdsData,
     ps_bytes: [u8; 8],
     ps_seen: [bool; 4],
+    rt_bytes: [u8; 64],
+    rt_seen: [bool; 16],
+    rt_ab_flag: bool,
+    ptyn_bytes: [u8; 8],
+    ptyn_seen: [bool; 2],
 }
 
 impl Candidate {
@@ -107,10 +114,17 @@ impl Candidate {
             block_bits: 0,
             block_a: 0,
             block_b: 0,
+            block_c: 0,
+            block_c_kind: BlockKind::C,
             score: 0,
             state: RdsData::default(),
             ps_bytes: [b' '; 8],
             ps_seen: [false; 4],
+            rt_bytes: [b' '; 64],
+            rt_seen: [false; 16],
+            rt_ab_flag: false,
+            ptyn_bytes: [b' '; 8],
+            ptyn_seen: [false; 2],
         }
     }
 
@@ -216,6 +230,8 @@ impl Candidate {
                 None
             }
             (ExpectBlock::C, BlockKind::C | BlockKind::CPrime) => {
+                self.block_c = data;
+                self.block_c_kind = kind;
                 self.expect = ExpectBlock::D;
                 None
             }
@@ -223,7 +239,7 @@ impl Candidate {
                 self.locked = false;
                 self.search_bits = 0;
                 self.search_reg = 0;
-                self.process_group(self.block_a, self.block_b, data)
+                self.process_group(self.block_a, self.block_b, self.block_c, self.block_c_kind, data)
             }
             (_, BlockKind::A) => {
                 self.locked = true;
@@ -259,10 +275,23 @@ impl Candidate {
         }
     }
 
-    fn process_group(&mut self, block_a: u16, block_b: u16, block_d: u16) -> Option<RdsData> {
+    fn process_group(
+        &mut self,
+        block_a: u16,
+        block_b: u16,
+        block_c: u16,
+        block_c_kind: BlockKind,
+        block_d: u16,
+    ) -> Option<RdsData> {
         let mut changed = false;
         if self.state.pi != Some(block_a) {
             self.state.pi = Some(block_a);
+            changed = true;
+        }
+
+        let tp = ((block_b >> 10) & 0x1) != 0;
+        if self.state.traffic_program != Some(tp) {
+            self.state.traffic_program = Some(tp);
             changed = true;
         }
 
@@ -274,8 +303,47 @@ impl Candidate {
         }
 
         let group_type = ((block_b >> 12) & 0x0f) as u8;
+        let version_b = ((block_b >> 11) & 0x1) != 0;
         if group_type == 0 {
+            let ta = ((block_b >> 4) & 0x1) != 0;
+            if self.state.traffic_announcement != Some(ta) {
+                self.state.traffic_announcement = Some(ta);
+                changed = true;
+            }
+            let music = ((block_b >> 3) & 0x1) != 0;
+            if self.state.music != Some(music) {
+                self.state.music = Some(music);
+                changed = true;
+            }
             let segment = usize::from((block_b & 0x0003) as u8);
+            let di = ((block_b >> 2) & 0x1) != 0;
+            match segment {
+                0 => {
+                    if self.state.dynamic_pty != Some(di) {
+                        self.state.dynamic_pty = Some(di);
+                        changed = true;
+                    }
+                }
+                1 => {
+                    if self.state.compressed != Some(di) {
+                        self.state.compressed = Some(di);
+                        changed = true;
+                    }
+                }
+                2 => {
+                    if self.state.artificial_head != Some(di) {
+                        self.state.artificial_head = Some(di);
+                        changed = true;
+                    }
+                }
+                3 => {
+                    if self.state.stereo != Some(di) {
+                        self.state.stereo = Some(di);
+                        changed = true;
+                    }
+                }
+                _ => {}
+            }
             let [b0, b1] = block_d.to_be_bytes();
             self.ps_bytes[segment * 2] = sanitize_text_byte(b0);
             self.ps_bytes[segment * 2 + 1] = sanitize_text_byte(b1);
@@ -284,6 +352,67 @@ impl Candidate {
                 let ps = String::from_utf8_lossy(&self.ps_bytes).trim_end().to_string();
                 if !ps.is_empty() && self.state.program_service.as_deref() != Some(ps.as_str()) {
                     self.state.program_service = Some(ps);
+                    changed = true;
+                }
+            }
+        } else if group_type == 2 {
+            let text_ab = ((block_b >> 4) & 0x1) != 0;
+            if text_ab != self.rt_ab_flag {
+                self.rt_ab_flag = text_ab;
+                self.rt_bytes = [b' '; 64];
+                self.rt_seen = [false; 16];
+            }
+            let segment = usize::from((block_b & 0x000f) as u8);
+            if version_b {
+                let [b0, b1] = block_d.to_be_bytes();
+                let base = segment.saturating_mul(2);
+                if base + 1 < self.rt_bytes.len() {
+                    self.rt_bytes[base] = sanitize_text_byte(b0);
+                    self.rt_bytes[base + 1] = sanitize_text_byte(b1);
+                    self.rt_seen[segment] = true;
+                }
+            } else if block_c_kind == BlockKind::C {
+                let [c0, c1] = block_c.to_be_bytes();
+                let [d0, d1] = block_d.to_be_bytes();
+                let base = segment.saturating_mul(4);
+                if base + 3 < self.rt_bytes.len() {
+                    self.rt_bytes[base] = sanitize_text_byte(c0);
+                    self.rt_bytes[base + 1] = sanitize_text_byte(c1);
+                    self.rt_bytes[base + 2] = sanitize_text_byte(d0);
+                    self.rt_bytes[base + 3] = sanitize_text_byte(d1);
+                    self.rt_seen[segment] = true;
+                }
+            }
+            if let Some(last_seen) = self.rt_seen.iter().rposition(|seen| *seen) {
+                let rt_len = if version_b {
+                    (last_seen + 1) * 2
+                } else {
+                    (last_seen + 1) * 4
+                };
+                let rt = String::from_utf8_lossy(&self.rt_bytes[..rt_len]).trim_end().to_string();
+                if !rt.is_empty() && self.state.radio_text.as_deref() != Some(rt.as_str()) {
+                    self.state.radio_text = Some(rt);
+                    changed = true;
+                }
+            }
+        } else if group_type == 10 && !version_b && block_c_kind == BlockKind::C {
+            let segment = usize::from((block_b & 0x0001) as u8);
+            let [c0, c1] = block_c.to_be_bytes();
+            let [d0, d1] = block_d.to_be_bytes();
+            let base = segment.saturating_mul(4);
+            if base + 3 < self.ptyn_bytes.len() {
+                self.ptyn_bytes[base] = sanitize_text_byte(c0);
+                self.ptyn_bytes[base + 1] = sanitize_text_byte(c1);
+                self.ptyn_bytes[base + 2] = sanitize_text_byte(d0);
+                self.ptyn_bytes[base + 3] = sanitize_text_byte(d1);
+                self.ptyn_seen[segment] = true;
+            }
+            if self.ptyn_seen.iter().all(|seen| *seen) {
+                let ptyn = String::from_utf8_lossy(&self.ptyn_bytes).trim_end().to_string();
+                if !ptyn.is_empty()
+                    && self.state.program_type_name_long.as_deref() != Some(ptyn.as_str())
+                {
+                    self.state.program_type_name_long = Some(ptyn);
                     changed = true;
                 }
             }

@@ -3227,6 +3227,21 @@ function formatOverlayPty(pty, ptyName) {
   return pty != null ? String(pty) : "--";
 }
 
+function overlayTrafficFlagHtml(label, active) {
+  const stateClass = active === true ? "rds-flag-active" : "rds-flag-inactive";
+  return `<span class="rds-flag ${stateClass}">${label}</span>`;
+}
+
+function formatRdsFlag(value, yes = "Yes", no = "No") {
+  if (value == null) return "--";
+  return value ? yes : no;
+}
+
+function formatRdsAudio(value) {
+  if (value == null) return "--";
+  return value ? "Music" : "Speech";
+}
+
 async function copyRdsPsToClipboard() {
   const rds = lastSpectrumData?.rds;
   const ps = rds?.program_service;
@@ -3276,9 +3291,17 @@ function updateRdsPsOverlay(rds) {
       const metaText = hasPs
         ? `${formatOverlayPi(rds?.pi)} · ${formatOverlayPty(rds?.pty, rds?.pty_name)}`
         : (rds?.pty_name ?? (rds?.pty != null ? String(rds.pty) : ""));
+      const trafficFlags =
+        `<span class="rds-ps-flags">` +
+        `${overlayTrafficFlagHtml("TP", rds?.traffic_program)}` +
+        `${overlayTrafficFlagHtml("TA", rds?.traffic_announcement)}` +
+        `</span>`;
       rdsPsOverlay.innerHTML =
         `<span class="${mainClass}">${escapeMapHtml(mainText)}</span>` +
-        `<span class="rds-ps-meta">${escapeMapHtml(metaText)}</span>`;
+        `<span class="rds-ps-meta">` +
+        `<span class="rds-ps-meta-text">${escapeMapHtml(metaText)}</span>` +
+        `${trafficFlags}` +
+        `</span>`;
       positionRdsPsOverlay();
       rdsPsOverlay.style.display = "flex";
     } else {
@@ -3294,6 +3317,15 @@ function updateRdsPsOverlay(rds) {
   const psEl       = document.getElementById("rds-ps");
   const ptyEl      = document.getElementById("rds-pty");
   const ptyNameEl  = document.getElementById("rds-pty-name");
+  const ptynEl     = document.getElementById("rds-ptyn");
+  const tpEl       = document.getElementById("rds-tp");
+  const taEl       = document.getElementById("rds-ta");
+  const musicEl    = document.getElementById("rds-music");
+  const stereoEl   = document.getElementById("rds-stereo");
+  const compEl     = document.getElementById("rds-compressed");
+  const headEl     = document.getElementById("rds-artificial-head");
+  const dynPtyEl   = document.getElementById("rds-dynamic-pty");
+  const rtEl       = document.getElementById("rds-radio-text");
   const rawEl      = document.getElementById("rds-raw");
   if (!statusEl) return;
 
@@ -3309,6 +3341,15 @@ function updateRdsPsOverlay(rds) {
     psEl.textContent = "--";
     ptyEl.textContent = "--";
     ptyNameEl.textContent = "--";
+    if (ptynEl) ptynEl.textContent = "--";
+    if (tpEl) tpEl.textContent = "--";
+    if (taEl) taEl.textContent = "--";
+    if (musicEl) musicEl.textContent = "--";
+    if (stereoEl) stereoEl.textContent = "--";
+    if (compEl) compEl.textContent = "--";
+    if (headEl) headEl.textContent = "--";
+    if (dynPtyEl) dynPtyEl.textContent = "--";
+    if (rtEl) rtEl.textContent = "--";
     if (rawEl && lastSpectrumData) {
       const { bins: _b, ...rest } = lastSpectrumData;
       rawEl.textContent = JSON.stringify(rest, null, 2);
@@ -3322,6 +3363,15 @@ function updateRdsPsOverlay(rds) {
   psEl.textContent = rds.program_service ?? "--";
   ptyEl.textContent = rds.pty_name ?? (rds.pty != null ? String(rds.pty) : "--");
   ptyNameEl.textContent = rds.pty != null ? String(rds.pty) : "--";
+  if (ptynEl) ptynEl.textContent = rds.program_type_name_long ?? "--";
+  if (tpEl) tpEl.textContent = formatRdsFlag(rds.traffic_program);
+  if (taEl) taEl.textContent = formatRdsFlag(rds.traffic_announcement);
+  if (musicEl) musicEl.textContent = formatRdsAudio(rds.music);
+  if (stereoEl) stereoEl.textContent = formatRdsFlag(rds.stereo);
+  if (compEl) compEl.textContent = formatRdsFlag(rds.compressed);
+  if (headEl) headEl.textContent = formatRdsFlag(rds.artificial_head);
+  if (dynPtyEl) dynPtyEl.textContent = formatRdsFlag(rds.dynamic_pty);
+  if (rtEl) rtEl.textContent = rds.radio_text ?? "--";
   rawEl.textContent = JSON.stringify(rds, null, 2);
 }
 

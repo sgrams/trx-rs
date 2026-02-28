@@ -299,9 +299,27 @@ pub struct RdsData {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub program_service: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub radio_text: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub program_type_name_long: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pty: Option<u8>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pty_name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub traffic_program: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub traffic_announcement: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub music: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stereo: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub artificial_head: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub compressed: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dynamic_pty: Option<bool>,
 }
 
 /// Read-only projection of state shared with clients.

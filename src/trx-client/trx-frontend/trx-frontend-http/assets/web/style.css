@@ -496,12 +496,45 @@ small { color: var(--text-muted); }
   white-space: nowrap;
 }
 .rds-ps-meta {
-  display: block;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
   font-size: clamp(0.58rem, 1.1vw, 0.78rem);
   letter-spacing: 0.04em;
   color: var(--text-muted);
   white-space: nowrap;
+}
+.rds-ps-meta-text {
+  display: inline-block;
+}
+.rds-ps-flags {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+.rds-flag {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.9em;
+  padding: 0.05rem 0.35rem;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--border-light) 72%, transparent);
+  font-size: 0.92em;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+}
+.rds-flag-active {
+  color: #ffd7d7;
+  background: color-mix(in srgb, #b31217 68%, transparent);
+  border-color: color-mix(in srgb, #ff7b7b 46%, transparent);
+  box-shadow: 0 0 10px color-mix(in srgb, #b31217 28%, transparent);
+}
+.rds-flag-inactive {
+  color: var(--text-muted);
+  background: color-mix(in srgb, var(--card-bg) 62%, transparent);
 }
 .overview-toolbar {
   display: flex;
@@ -778,6 +811,7 @@ small { color: var(--text-muted); }
 .rds-label { color: var(--text-muted); font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.06em; white-space: nowrap; }
 .rds-value { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; font-size: 0.95rem; color: var(--text); }
 .rds-ps { font-size: 1.1rem; font-weight: 600; letter-spacing: 0.08em; color: var(--accent-green); }
+.rds-text { white-space: normal; overflow-wrap: anywhere; line-height: 1.35; }
 .rds-no-signal { color: var(--text-muted); }
 .rds-decoding { color: var(--accent-green); }
 .rds-raw-label { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-muted); margin-bottom: 0.3rem; }
