@@ -2040,6 +2040,11 @@ document.querySelector(".tab-bar").addEventListener("click", (e) => {
   btn.classList.add("active");
   document.querySelectorAll(".tab-panel").forEach((p) => p.style.display = "none");
   document.getElementById(`tab-${btn.dataset.tab}`).style.display = "";
+  if (btn.dataset.tab === "map") {
+    initAprsMap();
+    sizeAprsMapToViewport();
+    if (aprsMap) setTimeout(() => aprsMap.invalidateSize(), 50);
+  }
 });
 
 // --- Auth startup sequence ---
@@ -2379,16 +2384,11 @@ document.querySelectorAll(".sub-tab-bar").forEach((bar) => {
     const parent = bar.parentElement;
     parent.querySelectorAll(".sub-tab-panel").forEach((p) => p.style.display = "none");
     parent.querySelector(`#subtab-${btn.dataset.subtab}`).style.display = "";
-    if (btn.dataset.subtab === "map") {
-      initAprsMap();
-      sizeAprsMapToViewport();
-      if (aprsMap) setTimeout(() => aprsMap.invalidateSize(), 50);
-    }
   });
 });
 
 window.addEventListener("resize", () => {
-  const mapTab = document.getElementById("subtab-map");
+  const mapTab = document.getElementById("tab-map");
   if (!mapTab || mapTab.style.display === "none") return;
   sizeAprsMapToViewport();
 });

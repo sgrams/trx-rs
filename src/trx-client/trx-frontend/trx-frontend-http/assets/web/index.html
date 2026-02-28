@@ -16,6 +16,7 @@
       <div class="tab-bar-nav">
         <button class="tab active" data-tab="main">Main</button>
         <button class="tab" data-tab="plugins">Plugins</button>
+        <button class="tab" data-tab="map">Map</button>
         <button class="tab" data-tab="about">About</button>
       </div>
       <div class="top-bar-actions">
@@ -237,7 +238,6 @@
         <button class="sub-tab" data-subtab="ft8">FT8</button>
         <button class="sub-tab" data-subtab="wspr">WSPR</button>
         <button class="sub-tab" data-subtab="rds">RDS</button>
-        <button class="sub-tab" data-subtab="map">Map</button>
       </div>
       <div id="subtab-overview" class="sub-tab-panel">
         <div class="plugin-item">
@@ -283,14 +283,6 @@
         </div>
         <div class="rds-raw-label">Raw JSON (last spectrum frame)</div>
         <pre id="rds-raw" class="rds-raw">--</pre>
-      </div>
-      <div id="subtab-map" class="sub-tab-panel" style="display:none;">
-        <div class="map-controls">
-          <label><input type="checkbox" id="map-filter-aprs" checked /> APRS</label>
-          <label><input type="checkbox" id="map-filter-ft8" checked /> FT8</label>
-          <label><input type="checkbox" id="map-filter-wspr" checked /> WSPR</label>
-        </div>
-        <div id="aprs-map"></div>
       </div>
       <div id="subtab-aprs" class="sub-tab-panel" style="display:none;">
         <div class="aprs-controls">
@@ -347,6 +339,14 @@
         </div>
         <div id="cw-output"></div>
       </div>
+    </div>
+    <div id="tab-map" class="tab-panel" style="display:none;">
+      <div class="map-controls">
+        <label><input type="checkbox" id="map-filter-aprs" checked /> APRS</label>
+        <label><input type="checkbox" id="map-filter-ft8" checked /> FT8</label>
+        <label><input type="checkbox" id="map-filter-wspr" checked /> WSPR</label>
+      </div>
+      <div id="aprs-map"></div>
     </div>
     <div id="tab-about" class="tab-panel" style="display:none;">
       <div id="auth-badge" style="display:none; margin-bottom: 1rem; padding: 0.5rem; background: var(--bg-secondary); border-radius: 0.25rem; color: var(--text-muted); font-size: 0.85rem;">Authenticated as: <strong id="auth-role-badge">--</strong></div>
