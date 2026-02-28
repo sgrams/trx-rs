@@ -3028,6 +3028,45 @@ function nearestSpectrumPeakHz(cssX, cssW, data) {
   return nearestSpectrumPeak(cssX, cssW, data)?.hz ?? null;
 }
 
+function visibleSpectrumPeakIndices(data, limit = 24) {
+  if (!data || !Array.isArray(data.bins) || data.bins.length < 3) {
+    return [];
+  }
+
+  const bins = data.bins;
+  const maxIdx = bins.length - 1;
+  const range = spectrumVisibleRange(data);
+  const fullLoHz = data.center_hz - data.sample_rate / 2;
+  const visStartIdx = Math.max(
+    1,
+    Math.min(maxIdx - 1, Math.floor(((range.visLoHz - fullLoHz) / data.sample_rate) * maxIdx)),
+  );
+  const visEndIdx = Math.max(
+    visStartIdx,
+    Math.min(maxIdx - 1, Math.ceil(((range.visHiHz - fullLoHz) / data.sample_rate) * maxIdx)),
+  );
+
+  const peaks = [];
+  for (let i = visStartIdx; i <= visEndIdx; i++) {
+    const v = bins[i];
+    if (v >= bins[i - 1] && v >= bins[i + 1]) {
+      peaks.push(i);
+    }
+  }
+  if (peaks.length === 0) {
+    return [];
+  }
+
+  const peakValues = peaks.map((i) => bins[i]).sort((a, b) => a - b);
+  const cutoff = peakValues[Math.max(0, Math.floor(peakValues.length * 0.7))];
+
+  return peaks
+    .filter((i) => bins[i] >= cutoff)
+    .sort((a, b) => bins[b] - bins[a])
+    .slice(0, limit)
+    .sort((a, b) => a - b);
+}
+
 // Format a frequency according to the current jog-step unit.
 function formatSpectrumFreq(hz) {
   if (jogStep >= 1_000_000) return (hz / 1e6).toFixed(3) + " MHz";
@@ -3304,6 +3343,25 @@ function drawSpectrum(data) {
   }
   ctx.stroke();
   ctx.restore();
+
+  // Peak markers for easier snap-tune targeting.
+  const markerPeaks = visibleSpectrumPeakIndices(data);
+  if (markerPeaks.length > 0) {
+    ctx.save();
+    ctx.fillStyle = pal.waveformPeak;
+    ctx.strokeStyle = pal.bg;
+    ctx.lineWidth = Math.max(1, dpr * 0.75);
+    const radius = Math.max(2, dpr * 1.6);
+    for (const idx of markerPeaks) {
+      const x = binX(idx);
+      const y = binY(idx);
+      ctx.beginPath();
+      ctx.arc(x, y - radius * 0.35, radius, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
 
   // ── Tuned-frequency marker ────────────────────────────────────────────────
   if (lastFreqHz != null) {
