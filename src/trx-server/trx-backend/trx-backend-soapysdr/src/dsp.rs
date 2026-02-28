@@ -568,6 +568,13 @@ impl ChannelDsp {
         self.wfm_decoder.as_ref().and_then(WfmStereoDecoder::rds_data)
     }
 
+    pub fn wfm_stereo_detected(&self) -> bool {
+        self.wfm_decoder
+            .as_ref()
+            .map(WfmStereoDecoder::stereo_detected)
+            .unwrap_or(false)
+    }
+
     pub fn reset_rds(&mut self) {
         if let Some(decoder) = &mut self.wfm_decoder {
             decoder.reset_rds();

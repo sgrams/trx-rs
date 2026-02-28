@@ -405,6 +405,10 @@ pub struct WfmStereoDecoder {
     diff_denoise: MultibandStereoBlend,
     /// Whether multiband stereo denoising is active.
     denoise_enabled: bool,
+    /// Smoothed pilot-derived stereo detection strength in [0, 1].
+    stereo_detect_level: f32,
+    /// Hysteretic pilot-lock result used by the UI.
+    stereo_detected: bool,
     /// FM discriminator gain normalization.
     ///
     /// `demod_fm` outputs `atan2(…)/π ≈ 2·Δf/fs` for small deviations.
@@ -471,6 +475,8 @@ impl WfmStereoDecoder {
             deemph_r: Deemphasis::new(audio_rate.max(1) as f32, deemphasis_us),
             diff_denoise: MultibandStereoBlend::new(audio_rate.max(1) as f32),
             denoise_enabled,
+            stereo_detect_level: 0.0,
+            stereo_detected: false,
             fm_gain: composite_rate_f / (2.0 * 75_000.0),
             sum_hist: [0.0; 4],
             diff_hist: [0.0; 4],
@@ -509,6 +515,19 @@ impl WfmStereoDecoder {
 
             let pilot_mag = (i * i + q * q).sqrt().max(pilot_tone.abs());
             let stereo_blend = (pilot_mag * 40.0).clamp(0.0, 1.0);
+            let detect_coeff = if stereo_blend > self.stereo_detect_level {
+                0.0008
+            } else {
+                0.0002
+            };
+            self.stereo_detect_level += detect_coeff * (stereo_blend - self.stereo_detect_level);
+            if self.stereo_detected {
+                if self.stereo_detect_level < 0.35 {
+                    self.stereo_detected = false;
+                }
+            } else if self.stereo_detect_level > 0.6 {
+                self.stereo_detected = true;
+            }
 
             // --- RDS ---
             let rds_quality = (0.35 + pilot_mag * 20.0).clamp(0.35, 1.0);
@@ -618,6 +637,10 @@ impl WfmStereoDecoder {
 
     pub fn reset_rds(&mut self) {
         self.rds_decoder.reset();
+    }
+
+    pub fn stereo_detected(&self) -> bool {
+        self.stereo_detected
     }
 }
 

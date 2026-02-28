@@ -663,6 +663,7 @@ async fn refresh_state_with_retry(
 /// Read current state from the rig via CAT.
 async fn refresh_state_from_cat(rig: &mut Box<dyn RigCat>, state: &mut RigState) -> DynResult<()> {
     let (freq, mode, vfo) = rig.get_status().await?;
+    state.filter = rig.filter_state();
     state.control.enabled = Some(true);
     state.apply_freq(freq);
     state.apply_mode(mode);

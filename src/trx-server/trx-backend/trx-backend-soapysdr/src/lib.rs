@@ -495,6 +495,12 @@ impl RigCat for SoapySdrRig {
     }
 
     fn filter_state(&self) -> Option<RigFilterState> {
+        let wfm_stereo_detected = self
+            .pipeline
+            .channel_dsps
+            .get(self.primary_channel_idx)
+            .and_then(|dsp| dsp.lock().ok().map(|d| d.wfm_stereo_detected()))
+            .unwrap_or(false);
         Some(RigFilterState {
             bandwidth_hz: self.bandwidth_hz,
             fir_taps: self.fir_taps,
@@ -502,6 +508,7 @@ impl RigCat for SoapySdrRig {
             wfm_deemphasis_us: self.wfm_deemphasis_us,
             wfm_stereo: self.wfm_stereo,
             wfm_denoise: self.wfm_denoise,
+            wfm_stereo_detected,
         })
     }
 

@@ -192,6 +192,34 @@ input.status-input, select.status-input { width: 100%; padding: 0.45rem 0.5rem; 
   line-height: 1.2;
   box-sizing: border-box;
 }
+.wfm-st-flag-wrap {
+  min-width: 0;
+}
+.wfm-st-flag {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 2.35rem;
+  padding: 0.45rem 0.5rem;
+  box-sizing: border-box;
+  border: 1px solid var(--border-light);
+  border-radius: 6px;
+  font-size: 0.9rem;
+  font-weight: 800;
+  line-height: 1.2;
+  letter-spacing: 0.04em;
+  background: var(--input-bg);
+}
+.wfm-st-flag-stereo {
+  color: #ff5c5c;
+  border-color: color-mix(in srgb, #ff5c5c 65%, var(--border-light));
+  background: color-mix(in srgb, #ff5c5c 14%, var(--input-bg));
+}
+.wfm-st-flag-mono {
+  color: var(--text-muted);
+  border-color: var(--border-light);
+  background: color-mix(in srgb, var(--input-bg) 92%, var(--panel-2));
+}
 .controls-col-center::after {
   content: "";
   display: block;

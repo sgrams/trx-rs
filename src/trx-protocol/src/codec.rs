@@ -300,6 +300,7 @@ mod tests {
                 wfm_deemphasis_us: 75,
                 wfm_stereo: true,
                 wfm_denoise: true,
+                wfm_stereo_detected: false,
             }),
             ..minimal_snapshot()
         })
@@ -338,6 +339,7 @@ mod tests {
                 wfm_deemphasis_us: 50,
                 wfm_stereo: true,
                 wfm_denoise: true,
+                wfm_stereo_detected: true,
             }),
             ..minimal_snapshot()
         };
@@ -347,6 +349,7 @@ mod tests {
         assert_eq!(f.bandwidth_hz, 12000);
         assert_eq!(f.fir_taps, 128);
         assert_eq!(f.wfm_deemphasis_us, 50);
+        assert!(f.wfm_stereo_detected);
     }
 
     fn minimal_snapshot() -> trx_core::rig::state::RigSnapshot {
