@@ -3317,17 +3317,26 @@ async function tuneRdsAlternativeFrequency(hz) {
 function renderRdsAlternativeFrequencies(list) {
   const afEl = document.getElementById("rds-af-list");
   if (!afEl) return;
-  if (!Array.isArray(list) || list.length === 0) {
+  const afs = Array.isArray(list)
+    ? list
+      .filter((hz) => Number.isFinite(hz) && hz > 0)
+      .map((hz) => Math.round(hz))
+    : [];
+  const afKey = afs.join(",");
+  if (!afs.length) {
+    if (afEl.dataset.afKey === "") return;
+    afEl.dataset.afKey = "";
     afEl.textContent = "--";
     return;
   }
+  if (afEl.dataset.afKey === afKey) return;
+  afEl.dataset.afKey = afKey;
   afEl.innerHTML = "";
-  for (const hz of list) {
-    if (!Number.isFinite(hz) || hz <= 0) continue;
+  for (const hz of afs) {
     const btn = document.createElement("button");
     btn.type = "button";
     btn.className = "rds-af-btn";
-    btn.dataset.hz = String(Math.round(hz));
+    btn.dataset.hz = String(hz);
     btn.textContent = formatRdsAfMHz(hz);
     afEl.appendChild(btn);
   }
