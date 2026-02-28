@@ -3244,7 +3244,8 @@ async function copyRdsPsToClipboard() {
   const piHex = rds.pi != null
     ? `0x${rds.pi.toString(16).toUpperCase().padStart(4, "0")}`
     : "--";
-  const clipText = `${yyyy}-${mm}-${dd} ${hh}:${min} - ${freqMhz} MHz - ${piHex} - ${ps}`;
+  const clipPs = formatOverlayPs(ps);
+  const clipText = `${yyyy}-${mm}-${dd} ${hh}:${min} - ${freqMhz} MHz - ${piHex} - ${clipPs}`;
   try {
     await navigator.clipboard.writeText(clipText);
     showHint("RDS copied", 1200);
