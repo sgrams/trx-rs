@@ -23,6 +23,12 @@ const BW4_Q1: f32 = 0.5412;
 const BW4_Q2: f32 = 1.3066;
 /// Q for the 19 kHz pilot notch (~3.8 kHz 3 dB bandwidth).
 const PILOT_NOTCH_Q: f32 = 5.0;
+/// Narrow 19 kHz band-pass used to derive zero-crossings for switching stereo demod.
+const PILOT_BPF_Q: f32 = 10.0;
+/// Fixed phase trim on the recovered L-R channel to compensate pilot-path delay.
+const STEREO_SEPARATION_PHASE_TRIM: f32 = 0.0;
+/// Fixed gain trim on the recovered L-R channel.
+const STEREO_SEPARATION_GAIN: f32 = 1.0;
 
 /// 4-point Hermite cubic interpolation.
 ///
@@ -368,9 +374,9 @@ pub struct WfmStereoDecoder {
     rds_dc: DcBlocker,
     pilot_phase: f32,
     pilot_freq: f32,
-    pilot_freq_err: f32,
     pilot_i_lp: OnePoleLowPass,
     pilot_q_lp: OnePoleLowPass,
+    pilot_bpf: BiquadBandPass,
     /// 4th-order Butterworth cascade for L+R (two 2nd-order stages, Q = BW4_Q1/BW4_Q2).
     sum_lpf1: BiquadLowPass,
     sum_lpf2: BiquadLowPass,
@@ -380,6 +386,9 @@ pub struct WfmStereoDecoder {
     /// 4th-order Butterworth cascade for L-R (matched to sum path for stereo phase accuracy).
     diff_lpf1: BiquadLowPass,
     diff_lpf2: BiquadLowPass,
+    /// Quadrature companion of the L-R path used for phase trim / crosstalk adjustment.
+    diff_q_lpf1: BiquadLowPass,
+    diff_q_lpf2: BiquadLowPass,
     /// DC blockers on audio outputs — remove carrier-offset DC from the FM discriminator.
     dc_m: DcBlocker,
     dc_l: DcBlocker,
@@ -402,6 +411,8 @@ pub struct WfmStereoDecoder {
     sum_hist: [f32; 4],
     /// History ring for 4-point Hermite cubic interpolation of diff channel.
     diff_hist: [f32; 4],
+    /// History ring for 4-point Hermite cubic interpolation of quadrature diff channel.
+    diff_q_hist: [f32; 4],
     /// History ring for 4-point Hermite cubic interpolation of pilot blend.
     blend_hist: [f32; 4],
     /// Fractional phase increment per composite sample = audio_rate / composite_rate.
@@ -433,9 +444,9 @@ impl WfmStereoDecoder {
             rds_dc: DcBlocker::new(0.995),
             pilot_phase: 0.0,
             pilot_freq: 2.0 * std::f32::consts::PI * PILOT_HZ / composite_rate_f,
-            pilot_freq_err: 0.0,
             pilot_i_lp: OnePoleLowPass::new(composite_rate_f, 400.0),
             pilot_q_lp: OnePoleLowPass::new(composite_rate_f, 400.0),
+            pilot_bpf: BiquadBandPass::new(composite_rate_f, PILOT_HZ, PILOT_BPF_Q),
             // 4th-order Butterworth: two cascaded biquads with BW4_Q1/BW4_Q2.
             // At 19 kHz (pilot): ≈ −12 dB; at 38 kHz (DSB carrier): ≈ −32 dB.
             sum_lpf1: BiquadLowPass::new(composite_rate_f, AUDIO_BW_HZ, BW4_Q1),
@@ -443,6 +454,8 @@ impl WfmStereoDecoder {
             sum_notch: BiquadNotch::new(composite_rate_f, PILOT_HZ, PILOT_NOTCH_Q),
             diff_lpf1: BiquadLowPass::new(composite_rate_f, AUDIO_BW_HZ, BW4_Q1),
             diff_lpf2: BiquadLowPass::new(composite_rate_f, AUDIO_BW_HZ, BW4_Q2),
+            diff_q_lpf1: BiquadLowPass::new(composite_rate_f, AUDIO_BW_HZ, BW4_Q1),
+            diff_q_lpf2: BiquadLowPass::new(composite_rate_f, AUDIO_BW_HZ, BW4_Q2),
             dc_m: DcBlocker::new(0.9999),
             dc_l: DcBlocker::new(0.9999),
             dc_r: DcBlocker::new(0.9999),
@@ -454,6 +467,7 @@ impl WfmStereoDecoder {
             fm_gain: composite_rate_f / (2.0 * 75_000.0),
             sum_hist: [0.0; 4],
             diff_hist: [0.0; 4],
+            diff_q_hist: [0.0; 4],
             blend_hist: [0.0; 4],
             output_phase_inc,
             output_phase: 0.0,
@@ -475,16 +489,18 @@ impl WfmStereoDecoder {
             // Normalize discriminator output so ±75 kHz deviation maps to ±1.0.
             let x = x * self.fm_gain;
 
-            // --- Pilot PLL ---
+            let pilot_tone = self.pilot_bpf.process(x);
+
+            // --- Pilot phase estimator ---
             let (sin_p, cos_p) = self.pilot_phase.sin_cos();
             let i = self.pilot_i_lp.process(x * cos_p);
             let q = self.pilot_q_lp.process(x * -sin_p);
             let phase_err = q.atan2(i);
-            self.pilot_freq_err = (self.pilot_freq_err + phase_err * 0.00005).clamp(-0.02, 0.02);
-            self.pilot_phase += self.pilot_freq + self.pilot_freq_err + phase_err * 0.003;
+            let pilot_phase_est = self.pilot_phase + phase_err;
+            self.pilot_phase += self.pilot_freq;
             self.pilot_phase = self.pilot_phase.rem_euclid(std::f32::consts::TAU);
 
-            let pilot_mag = (i * i + q * q).sqrt();
+            let pilot_mag = (i * i + q * q).sqrt().max(pilot_tone.abs());
             let stereo_blend = (pilot_mag * 40.0).clamp(0.0, 1.0);
 
             // --- RDS ---
@@ -502,8 +518,11 @@ impl WfmStereoDecoder {
 
             // --- L-R (diff): 38 kHz demod + 4th-order Butterworth (unblended) ---
             // Blend is applied per-band at audio rate in the emit step below.
-            let stereo_carrier = (2.0 * self.pilot_phase).cos() * 2.0;
-            let diff = self.diff_lpf2.process(self.diff_lpf1.process(x * stereo_carrier));
+            let (sin_2p, cos_2p) = (2.0 * pilot_phase_est).sin_cos();
+            let diff_i = self.diff_lpf2.process(self.diff_lpf1.process(x * (cos_2p * 2.0)));
+            let diff_q = self
+                .diff_q_lpf2
+                .process(self.diff_q_lpf1.process(x * (-sin_2p * 2.0)));
 
             // --- 4-point Hermite cubic interpolation resampling ---
             // Shift history rings: drop oldest, append current sample.
@@ -514,7 +533,9 @@ impl WfmStereoDecoder {
             self.sum_hist.rotate_left(1);
             self.sum_hist[3] = sum;
             self.diff_hist.rotate_left(1);
-            self.diff_hist[3] = diff;
+            self.diff_hist[3] = diff_i;
+            self.diff_q_hist.rotate_left(1);
+            self.diff_q_hist[3] = diff_q;
             self.blend_hist.rotate_left(1);
             self.blend_hist[3] = stereo_blend;
 
@@ -530,7 +551,10 @@ impl WfmStereoDecoder {
             let frac = ((1.0 - prev_phase) / self.output_phase_inc) as f32;
             let sum_i = hermite4(&self.sum_hist, frac);
             let diff_i = hermite4(&self.diff_hist, frac);
+            let diff_q = hermite4(&self.diff_q_hist, frac);
             let blend_i = hermite4(&self.blend_hist, frac).clamp(0.0, 1.0);
+            let (trim_sin, trim_cos) = STEREO_SEPARATION_PHASE_TRIM.sin_cos();
+            let diff_i = (diff_i * trim_cos + diff_q * trim_sin) * STEREO_SEPARATION_GAIN;
 
             // --- Deemphasis + DC block + output ---
             if self.output_channels >= 2 && self.stereo_enabled {
@@ -857,7 +881,112 @@ mod tests {
         assert_eq!(Demodulator::for_mode(&RigMode::PKT), Demodulator::Fm);
     }
 
-    // Test 9: All demodulators return an empty Vec for empty input without panicking.
+    // Test 9: Synthetic FM stereo — verify L/R separation.
+    //
+    // Generate a composite FM stereo signal with a 1 kHz tone on L only:
+    //   L = sin(2π·1000·t),  R = 0
+    //   sum  = L + R = sin(2π·1000·t)
+    //   diff = L - R = sin(2π·1000·t)
+    //   composite = sum + 0.1·cos(2π·19000·t) + diff·cos(2π·38000·t)
+    //
+    // FM-modulate at 240 kHz composite rate, run through WfmStereoDecoder,
+    // and verify L has significant energy while R is near zero.
+    #[test]
+    fn test_wfm_stereo_separation() {
+        use std::f32::consts::TAU;
+
+        let composite_rate: u32 = 240_000;
+        let audio_rate: u32 = 48_000;
+        let fs = composite_rate as f32;
+        let duration_secs = 0.5_f32; // 500 ms — enough for PLL lock + measurement
+        let num_samples = (fs * duration_secs) as usize;
+
+        // --- Build composite baseband ---
+        let audio_freq = 1000.0_f32;
+        let pilot_freq = 19_000.0_f32;
+        let carrier_freq = 38_000.0_f32;
+        let mut composite = vec![0.0_f32; num_samples];
+        for n in 0..num_samples {
+            let t = n as f32 / fs;
+            let audio = (TAU * audio_freq * t).sin(); // L = audio, R = 0
+            let sum = audio;       // L + R
+            let diff = audio;      // L - R
+            let pilot = 0.1 * (TAU * pilot_freq * t).cos();
+            let carrier = (TAU * carrier_freq * t).cos();
+            composite[n] = sum + pilot + diff * carrier;
+        }
+
+        // --- FM-modulate composite → IQ samples ---
+        // deviation: peak composite ≈ ±2.1, map to ±75 kHz
+        // phase per sample = 2π · (75000 / peak_composite) · composite[n] / fs
+        let peak_composite = 2.1_f32; // sum(1) + pilot(0.1) + diff(1)
+        let deviation_hz = 75_000.0_f32;
+        let mod_index = TAU * deviation_hz / (peak_composite * fs);
+        let mut phase: f32 = 0.0;
+        let mut iq = Vec::with_capacity(num_samples);
+        for &c in &composite {
+            phase += mod_index * c;
+            iq.push(Complex::from_polar(1.0, phase));
+        }
+
+        // --- Decode ---
+        let mut decoder = WfmStereoDecoder::new(
+            composite_rate,
+            audio_rate,
+            2,    // stereo output
+            true, // stereo enabled
+            50,   // 50 µs deemphasis
+            false, // no denoise — test raw separation
+        );
+        let output = decoder.process_iq(&iq);
+
+        // Output is interleaved L, R.  Skip the first 200 ms for PLL lock.
+        let skip_samples = (0.2 * audio_rate as f32) as usize;
+        let stereo_pairs = output.len() / 2;
+        assert!(
+            stereo_pairs > skip_samples + 100,
+            "not enough output samples: {} pairs, need > {}",
+            stereo_pairs,
+            skip_samples + 100
+        );
+
+        // Measure RMS of L and R channels in the measurement window.
+        let mut l_energy = 0.0_f64;
+        let mut r_energy = 0.0_f64;
+        let mut count = 0_u64;
+        for i in skip_samples..stereo_pairs {
+            let l = output[2 * i] as f64;
+            let r = output[2 * i + 1] as f64;
+            l_energy += l * l;
+            r_energy += r * r;
+            count += 1;
+        }
+        let l_rms = (l_energy / count as f64).sqrt();
+        let r_rms = (r_energy / count as f64).sqrt();
+
+        eprintln!("L RMS = {l_rms:.6}, R RMS = {r_rms:.6}");
+
+        // L should have significant energy (tone is present).
+        assert!(
+            l_rms > 0.01,
+            "L channel has no energy: L_rms = {l_rms:.6}"
+        );
+
+        // R should be much smaller than L (>20 dB separation).
+        let separation_db = if r_rms > 1e-10 {
+            20.0 * (l_rms / r_rms).log10()
+        } else {
+            f64::INFINITY
+        };
+        eprintln!("stereo separation = {separation_db:.1} dB");
+
+        assert!(
+            separation_db > 20.0,
+            "stereo separation too low: {separation_db:.1} dB (L_rms={l_rms:.6}, R_rms={r_rms:.6})"
+        );
+    }
+
+    // Test 10: All demodulators return an empty Vec for empty input without panicking.
     #[test]
     fn test_empty_input() {
         let empty: Vec<Complex<f32>> = Vec::new();
