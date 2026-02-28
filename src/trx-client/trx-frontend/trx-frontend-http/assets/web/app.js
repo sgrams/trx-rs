@@ -2684,7 +2684,7 @@ function extractAudioFrameChannels(frame) {
 
   if (!isPlanar) {
     const interleaved = new Float32Array(frames * channels);
-    frame.copyTo(interleaved);
+    frame.copyTo(interleaved, { planeIndex: 0 });
     const out = Array.from({ length: channels }, () => new Float32Array(frames));
     for (let i = 0; i < frames; i++) {
       for (let ch = 0; ch < channels; ch++) {
