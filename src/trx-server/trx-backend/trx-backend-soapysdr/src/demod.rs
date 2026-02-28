@@ -11,14 +11,13 @@ const RDS_BPF_Q: f32 = 10.0;
 /// Pilot tone frequency (Hz).
 const PILOT_HZ: f32 = 19_000.0;
 /// Audio bandwidth for WFM (Hz).
-/// 15.8 kHz leaves more guard band below the 19 kHz pilot and reduces
-/// top-end artifacts on strong signals while still preserving the useful
-/// broadcast audio range.
-const AUDIO_BW_HZ: f32 = 15_800.0;
+/// 17 kHz preserves more top-end while still leaving guard band below the
+/// 19 kHz pilot.
+const AUDIO_BW_HZ: f32 = 17_000.0;
 /// Stereo L-R subchannel bandwidth for WFM (Hz).
 /// Keep this a bit lower than the mono path because the recovered difference
 /// signal is noisier and more prone to high-frequency artifacts.
-const STEREO_DIFF_BW_HZ: f32 = 14_500.0;
+const STEREO_DIFF_BW_HZ: f32 = 15_800.0;
 /// Q values for a proper 4th-order Butterworth cascade (two 2nd-order stages).
 /// Stage 1: Q = 1 / (2 cos(π/8))
 const BW4_Q1: f32 = 0.5412;
@@ -100,7 +99,6 @@ fn polyphase_resample(
         .sum()
 }
 
-#[inline]
 fn smoothstep01(x: f32) -> f32 {
     let x = x.clamp(0.0, 1.0);
     x * x * (3.0 - 2.0 * x)
@@ -220,24 +218,6 @@ impl SoftAgc {
     pub(crate) fn process(&mut self, x: f32) -> f32 {
         let gain = self.update_gain(x.abs());
         (x * gain).clamp(-1.0, 1.0)
-    }
-
-    pub(crate) fn process_with_level(&mut self, x: f32, level: f32) -> f32 {
-        let gain = self.update_gain(level.abs());
-        (x * gain).clamp(-1.0, 1.0)
-    }
-
-    pub(crate) fn process_pair_with_level(
-        &mut self,
-        left: f32,
-        right: f32,
-        level: f32,
-    ) -> (f32, f32) {
-        let gain = self.update_gain(level.abs());
-        (
-            (left * gain).clamp(-1.0, 1.0),
-            (right * gain).clamp(-1.0, 1.0),
-        )
     }
 
     pub(crate) fn process_complex(&mut self, x: Complex<f32>) -> Complex<f32> {

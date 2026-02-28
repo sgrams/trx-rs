@@ -267,15 +267,12 @@ impl BlockFirFilter {
 /// 500 ms / 5 s only reacts to slow carrier-amplitude fading, not audio.
 ///
 /// CW uses a fast attack/release to follow individual dots and dashes.
-/// WFM uses a linked downward-only peak limiter (max gain = 1.0) so louder
-/// stations are tamed without boosting quieter ones.
 /// All other modes use 5 ms / 500 ms, suitable for SSB voice and FM.
 fn agc_for_mode(mode: &RigMode, audio_sample_rate: u32) -> SoftAgc {
     let sr = audio_sample_rate.max(1) as f32;
     match mode {
         RigMode::CW | RigMode::CWR => SoftAgc::new(sr, 1.0, 50.0, 0.5, 30.0),
         RigMode::AM => SoftAgc::new(sr, 500.0, 5_000.0, 0.5, 30.0),
-        RigMode::WFM => SoftAgc::new(sr, 0.2, 80.0, 0.92, 0.0),
         _ => SoftAgc::new(sr, 5.0, 500.0, 0.5, 30.0),
     }
 }
@@ -303,10 +300,6 @@ fn dc_for_mode(mode: &RigMode) -> Option<DcBlocker> {
         RigMode::WFM => None,
         _ => Some(DcBlocker::new(0.9999)),
     }
-}
-
-fn wfm_limiter_sidechain() -> Option<(DcBlocker, DcBlocker)> {
-    Some((DcBlocker::new(0.985), DcBlocker::new(0.985)))
 }
 
 // ---------------------------------------------------------------------------
@@ -366,9 +359,6 @@ pub struct ChannelDsp {
     iq_agc: Option<SoftAgc>,
     /// Soft AGC applied to all demodulated audio for consistent cross-mode levels.
     audio_agc: SoftAgc,
-    /// Optional high-passed detector path for the WFM limiter so bass does not
-    /// dominate gain reduction and smear treble.
-    limiter_sidechain: Option<(DcBlocker, DcBlocker)>,
     /// DC blocker for modes whose demodulator output can carry a DC offset
     /// (USB/LSB/AM/FM/DIG).  None for CW and WFM.
     audio_dc: Option<DcBlocker>,
@@ -450,11 +440,6 @@ impl ChannelDsp {
         }
         self.iq_agc = iq_agc_for_mode(&self.mode, channel_sample_rate);
         self.audio_agc = agc_for_mode(&self.mode, self.audio_sample_rate);
-        self.limiter_sidechain = if self.mode == RigMode::WFM {
-            wfm_limiter_sidechain()
-        } else {
-            None
-        };
         self.audio_dc = dc_for_mode(&self.mode);
         self.frame_buf.clear();
     }
@@ -542,11 +527,6 @@ impl ChannelDsp {
             },
             iq_agc: iq_agc_for_mode(mode, channel_sample_rate),
             audio_agc: agc_for_mode(mode, audio_sample_rate),
-            limiter_sidechain: if *mode == RigMode::WFM {
-                wfm_limiter_sidechain()
-            } else {
-                None
-            },
             audio_dc: dc_for_mode(mode),
         }
     }
@@ -701,44 +681,10 @@ impl ChannelDsp {
         // --- 4. Demodulate + post-process -----------------------------------
         // WFM: full composite decoder (handles its own DC blocks + deemphasis).
         // All other modes: stateless demodulator → DC blocker (where enabled) → AGC.
-        // WFM uses linked audio AGC after stereo decode; all other modes use
-        // the normal post-demod AGC path.
+        // WFM bypasses post-audio AGC so the deemphasized stereo path is
+        // heard directly; all other modes use the normal post-demod AGC path.
         let audio = if let Some(decoder) = self.wfm_decoder.as_mut() {
-            let mut out = decoder.process_iq(&decimated);
-            if !self.wfm_stereo && self.output_channels >= 2 {
-                for pair in out.chunks_exact_mut(2) {
-                    let detect = if let Some((left_sc, _)) = &mut self.limiter_sidechain {
-                        left_sc.process(pair[0]).abs()
-                    } else {
-                        pair[0].abs()
-                    };
-                    let mono = self.audio_agc.process_with_level(pair[0], detect);
-                    pair[0] = mono;
-                    pair[1] = mono;
-                }
-            } else if self.wfm_stereo && self.output_channels >= 2 {
-                for pair in out.chunks_exact_mut(2) {
-                    let detect = if let Some((left_sc, right_sc)) = &mut self.limiter_sidechain {
-                        left_sc.process(pair[0]).abs().max(right_sc.process(pair[1]).abs())
-                    } else {
-                        pair[0].abs().max(pair[1].abs())
-                    };
-                    let (left, right) =
-                        self.audio_agc.process_pair_with_level(pair[0], pair[1], detect);
-                    pair[0] = left;
-                    pair[1] = right;
-                }
-            } else {
-                for s in &mut out {
-                    let detect = if let Some((left_sc, _)) = &mut self.limiter_sidechain {
-                        left_sc.process(*s).abs()
-                    } else {
-                        s.abs()
-                    };
-                    *s = self.audio_agc.process_with_level(*s, detect);
-                }
-            }
-            out
+            decoder.process_iq(&decimated)
         } else {
             let mut raw = self.demodulator.demodulate(&decimated);
             for s in &mut raw {
