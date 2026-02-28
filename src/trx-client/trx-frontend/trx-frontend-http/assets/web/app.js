@@ -627,6 +627,16 @@ let overviewSignalTimer = null;
 let overviewWaterfallRows = [];
 const HEADER_SIG_WINDOW_MS = 10_000;
 
+// Offscreen waterfall cache — reused across frames to avoid full redraws
+let _wfOC = null;         // OffscreenCanvas
+let _wfOCPalKey = "";     // palette signature when offscreen was last built
+let _wfOCRowCount = 0;    // number of rows currently rendered into offscreen
+
+function _wfResetOffscreen() { _wfOC = null; _wfOCRowCount = 0; _wfOCPalKey = ""; }
+function _wfPalKey(pal) {
+  return `${pal.waterfallHue}|${pal.waterfallSat}|${pal.waterfallLight}|${pal.waterfallAlpha}`;
+}
+
 function resizeHeaderSignalCanvas() {
   if (!overviewCanvas) return;
   const cssW = Math.floor(overviewCanvas.clientWidth);
@@ -638,6 +648,7 @@ function resizeHeaderSignalCanvas() {
   if (overviewCanvas.width !== nextW || overviewCanvas.height !== nextH) {
     overviewCanvas.width = nextW;
     overviewCanvas.height = nextH;
+    _wfResetOffscreen();
     trimOverviewWaterfallRows();
   }
   drawHeaderSignalGraph();
@@ -721,24 +732,69 @@ function drawHeaderSignalGraph() {
   ctx.restore();
 }
 
-function drawOverviewWaterfall(ctx, w, h, pal) {
-  const rows = overviewWaterfallRows.slice(-Math.max(1, Math.floor(h)));
-  if (rows.length === 0) return;
-  const rowH = h / rows.length;
-  const columnStep = Math.max(1, Math.ceil(w / 320));
-  for (let rowIdx = 0; rowIdx < rows.length; rowIdx++) {
-    const bins = rows[rowIdx];
+function _wfDrawRows(oct, rows, startRowIdx, endRowIdx, iW, iH, pal) {
+  // Draw rows[startRowIdx..endRowIdx) into oct, positioned at the canvas bottom.
+  // rowH is computed relative to the total row count (all of `rows`).
+  const total = rows.length;
+  const rowH = iH / total;
+  const columnStep = Math.max(1, Math.ceil(iW / 320));
+  for (let ri = startRowIdx; ri < endRowIdx; ri++) {
+    const bins = rows[ri];
     if (!Array.isArray(bins) || bins.length === 0) continue;
     const { startIdx, endIdx } = overviewVisibleBinWindow(lastSpectrumData, bins.length);
     const spanBins = Math.max(1, endIdx - startIdx);
-    const y = h - (rows.length - rowIdx) * rowH;
-    for (let x = 0; x < w; x += columnStep) {
-      const frac = x / Math.max(1, w - 1);
+    const y = iH - (total - ri) * rowH;
+    for (let x = 0; x < iW; x += columnStep) {
+      const frac = x / Math.max(1, iW - 1);
       const binIdx = Math.min(endIdx, startIdx + Math.floor(frac * spanBins));
-      ctx.fillStyle = waterfallColor(bins[binIdx], pal);
-      ctx.fillRect(x, y, columnStep + 0.75, rowH + 1);
+      oct.fillStyle = waterfallColor(bins[binIdx], pal);
+      oct.fillRect(x, y, columnStep + 0.75, rowH + 1);
     }
   }
+}
+
+function drawOverviewWaterfall(ctx, w, h, pal) {
+  const maxVisible = Math.max(1, Math.floor(h));
+  const rows = overviewWaterfallRows.slice(-maxVisible);
+  if (rows.length === 0) return;
+
+  const iW = Math.ceil(w);
+  const iH = Math.ceil(h);
+  const palKey = _wfPalKey(pal);
+  const steadyState = rows.length >= maxVisible;
+
+  // Detect conditions that require a full redraw
+  const sizeChanged = !_wfOC || _wfOC.width !== iW || _wfOC.height !== iH;
+  const palChanged  = _wfOCPalKey !== palKey;
+  const rowsShrank  = rows.length < _wfOCRowCount;
+  const needsFull   = sizeChanged || palChanged || rowsShrank || _wfOCRowCount === 0;
+
+  if (sizeChanged || !_wfOC) {
+    _wfOC = new OffscreenCanvas(iW, iH);
+    _wfOCRowCount = 0;
+  }
+  const oct = _wfOC.getContext("2d");
+
+  if (needsFull) {
+    oct.clearRect(0, 0, iW, iH);
+    _wfDrawRows(oct, rows, 0, rows.length, iW, iH, pal);
+    _wfOCRowCount = rows.length;
+    _wfOCPalKey   = palKey;
+  } else if (steadyState && rows.length > _wfOCRowCount) {
+    // Steady state: scroll up and paint only the new rows at the bottom
+    const newCount = rows.length - _wfOCRowCount;
+    const rowH     = iH / rows.length;
+    const scrollPx = Math.round(newCount * rowH);
+    if (scrollPx > 0 && scrollPx < iH) {
+      const img = oct.getImageData(0, scrollPx, iW, iH - scrollPx);
+      oct.putImageData(img, 0, 0);
+      oct.clearRect(0, iH - scrollPx, iW, scrollPx);
+    }
+    _wfDrawRows(oct, rows, rows.length - newCount, rows.length, iW, iH, pal);
+    _wfOCRowCount = rows.length;
+  }
+
+  ctx.drawImage(_wfOC, 0, 0, w, h);
 }
 
 function drawOverviewSignalHistory(ctx, w, h, pal) {
@@ -2792,6 +2848,7 @@ function startSpectrumStreaming() {
     if (evt.data === "null") {
       lastSpectrumData = null;
       overviewWaterfallRows = [];
+      _wfResetOffscreen();
       scheduleOverviewDraw();
       clearSpectrumCanvas();
       updateRdsPsOverlay(null);
@@ -2826,6 +2883,7 @@ function stopSpectrumStreaming() {
   spectrumDrawPending = false;
   lastSpectrumData = null;
   overviewWaterfallRows = [];
+  _wfResetOffscreen();
   scheduleOverviewDraw();
   updateRdsPsOverlay(null);
   clearSpectrumCanvas();
