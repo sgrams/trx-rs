@@ -712,6 +712,7 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
         .service(select_rig)
         .service(crate::server::audio::audio_ws)
         .service(favicon)
+        .service(favicon_png)
         .service(logo)
         .service(style_css)
         .service(app_js)
@@ -734,6 +735,13 @@ async fn index() -> impl Responder {
 
 #[get("/favicon.ico")]
 async fn favicon() -> impl Responder {
+    HttpResponse::Ok()
+        .insert_header((header::CONTENT_TYPE, "image/png"))
+        .body(FAVICON_BYTES)
+}
+
+#[get("/favicon.png")]
+async fn favicon_png() -> impl Responder {
     HttpResponse::Ok()
         .insert_header((header::CONTENT_TYPE, "image/png"))
         .body(FAVICON_BYTES)
