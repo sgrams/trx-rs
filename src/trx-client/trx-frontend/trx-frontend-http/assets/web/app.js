@@ -926,6 +926,22 @@ function refreshFreqDisplay() {
   refreshWavelengthDisplay(lastFreqHz);
 }
 
+function applyLocalTunedFrequency(hz) {
+  if (!Number.isFinite(hz)) return;
+  lastFreqHz = hz;
+  refreshWavelengthDisplay(lastFreqHz);
+  if (!freqDirty) {
+    refreshFreqDisplay();
+  }
+  window.ft8BaseHz = lastFreqHz;
+  if (window.updateFt8RfDisplay) {
+    window.updateFt8RfDisplay();
+  }
+  if (lastSpectrumData) {
+    scheduleSpectrumDraw();
+  }
+}
+
 function refreshCenterFreqDisplay() {
   if (!centerFreqEl || !lastSpectrumData || centerFreqDirty) return;
   centerFreqEl.value = formatFreqForStep(lastSpectrumData.center_hz, jogStep);
@@ -1189,15 +1205,7 @@ function render(update) {
     }
   }
   if (update.status && update.status.freq && typeof update.status.freq.hz === "number") {
-    lastFreqHz = update.status.freq.hz;
-    refreshWavelengthDisplay(lastFreqHz);
-    if (!freqDirty) {
-      refreshFreqDisplay();
-    }
-    window.ft8BaseHz = update.status.freq.hz;
-    if (window.updateFt8RfDisplay) {
-      window.updateFt8RfDisplay();
-    }
+    applyLocalTunedFrequency(update.status.freq.hz);
   }
   if (update.status && update.status.mode) {
     const mode = normalizeMode(update.status.mode);
@@ -1610,6 +1618,7 @@ async function applyFreqFromInput() {
   showHint("Setting frequency…");
   try {
     await postPath(`/set_freq?hz=${parsed}`);
+    applyLocalTunedFrequency(parsed);
     showHint("Freq set", 1500);
   } catch (err) {
     showHint("Set freq failed", 2000);
@@ -1697,6 +1706,7 @@ async function jogFreq(direction) {
   showHint("Setting frequency…");
   try {
     await postPath(`/set_freq?hz=${newHz}`);
+    applyLocalTunedFrequency(newHz);
     showHint("Freq set", 1000);
   } catch (err) {
     showHint("Set freq failed", 2000);
@@ -3430,7 +3440,9 @@ if (spectrumCanvas) {
     const range = spectrumVisibleRange(lastSpectrumData);
     const targetHz = nearestSpectrumPeakHz(cssX, rect.width, lastSpectrumData)
       ?? Math.round(canvasXToHz(cssX, rect.width, range));
-    postPath(`/set_freq?hz=${targetHz}`).catch(() => {});
+    postPath(`/set_freq?hz=${targetHz}`)
+      .then(() => { applyLocalTunedFrequency(targetHz); })
+      .catch(() => {});
   });
 }
 
