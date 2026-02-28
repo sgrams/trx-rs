@@ -248,11 +248,11 @@ pub struct RigctlFrontendConfig {
     pub enabled: bool,
     /// Listen address
     pub listen: IpAddr,
-    /// Listen port (used for single-rig setups or as the fallback base port)
+    /// Legacy shared-listener port. Ignored; per-rig ports must be configured.
     pub port: u16,
-    /// Per-rig port overrides for multi-rig servers.
-    /// Maps rig ID → local rigctl port. When non-empty, one rigctl listener
-    /// is spawned per entry, each routing commands to its assigned rig.
+    /// Per-rig rigctl listener ports.
+    /// Maps rig ID -> local rigctl port. One rigctl listener is spawned per
+    /// entry, each routing commands to its assigned rig.
     pub rig_ports: HashMap<String, u16>,
 }
 
@@ -326,8 +326,22 @@ impl ClientConfig {
         if self.frontends.http.enabled && self.frontends.http.port == 0 {
             return Err("[frontends.http].port must be > 0 when enabled".to_string());
         }
-        if self.frontends.rigctl.enabled && self.frontends.rigctl.port == 0 {
-            return Err("[frontends.rigctl].port must be > 0 when enabled".to_string());
+        if self.frontends.rigctl.enabled && self.frontends.rigctl.rig_ports.is_empty() {
+            return Err(
+                "[frontends.rigctl].rig_ports must contain at least one rig when enabled"
+                    .to_string(),
+            );
+        }
+        for (rig_id, port) in &self.frontends.rigctl.rig_ports {
+            if rig_id.trim().is_empty() {
+                return Err("[frontends.rigctl].rig_ports keys must not be empty".to_string());
+            }
+            if *port == 0 {
+                return Err(format!(
+                    "[frontends.rigctl].rig_ports[\"{}\"] must be > 0",
+                    rig_id
+                ));
+            }
         }
         if self.frontends.audio.enabled && self.frontends.audio.server_port == 0 {
             return Err("[frontends.audio].server_port must be > 0 when enabled".to_string());

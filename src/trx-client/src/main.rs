@@ -337,8 +337,8 @@ async fn async_init() -> DynResult<AppState> {
     for frontend in &frontends {
         let frontend_state_rx = state_rx.clone();
 
-        // rigctl with per-rig port mapping: spawn one listener per rig entry.
-        if frontend == "rigctl" && !cfg.frontends.rigctl.rig_ports.is_empty() {
+        // rigctl: always spawn one listener per configured rig entry.
+        if frontend == "rigctl" {
             let mut first = true;
             for (rig_id, &port) in &cfg.frontends.rigctl.rig_ports {
                 let addr = SocketAddr::from((rigctl_listen, port));
@@ -378,17 +378,11 @@ async fn async_init() -> DynResult<AppState> {
 
         let addr = match frontend.as_str() {
             "http" => SocketAddr::from((http_listen, http_port)),
-            "rigctl" => SocketAddr::from((rigctl_listen, rigctl_port)),
             "httpjson" => SocketAddr::from((http_json_listen, http_json_port)),
             other => {
                 return Err(format!("Frontend missing listen configuration: {}", other).into());
             }
         };
-        if frontend == "rigctl" {
-            if let Ok(mut listen_addr) = frontend_runtime_ctx.rigctl_listen_addr.lock() {
-                *listen_addr = Some(addr);
-            }
-        }
         frontend_reg_ctx.spawn_frontend(
             frontend,
             frontend_state_rx,
