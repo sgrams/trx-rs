@@ -2529,6 +2529,7 @@ let txTimeoutInterval = null;
 const hasWebCodecs = typeof AudioDecoder !== "undefined" && typeof AudioEncoder !== "undefined";
 const MAX_RX_BUFFER_SECS = 0.25;
 const TARGET_RX_BUFFER_SECS = 0.04;
+const MIN_RX_JITTER_SAMPLES = 512;
 
 if (wfmAudioModeEl) {
   wfmAudioModeEl.value = loadSetting("wfmAudioMode", "stereo");
@@ -2666,10 +2667,16 @@ function startRxAudio() {
             src.buffer = ab;
             src.connect(rxGainNode);
             const now = audioCtx.currentTime;
+            const sampleRate = (streamInfo && streamInfo.sample_rate) || frame.sampleRate || 48000;
+            const minLeadSecs = Math.max(0, MIN_RX_JITTER_SAMPLES / Math.max(1, sampleRate));
+            const targetLeadSecs = Math.max(TARGET_RX_BUFFER_SECS, minLeadSecs);
             if (nextPlayTime && nextPlayTime - now > MAX_RX_BUFFER_SECS) {
-              nextPlayTime = now + TARGET_RX_BUFFER_SECS;
+              nextPlayTime = now + targetLeadSecs;
             }
-            const schedTime = Math.max(now, (nextPlayTime || now));
+            if (!nextPlayTime || nextPlayTime < now + minLeadSecs) {
+              nextPlayTime = now + targetLeadSecs;
+            }
+            const schedTime = nextPlayTime || (now + targetLeadSecs);
             src.start(schedTime);
             nextPlayTime = schedTime + ab.duration;
             frame.close();
@@ -3181,7 +3188,7 @@ function updateRdsPsOverlay(rds) {
     if (ps) {
       rdsPsOverlay.textContent = ps;
       positionRdsPsOverlay();
-      rdsPsOverlay.style.display = "";
+      rdsPsOverlay.style.display = "block";
     } else {
       rdsPsOverlay.style.display = "none";
     }
