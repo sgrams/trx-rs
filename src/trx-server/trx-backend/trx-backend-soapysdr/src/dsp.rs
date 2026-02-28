@@ -167,6 +167,57 @@ pub struct BlockFirFilter {
     ifft: Arc<dyn Fft<f32>>,
 }
 
+fn mul_freq_domain_scalar(buf: &mut [FftComplex<f32>], h_freq: &[FftComplex<f32>], scale: f32) {
+    for (x, &h) in buf.iter_mut().zip(h_freq.iter()) {
+        *x = FftComplex::new(
+            (x.re * h.re - x.im * h.im) * scale,
+            (x.re * h.im + x.im * h.re) * scale,
+        );
+    }
+}
+
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+#[target_feature(enable = "avx2")]
+unsafe fn mul_freq_domain_avx2(buf: &mut [FftComplex<f32>], h_freq: &[FftComplex<f32>], scale: f32) {
+    #[cfg(target_arch = "x86")]
+    use std::arch::x86::*;
+    #[cfg(target_arch = "x86_64")]
+    use std::arch::x86_64::*;
+
+    let len = buf.len().min(h_freq.len());
+    let mut i = 0usize;
+    let scale_v = _mm256_set1_ps(scale);
+    while i + 4 <= len {
+        let x_ptr = unsafe { buf.as_mut_ptr().add(i) as *mut f32 };
+        let h_ptr = unsafe { h_freq.as_ptr().add(i) as *const f32 };
+        let x_v = unsafe { _mm256_loadu_ps(x_ptr) };
+        let h_v = unsafe { _mm256_loadu_ps(h_ptr) };
+        let h_re = _mm256_moveldup_ps(h_v);
+        let h_im = _mm256_movehdup_ps(h_v);
+        let x_swapped = _mm256_permute_ps(x_v, 0xB1);
+        let prod = _mm256_addsub_ps(_mm256_mul_ps(x_v, h_re), _mm256_mul_ps(x_swapped, h_im));
+        let out = _mm256_mul_ps(prod, scale_v);
+        unsafe { _mm256_storeu_ps(x_ptr, out) };
+        i += 4;
+    }
+
+    mul_freq_domain_scalar(&mut buf[i..len], &h_freq[i..len], scale);
+}
+
+fn mul_freq_domain(buf: &mut [FftComplex<f32>], h_freq: &[FftComplex<f32>], scale: f32) {
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    {
+        if std::arch::is_x86_feature_detected!("avx2") {
+            unsafe {
+                mul_freq_domain_avx2(buf, h_freq, scale);
+            }
+            return;
+        }
+    }
+
+    mul_freq_domain_scalar(buf, h_freq, scale);
+}
+
 impl BlockFirFilter {
     /// Create a new `BlockFirFilter`.
     ///
@@ -224,12 +275,7 @@ impl BlockFirFilter {
         // Point-wise multiply with H(f); fold in the IFFT normalisation here
         // to avoid a second pass.
         let scale = 1.0 / self.fft_size as f32;
-        for (x, &h) in buf.iter_mut().zip(self.h_freq.iter()) {
-            *x = FftComplex::new(
-                (x.re * h.re - x.im * h.im) * scale,
-                (x.re * h.im + x.im * h.re) * scale,
-            );
-        }
+        mul_freq_domain(&mut buf, &self.h_freq, scale);
 
         // Inverse FFT.
         self.ifft.process(&mut buf);
