@@ -96,6 +96,7 @@ The following system libraries are required at build time:
 | Library | Purpose | Install |
 |---------|---------|---------|
 | **libopus** | Opus audio codec encoding/decoding | `zb install opus` (or your system package manager) |
+| **libsoapysdr** | Required for SoapySDR-based SDR backends | `zb install soapysdr` (or your system package manager) |
 | **cmake** | Required by the `audiopus_sys` build script if libopus is not found via pkg-config | `zb install cmake` |
 | **pkg-config** / **pkgconf** | Locates system libopus during build | `zb install pkgconf` |
 | **Core Audio** (macOS) / **ALSA** (Linux) | Audio device access via cpal | Provided by the OS (macOS) or `alsa-lib-dev` (Linux) |
