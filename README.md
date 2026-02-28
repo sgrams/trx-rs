@@ -10,6 +10,24 @@ A modular transceiver control stack with configurable backends and frontends. Th
 
 Configuration reference: see `CONFIGURATION.md` for all server/client options and defaults.
 
+## Configuration Files
+
+`trx-server` and `trx-client` now support a shared `trx-rs.toml` as well as the legacy per-binary files.
+
+- Default search order for each app:
+  current directory, then `~/.config/trx-rs`, then `/etc/trx-rs`
+- At each location, the loader checks:
+  `trx-rs.toml` first (`[trx-server]` or `[trx-client]` section), then the legacy flat file
+- Combined file names:
+  `trx-rs.toml`
+- Legacy flat file names:
+  `trx-server.toml` in the current directory, `server.toml` under XDG/`/etc`
+  `trx-client.toml` in the current directory, `client.toml` under XDG/`/etc`
+- `--config <FILE>` still loads an explicit file path. If that file contains a `[trx-server]` or `[trx-client]` section, only that section is used; otherwise the whole file is parsed as the legacy flat format.
+- `--print-config` prints an example combined config block suitable for `trx-rs.toml`.
+
+See `trx-rs.toml.example` for a complete combined example.
+
 ## Supported backends
 
 - Yaesu FT-817 (feature-gated crate `trx-backend-ft817`)
@@ -32,10 +50,11 @@ Authentication is disabled by default for backward compatibility. When enabled, 
 
 ### Configuration
 
-Enable authentication in `trx-client.toml`:
+In a combined `trx-rs.toml`, enable authentication under `[trx-client.frontends.http.auth]`.
+If you use a legacy `trx-client.toml`, use the same keys under `[frontends.http.auth]`.
 
 ```toml
-[frontends.http.auth]
+[trx-client.frontends.http.auth]
 enabled = true
 rx_passphrase = "read-only-secret"
 control_passphrase = "full-control-secret"
