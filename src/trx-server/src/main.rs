@@ -870,6 +870,8 @@ async fn main() -> DynResult<()> {
         }));
 
         // Spawn audio stack.
+        // listen_override priority: --listen CLI flag > global [audio].listen > per-rig default.
+        let audio_listen_override = cli.listen.or(Some(cfg.audio.listen));
         let audio_handles = spawn_rig_audio_stack(
             rig_cfg,
             state_rx.clone(),
@@ -878,7 +880,7 @@ async fn main() -> DynResult<()> {
             callsign.clone(),
             latitude,
             longitude,
-            cli.listen,
+            audio_listen_override,
             sdr_pcm_rx,
         );
         task_handles.extend(audio_handles);
