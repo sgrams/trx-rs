@@ -3265,10 +3265,18 @@ function updateRdsPsOverlay(rds) {
   // Overview strip overlay
   if (rdsPsOverlay) {
     const ps = rds?.program_service;
-    if (ps && ps.length > 0) {
+    const hasPs = !!(ps && ps.length > 0);
+    const hasPi = rds?.pi != null;
+    if (hasPs || hasPi) {
+      const mainText = hasPs
+        ? formatOverlayPs(ps)
+        : formatOverlayPi(rds?.pi);
+      const metaText = hasPs
+        ? `${formatOverlayPi(rds?.pi)} · ${formatOverlayPty(rds?.pty, rds?.pty_name)}`
+        : (rds?.pty_name ?? (rds?.pty != null ? String(rds.pty) : ""));
       rdsPsOverlay.innerHTML =
-        `<span class="rds-ps-main">${escapeMapHtml(formatOverlayPs(ps))}</span>` +
-        `<span class="rds-ps-meta">${escapeMapHtml(formatOverlayPi(rds?.pi))} · ${escapeMapHtml(formatOverlayPty(rds?.pty, rds?.pty_name))}</span>`;
+        `<span class="rds-ps-main">${escapeMapHtml(mainText)}</span>` +
+        `<span class="rds-ps-meta">${escapeMapHtml(metaText)}</span>`;
       positionRdsPsOverlay();
       rdsPsOverlay.style.display = "flex";
     } else {
