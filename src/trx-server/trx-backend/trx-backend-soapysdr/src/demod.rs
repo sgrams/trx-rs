@@ -28,18 +28,65 @@ const PILOT_BPF_Q: f32 = 20.0;
 const STEREO_SEPARATION_PHASE_TRIM: f32 = 0.012;
 /// Fixed gain trim on the recovered L-R channel.
 const STEREO_SEPARATION_GAIN: f32 = 1.006;
+/// Fractional-resampler FIR taps for WFM audio reconstruction.
+const WFM_RESAMP_TAPS: usize = 6;
+/// Polyphase slots for the WFM fractional FIR resampler.
+const WFM_RESAMP_PHASES: usize = 32;
+/// Slightly sub-Nyquist sinc cutoff to tame top-end imaging.
+const WFM_RESAMP_CUTOFF: f32 = 0.94;
 
-/// 4-point Hermite cubic interpolation.
-///
-/// `y` contains `[y_{n-1}, y_n, y_{n+1}, y_{n+2}]`; `frac` in `[0, 1)`
-/// positions the output within the `y_n`–`y_{n+1}` interval.
+fn build_wfm_resample_bank() -> [[f32; WFM_RESAMP_TAPS]; WFM_RESAMP_PHASES] {
+    let mut bank = [[0.0; WFM_RESAMP_TAPS]; WFM_RESAMP_PHASES];
+    let anchor = (WFM_RESAMP_TAPS / 2 - 1) as f32;
+    for (phase_idx, phase) in bank.iter_mut().enumerate() {
+        let frac = phase_idx as f32 / WFM_RESAMP_PHASES as f32;
+        let center = anchor + frac;
+        let mut sum = 0.0_f32;
+        for (tap_idx, coeff) in phase.iter_mut().enumerate() {
+            let x = tap_idx as f32 - center;
+            let sinc = if x.abs() < 1e-6 {
+                WFM_RESAMP_CUTOFF
+            } else {
+                let arg = std::f32::consts::PI * x * WFM_RESAMP_CUTOFF;
+                arg.sin() / (std::f32::consts::PI * x)
+            };
+            let window = if WFM_RESAMP_TAPS == 1 {
+                1.0
+            } else {
+                let pos = tap_idx as f32 / (WFM_RESAMP_TAPS - 1) as f32;
+                0.5 - 0.5 * (2.0 * std::f32::consts::PI * pos).cos()
+            };
+            *coeff = sinc * window;
+            sum += *coeff;
+        }
+        if sum.abs() > 1e-9 {
+            let inv = 1.0 / sum;
+            for coeff in phase.iter_mut() {
+                *coeff *= inv;
+            }
+        }
+    }
+    bank
+}
+
 #[inline]
-fn hermite4(y: &[f32; 4], frac: f32) -> f32 {
-    let c0 = y[1];
-    let c1 = 0.5 * (y[2] - y[0]);
-    let c2 = y[0] - 2.5 * y[1] + 2.0 * y[2] - 0.5 * y[3];
-    let c3 = 0.5 * (y[3] - y[0]) + 1.5 * (y[1] - y[2]);
-    ((c3 * frac + c2) * frac + c1) * frac + c0
+fn shift_append<const N: usize>(hist: &mut [f32; N], sample: f32) {
+    hist.rotate_left(1);
+    hist[N - 1] = sample;
+}
+
+#[inline]
+fn polyphase_resample(
+    hist: &[f32; WFM_RESAMP_TAPS],
+    bank: &[[f32; WFM_RESAMP_TAPS]; WFM_RESAMP_PHASES],
+    frac: f32,
+) -> f32 {
+    let phase = (frac.clamp(0.0, 0.999_999) * WFM_RESAMP_PHASES as f32).round() as usize;
+    let phase = phase.min(WFM_RESAMP_PHASES - 1);
+    hist.iter()
+        .zip(bank[phase].iter())
+        .map(|(x, c)| x * c)
+        .sum()
 }
 
 #[derive(Debug, Clone)]
@@ -382,15 +429,16 @@ pub struct WfmStereoDecoder {
     /// For standard WFM ±75 kHz deviation we want ±1.0 at full deviation,
     /// so `fm_gain = fs / (2 · 75_000)`.
     fm_gain: f32,
-    /// History ring for 4-point Hermite cubic interpolation of sum channel.
-    /// Layout: [n-3, n-2, n-1, n] — oldest first.
-    sum_hist: [f32; 4],
-    /// History ring for 4-point Hermite cubic interpolation of diff channel.
-    diff_hist: [f32; 4],
-    /// History ring for 4-point Hermite cubic interpolation of quadrature diff channel.
-    diff_q_hist: [f32; 4],
-    /// History ring for 4-point Hermite cubic interpolation of pilot blend.
-    blend_hist: [f32; 4],
+    /// Shared coefficient bank for the polyphase fractional audio resampler.
+    resample_bank: [[f32; WFM_RESAMP_TAPS]; WFM_RESAMP_PHASES],
+    /// History ring for polyphase FIR resampling of the sum channel.
+    sum_hist: [f32; WFM_RESAMP_TAPS],
+    /// History ring for polyphase FIR resampling of the diff channel.
+    diff_hist: [f32; WFM_RESAMP_TAPS],
+    /// History ring for polyphase FIR resampling of the quadrature diff channel.
+    diff_q_hist: [f32; WFM_RESAMP_TAPS],
+    /// Previous pilot blend sample for simple linear interpolation.
+    prev_blend: f32,
     /// Fractional phase increment per composite sample = audio_rate / composite_rate.
     /// Avoids integer-division rate error when composite_rate is not an exact
     /// multiple of audio_rate (e.g. 250 kHz composite → 48 kHz audio).
@@ -441,10 +489,11 @@ impl WfmStereoDecoder {
             stereo_detect_level: 0.0,
             stereo_detected: false,
             fm_gain: composite_rate_f / (2.0 * 75_000.0),
-            sum_hist: [0.0; 4],
-            diff_hist: [0.0; 4],
-            diff_q_hist: [0.0; 4],
-            blend_hist: [0.0; 4],
+            resample_bank: build_wfm_resample_bank(),
+            sum_hist: [0.0; WFM_RESAMP_TAPS],
+            diff_hist: [0.0; WFM_RESAMP_TAPS],
+            diff_q_hist: [0.0; WFM_RESAMP_TAPS],
+            prev_blend: 0.0,
             output_phase_inc,
             output_phase: 0.0,
         }
@@ -516,35 +565,30 @@ impl WfmStereoDecoder {
                 .diff_q_lpf2
                 .process(self.diff_q_lpf1.process(x * (-sin_2p * 2.0)));
 
-            // --- 4-point Hermite cubic interpolation resampling ---
-            // Shift history rings: drop oldest, append current sample.
-            // Layout after shift: [n-3, n-2, n-1, n].
-            // Hermite interpolates between hist[1] and hist[2] using hist[0]
-            // and hist[3] as outer control points — one composite sample of
-            // latency relative to linear interpolation (<5 µs at 240 kHz).
-            self.sum_hist.rotate_left(1);
-            self.sum_hist[3] = sum;
-            self.diff_hist.rotate_left(1);
-            self.diff_hist[3] = diff_i;
-            self.diff_q_hist.rotate_left(1);
-            self.diff_q_hist[3] = diff_q;
-            self.blend_hist.rotate_left(1);
-            self.blend_hist[3] = stereo_blend;
+            // --- Polyphase FIR fractional resampling ---
+            // This uses a short windowed-sinc bank instead of cubic interpolation
+            // to reduce top-end overshoot/ringing near the audio cutoff.
+            shift_append(&mut self.sum_hist, sum);
+            shift_append(&mut self.diff_hist, diff_i);
+            shift_append(&mut self.diff_q_hist, diff_q);
 
             let prev_phase = self.output_phase;
             self.output_phase += self.output_phase_inc;
             if self.output_phase < 1.0 {
+                self.prev_blend = stereo_blend;
                 continue;
             }
             self.output_phase -= 1.0;
 
-            // `frac` positions the output sample within the hist[1]–hist[2]
-            // interval of the 4-point Hermite window.
+            // `frac` positions the output sample within the current fractional
+            // interval. The FIR bank reconstructs a band-limited sample using
+            // a fixed two-sample lookahead in the decoder.
             let frac = ((1.0 - prev_phase) / self.output_phase_inc) as f32;
-            let sum_i = hermite4(&self.sum_hist, frac);
-            let diff_i = hermite4(&self.diff_hist, frac);
-            let diff_q = hermite4(&self.diff_q_hist, frac);
-            let blend_i = hermite4(&self.blend_hist, frac).clamp(0.0, 1.0);
+            let sum_i = polyphase_resample(&self.sum_hist, &self.resample_bank, frac);
+            let diff_i = polyphase_resample(&self.diff_hist, &self.resample_bank, frac);
+            let diff_q = polyphase_resample(&self.diff_q_hist, &self.resample_bank, frac);
+            let blend_i = (self.prev_blend + frac * (stereo_blend - self.prev_blend)).clamp(0.0, 1.0);
+            self.prev_blend = stereo_blend;
             let (trim_sin, trim_cos) = STEREO_SEPARATION_PHASE_TRIM.sin_cos();
             let diff_i = (diff_i * trim_cos + diff_q * trim_sin) * STEREO_SEPARATION_GAIN;
 
