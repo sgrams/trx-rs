@@ -269,14 +269,13 @@ fn agc_for_mode(mode: &RigMode, audio_sample_rate: u32) -> SoftAgc {
 
 /// Build the DC blocker for a given mode, or `None` if not applicable.
 ///
-/// CW and WFM are excluded: CW envelope is always non-negative (DC blocking
-/// would create negative artifacts on key releases), and WFM has its own
-/// internal DC blockers on each output channel.
-/// AM uses a slightly faster blocker (r = 0.999, corner ≈ 7.6 Hz @ 48 kHz)
-/// so it can track slow carrier-amplitude fading.
+/// WFM is excluded because it has its own internal DC blockers on each output
+/// channel.  AM uses a slightly faster blocker (r = 0.999, corner ≈ 7.6 Hz
+/// @ 48 kHz) so it can track slow carrier-amplitude fading.  All other modes
+/// (including CW, which now demodulates as USB) use r = 0.9999 (≈ 0.76 Hz).
 fn dc_for_mode(mode: &RigMode) -> Option<DcBlocker> {
     match mode {
-        RigMode::CW | RigMode::CWR | RigMode::WFM => None,
+        RigMode::WFM => None,
         RigMode::AM => Some(DcBlocker::new(0.999)),
         _ => Some(DcBlocker::new(0.9999)),
     }

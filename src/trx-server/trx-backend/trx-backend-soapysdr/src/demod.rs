@@ -577,17 +577,14 @@ fn demod_fm(samples: &[Complex<f32>]) -> Vec<f32> {
 // CW
 // ---------------------------------------------------------------------------
 
-/// CW envelope detector: magnitude of IQ.
+/// CW demodulator: take the real part of each baseband IQ sample.
 ///
-/// Returns the raw envelope amplitude.  Level normalisation is handled
-/// downstream by the per-channel AGC.  No DC blocker is applied to CW because
-/// the envelope is always non-negative; high-pass filtering would create
-/// negative-going artifacts on each key release.
+/// The upstream FIR filter centres the CW carrier at the configured audio
+/// offset (e.g. 700 Hz), so demodulating identically to USB produces the
+/// characteristic CW side-tone.  Level normalisation is handled downstream
+/// by the per-channel AGC.
 fn demod_cw(samples: &[Complex<f32>]) -> Vec<f32> {
-    samples
-        .iter()
-        .map(|s| (s.re * s.re + s.im * s.im).sqrt())
-        .collect()
+    samples.iter().map(|s| s.re).collect()
 }
 
 // ---------------------------------------------------------------------------
@@ -705,18 +702,17 @@ mod tests {
         }
     }
 
-    // Test 7: CW envelope detector returns raw magnitudes.
-    // Normalisation is handled downstream by the AGC.
+    // Test 7: CW demodulator returns the real part (same as USB).
     #[test]
-    fn test_cw_raw_magnitude() {
+    fn test_cw_takes_real_part() {
         let input = vec![
-            Complex::new(3.0_f32, 4.0), // magnitude 5.0
-            Complex::new(0.0, 0.0),     // magnitude 0.0
-            Complex::new(1.0, 0.0),     // magnitude 1.0
+            Complex::new(3.0_f32, 4.0),
+            Complex::new(0.0, 0.0),
+            Complex::new(1.0, 0.0),
         ];
         let out = Demodulator::Cw.demodulate(&input);
         assert_eq!(out.len(), 3);
-        assert_approx_eq(out[0], 5.0, 1e-6, "CW sample 0");
+        assert_approx_eq(out[0], 3.0, 1e-6, "CW sample 0");
         assert_approx_eq(out[1], 0.0, 1e-6, "CW sample 1");
         assert_approx_eq(out[2], 1.0, 1e-6, "CW sample 2");
     }
