@@ -229,7 +229,6 @@ async fn async_init() -> DynResult<AppState> {
     let http_listen = cli.http_listen.unwrap_or(cfg.frontends.http.listen);
     let http_port = cli.http_port.unwrap_or(cfg.frontends.http.port);
     let rigctl_listen = cli.rigctl_listen.unwrap_or(cfg.frontends.rigctl.listen);
-    let rigctl_port = cli.rigctl_port.unwrap_or(cfg.frontends.rigctl.port);
     let http_json_listen = cli
         .http_json_listen
         .unwrap_or(cfg.frontends.http_json.listen);
