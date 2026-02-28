@@ -332,6 +332,7 @@ const headerRigSwitchSelect = document.getElementById("header-rig-switch-select"
 const headerStylePickSelect = document.getElementById("header-style-pick-select");
 let overviewPeakHoldMs = Number(loadSetting("overviewPeakHoldMs", 2000));
 
+let overviewDrawPending = false;
 let lastControl;
 let lastTxEn = null;
 let lastHasTx = true;
@@ -622,7 +623,6 @@ let reconnectTimer = null;
 let overviewSignalSamples = [];
 let overviewSignalTimer = null;
 let overviewWaterfallRows = [];
-let overviewDrawPending = false;
 const HEADER_SIG_WINDOW_MS = 10_000;
 
 function resizeHeaderSignalCanvas() {
