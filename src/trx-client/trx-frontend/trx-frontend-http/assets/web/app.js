@@ -366,9 +366,10 @@ let sigMeasurePeak = null;
 let lastFreqHz = null;
 let centerFreqDirty = false;
 let jogUnit = loadSetting("jogUnit", 1000);   // base unit: 1, 1000, 1000000
-let jogMult = loadSetting("jogMult", 1);      // multiplier: 1, 10, 100
-let jogStep = Math.max(jogUnit * jogMult, 1);
+let jogMult = loadSetting("jogMult", 1);      // divisor: 1, 10, 100
+let jogStep = Math.max(Math.round(jogUnit / jogMult), 1);
 let minFreqStepHz = 1;
+let lastModeName = "";
 const VFO_COLORS = ["var(--accent-green)", "var(--accent-yellow)"];
 function vfoColor(idx) {
   if (idx < VFO_COLORS.length) return VFO_COLORS[idx];
@@ -1053,7 +1054,7 @@ function updateJogStepSupport(cap) {
     Number.isFinite(current) && current >= minFreqStepHz ? current : Math.max(steps[0], minFreqStepHz);
 
   jogUnit = steps.reduce((best, s) => (Math.abs(s - desired) < Math.abs(best - desired) ? s : best), steps[0]);
-  jogStep = Math.max(jogUnit * jogMult, minFreqStepHz);
+  jogStep = Math.max(Math.round(jogUnit / jogMult), minFreqStepHz);
   saveSetting("jogUnit", jogUnit);
   saveSetting("jogStep", jogStep);
 
@@ -1240,7 +1241,12 @@ function render(update) {
   }
   if (update.status && update.status.mode) {
     const mode = normalizeMode(update.status.mode);
-    modeEl.value = mode ? mode.toUpperCase() : "";
+    const modeUpper = mode ? mode.toUpperCase() : "";
+    modeEl.value = modeUpper;
+    if (modeUpper === "WFM" && lastModeName !== "WFM") {
+      setJogDivisor(10);
+    }
+    lastModeName = modeUpper;
     updateWfmControls();
     // When filter panel is active (SDR backend), update the BW slider range
     // to match the new mode — but only if the server hasn't already sent a
@@ -1716,12 +1722,23 @@ const jogStepEl = document.getElementById("jog-step");
 const jogMultEl = document.getElementById("jog-mult");
 
 function applyJogStep() {
-  jogStep = Math.max(jogUnit * jogMult, minFreqStepHz);
+  jogStep = Math.max(Math.round(jogUnit / jogMult), minFreqStepHz);
   saveSetting("jogUnit", jogUnit);
   saveSetting("jogMult", jogMult);
   saveSetting("jogStep", jogStep);
   refreshFreqDisplay();
   refreshCenterFreqDisplay();
+}
+
+function setJogDivisor(divisor) {
+  const next = divisor === 10 || divisor === 100 ? divisor : 1;
+  jogMult = next;
+  if (jogMultEl) {
+    jogMultEl.querySelectorAll("button[data-mult]").forEach((b) => {
+      b.classList.toggle("active", parseInt(b.dataset.mult, 10) === jogMult);
+    });
+  }
+  applyJogStep();
 }
 
 async function jogFreq(direction) {
@@ -1835,7 +1852,7 @@ if (jogMultEl) {
       multBtns.forEach((b) => b.classList.toggle("active", b === activeMult));
     }
   }
-  jogStep = Math.max(jogUnit * jogMult, minFreqStepHz);
+  jogStep = Math.max(Math.round(jogUnit / jogMult), minFreqStepHz);
 }
 
 async function applyModeFromPicker() {
@@ -1850,6 +1867,9 @@ async function applyModeFromPicker() {
   try {
     await postPath(`/set_mode?mode=${encodeURIComponent(mode)}`);
     showHint("Mode set", 1500);
+    if (mode.toUpperCase() === "WFM") {
+      setJogDivisor(10);
+    }
     // Apply sensible default bandwidth for the new mode and push to server.
     await applyBwDefaultForMode(mode, true);
   } catch (err) {

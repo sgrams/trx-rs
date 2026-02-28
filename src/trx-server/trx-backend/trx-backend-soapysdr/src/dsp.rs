@@ -332,8 +332,8 @@ impl ChannelDsp {
         (decim_factor, channel_sample_rate)
     }
 
-    fn rebuild_filters(&mut self) {
-        let (_, channel_sample_rate) = Self::pipeline_rates(
+    fn rebuild_filters(&mut self, reset_wfm_decoder: bool) {
+        let (next_decim_factor, channel_sample_rate) = Self::pipeline_rates(
             &self.mode,
             self.sdr_sample_rate,
             self.audio_sample_rate,
@@ -354,13 +354,8 @@ impl ChannelDsp {
         };
         self.lpf_i = BlockFirFilter::new(cutoff_norm, self.fir_taps, IQ_BLOCK_SIZE);
         self.lpf_q = BlockFirFilter::new(cutoff_norm, self.fir_taps, IQ_BLOCK_SIZE);
-        self.decim_factor = Self::pipeline_rates(
-            &self.mode,
-            self.sdr_sample_rate,
-            self.audio_sample_rate,
-            self.audio_bandwidth_hz,
-        )
-        .0;
+        let rate_changed = self.decim_factor != next_decim_factor;
+        self.decim_factor = next_decim_factor;
         self.decim_counter = 0;
         self.resample_phase = 0.0;
         self.resample_phase_inc = if self.sdr_sample_rate == 0 {
@@ -368,16 +363,18 @@ impl ChannelDsp {
         } else {
             self.audio_sample_rate as f64 / self.sdr_sample_rate as f64
         };
-        self.wfm_decoder = if self.mode == RigMode::WFM {
-            Some(WfmStereoDecoder::new(
-                channel_sample_rate,
-                self.audio_sample_rate,
-                self.output_channels,
-                self.wfm_deemphasis_us,
-            ))
+        if self.mode == RigMode::WFM {
+            if reset_wfm_decoder || rate_changed || self.wfm_decoder.is_none() {
+                self.wfm_decoder = Some(WfmStereoDecoder::new(
+                    channel_sample_rate,
+                    self.audio_sample_rate,
+                    self.output_channels,
+                    self.wfm_deemphasis_us,
+                ));
+            }
         } else {
-            None
-        };
+            self.wfm_decoder = None;
+        }
         self.frame_buf.clear();
     }
 
@@ -466,7 +463,7 @@ impl ChannelDsp {
         self.mode = mode.clone();
         self.audio_bandwidth_hz = default_bandwidth_for_mode(mode);
         self.demodulator = Demodulator::for_mode(mode);
-        self.rebuild_filters();
+        self.rebuild_filters(true);
     }
 }
 
@@ -490,12 +487,12 @@ impl ChannelDsp {
     pub fn set_filter(&mut self, bandwidth_hz: u32, taps: usize) {
         self.audio_bandwidth_hz = bandwidth_hz;
         self.fir_taps = taps.max(1);
-        self.rebuild_filters();
+        self.rebuild_filters(false);
     }
 
     pub fn set_wfm_deemphasis(&mut self, deemphasis_us: u32) {
         self.wfm_deemphasis_us = deemphasis_us;
-        self.rebuild_filters();
+        self.rebuild_filters(true);
     }
 
     pub fn rds_data(&self) -> Option<RdsData> {
