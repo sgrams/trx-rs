@@ -18,7 +18,7 @@ const AUDIO_BW_HZ: f32 = 15_800.0;
 /// Stereo L-R subchannel bandwidth for WFM (Hz).
 /// Keep this a bit lower than the mono path because the recovered difference
 /// signal is noisier and more prone to high-frequency artifacts.
-const STEREO_DIFF_BW_HZ: f32 = 13_500.0;
+const STEREO_DIFF_BW_HZ: f32 = 14_500.0;
 /// Q values for a proper 4th-order Butterworth cascade (two 2nd-order stages).
 /// Stage 1: Q = 1 / (2 cos(π/8))
 const BW4_Q1: f32 = 0.5412;
@@ -29,7 +29,7 @@ const PILOT_NOTCH_Q: f32 = 5.0;
 /// Narrow 19 kHz band-pass used to derive zero-crossings for switching stereo demod.
 const PILOT_BPF_Q: f32 = 20.0;
 /// Fixed phase trim on the recovered L-R channel to compensate pilot-path delay.
-const STEREO_SEPARATION_PHASE_TRIM: f32 = 0.012;
+const STEREO_SEPARATION_PHASE_TRIM: f32 = 0.015;
 /// Fixed gain trim on the recovered L-R channel.
 const STEREO_SEPARATION_GAIN: f32 = 1.006;
 /// Extra headroom in the stereo matrix to reduce stereo-only clipping/IMD on
