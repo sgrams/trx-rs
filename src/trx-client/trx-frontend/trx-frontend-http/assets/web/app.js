@@ -3264,6 +3264,23 @@ function formatRdsAudio(value) {
   return value ? "Music" : "Speech";
 }
 
+function formatMinuteTimestamp(date = new Date()) {
+  const yyyy = date.getFullYear();
+  const mm = String(date.getMonth() + 1).padStart(2, "0");
+  const dd = String(date.getDate()).padStart(2, "0");
+  const hh = String(date.getHours()).padStart(2, "0");
+  const min = String(date.getMinutes()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd} ${hh}:${min}`;
+}
+
+function buildRdsRawPayload(rds) {
+  return {
+    time: formatMinuteTimestamp(),
+    freq_hz: Number.isFinite(lastFreqHz) ? Math.round(lastFreqHz) : null,
+    ...rds,
+  };
+}
+
 async function copyRdsPsToClipboard() {
   const rds = lastSpectrumData?.rds;
   const ps = rds?.program_service;
@@ -3271,18 +3288,12 @@ async function copyRdsPsToClipboard() {
     showHint("No RDS PS", 1200);
     return;
   }
-  const now = new Date();
-  const yyyy = now.getFullYear();
-  const mm = String(now.getMonth() + 1).padStart(2, "0");
-  const dd = String(now.getDate()).padStart(2, "0");
-  const hh = String(now.getHours()).padStart(2, "0");
-  const min = String(now.getMinutes()).padStart(2, "0");
   const freqMhz = Number.isFinite(lastFreqHz) ? (Math.round((lastFreqHz / 100_000)) / 10).toFixed(1) : "--.-";
   const piHex = rds.pi != null
     ? `0x${rds.pi.toString(16).toUpperCase().padStart(4, "0")}`
     : "--";
   const clipPs = formatOverlayPs(ps);
-  const clipText = `${yyyy}-${mm}-${dd} ${hh}:${min} - ${freqMhz} MHz - ${piHex} - ${clipPs}`;
+  const clipText = `${formatMinuteTimestamp()} - ${freqMhz} MHz - ${piHex} - ${clipPs}`;
   try {
     await navigator.clipboard.writeText(clipText);
     showHint("RDS copied", 1200);
@@ -3393,7 +3404,11 @@ function updateRdsPsOverlay(rds) {
     if (rtEl) rtEl.textContent = "--";
     if (rawEl && lastSpectrumData) {
       const { bins: _b, ...rest } = lastSpectrumData;
-      rawEl.textContent = JSON.stringify(rest, null, 2);
+      rawEl.textContent = JSON.stringify({
+        time: formatMinuteTimestamp(),
+        freq_hz: Number.isFinite(lastFreqHz) ? Math.round(lastFreqHz) : null,
+        ...rest,
+      }, null, 2);
     }
     return;
   }
@@ -3413,7 +3428,7 @@ function updateRdsPsOverlay(rds) {
   if (headEl) headEl.textContent = formatRdsFlag(rds.artificial_head);
   if (dynPtyEl) dynPtyEl.textContent = formatRdsFlag(rds.dynamic_pty);
   if (rtEl) rtEl.textContent = rds.radio_text ?? "--";
-  rawEl.textContent = JSON.stringify(rds, null, 2);
+  rawEl.textContent = JSON.stringify(buildRdsRawPayload(rds), null, 2);
 }
 
 function scheduleSpectrumDraw() {
