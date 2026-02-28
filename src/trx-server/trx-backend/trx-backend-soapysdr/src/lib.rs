@@ -279,7 +279,7 @@ impl RigCat for SoapySdrRig {
                 let mut dsp = dsp_arc.lock().unwrap();
                 dsp.set_channel_if_hz(channel_if_hz);
                 if freq_changed {
-                    dsp.reset_rds();
+                    dsp.reset_wfm_state();
                 }
             }
             Ok(())

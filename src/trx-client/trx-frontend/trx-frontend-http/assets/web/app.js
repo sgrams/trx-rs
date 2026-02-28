@@ -964,11 +964,19 @@ function resetRdsDisplay() {
   updateRdsPsOverlay(null);
 }
 
+function resetWfmStereoIndicator() {
+  if (!wfmStFlagEl) return;
+  wfmStFlagEl.textContent = "MO";
+  wfmStFlagEl.classList.remove("wfm-st-flag-stereo");
+  wfmStFlagEl.classList.add("wfm-st-flag-mono");
+}
+
 function applyLocalTunedFrequency(hz, forceDisplay = false) {
   if (!Number.isFinite(hz)) return;
   const freqChanged = lastFreqHz !== hz;
   if (freqChanged) {
     resetRdsDisplay();
+    resetWfmStereoIndicator();
   }
   lastFreqHz = hz;
   updateDocumentTitle(lastSpectrumData?.rds ?? null);

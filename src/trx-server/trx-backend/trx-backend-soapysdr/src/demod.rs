@@ -23,8 +23,6 @@ const BW4_Q1: f32 = 0.5412;
 const BW4_Q2: f32 = 1.3066;
 /// Q for the 19 kHz pilot notch (~3.8 kHz 3 dB bandwidth).
 const PILOT_NOTCH_Q: f32 = 5.0;
-/// Tighter post-matrix stereo notch for suppressing residual pilot leakage.
-const STEREO_PILOT_NOTCH_Q: f32 = 12.0;
 /// Narrow 19 kHz band-pass used to derive zero-crossings for switching stereo demod.
 const PILOT_BPF_Q: f32 = 20.0;
 /// Fixed phase trim on the recovered L-R channel to compensate pilot-path delay.
@@ -362,9 +360,6 @@ pub struct WfmStereoDecoder {
     dc_m: DcBlocker,
     dc_l: DcBlocker,
     dc_r: DcBlocker,
-    /// Post-matrix pilot notches for stereo outputs.
-    pilot_notch_l: BiquadNotch,
-    pilot_notch_r: BiquadNotch,
     deemph_m: Deemphasis,
     deemph_l: Deemphasis,
     deemph_r: Deemphasis,
@@ -431,8 +426,6 @@ impl WfmStereoDecoder {
             dc_m: DcBlocker::new(0.9999),
             dc_l: DcBlocker::new(0.9999),
             dc_r: DcBlocker::new(0.9999),
-            pilot_notch_l: BiquadNotch::new(audio_rate.max(1) as f32, PILOT_HZ, STEREO_PILOT_NOTCH_Q),
-            pilot_notch_r: BiquadNotch::new(audio_rate.max(1) as f32, PILOT_HZ, STEREO_PILOT_NOTCH_Q),
             deemph_m: Deemphasis::new(audio_rate.max(1) as f32, deemphasis_us),
             deemph_l: Deemphasis::new(audio_rate.max(1) as f32, deemphasis_us),
             deemph_r: Deemphasis::new(audio_rate.max(1) as f32, deemphasis_us),
@@ -553,11 +546,11 @@ impl WfmStereoDecoder {
                 let right_corr = (sum_i - diff) * 0.5;
                 let left = self
                     .dc_l
-                    .process(self.pilot_notch_l.process(self.deemph_l.process(left_corr)))
+                    .process(self.deemph_l.process(left_corr))
                     .clamp(-1.0, 1.0);
                 let right = self
                     .dc_r
-                    .process(self.pilot_notch_r.process(self.deemph_r.process(right_corr)))
+                    .process(self.deemph_r.process(right_corr))
                     .clamp(-1.0, 1.0);
                 output.push(left);
                 output.push(right);
@@ -589,6 +582,11 @@ impl WfmStereoDecoder {
 
     pub fn reset_rds(&mut self) {
         self.rds_decoder.reset();
+    }
+
+    pub fn reset_stereo_detect(&mut self) {
+        self.stereo_detect_level = 0.0;
+        self.stereo_detected = false;
     }
 
     pub fn stereo_detected(&self) -> bool {

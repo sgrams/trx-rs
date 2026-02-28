@@ -568,6 +568,13 @@ impl ChannelDsp {
         }
     }
 
+    pub fn reset_wfm_state(&mut self) {
+        if let Some(decoder) = &mut self.wfm_decoder {
+            decoder.reset_rds();
+            decoder.reset_stereo_detect();
+        }
+    }
+
     /// Process a block of raw IQ samples through the full DSP chain.
     ///
     /// 1. **Batch mixer**: compute the full LO signal for the block at once,
@@ -990,7 +997,7 @@ mod tests {
     fn channel_dsp_processes_silence() {
         let (pcm_tx, _pcm_rx) = broadcast::channel::<Vec<f32>>(8);
         let mut dsp =
-            ChannelDsp::new(0.0, &RigMode::USB, 48_000, 8_000, 1, 20, 3000, 75, true, true, 31, pcm_tx);
+            ChannelDsp::new(0.0, &RigMode::USB, 48_000, 8_000, 1, 20, 3000, 75, true, 31, pcm_tx);
         let block = vec![Complex::new(0.0_f32, 0.0_f32); 4096];
         dsp.process_block(&block);
     }
@@ -999,7 +1006,7 @@ mod tests {
     fn channel_dsp_set_mode() {
         let (pcm_tx, _) = broadcast::channel::<Vec<f32>>(8);
         let mut dsp =
-            ChannelDsp::new(0.0, &RigMode::USB, 48_000, 8_000, 1, 20, 3000, 75, true, true, 31, pcm_tx);
+            ChannelDsp::new(0.0, &RigMode::USB, 48_000, 8_000, 1, 20, 3000, 75, true, 31, pcm_tx);
         assert_eq!(dsp.demodulator, Demodulator::Usb);
         dsp.set_mode(&RigMode::FM);
         assert_eq!(dsp.demodulator, Demodulator::Fm);
@@ -1015,7 +1022,6 @@ mod tests {
             20,
             75,
             true,
-            true,
             &[(200_000.0, RigMode::USB, 3000, 64)],
         );
         assert_eq!(pipeline.pcm_senders.len(), 1);
@@ -1024,7 +1030,7 @@ mod tests {
 
     #[test]
     fn pipeline_empty_channels() {
-        let pipeline = SdrPipeline::start(Box::new(MockIqSource), 1_920_000, 48_000, 1, 20, 75, true, true, &[]);
+        let pipeline = SdrPipeline::start(Box::new(MockIqSource), 1_920_000, 48_000, 1, 20, 75, true, &[]);
         assert_eq!(pipeline.pcm_senders.len(), 0);
         assert_eq!(pipeline.channel_dsps.len(), 0);
     }
