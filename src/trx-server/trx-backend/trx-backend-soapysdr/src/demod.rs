@@ -40,7 +40,7 @@ const STEREO_MATRIX_GAIN: f32 = 0.30;
 /// and modulate higher-frequency stereo detail.
 const STEREO_DIFF_DC_R: f32 = 0.9995;
 /// Fractional-resampler FIR taps for WFM audio reconstruction.
-const WFM_RESAMP_TAPS: usize = 32;
+const WFM_RESAMP_TAPS: usize = 16;
 /// Polyphase slots for the WFM fractional FIR resampler.
 const WFM_RESAMP_PHASES: usize = 32;
 /// Slightly sub-Nyquist sinc cutoff to tame top-end imaging.
@@ -94,10 +94,47 @@ fn polyphase_resample(
 ) -> f32 {
     let phase = (frac.clamp(0.0, 0.999_999) * WFM_RESAMP_PHASES as f32).round() as usize;
     let phase = phase.min(WFM_RESAMP_PHASES - 1);
-    hist.iter()
-        .zip(bank[phase].iter())
-        .map(|(x, c)| x * c)
-        .sum()
+    dot_product(&hist[..], &bank[phase][..])
+}
+
+#[inline]
+fn dot_product_scalar(a: &[f32], b: &[f32]) -> f32 {
+    a.iter().zip(b.iter()).map(|(x, y)| x * y).sum()
+}
+
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+#[target_feature(enable = "avx2")]
+unsafe fn dot_product_avx2(a: &[f32], b: &[f32]) -> f32 {
+    #[cfg(target_arch = "x86")]
+    use std::arch::x86::*;
+    #[cfg(target_arch = "x86_64")]
+    use std::arch::x86_64::*;
+
+    let len = a.len().min(b.len());
+    let mut acc = _mm256_setzero_ps();
+    let mut i = 0usize;
+    while i + 8 <= len {
+        let av = unsafe { _mm256_loadu_ps(a.as_ptr().add(i)) };
+        let bv = unsafe { _mm256_loadu_ps(b.as_ptr().add(i)) };
+        acc = _mm256_add_ps(acc, _mm256_mul_ps(av, bv));
+        i += 8;
+    }
+
+    let mut lanes = [0.0_f32; 8];
+    unsafe { _mm256_storeu_ps(lanes.as_mut_ptr(), acc) };
+    lanes.iter().sum::<f32>() + dot_product_scalar(&a[i..len], &b[i..len])
+}
+
+#[inline]
+fn dot_product(a: &[f32], b: &[f32]) -> f32 {
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    {
+        if std::arch::is_x86_feature_detected!("avx2") {
+            return unsafe { dot_product_avx2(a, b) };
+        }
+    }
+
+    dot_product_scalar(a, b)
 }
 
 fn smoothstep01(x: f32) -> f32 {
@@ -858,14 +895,90 @@ fn demod_fm_with_prev(
         output.push(0.0_f32);
     }
 
-    for i in 1..samples.len() {
-        let product = samples[i] * samples[i - 1].conj();
+    let mut i = 1usize;
+
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    if std::arch::is_x86_feature_detected!("avx2") {
+        i = demod_fm_body_avx2(samples, i, inv_pi, &mut output);
+    }
+
+    for idx in i..samples.len() {
+        let product = samples[idx] * samples[idx - 1].conj();
         let angle = product.im.atan2(product.re);
         output.push(angle * inv_pi);
     }
 
     *prev = samples.last().copied();
     output
+}
+
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+fn demod_fm_body_avx2(
+    samples: &[Complex<f32>],
+    start: usize,
+    inv_pi: f32,
+    output: &mut Vec<f32>,
+) -> usize {
+    unsafe { demod_fm_body_avx2_impl(samples, start, inv_pi, output) }
+}
+
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+#[target_feature(enable = "avx2")]
+unsafe fn demod_fm_body_avx2_impl(
+    samples: &[Complex<f32>],
+    start: usize,
+    inv_pi: f32,
+    output: &mut Vec<f32>,
+) -> usize {
+    #[cfg(target_arch = "x86")]
+    use std::arch::x86::*;
+    #[cfg(target_arch = "x86_64")]
+    use std::arch::x86_64::*;
+
+    let len = samples.len();
+    let mut i = start;
+    let mut cur_re = [0.0_f32; 8];
+    let mut cur_im = [0.0_f32; 8];
+    let mut prev_re = [0.0_f32; 8];
+    let mut prev_im = [0.0_f32; 8];
+    let mut prod_re = [0.0_f32; 8];
+    let mut prod_im = [0.0_f32; 8];
+
+    while i + 8 <= len {
+        for lane in 0..8 {
+            let cur = samples[i + lane];
+            let prev = samples[i + lane - 1];
+            cur_re[lane] = cur.re;
+            cur_im[lane] = cur.im;
+            prev_re[lane] = prev.re;
+            prev_im[lane] = prev.im;
+        }
+
+        let cur_re_v = _mm256_loadu_ps(cur_re.as_ptr());
+        let cur_im_v = _mm256_loadu_ps(cur_im.as_ptr());
+        let prev_re_v = _mm256_loadu_ps(prev_re.as_ptr());
+        let prev_im_v = _mm256_loadu_ps(prev_im.as_ptr());
+
+        let re_v = _mm256_add_ps(
+            _mm256_mul_ps(cur_re_v, prev_re_v),
+            _mm256_mul_ps(cur_im_v, prev_im_v),
+        );
+        let im_v = _mm256_sub_ps(
+            _mm256_mul_ps(cur_im_v, prev_re_v),
+            _mm256_mul_ps(cur_re_v, prev_im_v),
+        );
+
+        _mm256_storeu_ps(prod_re.as_mut_ptr(), re_v);
+        _mm256_storeu_ps(prod_im.as_mut_ptr(), im_v);
+
+        for lane in 0..8 {
+            output.push(prod_im[lane].atan2(prod_re[lane]) * inv_pi);
+        }
+
+        i += 8;
+    }
+
+    i
 }
 
 /// FM quadrature discriminator: instantaneous frequency via arg(s[n] * conj(s[n-1])).
