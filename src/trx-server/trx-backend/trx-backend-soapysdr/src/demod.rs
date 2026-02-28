@@ -11,7 +11,11 @@ const RDS_BPF_Q: f32 = 10.0;
 /// Pilot tone frequency (Hz).
 const PILOT_HZ: f32 = 19_000.0;
 /// Audio bandwidth for WFM (Hz).
-const AUDIO_BW_HZ: f32 = 15_000.0;
+/// 17 kHz passes the full FM stereo audio bandwidth.  The 4th-order
+/// Butterworth is −3 dB at 17 kHz, −8 dB at 19 kHz (pilot), and −28 dB
+/// at 38 kHz (carrier).  Combined with deemphasis (−18 dB at 19 kHz) the
+/// pilot is still >25 dB below audibility.
+const AUDIO_BW_HZ: f32 = 17_000.0;
 /// Q values for a proper 4th-order Butterworth cascade (two 2nd-order stages).
 /// Stage 1: Q = 1 / (2 cos(π/8))
 const BW4_Q1: f32 = 0.5412;
@@ -19,6 +23,19 @@ const BW4_Q1: f32 = 0.5412;
 const BW4_Q2: f32 = 1.3066;
 /// Q for the 19 kHz pilot notch (~3.8 kHz 3 dB bandwidth).
 const PILOT_NOTCH_Q: f32 = 5.0;
+
+/// 4-point Hermite cubic interpolation.
+///
+/// `y` contains `[y_{n-1}, y_n, y_{n+1}, y_{n+2}]`; `frac` in `[0, 1)`
+/// positions the output within the `y_n`–`y_{n+1}` interval.
+#[inline]
+fn hermite4(y: &[f32; 4], frac: f32) -> f32 {
+    let c0 = y[1];
+    let c1 = 0.5 * (y[2] - y[0]);
+    let c2 = y[0] - 2.5 * y[1] + 2.0 * y[2] - 0.5 * y[3];
+    let c3 = 0.5 * (y[3] - y[0]) + 1.5 * (y[1] - y[2]);
+    ((c3 * frac + c2) * frac + c1) * frac + c0
+}
 
 #[derive(Debug, Clone)]
 struct OnePoleLowPass {
@@ -374,12 +391,19 @@ pub struct WfmStereoDecoder {
     diff_denoise: MultibandStereoBlend,
     /// Whether multiband stereo denoising is active.
     denoise_enabled: bool,
-    /// Previous filtered sum/diff composite samples used for linear interpolation.
-    prev_sum: f32,
-    /// Unblended L-R diff at the previous composite sample, for interpolation.
-    prev_diff: f32,
-    /// Pilot blend value at the previous composite sample, for interpolation.
-    prev_blend: f32,
+    /// FM discriminator gain normalization.
+    ///
+    /// `demod_fm` outputs `atan2(…)/π ≈ 2·Δf/fs` for small deviations.
+    /// For standard WFM ±75 kHz deviation we want ±1.0 at full deviation,
+    /// so `fm_gain = fs / (2 · 75_000)`.
+    fm_gain: f32,
+    /// History ring for 4-point Hermite cubic interpolation of sum channel.
+    /// Layout: [n-3, n-2, n-1, n] — oldest first.
+    sum_hist: [f32; 4],
+    /// History ring for 4-point Hermite cubic interpolation of diff channel.
+    diff_hist: [f32; 4],
+    /// History ring for 4-point Hermite cubic interpolation of pilot blend.
+    blend_hist: [f32; 4],
     /// Fractional phase increment per composite sample = audio_rate / composite_rate.
     /// Avoids integer-division rate error when composite_rate is not an exact
     /// multiple of audio_rate (e.g. 250 kHz composite → 48 kHz audio).
@@ -427,9 +451,10 @@ impl WfmStereoDecoder {
             deemph_r: Deemphasis::new(audio_rate.max(1) as f32, deemphasis_us),
             diff_denoise: MultibandStereoBlend::new(audio_rate.max(1) as f32),
             denoise_enabled,
-            prev_sum: 0.0,
-            prev_diff: 0.0,
-            prev_blend: 0.0,
+            fm_gain: composite_rate_f / (2.0 * 75_000.0),
+            sum_hist: [0.0; 4],
+            diff_hist: [0.0; 4],
+            blend_hist: [0.0; 4],
             output_phase_inc,
             output_phase: 0.0,
         }
@@ -447,13 +472,16 @@ impl WfmStereoDecoder {
         );
 
         for x in composite {
+            // Normalize discriminator output so ±75 kHz deviation maps to ±1.0.
+            let x = x * self.fm_gain;
+
             // --- Pilot PLL ---
             let (sin_p, cos_p) = self.pilot_phase.sin_cos();
             let i = self.pilot_i_lp.process(x * cos_p);
             let q = self.pilot_q_lp.process(x * -sin_p);
             let phase_err = q.atan2(i);
-            self.pilot_freq_err = (self.pilot_freq_err + phase_err * 0.00002).clamp(-0.02, 0.02);
-            self.pilot_phase += self.pilot_freq + self.pilot_freq_err + phase_err * 0.0015;
+            self.pilot_freq_err = (self.pilot_freq_err + phase_err * 0.00005).clamp(-0.02, 0.02);
+            self.pilot_phase += self.pilot_freq + self.pilot_freq_err + phase_err * 0.003;
             self.pilot_phase = self.pilot_phase.rem_euclid(std::f32::consts::TAU);
 
             let pilot_mag = (i * i + q * q).sqrt();
@@ -477,14 +505,18 @@ impl WfmStereoDecoder {
             let stereo_carrier = (2.0 * self.pilot_phase).cos() * 2.0;
             let diff = self.diff_lpf2.process(self.diff_lpf1.process(x * stereo_carrier));
 
-            // --- Linear interpolation resampling ---
-            // Track previous filtered values and blend every composite sample.
-            let prev_sum = self.prev_sum;
-            let prev_diff = self.prev_diff;
-            let prev_blend = self.prev_blend;
-            self.prev_sum = sum;
-            self.prev_diff = diff;
-            self.prev_blend = stereo_blend;
+            // --- 4-point Hermite cubic interpolation resampling ---
+            // Shift history rings: drop oldest, append current sample.
+            // Layout after shift: [n-3, n-2, n-1, n].
+            // Hermite interpolates between hist[1] and hist[2] using hist[0]
+            // and hist[3] as outer control points — one composite sample of
+            // latency relative to linear interpolation (<5 µs at 240 kHz).
+            self.sum_hist.rotate_left(1);
+            self.sum_hist[3] = sum;
+            self.diff_hist.rotate_left(1);
+            self.diff_hist[3] = diff;
+            self.blend_hist.rotate_left(1);
+            self.blend_hist[3] = stereo_blend;
 
             let prev_phase = self.output_phase;
             self.output_phase += self.output_phase_inc;
@@ -493,13 +525,12 @@ impl WfmStereoDecoder {
             }
             self.output_phase -= 1.0;
 
-            // Interpolate: `frac` is the fractional position of the output sample
-            // between the previous composite sample (frac≈0) and the current one (frac≈1).
+            // `frac` positions the output sample within the hist[1]–hist[2]
+            // interval of the 4-point Hermite window.
             let frac = ((1.0 - prev_phase) / self.output_phase_inc) as f32;
-            let sum_i = prev_sum + frac * (sum - prev_sum);
-            let diff_i = prev_diff + frac * (diff - prev_diff);
-            // Interpolate pilot blend for smooth stereo transitions at audio rate.
-            let blend_i = prev_blend + frac * (stereo_blend - prev_blend);
+            let sum_i = hermite4(&self.sum_hist, frac);
+            let diff_i = hermite4(&self.diff_hist, frac);
+            let blend_i = hermite4(&self.blend_hist, frac).clamp(0.0, 1.0);
 
             // --- Deemphasis + DC block + output ---
             if self.output_channels >= 2 && self.stereo_enabled {
