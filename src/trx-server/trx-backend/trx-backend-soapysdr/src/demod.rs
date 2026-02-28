@@ -6,10 +6,68 @@ use num_complex::Complex;
 use trx_core::rig::state::{RdsData, RigMode};
 use trx_rds::RdsDecoder;
 
+const RDS_SUBCARRIER_HZ: f32 = 57_000.0;
+const RDS_BPF_Q: f32 = 8.0;
+
 #[derive(Debug, Clone)]
 struct OnePoleLowPass {
     alpha: f32,
     y: f32,
+}
+
+#[derive(Debug, Clone)]
+struct BiquadBandPass {
+    b0: f32,
+    b1: f32,
+    b2: f32,
+    a1: f32,
+    a2: f32,
+    x1: f32,
+    x2: f32,
+    y1: f32,
+    y2: f32,
+}
+
+impl BiquadBandPass {
+    fn new(sample_rate: f32, center_hz: f32, q: f32) -> Self {
+        let sr = sample_rate.max(1.0);
+        let center = center_hz.clamp(100.0, sr * 0.45);
+        let q = q.max(0.2);
+        let w0 = 2.0 * std::f32::consts::PI * center / sr;
+        let alpha = w0.sin() / (2.0 * q);
+        let cos_w0 = w0.cos();
+
+        let a0 = 1.0 + alpha;
+        let inv_a0 = 1.0 / a0;
+
+        // RBJ band-pass, constant skirt gain.
+        let b0 = alpha * inv_a0;
+        let b1 = 0.0;
+        let b2 = -alpha * inv_a0;
+        let a1 = (-2.0 * cos_w0) * inv_a0;
+        let a2 = (1.0 - alpha) * inv_a0;
+
+        Self {
+            b0,
+            b1,
+            b2,
+            a1,
+            a2,
+            x1: 0.0,
+            x2: 0.0,
+            y1: 0.0,
+            y2: 0.0,
+        }
+    }
+
+    fn process(&mut self, x: f32) -> f32 {
+        let y = self.b0 * x + self.b1 * self.x1 + self.b2 * self.x2 - self.a1 * self.y1 - self.a2 * self.y2;
+        self.x2 = self.x1;
+        self.x1 = x;
+        self.y2 = self.y1;
+        self.y1 = y;
+        y
+    }
 }
 
 impl OnePoleLowPass {
@@ -52,6 +110,7 @@ impl Deemphasis {
 pub struct WfmStereoDecoder {
     output_channels: usize,
     rds_decoder: RdsDecoder,
+    rds_bpf: BiquadBandPass,
     pilot_phase: f32,
     pilot_freq: f32,
     pilot_freq_err: f32,
@@ -84,6 +143,7 @@ impl WfmStereoDecoder {
         Self {
             output_channels: output_channels.max(1),
             rds_decoder: RdsDecoder::new(composite_rate),
+            rds_bpf: BiquadBandPass::new(composite_rate_f, RDS_SUBCARRIER_HZ, RDS_BPF_Q),
             pilot_phase: 0.0,
             pilot_freq: 2.0 * std::f32::consts::PI * 19_000.0 / composite_rate_f,
             pilot_freq_err: 0.0,
@@ -122,7 +182,8 @@ impl WfmStereoDecoder {
             let pilot_mag = (i * i + q * q).sqrt();
             let stereo_blend = (pilot_mag * 40.0).clamp(0.0, 1.0);
             let rds_quality = (0.35 + pilot_mag * 20.0).clamp(0.35, 1.0);
-            let _ = self.rds_decoder.process_sample(x, rds_quality);
+            let rds_band = self.rds_bpf.process(x);
+            let _ = self.rds_decoder.process_sample(rds_band, rds_quality);
 
             let sum = self.sum_lp.process(x);
             let stereo_carrier = (2.0 * self.pilot_phase).cos() * 2.0;
