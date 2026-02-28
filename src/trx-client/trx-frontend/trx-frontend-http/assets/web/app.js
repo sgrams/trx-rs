@@ -3181,15 +3181,57 @@ function clearSpectrumCanvas() {
   ctx.fillRect(0, 0, spectrumCanvas.width, spectrumCanvas.height);
 }
 
+function formatOverlayPs(ps) {
+  const padded = String(ps ?? "")
+    .slice(0, 8)
+    .padEnd(8, " ");
+  return padded.replaceAll(" ", "_");
+}
+
+function formatOverlayPi(pi) {
+  return pi != null
+    ? `PI 0x${pi.toString(16).toUpperCase().padStart(4, "0")}`
+    : "PI --";
+}
+
+function formatOverlayPty(pty) {
+  return pty != null ? `PTY ${pty}` : "PTY --";
+}
+
+async function copyRdsPsToClipboard() {
+  const ps = lastSpectrumData?.rds?.program_service?.trim();
+  if (!ps) {
+    showHint("No RDS PS", 1200);
+    return;
+  }
+  try {
+    await navigator.clipboard.writeText(ps);
+    showHint(`Copied ${ps}`, 1200);
+  } catch (_) {
+    showHint("Clipboard failed", 1500);
+  }
+}
+
+if (rdsPsOverlay) {
+  rdsPsOverlay.addEventListener("click", () => { copyRdsPsToClipboard(); });
+}
+const rdsPsValueEl = document.getElementById("rds-ps");
+if (rdsPsValueEl) {
+  rdsPsValueEl.addEventListener("click", () => { copyRdsPsToClipboard(); });
+}
+
 function updateRdsPsOverlay(rds) {
   // Overview strip overlay
   if (rdsPsOverlay) {
     const ps = rds?.program_service?.trim();
     if (ps) {
-      rdsPsOverlay.textContent = ps;
+      rdsPsOverlay.innerHTML =
+        `<span class="rds-ps-main">${escapeMapHtml(formatOverlayPs(ps))}</span>` +
+        `<span class="rds-ps-meta">${escapeMapHtml(formatOverlayPi(rds?.pi))} · ${escapeMapHtml(formatOverlayPty(rds?.pty))}</span>`;
       positionRdsPsOverlay();
-      rdsPsOverlay.style.display = "block";
+      rdsPsOverlay.style.display = "flex";
     } else {
+      rdsPsOverlay.innerHTML = "";
       rdsPsOverlay.style.display = "none";
     }
   }
