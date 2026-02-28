@@ -298,6 +298,7 @@ mod tests {
                 fir_taps: 64,
                 cw_center_hz: 700,
                 wfm_deemphasis_us: 75,
+                wfm_stereo: true,
                 wfm_denoise: true,
             }),
             ..minimal_snapshot()
@@ -335,6 +336,7 @@ mod tests {
                 fir_taps: 128,
                 cw_center_hz: 700,
                 wfm_deemphasis_us: 50,
+                wfm_stereo: true,
                 wfm_denoise: true,
             }),
             ..minimal_snapshot()

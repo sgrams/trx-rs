@@ -345,6 +345,7 @@ impl Deemphasis {
 #[derive(Debug, Clone)]
 pub struct WfmStereoDecoder {
     output_channels: usize,
+    stereo_enabled: bool,
     rds_decoder: RdsDecoder,
     rds_bpf: BiquadBandPass,
     rds_dc: DcBlocker,
@@ -393,6 +394,7 @@ impl WfmStereoDecoder {
         composite_rate: u32,
         audio_rate: u32,
         output_channels: usize,
+        stereo_enabled: bool,
         deemphasis_us: u32,
         denoise_enabled: bool,
     ) -> Self {
@@ -401,6 +403,7 @@ impl WfmStereoDecoder {
         let deemphasis_us = deemphasis_us as f32;
         Self {
             output_channels: output_channels.max(1),
+            stereo_enabled,
             rds_decoder: RdsDecoder::new(composite_rate),
             rds_bpf: BiquadBandPass::new(composite_rate_f, RDS_SUBCARRIER_HZ, RDS_BPF_Q),
             rds_dc: DcBlocker::new(0.995),
@@ -499,7 +502,7 @@ impl WfmStereoDecoder {
             let blend_i = prev_blend + frac * (stereo_blend - prev_blend);
 
             // --- Deemphasis + DC block + output ---
-            if self.output_channels >= 2 {
+            if self.output_channels >= 2 && self.stereo_enabled {
                 // Apply multiband or single-band stereo blend at audio rate.
                 let diff_denoised = if self.denoise_enabled {
                     // Multiband: attenuates high-frequency diff more aggressively
@@ -521,11 +524,14 @@ impl WfmStereoDecoder {
                 // Mono path: apply the pilot notch here so the 19 kHz pilot tone
                 // does not leak into mono audio.  Phase matching with diff is not
                 // a concern for mono, so the notch can sit anywhere in the chain.
-                output.push(
-                    self.dc_m
-                        .process(self.deemph_m.process(self.sum_notch.process(sum_i)))
-                        .clamp(-1.0, 1.0),
-                );
+                let mono = self
+                    .dc_m
+                    .process(self.deemph_m.process(self.sum_notch.process(sum_i)))
+                    .clamp(-1.0, 1.0);
+                output.push(mono);
+                if self.output_channels >= 2 {
+                    output.push(mono);
+                }
             }
         }
 
@@ -534,6 +540,10 @@ impl WfmStereoDecoder {
 
     pub fn set_denoise_enabled(&mut self, enabled: bool) {
         self.denoise_enabled = enabled;
+    }
+
+    pub fn set_stereo_enabled(&mut self, enabled: bool) {
+        self.stereo_enabled = enabled;
     }
 
     pub fn rds_data(&self) -> Option<RdsData> {

@@ -1252,6 +1252,13 @@ function render(update) {
     if (wfmDeemphasisEl && typeof update.filter.wfm_deemphasis_us === "number") {
       wfmDeemphasisEl.value = String(update.filter.wfm_deemphasis_us);
     }
+    if (wfmAudioModeEl && typeof update.filter.wfm_stereo === "boolean") {
+      const nextMode = update.filter.wfm_stereo ? "stereo" : "mono";
+      if (wfmAudioModeEl.value !== nextMode) {
+        wfmAudioModeEl.value = nextMode;
+        saveSetting("wfmAudioMode", nextMode);
+      }
+    }
     if (wfmDenoiseBtn && typeof update.filter.wfm_denoise === "boolean") {
       const on = update.filter.wfm_denoise;
       wfmDenoiseBtn.textContent = on ? "On" : "Off";
@@ -2587,6 +2594,8 @@ if (wfmAudioModeEl) {
   wfmAudioModeEl.value = loadSetting("wfmAudioMode", "stereo");
   wfmAudioModeEl.addEventListener("change", () => {
     saveSetting("wfmAudioMode", wfmAudioModeEl.value);
+    const enabled = wfmAudioModeEl.value !== "mono";
+    postPath(`/set_wfm_stereo?enabled=${enabled ? "true" : "false"}`).catch(() => {});
   });
 }
 if (wfmDeemphasisEl) {

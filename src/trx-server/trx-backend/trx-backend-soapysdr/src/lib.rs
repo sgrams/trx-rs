@@ -39,6 +39,8 @@ pub struct SoapySdrRig {
     retune_cmd: Arc<std::sync::Mutex<Option<f64>>>,
     /// Current WFM deemphasis setting in microseconds.
     wfm_deemphasis_us: u32,
+    /// Whether WFM stereo decode is enabled.
+    wfm_stereo: bool,
     /// Whether multiband WFM stereo denoising is enabled.
     wfm_denoise: bool,
 }
@@ -117,6 +119,7 @@ impl SoapySdrRig {
             audio_channels,
             frame_duration_ms,
             wfm_deemphasis_us,
+            true, // wfm_stereo: enabled by default
             true, // wfm_denoise: enabled by default
             channels,
         );
@@ -185,6 +188,7 @@ impl SoapySdrRig {
             center_hz: hardware_center_hz,
             retune_cmd,
             wfm_deemphasis_us,
+            wfm_stereo: true,
             wfm_denoise: true,
         })
     }
@@ -464,6 +468,19 @@ impl RigCat for SoapySdrRig {
         })
     }
 
+    fn set_wfm_stereo<'a>(
+        &'a mut self,
+        enabled: bool,
+    ) -> Pin<Box<dyn std::future::Future<Output = DynResult<()>> + Send + 'a>> {
+        Box::pin(async move {
+            self.wfm_stereo = enabled;
+            if let Some(dsp_arc) = self.pipeline.channel_dsps.get(self.primary_channel_idx) {
+                dsp_arc.lock().unwrap().set_wfm_stereo(enabled);
+            }
+            Ok(())
+        })
+    }
+
     fn set_wfm_denoise<'a>(
         &'a mut self,
         enabled: bool,
@@ -483,6 +500,7 @@ impl RigCat for SoapySdrRig {
             fir_taps: self.fir_taps,
             cw_center_hz: 700,
             wfm_deemphasis_us: self.wfm_deemphasis_us,
+            wfm_stereo: self.wfm_stereo,
             wfm_denoise: self.wfm_denoise,
         })
     }

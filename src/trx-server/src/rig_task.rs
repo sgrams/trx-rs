@@ -462,6 +462,16 @@ async fn process_command(
             let _ = ctx.state_tx.send(ctx.state.clone());
             return snapshot_from(ctx.state);
         }
+        RigCommand::SetWfmStereo(enabled) => {
+            if let Err(e) = ctx.rig.set_wfm_stereo(enabled).await {
+                return Err(RigError::communication(format!("set_wfm_stereo: {e}")));
+            }
+            if let Some(f) = ctx.state.filter.as_mut() {
+                f.wfm_stereo = enabled;
+            }
+            let _ = ctx.state_tx.send(ctx.state.clone());
+            return snapshot_from(ctx.state);
+        }
         RigCommand::SetWfmDenoise(enabled) => {
             if let Err(e) = ctx.rig.set_wfm_denoise(enabled).await {
                 return Err(RigError::communication(format!("set_wfm_denoise: {e}")));

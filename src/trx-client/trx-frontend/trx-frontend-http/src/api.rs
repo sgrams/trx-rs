@@ -486,6 +486,19 @@ pub async fn set_wfm_deemphasis(
     send_command(&rig_tx, RigCommand::SetWfmDeemphasis(query.us)).await
 }
 
+#[derive(serde::Deserialize)]
+pub struct WfmStereoQuery {
+    pub enabled: bool,
+}
+
+#[post("/set_wfm_stereo")]
+pub async fn set_wfm_stereo(
+    query: web::Query<WfmStereoQuery>,
+    rig_tx: web::Data<mpsc::Sender<RigRequest>>,
+) -> Result<HttpResponse, Error> {
+    send_command(&rig_tx, RigCommand::SetWfmStereo(query.enabled)).await
+}
+
 #[post("/toggle_wfm_denoise")]
 pub async fn toggle_wfm_denoise(
     state: web::Data<watch::Receiver<RigState>>,
@@ -713,6 +726,7 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
         .service(set_bandwidth)
         .service(set_fir_taps)
         .service(set_wfm_deemphasis)
+        .service(set_wfm_stereo)
         .service(toggle_wfm_denoise)
         .service(toggle_aprs_decode)
         .service(toggle_cw_decode)

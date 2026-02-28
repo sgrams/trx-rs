@@ -309,6 +309,8 @@ pub struct ChannelDsp {
     fir_taps: usize,
     /// WFM deemphasis time constant in microseconds.
     wfm_deemphasis_us: u32,
+    /// Whether WFM stereo decoding is enabled.
+    wfm_stereo: bool,
     /// Whether multiband stereo denoising is enabled for WFM.
     wfm_denoise: bool,
     /// Decimation factor: `sdr_sample_rate / audio_sample_rate`.
@@ -410,6 +412,7 @@ impl ChannelDsp {
                     channel_sample_rate,
                     self.audio_sample_rate,
                     self.output_channels,
+                    self.wfm_stereo,
                     self.wfm_deemphasis_us,
                     self.wfm_denoise,
                 ));
@@ -432,6 +435,7 @@ impl ChannelDsp {
         frame_duration_ms: u16,
         audio_bandwidth_hz: u32,
         wfm_deemphasis_us: u32,
+        wfm_stereo: bool,
         wfm_denoise: bool,
         fir_taps: usize,
         pcm_tx: broadcast::Sender<Vec<f32>>,
@@ -477,6 +481,7 @@ impl ChannelDsp {
             audio_bandwidth_hz,
             fir_taps: taps,
             wfm_deemphasis_us,
+            wfm_stereo,
             wfm_denoise,
             decim_factor,
             output_channels,
@@ -497,6 +502,7 @@ impl ChannelDsp {
                     channel_sample_rate,
                     audio_sample_rate,
                     output_channels,
+                    wfm_stereo,
                     wfm_deemphasis_us,
                     wfm_denoise,
                 ))
@@ -542,6 +548,13 @@ impl ChannelDsp {
     pub fn set_wfm_deemphasis(&mut self, deemphasis_us: u32) {
         self.wfm_deemphasis_us = deemphasis_us;
         self.rebuild_filters(true);
+    }
+
+    pub fn set_wfm_stereo(&mut self, enabled: bool) {
+        self.wfm_stereo = enabled;
+        if let Some(decoder) = &mut self.wfm_decoder {
+            decoder.set_stereo_enabled(enabled);
+        }
     }
 
     pub fn set_wfm_denoise(&mut self, enabled: bool) {
@@ -689,6 +702,7 @@ impl SdrPipeline {
         output_channels: usize,
         frame_duration_ms: u16,
         wfm_deemphasis_us: u32,
+        wfm_stereo: bool,
         wfm_denoise: bool,
         channels: &[(f64, RigMode, u32, usize)],
     ) -> Self {
@@ -711,6 +725,7 @@ impl SdrPipeline {
                 frame_duration_ms,
                 audio_bandwidth_hz,
                 wfm_deemphasis_us,
+                wfm_stereo,
                 wfm_denoise,
                 fir_taps,
                 pcm_tx.clone(),
