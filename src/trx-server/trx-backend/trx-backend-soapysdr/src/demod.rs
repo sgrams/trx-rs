@@ -11,11 +11,10 @@ const RDS_BPF_Q: f32 = 10.0;
 /// Pilot tone frequency (Hz).
 const PILOT_HZ: f32 = 19_000.0;
 /// Audio bandwidth for WFM (Hz).
-/// 17 kHz passes the full FM stereo audio bandwidth.  The 4th-order
-/// Butterworth is −3 dB at 17 kHz, −8 dB at 19 kHz (pilot), and −28 dB
-/// at 38 kHz (carrier).  Combined with deemphasis (−18 dB at 19 kHz) the
-/// pilot is still >25 dB below audibility.
-const AUDIO_BW_HZ: f32 = 17_000.0;
+/// 15.8 kHz leaves more guard band below the 19 kHz pilot and reduces
+/// top-end artifacts on strong signals while still preserving the useful
+/// broadcast audio range.
+const AUDIO_BW_HZ: f32 = 15_800.0;
 /// Q values for a proper 4th-order Butterworth cascade (two 2nd-order stages).
 /// Stage 1: Q = 1 / (2 cos(π/8))
 const BW4_Q1: f32 = 0.5412;
