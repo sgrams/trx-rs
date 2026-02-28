@@ -657,41 +657,6 @@ impl ServerConfig {
         }]
     }
 
-    /// Generate an example configuration as a TOML string.
-    pub fn example_toml() -> String {
-        let example = ServerConfig {
-            general: GeneralConfig {
-                callsign: Some("N0CALL".to_string()),
-                log_level: Some("info".to_string()),
-                latitude: Some(52.2297),
-                longitude: Some(21.0122),
-            },
-            rig: RigConfig {
-                model: Some("ft817".to_string()),
-                initial_freq_hz: 144_300_000,
-                initial_mode: RigMode::USB,
-                access: AccessConfig {
-                    access_type: Some("serial".to_string()),
-                    port: Some("/dev/ttyUSB0".to_string()),
-                    baud: Some(9600),
-                    host: None,
-                    tcp_port: None,
-                    args: None,
-                },
-            },
-            behavior: BehaviorConfig::default(),
-            listen: ListenConfig::default(),
-            audio: AudioConfig::default(),
-            pskreporter: PskReporterConfig::default(),
-            aprsfi: AprsFiConfig::default(),
-            decode_logs: DecodeLogsConfig::default(),
-            sdr: SdrConfig::default(),
-            rigs: Vec::new(),
-        };
-
-        toml::to_string_pretty(&example).unwrap_or_default()
-    }
-
     /// Generate an example configuration wrapped under the `[trx-server]`
     /// section header, suitable for use in a combined `trx-rs.toml` file.
     pub fn example_combined_toml() -> String {

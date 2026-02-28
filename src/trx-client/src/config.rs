@@ -369,49 +369,6 @@ impl ClientConfig {
         <Self as ConfigFile>::load_from_default_paths()
     }
 
-    /// Generate an example configuration as a TOML string.
-    pub fn example_toml() -> String {
-        let example = ClientConfig {
-            general: GeneralConfig {
-                callsign: Some("N0CALL".to_string()),
-                log_level: Some("info".to_string()),
-            },
-            remote: RemoteConfig {
-                url: Some("192.168.1.100:9000".to_string()),
-                rig_id: Some("hf".to_string()),
-                auth: RemoteAuthConfig {
-                    token: Some("my-token".to_string()),
-                },
-                poll_interval_ms: 750,
-            },
-            frontends: FrontendsConfig {
-                http: HttpFrontendConfig {
-                    enabled: true,
-                    listen: IpAddr::from([127, 0, 0, 1]),
-                    port: 8080,
-                    auth: HttpAuthConfig {
-                        enabled: false,
-                        rx_passphrase: Some("rx-passphrase-example".to_string()),
-                        control_passphrase: Some("control-passphrase-example".to_string()),
-                        tx_access_control_enabled: true,
-                        session_ttl_min: 480,
-                        cookie_secure: false,
-                        cookie_same_site: CookieSameSite::Lax,
-                    },
-                },
-                rigctl: RigctlFrontendConfig {
-                    enabled: false,
-                    listen: IpAddr::from([127, 0, 0, 1]),
-                    port: 4532,
-                },
-                http_json: HttpJsonFrontendConfig::default(),
-                audio: AudioClientConfig::default(),
-            },
-        };
-
-        toml::to_string_pretty(&example).unwrap_or_default()
-    }
-
     /// Generate an example configuration wrapped under the `[trx-client]`
     /// section header, suitable for use in a combined `trx-rs.toml` file.
     pub fn example_combined_toml() -> String {
