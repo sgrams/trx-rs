@@ -15,6 +15,10 @@ const PILOT_HZ: f32 = 19_000.0;
 /// top-end artifacts on strong signals while still preserving the useful
 /// broadcast audio range.
 const AUDIO_BW_HZ: f32 = 15_800.0;
+/// Stereo L-R subchannel bandwidth for WFM (Hz).
+/// Keep this a bit lower than the mono path because the recovered difference
+/// signal is noisier and more prone to high-frequency artifacts.
+const STEREO_DIFF_BW_HZ: f32 = 13_500.0;
 /// Q values for a proper 4th-order Butterworth cascade (two 2nd-order stages).
 /// Stage 1: Q = 1 / (2 cos(π/8))
 const BW4_Q1: f32 = 0.5412;
@@ -476,10 +480,10 @@ impl WfmStereoDecoder {
             sum_lpf1: BiquadLowPass::new(composite_rate_f, AUDIO_BW_HZ, BW4_Q1),
             sum_lpf2: BiquadLowPass::new(composite_rate_f, AUDIO_BW_HZ, BW4_Q2),
             sum_notch: BiquadNotch::new(composite_rate_f, PILOT_HZ, PILOT_NOTCH_Q),
-            diff_lpf1: BiquadLowPass::new(composite_rate_f, AUDIO_BW_HZ, BW4_Q1),
-            diff_lpf2: BiquadLowPass::new(composite_rate_f, AUDIO_BW_HZ, BW4_Q2),
-            diff_q_lpf1: BiquadLowPass::new(composite_rate_f, AUDIO_BW_HZ, BW4_Q1),
-            diff_q_lpf2: BiquadLowPass::new(composite_rate_f, AUDIO_BW_HZ, BW4_Q2),
+            diff_lpf1: BiquadLowPass::new(composite_rate_f, STEREO_DIFF_BW_HZ, BW4_Q1),
+            diff_lpf2: BiquadLowPass::new(composite_rate_f, STEREO_DIFF_BW_HZ, BW4_Q2),
+            diff_q_lpf1: BiquadLowPass::new(composite_rate_f, STEREO_DIFF_BW_HZ, BW4_Q1),
+            diff_q_lpf2: BiquadLowPass::new(composite_rate_f, STEREO_DIFF_BW_HZ, BW4_Q2),
             dc_m: DcBlocker::new(0.9999),
             dc_l: DcBlocker::new(0.9999),
             dc_r: DcBlocker::new(0.9999),
