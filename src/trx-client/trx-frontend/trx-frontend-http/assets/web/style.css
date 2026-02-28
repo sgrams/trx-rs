@@ -444,7 +444,7 @@ small { color: var(--text-muted); }
 .title { font-size: 1.4rem; font-weight: 700; display: inline-flex; align-items: center; gap: 0.35rem; }
 .overview-strip {
   width: 100%;
-  margin: calc(-1 * var(--header-waterfall-overlap)) 0 0.95rem;
+  margin: calc(-1 * var(--header-waterfall-overlap)) 0 0.45rem;
   position: relative;
   z-index: 4;
 }
