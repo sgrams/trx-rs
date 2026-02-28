@@ -3129,7 +3129,7 @@ function drawSpectrum(data) {
       ctx.beginPath(); ctx.moveTo(xL, 0); ctx.lineTo(xL, H); ctx.stroke();
       ctx.beginPath(); ctx.moveTo(xR, 0); ctx.lineTo(xR, H); ctx.stroke();
 
-      // Top bookmark tab centered on the dial frequency
+      // Bottom bookmark tab centered on the dial frequency
       const xMid = hzToX(lastFreqHz);
       const bwText = formatBwLabel(currentBandwidthHz);
       ctx.save();
@@ -3138,23 +3138,24 @@ function drawSpectrum(data) {
       const PAD  = 6 * dpr;
       const TAB_H = 16 * dpr;
       const tabX = Math.max(0, Math.min(W - tw - PAD * 2, xMid - (tw + PAD * 2) / 2));
+      const tabY = H - TAB_H;
       const r = 3 * dpr;
-      // Rounded-top tab shape (flat bottom)
+      // Rounded-bottom tab shape (flat top)
       ctx.fillStyle = "rgba(240,173,78,0.85)";
       ctx.beginPath();
-      ctx.moveTo(tabX + r, 0);
-      ctx.lineTo(tabX + tw + PAD * 2 - r, 0);
-      ctx.arcTo(tabX + tw + PAD * 2, 0, tabX + tw + PAD * 2, r, r);
-      ctx.lineTo(tabX + tw + PAD * 2, TAB_H);
-      ctx.lineTo(tabX, TAB_H);
-      ctx.lineTo(tabX, r);
-      ctx.arcTo(tabX, 0, tabX + r, 0, r);
+      ctx.moveTo(tabX, tabY);
+      ctx.lineTo(tabX + tw + PAD * 2, tabY);
+      ctx.lineTo(tabX + tw + PAD * 2, H - r);
+      ctx.arcTo(tabX + tw + PAD * 2, H, tabX + tw + PAD * 2 - r, H, r);
+      ctx.lineTo(tabX + r, H);
+      ctx.arcTo(tabX, H, tabX, H - r, r);
+      ctx.lineTo(tabX, tabY);
       ctx.closePath();
       ctx.fill();
       // Tab text
       ctx.fillStyle = spectrumBgColor();
       ctx.textAlign = "left";
-      ctx.fillText(bwText, tabX + PAD, TAB_H - 4 * dpr);
+      ctx.fillText(bwText, tabX + PAD, H - 4 * dpr);
       ctx.restore();
     }
   }
@@ -3400,7 +3401,12 @@ if (spectrumCanvas) {
     const edge = getBwEdgeHit(cssX, rect.width, range);
     spectrumCanvas.style.cursor = edge ? "ew-resize" : "crosshair";
     const hz = canvasXToHz(cssX, rect.width, range);
-    spectrumTooltip.textContent = formatSpectrumFreq(hz);
+    const peakHz = edge ? null : nearestSpectrumPeakHz(cssX, rect.width, lastSpectrumData);
+    if (peakHz != null && Math.abs(peakHz - hz) >= Math.max(minFreqStepHz, 10)) {
+      spectrumTooltip.textContent = `Peak ${formatSpectrumFreq(peakHz)}`;
+    } else {
+      spectrumTooltip.textContent = formatSpectrumFreq(peakHz ?? hz);
+    }
     spectrumTooltip.style.display = "block";
     const tw = spectrumTooltip.offsetWidth;
     let tx = cssX + 10;
