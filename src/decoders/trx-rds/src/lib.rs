@@ -15,6 +15,9 @@ const PHASE_CANDIDATES: usize = 8;
 const BIPHASE_CLOCK_WINDOW: usize = 128;
 const RDS_BASEBAND_LP_HZ: f32 = 2_400.0;
 const PS_VOTE_COMMIT_SCORE: u8 = 3;
+const TIMING_PHASE_GAIN: f32 = 0.08;
+const TIMING_RATE_GAIN: f32 = 0.0008;
+const TIMING_RATE_SPAN: f32 = 0.03;
 
 const OFFSET_A: u16 = 0x0FC;
 const OFFSET_B: u16 = 0x198;
@@ -63,10 +66,15 @@ enum ExpectBlock {
 #[derive(Debug, Clone)]
 struct Candidate {
     clock_phase: f32,
+    nominal_clock_inc: f32,
     clock_inc: f32,
     sym_i_acc: f32,
     sym_q_acc: f32,
     sym_count: u16,
+    early_energy_acc: f32,
+    early_energy_count: u16,
+    late_energy_acc: f32,
+    late_energy_count: u16,
     prev_psk_symbol: Option<(f32, f32)>,
     clock_history: [f32; BIPHASE_CLOCK_WINDOW],
     clock: usize,
@@ -94,10 +102,15 @@ impl Candidate {
     fn new(sample_rate: f32, phase_offset: f32) -> Self {
         Self {
             clock_phase: phase_offset,
+            nominal_clock_inc: RDS_PSK_SYMBOL_RATE / sample_rate.max(1.0),
             clock_inc: RDS_PSK_SYMBOL_RATE / sample_rate.max(1.0),
             sym_i_acc: 0.0,
             sym_q_acc: 0.0,
             sym_count: 0,
+            early_energy_acc: 0.0,
+            early_energy_count: 0,
+            late_energy_acc: 0.0,
+            late_energy_count: 0,
             prev_psk_symbol: None,
             clock_history: [0.0; BIPHASE_CLOCK_WINDOW],
             clock: 0,
@@ -126,6 +139,14 @@ impl Candidate {
         self.sym_i_acc += i;
         self.sym_q_acc += q;
         self.sym_count = self.sym_count.saturating_add(1);
+        let energy = (i * i + q * q).sqrt();
+        if self.clock_phase < 0.5 {
+            self.early_energy_acc += energy;
+            self.early_energy_count = self.early_energy_count.saturating_add(1);
+        } else {
+            self.late_energy_acc += energy;
+            self.late_energy_count = self.late_energy_count.saturating_add(1);
+        }
         self.clock_phase += self.clock_inc;
         if self.clock_phase < 1.0 {
             return None;
@@ -137,6 +158,17 @@ impl Candidate {
         self.sym_i_acc = 0.0;
         self.sym_q_acc = 0.0;
         self.sym_count = 0;
+        let early_avg = self.early_energy_acc / f32::from(self.early_energy_count.max(1));
+        let late_avg = self.late_energy_acc / f32::from(self.late_energy_count.max(1));
+        self.early_energy_acc = 0.0;
+        self.early_energy_count = 0;
+        self.late_energy_acc = 0.0;
+        self.late_energy_count = 0;
+        let timing_err = (late_avg - early_avg) / (late_avg + early_avg + 1e-6);
+        self.clock_phase = (self.clock_phase - timing_err * TIMING_PHASE_GAIN).clamp(0.0, 0.999);
+        let min_inc = self.nominal_clock_inc * (1.0 - TIMING_RATE_SPAN);
+        let max_inc = self.nominal_clock_inc * (1.0 + TIMING_RATE_SPAN);
+        self.clock_inc = (self.clock_inc - timing_err * TIMING_RATE_GAIN).clamp(min_inc, max_inc);
 
         let update = if let Some((prev_i, prev_q)) = self.prev_psk_symbol {
             let biphase_i = (symbol.0 - prev_i) * 0.5;
