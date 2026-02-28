@@ -605,8 +605,8 @@ small { color: var(--text-muted); }
   transition: width 100ms ease;
 }
 
-.sub-tab-bar { display: flex; border-bottom: 1px solid var(--border); margin-bottom: 0.75rem; }
-.sub-tab { background: transparent; border: none; border-bottom: 2px solid transparent; border-radius: 0; padding: 0.35rem 0.75rem; color: var(--text-muted); cursor: pointer; font-size: 0.85rem; height: auto; }
+.sub-tab-bar { display: flex; border-bottom: 1px solid var(--border); margin-bottom: 0.75rem; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.sub-tab { flex-shrink: 0; background: transparent; border: none; border-bottom: 2px solid transparent; border-radius: 0; padding: 0.35rem 0.75rem; color: var(--text-muted); cursor: pointer; font-size: 0.85rem; height: auto; }
 .sub-tab.active { border-bottom-color: var(--accent-green); color: var(--accent-green); font-weight: 600; }
 .sub-tab:hover:not(.active) { color: var(--text); }
 #aprs-map { min-height: 150px; border-radius: 6px; }
@@ -830,10 +830,60 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   padding: 0 8px;
   font-size: 0.73rem;
 }
-#spectrum-hint {
+.spectrum-hint-mouse,
+.spectrum-hint-touch {
   font-size: 0.68rem;
   color: var(--text-muted);
   text-align: right;
   margin-top: 2px;
   opacity: 0.6;
+}
+/* Show correct hint based on input device */
+.spectrum-hint-touch { display: none; }
+@media (hover: none) and (pointer: coarse) {
+  .spectrum-hint-mouse { display: none; }
+  .spectrum-hint-touch { display: block; }
+}
+
+/* ── Phone layout (≤ 520px) ───────────────────────────────────────────── */
+@media (max-width: 520px) {
+  /* Remove forced min-width — no horizontal scroll on phones */
+  .controls-tray {
+    width: 100%;
+  }
+
+  /* Single-column controls: jog first, then mode, then power */
+  .controls-row {
+    grid-template-columns: 1fr;
+  }
+  .controls-col-center {
+    order: -1;
+    justify-self: center;
+    width: auto;
+  }
+  .controls-col-center::after { display: none; }
+  .controls-col.label-below-col .inline,
+  .controls-col.label-below-col .btn-grid { margin-top: 0; }
+
+  /* Scale frequency display to fit narrow screens */
+  #freq { font-size: clamp(1.3rem, 6vw, 2rem); }
+
+  /* Wider volume sliders for touch */
+  .vol-slider { width: clamp(80px, 35vw, 140px); }
+  .vol-slider::-webkit-slider-thumb { width: 20px; height: 20px; }
+  .vol-slider::-moz-range-thumb     { width: 20px; height: 20px; }
+
+  /* Spectrum control inputs and buttons: meet minimum tap-target size */
+  #spectrum-bw-input,
+  #spectrum-floor-input {
+    height: 2.2rem;
+    font-size: 0.82rem;
+  }
+  #spectrum-bw-set-btn,
+  #spectrum-auto-btn {
+    height: 2.2rem;
+    min-height: 0;
+    padding: 0 10px;
+    font-size: 0.82rem;
+  }
 }
