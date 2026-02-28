@@ -104,7 +104,6 @@ impl WfmStereoDecoder {
         if composite.is_empty() {
             return Vec::new();
         }
-        let _ = self.rds_decoder.process_samples(&composite);
 
         let mut output = Vec::with_capacity(
             ((composite.len() as f64 * self.output_phase_inc).ceil() as usize + 1)
@@ -122,6 +121,8 @@ impl WfmStereoDecoder {
 
             let pilot_mag = (i * i + q * q).sqrt();
             let stereo_blend = (pilot_mag * 40.0).clamp(0.0, 1.0);
+            let rds_quality = (pilot_mag * 45.0).clamp(0.0, 1.0);
+            let _ = self.rds_decoder.process_sample(x, rds_quality);
 
             let sum = self.sum_lp.process(x);
             let stereo_carrier = (2.0 * self.pilot_phase).cos() * 2.0;
