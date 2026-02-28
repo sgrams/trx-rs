@@ -411,6 +411,22 @@ small { color: var(--text-muted); }
   position: relative;
   z-index: 1;
 }
+#rds-ps-overlay {
+  display: none;
+  position: absolute;
+  top: calc(var(--header-waterfall-overlap) + clamp(4.2rem, 11vh, 6.25rem) / 2);
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 2;
+  pointer-events: none;
+  font-family: 'DSEG14 Classic', monospace;
+  font-size: 2rem;
+  letter-spacing: 0.05em;
+  color: var(--text-heading);
+  opacity: 0.88;
+  text-shadow: 0 1px 8px color-mix(in srgb, var(--bg) 60%, transparent);
+  white-space: nowrap;
+}
 .overview-toolbar {
   display: flex;
   align-items: center;

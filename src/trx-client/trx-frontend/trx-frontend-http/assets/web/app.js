@@ -330,6 +330,7 @@ const overviewPeakHoldEl = document.getElementById("overview-peak-hold");
 const themeToggleBtn = document.getElementById("theme-toggle");
 const headerRigSwitchSelect = document.getElementById("header-rig-switch-select");
 const headerStylePickSelect = document.getElementById("header-style-pick-select");
+const rdsPsOverlay = document.getElementById("rds-ps-overlay");
 let overviewPeakHoldMs = Number(loadSetting("overviewPeakHoldMs", 2000));
 
 let overviewDrawPending = false;
@@ -2793,6 +2794,7 @@ function startSpectrumStreaming() {
       overviewWaterfallRows = [];
       scheduleOverviewDraw();
       clearSpectrumCanvas();
+      updateRdsPsOverlay(null);
       return;
     }
     try {
@@ -2800,6 +2802,7 @@ function startSpectrumStreaming() {
       pushOverviewWaterfallFrame(lastSpectrumData);
       refreshCenterFreqDisplay();
       scheduleSpectrumDraw();
+      updateRdsPsOverlay(lastSpectrumData.rds);
     } catch (_) {}
   };
   spectrumSource.onerror = () => {
@@ -2824,6 +2827,7 @@ function stopSpectrumStreaming() {
   lastSpectrumData = null;
   overviewWaterfallRows = [];
   scheduleOverviewDraw();
+  updateRdsPsOverlay(null);
   clearSpectrumCanvas();
 }
 
@@ -2833,6 +2837,17 @@ function clearSpectrumCanvas() {
   const ctx = spectrumCanvas.getContext("2d");
   ctx.fillStyle = spectrumBgColor();
   ctx.fillRect(0, 0, spectrumCanvas.width, spectrumCanvas.height);
+}
+
+function updateRdsPsOverlay(rds) {
+  if (!rdsPsOverlay) return;
+  const ps = rds?.program_service?.trim();
+  if (ps) {
+    rdsPsOverlay.textContent = ps;
+    rdsPsOverlay.style.display = "";
+  } else {
+    rdsPsOverlay.style.display = "none";
+  }
 }
 
 function scheduleSpectrumDraw() {
