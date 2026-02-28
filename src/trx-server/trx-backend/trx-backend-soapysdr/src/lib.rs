@@ -55,6 +55,7 @@ impl SoapySdrRig {
     ///   `(channel_if_hz, initial_mode, audio_bandwidth_hz, fir_taps)`.
     /// - `gain_mode`: `"auto"` or `"manual"`.
     /// - `gain_db`: gain in dB; used when `gain_mode == "manual"`.
+    /// - `max_gain_db`: optional hard ceiling for the applied hardware gain.
     ///   When `gain_mode == "auto"` hardware AGC is not yet wired, so this
     ///   value acts as the fallback.
     /// - `audio_sample_rate`: output PCM rate (Hz).
@@ -72,6 +73,7 @@ impl SoapySdrRig {
         channels: &[(f64, RigMode, u32, usize)],
         gain_mode: &str,
         gain_db: f64,
+        max_gain_db: Option<f64>,
         audio_sample_rate: u32,
         audio_channels: usize,
         frame_duration_ms: u16,
@@ -83,10 +85,11 @@ impl SoapySdrRig {
         center_offset_hz: i64,
     ) -> DynResult<Self> {
         tracing::info!(
-            "initialising SoapySDR backend (args={:?}, gain_mode={:?}, gain_db={})",
+            "initialising SoapySDR backend (args={:?}, gain_mode={:?}, gain_db={}, max_gain_db={:?})",
             args,
             gain_mode,
             gain_db,
+            max_gain_db,
         );
 
         if gain_mode == "auto" {
@@ -94,6 +97,17 @@ impl SoapySdrRig {
                 "SoapySDR hardware AGC is not yet implemented; falling back to configured \
                  gain of {} dB",
                 gain_db,
+            );
+        }
+
+        let effective_gain_db = max_gain_db
+            .map(|max_gain| gain_db.min(max_gain))
+            .unwrap_or(gain_db);
+        if (effective_gain_db - gain_db).abs() > f64::EPSILON {
+            tracing::info!(
+                "Clamping SoapySDR gain from {} dB to {} dB due to configured max_value",
+                gain_db,
+                effective_gain_db,
             );
         }
 
@@ -107,7 +121,7 @@ impl SoapySdrRig {
             hardware_center_hz as f64,
             sdr_sample_rate as f64,
             bandwidth_hz as f64,
-            gain_db,
+            effective_gain_db,
         )?);
 
         let pipeline = dsp::SdrPipeline::start(
@@ -198,6 +212,7 @@ impl SoapySdrRig {
             &[], // no channels — pipeline does nothing; filter defaults applied in new_with_config
             "auto",
             30.0,
+            None,
             48_000,
             1,
             20,

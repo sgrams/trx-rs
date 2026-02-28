@@ -313,6 +313,7 @@ fn build_sdr_rig_from_instance(
         &channels,
         &rig_cfg.sdr.gain.mode,
         rig_cfg.sdr.gain.value,
+        rig_cfg.sdr.gain.max_value,
         rig_cfg.audio.sample_rate,
         rig_cfg.audio.channels as usize,
         rig_cfg.audio.frame_duration_ms,

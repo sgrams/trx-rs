@@ -362,6 +362,9 @@ pub struct SdrGainConfig {
     pub mode: String,
     /// Gain in dB; effective only when mode = "manual".
     pub value: f64,
+    /// Optional hard ceiling for the applied hardware gain in dB.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_value: Option<f64>,
 }
 
 impl Default for SdrGainConfig {
@@ -369,6 +372,7 @@ impl Default for SdrGainConfig {
         Self {
             mode: "auto".to_string(),
             value: 30.0,
+            max_value: None,
         }
     }
 }
@@ -501,6 +505,15 @@ impl ServerConfig {
             }
         }
 
+        if let Some(max_gain) = self.sdr.gain.max_value {
+            if !max_gain.is_finite() {
+                return Err("[sdr.gain].max_value must be finite".to_string());
+            }
+            if max_gain < 0.0 {
+                return Err("[sdr.gain].max_value must be >= 0".to_string());
+            }
+        }
+
         // Multi-rig uniqueness checks.
         if !self.rigs.is_empty() {
             let mut seen_ids: std::collections::HashSet<String> = std::collections::HashSet::new();
@@ -517,6 +530,20 @@ impl ServerConfig {
                         return Err(format!(
                             "[[rigs]] duplicate audio port {} (rig id: \"{}\")",
                             rig.audio.port, rig.id
+                        ));
+                    }
+                }
+                if let Some(max_gain) = rig.sdr.gain.max_value {
+                    if !max_gain.is_finite() {
+                        return Err(format!(
+                            "[[rigs]] [sdr.gain].max_value must be finite (rig id: \"{}\")",
+                            rig.id
+                        ));
+                    }
+                    if max_gain < 0.0 {
+                        return Err(format!(
+                            "[[rigs]] [sdr.gain].max_value must be >= 0 (rig id: \"{}\")",
+                            rig.id
                         ));
                     }
                 }
