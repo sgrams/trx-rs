@@ -311,8 +311,6 @@ pub struct ChannelDsp {
     wfm_deemphasis_us: u32,
     /// Whether WFM stereo decoding is enabled.
     wfm_stereo: bool,
-    /// Whether multiband stereo denoising is enabled for WFM.
-    wfm_denoise: bool,
     /// Decimation factor: `sdr_sample_rate / audio_sample_rate`.
     pub decim_factor: usize,
     /// Number of PCM channels emitted in each frame.
@@ -414,7 +412,6 @@ impl ChannelDsp {
                     self.output_channels,
                     self.wfm_stereo,
                     self.wfm_deemphasis_us,
-                    self.wfm_denoise,
                 ));
             }
         } else {
@@ -436,7 +433,6 @@ impl ChannelDsp {
         audio_bandwidth_hz: u32,
         wfm_deemphasis_us: u32,
         wfm_stereo: bool,
-        wfm_denoise: bool,
         fir_taps: usize,
         pcm_tx: broadcast::Sender<Vec<f32>>,
     ) -> Self {
@@ -482,7 +478,6 @@ impl ChannelDsp {
             fir_taps: taps,
             wfm_deemphasis_us,
             wfm_stereo,
-            wfm_denoise,
             decim_factor,
             output_channels,
             frame_buf: Vec::with_capacity(frame_size + output_channels),
@@ -504,7 +499,6 @@ impl ChannelDsp {
                     output_channels,
                     wfm_stereo,
                     wfm_deemphasis_us,
-                    wfm_denoise,
                 ))
             } else {
                 None
@@ -554,13 +548,6 @@ impl ChannelDsp {
         self.wfm_stereo = enabled;
         if let Some(decoder) = &mut self.wfm_decoder {
             decoder.set_stereo_enabled(enabled);
-        }
-    }
-
-    pub fn set_wfm_denoise(&mut self, enabled: bool) {
-        self.wfm_denoise = enabled;
-        if let Some(decoder) = &mut self.wfm_decoder {
-            decoder.set_denoise_enabled(enabled);
         }
     }
 
@@ -724,7 +711,6 @@ impl SdrPipeline {
         frame_duration_ms: u16,
         wfm_deemphasis_us: u32,
         wfm_stereo: bool,
-        wfm_denoise: bool,
         channels: &[(f64, RigMode, u32, usize)],
     ) -> Self {
         const IQ_BROADCAST_CAPACITY: usize = 64;
@@ -747,7 +733,6 @@ impl SdrPipeline {
                 audio_bandwidth_hz,
                 wfm_deemphasis_us,
                 wfm_stereo,
-                wfm_denoise,
                 fir_taps,
                 pcm_tx.clone(),
             );

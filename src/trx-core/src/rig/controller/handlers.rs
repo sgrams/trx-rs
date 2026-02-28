@@ -518,7 +518,6 @@ pub fn command_from_rig_command(cmd: RigCommand) -> Box<dyn RigCommandHandler> {
         | RigCommand::SetFirTaps(_)
         | RigCommand::SetWfmDeemphasis(_)
         | RigCommand::SetWfmStereo(_)
-        | RigCommand::SetWfmDenoise(_)
         | RigCommand::GetSpectrum => Box::new(GetSnapshotCommand),
     }
 }

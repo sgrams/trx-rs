@@ -265,7 +265,7 @@ impl Default for AudioConfig {
             tx_enabled: true,
             device: None,
             sample_rate: 48000,
-            channels: 1,
+            channels: 2,
             frame_duration_ms: 20,
             bitrate_bps: 192000,
         }

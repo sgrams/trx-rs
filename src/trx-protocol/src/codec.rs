@@ -299,7 +299,6 @@ mod tests {
                 cw_center_hz: 700,
                 wfm_deemphasis_us: 75,
                 wfm_stereo: true,
-                wfm_denoise: true,
                 wfm_stereo_detected: false,
             }),
             ..minimal_snapshot()
@@ -338,7 +337,6 @@ mod tests {
                 cw_center_hz: 700,
                 wfm_deemphasis_us: 50,
                 wfm_stereo: true,
-                wfm_denoise: true,
                 wfm_stereo_detected: true,
             }),
             ..minimal_snapshot()

@@ -40,7 +40,6 @@ pub enum ClientCommand {
     SetFirTaps { taps: u32 },
     SetWfmDeemphasis { deemphasis_us: u32 },
     SetWfmStereo { enabled: bool },
-    SetWfmDenoise { enabled: bool },
     GetSpectrum,
 }
 
