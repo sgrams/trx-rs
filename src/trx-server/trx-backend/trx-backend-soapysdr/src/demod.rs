@@ -146,6 +146,11 @@ impl DcBlocker {
         self.y1 = y;
         y
     }
+
+    pub(crate) fn reset(&mut self) {
+        self.x1 = 0.0;
+        self.y1 = 0.0;
+    }
 }
 
 /// Soft AGC with a fast-attack / slow-release envelope follower.
@@ -280,6 +285,13 @@ impl BiquadBandPass {
         self.y1 = y;
         y
     }
+
+    fn reset(&mut self) {
+        self.x1 = 0.0;
+        self.x2 = 0.0;
+        self.y1 = 0.0;
+        self.y2 = 0.0;
+    }
 }
 
 /// 2nd-order IIR low-pass filter (RBJ cookbook).  Use [`BW4_Q1`]/[`BW4_Q2`] in
@@ -323,6 +335,13 @@ impl BiquadLowPass {
         self.y1 = y;
         y
     }
+
+    fn reset(&mut self) {
+        self.x1 = 0.0;
+        self.x2 = 0.0;
+        self.y1 = 0.0;
+        self.y2 = 0.0;
+    }
 }
 
 /// 2nd-order IIR notch (band-reject) filter (RBJ cookbook).
@@ -365,6 +384,13 @@ impl BiquadNotch {
         self.y1 = y;
         y
     }
+
+    fn reset(&mut self) {
+        self.x1 = 0.0;
+        self.x2 = 0.0;
+        self.y1 = 0.0;
+        self.y2 = 0.0;
+    }
 }
 
 impl OnePoleLowPass {
@@ -380,6 +406,10 @@ impl OnePoleLowPass {
     fn process(&mut self, x: f32) -> f32 {
         self.y += self.alpha * (x - self.y);
         self.y
+    }
+
+    fn reset(&mut self) {
+        self.y = 0.0;
     }
 }
 
@@ -400,6 +430,10 @@ impl Deemphasis {
     fn process(&mut self, x: f32) -> f32 {
         self.y += self.alpha * (x - self.y);
         self.y
+    }
+
+    fn reset(&mut self) {
+        self.y = 0.0;
     }
 }
 
@@ -672,6 +706,40 @@ impl WfmStereoDecoder {
 
     pub fn reset_demod_state(&mut self) {
         self.prev_iq = None;
+    }
+
+    pub fn reset_state(&mut self) {
+        self.rds_decoder.reset();
+        self.rds_bpf.reset();
+        self.rds_dc.reset();
+        self.prev_iq = None;
+        self.pilot_phase = 0.0;
+        self.pilot_i_lp.reset();
+        self.pilot_q_lp.reset();
+        self.pilot_abs_lp.reset();
+        self.pilot_bpf.reset();
+        self.sum_lpf1.reset();
+        self.sum_lpf2.reset();
+        self.sum_notch.reset();
+        self.diff_lpf1.reset();
+        self.diff_lpf2.reset();
+        self.diff_q_lpf1.reset();
+        self.diff_q_lpf2.reset();
+        self.diff_dc.reset();
+        self.diff_q_dc.reset();
+        self.dc_m.reset();
+        self.dc_l.reset();
+        self.dc_r.reset();
+        self.deemph_m.reset();
+        self.deemph_l.reset();
+        self.deemph_r.reset();
+        self.stereo_detect_level = 0.0;
+        self.stereo_detected = false;
+        self.sum_hist = [0.0; WFM_RESAMP_TAPS];
+        self.diff_hist = [0.0; WFM_RESAMP_TAPS];
+        self.diff_q_hist = [0.0; WFM_RESAMP_TAPS];
+        self.prev_blend = 0.0;
+        self.output_phase = 0.0;
     }
 
     pub fn stereo_detected(&self) -> bool {
