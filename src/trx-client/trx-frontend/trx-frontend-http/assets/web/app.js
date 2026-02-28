@@ -275,12 +275,10 @@ function applyCapabilities(caps) {
   if (vfoRow) vfoRow.style.display = caps.vfo_switch ? "" : "none";
 
   // Signal meter row
-  const sigRow = document.querySelector(".full-row.label-below-row");
-  // Find signal row by content check rather than class (it may share classes)
   document.querySelectorAll(".full-row.label-below-row").forEach(row => {
     const label = row.querySelector(".label span");
     if (label && label.textContent === "Signal") {
-      row.style.display = caps.signal_meter ? "" : "none";
+      row.style.display = (caps.signal_meter && !caps.filter_controls) ? "" : "none";
     }
   });
 
@@ -361,6 +359,7 @@ let lastClientCount = null;
 let lastLocked = false;
 let lastRigIds = [];
 let lastRigDisplayNames = {};
+let lastActiveRigId = null;
 const originalTitle = document.title;
 const savedTheme = loadSetting("theme", null);
 
@@ -409,6 +408,25 @@ function readyText() {
   return lastClientCount !== null ? `Ready \u00b7 ${lastClientCount} user${lastClientCount !== 1 ? "s" : ""}` : "Ready";
 }
 
+function rigBadgeColor(rigId) {
+  const text = (rigId || "rx").toString();
+  let hash = 0;
+  for (let i = 0; i < text.length; i++) {
+    hash = ((hash * 33) + text.charCodeAt(i)) >>> 0;
+  }
+  const hue = hash % 360;
+  return `hsl(${hue}, 62%, 52%)`;
+}
+
+window.getDecodeRigMeta = function() {
+  const rigId = lastActiveRigId || "local";
+  return {
+    rigId,
+    label: lastRigDisplayNames[rigId] || rigId,
+    color: rigBadgeColor(rigId),
+  };
+};
+
 function populateRigPicker(selectEl, rigIds, activeRigId, disabled) {
   if (!selectEl) return;
   const selectedBefore = selectEl.value;
@@ -445,6 +463,7 @@ function applyRigList(activeRigId, rigIds, displayNames) {
     aboutList.textContent = lastRigIds.length ? lastRigIds.join(", ") : "--";
   }
   if (typeof activeRigId === "string" && activeRigId.length > 0) {
+    lastActiveRigId = activeRigId;
     const aboutActive = document.getElementById("about-active-rig");
     if (aboutActive) aboutActive.textContent = activeRigId;
   }

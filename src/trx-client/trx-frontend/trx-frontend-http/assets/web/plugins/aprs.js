@@ -68,7 +68,11 @@ function renderAprsRow(pkt) {
     const osmUrl = `https://www.openstreetmap.org/?mlat=${pkt.lat}&mlon=${pkt.lon}#map=15/${pkt.lat}/${pkt.lon}`;
     posHtml = ` <a class="aprs-pos" href="${osmUrl}" target="_blank">${pkt.lat.toFixed(4)}, ${pkt.lon.toFixed(4)}</a>`;
   }
+  const receiverHtml = pkt.receiver
+    ? `<span class="decode-rig-badge" style="--decode-rig-color:${pkt.receiver.color};">${pkt.receiver.label}</span> `
+    : "";
   row.dataset.filterText = [
+    pkt.receiver ? pkt.receiver.label : "",
     pkt.srcCall,
     pkt.destCall,
     pkt.path,
@@ -80,7 +84,7 @@ function renderAprsRow(pkt) {
     .filter(Boolean)
     .join(" ")
     .toUpperCase();
-  row.innerHTML = `<span class="aprs-time">${ts}</span>${symbolHtml}<span class="aprs-call">${pkt.srcCall}</span>&gt;${pkt.destCall}${pkt.path ? "," + pkt.path : ""}: <span title="${pkt.type}">${renderAprsInfo(pkt)}</span>${posHtml}${crcTag}`;
+  row.innerHTML = `<span class="aprs-time">${ts}</span>${receiverHtml}${symbolHtml}<span class="aprs-call">${pkt.srcCall}</span>&gt;${pkt.destCall}${pkt.path ? "," + pkt.path : ""}: <span title="${pkt.type}">${renderAprsInfo(pkt)}</span>${posHtml}${crcTag}`;
   applyAprsFilterToRow(row);
   return row;
 }
@@ -148,6 +152,7 @@ if (aprsFilterInput) {
 window.onServerAprs = function(pkt) {
   aprsStatus.textContent = "Receiving";
   addAprsPacket({
+    receiver: window.getDecodeRigMeta ? window.getDecodeRigMeta() : null,
     srcCall: pkt.src_call,
     destCall: pkt.dest_call,
     path: pkt.path,
