@@ -8,6 +8,17 @@ use trx_rds::RdsDecoder;
 
 const RDS_SUBCARRIER_HZ: f32 = 57_000.0;
 const RDS_BPF_Q: f32 = 10.0;
+/// Pilot tone frequency (Hz).
+const PILOT_HZ: f32 = 19_000.0;
+/// Audio bandwidth for WFM (Hz).
+const AUDIO_BW_HZ: f32 = 15_000.0;
+/// Q values for a proper 4th-order Butterworth cascade (two 2nd-order stages).
+/// Stage 1: Q = 1 / (2 cos(π/8))
+const BW4_Q1: f32 = 0.5412;
+/// Stage 2: Q = 1 / (2 cos(3π/8))
+const BW4_Q2: f32 = 1.3066;
+/// Q for the 19 kHz pilot notch (~3.8 kHz 3 dB bandwidth).
+const PILOT_NOTCH_Q: f32 = 5.0;
 
 #[derive(Debug, Clone)]
 struct OnePoleLowPass {
@@ -94,6 +105,91 @@ impl BiquadBandPass {
     }
 }
 
+/// 2nd-order IIR low-pass filter (RBJ cookbook).  Use [`BW4_Q1`]/[`BW4_Q2`] in
+/// cascade for a proper 4th-order Butterworth response.
+#[derive(Debug, Clone)]
+struct BiquadLowPass {
+    b0: f32,
+    b1: f32,
+    b2: f32,
+    a1: f32,
+    a2: f32,
+    x1: f32,
+    x2: f32,
+    y1: f32,
+    y2: f32,
+}
+
+impl BiquadLowPass {
+    fn new(sample_rate: f32, cutoff_hz: f32, q: f32) -> Self {
+        let sr = sample_rate.max(1.0);
+        let fc = cutoff_hz.clamp(1.0, sr * 0.45);
+        let q = q.max(0.1);
+        let w0 = 2.0 * std::f32::consts::PI * fc / sr;
+        let alpha = w0.sin() / (2.0 * q);
+        let cos_w0 = w0.cos();
+        let a0_inv = 1.0 / (1.0 + alpha);
+        let b0 = (1.0 - cos_w0) * 0.5 * a0_inv;
+        let b1 = (1.0 - cos_w0) * a0_inv;
+        let b2 = b0;
+        let a1 = -2.0 * cos_w0 * a0_inv;
+        let a2 = (1.0 - alpha) * a0_inv;
+        Self { b0, b1, b2, a1, a2, x1: 0.0, x2: 0.0, y1: 0.0, y2: 0.0 }
+    }
+
+    fn process(&mut self, x: f32) -> f32 {
+        let y = self.b0 * x + self.b1 * self.x1 + self.b2 * self.x2
+            - self.a1 * self.y1 - self.a2 * self.y2;
+        self.x2 = self.x1;
+        self.x1 = x;
+        self.y2 = self.y1;
+        self.y1 = y;
+        y
+    }
+}
+
+/// 2nd-order IIR notch (band-reject) filter (RBJ cookbook).
+#[derive(Debug, Clone)]
+struct BiquadNotch {
+    b0: f32,
+    b1: f32,
+    b2: f32,
+    a1: f32,
+    a2: f32,
+    x1: f32,
+    x2: f32,
+    y1: f32,
+    y2: f32,
+}
+
+impl BiquadNotch {
+    fn new(sample_rate: f32, center_hz: f32, q: f32) -> Self {
+        let sr = sample_rate.max(1.0);
+        let fc = center_hz.clamp(1.0, sr * 0.45);
+        let q = q.max(0.1);
+        let w0 = 2.0 * std::f32::consts::PI * fc / sr;
+        let alpha = w0.sin() / (2.0 * q);
+        let cos_w0 = w0.cos();
+        let a0_inv = 1.0 / (1.0 + alpha);
+        let b0 = a0_inv;
+        let b1 = -2.0 * cos_w0 * a0_inv;
+        let b2 = a0_inv;
+        let a1 = b1;
+        let a2 = (1.0 - alpha) * a0_inv;
+        Self { b0, b1, b2, a1, a2, x1: 0.0, x2: 0.0, y1: 0.0, y2: 0.0 }
+    }
+
+    fn process(&mut self, x: f32) -> f32 {
+        let y = self.b0 * x + self.b1 * self.x1 + self.b2 * self.x2
+            - self.a1 * self.y1 - self.a2 * self.y2;
+        self.x2 = self.x1;
+        self.x1 = x;
+        self.y2 = self.y1;
+        self.y1 = y;
+        y
+    }
+}
+
 impl OnePoleLowPass {
     fn new(sample_rate: f32, cutoff_hz: f32) -> Self {
         let sr = sample_rate.max(1.0);
@@ -141,11 +237,24 @@ pub struct WfmStereoDecoder {
     pilot_freq_err: f32,
     pilot_i_lp: OnePoleLowPass,
     pilot_q_lp: OnePoleLowPass,
-    sum_lp: OnePoleLowPass,
-    diff_lp: OnePoleLowPass,
+    /// 4th-order Butterworth cascade for L+R (two 2nd-order stages, Q = BW4_Q1/BW4_Q2).
+    sum_lpf1: BiquadLowPass,
+    sum_lpf2: BiquadLowPass,
+    /// Notch at 19 kHz to suppress pilot tone leakage in the L+R channel.
+    sum_notch: BiquadNotch,
+    /// 4th-order Butterworth cascade for L-R (matched to sum path for stereo phase accuracy).
+    diff_lpf1: BiquadLowPass,
+    diff_lpf2: BiquadLowPass,
+    /// DC blockers on audio outputs — remove carrier-offset DC from the FM discriminator.
+    dc_m: DcBlocker,
+    dc_l: DcBlocker,
+    dc_r: DcBlocker,
     deemph_m: Deemphasis,
     deemph_l: Deemphasis,
     deemph_r: Deemphasis,
+    /// Previous filtered sum/diff composite samples used for linear interpolation.
+    prev_sum: f32,
+    prev_diff: f32,
     /// Fractional phase increment per composite sample = audio_rate / composite_rate.
     /// Avoids integer-division rate error when composite_rate is not an exact
     /// multiple of audio_rate (e.g. 250 kHz composite → 48 kHz audio).
@@ -171,15 +280,25 @@ impl WfmStereoDecoder {
             rds_bpf: BiquadBandPass::new(composite_rate_f, RDS_SUBCARRIER_HZ, RDS_BPF_Q),
             rds_dc: DcBlocker::new(0.995),
             pilot_phase: 0.0,
-            pilot_freq: 2.0 * std::f32::consts::PI * 19_000.0 / composite_rate_f,
+            pilot_freq: 2.0 * std::f32::consts::PI * PILOT_HZ / composite_rate_f,
             pilot_freq_err: 0.0,
             pilot_i_lp: OnePoleLowPass::new(composite_rate_f, 400.0),
             pilot_q_lp: OnePoleLowPass::new(composite_rate_f, 400.0),
-            sum_lp: OnePoleLowPass::new(composite_rate_f, 15_000.0),
-            diff_lp: OnePoleLowPass::new(composite_rate_f, 15_000.0),
+            // 4th-order Butterworth: two cascaded biquads with BW4_Q1/BW4_Q2.
+            // At 19 kHz (pilot): ≈ −12 dB; at 38 kHz (DSB carrier): ≈ −32 dB.
+            sum_lpf1: BiquadLowPass::new(composite_rate_f, AUDIO_BW_HZ, BW4_Q1),
+            sum_lpf2: BiquadLowPass::new(composite_rate_f, AUDIO_BW_HZ, BW4_Q2),
+            sum_notch: BiquadNotch::new(composite_rate_f, PILOT_HZ, PILOT_NOTCH_Q),
+            diff_lpf1: BiquadLowPass::new(composite_rate_f, AUDIO_BW_HZ, BW4_Q1),
+            diff_lpf2: BiquadLowPass::new(composite_rate_f, AUDIO_BW_HZ, BW4_Q2),
+            dc_m: DcBlocker::new(0.9999),
+            dc_l: DcBlocker::new(0.9999),
+            dc_r: DcBlocker::new(0.9999),
             deemph_m: Deemphasis::new(audio_rate.max(1) as f32, deemphasis_us),
             deemph_l: Deemphasis::new(audio_rate.max(1) as f32, deemphasis_us),
             deemph_r: Deemphasis::new(audio_rate.max(1) as f32, deemphasis_us),
+            prev_sum: 0.0,
+            prev_diff: 0.0,
             output_phase_inc,
             output_phase: 0.0,
         }
@@ -197,6 +316,7 @@ impl WfmStereoDecoder {
         );
 
         for x in composite {
+            // --- Pilot PLL ---
             let (sin_p, cos_p) = self.pilot_phase.sin_cos();
             let i = self.pilot_i_lp.process(x * cos_p);
             let q = self.pilot_q_lp.process(x * -sin_p);
@@ -207,28 +327,57 @@ impl WfmStereoDecoder {
 
             let pilot_mag = (i * i + q * q).sqrt();
             let stereo_blend = (pilot_mag * 40.0).clamp(0.0, 1.0);
+
+            // --- RDS ---
             let rds_quality = (0.35 + pilot_mag * 20.0).clamp(0.35, 1.0);
             let rds_band = self.rds_bpf.process(x);
             let rds_clean = self.rds_dc.process(rds_band);
             let _ = self.rds_decoder.process_sample(rds_clean, rds_quality);
 
-            let sum = self.sum_lp.process(x);
-            let stereo_carrier = (2.0 * self.pilot_phase).cos() * 2.0;
-            let diff = self.diff_lp.process(x * stereo_carrier) * stereo_blend;
+            // --- L+R (sum): 4th-order Butterworth + pilot notch ---
+            let sum = self.sum_notch.process(self.sum_lpf2.process(self.sum_lpf1.process(x)));
 
+            // --- L-R (diff): 38 kHz demod + 4th-order Butterworth ---
+            let stereo_carrier = (2.0 * self.pilot_phase).cos() * 2.0;
+            let diff = self.diff_lpf2.process(self.diff_lpf1.process(x * stereo_carrier))
+                * stereo_blend;
+
+            // --- Linear interpolation resampling ---
+            // Track previous filtered values every composite sample for interpolation.
+            let prev_sum = self.prev_sum;
+            let prev_diff = self.prev_diff;
+            self.prev_sum = sum;
+            self.prev_diff = diff;
+
+            let prev_phase = self.output_phase;
             self.output_phase += self.output_phase_inc;
             if self.output_phase < 1.0 {
                 continue;
             }
             self.output_phase -= 1.0;
 
+            // Interpolate: `frac` is the fractional position of the output sample
+            // between the previous composite sample (frac≈0) and the current one (frac≈1).
+            let frac = ((1.0 - prev_phase) / self.output_phase_inc) as f32;
+            let sum_i = prev_sum + frac * (sum - prev_sum);
+            let diff_i = prev_diff + frac * (diff - prev_diff);
+
+            // --- Deemphasis + DC block + output ---
             if self.output_channels >= 2 {
-                let left = self.deemph_l.process((sum + diff) * 0.5).clamp(-1.0, 1.0);
-                let right = self.deemph_r.process((sum - diff) * 0.5).clamp(-1.0, 1.0);
+                let left = self.dc_l
+                    .process(self.deemph_l.process((sum_i + diff_i) * 0.5))
+                    .clamp(-1.0, 1.0);
+                let right = self.dc_r
+                    .process(self.deemph_r.process((sum_i - diff_i) * 0.5))
+                    .clamp(-1.0, 1.0);
                 output.push(left);
                 output.push(right);
             } else {
-                output.push(self.deemph_m.process(sum).clamp(-1.0, 1.0));
+                output.push(
+                    self.dc_m
+                        .process(self.deemph_m.process(sum_i))
+                        .clamp(-1.0, 1.0),
+                );
             }
         }
 
