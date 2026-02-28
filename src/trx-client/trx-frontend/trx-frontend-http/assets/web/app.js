@@ -654,7 +654,7 @@ function drawOverviewSignalHistory(ctx, w, h, isLight) {
     ctx.moveTo(0, y);
     ctx.lineTo(w, y);
     ctx.stroke();
-    ctx.fillText(marker.label, w - 6, Math.max(8, Math.min(h - 8, y)));
+    ctx.fillText(marker.label, w - 6, Math.max(8, Math.min(h - 8, y + 6)));
   }
 
   ctx.beginPath();
