@@ -82,16 +82,9 @@ function showAuthGate(allowGuest = false) {
   authGate.style.flexDirection = "column";
   authGate.style.justifyContent = "center";
   authGate.style.alignItems = "stretch";
-  document.getElementById("tab-bar").style.display = "none";
   const overviewStrip = document.querySelector(".overview-strip");
   if (overviewStrip) {
     overviewStrip.style.display = "none";
-  }
-
-  // Hide rig picker since no rigs are accessible without auth
-  const rigSwitch = document.querySelector(".header-rig-switch");
-  if (rigSwitch) {
-    rigSwitch.style.display = "none";
   }
 
   // Hide all tab panels
@@ -104,22 +97,20 @@ function showAuthGate(allowGuest = false) {
   if (guestBtn) {
     guestBtn.style.display = allowGuest ? "block" : "none";
   }
+
+  document.querySelectorAll(".tab-bar .tab").forEach((btn) => {
+    btn.classList.toggle("active", btn.dataset.tab === "main");
+  });
+  syncTopBarAccess();
 }
 
 function hideAuthGate() {
   const authGate = document.getElementById("auth-gate");
   authGate.style.display = "none";
   document.getElementById("loading").style.display = "block";
-  document.getElementById("tab-bar").style.display = "";
   const overviewStrip = document.querySelector(".overview-strip");
   if (overviewStrip) {
     overviewStrip.style.display = "";
-  }
-
-  // Show rig picker again now that user is authenticated
-  const rigSwitch = document.querySelector(".header-rig-switch");
-  if (rigSwitch) {
-    rigSwitch.style.display = "";
   }
 
   // Show Main tab by default and hide all other tabs
@@ -139,6 +130,7 @@ function hideAuthGate() {
   if (mainTabBtn) {
     mainTabBtn.classList.add("active");
   }
+  syncTopBarAccess();
 }
 
 function showAuthError(msg) {
@@ -158,6 +150,7 @@ function updateAuthUI() {
   if (!authEnabled) {
     if (badge) badge.style.display = "none";
     if (headerAuthBtn) headerAuthBtn.style.display = "none";
+    syncTopBarAccess();
     return;
   }
 
@@ -175,6 +168,7 @@ function updateAuthUI() {
       headerAuthBtn.style.display = "block";
     }
   }
+  syncTopBarAccess();
 }
 
 function applyAuthRestrictions() {
@@ -333,6 +327,22 @@ const headerStylePickSelect = document.getElementById("header-style-pick-select"
 const rdsPsOverlay = document.getElementById("rds-ps-overlay");
 let overviewPeakHoldMs = Number(loadSetting("overviewPeakHoldMs", 2000));
 
+function syncTopBarAccess() {
+  const loggedOut = authEnabled && !authRole;
+  const tabBar = document.getElementById("tab-bar");
+  if (tabBar) tabBar.style.display = "";
+
+  document.querySelectorAll(".tab-bar .tab").forEach((btn) => {
+    const isMain = btn.dataset.tab === "main";
+    btn.style.display = !loggedOut || isMain ? "" : "none";
+    btn.disabled = false;
+  });
+
+  if (headerRigSwitchSelect) {
+    headerRigSwitchSelect.disabled = loggedOut || authRole === "rx" || lastRigIds.length === 0;
+  }
+}
+
 let overviewDrawPending = false;
 let lastSpectrumData = null;
 let lastControl;
@@ -403,7 +413,7 @@ const CANVAS_PALETTE = {
       waterfallHue: [210, 35], waterfallSat: 82, waterfallLight: [92, 40], waterfallAlpha: [0.42, 0.80],
     },
   },
-  nord: {
+  arctic: {
     dark: {
       bg: "#1e2530",
       spectrumLine: "#88c0d0", spectrumFill: "rgba(136,192,208,0.12)",
@@ -421,7 +431,7 @@ const CANVAS_PALETTE = {
       waterfallHue: [215, 195], waterfallSat: 65, waterfallLight: [88, 45], waterfallAlpha: [0.35, 0.78],
     },
   },
-  monokai: {
+  lime: {
     dark: {
       bg: "#181815",
       spectrumLine: "#a6e22e", spectrumFill: "rgba(166,226,46,0.10)",
@@ -470,8 +480,9 @@ function canvasPalette() {
 }
 
 function setStyle(style) {
-  const valid = ["original", "nord", "monokai", "contrast"];
-  const next = valid.includes(style) ? style : "original";
+  const remapped = style === "nord" ? "arctic" : style === "monokai" ? "lime" : style;
+  const valid = ["original", "arctic", "lime", "contrast"];
+  const next = valid.includes(remapped) ? remapped : "original";
   if (next === "original") {
     document.documentElement.removeAttribute("data-style");
   } else {
@@ -584,7 +595,7 @@ function applyRigList(activeRigId, rigIds, displayNames) {
     const aboutActive = document.getElementById("about-active-rig");
     if (aboutActive) aboutActive.textContent = activeRigId;
   }
-  const disableSwitch = lastRigIds.length === 0 || authRole === "rx";
+  const disableSwitch = lastRigIds.length === 0 || !authRole || authRole === "rx";
   populateRigPicker(headerRigSwitchSelect, lastRigIds, activeRigId, disableSwitch);
   updateRigSubtitle(activeRigId);
 }
@@ -1540,7 +1551,7 @@ async function switchRigFromSelect(selectEl) {
     showHint("Rig switch failed", 2000);
     console.error(err);
   } finally {
-    const disableSwitch = lastRigIds.length === 0 || authRole === "rx";
+    const disableSwitch = lastRigIds.length === 0 || !authRole || authRole === "rx";
     selectEl.disabled = disableSwitch;
   }
 }
@@ -1934,6 +1945,7 @@ if (spectrumBwSetBtn) {
 document.querySelector(".tab-bar").addEventListener("click", (e) => {
   const btn = e.target.closest(".tab[data-tab]");
   if (!btn) return;
+  if (authEnabled && !authRole && btn.dataset.tab !== "main") return;
   document.querySelectorAll(".tab-bar .tab").forEach((t) => t.classList.remove("active"));
   btn.classList.add("active");
   document.querySelectorAll(".tab-panel").forEach((p) => p.style.display = "none");

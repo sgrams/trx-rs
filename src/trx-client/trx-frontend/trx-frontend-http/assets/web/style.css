@@ -962,7 +962,7 @@ button:focus-visible, input:focus-visible, select:focus-visible {
 }
 
 /* ── Arctic style ─────────────────────────────────────────────────────── */
-[data-style="nord"] {
+[data-style="arctic"] {
   --bg: #242933;
   --card-bg: #2e3440;
   --input-bg: #242933;
@@ -990,7 +990,7 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   --wavelength-fg: #7a8ea8;
   --spectrum-bg: #1e2530;
 }
-[data-style="nord"][data-theme="light"] {
+[data-style="arctic"][data-theme="light"] {
   --bg: #e5e9f0;
   --card-bg: #eceff4;
   --input-bg: #d8dee9;
@@ -1019,8 +1019,8 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   --spectrum-bg: #dde1e9;
 }
 
-/* ── Brownie style ────────────────────────────────────────────────────── */
-[data-style="monokai"] {
+/* ── Lime style ───────────────────────────────────────────────────────── */
+[data-style="lime"] {
   --bg: #1c1c17;
   --card-bg: #272822;
   --input-bg: #1c1c17;
@@ -1048,7 +1048,7 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   --wavelength-fg: #9c8f78;
   --spectrum-bg: #181815;
 }
-[data-style="monokai"][data-theme="light"] {
+[data-style="lime"][data-theme="light"] {
   --bg: #f5f0e4;
   --card-bg: #fdf9f2;
   --input-bg: #ede8d8;
