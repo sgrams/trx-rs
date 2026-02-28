@@ -3103,14 +3103,44 @@ function clearSpectrumCanvas() {
 }
 
 function updateRdsPsOverlay(rds) {
-  if (!rdsPsOverlay) return;
-  const ps = rds?.program_service?.trim();
-  if (ps) {
-    rdsPsOverlay.textContent = ps;
-    rdsPsOverlay.style.display = "";
-  } else {
-    rdsPsOverlay.style.display = "none";
+  // Overview strip overlay
+  if (rdsPsOverlay) {
+    const ps = rds?.program_service?.trim();
+    if (ps) {
+      rdsPsOverlay.textContent = ps;
+      rdsPsOverlay.style.display = "";
+    } else {
+      rdsPsOverlay.style.display = "none";
+    }
   }
+
+  // RDS debug panel
+  const statusEl   = document.getElementById("rds-status");
+  const piEl       = document.getElementById("rds-pi");
+  const psEl       = document.getElementById("rds-ps");
+  const ptyEl      = document.getElementById("rds-pty");
+  const ptyNameEl  = document.getElementById("rds-pty-name");
+  const rawEl      = document.getElementById("rds-raw");
+  if (!statusEl) return;
+
+  if (!rds) {
+    statusEl.textContent = "No signal";
+    statusEl.className = "rds-value rds-no-signal";
+    piEl.textContent = "--";
+    psEl.textContent = "--";
+    ptyEl.textContent = "--";
+    ptyNameEl.textContent = "--";
+    rawEl.textContent = "--";
+    return;
+  }
+
+  statusEl.textContent = "Decoding";
+  statusEl.className = "rds-value rds-decoding";
+  piEl.textContent = rds.pi != null ? `0x${rds.pi.toString(16).toUpperCase().padStart(4, "0")}` : "--";
+  psEl.textContent = rds.program_service ?? "--";
+  ptyEl.textContent = rds.pty != null ? String(rds.pty) : "--";
+  ptyNameEl.textContent = rds.pty_name ?? "--";
+  rawEl.textContent = JSON.stringify(rds, null, 2);
 }
 
 function scheduleSpectrumDraw() {
