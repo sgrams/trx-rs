@@ -255,28 +255,30 @@ impl BlockFirFilter {
 
 /// Build the AGC for a given mode.
 ///
-/// CW uses fast attack/release to follow individual dots and dashes.
-/// AM uses a moderate release so the AGC tracks fading carriers.
-/// All other modes use a longer release suitable for voice and data signals.
+/// AM AGC must be far slower than audio modulation.  With a 50 Hz bass
+/// component the modulation period is 20 ms; an attack faster than that
+/// causes the AGC to follow the audio envelope and distort (pumping).
+/// 500 ms / 5 s only reacts to slow carrier-amplitude fading, not audio.
+///
+/// CW uses a fast attack/release to follow individual dots and dashes.
+/// All other modes use 5 ms / 500 ms, suitable for SSB voice and FM.
 fn agc_for_mode(mode: &RigMode, audio_sample_rate: u32) -> SoftAgc {
     let sr = audio_sample_rate.max(1) as f32;
     match mode {
         RigMode::CW | RigMode::CWR => SoftAgc::new(sr, 1.0, 50.0, 0.5, 30.0),
-        RigMode::AM => SoftAgc::new(sr, 5.0, 200.0, 0.5, 30.0),
+        RigMode::AM => SoftAgc::new(sr, 500.0, 5_000.0, 0.5, 30.0),
         _ => SoftAgc::new(sr, 5.0, 500.0, 0.5, 30.0),
     }
 }
 
 /// Build the DC blocker for a given mode, or `None` if not applicable.
 ///
-/// WFM is excluded because it has its own internal DC blockers on each output
-/// channel.  AM uses a slightly faster blocker (r = 0.999, corner ≈ 7.6 Hz
-/// @ 48 kHz) so it can track slow carrier-amplitude fading.  All other modes
-/// (including CW, which now demodulates as USB) use r = 0.9999 (≈ 0.76 Hz).
+/// WFM is excluded because it has its own internal DC blockers per channel.
+/// All other modes use r = 0.9999 (corner ≈ 0.76 Hz @ 48 kHz), which strips
+/// only true carrier DC without affecting any audible bass content.
 fn dc_for_mode(mode: &RigMode) -> Option<DcBlocker> {
     match mode {
         RigMode::WFM => None,
-        RigMode::AM => Some(DcBlocker::new(0.999)),
         _ => Some(DcBlocker::new(0.9999)),
     }
 }
@@ -513,7 +515,7 @@ fn default_bandwidth_for_mode(mode: &RigMode) -> u32 {
     match mode {
         RigMode::LSB | RigMode::USB | RigMode::PKT | RigMode::DIG => 3_000,
         RigMode::CW | RigMode::CWR => 500,
-        RigMode::AM => 6_000,
+        RigMode::AM => 12_000,
         RigMode::FM => 12_500,
         RigMode::WFM => 180_000,
         RigMode::Other(_) => 3_000,
