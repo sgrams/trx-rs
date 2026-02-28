@@ -62,8 +62,13 @@ pub struct WfmStereoDecoder {
     deemph_m: Deemphasis,
     deemph_l: Deemphasis,
     deemph_r: Deemphasis,
-    output_decim: usize,
-    output_counter: usize,
+    /// Fractional phase increment per composite sample = audio_rate / composite_rate.
+    /// Avoids integer-division rate error when composite_rate is not an exact
+    /// multiple of audio_rate (e.g. 250 kHz composite → 48 kHz audio).
+    output_phase_inc: f64,
+    /// Fractional phase accumulator (0 .. 1).  Emits an output sample whenever
+    /// it crosses 1.0, ensuring the long-term rate is exactly audio_rate.
+    output_phase: f64,
 }
 
 impl WfmStereoDecoder {
@@ -74,7 +79,7 @@ impl WfmStereoDecoder {
         deemphasis_us: u32,
     ) -> Self {
         let composite_rate_f = composite_rate.max(1) as f32;
-        let output_decim = (composite_rate / audio_rate.max(1)).max(1) as usize;
+        let output_phase_inc = audio_rate.max(1) as f64 / composite_rate.max(1) as f64;
         let deemphasis_us = deemphasis_us as f32;
         Self {
             output_channels: output_channels.max(1),
@@ -89,8 +94,8 @@ impl WfmStereoDecoder {
             deemph_m: Deemphasis::new(audio_rate.max(1) as f32, deemphasis_us),
             deemph_l: Deemphasis::new(audio_rate.max(1) as f32, deemphasis_us),
             deemph_r: Deemphasis::new(audio_rate.max(1) as f32, deemphasis_us),
-            output_decim,
-            output_counter: 0,
+            output_phase_inc,
+            output_phase: 0.0,
         }
     }
 
@@ -102,7 +107,8 @@ impl WfmStereoDecoder {
         let _ = self.rds_decoder.process_samples(&composite);
 
         let mut output = Vec::with_capacity(
-            (composite.len() / self.output_decim.max(1)) * self.output_channels.max(1),
+            ((composite.len() as f64 * self.output_phase_inc).ceil() as usize + 1)
+                * self.output_channels.max(1),
         );
 
         for x in composite {
@@ -121,11 +127,11 @@ impl WfmStereoDecoder {
             let stereo_carrier = (2.0 * self.pilot_phase).cos() * 2.0;
             let diff = self.diff_lp.process(x * stereo_carrier) * stereo_blend;
 
-            self.output_counter += 1;
-            if self.output_counter < self.output_decim {
+            self.output_phase += self.output_phase_inc;
+            if self.output_phase < 1.0 {
                 continue;
             }
-            self.output_counter = 0;
+            self.output_phase -= 1.0;
 
             if self.output_channels >= 2 {
                 let left = self.deemph_l.process((sum + diff) * 0.5).clamp(-1.0, 1.0);

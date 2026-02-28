@@ -2504,8 +2504,6 @@ function startRxAudio() {
         const sampleRate = (streamInfo && streamInfo.sample_rate) || 48000;
         opusDecoder = new AudioDecoder({
           output: (frame) => {
-            const buf = new Float32Array(frame.numberOfFrames * frame.numberOfChannels);
-            frame.copyTo(buf, { planeIndex: 0 });
             const forceMono = frame.numberOfChannels >= 2
               && wfmAudioModeEl
               && wfmAudioModeEl.value === "mono"
@@ -2514,21 +2512,21 @@ function startRxAudio() {
             const outChannels = forceMono ? 1 : frame.numberOfChannels;
             const ab = audioCtx.createBuffer(outChannels, frame.numberOfFrames, frame.sampleRate);
             if (forceMono) {
+              // Mix all planes down to mono
               const monoData = new Float32Array(frame.numberOfFrames);
-              for (let i = 0; i < frame.numberOfFrames; i++) {
-                let sum = 0;
-                for (let ch = 0; ch < frame.numberOfChannels; ch++) {
-                  sum += buf[i * frame.numberOfChannels + ch];
-                }
-                monoData[i] = sum / frame.numberOfChannels;
+              for (let ch = 0; ch < frame.numberOfChannels; ch++) {
+                const plane = new Float32Array(frame.numberOfFrames);
+                frame.copyTo(plane, { planeIndex: ch });
+                for (let i = 0; i < frame.numberOfFrames; i++) monoData[i] += plane[i];
               }
+              const inv = 1 / frame.numberOfChannels;
+              for (let i = 0; i < frame.numberOfFrames; i++) monoData[i] *= inv;
               ab.copyToChannel(monoData, 0);
             } else {
+              // Copy each plane directly — AudioData uses planar layout (f32-planar)
               for (let ch = 0; ch < frame.numberOfChannels; ch++) {
                 const chData = new Float32Array(frame.numberOfFrames);
-                for (let i = 0; i < frame.numberOfFrames; i++) {
-                  chData[i] = buf[i * frame.numberOfChannels + ch];
-                }
+                frame.copyTo(chData, { planeIndex: ch });
                 ab.copyToChannel(chData, ch);
               }
             }

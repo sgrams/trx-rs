@@ -282,8 +282,15 @@ pub struct ChannelDsp {
     pub mixer_phase: f64,
     /// Phase increment per IQ sample.
     pub mixer_phase_inc: f64,
-    /// Decimation counter.
+    /// Decimation counter (used only for the WFM path).
     decim_counter: usize,
+    /// Fractional-phase resampler for non-WFM paths.
+    /// Advances by `resample_phase_inc` per IQ sample and emits an output
+    /// sample whenever it crosses 1.0, giving a long-term output rate of
+    /// exactly `audio_sample_rate` regardless of SDR rate rounding.
+    resample_phase: f64,
+    /// `audio_sample_rate / sdr_sample_rate`  (updated in `rebuild_filters`).
+    resample_phase_inc: f64,
     /// Dedicated WFM decoder that preserves the FM composite baseband.
     wfm_decoder: Option<WfmStereoDecoder>,
 }
@@ -335,6 +342,12 @@ impl ChannelDsp {
         )
         .0;
         self.decim_counter = 0;
+        self.resample_phase = 0.0;
+        self.resample_phase_inc = if self.sdr_sample_rate == 0 {
+            1.0
+        } else {
+            self.audio_sample_rate as f64 / self.sdr_sample_rate as f64
+        };
         self.wfm_decoder = if self.mode == RigMode::WFM {
             Some(WfmStereoDecoder::new(
                 channel_sample_rate,
@@ -403,6 +416,12 @@ impl ChannelDsp {
             mixer_phase: 0.0,
             mixer_phase_inc,
             decim_counter: 0,
+            resample_phase: 0.0,
+            resample_phase_inc: if sdr_sample_rate == 0 {
+                1.0
+            } else {
+                audio_sample_rate as f64 / sdr_sample_rate as f64
+            },
             wfm_decoder: if *mode == RigMode::WFM {
                 Some(WfmStereoDecoder::new(
                     channel_sample_rate,
@@ -496,16 +515,33 @@ impl ChannelDsp {
         let filtered_i = self.lpf_i.filter_block(&mixed_i);
         let filtered_q = self.lpf_q.filter_block(&mixed_q);
 
-        // --- 3. Decimate ----------------------------------------------------
+        // --- 3. Decimate / resample -----------------------------------------
         let capacity = n / self.decim_factor + 1;
         let mut decimated: Vec<Complex<f32>> = Vec::with_capacity(capacity);
-        for i in 0..n {
-            self.decim_counter += 1;
-            if self.decim_counter >= self.decim_factor {
-                self.decim_counter = 0;
-                let fi = filtered_i.get(i).copied().unwrap_or(0.0);
-                let fq = filtered_q.get(i).copied().unwrap_or(0.0);
-                decimated.push(Complex::new(fi, fq));
+        if self.wfm_decoder.is_some() {
+            // WFM: integer decimation preserves the FM composite signal at the
+            // rate expected by WfmStereoDecoder.  Final rate correction is done
+            // inside WfmStereoDecoder via its own fractional-phase accumulator.
+            for i in 0..n {
+                self.decim_counter += 1;
+                if self.decim_counter >= self.decim_factor {
+                    self.decim_counter = 0;
+                    let fi = filtered_i.get(i).copied().unwrap_or(0.0);
+                    let fq = filtered_q.get(i).copied().unwrap_or(0.0);
+                    decimated.push(Complex::new(fi, fq));
+                }
+            }
+        } else {
+            // Non-WFM: fractional-phase resampler so the long-term output rate
+            // equals exactly `audio_sample_rate` regardless of SDR rate rounding.
+            for i in 0..n {
+                self.resample_phase += self.resample_phase_inc;
+                if self.resample_phase >= 1.0 {
+                    self.resample_phase -= 1.0;
+                    let fi = filtered_i.get(i).copied().unwrap_or(0.0);
+                    let fq = filtered_q.get(i).copied().unwrap_or(0.0);
+                    decimated.push(Complex::new(fi, fq));
+                }
             }
         }
 
