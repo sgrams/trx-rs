@@ -485,7 +485,7 @@ small { color: var(--text-muted); }
 #rds-ps-overlay {
   display: none;
   position: absolute;
-  top: calc(var(--header-waterfall-overlap) + 0.35rem);
+  top: calc(var(--header-waterfall-overlap) + 0.7rem);
   left: 50%;
   transform: translate(-50%, -50%);
   z-index: 5;
