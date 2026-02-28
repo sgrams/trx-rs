@@ -2676,6 +2676,37 @@ function configureRxStream(nextInfo) {
   audioStatus.textContent = "RX";
 }
 
+function extractAudioFrameChannels(frame) {
+  const channels = Math.max(1, frame.numberOfChannels || 1);
+  const frames = Math.max(0, frame.numberOfFrames || 0);
+  const format = String(frame.format || "").toLowerCase();
+  const isPlanar = format.includes("planar");
+
+  if (!isPlanar) {
+    const interleaved = new Float32Array(frames * channels);
+    frame.copyTo(interleaved);
+    const out = Array.from({ length: channels }, () => new Float32Array(frames));
+    for (let i = 0; i < frames; i++) {
+      for (let ch = 0; ch < channels; ch++) {
+        out[ch][i] = interleaved[i * channels + ch];
+      }
+    }
+    return out;
+  }
+
+  const out = [];
+  for (let ch = 0; ch < channels; ch++) {
+    let len = frames;
+    try {
+      len = Math.max(frames, Math.floor(frame.allocationSize({ planeIndex: ch }) / 4));
+    } catch (e) {}
+    const plane = new Float32Array(len);
+    frame.copyTo(plane, { planeIndex: ch });
+    out.push(plane.length === frames ? plane : plane.subarray(0, frames));
+  }
+  return out;
+}
+
 function startRxAudio() {
   if (rxActive) { stopRxAudio(); return; }
   if (!hasWebCodecs) {
@@ -2721,30 +2752,26 @@ function startRxAudio() {
         const sampleRate = (streamInfo && streamInfo.sample_rate) || 48000;
         opusDecoder = new AudioDecoder({
           output: (frame) => {
+            const frameChannels = extractAudioFrameChannels(frame);
             const forceMono = frame.numberOfChannels >= 2
               && wfmAudioModeEl
               && wfmAudioModeEl.value === "mono"
               && modeEl
               && (modeEl.value || "").toUpperCase() === "WFM";
-            const outChannels = forceMono ? 1 : frame.numberOfChannels;
+            const outChannels = forceMono ? 1 : frameChannels.length;
             const ab = audioCtx.createBuffer(outChannels, frame.numberOfFrames, frame.sampleRate);
             if (forceMono) {
-              // Mix all planes down to mono
               const monoData = new Float32Array(frame.numberOfFrames);
-              for (let ch = 0; ch < frame.numberOfChannels; ch++) {
-                const plane = new Float32Array(frame.numberOfFrames);
-                frame.copyTo(plane, { planeIndex: ch });
+              for (let ch = 0; ch < frameChannels.length; ch++) {
+                const plane = frameChannels[ch];
                 for (let i = 0; i < frame.numberOfFrames; i++) monoData[i] += plane[i];
               }
-              const inv = 1 / frame.numberOfChannels;
+              const inv = 1 / Math.max(1, frameChannels.length);
               for (let i = 0; i < frame.numberOfFrames; i++) monoData[i] *= inv;
               ab.copyToChannel(monoData, 0);
             } else {
-              // Copy each plane directly — AudioData uses planar layout (f32-planar)
-              for (let ch = 0; ch < frame.numberOfChannels; ch++) {
-                const chData = new Float32Array(frame.numberOfFrames);
-                frame.copyTo(chData, { planeIndex: ch });
-                ab.copyToChannel(chData, ch);
+              for (let ch = 0; ch < frameChannels.length; ch++) {
+                ab.copyToChannel(frameChannels[ch], ch);
               }
             }
             const src = audioCtx.createBufferSource();
