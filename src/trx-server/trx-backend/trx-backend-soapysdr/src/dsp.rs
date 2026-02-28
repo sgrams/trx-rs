@@ -674,7 +674,16 @@ impl ChannelDsp {
                 }
                 *s = self.audio_agc.process(*s);
             }
-            raw
+            if self.output_channels >= 2 {
+                let mut stereo = Vec::with_capacity(raw.len() * self.output_channels);
+                for sample in raw {
+                    stereo.push(sample);
+                    stereo.push(sample);
+                }
+                stereo
+            } else {
+                raw
+            }
         };
 
         // --- 5. Emit complete PCM frames ------------------------------------
