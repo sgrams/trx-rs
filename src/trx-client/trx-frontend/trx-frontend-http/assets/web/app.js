@@ -3182,9 +3182,9 @@ function clearSpectrumCanvas() {
 }
 
 function formatOverlayPs(ps) {
-  return String(ps ?? "")
-    .slice(0, 8)
-    .padEnd(8, "_");
+  const raw = String(ps ?? "").slice(0, 8);
+  const leadingBlanks = raw.match(/^ */)?.[0].length ?? 0;
+  return `${"_".repeat(leadingBlanks)}${raw.slice(leadingBlanks)}`.padEnd(8, "_");
 }
 
 function formatOverlayPi(pi) {
@@ -3193,7 +3193,8 @@ function formatOverlayPi(pi) {
     : "PI --";
 }
 
-function formatOverlayPty(pty) {
+function formatOverlayPty(pty, ptyName) {
+  if (ptyName) return `PTY ${ptyName}`;
   return pty != null ? `PTY ${pty}` : "PTY --";
 }
 
@@ -3226,7 +3227,7 @@ function updateRdsPsOverlay(rds) {
     if (ps && ps.length > 0) {
       rdsPsOverlay.innerHTML =
         `<span class="rds-ps-main">${escapeMapHtml(formatOverlayPs(ps))}</span>` +
-        `<span class="rds-ps-meta">${escapeMapHtml(formatOverlayPi(rds?.pi))} · ${escapeMapHtml(formatOverlayPty(rds?.pty))}</span>`;
+        `<span class="rds-ps-meta">${escapeMapHtml(formatOverlayPi(rds?.pi))} · ${escapeMapHtml(formatOverlayPty(rds?.pty, rds?.pty_name))}</span>`;
       positionRdsPsOverlay();
       rdsPsOverlay.style.display = "flex";
     } else {
@@ -3268,8 +3269,8 @@ function updateRdsPsOverlay(rds) {
   statusEl.className = "rds-value rds-decoding";
   piEl.textContent = rds.pi != null ? `0x${rds.pi.toString(16).toUpperCase().padStart(4, "0")}` : "--";
   psEl.textContent = rds.program_service ?? "--";
-  ptyEl.textContent = rds.pty != null ? String(rds.pty) : "--";
-  ptyNameEl.textContent = rds.pty_name ?? "--";
+  ptyEl.textContent = rds.pty_name ?? (rds.pty != null ? String(rds.pty) : "--");
+  ptyNameEl.textContent = rds.pty != null ? String(rds.pty) : "--";
   rawEl.textContent = JSON.stringify(rds, null, 2);
 }
 
