@@ -654,25 +654,7 @@ impl ChannelDsp {
         // All other modes: stateless demodulator → DC blocker (where enabled) → AGC.
         // AGC is applied to WFM output too so all modes share the same target level.
         let audio = if let Some(decoder) = self.wfm_decoder.as_mut() {
-            let mut out = decoder.process_iq(&decimated);
-            if !self.wfm_stereo && self.output_channels >= 2 {
-                for pair in out.chunks_exact_mut(2) {
-                    let mono = self.audio_agc.process(pair[0]);
-                    pair[0] = mono;
-                    pair[1] = mono;
-                }
-            } else if self.wfm_stereo && self.output_channels >= 2 {
-                for pair in out.chunks_exact_mut(2) {
-                    let (left, right) = self.audio_agc.process_pair(pair[0], pair[1]);
-                    pair[0] = left;
-                    pair[1] = right;
-                }
-            } else {
-                for s in &mut out {
-                    *s = self.audio_agc.process(*s);
-                }
-            }
-            out
+            decoder.process_iq(&decimated)
         } else {
             let mut raw = self.demodulator.demodulate(&decimated);
             for s in &mut raw {

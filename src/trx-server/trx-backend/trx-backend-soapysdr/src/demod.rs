@@ -158,14 +158,6 @@ impl SoftAgc {
         let gain = self.update_gain(x.abs());
         (x * gain).clamp(-1.0, 1.0)
     }
-
-    pub(crate) fn process_pair(&mut self, left: f32, right: f32) -> (f32, f32) {
-        let gain = self.update_gain(left.abs().max(right.abs()));
-        (
-            (left * gain).clamp(-1.0, 1.0),
-            (right * gain).clamp(-1.0, 1.0),
-        )
-    }
 }
 
 impl BiquadBandPass {
