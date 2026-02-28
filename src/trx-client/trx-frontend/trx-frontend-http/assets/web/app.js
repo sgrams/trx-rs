@@ -1901,6 +1901,7 @@ function formatBwLabel(hz) {
 let currentBandwidthHz = 3_000;
 const spectrumBwInput = document.getElementById("spectrum-bw-input");
 const spectrumBwSetBtn = document.getElementById("spectrum-bw-set-btn");
+const spectrumBwAutoBtn = document.getElementById("spectrum-bw-auto-btn");
 
 function formatBandwidthInputKhz(hz) {
   const khz = hz / 1000;
@@ -1944,6 +1945,76 @@ async function applyBandwidthFromInput() {
   try { await postPath(`/set_bandwidth?hz=${clamped}`); } catch (_) {}
 }
 
+function estimateBandwidthAroundPeak(data, centerHz) {
+  if (!data || !Array.isArray(data.bins) || data.bins.length < 3 || !Number.isFinite(centerHz)) {
+    return null;
+  }
+
+  const bins = data.bins;
+  const maxIdx = bins.length - 1;
+  const fullLoHz = data.center_hz - data.sample_rate / 2;
+  const centerIdx = Math.max(
+    1,
+    Math.min(maxIdx - 1, Math.round(((centerHz - fullLoHz) / data.sample_rate) * maxIdx)),
+  );
+  const searchRadius = Math.max(6, Math.min(120, Math.round(maxIdx * 0.03)));
+  const searchLo = Math.max(1, centerIdx - searchRadius);
+  const searchHi = Math.min(maxIdx - 1, centerIdx + searchRadius);
+
+  let peakIdx = centerIdx;
+  for (let i = searchLo; i <= searchHi; i++) {
+    if (bins[i] > bins[peakIdx]) peakIdx = i;
+  }
+
+  const sorted = [...bins].sort((a, b) => a - b);
+  const noise = sorted[Math.floor(sorted.length * 0.2)];
+  const peak = bins[peakIdx];
+  const threshold = Math.max(noise + 4, peak - Math.max(8, (peak - noise) * 0.35));
+
+  let left = peakIdx;
+  let right = peakIdx;
+  let belowCount = 0;
+  for (let i = peakIdx; i > 1; i--) {
+    if (bins[i] < threshold) belowCount += 1;
+    else belowCount = 0;
+    if (belowCount >= 2) break;
+    left = i;
+  }
+
+  belowCount = 0;
+  for (let i = peakIdx; i < maxIdx - 1; i++) {
+    if (bins[i] < threshold) belowCount += 1;
+    else belowCount = 0;
+    if (belowCount >= 2) break;
+    right = i;
+  }
+
+  const shoulderPad = Math.max(1, Math.round((right - left) * 0.08));
+  left = Math.max(0, left - shoulderPad);
+  right = Math.min(maxIdx, right + shoulderPad);
+
+  const hzPerBin = data.sample_rate / maxIdx;
+  const rawBw = Math.max(hzPerBin, (right - left) * hzPerBin);
+  const [, minBw, maxBw, stepBw] = mwDefaultsForMode(modeEl ? modeEl.value : "USB");
+  const clamped = Math.max(minBw, Math.min(maxBw, rawBw));
+  return Math.max(stepBw, Math.round(clamped / stepBw) * stepBw);
+}
+
+async function applyAutoBandwidth() {
+  if (!lastSpectrumData || lastFreqHz == null) return;
+  const estimated = estimateBandwidthAroundPeak(lastSpectrumData, lastFreqHz);
+  if (!Number.isFinite(estimated) || estimated <= 0) {
+    syncBandwidthInput(currentBandwidthHz);
+    return;
+  }
+  currentBandwidthHz = estimated;
+  syncBandwidthInput(estimated);
+  if (lastSpectrumData) scheduleSpectrumDraw();
+  try {
+    await postPath(`/set_bandwidth?hz=${estimated}`);
+  } catch (_) {}
+}
+
 if (spectrumBwInput) {
   spectrumBwInput.addEventListener("keydown", (e) => {
     if (e.key === "Enter") {
@@ -1954,6 +2025,9 @@ if (spectrumBwInput) {
 }
 if (spectrumBwSetBtn) {
   spectrumBwSetBtn.addEventListener("click", () => { applyBandwidthFromInput(); });
+}
+if (spectrumBwAutoBtn) {
+  spectrumBwAutoBtn.addEventListener("click", () => { applyAutoBandwidth(); });
 }
 
 // --- Tab navigation ---
