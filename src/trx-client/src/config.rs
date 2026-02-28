@@ -6,10 +6,9 @@
 //!
 //! Supports loading configuration from TOML files with the following search order:
 //! 1. Path specified via `--config` CLI argument
-//! 2. `./trx-client.toml` (current directory)
-//! 3. `~/.trx-client.toml` (home directory)
-//! 4. `~/.config/trx-rs/client.toml` (XDG config)
-//! 5. `/etc/trx-rs/client.toml` (system-wide)
+//! 2. `./trx-rs.toml` `[trx-client]` section, or `./trx-client.toml`
+//! 3. `~/.config/trx-rs/trx-rs.toml` `[trx-client]` section, or `~/.config/trx-rs/client.toml`
+//! 4. `/etc/trx-rs/trx-rs.toml` `[trx-client]` section, or `/etc/trx-rs/client.toml`
 
 use std::collections::HashMap;
 use std::net::IpAddr;
@@ -488,9 +487,6 @@ impl ConfigFile for ClientConfig {
     fn default_search_paths() -> Vec<PathBuf> {
         let mut paths = Vec::new();
         paths.push(PathBuf::from("trx-client.toml"));
-        if let Some(home_dir) = dirs::home_dir() {
-            paths.push(home_dir.join(".trx-client.toml"));
-        }
         if let Some(config_dir) = dirs::config_dir() {
             paths.push(config_dir.join("trx-rs").join("client.toml"));
         }
@@ -551,9 +547,11 @@ port = 8080
     }
 
     #[test]
-    fn test_example_toml_parses() {
-        let example = ClientConfig::example_toml();
-        let _config: ClientConfig = toml::from_str(&example).unwrap();
+    fn test_example_combined_toml_parses() {
+        let example = ClientConfig::example_combined_toml();
+        let table: toml::Table = toml::from_str(&example).unwrap();
+        let section = toml::to_string(table.get("trx-client").unwrap()).unwrap();
+        let _config: ClientConfig = toml::from_str(&section).unwrap();
     }
 
     #[test]

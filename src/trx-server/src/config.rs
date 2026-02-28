@@ -6,10 +6,9 @@
 //!
 //! Supports loading configuration from TOML files with the following search order:
 //! 1. Path specified via `--config` CLI argument
-//! 2. `./trx-server.toml` (current directory)
-//! 3. `~/.trx-server.toml` (legacy per-user path)
-//! 4. `~/.config/trx-rs/server.toml` (XDG config)
-//! 5. `/etc/trx-rs/server.toml` (system-wide)
+//! 2. `./trx-rs.toml` `[trx-server]` section, or `./trx-server.toml`
+//! 3. `~/.config/trx-rs/trx-rs.toml` `[trx-server]` section, or `~/.config/trx-rs/server.toml`
+//! 4. `/etc/trx-rs/trx-rs.toml` `[trx-server]` section, or `/etc/trx-rs/server.toml`
 
 use std::net::IpAddr;
 use std::path::{Path, PathBuf};
@@ -801,9 +800,6 @@ impl ConfigFile for ServerConfig {
     fn default_search_paths() -> Vec<PathBuf> {
         let mut paths = Vec::new();
         paths.push(PathBuf::from("trx-server.toml"));
-        if let Some(home_dir) = dirs::home_dir() {
-            paths.push(home_dir.join(".trx-server.toml"));
-        }
         if let Some(config_dir) = dirs::config_dir() {
             paths.push(config_dir.join("trx-rs").join("server.toml"));
         }
@@ -907,9 +903,11 @@ tokens = ["secret123"]
     }
 
     #[test]
-    fn test_example_toml_parses() {
-        let example = ServerConfig::example_toml();
-        let _config: ServerConfig = toml::from_str(&example).unwrap();
+    fn test_example_combined_toml_parses() {
+        let example = ServerConfig::example_combined_toml();
+        let table: toml::Table = toml::from_str(&example).unwrap();
+        let section = toml::to_string(table.get("trx-server").unwrap()).unwrap();
+        let _config: ServerConfig = toml::from_str(&section).unwrap();
     }
 
     #[test]
@@ -943,14 +941,6 @@ tokens = ["secret123"]
         config.general.latitude = Some(52.0);
         config.general.longitude = Some(21.0);
         assert!(config.validate().is_ok());
-    }
-
-    #[test]
-    fn test_default_search_paths_include_legacy_home_file() {
-        let paths = ServerConfig::default_search_paths();
-        if let Some(home_dir) = dirs::home_dir() {
-            assert!(paths.contains(&home_dir.join(".trx-server.toml")));
-        }
     }
 
     // --- SDR-11: validate_sdr() unit tests ---
