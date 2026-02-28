@@ -1,0 +1,239 @@
+# trx-rs Combined Configuration File
+#
+# Copy this file to one of:
+#   ./trx-rs.toml                       (current directory)
+#   ~/.config/trx-rs/trx-rs.toml        (user config)
+#   /etc/trx-rs/trx-rs.toml             (system-wide)
+#
+# Or use per-binary files (trx-server.toml / trx-client.toml) without the
+# section headers — both formats are supported and the section headers may
+# also appear in any per-binary file passed via --config.
+#
+# CLI arguments override config file values.
+
+# =============================================================================
+# trx-server — connects to radio hardware, exposes a JSON/audio TCP server
+# =============================================================================
+
+[trx-server.general]
+# Callsign or station identifier
+callsign = "N0CALL"
+
+# Log level: trace, debug, info, warn, error
+# log_level = "info"
+
+[trx-server.rig]
+# Rig model: ft817 (more models coming)
+model = "ft817"
+# Initial frequency (Hz) before first CAT read
+initial_freq_hz = 144300000
+# Initial mode before first CAT read (LSB, USB, CW, CWR, AM, WFM, FM, DIG, PKT)
+initial_mode = "USB"
+
+[trx-server.rig.access]
+# Access type: "serial" or "tcp"
+type = "serial"
+
+# Serial port settings (when type = "serial")
+port = "/dev/ttyUSB0"
+baud = 9600
+
+# TCP settings (when type = "tcp")
+# host = "192.168.1.100"
+# tcp_port = 4532
+
+[trx-server.behavior]
+# Polling interval when idle (milliseconds)
+poll_interval_ms = 500
+
+# Polling interval when transmitting (milliseconds)
+poll_interval_tx_ms = 100
+
+# Maximum retry attempts for transient errors
+max_retries = 3
+
+# Base delay for exponential backoff (milliseconds)
+retry_base_delay_ms = 100
+
+[trx-server.listen]
+# Enable the JSON TCP listener for client connections
+enabled = true
+
+# IP address to listen on (use "0.0.0.0" for all interfaces)
+listen = "127.0.0.1"
+
+# TCP port to listen on
+port = 4530
+
+[trx-server.listen.auth]
+# Authentication tokens (empty = no auth required)
+tokens = []
+
+[trx-server.pskreporter]
+# Enable uploads of decoded FT8/WSPR spots to PSK Reporter
+enabled = false
+
+# PSK Reporter endpoint (UDP)
+host = "report.pskreporter.info"
+port = 4739
+
+# Optional receiver locator (4 or 6-char Maidenhead).
+# If omitted, it is derived from [trx-server.general] latitude/longitude.
+# receiver_locator = "JO93"
+
+[trx-server.aprsfi]
+# Enable APRS-IS IGate uplink (forwards received RF APRS packets to APRS-IS / aprs.fi)
+enabled = false
+
+# APRS-IS server (rotate.aprs.net does DNS round-robin across all tier-2 servers)
+host = "rotate.aprs.net"
+port = 14580
+
+# APRS-IS passcode. -1 = auto-computed from [trx-server.general] callsign.
+# passcode = -1
+
+[trx-server.decode_logs]
+# Optional decoder message logs to files (APRS/CW/FT8/WSPR)
+enabled = false
+
+# Base directory for decoder logs.
+# Default (if omitted): $XDG_DATA_HOME/trx-rs/decoders
+# Fallback: logs/decoders
+# dir = "/path/to/decoder-logs"
+
+# Per-decoder log file names (supported tokens: %YYYY% %MM% %DD%)
+aprs_file = "TRXRS-APRS-%YYYY%-%MM%-%DD%.log"
+cw_file = "TRXRS-CW-%YYYY%-%MM%-%DD%.log"
+ft8_file = "TRXRS-FT8-%YYYY%-%MM%-%DD%.log"
+wspr_file = "TRXRS-WSPR-%YYYY%-%MM%-%DD%.log"
+
+# --- SoapySDR backend example ---
+# To use an SDR device instead of a physical transceiver, set:
+#
+# [trx-server.rig]
+# model = "soapysdr"
+# initial_freq_hz = 14074000
+# initial_mode = "USB"
+#
+# [trx-server.rig.access]
+# type = "sdr"
+# args = "driver=rtlsdr"
+#
+# [trx-server.sdr]
+# sample_rate      = 1920000
+# bandwidth        = 1500000
+# center_offset_hz = 200000
+#
+# [trx-server.sdr.gain]
+# mode  = "auto"
+# value = 30.0
+#
+# [[trx-server.sdr.channels]]
+# id               = "primary"
+# offset_hz        = 0
+# mode             = "auto"
+# audio_bandwidth_hz = 3000
+# decoders         = ["ft8", "cw"]
+# stream_opus      = true
+#
+# [[trx-server.sdr.channels]]
+# id               = "wspr"
+# offset_hz        = 21600
+# mode             = "USB"
+# audio_bandwidth_hz = 3000
+# decoders         = ["wspr"]
+# stream_opus      = false
+
+# =============================================================================
+# trx-client — connects to trx-server and exposes user-facing frontends
+# =============================================================================
+
+[trx-client.general]
+# Callsign or station identifier displayed in frontends
+callsign = "N0CALL"
+
+# Log level: trace, debug, info, warn, error
+# log_level = "info"
+
+[trx-client.remote]
+# Remote trx-server URL (host:port)
+url = "192.168.1.100:9000"
+# Optional target rig ID on a multi-rig server (omit to use server default rig)
+# rig_id = "hf"
+
+# Poll interval in milliseconds
+poll_interval_ms = 750
+
+[trx-client.remote.auth]
+# Bearer token for authenticating with the remote server
+token = "my-token"
+
+[trx-client.frontends.http]
+# Enable HTTP/REST frontend with SSE for real-time updates
+enabled = true
+listen = "127.0.0.1"
+port = 8080
+
+[trx-client.frontends.http.auth]
+# Optional passphrase-based authentication for the HTTP frontend
+# Disabled by default to preserve backward compatibility
+
+# Enable authentication (default: false)
+enabled = false
+
+# Read-only passphrase: grants access to status/events/audio (rx role)
+# Leave unset to disable rx access
+# rx_passphrase = "rx-only-passphrase"
+
+# Full control passphrase: grants access to all endpoints including TX/PTT (control role)
+# Leave unset to disable control access
+# control_passphrase = "full-control-passphrase"
+
+# Enforce TX/PTT access control (default: true)
+# When true, TX/PTT endpoints return 404 to authenticated users without control role
+tx_access_control_enabled = true
+
+# Session time-to-live in minutes (default: 480 = 8 hours)
+session_ttl_min = 480
+
+# Set Secure flag on session cookie (default: false)
+# Should be true if served over HTTPS; false for HTTP/localhost
+cookie_secure = false
+
+# Cookie SameSite attribute: Strict, Lax (default), or None
+cookie_same_site = "Lax"
+
+[trx-client.frontends.rigctl]
+# Enable rigctl-compatible TCP interface (hamlib compatible)
+enabled = false
+listen = "127.0.0.1"
+port = 4532
+
+[trx-client.frontends.http_json]
+# Enable JSON-over-TCP control interface
+enabled = true
+listen = "127.0.0.1"
+# Set to 0 to bind an ephemeral port
+port = 0
+# List of accepted bearer tokens (empty = no auth)
+# auth.tokens = ["example-token"]
+
+[trx-client.frontends.audio]
+# Enable remote audio stream and decode transport
+enabled = true
+# Remote trx-server audio port
+server_port = 4531
+# Optional per-rig audio ports for multi-rig servers:
+# rig_ports.ft817 = 4531
+# rig_ports.airspyhf = 4532
+
+[trx-client.frontends.audio.bridge]
+# Enable local cpal bridge for WSJT-X virtual audio routing
+enabled = false
+# Optional exact output device name for RX playback
+# rx_output_device = "BlackHole 2ch"
+# Optional exact input device name for TX capture
+# tx_input_device = "BlackHole 2ch"
+# Playback/capture gain multipliers
+rx_gain = 1.0
+tx_gain = 1.0
