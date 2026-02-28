@@ -654,8 +654,16 @@ impl ChannelDsp {
         // AGC is applied to WFM output too so all modes share the same target level.
         let audio = if let Some(decoder) = self.wfm_decoder.as_mut() {
             let mut out = decoder.process_iq(&decimated);
-            for s in &mut out {
-                *s = self.audio_agc.process(*s);
+            if !self.wfm_stereo && self.output_channels >= 2 {
+                for pair in out.chunks_exact_mut(2) {
+                    let mono = self.audio_agc.process(pair[0]);
+                    pair[0] = mono;
+                    pair[1] = mono;
+                }
+            } else {
+                for s in &mut out {
+                    *s = self.audio_agc.process(*s);
+                }
             }
             out
         } else {
