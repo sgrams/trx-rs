@@ -4,11 +4,12 @@
 
 //! Configuration file support for trx-client.
 //!
-//! Supports loading configuration from TOML files with the following search order:
+//! Config is loaded from the `[trx-client]` section of `trx-rs.toml`.
+//! Default search order:
 //! 1. Path specified via `--config` CLI argument
-//! 2. `./trx-rs.toml` `[trx-client]` section, or `./trx-client.toml`
-//! 3. `~/.config/trx-rs/trx-rs.toml` `[trx-client]` section, or `~/.config/trx-rs/client.toml`
-//! 4. `/etc/trx-rs/trx-rs.toml` `[trx-client]` section, or `/etc/trx-rs/client.toml`
+//! 2. `./trx-rs.toml`
+//! 3. `~/.config/trx-rs/trx-rs.toml`
+//! 4. `/etc/trx-rs/trx-rs.toml`
 
 use std::collections::HashMap;
 use std::net::IpAddr;
@@ -482,22 +483,8 @@ fn validate_http_auth(auth: &HttpAuthConfig) -> Result<(), String> {
 }
 
 impl ConfigFile for ClientConfig {
-    fn config_filename() -> &'static str {
-        "client.toml"
-    }
-
-    fn combined_key() -> Option<&'static str> {
-        Some("trx-client")
-    }
-
-    fn default_search_paths() -> Vec<PathBuf> {
-        let mut paths = Vec::new();
-        paths.push(PathBuf::from("trx-client.toml"));
-        if let Some(config_dir) = dirs::config_dir() {
-            paths.push(config_dir.join("trx-rs").join("client.toml"));
-        }
-        paths.push(PathBuf::from("/etc/trx-rs/client.toml"));
-        paths
+    fn section_key() -> &'static str {
+        "trx-client"
     }
 }
 

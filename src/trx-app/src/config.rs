@@ -15,9 +15,9 @@ pub enum ConfigError {
     ParseError(PathBuf, String),
 }
 
-/// Returns search paths for the combined `trx-rs.toml` config file
+/// Returns the default search paths for `trx-rs.toml`
 /// (current directory → XDG config → /etc).
-pub fn combined_config_paths() -> Vec<PathBuf> {
+fn config_search_paths() -> Vec<PathBuf> {
     let mut paths = vec![PathBuf::from("trx-rs.toml")];
     if let Some(config_dir) = dirs::config_dir() {
         paths.push(config_dir.join("trx-rs").join("trx-rs.toml"));
@@ -52,82 +52,37 @@ fn load_section_from_file<T: DeserializeOwned>(
     Ok(Some(cfg))
 }
 
-/// Trait for loading configuration files with default paths.
+/// Trait for loading configuration from a `trx-rs.toml` section.
 pub trait ConfigFile: Sized + Default + DeserializeOwned {
-    /// Config filename (e.g., "server.toml" or "client.toml")
-    fn config_filename() -> &'static str;
+    /// Section key in `trx-rs.toml` (e.g. `"trx-server"` or `"trx-client"`).
+    fn section_key() -> &'static str;
 
-    /// Section key inside a combined `trx-rs.toml` file, e.g. `"trx-server"`.
-    /// Return `None` (the default) to disable combined-file support.
-    fn combined_key() -> Option<&'static str> {
-        None
-    }
-
-    /// Load config from a specific file path.
+    /// Load the section from a specific file path.
     ///
-    /// If `combined_key()` is set and the file contains that section header,
-    /// only that section is deserialized.  Otherwise the whole file is used,
-    /// preserving full backward compatibility with per-binary config files.
+    /// Returns an error if the file cannot be read, is not valid TOML, or
+    /// does not contain the expected `[<section_key>]` header.
     fn load_from_file(path: &Path) -> Result<Self, ConfigError> {
-        if let Some(key) = Self::combined_key() {
-            // Peek at the file: if it contains our section, use that section.
-            if let Ok(Some(cfg)) = load_section_from_file::<Self>(path, key) {
-                return Ok(cfg);
-            }
-        }
-
-        let content = std::fs::read_to_string(path)
-            .map_err(|e| ConfigError::ReadError(path.to_path_buf(), e.to_string()))?;
-        toml::from_str(&content)
-            .map_err(|e| ConfigError::ParseError(path.to_path_buf(), e.to_string()))
+        load_section_from_file::<Self>(path, Self::section_key())?.ok_or_else(|| {
+            ConfigError::ParseError(
+                path.to_path_buf(),
+                format!("missing [{}] section", Self::section_key()),
+            )
+        })
     }
 
-    /// Search default paths and load first found config.
+    /// Search default paths (`trx-rs.toml` in CWD → XDG → /etc) and load
+    /// the first file that contains the expected section.
     ///
-    /// Search order (for each location tier — CWD, XDG, /etc):
-    ///   1. `trx-rs.toml`  with our section header  (combined file)
-    ///   2. per-binary flat file (e.g. `trx-server.toml`)
-    ///
-    /// Returns `(config, path_where_found)` or `(Default::default(), None)`.
+    /// Returns `(config, path_where_found)` or `(Default::default(), None)`
+    /// when no config file is found.
     fn load_from_default_paths() -> Result<(Self, Option<PathBuf>), ConfigError> {
-        let combined = combined_config_paths();
-        let flat = Self::default_search_paths();
-
-        // Build interleaved list: (combined_path, flat_path) per tier.
-        let tiers = combined.len().max(flat.len());
-        for i in 0..tiers {
-            // Combined file at this tier
-            if let Some(key) = Self::combined_key() {
-                if let Some(path) = combined.get(i) {
-                    if path.exists() {
-                        if let Some(cfg) = load_section_from_file::<Self>(path, key)? {
-                            return Ok((cfg, Some(path.clone())));
-                        }
-                        // Combined file present but our section absent → skip to flat.
-                    }
-                }
-            }
-            // Flat file at this tier
-            if let Some(path) = flat.get(i) {
-                if path.exists() {
-                    let cfg = Self::load_from_file(path)?;
-                    return Ok((cfg, Some(path.clone())));
+        for path in config_search_paths() {
+            if path.exists() {
+                if let Some(cfg) = load_section_from_file::<Self>(&path, Self::section_key())? {
+                    return Ok((cfg, Some(path)));
                 }
             }
         }
         Ok((Self::default(), None))
-    }
-
-    /// Default search paths for the per-binary flat config file
-    /// (current dir → XDG → /etc).
-    fn default_search_paths() -> Vec<PathBuf> {
-        let mut paths = vec![PathBuf::from(Self::config_filename())];
-
-        if let Some(config_dir) = dirs::config_dir() {
-            paths.push(config_dir.join("trx-rs").join(Self::config_filename()));
-        }
-
-        paths.push(PathBuf::from("/etc/trx-rs").join(Self::config_filename()));
-        paths
     }
 }
