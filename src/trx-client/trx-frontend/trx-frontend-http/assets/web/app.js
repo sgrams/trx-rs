@@ -3194,19 +3194,31 @@ function formatOverlayPi(pi) {
 }
 
 function formatOverlayPty(pty, ptyName) {
-  if (ptyName) return `PTY ${ptyName}`;
-  return pty != null ? `PTY ${pty}` : "PTY --";
+  if (ptyName) return ptyName;
+  return pty != null ? String(pty) : "--";
 }
 
 async function copyRdsPsToClipboard() {
-  const ps = lastSpectrumData?.rds?.program_service;
-  if (!ps || ps.length === 0) {
+  const rds = lastSpectrumData?.rds;
+  const ps = rds?.program_service;
+  if (!rds || !ps || ps.length === 0) {
     showHint("No RDS PS", 1200);
     return;
   }
+  const now = new Date();
+  const yyyy = now.getFullYear();
+  const mm = String(now.getMonth() + 1).padStart(2, "0");
+  const dd = String(now.getDate()).padStart(2, "0");
+  const hh = String(now.getHours()).padStart(2, "0");
+  const min = String(now.getMinutes()).padStart(2, "0");
+  const freqMhz = Number.isFinite(lastFreqHz) ? (Math.round((lastFreqHz / 100_000)) / 10).toFixed(1) : "--.-";
+  const piHex = rds.pi != null
+    ? `0x${rds.pi.toString(16).toUpperCase().padStart(4, "0")}`
+    : "--";
+  const clipText = `${yyyy}-${mm}-${dd} ${hh}:${min} - ${freqMhz} MHz - ${piHex} - ${ps}`;
   try {
-    await navigator.clipboard.writeText(ps);
-    showHint(`Copied ${ps}`, 1200);
+    await navigator.clipboard.writeText(clipText);
+    showHint("RDS copied", 1200);
   } catch (_) {
     showHint("Clipboard failed", 1500);
   }
