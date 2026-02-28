@@ -222,8 +222,18 @@ impl SoftAgc {
         (x * gain).clamp(-1.0, 1.0)
     }
 
-    pub(crate) fn process_pair(&mut self, left: f32, right: f32) -> (f32, f32) {
-        let gain = self.update_gain(left.abs().max(right.abs()));
+    pub(crate) fn process_with_level(&mut self, x: f32, level: f32) -> f32 {
+        let gain = self.update_gain(level.abs());
+        (x * gain).clamp(-1.0, 1.0)
+    }
+
+    pub(crate) fn process_pair_with_level(
+        &mut self,
+        left: f32,
+        right: f32,
+        level: f32,
+    ) -> (f32, f32) {
+        let gain = self.update_gain(level.abs());
         (
             (left * gain).clamp(-1.0, 1.0),
             (right * gain).clamp(-1.0, 1.0),

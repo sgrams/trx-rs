@@ -305,6 +305,10 @@ fn dc_for_mode(mode: &RigMode) -> Option<DcBlocker> {
     }
 }
 
+fn wfm_limiter_sidechain() -> Option<(DcBlocker, DcBlocker)> {
+    Some((DcBlocker::new(0.985), DcBlocker::new(0.985)))
+}
+
 // ---------------------------------------------------------------------------
 // Channel DSP context
 // ---------------------------------------------------------------------------
@@ -362,6 +366,9 @@ pub struct ChannelDsp {
     iq_agc: Option<SoftAgc>,
     /// Soft AGC applied to all demodulated audio for consistent cross-mode levels.
     audio_agc: SoftAgc,
+    /// Optional high-passed detector path for the WFM limiter so bass does not
+    /// dominate gain reduction and smear treble.
+    limiter_sidechain: Option<(DcBlocker, DcBlocker)>,
     /// DC blocker for modes whose demodulator output can carry a DC offset
     /// (USB/LSB/AM/FM/DIG).  None for CW and WFM.
     audio_dc: Option<DcBlocker>,
@@ -443,6 +450,11 @@ impl ChannelDsp {
         }
         self.iq_agc = iq_agc_for_mode(&self.mode, channel_sample_rate);
         self.audio_agc = agc_for_mode(&self.mode, self.audio_sample_rate);
+        self.limiter_sidechain = if self.mode == RigMode::WFM {
+            wfm_limiter_sidechain()
+        } else {
+            None
+        };
         self.audio_dc = dc_for_mode(&self.mode);
         self.frame_buf.clear();
     }
@@ -530,6 +542,11 @@ impl ChannelDsp {
             },
             iq_agc: iq_agc_for_mode(mode, channel_sample_rate),
             audio_agc: agc_for_mode(mode, audio_sample_rate),
+            limiter_sidechain: if *mode == RigMode::WFM {
+                wfm_limiter_sidechain()
+            } else {
+                None
+            },
             audio_dc: dc_for_mode(mode),
         }
     }
@@ -690,19 +707,35 @@ impl ChannelDsp {
             let mut out = decoder.process_iq(&decimated);
             if !self.wfm_stereo && self.output_channels >= 2 {
                 for pair in out.chunks_exact_mut(2) {
-                    let mono = self.audio_agc.process(pair[0]);
+                    let detect = if let Some((left_sc, _)) = &mut self.limiter_sidechain {
+                        left_sc.process(pair[0]).abs()
+                    } else {
+                        pair[0].abs()
+                    };
+                    let mono = self.audio_agc.process_with_level(pair[0], detect);
                     pair[0] = mono;
                     pair[1] = mono;
                 }
             } else if self.wfm_stereo && self.output_channels >= 2 {
                 for pair in out.chunks_exact_mut(2) {
-                    let (left, right) = self.audio_agc.process_pair(pair[0], pair[1]);
+                    let detect = if let Some((left_sc, right_sc)) = &mut self.limiter_sidechain {
+                        left_sc.process(pair[0]).abs().max(right_sc.process(pair[1]).abs())
+                    } else {
+                        pair[0].abs().max(pair[1].abs())
+                    };
+                    let (left, right) =
+                        self.audio_agc.process_pair_with_level(pair[0], pair[1], detect);
                     pair[0] = left;
                     pair[1] = right;
                 }
             } else {
                 for s in &mut out {
-                    *s = self.audio_agc.process(*s);
+                    let detect = if let Some((left_sc, _)) = &mut self.limiter_sidechain {
+                        left_sc.process(*s).abs()
+                    } else {
+                        s.abs()
+                    };
+                    *s = self.audio_agc.process_with_level(*s, detect);
                 }
             }
             out
