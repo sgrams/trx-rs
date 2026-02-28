@@ -330,6 +330,7 @@ let overviewPeakHoldMs = Number(loadSetting("overviewPeakHoldMs", 2000));
 function syncTopBarAccess() {
   const loggedOut = authEnabled && !authRole;
   const tabBar = document.getElementById("tab-bar");
+  const rigSwitch = document.querySelector(".header-rig-switch");
   if (tabBar) tabBar.style.display = "";
 
   document.querySelectorAll(".tab-bar .tab").forEach((btn) => {
@@ -337,6 +338,10 @@ function syncTopBarAccess() {
     btn.style.display = !loggedOut || isMain ? "" : "none";
     btn.disabled = false;
   });
+
+  if (rigSwitch) {
+    rigSwitch.style.display = loggedOut ? "none" : "";
+  }
 
   if (headerRigSwitchSelect) {
     headerRigSwitchSelect.disabled = loggedOut || authRole === "rx" || lastRigIds.length === 0;
