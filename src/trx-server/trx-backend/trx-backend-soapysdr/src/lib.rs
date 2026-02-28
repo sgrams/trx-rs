@@ -460,6 +460,9 @@ impl RigCat for SoapySdrRig {
             .channel_dsps
             .get(self.primary_channel_idx)
             .and_then(|dsp| dsp.lock().ok().and_then(|d| d.rds_data()));
+        if let Some(ref r) = rds {
+            tracing::debug!("RDS: pi={:?} ps={:?} pty={:?}({})", r.pi, r.program_service, r.pty, r.pty_name.as_deref().unwrap_or("?"));
+        }
         Some(SpectrumData {
             bins,
             center_hz: self.center_hz.max(0) as u64,

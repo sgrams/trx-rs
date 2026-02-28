@@ -350,6 +350,7 @@ function syncTopBarAccess() {
 
 let overviewDrawPending = false;
 let lastSpectrumData = null;
+let rdsFrameCount = 0;
 let lastControl;
 let lastTxEn = null;
 let lastHasTx = true;
@@ -3099,6 +3100,7 @@ function startSpectrumStreaming() {
     }
     try {
       lastSpectrumData = JSON.parse(evt.data);
+      rdsFrameCount++;
       pushOverviewWaterfallFrame(lastSpectrumData);
       refreshCenterFreqDisplay();
       scheduleSpectrumDraw();
@@ -3125,6 +3127,7 @@ function stopSpectrumStreaming() {
   }
   spectrumDrawPending = false;
   lastSpectrumData = null;
+  rdsFrameCount = 0;
   overviewWaterfallRows = [];
   overviewWaterfallPushCount = 0;
   _wfResetOffscreen();
@@ -3155,12 +3158,18 @@ function updateRdsPsOverlay(rds) {
 
   // RDS debug panel
   const statusEl   = document.getElementById("rds-status");
+  const modeEl     = document.getElementById("rds-mode");
   const piEl       = document.getElementById("rds-pi");
   const psEl       = document.getElementById("rds-ps");
   const ptyEl      = document.getElementById("rds-pty");
   const ptyNameEl  = document.getElementById("rds-pty-name");
   const rawEl      = document.getElementById("rds-raw");
   if (!statusEl) return;
+
+  // Always show the current mode, frame counter, and a sanitised spectrum snapshot
+  if (modeEl) modeEl.textContent = document.getElementById("mode")?.value || "--";
+  const framesEl = document.getElementById("rds-frames");
+  if (framesEl) framesEl.textContent = String(rdsFrameCount);
 
   if (!rds) {
     statusEl.textContent = "No signal";
@@ -3169,7 +3178,10 @@ function updateRdsPsOverlay(rds) {
     psEl.textContent = "--";
     ptyEl.textContent = "--";
     ptyNameEl.textContent = "--";
-    rawEl.textContent = "--";
+    if (rawEl && lastSpectrumData) {
+      const { bins: _b, ...rest } = lastSpectrumData;
+      rawEl.textContent = JSON.stringify(rest, null, 2);
+    }
     return;
   }
 
@@ -3344,7 +3356,7 @@ function drawSpectrum(data) {
   ctx.stroke();
   ctx.restore();
 
-  // Peak markers for easier snap-tune targeting.
+  // ── Peak markers for easier snap-tune targeting ──────────────────────────
   const markerPeaks = visibleSpectrumPeakIndices(data);
   if (markerPeaks.length > 0) {
     ctx.save();
