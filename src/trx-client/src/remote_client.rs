@@ -167,10 +167,11 @@ async fn handle_connection(
                 let Some(req) = req else {
                     return Ok(());
                 };
+                let rig_id_override = req.rig_id_override;
                 let cmd = req.cmd;
                 let result = {
                     let client_cmd = rig_command_to_client(cmd);
-                    send_command(config, &mut writer, &mut reader, client_cmd, state_tx).await
+                    send_command(config, &mut writer, &mut reader, client_cmd, rig_id_override, state_tx).await
                 };
 
                 let _ = req.respond_to.send(result);
@@ -184,9 +185,10 @@ async fn send_command(
     writer: &mut tokio::net::tcp::OwnedWriteHalf,
     reader: &mut BufReader<tokio::net::tcp::OwnedReadHalf>,
     cmd: ClientCommand,
+    rig_id_override: Option<String>,
     state_tx: &watch::Sender<RigState>,
 ) -> RigResult<trx_core::RigSnapshot> {
-    let envelope = build_envelope(config, cmd);
+    let envelope = build_envelope(config, cmd, rig_id_override);
 
     let payload = serde_json::to_string(&envelope)
         .map_err(|e| RigError::communication(format!("JSON serialize failed: {e}")))?;
@@ -233,7 +235,7 @@ async fn send_command_no_state_update(
     reader: &mut BufReader<tokio::net::tcp::OwnedReadHalf>,
     cmd: ClientCommand,
 ) -> RigResult<trx_core::RigSnapshot> {
-    let envelope = build_envelope(config, cmd);
+    let envelope = build_envelope(config, cmd, None);
     let payload = serde_json::to_string(&envelope)
         .map_err(|e| RigError::communication(format!("JSON serialize failed: {e}")))?;
     time::timeout(
@@ -265,10 +267,14 @@ async fn send_command_no_state_update(
     ))
 }
 
-fn build_envelope(config: &RemoteClientConfig, cmd: ClientCommand) -> ClientEnvelope {
+fn build_envelope(
+    config: &RemoteClientConfig,
+    cmd: ClientCommand,
+    rig_id_override: Option<String>,
+) -> ClientEnvelope {
     ClientEnvelope {
         token: config.token.clone(),
-        rig_id: selected_rig_id(config),
+        rig_id: rig_id_override.or_else(|| selected_rig_id(config)),
         cmd,
     }
 }
@@ -305,7 +311,7 @@ async fn send_get_rigs(
     writer: &mut tokio::net::tcp::OwnedWriteHalf,
     reader: &mut BufReader<tokio::net::tcp::OwnedReadHalf>,
 ) -> RigResult<Vec<RigEntry>> {
-    let envelope = build_envelope(config, ClientCommand::GetRigs);
+    let envelope = build_envelope(config, ClientCommand::GetRigs, None);
     let payload = serde_json::to_string(&envelope)
         .map_err(|e| RigError::communication(format!("JSON serialize failed: {e}")))?;
 
@@ -712,7 +718,7 @@ mod tests {
             poll_interval: Duration::from_millis(500),
             spectrum: Arc::new(Mutex::new(SharedSpectrum::default())),
         };
-        let envelope = super::build_envelope(&config, trx_protocol::ClientCommand::GetState);
+        let envelope = super::build_envelope(&config, trx_protocol::ClientCommand::GetState, None);
         assert_eq!(envelope.token.as_deref(), Some("secret"));
         assert_eq!(envelope.rig_id.as_deref(), Some("sdr"));
     }

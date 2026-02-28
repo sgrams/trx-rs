@@ -11,4 +11,7 @@ use crate::{RigCommand, RigResult, RigSnapshot};
 pub struct RigRequest {
     pub cmd: RigCommand,
     pub respond_to: oneshot::Sender<RigResult<RigSnapshot>>,
+    /// When set, the remote client routes this request to the specified rig
+    /// instead of the globally selected rig. Used for per-rig rigctl listeners.
+    pub rig_id_override: Option<String>,
 }

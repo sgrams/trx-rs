@@ -812,6 +812,7 @@ async fn send_command(
         .send(RigRequest {
             cmd,
             respond_to: resp_tx,
+            rig_id_override: None,
         })
         .await
         .map_err(|e| {

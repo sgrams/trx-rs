@@ -300,6 +300,7 @@ async fn handle_client(
         let req = RigRequest {
             cmd: rig_cmd,
             respond_to: resp_tx,
+            rig_id_override: None,
         };
 
         match time::timeout(IO_TIMEOUT, handle.rig_tx.send(req)).await {

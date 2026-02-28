@@ -337,6 +337,7 @@ async fn send_rig_command(
         .send(RigRequest {
             cmd,
             respond_to: resp_tx,
+            rig_id_override: None,
         })
         .await
         .map_err(|e| format!("failed to send to rig: {e:?}"))?;

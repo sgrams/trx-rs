@@ -316,7 +316,7 @@ pub async fn run_rig_task(
                 }
 
                 // Process each request
-                while let Some(RigRequest { cmd, respond_to }) = batch.pop() {
+                while let Some(RigRequest { cmd, respond_to, .. }) = batch.pop() {
                     let cmd_label = format!("{:?}", cmd);
                     let log_command = !matches!(&cmd, RigCommand::GetSpectrum);
                     let started = Instant::now();

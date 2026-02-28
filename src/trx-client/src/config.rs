@@ -247,8 +247,12 @@ pub struct RigctlFrontendConfig {
     pub enabled: bool,
     /// Listen address
     pub listen: IpAddr,
-    /// Listen port
+    /// Listen port (used for single-rig setups or as the fallback base port)
     pub port: u16,
+    /// Per-rig port overrides for multi-rig servers.
+    /// Maps rig ID → local rigctl port. When non-empty, one rigctl listener
+    /// is spawned per entry, each routing commands to its assigned rig.
+    pub rig_ports: HashMap<String, u16>,
 }
 
 impl Default for RigctlFrontendConfig {
@@ -257,6 +261,7 @@ impl Default for RigctlFrontendConfig {
             enabled: false,
             listen: IpAddr::from([127, 0, 0, 1]),
             port: 4532,
+            rig_ports: HashMap::new(),
         }
     }
 }
@@ -408,6 +413,7 @@ impl ClientConfig {
                     enabled: false,
                     listen: IpAddr::from([127, 0, 0, 1]),
                     port: 4532,
+                    rig_ports: HashMap::new(),
                 },
                 http_json: HttpJsonFrontendConfig::default(),
                 audio: AudioClientConfig::default(),

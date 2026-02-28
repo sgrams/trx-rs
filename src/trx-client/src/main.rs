@@ -336,6 +336,46 @@ async fn async_init() -> DynResult<AppState> {
     // Spawn frontends with runtime context
     for frontend in &frontends {
         let frontend_state_rx = state_rx.clone();
+
+        // rigctl with per-rig port mapping: spawn one listener per rig entry.
+        if frontend == "rigctl" && !cfg.frontends.rigctl.rig_ports.is_empty() {
+            let mut first = true;
+            for (rig_id, &port) in &cfg.frontends.rigctl.rig_ports {
+                let addr = SocketAddr::from((rigctl_listen, port));
+                if first {
+                    if let Ok(mut listen_addr) = frontend_runtime_ctx.rigctl_listen_addr.lock() {
+                        *listen_addr = Some(addr);
+                    }
+                    first = false;
+                }
+                // Proxy channel: inject rig_id_override before forwarding to main tx.
+                let (proxy_tx, mut proxy_rx) =
+                    mpsc::channel::<RigRequest>(RIG_TASK_CHANNEL_BUFFER);
+                let main_tx = tx.clone();
+                let rig_id_owned = rig_id.clone();
+                tokio::spawn(async move {
+                    while let Some(req) = proxy_rx.recv().await {
+                        let forwarded = RigRequest {
+                            cmd: req.cmd,
+                            respond_to: req.respond_to,
+                            rig_id_override: Some(rig_id_owned.clone()),
+                        };
+                        let _ = main_tx.send(forwarded).await;
+                    }
+                });
+                info!("rigctl frontend for rig '{}' on {}", rig_id, addr);
+                frontend_reg_ctx.spawn_frontend(
+                    frontend,
+                    state_rx.clone(),
+                    proxy_tx,
+                    callsign.clone(),
+                    addr,
+                    frontend_runtime_ctx.clone(),
+                )?;
+            }
+            continue;
+        }
+
         let addr = match frontend.as_str() {
             "http" => SocketAddr::from((http_listen, http_port)),
             "rigctl" => SocketAddr::from((rigctl_listen, rigctl_port)),

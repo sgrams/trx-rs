@@ -12,18 +12,15 @@ Configuration reference: see `CONFIGURATION.md` for all server/client options an
 
 ## Configuration Files
 
-`trx-server` and `trx-client` now support a shared `trx-rs.toml` as well as the legacy per-binary files.
+`trx-server` and `trx-client` read configuration from a shared `trx-rs.toml`.
 
 - Default search order for each app:
   current directory, then `~/.config/trx-rs`, then `/etc/trx-rs`
 - At each location, the loader checks:
-  `trx-rs.toml` first (`[trx-server]` or `[trx-client]` section), then the legacy flat file
-- Combined file names:
+  `trx-rs.toml` and reads the `[trx-server]` or `[trx-client]` section
+- Config file name:
   `trx-rs.toml`
-- Legacy flat file names:
-  `trx-server.toml` in the current directory, `server.toml` under XDG/`/etc`
-  `trx-client.toml` in the current directory, `client.toml` under XDG/`/etc`
-- `--config <FILE>` still loads an explicit file path. If that file contains a `[trx-server]` or `[trx-client]` section, only that section is used; otherwise the whole file is parsed as the legacy flat format.
+- `--config <FILE>` loads an explicit config file path and reads the matching `[trx-server]` or `[trx-client]` section from that file.
 - `--print-config` prints an example combined config block suitable for `trx-rs.toml`.
 
 See `trx-rs.toml.example` for a complete combined example.
@@ -46,12 +43,11 @@ The HTTP frontend supports optional passphrase-based authentication with two rol
 - **rx**: Read-only access to status, events, decode history, and audio streams
 - **control**: Full access including transmit control (TX/PTT) and power toggling
 
-Authentication is disabled by default for backward compatibility. When enabled, users must log in via a passphrase before accessing the web UI. Sessions are managed server-side with configurable time-to-live and cookie security settings.
+Authentication is disabled by default. When enabled, users must log in via a passphrase before accessing the web UI. Sessions are managed server-side with configurable time-to-live and cookie security settings.
 
 ### Configuration
 
-In a combined `trx-rs.toml`, enable authentication under `[trx-client.frontends.http.auth]`.
-If you use a legacy `trx-client.toml`, use the same keys under `[frontends.http.auth]`.
+Enable authentication under `[trx-client.frontends.http.auth]` in `trx-rs.toml`.
 
 ```toml
 [trx-client.frontends.http.auth]
