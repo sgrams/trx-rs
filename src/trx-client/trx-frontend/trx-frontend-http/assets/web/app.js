@@ -329,6 +329,7 @@ const overviewCanvas = document.getElementById("overview-canvas");
 const overviewPeakHoldEl = document.getElementById("overview-peak-hold");
 const themeToggleBtn = document.getElementById("theme-toggle");
 const headerRigSwitchSelect = document.getElementById("header-rig-switch-select");
+const headerStylePickSelect = document.getElementById("header-style-pick-select");
 let overviewPeakHoldMs = Number(loadSetting("overviewPeakHoldMs", 2000));
 
 let lastControl;
@@ -377,6 +378,106 @@ function setTheme(theme) {
   }
 }
 
+// ── Style / palette system ────────────────────────────────────────────────────
+const CANVAS_PALETTE = {
+  original: {
+    dark: {
+      bg: "#0a0f18",
+      spectrumLine: "#00e676", spectrumFill: "rgba(0,230,118,0.10)",
+      spectrumGrid: "rgba(255,255,255,0.06)", spectrumLabel: "rgba(180,200,220,0.45)",
+      waveformLine: "rgba(94,234,212,0.92)", waveformPeak: "rgba(251,191,36,0.88)",
+      waveformGrid: "rgba(148,163,184,0.12)", waveformLabel: "rgba(203,213,225,0.72)",
+      waterfallHue: [225, 30], waterfallSat: 88, waterfallLight: [16, 68], waterfallAlpha: [0.28, 0.86],
+    },
+    light: {
+      bg: "#eef3fb",
+      spectrumLine: "#007a47", spectrumFill: "rgba(0,110,70,0.12)",
+      spectrumGrid: "rgba(0,30,80,0.10)", spectrumLabel: "rgba(30,50,90,0.55)",
+      waveformLine: "rgba(17,94,89,0.95)", waveformPeak: "rgba(217,119,6,0.9)",
+      waveformGrid: "rgba(71,85,105,0.14)", waveformLabel: "rgba(51,65,85,0.72)",
+      waterfallHue: [210, 35], waterfallSat: 82, waterfallLight: [92, 40], waterfallAlpha: [0.42, 0.80],
+    },
+  },
+  nord: {
+    dark: {
+      bg: "#1e2530",
+      spectrumLine: "#88c0d0", spectrumFill: "rgba(136,192,208,0.12)",
+      spectrumGrid: "rgba(216,222,233,0.08)", spectrumLabel: "rgba(216,222,233,0.55)",
+      waveformLine: "rgba(136,192,208,0.92)", waveformPeak: "rgba(235,203,139,0.88)",
+      waveformGrid: "rgba(216,222,233,0.10)", waveformLabel: "rgba(216,222,233,0.65)",
+      waterfallHue: [212, 188], waterfallSat: 70, waterfallLight: [14, 58], waterfallAlpha: [0.28, 0.82],
+    },
+    light: {
+      bg: "#dde1e9",
+      spectrumLine: "#5e81ac", spectrumFill: "rgba(94,129,172,0.14)",
+      spectrumGrid: "rgba(46,52,64,0.08)", spectrumLabel: "rgba(46,52,64,0.55)",
+      waveformLine: "rgba(94,129,172,0.95)", waveformPeak: "rgba(208,135,112,0.9)",
+      waveformGrid: "rgba(46,52,64,0.12)", waveformLabel: "rgba(46,52,64,0.65)",
+      waterfallHue: [215, 195], waterfallSat: 65, waterfallLight: [88, 45], waterfallAlpha: [0.35, 0.78],
+    },
+  },
+  monokai: {
+    dark: {
+      bg: "#181815",
+      spectrumLine: "#a6e22e", spectrumFill: "rgba(166,226,46,0.10)",
+      spectrumGrid: "rgba(248,248,242,0.05)", spectrumLabel: "rgba(248,248,242,0.45)",
+      waveformLine: "rgba(166,226,46,0.92)", waveformPeak: "rgba(230,219,116,0.88)",
+      waveformGrid: "rgba(248,248,242,0.08)", waveformLabel: "rgba(248,248,242,0.65)",
+      waterfallHue: [70, 38], waterfallSat: 80, waterfallLight: [12, 62], waterfallAlpha: [0.25, 0.88],
+    },
+    light: {
+      bg: "#ede8d8",
+      spectrumLine: "#5f8700", spectrumFill: "rgba(95,135,0,0.12)",
+      spectrumGrid: "rgba(39,40,34,0.08)", spectrumLabel: "rgba(39,40,34,0.50)",
+      waveformLine: "rgba(95,135,0,0.95)", waveformPeak: "rgba(176,120,0,0.9)",
+      waveformGrid: "rgba(39,40,34,0.10)", waveformLabel: "rgba(39,40,34,0.60)",
+      waterfallHue: [75, 42], waterfallSat: 75, waterfallLight: [90, 42], waterfallAlpha: [0.35, 0.78],
+    },
+  },
+  contrast: {
+    dark: {
+      bg: "#000000",
+      spectrumLine: "#00ff88", spectrumFill: "rgba(0,255,136,0.12)",
+      spectrumGrid: "rgba(255,255,255,0.12)", spectrumLabel: "rgba(255,255,255,0.70)",
+      waveformLine: "rgba(0,255,136,0.95)", waveformPeak: "rgba(255,204,0,0.92)",
+      waveformGrid: "rgba(255,255,255,0.15)", waveformLabel: "rgba(255,255,255,0.80)",
+      waterfallHue: [150, 60], waterfallSat: 100, waterfallLight: [8, 55], waterfallAlpha: [0.30, 0.95],
+    },
+    light: {
+      bg: "#f4f4f4",
+      spectrumLine: "#005cc5", spectrumFill: "rgba(0,92,197,0.12)",
+      spectrumGrid: "rgba(0,0,0,0.12)", spectrumLabel: "rgba(0,0,0,0.65)",
+      waveformLine: "rgba(0,92,197,0.95)", waveformPeak: "rgba(180,60,0,0.9)",
+      waveformGrid: "rgba(0,0,0,0.14)", waveformLabel: "rgba(0,0,0,0.70)",
+      waterfallHue: [220, 180], waterfallSat: 100, waterfallLight: [90, 42], waterfallAlpha: [0.35, 0.82],
+    },
+  },
+};
+
+function currentStyle() {
+  return document.documentElement.getAttribute("data-style") || "original";
+}
+
+function canvasPalette() {
+  const s = currentStyle();
+  const t = currentTheme();
+  return (CANVAS_PALETTE[s] ?? CANVAS_PALETTE.original)[t];
+}
+
+function setStyle(style) {
+  const valid = ["original", "nord", "monokai", "contrast"];
+  const next = valid.includes(style) ? style : "original";
+  if (next === "original") {
+    document.documentElement.removeAttribute("data-style");
+  } else {
+    document.documentElement.setAttribute("data-style", next);
+  }
+  saveSetting("style", next);
+  if (headerStylePickSelect) headerStylePickSelect.value = next;
+  scheduleOverviewDraw();
+  if (typeof scheduleSpectrumDraw === "function" && lastSpectrumData) scheduleSpectrumDraw();
+}
+
 if (overviewPeakHoldEl) {
   if (!Number.isFinite(overviewPeakHoldMs) || overviewPeakHoldMs <= 0) {
     overviewPeakHoldMs = 2000;
@@ -396,11 +497,22 @@ if (savedTheme === "light" || savedTheme === "dark") {
   setTheme(prefersLight ? "light" : "dark");
 }
 
+const savedStyle = loadSetting("style", "original");
+setStyle(savedStyle);
+
 if (themeToggleBtn) {
   themeToggleBtn.addEventListener("click", () => {
     setTheme(currentTheme() === "dark" ? "light" : "dark");
     updateMapBaseLayerForTheme(currentTheme());
     scheduleOverviewDraw();
+    if (typeof scheduleSpectrumDraw === "function" && lastSpectrumData) scheduleSpectrumDraw();
+  });
+}
+
+if (headerStylePickSelect) {
+  headerStylePickSelect.addEventListener("change", () => {
+    setStyle(headerStylePickSelect.value);
+    updateMapBaseLayerForTheme(currentTheme());
   });
 }
 
@@ -590,7 +702,7 @@ function drawHeaderSignalGraph() {
   if (!overviewCanvas) return;
   const ctx = overviewCanvas.getContext("2d");
   if (!ctx) return;
-  const isLight = currentTheme() === "light";
+  const pal = canvasPalette();
   const dpr = window.devicePixelRatio || 1;
   const w = overviewCanvas.width / dpr;
   const h = overviewCanvas.height / dpr;
@@ -600,14 +712,14 @@ function drawHeaderSignalGraph() {
   ctx.scale(dpr, dpr);
   ctx.clearRect(0, 0, w, h);
   if (lastSpectrumData && overviewWaterfallRows.length > 0) {
-    drawOverviewWaterfall(ctx, w, h, isLight);
+    drawOverviewWaterfall(ctx, w, h, pal);
   } else {
-    drawOverviewSignalHistory(ctx, w, h, isLight);
+    drawOverviewSignalHistory(ctx, w, h, pal);
   }
   ctx.restore();
 }
 
-function drawOverviewWaterfall(ctx, w, h, isLight) {
+function drawOverviewWaterfall(ctx, w, h, pal) {
   const rows = overviewWaterfallRows.slice(-Math.max(1, Math.floor(h)));
   if (rows.length === 0) return;
   const rowH = h / rows.length;
@@ -621,13 +733,13 @@ function drawOverviewWaterfall(ctx, w, h, isLight) {
     for (let x = 0; x < w; x += columnStep) {
       const frac = x / Math.max(1, w - 1);
       const binIdx = Math.min(endIdx, startIdx + Math.floor(frac * spanBins));
-      ctx.fillStyle = waterfallColor(bins[binIdx], isLight);
+      ctx.fillStyle = waterfallColor(bins[binIdx], pal);
       ctx.fillRect(x, y, columnStep + 0.75, rowH + 1);
     }
   }
 }
 
-function drawOverviewSignalHistory(ctx, w, h, isLight) {
+function drawOverviewSignalHistory(ctx, w, h, pal) {
   const now = Date.now();
   const samples = overviewSignalSamples.filter((sample) => now - sample.t <= HEADER_SIG_WINDOW_MS);
   if (samples.length === 0) return;
@@ -642,10 +754,10 @@ function drawOverviewSignalHistory(ctx, w, h, isLight) {
     { val: 9, label: "S9" },
     { val: 18, label: "S9+" },
   ];
-  ctx.strokeStyle = isLight ? "rgba(71, 85, 105, 0.14)" : "rgba(148, 163, 184, 0.12)";
+  ctx.strokeStyle = pal.waveformGrid;
   ctx.lineWidth = 1;
   ctx.font = "11px sans-serif";
-  ctx.fillStyle = isLight ? "rgba(51, 65, 85, 0.72)" : "rgba(203, 213, 225, 0.72)";
+  ctx.fillStyle = pal.waveformLabel;
   ctx.textAlign = "right";
   ctx.textBaseline = "middle";
   for (const marker of gridMarkers) {
@@ -664,7 +776,7 @@ function drawOverviewSignalHistory(ctx, w, h, isLight) {
     if (idx === 0) ctx.moveTo(x, y);
     else ctx.lineTo(x, y);
   });
-  ctx.strokeStyle = isLight ? "rgba(17, 94, 89, 0.95)" : "rgba(94, 234, 212, 0.92)";
+  ctx.strokeStyle = pal.waveformLine;
   ctx.lineWidth = 1.6;
   ctx.stroke();
 
@@ -682,20 +794,19 @@ function drawOverviewSignalHistory(ctx, w, h, isLight) {
       if (i === 0) ctx.moveTo(x, y);
       else ctx.lineTo(x, y);
     }
-    ctx.strokeStyle = isLight ? "rgba(217, 119, 6, 0.9)" : "rgba(251, 191, 36, 0.88)";
+    ctx.strokeStyle = pal.waveformPeak;
     ctx.lineWidth = 1;
     ctx.stroke();
   }
 }
 
-function waterfallColor(db, isLight) {
+function waterfallColor(db, pal) {
   const clamped = Math.max(-120, Math.min(-10, Number.isFinite(db) ? db : -120));
   const t = (clamped + 120) / 110;
-  const hue = isLight ? 210 - t * 175 : 225 - t * 195;
-  const sat = isLight ? 82 : 88;
-  const light = isLight ? 92 - t * 52 : 16 + t * 52;
-  const alpha = isLight ? 0.42 + t * 0.38 : 0.28 + t * 0.58;
-  return `hsla(${hue}, ${sat}%, ${light}%, ${alpha})`;
+  const hue = pal.waterfallHue[0] + t * (pal.waterfallHue[1] - pal.waterfallHue[0]);
+  const light = pal.waterfallLight[0] + t * (pal.waterfallLight[1] - pal.waterfallLight[0]);
+  const alpha = pal.waterfallAlpha[0] + t * (pal.waterfallAlpha[1] - pal.waterfallAlpha[0]);
+  return `hsla(${hue}, ${pal.waterfallSat}%, ${light}%, ${alpha})`;
 }
 
 function formatFreq(hz) {
@@ -2631,7 +2742,7 @@ let _bwDragStartX   = 0;
 let _bwDragStartBwHz = 0;
 
 function spectrumBgColor() {
-  return currentTheme() === "light" ? "#eef3fb" : "#0a0f18";
+  return canvasPalette().bg;
 }
 
 // Returns { loHz, hiHz, visLoHz, visHiHz, fullSpanHz, visSpanHz } and clamps
@@ -2751,12 +2862,13 @@ function drawSpectrum(data) {
   }
 
   const ctx   = spectrumCanvas.getContext("2d");
+  const pal   = canvasPalette();
   const range = spectrumVisibleRange(data);
   const bins  = data.bins;
   const n     = bins.length;
 
   // Background
-  ctx.fillStyle = spectrumBgColor();
+  ctx.fillStyle = pal.bg;
   ctx.fillRect(0, 0, W, H);
 
   if (!n) return;
@@ -2768,7 +2880,7 @@ function drawSpectrum(data) {
   const loHz       = data.center_hz - fullSpanHz / 2;
 
   // Horizontal dB grid lines
-  ctx.strokeStyle = "rgba(255,255,255,0.06)";
+  ctx.strokeStyle = pal.spectrumGrid;
   ctx.lineWidth = 1;
   const gridStep = spectrumRange > 100 ? 20 : 10;
   for (let db = Math.ceil(DB_MIN / gridStep) * gridStep; db <= DB_MAX; db += gridStep) {
@@ -2779,7 +2891,7 @@ function drawSpectrum(data) {
   // Y-axis dB labels (left side)
   ctx.save();
   ctx.font = `${Math.round(9 * dpr)}px monospace`;
-  ctx.fillStyle = "rgba(180,200,220,0.45)";
+  ctx.fillStyle = pal.spectrumLabel;
   ctx.textAlign = "left";
   for (let db = Math.ceil(DB_MIN / gridStep) * gridStep; db <= DB_MAX; db += gridStep) {
     const y = Math.round(H * (1 - (db - DB_MIN) / dbRange));
@@ -2868,14 +2980,14 @@ function drawSpectrum(data) {
   for (let i = 0; i < n; i++) ctx.lineTo(binX(i), binY(i));
   ctx.lineTo(binX(n - 1), H);
   ctx.closePath();
-  ctx.fillStyle = "rgba(0,230,118,0.10)";
+  ctx.fillStyle = pal.spectrumFill;
   ctx.fill();
   ctx.restore();
 
   // ── Spectrum line ─────────────────────────────────────────────────────────
   ctx.save();
   ctx.beginPath();
-  ctx.strokeStyle = "#00e676";
+  ctx.strokeStyle = pal.spectrumLine;
   ctx.lineWidth   = Math.max(1, dpr);
   for (let i = 0; i < n; i++) {
     const x = binX(i), y = binY(i);
