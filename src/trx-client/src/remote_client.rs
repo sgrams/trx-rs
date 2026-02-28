@@ -22,6 +22,7 @@ use trx_protocol::{ClientCommand, ClientEnvelope, ClientResponse};
 const DEFAULT_REMOTE_PORT: u16 = 4530;
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
 const IO_TIMEOUT: Duration = Duration::from_secs(15);
+const SPECTRUM_IO_TIMEOUT: Duration = Duration::from_millis(300);
 const MAX_JSON_LINE_BYTES: usize = 16 * 1024;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -147,6 +148,12 @@ async fn handle_connection(
                     continue;
                 }
                 last_spectrum_poll = Instant::now();
+                if !should_poll_spectrum(config) {
+                    if let Ok(mut guard) = config.spectrum.lock() {
+                        guard.replace(None);
+                    }
+                    continue;
+                }
                 match send_command_no_state_update(config, &mut writer, &mut reader,
                     ClientCommand::GetSpectrum).await
                 {
@@ -239,19 +246,19 @@ async fn send_command_no_state_update(
     let payload = serde_json::to_string(&envelope)
         .map_err(|e| RigError::communication(format!("JSON serialize failed: {e}")))?;
     time::timeout(
-        IO_TIMEOUT,
+        SPECTRUM_IO_TIMEOUT,
         writer.write_all(format!("{}\n", payload).as_bytes()),
     )
     .await
-    .map_err(|_| RigError::communication(format!("write timed out after {:?}", IO_TIMEOUT)))?
+    .map_err(|_| RigError::communication(format!("write timed out after {:?}", SPECTRUM_IO_TIMEOUT)))?
     .map_err(|e| RigError::communication(format!("write failed: {e}")))?;
-    time::timeout(IO_TIMEOUT, writer.flush())
+    time::timeout(SPECTRUM_IO_TIMEOUT, writer.flush())
         .await
-        .map_err(|_| RigError::communication(format!("flush timed out after {:?}", IO_TIMEOUT)))?
+        .map_err(|_| RigError::communication(format!("flush timed out after {:?}", SPECTRUM_IO_TIMEOUT)))?
         .map_err(|e| RigError::communication(format!("flush failed: {e}")))?;
-    let line = time::timeout(IO_TIMEOUT, read_limited_line(reader, MAX_JSON_LINE_BYTES))
+    let line = time::timeout(SPECTRUM_IO_TIMEOUT, read_limited_line(reader, MAX_JSON_LINE_BYTES))
         .await
-        .map_err(|_| RigError::communication(format!("read timed out after {:?}", IO_TIMEOUT)))?
+        .map_err(|_| RigError::communication(format!("read timed out after {:?}", SPECTRUM_IO_TIMEOUT)))?
         .map_err(|e| RigError::communication(format!("read failed: {e}")))?;
     let line = line.ok_or_else(|| RigError::communication("connection closed by remote"))?;
     let resp: ClientResponse = serde_json::from_str(line.trim_end())
@@ -368,6 +375,20 @@ fn set_selected_rig_id(config: &RemoteClientConfig, value: Option<String>) {
     if let Ok(mut guard) = config.selected_rig_id.lock() {
         *guard = value;
     }
+}
+
+fn should_poll_spectrum(config: &RemoteClientConfig) -> bool {
+    let selected = selected_rig_id(config);
+    let Some(selected) = selected.as_deref() else {
+        return true;
+    };
+    config
+        .known_rigs
+        .lock()
+        .ok()
+        .and_then(|entries| entries.iter().find(|entry| entry.rig_id == selected).cloned())
+        .map(|entry| entry.state.initialized)
+        .unwrap_or(true)
 }
 
 fn choose_default_rig(rigs: &[RigEntry]) -> Option<&RigEntry> {

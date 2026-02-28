@@ -157,6 +157,24 @@ impl SoftAgc {
         let gain = self.update_gain(x.abs());
         (x * gain).clamp(-1.0, 1.0)
     }
+
+    pub(crate) fn process_pair(&mut self, left: f32, right: f32) -> (f32, f32) {
+        let gain = self.update_gain(left.abs().max(right.abs()));
+        (
+            (left * gain).clamp(-1.0, 1.0),
+            (right * gain).clamp(-1.0, 1.0),
+        )
+    }
+
+    pub(crate) fn process_complex(&mut self, x: Complex<f32>) -> Complex<f32> {
+        let gain = self.update_gain((x.re * x.re + x.im * x.im).sqrt());
+        let mut y = x * gain;
+        let mag = (y.re * y.re + y.im * y.im).sqrt();
+        if mag > 1.0 {
+            y /= mag;
+        }
+        y
+    }
 }
 
 impl BiquadBandPass {

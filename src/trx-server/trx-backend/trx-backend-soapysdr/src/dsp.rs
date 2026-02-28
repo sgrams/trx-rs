@@ -271,6 +271,19 @@ fn agc_for_mode(mode: &RigMode, audio_sample_rate: u32) -> SoftAgc {
     }
 }
 
+/// Build a pre-demod complex AGC for FM-family modes.
+///
+/// This stabilizes I/Q magnitude before the discriminator while preserving
+/// phase, which helps the FM/WFM demod path behave better when strong signals
+/// drive large amplitude swings inside the channel filter.
+fn iq_agc_for_mode(mode: &RigMode, sample_rate: u32) -> Option<SoftAgc> {
+    let sr = sample_rate.max(1) as f32;
+    match mode {
+        RigMode::FM | RigMode::WFM | RigMode::PKT => Some(SoftAgc::new(sr, 0.5, 150.0, 0.8, 12.0)),
+        _ => None,
+    }
+}
+
 /// Build the DC blocker for a given mode, or `None` if not applicable.
 ///
 /// WFM is excluded because it has its own internal DC blockers per channel.
@@ -336,6 +349,8 @@ pub struct ChannelDsp {
     resample_phase_inc: f64,
     /// Dedicated WFM decoder that preserves the FM composite baseband.
     wfm_decoder: Option<WfmStereoDecoder>,
+    /// Complex-domain AGC/limiter applied before FM-family demodulation.
+    iq_agc: Option<SoftAgc>,
     /// Soft AGC applied to all demodulated audio for consistent cross-mode levels.
     audio_agc: SoftAgc,
     /// DC blocker for modes whose demodulator output can carry a DC offset
@@ -417,6 +432,7 @@ impl ChannelDsp {
         } else {
             self.wfm_decoder = None;
         }
+        self.iq_agc = iq_agc_for_mode(&self.mode, channel_sample_rate);
         self.audio_agc = agc_for_mode(&self.mode, self.audio_sample_rate);
         self.audio_dc = dc_for_mode(&self.mode);
         self.frame_buf.clear();
@@ -503,6 +519,7 @@ impl ChannelDsp {
             } else {
                 None
             },
+            iq_agc: iq_agc_for_mode(mode, channel_sample_rate),
             audio_agc: agc_for_mode(mode, audio_sample_rate),
             audio_dc: dc_for_mode(mode),
         }
@@ -649,12 +666,37 @@ impl ChannelDsp {
             return;
         }
 
+        if let Some(iq_agc) = &mut self.iq_agc {
+            for sample in &mut decimated {
+                *sample = iq_agc.process_complex(*sample);
+            }
+        }
+
         // --- 4. Demodulate + post-process -----------------------------------
         // WFM: full composite decoder (handles its own DC blocks + deemphasis).
         // All other modes: stateless demodulator → DC blocker (where enabled) → AGC.
-        // AGC is applied to WFM output too so all modes share the same target level.
+        // WFM uses linked audio AGC after stereo decode; all other modes use
+        // the normal post-demod AGC path.
         let audio = if let Some(decoder) = self.wfm_decoder.as_mut() {
-            decoder.process_iq(&decimated)
+            let mut out = decoder.process_iq(&decimated);
+            if !self.wfm_stereo && self.output_channels >= 2 {
+                for pair in out.chunks_exact_mut(2) {
+                    let mono = self.audio_agc.process(pair[0]);
+                    pair[0] = mono;
+                    pair[1] = mono;
+                }
+            } else if self.wfm_stereo && self.output_channels >= 2 {
+                for pair in out.chunks_exact_mut(2) {
+                    let (left, right) = self.audio_agc.process_pair(pair[0], pair[1]);
+                    pair[0] = left;
+                    pair[1] = right;
+                }
+            } else {
+                for s in &mut out {
+                    *s = self.audio_agc.process(*s);
+                }
+            }
+            out
         } else {
             let mut raw = self.demodulator.demodulate(&decimated);
             for s in &mut raw {
