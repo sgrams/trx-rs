@@ -630,7 +630,7 @@ function drawOverviewSignalHistory(ctx, w, h, isLight) {
   ctx.lineWidth = 1;
   ctx.font = "11px sans-serif";
   ctx.fillStyle = isLight ? "rgba(51, 65, 85, 0.72)" : "rgba(203, 213, 225, 0.72)";
-  ctx.textAlign = "left";
+  ctx.textAlign = "right";
   ctx.textBaseline = "middle";
   for (const marker of gridMarkers) {
     const y = toY(marker.val);
@@ -638,7 +638,7 @@ function drawOverviewSignalHistory(ctx, w, h, isLight) {
     ctx.moveTo(0, y);
     ctx.lineTo(w, y);
     ctx.stroke();
-    ctx.fillText(marker.label, 6, Math.max(8, Math.min(h - 8, y)));
+    ctx.fillText(marker.label, w - 6, Math.max(8, Math.min(h - 8, y)));
   }
 
   ctx.beginPath();
