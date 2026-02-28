@@ -2988,6 +2988,7 @@ let spectrumSource = null;
 let spectrumReconnectTimer = null;
 let spectrumDrawPending = false;
 let spectrumAxisKey = "";
+let lastSpectrumRenderData = null;
 
 // Zoom / pan state.  zoom >= 1; panFrac in [0,1] is the fraction of the full
 // bandwidth at the centre of the visible window.
@@ -2997,6 +2998,7 @@ let spectrumPanFrac = 0.5;
 // Y-axis level: floor = bottom dB value shown; range = total dB span.
 let spectrumFloor = -115;
 let spectrumRange = 80;
+const SPECTRUM_SMOOTH_ALPHA = 0.42;
 
 // BW-strip drag state.
 let _bwDragEdge     = null; // "left" | "right" | null
@@ -3005,6 +3007,23 @@ let _bwDragStartBwHz = 0;
 
 function spectrumBgColor() {
   return canvasPalette().bg;
+}
+
+function buildSpectrumRenderData(frame) {
+  if (!frame || !Array.isArray(frame.bins)) return frame;
+  const prev = lastSpectrumRenderData;
+  const canBlend =
+    prev &&
+    Array.isArray(prev.bins) &&
+    prev.bins.length === frame.bins.length &&
+    prev.sample_rate === frame.sample_rate &&
+    prev.center_hz === frame.center_hz;
+  const bins = frame.bins.map((value, idx) => {
+    if (!canBlend) return value;
+    const prevValue = prev.bins[idx];
+    return prevValue + (value - prevValue) * SPECTRUM_SMOOTH_ALPHA;
+  });
+  return { ...frame, bins };
 }
 
 // Returns { loHz, hiHz, visLoHz, visHiHz, fullSpanHz, visSpanHz } and clamps
@@ -3155,6 +3174,7 @@ function startSpectrumStreaming() {
   spectrumSource.onmessage = (evt) => {
     if (evt.data === "null") {
       lastSpectrumData = null;
+      lastSpectrumRenderData = null;
       overviewWaterfallRows = [];
       overviewWaterfallPushCount = 0;
       _wfResetOffscreen();
@@ -3165,6 +3185,7 @@ function startSpectrumStreaming() {
     }
     try {
       lastSpectrumData = JSON.parse(evt.data);
+      lastSpectrumRenderData = buildSpectrumRenderData(lastSpectrumData);
       rdsFrameCount++;
       pushOverviewWaterfallFrame(lastSpectrumData);
       refreshCenterFreqDisplay();
@@ -3192,6 +3213,7 @@ function stopSpectrumStreaming() {
   }
   spectrumDrawPending = false;
   lastSpectrumData = null;
+  lastSpectrumRenderData = null;
   rdsFrameCount = 0;
   overviewWaterfallRows = [];
   overviewWaterfallPushCount = 0;
@@ -3399,8 +3421,8 @@ function scheduleSpectrumDraw() {
   spectrumDrawPending = true;
   requestAnimationFrame(() => {
     spectrumDrawPending = false;
-    if (lastSpectrumData) {
-      drawSpectrum(lastSpectrumData);
+    if (lastSpectrumRenderData) {
+      drawSpectrum(lastSpectrumRenderData);
       if (overviewWaterfallRows.length > 0) scheduleOverviewDraw();
     }
   });
