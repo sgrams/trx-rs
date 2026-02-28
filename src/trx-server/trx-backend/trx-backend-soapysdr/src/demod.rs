@@ -7,7 +7,7 @@ use trx_core::rig::state::{RdsData, RigMode};
 use trx_rds::RdsDecoder;
 
 const RDS_SUBCARRIER_HZ: f32 = 57_000.0;
-const RDS_BPF_Q: f32 = 8.0;
+const RDS_BPF_Q: f32 = 10.0;
 
 #[derive(Debug, Clone)]
 struct OnePoleLowPass {
@@ -26,6 +26,30 @@ struct BiquadBandPass {
     x2: f32,
     y1: f32,
     y2: f32,
+}
+
+#[derive(Debug, Clone)]
+struct DcBlocker {
+    r: f32,
+    x1: f32,
+    y1: f32,
+}
+
+impl DcBlocker {
+    fn new(r: f32) -> Self {
+        Self {
+            r: r.clamp(0.9, 0.9999),
+            x1: 0.0,
+            y1: 0.0,
+        }
+    }
+
+    fn process(&mut self, x: f32) -> f32 {
+        let y = x - self.x1 + self.r * self.y1;
+        self.x1 = x;
+        self.y1 = y;
+        y
+    }
 }
 
 impl BiquadBandPass {
@@ -111,6 +135,7 @@ pub struct WfmStereoDecoder {
     output_channels: usize,
     rds_decoder: RdsDecoder,
     rds_bpf: BiquadBandPass,
+    rds_dc: DcBlocker,
     pilot_phase: f32,
     pilot_freq: f32,
     pilot_freq_err: f32,
@@ -144,6 +169,7 @@ impl WfmStereoDecoder {
             output_channels: output_channels.max(1),
             rds_decoder: RdsDecoder::new(composite_rate),
             rds_bpf: BiquadBandPass::new(composite_rate_f, RDS_SUBCARRIER_HZ, RDS_BPF_Q),
+            rds_dc: DcBlocker::new(0.995),
             pilot_phase: 0.0,
             pilot_freq: 2.0 * std::f32::consts::PI * 19_000.0 / composite_rate_f,
             pilot_freq_err: 0.0,
@@ -183,7 +209,8 @@ impl WfmStereoDecoder {
             let stereo_blend = (pilot_mag * 40.0).clamp(0.0, 1.0);
             let rds_quality = (0.35 + pilot_mag * 20.0).clamp(0.35, 1.0);
             let rds_band = self.rds_bpf.process(x);
-            let _ = self.rds_decoder.process_sample(rds_band, rds_quality);
+            let rds_clean = self.rds_dc.process(rds_band);
+            let _ = self.rds_decoder.process_sample(rds_clean, rds_quality);
 
             let sum = self.sum_lp.process(x);
             let stereo_carrier = (2.0 * self.pilot_phase).cos() * 2.0;

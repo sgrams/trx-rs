@@ -14,6 +14,7 @@ const SEARCH_REG_MASK: u32 = (1 << 26) - 1;
 const PHASE_CANDIDATES: usize = 8;
 const BIPHASE_CLOCK_WINDOW: usize = 128;
 const RDS_BASEBAND_LP_HZ: f32 = 3_000.0;
+const MIN_PUBLISH_QUALITY: f32 = 0.45;
 
 const OFFSET_A: u16 = 0x0FC;
 const OFFSET_B: u16 = 0x198;
@@ -328,7 +329,7 @@ impl RdsDecoder {
     }
 
     pub fn process_sample(&mut self, sample: f32, quality: f32) -> Option<&RdsData> {
-        let _ = quality;
+        let publish_quality = quality.clamp(0.0, 1.0);
         let (sin_p, cos_p) = self.carrier_phase.sin_cos();
         self.carrier_phase = (self.carrier_phase + self.carrier_inc).rem_euclid(TAU);
         let mixed_i = self.i_lp.process(sample * cos_p * 2.0);
@@ -338,7 +339,10 @@ impl RdsDecoder {
             if let Some(update) = candidate.process_sample(mixed_i, mixed_q) {
                 if candidate.score >= self.best_score {
                     self.best_score = candidate.score;
-                    self.best_state = Some(update);
+                    let same_pi = self.best_state.as_ref().and_then(|state| state.pi) == update.pi;
+                    if publish_quality >= MIN_PUBLISH_QUALITY || same_pi || self.best_state.is_none() {
+                        self.best_state = Some(update);
+                    }
                 }
             }
         }
