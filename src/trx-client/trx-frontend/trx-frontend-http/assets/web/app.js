@@ -333,6 +333,7 @@ const headerStylePickSelect = document.getElementById("header-style-pick-select"
 let overviewPeakHoldMs = Number(loadSetting("overviewPeakHoldMs", 2000));
 
 let overviewDrawPending = false;
+let lastSpectrumData = null;
 let lastControl;
 let lastTxEn = null;
 let lastHasTx = true;
@@ -2723,7 +2724,6 @@ const spectrumFreqAxis = document.getElementById("spectrum-freq-axis");
 const spectrumTooltip = document.getElementById("spectrum-tooltip");
 let spectrumSource = null;
 let spectrumReconnectTimer = null;
-let lastSpectrumData  = null;
 let spectrumDrawPending = false;
 let spectrumAxisKey = "";
 
