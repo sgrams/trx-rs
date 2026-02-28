@@ -587,7 +587,11 @@ impl WfmStereoDecoder {
             let sum_i = polyphase_resample(&self.sum_hist, &self.resample_bank, frac);
             let diff_i = polyphase_resample(&self.diff_hist, &self.resample_bank, frac);
             let diff_q = polyphase_resample(&self.diff_q_hist, &self.resample_bank, frac);
-            let blend_i = (self.prev_blend + frac * (stereo_blend - self.prev_blend)).clamp(0.0, 1.0);
+            let blend_i = if self.stereo_detected {
+                1.0
+            } else {
+                (self.prev_blend + frac * (stereo_blend - self.prev_blend)).clamp(0.0, 1.0)
+            };
             self.prev_blend = stereo_blend;
             let (trim_sin, trim_cos) = STEREO_SEPARATION_PHASE_TRIM.sin_cos();
             let diff_i = (diff_i * trim_cos + diff_q * trim_sin) * STEREO_SEPARATION_GAIN;
