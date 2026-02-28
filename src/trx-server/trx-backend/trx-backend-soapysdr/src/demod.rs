@@ -142,6 +142,48 @@ fn smoothstep01(x: f32) -> f32 {
     x * x * (3.0 - 2.0 * x)
 }
 
+#[inline]
+fn fast_atan2(y: f32, x: f32) -> f32 {
+    if x == 0.0 {
+        if y > 0.0 {
+            return std::f32::consts::FRAC_PI_2;
+        }
+        if y < 0.0 {
+            return -std::f32::consts::FRAC_PI_2;
+        }
+        return 0.0;
+    }
+
+    #[inline]
+    fn fast_atan(z: f32) -> f32 {
+        let abs_z = z.abs();
+        if abs_z <= 1.0 {
+            z * (std::f32::consts::FRAC_PI_4 + 0.273 * (1.0 - abs_z))
+        } else {
+            let inv = 1.0 / z;
+            let base = inv * (std::f32::consts::FRAC_PI_4 + 0.273 * (1.0 - inv.abs()));
+            if z > 0.0 {
+                std::f32::consts::FRAC_PI_2 - base
+            } else {
+                -std::f32::consts::FRAC_PI_2 - base
+            }
+        }
+    }
+
+    let angle = if x > 0.0 {
+        fast_atan(y / x)
+    } else if x < 0.0 {
+        if y >= 0.0 {
+            fast_atan(y / x) + std::f32::consts::PI
+        } else {
+            fast_atan(y / x) - std::f32::consts::PI
+        }
+    } else {
+        0.0
+    };
+    angle
+}
+
 #[derive(Debug, Clone)]
 struct OnePoleLowPass {
     alpha: f32,
@@ -627,18 +669,22 @@ impl WfmStereoDecoder {
             let detect_coeff = if stereo_drive > self.stereo_detect_level {
                 0.0008
             } else {
-                0.0002
+                0.00005
             };
             self.stereo_detect_level += detect_coeff * (stereo_drive - self.stereo_detect_level);
             if self.stereo_detected {
-                if self.stereo_detect_level < 0.35 {
+                if self.stereo_detect_level < 0.22 {
                     self.stereo_detected = false;
                 }
             } else if self.stereo_detect_level > 0.6 {
                 self.stereo_detected = true;
             }
-            let stereo_blend_target =
-                smoothstep01((self.stereo_detect_level - 0.18) / (0.92 - 0.18));
+            let stereo_blend_target = if self.stereo_detected {
+                let width = smoothstep01((self.stereo_detect_level - 0.30) / (0.92 - 0.30));
+                0.55 + 0.45 * width
+            } else {
+                0.35 * smoothstep01((self.stereo_detect_level - 0.10) / (0.30 - 0.10))
+            };
 
             // --- RDS ---
             let rds_quality = (0.35 + pilot_mag * 20.0).clamp(0.35, 1.0);
@@ -889,7 +935,7 @@ fn demod_fm_with_prev(
 
     if let Some(prev_sample) = prev.as_ref().copied() {
         let product = samples[0] * prev_sample.conj();
-        let angle = product.im.atan2(product.re);
+        let angle = fast_atan2(product.im, product.re);
         output.push(angle * inv_pi);
     } else {
         output.push(0.0_f32);
@@ -904,7 +950,7 @@ fn demod_fm_with_prev(
 
     for idx in i..samples.len() {
         let product = samples[idx] * samples[idx - 1].conj();
-        let angle = product.im.atan2(product.re);
+        let angle = fast_atan2(product.im, product.re);
         output.push(angle * inv_pi);
     }
 
@@ -972,7 +1018,7 @@ unsafe fn demod_fm_body_avx2_impl(
         _mm256_storeu_ps(prod_im.as_mut_ptr(), im_v);
 
         for lane in 0..8 {
-            output.push(prod_im[lane].atan2(prod_re[lane]) * inv_pi);
+            output.push(fast_atan2(prod_im[lane], prod_re[lane]) * inv_pi);
         }
 
         i += 8;
