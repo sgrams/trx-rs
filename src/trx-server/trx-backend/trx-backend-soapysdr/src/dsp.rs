@@ -605,6 +605,7 @@ impl ChannelDsp {
         if let Some(decoder) = &mut self.wfm_decoder {
             decoder.reset_rds();
             decoder.reset_stereo_detect();
+            decoder.reset_demod_state();
         }
     }
 

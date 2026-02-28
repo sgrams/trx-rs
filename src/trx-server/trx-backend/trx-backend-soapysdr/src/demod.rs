@@ -401,6 +401,7 @@ pub struct WfmStereoDecoder {
     rds_decoder: RdsDecoder,
     rds_bpf: BiquadBandPass,
     rds_dc: DcBlocker,
+    prev_iq: Option<Complex<f32>>,
     pilot_phase: f32,
     pilot_freq: f32,
     pilot_i_lp: OnePoleLowPass,
@@ -475,6 +476,7 @@ impl WfmStereoDecoder {
             rds_decoder: RdsDecoder::new(composite_rate),
             rds_bpf: BiquadBandPass::new(composite_rate_f, RDS_SUBCARRIER_HZ, RDS_BPF_Q),
             rds_dc: DcBlocker::new(0.995),
+            prev_iq: None,
             pilot_phase: 0.0,
             pilot_freq: 2.0 * std::f32::consts::PI * PILOT_HZ / composite_rate_f,
             pilot_i_lp: OnePoleLowPass::new(composite_rate_f, 400.0),
@@ -512,7 +514,7 @@ impl WfmStereoDecoder {
     }
 
     pub fn process_iq(&mut self, samples: &[Complex<f32>]) -> Vec<f32> {
-        let composite = demod_fm(samples);
+        let composite = demod_fm_with_prev(samples, &mut self.prev_iq);
         if composite.is_empty() {
             return Vec::new();
         }
@@ -659,6 +661,10 @@ impl WfmStereoDecoder {
         self.stereo_detected = false;
     }
 
+    pub fn reset_demod_state(&mut self) {
+        self.prev_iq = None;
+    }
+
     pub fn stereo_detected(&self) -> bool {
         self.stereo_detected
     }
@@ -756,14 +762,24 @@ fn demod_am(samples: &[Complex<f32>]) -> Vec<f32> {
 
 /// FM quadrature discriminator: instantaneous frequency via arg(s[n] * conj(s[n-1])).
 /// Output is in radians/sample, scaled by 1/π to normalise to [-1, 1].
-fn demod_fm(samples: &[Complex<f32>]) -> Vec<f32> {
+fn demod_fm_with_prev(
+    samples: &[Complex<f32>],
+    prev: &mut Option<Complex<f32>>,
+) -> Vec<f32> {
     if samples.is_empty() {
         return Vec::new();
     }
 
     let inv_pi = std::f32::consts::FRAC_1_PI;
     let mut output = Vec::with_capacity(samples.len());
-    output.push(0.0_f32);
+
+    if let Some(prev_sample) = prev.as_ref().copied() {
+        let product = samples[0] * prev_sample.conj();
+        let angle = product.im.atan2(product.re);
+        output.push(angle * inv_pi);
+    } else {
+        output.push(0.0_f32);
+    }
 
     for i in 1..samples.len() {
         let product = samples[i] * samples[i - 1].conj();
@@ -771,7 +787,15 @@ fn demod_fm(samples: &[Complex<f32>]) -> Vec<f32> {
         output.push(angle * inv_pi);
     }
 
+    *prev = samples.last().copied();
     output
+}
+
+/// FM quadrature discriminator: instantaneous frequency via arg(s[n] * conj(s[n-1])).
+/// Output is in radians/sample, scaled by 1/π to normalise to [-1, 1].
+fn demod_fm(samples: &[Complex<f32>]) -> Vec<f32> {
+    let mut prev = None;
+    demod_fm_with_prev(samples, &mut prev)
 }
 
 // ---------------------------------------------------------------------------
