@@ -663,7 +663,7 @@ async fn main() -> DynResult<()> {
     let cli = Cli::parse();
 
     if cli.print_config {
-        println!("{}", ServerConfig::example_toml());
+        println!("{}", ServerConfig::example_combined_toml());
         return Ok(());
     }
 

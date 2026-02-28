@@ -131,7 +131,7 @@ async fn async_init() -> DynResult<AppState> {
     let cli = Cli::parse();
 
     if cli.print_config {
-        println!("{}", ClientConfig::example_toml());
+        println!("{}", ClientConfig::example_combined_toml());
         std::process::exit(0);
     }
 
