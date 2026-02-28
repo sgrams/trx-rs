@@ -65,7 +65,7 @@ fn build_wfm_resample_bank() -> [[f32; WFM_RESAMP_TAPS]; WFM_RESAMP_PHASES] {
                 1.0
             } else {
                 let pos = tap_idx as f32 / (WFM_RESAMP_TAPS - 1) as f32;
-                0.5 - 0.5 * (2.0 * std::f32::consts::PI * pos).cos()
+                0.54 - 0.46 * (2.0 * std::f32::consts::PI * pos).cos()
             };
             *coeff = sinc * window;
             sum += *coeff;
