@@ -446,15 +446,15 @@ small { color: var(--text-muted); }
   width: 100%;
   margin: calc(-1 * var(--header-waterfall-overlap)) 0 0.95rem;
   position: relative;
-  z-index: 1;
+  z-index: 4;
 }
 #rds-ps-overlay {
   display: none;
   position: absolute;
-  top: 0.35rem;
+  top: calc(var(--header-waterfall-overlap) + 0.35rem);
   left: 50%;
   transform: translate(-50%, 0);
-  z-index: 2;
+  z-index: 5;
   pointer-events: none;
   font-family: 'DSEG14 Classic', monospace;
   font-size: clamp(1rem, 2.2vw, 1.45rem);

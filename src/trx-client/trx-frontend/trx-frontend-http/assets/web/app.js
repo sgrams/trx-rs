@@ -949,7 +949,7 @@ function resetRdsDisplay() {
   updateRdsPsOverlay(null);
 }
 
-function applyLocalTunedFrequency(hz) {
+function applyLocalTunedFrequency(hz, forceDisplay = false) {
   if (!Number.isFinite(hz)) return;
   const freqChanged = lastFreqHz !== hz;
   if (freqChanged) {
@@ -957,7 +957,10 @@ function applyLocalTunedFrequency(hz) {
   }
   lastFreqHz = hz;
   refreshWavelengthDisplay(lastFreqHz);
-  if (!freqDirty) {
+  if (forceDisplay) {
+    freqDirty = false;
+  }
+  if (forceDisplay || !freqDirty) {
     refreshFreqDisplay();
   }
   window.ft8BaseHz = lastFreqHz;
@@ -1233,7 +1236,7 @@ function render(update) {
     }
   }
   if (update.status && update.status.freq && typeof update.status.freq.hz === "number") {
-    applyLocalTunedFrequency(update.status.freq.hz);
+    applyLocalTunedFrequency(update.status.freq.hz, true);
   }
   if (update.status && update.status.mode) {
     const mode = normalizeMode(update.status.mode);
