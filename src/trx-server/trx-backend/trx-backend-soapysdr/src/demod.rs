@@ -356,7 +356,8 @@ pub struct WfmStereoDecoder {
     /// 4th-order Butterworth cascade for L+R (two 2nd-order stages, Q = BW4_Q1/BW4_Q2).
     sum_lpf1: BiquadLowPass,
     sum_lpf2: BiquadLowPass,
-    /// Notch at 19 kHz to suppress pilot tone leakage in the L+R channel.
+    /// Notch at 19 kHz for the mono output path — keeps pilot tone out of mono
+    /// audio without introducing phase mismatch with the diff channel.
     sum_notch: BiquadNotch,
     /// 4th-order Butterworth cascade for L-R (matched to sum path for stereo phase accuracy).
     diff_lpf1: BiquadLowPass,
@@ -461,8 +462,12 @@ impl WfmStereoDecoder {
             let rds_clean = self.rds_dc.process(rds_band);
             let _ = self.rds_decoder.process_sample(rds_clean, rds_quality);
 
-            // --- L+R (sum): 4th-order Butterworth + pilot notch ---
-            let sum = self.sum_notch.process(self.sum_lpf2.process(self.sum_lpf1.process(x)));
+            // --- L+R (sum): 4th-order Butterworth ---
+            // The pilot notch is NOT applied here so the sum and diff paths have
+            // identical phase responses, which is required for good stereo separation.
+            // The notch is applied only on the mono output path where phase matching
+            // with the diff channel is irrelevant.
+            let sum = self.sum_lpf2.process(self.sum_lpf1.process(x));
 
             // --- L-R (diff): 38 kHz demod + 4th-order Butterworth (unblended) ---
             // Blend is applied per-band at audio rate in the emit step below.
@@ -513,9 +518,12 @@ impl WfmStereoDecoder {
                 output.push(left);
                 output.push(right);
             } else {
+                // Mono path: apply the pilot notch here so the 19 kHz pilot tone
+                // does not leak into mono audio.  Phase matching with diff is not
+                // a concern for mono, so the notch can sit anywhere in the chain.
                 output.push(
                     self.dc_m
-                        .process(self.deemph_m.process(sum_i))
+                        .process(self.deemph_m.process(self.sum_notch.process(sum_i)))
                         .clamp(-1.0, 1.0),
                 );
             }
