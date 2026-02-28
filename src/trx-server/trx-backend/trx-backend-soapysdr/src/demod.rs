@@ -100,6 +100,12 @@ fn polyphase_resample(
         .sum()
 }
 
+#[inline]
+fn smoothstep01(x: f32) -> f32 {
+    let x = x.clamp(0.0, 1.0);
+    x * x * (3.0 - 2.0 * x)
+}
+
 #[derive(Debug, Clone)]
 struct OnePoleLowPass {
     alpha: f32,
@@ -545,13 +551,13 @@ impl WfmStereoDecoder {
             let pilot_abs = self.pilot_abs_lp.process(pilot_tone.abs());
             let pilot_coherence = (pilot_mag / (pilot_abs + 1e-4)).clamp(0.0, 1.0);
             let pilot_lock = ((pilot_coherence - 0.4) / 0.2).clamp(0.0, 1.0);
-            let stereo_blend = (pilot_mag * pilot_lock * 120.0).clamp(0.0, 1.0);
-            let detect_coeff = if stereo_blend > self.stereo_detect_level {
+            let stereo_drive = (pilot_mag * pilot_lock * 120.0).clamp(0.0, 1.0);
+            let detect_coeff = if stereo_drive > self.stereo_detect_level {
                 0.0008
             } else {
                 0.0002
             };
-            self.stereo_detect_level += detect_coeff * (stereo_blend - self.stereo_detect_level);
+            self.stereo_detect_level += detect_coeff * (stereo_drive - self.stereo_detect_level);
             if self.stereo_detected {
                 if self.stereo_detect_level < 0.35 {
                     self.stereo_detected = false;
@@ -559,6 +565,8 @@ impl WfmStereoDecoder {
             } else if self.stereo_detect_level > 0.6 {
                 self.stereo_detected = true;
             }
+            let stereo_blend_target =
+                smoothstep01((self.stereo_detect_level - 0.18) / (0.92 - 0.18));
 
             // --- RDS ---
             let rds_quality = (0.35 + pilot_mag * 20.0).clamp(0.35, 1.0);
@@ -593,7 +601,7 @@ impl WfmStereoDecoder {
             let prev_phase = self.output_phase;
             self.output_phase += self.output_phase_inc;
             if self.output_phase < 1.0 {
-                self.prev_blend = stereo_blend;
+                self.prev_blend = stereo_blend_target;
                 continue;
             }
             self.output_phase -= 1.0;
@@ -605,12 +613,9 @@ impl WfmStereoDecoder {
             let sum_i = polyphase_resample(&self.sum_hist, &self.resample_bank, frac);
             let diff_i = polyphase_resample(&self.diff_hist, &self.resample_bank, frac);
             let diff_q = polyphase_resample(&self.diff_q_hist, &self.resample_bank, frac);
-            let blend_i = if self.stereo_detected {
-                1.0
-            } else {
-                (self.prev_blend + frac * (stereo_blend - self.prev_blend)).clamp(0.0, 1.0)
-            };
-            self.prev_blend = stereo_blend;
+            let blend_i =
+                (self.prev_blend + frac * (stereo_blend_target - self.prev_blend)).clamp(0.0, 1.0);
+            self.prev_blend = stereo_blend_target;
             let (trim_sin, trim_cos) = STEREO_SEPARATION_PHASE_TRIM.sin_cos();
             let diff_i = (diff_i * trim_cos + diff_q * trim_sin) * STEREO_SEPARATION_GAIN;
 
