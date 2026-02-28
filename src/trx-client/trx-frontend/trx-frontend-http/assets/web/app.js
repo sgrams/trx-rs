@@ -349,7 +349,9 @@ let sigMeasureWeighted = 0;
 let sigMeasurePeak = null;
 let lastFreqHz = null;
 let centerFreqDirty = false;
-let jogStep = loadSetting("jogStep", 1000);
+let jogUnit = loadSetting("jogUnit", 1000);   // base unit: 1, 1000, 1000000
+let jogMult = loadSetting("jogMult", 1);      // multiplier: 1, 10, 100
+let jogStep = Math.max(jogUnit * jogMult, 1);
 let minFreqStepHz = 1;
 const VFO_COLORS = ["var(--accent-green)", "var(--accent-yellow)"];
 function vfoColor(idx) {
@@ -625,14 +627,15 @@ let reconnectTimer = null;
 let overviewSignalSamples = [];
 let overviewSignalTimer = null;
 let overviewWaterfallRows = [];
+let overviewWaterfallPushCount = 0;   // monotonically increments on every push
 const HEADER_SIG_WINDOW_MS = 10_000;
 
 // Offscreen waterfall cache — reused across frames to avoid full redraws
-let _wfOC = null;         // OffscreenCanvas
-let _wfOCPalKey = "";     // palette signature when offscreen was last built
-let _wfOCRowCount = 0;    // number of rows currently rendered into offscreen
+let _wfOC = null;           // OffscreenCanvas
+let _wfOCPalKey = "";       // palette signature when offscreen was last built
+let _wfOCPushCount = 0;     // overviewWaterfallPushCount when offscreen was last updated
 
-function _wfResetOffscreen() { _wfOC = null; _wfOCRowCount = 0; _wfOCPalKey = ""; }
+function _wfResetOffscreen() { _wfOC = null; _wfOCPushCount = 0; _wfOCPalKey = ""; }
 function _wfPalKey(pal) {
   return `${pal.waterfallHue}|${pal.waterfallSat}|${pal.waterfallLight}|${pal.waterfallAlpha}`;
 }
@@ -700,6 +703,7 @@ function overviewVisibleBinWindow(data, binCount) {
 function pushOverviewWaterfallFrame(data) {
   if (!overviewCanvas || !data || !Array.isArray(data.bins) || data.bins.length === 0) return;
   overviewWaterfallRows.push(data.bins.slice());
+  overviewWaterfallPushCount++;
   trimOverviewWaterfallRows();
   scheduleOverviewDraw();
 }
@@ -762,27 +766,29 @@ function drawOverviewWaterfall(ctx, w, h, pal) {
   const iH = Math.ceil(h);
   const palKey = _wfPalKey(pal);
   const steadyState = rows.length >= maxVisible;
+  // How many rows were pushed since the offscreen was last updated
+  const newPushes = overviewWaterfallPushCount - _wfOCPushCount;
 
   // Detect conditions that require a full redraw
   const sizeChanged = !_wfOC || _wfOC.width !== iW || _wfOC.height !== iH;
   const palChanged  = _wfOCPalKey !== palKey;
-  const rowsShrank  = rows.length < _wfOCRowCount;
-  const needsFull   = sizeChanged || palChanged || rowsShrank || _wfOCRowCount === 0;
+  const needsFull   = sizeChanged || palChanged || _wfOCPushCount === 0;
 
   if (sizeChanged || !_wfOC) {
     _wfOC = new OffscreenCanvas(iW, iH);
-    _wfOCRowCount = 0;
+    _wfOCPushCount = 0;
   }
   const oct = _wfOC.getContext("2d");
 
   if (needsFull) {
     oct.clearRect(0, 0, iW, iH);
     _wfDrawRows(oct, rows, 0, rows.length, iW, iH, pal);
-    _wfOCRowCount = rows.length;
-    _wfOCPalKey   = palKey;
-  } else if (steadyState && rows.length > _wfOCRowCount) {
-    // Steady state: scroll up and paint only the new rows at the bottom
-    const newCount = rows.length - _wfOCRowCount;
+    _wfOCPushCount = overviewWaterfallPushCount;
+    _wfOCPalKey    = palKey;
+  } else if (steadyState && newPushes > 0) {
+    // Steady state: scroll up and paint only the new rows at the bottom.
+    // newPushes new rows are at the tail of `rows`; each replaces one old row.
+    const newCount = Math.min(newPushes, rows.length);
     const rowH     = iH / rows.length;
     const scrollPx = Math.round(newCount * rowH);
     if (scrollPx > 0 && scrollPx < iH) {
@@ -791,7 +797,7 @@ function drawOverviewWaterfall(ctx, w, h, pal) {
       oct.clearRect(0, iH - scrollPx, iW, scrollPx);
     }
     _wfDrawRows(oct, rows, rows.length - newCount, rows.length, iW, iH, pal);
-    _wfOCRowCount = rows.length;
+    _wfOCPushCount = overviewWaterfallPushCount;
   }
 
   ctx.drawImage(_wfOC, 0, 0, w, h);
@@ -1649,6 +1655,16 @@ const jogIndicator = document.getElementById("jog-indicator");
 const jogDownBtn = document.getElementById("jog-down");
 const jogUpBtn = document.getElementById("jog-up");
 const jogStepEl = document.getElementById("jog-step");
+const jogMultEl = document.getElementById("jog-mult");
+
+function applyJogStep() {
+  jogStep = Math.max(jogUnit * jogMult, minFreqStepHz);
+  saveSetting("jogUnit", jogUnit);
+  saveSetting("jogMult", jogMult);
+  saveSetting("jogStep", jogStep);
+  refreshFreqDisplay();
+  refreshCenterFreqDisplay();
+}
 
 async function jogFreq(direction) {
   if (lastLocked) { showHint("Locked", 1500); return; }
@@ -1716,29 +1732,51 @@ window.addEventListener("mouseup", () => {
   if (jogWheel) jogWheel.style.cursor = "grab";
 });
 
-// Step selector
+// Step unit selector
 jogStepEl.addEventListener("click", (e) => {
   const btn = e.target.closest("button[data-step]");
   if (!btn) return;
-  jogStep = Math.max(parseInt(btn.dataset.step, 10), minFreqStepHz);
+  jogUnit = parseInt(btn.dataset.step, 10);
   jogStepEl.querySelectorAll("button").forEach((b) => b.classList.remove("active"));
   btn.classList.add("active");
-  saveSetting("jogStep", jogStep);
-  refreshFreqDisplay();
-  refreshCenterFreqDisplay();
+  applyJogStep();
 });
 
-// Restore active jog step button from saved setting
+// Step multiplier selector
+if (jogMultEl) {
+  jogMultEl.addEventListener("click", (e) => {
+    const btn = e.target.closest("button[data-mult]");
+    if (!btn) return;
+    jogMult = parseInt(btn.dataset.mult, 10);
+    jogMultEl.querySelectorAll("button").forEach((b) => b.classList.remove("active"));
+    btn.classList.add("active");
+    applyJogStep();
+  });
+}
+
+// Restore active jog step buttons from saved settings
 {
-  const buttons = Array.from(jogStepEl.querySelectorAll("button[data-step]"));
-  const active =
-    buttons.find((b) => parseInt(b.dataset.step, 10) === jogStep) ||
-    buttons.find((b) => parseInt(b.dataset.step, 10) === 1000) ||
-    buttons[0];
-  if (active) {
-    jogStep = parseInt(active.dataset.step, 10);
-    buttons.forEach((b) => b.classList.toggle("active", b === active));
+  const unitBtns = Array.from(jogStepEl.querySelectorAll("button[data-step]"));
+  const activeUnit =
+    unitBtns.find((b) => parseInt(b.dataset.step, 10) === jogUnit) ||
+    unitBtns.find((b) => parseInt(b.dataset.step, 10) === 1000) ||
+    unitBtns[0];
+  if (activeUnit) {
+    jogUnit = parseInt(activeUnit.dataset.step, 10);
+    unitBtns.forEach((b) => b.classList.toggle("active", b === activeUnit));
   }
+  if (jogMultEl) {
+    const multBtns = Array.from(jogMultEl.querySelectorAll("button[data-mult]"));
+    const activeMult =
+      multBtns.find((b) => parseInt(b.dataset.mult, 10) === jogMult) ||
+      multBtns.find((b) => parseInt(b.dataset.mult, 10) === 1) ||
+      multBtns[0];
+    if (activeMult) {
+      jogMult = parseInt(activeMult.dataset.mult, 10);
+      multBtns.forEach((b) => b.classList.toggle("active", b === activeMult));
+    }
+  }
+  jogStep = Math.max(jogUnit * jogMult, minFreqStepHz);
 }
 
 async function applyModeFromPicker() {
@@ -2848,6 +2886,7 @@ function startSpectrumStreaming() {
     if (evt.data === "null") {
       lastSpectrumData = null;
       overviewWaterfallRows = [];
+      overviewWaterfallPushCount = 0;
       _wfResetOffscreen();
       scheduleOverviewDraw();
       clearSpectrumCanvas();
@@ -2883,6 +2922,7 @@ function stopSpectrumStreaming() {
   spectrumDrawPending = false;
   lastSpectrumData = null;
   overviewWaterfallRows = [];
+  overviewWaterfallPushCount = 0;
   _wfResetOffscreen();
   scheduleOverviewDraw();
   updateRdsPsOverlay(null);

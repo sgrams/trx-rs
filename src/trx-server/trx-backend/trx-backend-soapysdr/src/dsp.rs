@@ -418,9 +418,25 @@ impl ChannelDsp {
 
     pub fn set_mode(&mut self, mode: &RigMode) {
         self.mode = mode.clone();
+        self.audio_bandwidth_hz = default_bandwidth_for_mode(mode);
         self.demodulator = Demodulator::for_mode(mode);
         self.rebuild_filters();
     }
+}
+
+/// Returns the appropriate channel filter bandwidth for a given mode.
+fn default_bandwidth_for_mode(mode: &RigMode) -> u32 {
+    match mode {
+        RigMode::LSB | RigMode::USB | RigMode::PKT | RigMode::DIG => 3_000,
+        RigMode::CW | RigMode::CWR => 500,
+        RigMode::AM => 6_000,
+        RigMode::FM => 12_500,
+        RigMode::WFM => 180_000,
+        RigMode::Other(_) => 3_000,
+    }
+}
+
+impl ChannelDsp {
 
     /// Rebuild the FIR low-pass filters with new bandwidth and tap count.
     ///

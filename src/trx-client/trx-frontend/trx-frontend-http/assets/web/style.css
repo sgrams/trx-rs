@@ -343,6 +343,38 @@ button:disabled { opacity: 0.6; cursor: not-allowed; }
   display: flex;
   justify-content: flex-end;
 }
+.mult-col {
+  flex: 0 0 auto;
+}
+.mult-col .label {
+  display: flex;
+  justify-content: flex-end;
+}
+.jog-mult {
+  display: flex;
+  border: 1px solid var(--border-light);
+  border-radius: 6px;
+  overflow: hidden;
+  height: 3.35rem;
+  flex-shrink: 0;
+}
+.jog-mult button {
+  border: none;
+  border-right: 1px solid var(--border-light);
+  border-radius: 0;
+  height: 100%;
+  padding: 0 0.5rem;
+  font-size: 0.85rem;
+  background: var(--input-bg);
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.jog-mult button:last-child { border-right: none; }
+.jog-mult button.active {
+  background: var(--btn-bg);
+  color: var(--accent-green);
+  font-weight: 600;
+}
 .label-below-row {
   display: flex;
   flex-direction: column;
