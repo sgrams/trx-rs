@@ -490,6 +490,17 @@ small { color: var(--text-muted); }
   font-size: 0.78rem;
   white-space: nowrap;
 }
+/* Theme toggle: always styled as the opposite theme so it previews what clicking will do */
+#theme-toggle {
+  background: #dde3ed;
+  color: #1a2336;
+  border-color: #a0aec0;
+}
+[data-theme="light"] #theme-toggle {
+  background: #1e2a3a;
+  color: #e7edf9;
+  border-color: #3a5274;
+}
 .header-style-pick {
   display: flex;
   align-items: center;
