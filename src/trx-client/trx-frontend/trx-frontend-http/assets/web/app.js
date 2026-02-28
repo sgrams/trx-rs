@@ -3182,10 +3182,9 @@ function clearSpectrumCanvas() {
 }
 
 function formatOverlayPs(ps) {
-  const padded = String(ps ?? "")
+  return String(ps ?? "")
     .slice(0, 8)
-    .padEnd(8, " ");
-  return padded.replaceAll(" ", "_");
+    .padEnd(8, "_");
 }
 
 function formatOverlayPi(pi) {
@@ -3199,8 +3198,8 @@ function formatOverlayPty(pty) {
 }
 
 async function copyRdsPsToClipboard() {
-  const ps = lastSpectrumData?.rds?.program_service?.trim();
-  if (!ps) {
+  const ps = lastSpectrumData?.rds?.program_service;
+  if (!ps || ps.length === 0) {
     showHint("No RDS PS", 1200);
     return;
   }
@@ -3223,8 +3222,8 @@ if (rdsPsValueEl) {
 function updateRdsPsOverlay(rds) {
   // Overview strip overlay
   if (rdsPsOverlay) {
-    const ps = rds?.program_service?.trim();
-    if (ps) {
+    const ps = rds?.program_service;
+    if (ps && ps.length > 0) {
       rdsPsOverlay.innerHTML =
         `<span class="rds-ps-main">${escapeMapHtml(formatOverlayPs(ps))}</span>` +
         `<span class="rds-ps-meta">${escapeMapHtml(formatOverlayPi(rds?.pi))} · ${escapeMapHtml(formatOverlayPty(rds?.pty))}</span>`;
