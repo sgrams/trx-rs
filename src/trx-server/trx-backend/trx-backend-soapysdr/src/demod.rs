@@ -40,14 +40,14 @@ struct BiquadBandPass {
 }
 
 #[derive(Debug, Clone)]
-struct DcBlocker {
+pub(crate) struct DcBlocker {
     r: f32,
     x1: f32,
     y1: f32,
 }
 
 impl DcBlocker {
-    fn new(r: f32) -> Self {
+    pub(crate) fn new(r: f32) -> Self {
         Self {
             r: r.clamp(0.9, 0.9999),
             x1: 0.0,
@@ -55,11 +55,81 @@ impl DcBlocker {
         }
     }
 
-    fn process(&mut self, x: f32) -> f32 {
+    pub(crate) fn process(&mut self, x: f32) -> f32 {
         let y = x - self.x1 + self.r * self.y1;
         self.x1 = x;
         self.y1 = y;
         y
+    }
+}
+
+/// Soft AGC with a fast-attack / slow-release envelope follower.
+///
+/// Tracks the signal envelope and adjusts gain so the output level converges
+/// toward `target`.  Gain decreases quickly when the signal is louder than
+/// the target (prevents clipping) and recovers slowly during quieter periods
+/// (avoids pumping noise).  A `max_gain` cap prevents excessive amplification
+/// of noise during silence.
+#[derive(Debug, Clone)]
+pub(crate) struct SoftAgc {
+    gain: f32,
+    envelope: f32,
+    attack_coeff: f32,
+    release_coeff: f32,
+    target: f32,
+    max_gain: f32,
+}
+
+impl SoftAgc {
+    /// Create a new `SoftAgc`.
+    ///
+    /// - `sample_rate`: audio sample rate in Hz
+    /// - `attack_ms`:   envelope follower attack time (fast, e.g. 1–10 ms)
+    /// - `release_ms`:  envelope follower release time (slow, e.g. 50–1000 ms)
+    /// - `target`:      desired peak output level (e.g. `0.5`)
+    /// - `max_gain_db`: maximum gain cap in dB (e.g. `30.0`)
+    pub(crate) fn new(
+        sample_rate: f32,
+        attack_ms: f32,
+        release_ms: f32,
+        target: f32,
+        max_gain_db: f32,
+    ) -> Self {
+        let sr = sample_rate.max(1.0);
+        let attack_coeff = 1.0 - (-1.0 / (attack_ms * 1e-3 * sr)).exp();
+        let release_coeff = 1.0 - (-1.0 / (release_ms * 1e-3 * sr)).exp();
+        Self {
+            gain: 1.0,
+            envelope: 0.0,
+            attack_coeff,
+            release_coeff,
+            target: target.max(0.01),
+            max_gain: 10.0_f32.powf(max_gain_db / 20.0),
+        }
+    }
+
+    pub(crate) fn process(&mut self, x: f32) -> f32 {
+        // Update envelope tracker (peak-hold with attack/release).
+        let abs_x = x.abs();
+        let env_coeff = if abs_x > self.envelope {
+            self.attack_coeff
+        } else {
+            self.release_coeff
+        };
+        self.envelope += env_coeff * (abs_x - self.envelope);
+
+        // Compute desired gain; fast response when reducing, slow when recovering.
+        if self.envelope > 1e-6 {
+            let desired = (self.target / self.envelope).min(self.max_gain);
+            let gain_coeff = if desired < self.gain {
+                self.attack_coeff
+            } else {
+                self.release_coeff
+            };
+            self.gain += gain_coeff * (desired - self.gain);
+        }
+
+        (x * self.gain).clamp(-1.0, 1.0)
     }
 }
 
@@ -468,32 +538,15 @@ fn demod_lsb(samples: &[Complex<f32>]) -> Vec<f32> {
 // AM
 // ---------------------------------------------------------------------------
 
-/// AM envelope detector: magnitude of IQ, DC-removed, peak-normalised to ≤ 1.0.
+/// AM envelope detector: magnitude of IQ.
+///
+/// Returns the raw envelope amplitude.  DC removal (carrier offset) and level
+/// normalisation are handled downstream by the per-channel DC blocker and AGC.
 fn demod_am(samples: &[Complex<f32>]) -> Vec<f32> {
-    if samples.is_empty() {
-        return Vec::new();
-    }
-
-    // Compute envelope (magnitude).
-    let mag: Vec<f32> = samples
+    samples
         .iter()
         .map(|s| (s.re * s.re + s.im * s.im).sqrt())
-        .collect();
-
-    // Remove DC offset.
-    let mean = mag.iter().copied().sum::<f32>() / mag.len() as f32;
-    let mut output: Vec<f32> = mag.iter().map(|&m| m - mean).collect();
-
-    // Normalise peak to ≤ 1.0 (only if max > 1.0, to avoid amplifying noise).
-    let max_abs = output.iter().copied().map(f32::abs).fold(0.0_f32, f32::max);
-    if max_abs > 1.0 {
-        let inv = 1.0 / max_abs;
-        for sample in &mut output {
-            *sample *= inv;
-        }
-    }
-
-    output
+        .collect()
 }
 
 // ---------------------------------------------------------------------------
@@ -524,28 +577,17 @@ fn demod_fm(samples: &[Complex<f32>]) -> Vec<f32> {
 // CW
 // ---------------------------------------------------------------------------
 
-/// CW envelope detector: magnitude of IQ, peak-normalised to ≤ 1.0.
-/// Narrow BPF is applied upstream.
+/// CW envelope detector: magnitude of IQ.
+///
+/// Returns the raw envelope amplitude.  Level normalisation is handled
+/// downstream by the per-channel AGC.  No DC blocker is applied to CW because
+/// the envelope is always non-negative; high-pass filtering would create
+/// negative-going artifacts on each key release.
 fn demod_cw(samples: &[Complex<f32>]) -> Vec<f32> {
-    if samples.is_empty() {
-        return Vec::new();
-    }
-
-    let mut output: Vec<f32> = samples
+    samples
         .iter()
         .map(|s| (s.re * s.re + s.im * s.im).sqrt())
-        .collect();
-
-    // Normalise peak to ≤ 1.0.
-    let max_abs = output.iter().copied().fold(0.0_f32, f32::max);
-    if max_abs > 1.0 {
-        let inv = 1.0 / max_abs;
-        for sample in &mut output {
-            *sample *= inv;
-        }
-    }
-
-    output
+        .collect()
 }
 
 // ---------------------------------------------------------------------------
@@ -608,31 +650,32 @@ mod tests {
         assert_eq!(lsb_out, expected, "LSB should return real parts");
     }
 
-    // Test 3: AM on a constant-magnitude signal produces all zeros (DC removed).
+    // Test 3: AM on a constant-magnitude signal returns the raw envelope (1.0).
+    // DC removal and normalization are handled downstream by the DC blocker and AGC.
     #[test]
-    fn test_am_dc_removed() {
+    fn test_am_raw_magnitude_constant() {
         let input: Vec<Complex<f32>> = (0..8).map(|_| Complex::new(1.0, 0.0)).collect();
         let out = Demodulator::Am.demodulate(&input);
         assert_eq!(out.len(), 8);
         for (i, &v) in out.iter().enumerate() {
-            assert_approx_eq(v, 0.0, 1e-6, &format!("AM DC removed sample {}", i));
+            assert_approx_eq(v, 1.0, 1e-6, &format!("AM raw magnitude sample {}", i));
         }
     }
 
-    // Test 4: AM on alternating-magnitude signal produces DC-centered output.
+    // Test 4: AM on alternating-magnitude signal returns the raw envelope.
     #[test]
-    fn test_am_varying_envelope() {
+    fn test_am_raw_magnitude_varying() {
         let input = vec![
             Complex::new(0.0_f32, 0.0),
             Complex::new(1.0, 0.0),
             Complex::new(0.0, 0.0),
             Complex::new(1.0, 0.0),
         ];
-        let expected = [-0.5_f32, 0.5, -0.5, 0.5];
+        let expected = [0.0_f32, 1.0, 0.0, 1.0];
         let out = Demodulator::Am.demodulate(&input);
         assert_eq!(out.len(), 4);
         for (i, (&got, &exp)) in out.iter().zip(expected.iter()).enumerate() {
-            assert_approx_eq(got, exp, 1e-6, &format!("AM varying envelope sample {}", i));
+            assert_approx_eq(got, exp, 1e-6, &format!("AM raw magnitude sample {}", i));
         }
     }
 
@@ -662,9 +705,10 @@ mod tests {
         }
     }
 
-    // Test 7: CW envelope detector normalises peak to 1.0.
+    // Test 7: CW envelope detector returns raw magnitudes.
+    // Normalisation is handled downstream by the AGC.
     #[test]
-    fn test_cw_magnitude_envelope() {
+    fn test_cw_raw_magnitude() {
         let input = vec![
             Complex::new(3.0_f32, 4.0), // magnitude 5.0
             Complex::new(0.0, 0.0),     // magnitude 0.0
@@ -672,9 +716,9 @@ mod tests {
         ];
         let out = Demodulator::Cw.demodulate(&input);
         assert_eq!(out.len(), 3);
-        assert_approx_eq(out[0], 1.0, 1e-6, "CW sample 0");
+        assert_approx_eq(out[0], 5.0, 1e-6, "CW sample 0");
         assert_approx_eq(out[1], 0.0, 1e-6, "CW sample 1");
-        assert_approx_eq(out[2], 0.2, 1e-6, "CW sample 2");
+        assert_approx_eq(out[2], 1.0, 1e-6, "CW sample 2");
     }
 
     // Test 8: Demodulator::for_mode maps each RigMode to the correct variant.

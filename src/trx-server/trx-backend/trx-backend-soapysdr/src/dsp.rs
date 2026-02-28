@@ -20,7 +20,7 @@ use rustfft::{Fft, FftPlanner};
 use tokio::sync::broadcast;
 use trx_core::rig::state::{RdsData, RigMode};
 
-use crate::demod::{Demodulator, WfmStereoDecoder};
+use crate::demod::{DcBlocker, Demodulator, SoftAgc, WfmStereoDecoder};
 
 // ---------------------------------------------------------------------------
 // IQ source abstraction
@@ -250,6 +250,39 @@ impl BlockFirFilter {
 }
 
 // ---------------------------------------------------------------------------
+// Per-mode post-processing helpers (DC block + AGC)
+// ---------------------------------------------------------------------------
+
+/// Build the AGC for a given mode.
+///
+/// CW uses fast attack/release to follow individual dots and dashes.
+/// AM uses a moderate release so the AGC tracks fading carriers.
+/// All other modes use a longer release suitable for voice and data signals.
+fn agc_for_mode(mode: &RigMode, audio_sample_rate: u32) -> SoftAgc {
+    let sr = audio_sample_rate.max(1) as f32;
+    match mode {
+        RigMode::CW | RigMode::CWR => SoftAgc::new(sr, 1.0, 50.0, 0.5, 30.0),
+        RigMode::AM => SoftAgc::new(sr, 5.0, 200.0, 0.5, 30.0),
+        _ => SoftAgc::new(sr, 5.0, 500.0, 0.5, 30.0),
+    }
+}
+
+/// Build the DC blocker for a given mode, or `None` if not applicable.
+///
+/// CW and WFM are excluded: CW envelope is always non-negative (DC blocking
+/// would create negative artifacts on key releases), and WFM has its own
+/// internal DC blockers on each output channel.
+/// AM uses a slightly faster blocker (r = 0.999, corner ≈ 7.6 Hz @ 48 kHz)
+/// so it can track slow carrier-amplitude fading.
+fn dc_for_mode(mode: &RigMode) -> Option<DcBlocker> {
+    match mode {
+        RigMode::CW | RigMode::CWR | RigMode::WFM => None,
+        RigMode::AM => Some(DcBlocker::new(0.999)),
+        _ => Some(DcBlocker::new(0.9999)),
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Channel DSP context
 // ---------------------------------------------------------------------------
 
@@ -300,6 +333,11 @@ pub struct ChannelDsp {
     resample_phase_inc: f64,
     /// Dedicated WFM decoder that preserves the FM composite baseband.
     wfm_decoder: Option<WfmStereoDecoder>,
+    /// Soft AGC applied to all demodulated audio for consistent cross-mode levels.
+    audio_agc: SoftAgc,
+    /// DC blocker for modes whose demodulator output can carry a DC offset
+    /// (USB/LSB/AM/FM/DIG).  None for CW and WFM.
+    audio_dc: Option<DcBlocker>,
 }
 
 impl ChannelDsp {
@@ -375,6 +413,8 @@ impl ChannelDsp {
         } else {
             self.wfm_decoder = None;
         }
+        self.audio_agc = agc_for_mode(&self.mode, self.audio_sample_rate);
+        self.audio_dc = dc_for_mode(&self.mode);
         self.frame_buf.clear();
     }
 
@@ -456,6 +496,8 @@ impl ChannelDsp {
             } else {
                 None
             },
+            audio_agc: agc_for_mode(mode, audio_sample_rate),
+            audio_dc: dc_for_mode(mode),
         }
     }
 
@@ -579,11 +621,25 @@ impl ChannelDsp {
             return;
         }
 
-        // --- 4. Demodulate --------------------------------------------------
+        // --- 4. Demodulate + post-process -----------------------------------
+        // WFM: full composite decoder (handles its own DC blocks + deemphasis).
+        // All other modes: stateless demodulator → DC blocker (where enabled) → AGC.
+        // AGC is applied to WFM output too so all modes share the same target level.
         let audio = if let Some(decoder) = self.wfm_decoder.as_mut() {
-            decoder.process_iq(&decimated)
+            let mut out = decoder.process_iq(&decimated);
+            for s in &mut out {
+                *s = self.audio_agc.process(*s);
+            }
+            out
         } else {
-            self.demodulator.demodulate(&decimated)
+            let mut raw = self.demodulator.demodulate(&decimated);
+            for s in &mut raw {
+                if let Some(dc) = &mut self.audio_dc {
+                    *s = dc.process(*s);
+                }
+                *s = self.audio_agc.process(*s);
+            }
+            raw
         };
 
         // --- 5. Emit complete PCM frames ------------------------------------
