@@ -961,7 +961,7 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   }
 }
 
-/* ── Nord style ───────────────────────────────────────────────────────── */
+/* ── Arctic style ─────────────────────────────────────────────────────── */
 [data-style="nord"] {
   --bg: #242933;
   --card-bg: #2e3440;
@@ -1019,7 +1019,7 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   --spectrum-bg: #dde1e9;
 }
 
-/* ── Monokai style ────────────────────────────────────────────────────── */
+/* ── Brownie style ────────────────────────────────────────────────────── */
 [data-style="monokai"] {
   --bg: #1c1c17;
   --card-bg: #272822;
