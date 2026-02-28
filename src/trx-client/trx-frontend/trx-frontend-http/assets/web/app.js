@@ -3210,9 +3210,10 @@ function clearSpectrumCanvas() {
 }
 
 function formatOverlayPs(ps) {
-  const raw = String(ps ?? "").slice(0, 8);
-  const leadingBlanks = raw.match(/^ */)?.[0].length ?? 0;
-  return `${"_".repeat(leadingBlanks)}${raw.slice(leadingBlanks)}`.padEnd(8, "_");
+  return String(ps ?? "")
+    .slice(0, 8)
+    .padEnd(8, "_")
+    .replaceAll(" ", "_");
 }
 
 function formatOverlayPi(pi) {

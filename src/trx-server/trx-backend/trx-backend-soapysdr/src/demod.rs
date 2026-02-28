@@ -121,7 +121,7 @@ impl WfmStereoDecoder {
 
             let pilot_mag = (i * i + q * q).sqrt();
             let stereo_blend = (pilot_mag * 40.0).clamp(0.0, 1.0);
-            let rds_quality = (pilot_mag * 45.0).clamp(0.0, 1.0);
+            let rds_quality = (0.35 + pilot_mag * 20.0).clamp(0.35, 1.0);
             let _ = self.rds_decoder.process_sample(x, rds_quality);
 
             let sum = self.sum_lp.process(x);

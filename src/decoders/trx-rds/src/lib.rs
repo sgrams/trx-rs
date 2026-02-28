@@ -14,8 +14,6 @@ const SEARCH_REG_MASK: u32 = (1 << 26) - 1;
 const PHASE_CANDIDATES: usize = 8;
 const BIPHASE_CLOCK_WINDOW: usize = 128;
 const RDS_BASEBAND_LP_HZ: f32 = 2_400.0;
-const MIN_LOCK_QUALITY: f32 = 0.08;
-const MIN_BIT_CONFIDENCE: f32 = 0.002;
 const PS_VOTE_COMMIT_SCORE: u8 = 3;
 
 const OFFSET_A: u16 = 0x0FC;
@@ -83,7 +81,6 @@ struct Candidate {
     block_a: u16,
     block_b: u16,
     score: u32,
-    bit_conf_avg: f32,
     block_conf_sum: f32,
     block_conf_count: u8,
     state: RdsData,
@@ -115,7 +112,6 @@ impl Candidate {
             block_a: 0,
             block_b: 0,
             score: 0,
-            bit_conf_avg: 0.0,
             block_conf_sum: 0.0,
             block_conf_count: 0,
             state: RdsData::default(),
@@ -151,7 +147,6 @@ impl Candidate {
             self.clock = (self.clock + 1) % BIPHASE_CLOCK_WINDOW;
             let quality = quality.clamp(0.0, 1.0);
             let bit_confidence = magnitude * quality;
-            self.bit_conf_avg = self.bit_conf_avg * 0.995 + bit_confidence * 0.005;
 
             if self.clock == 0 {
                 let mut even_sum = 0.0;
@@ -170,10 +165,6 @@ impl Candidate {
             }
 
             if emit_bit {
-                let threshold = (self.bit_conf_avg * 0.35).max(MIN_BIT_CONFIDENCE);
-                if bit_confidence < threshold {
-                    return None;
-                }
                 let input_bit = biphase_i >= 0.0;
                 let bit = (input_bit != self.prev_input_bit) as u8;
                 self.prev_input_bit = input_bit;
@@ -413,9 +404,6 @@ impl RdsDecoder {
     }
 
     pub fn process_sample(&mut self, sample: f32, quality: f32) -> Option<&RdsData> {
-        if quality < MIN_LOCK_QUALITY {
-            return self.best_state.as_ref();
-        }
         let (sin_p, cos_p) = self.carrier_phase.sin_cos();
         self.carrier_phase = (self.carrier_phase + self.carrier_inc).rem_euclid(TAU);
         let mixed_i = self.i_lp.process(sample * cos_p * 2.0);
