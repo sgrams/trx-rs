@@ -328,7 +328,6 @@ const ownerSubtitle = document.getElementById("owner-subtitle");
 const loadingTitle = document.getElementById("loading-title");
 const loadingSub = document.getElementById("loading-sub");
 const overviewCanvas = document.getElementById("overview-canvas");
-const overviewLabel = document.getElementById("overview-label");
 const overviewPeakHoldEl = document.getElementById("overview-peak-hold");
 const themeToggleBtn = document.getElementById("theme-toggle");
 const headerRigSwitchSelect = document.getElementById("header-rig-switch-select");
@@ -582,10 +581,8 @@ function drawHeaderSignalGraph() {
   ctx.scale(dpr, dpr);
   ctx.clearRect(0, 0, w, h);
   if (lastSpectrumData && overviewWaterfallRows.length > 0) {
-    if (overviewLabel) overviewLabel.textContent = "Waterfall";
     drawOverviewWaterfall(ctx, w, h, isLight);
   } else {
-    if (overviewLabel) overviewLabel.textContent = "Signal History";
     drawOverviewSignalHistory(ctx, w, h, isLight);
   }
   ctx.restore();
@@ -878,7 +875,9 @@ function updateFooterBuildInfo() {
 }
 
 function updateTitle() {
-  document.getElementById("rig-title").textContent = originalTitle;
+  const titleEl = document.getElementById("rig-title");
+  if (!titleEl) return;
+  titleEl.textContent = serverVersion ? `trx-rs v${serverVersion}` : "trx-rs";
 }
 
 function render(update) {
