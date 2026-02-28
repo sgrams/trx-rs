@@ -1720,6 +1720,7 @@ const jogDownBtn = document.getElementById("jog-down");
 const jogUpBtn = document.getElementById("jog-up");
 const jogStepEl = document.getElementById("jog-step");
 const jogMultEl = document.getElementById("jog-mult");
+const VALID_JOG_DIVISORS = new Set([1, 10]);
 
 function applyJogStep() {
   jogStep = Math.max(Math.round(jogUnit / jogMult), minFreqStepHz);
@@ -1731,7 +1732,7 @@ function applyJogStep() {
 }
 
 function setJogDivisor(divisor) {
-  const next = divisor === 10 ? 10 : 1;
+  const next = VALID_JOG_DIVISORS.has(divisor) ? divisor : 1;
   jogMult = next;
   if (jogMultEl) {
     jogMultEl.querySelectorAll("button[data-mult]").forEach((b) => {
@@ -1820,13 +1821,16 @@ jogStepEl.addEventListener("click", (e) => {
 
 // Step multiplier selector
 if (jogMultEl) {
+  jogMultEl.querySelectorAll("button[data-mult]").forEach((btn) => {
+    const divisor = parseInt(btn.dataset.mult, 10);
+    if (!VALID_JOG_DIVISORS.has(divisor)) {
+      btn.remove();
+    }
+  });
   jogMultEl.addEventListener("click", (e) => {
     const btn = e.target.closest("button[data-mult]");
     if (!btn) return;
-    jogMult = parseInt(btn.dataset.mult, 10);
-    jogMultEl.querySelectorAll("button").forEach((b) => b.classList.remove("active"));
-    btn.classList.add("active");
-    applyJogStep();
+    setJogDivisor(parseInt(btn.dataset.mult, 10));
   });
 }
 
@@ -1844,12 +1848,16 @@ if (jogMultEl) {
   if (jogMultEl) {
     const multBtns = Array.from(jogMultEl.querySelectorAll("button[data-mult]"));
     const activeMult =
-      multBtns.find((b) => parseInt(b.dataset.mult, 10) === jogMult) ||
+      multBtns.find((b) => parseInt(b.dataset.mult, 10) === jogMult && VALID_JOG_DIVISORS.has(jogMult)) ||
       multBtns.find((b) => parseInt(b.dataset.mult, 10) === 1) ||
       multBtns[0];
     if (activeMult) {
-      jogMult = parseInt(activeMult.dataset.mult, 10);
+      jogMult = VALID_JOG_DIVISORS.has(parseInt(activeMult.dataset.mult, 10))
+        ? parseInt(activeMult.dataset.mult, 10)
+        : 1;
       multBtns.forEach((b) => b.classList.toggle("active", b === activeMult));
+    } else {
+      jogMult = 1;
     }
   }
   jogStep = Math.max(Math.round(jogUnit / jogMult), minFreqStepHz);
