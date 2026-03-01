@@ -621,7 +621,7 @@ small { color: var(--text-muted); }
   display: none;
   position: absolute;
   bottom: 0.4rem;
-  left: 0.4rem;
+  left: 1.2rem;
   z-index: 5;
   pointer-events: none;
   color: var(--text-heading);

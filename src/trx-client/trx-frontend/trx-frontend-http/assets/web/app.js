@@ -1419,6 +1419,7 @@ function render(update) {
   if (aprsStatus && modeUpper !== "PKT" && aprsStatus.textContent === "Receiving") {
     aprsStatus.textContent = "Connected, listening for packets";
   }
+  if (window.updateAprsBar) window.updateAprsBar();
   if (cwStatus && modeUpper !== "CW" && modeUpper !== "CWR" && cwStatus.textContent === "Receiving") {
     cwStatus.textContent = "Connected, listening for packets";
   }

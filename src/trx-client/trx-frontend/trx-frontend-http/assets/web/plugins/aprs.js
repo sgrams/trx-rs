@@ -109,7 +109,8 @@ function applyAprsFilterToAll() {
 
 function updateAprsBar() {
   if (!aprsBarOverlay) return;
-  if (aprsBarFrames.length === 0) {
+  const isPkt = (document.getElementById("mode")?.value || "").toUpperCase() === "PKT";
+  if (!isPkt || aprsBarFrames.length === 0) {
     aprsBarOverlay.style.display = "none";
     return;
   }
@@ -119,12 +120,12 @@ function updateAprsBar() {
     const call = `<span class="aprs-bar-call">${escapeMapHtml(pkt.srcCall)}</span>`;
     const dest = escapeMapHtml(pkt.destCall || "");
     const info = escapeMapHtml((pkt.info || "").slice(0, 60));
-    const crc = pkt.crcOk ? "" : '<span class="aprs-bar-crc">[CRC]</span>';
-    html += `<div class="aprs-bar-frame">${ts}${call}>${dest}: ${info}${crc}</div>`;
+    html += `<div class="aprs-bar-frame">${ts}${call}>${dest}: ${info}</div>`;
   }
   aprsBarOverlay.innerHTML = html;
   aprsBarOverlay.style.display = "flex";
 }
+window.updateAprsBar = updateAprsBar;
 
 function addAprsPacket(pkt) {
   const tag = pkt.crcOk ? "[APRS]" : "[APRS-CRC-FAIL]";
@@ -138,10 +139,12 @@ function addAprsPacket(pkt) {
   if (aprsPacketHistory.length > APRS_MAX_PACKETS) aprsPacketHistory.length = APRS_MAX_PACKETS;
   saveSetting("aprsPackets", aprsPacketHistory);
 
-  // Update overview bar
-  aprsBarFrames.unshift(pkt);
-  if (aprsBarFrames.length > APRS_BAR_MAX) aprsBarFrames.length = APRS_BAR_MAX;
-  updateAprsBar();
+  // Update overview bar (CRC-failed frames excluded)
+  if (pkt.crcOk) {
+    aprsBarFrames.unshift(pkt);
+    if (aprsBarFrames.length > APRS_BAR_MAX) aprsBarFrames.length = APRS_BAR_MAX;
+    updateAprsBar();
+  }
 
   const row = renderAprsRow(pkt);
   if (pkt.lat != null && pkt.lon != null && window.aprsMapAddStation) {
@@ -170,8 +173,8 @@ for (let i = aprsPacketHistory.length - 1; i >= 0; i--) {
     window.aprsMapAddStation(pkt.srcCall, pkt.lat, pkt.lon, pkt.info, pkt.symbolTable, pkt.symbolCode);
   }
 }
-// Pre-populate bar from history (most recent first)
-aprsBarFrames = aprsPacketHistory.slice(0, APRS_BAR_MAX);
+// Pre-populate bar from history (most recent first, CRC-ok only)
+aprsBarFrames = aprsPacketHistory.filter((p) => p.crcOk).slice(0, APRS_BAR_MAX);
 updateAprsBar();
 
 if (aprsFilterInput) {
