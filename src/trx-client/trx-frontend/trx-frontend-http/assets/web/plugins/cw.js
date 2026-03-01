@@ -48,9 +48,18 @@ if (cwToneInput) {
   });
 }
 
-document.getElementById("cw-clear-btn").addEventListener("click", async () => {
+window.resetCwHistoryView = function() {
   cwOutputEl.innerHTML = "";
-  try { await postPath("/clear_cw_decode"); } catch (e) { console.error("CW clear failed", e); }
+  cwLastAppendTime = 0;
+};
+
+document.getElementById("cw-clear-btn").addEventListener("click", async () => {
+  try {
+    await postPath("/clear_cw_decode");
+    window.resetCwHistoryView();
+  } catch (e) {
+    console.error("CW clear failed", e);
+  }
 });
 
 // --- Server-side CW decode handler ---

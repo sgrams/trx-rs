@@ -5,9 +5,7 @@ const aprsFilterInput = document.getElementById("aprs-filter");
 const aprsBarOverlay = document.getElementById("aprs-bar-overlay");
 const APRS_MAX_PACKETS = 100;
 let aprsFilterText = "";
-
-// Persistent packet history
-let aprsPacketHistory = loadSetting("aprsPackets", []);
+let aprsPacketHistory = [];
 
 function renderAprsInfo(pkt) {
   const bytes = Array.isArray(pkt.info_bytes) ? pkt.info_bytes : null;
@@ -133,6 +131,13 @@ window.clearAprsBar = function() {
   document.getElementById("aprs-clear-btn")?.click();
 };
 
+window.resetAprsHistoryView = function() {
+  aprsPacketsEl.innerHTML = "";
+  aprsPacketHistory = [];
+  updateAprsBar();
+  if (window.clearMapMarkersByType) window.clearMapMarkersByType("aprs");
+};
+
 function addAprsPacket(pkt) {
   const tag = pkt.crcOk ? "[APRS]" : "[APRS-CRC-FAIL]";
   console.log(tag, `${pkt.srcCall}>${pkt.destCall}${pkt.path ? "," + pkt.path : ""}: ${pkt.info}`, pkt);
@@ -141,10 +146,8 @@ function addAprsPacket(pkt) {
   pkt._ts = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
   pkt._tsMs = Date.now();
 
-  // Persist to history
   aprsPacketHistory.unshift(pkt);
   if (aprsPacketHistory.length > APRS_MAX_PACKETS) aprsPacketHistory.length = APRS_MAX_PACKETS;
-  saveSetting("aprsPackets", aprsPacketHistory);
 
   // Update overview bar (CRC-failed frames excluded)
   if (pkt.crcOk) updateAprsBar();
@@ -160,22 +163,13 @@ function addAprsPacket(pkt) {
 }
 
 document.getElementById("aprs-clear-btn").addEventListener("click", async () => {
-  aprsPacketsEl.innerHTML = "";
-  aprsPacketHistory = [];
-  saveSetting("aprsPackets", []);
-  updateAprsBar();
-  try { await postPath("/clear_aprs_decode"); } catch (e) { console.error("APRS clear failed", e); }
-});
-
-// Restore saved packets and map markers on page load
-for (let i = aprsPacketHistory.length - 1; i >= 0; i--) {
-  const pkt = aprsPacketHistory[i];
-  aprsPacketsEl.prepend(renderAprsRow(pkt));
-  if (pkt.lat != null && pkt.lon != null && window.aprsMapAddStation) {
-    window.aprsMapAddStation(pkt.srcCall, pkt.lat, pkt.lon, pkt.info, pkt.symbolTable, pkt.symbolCode, pkt);
+  try {
+    await postPath("/clear_aprs_decode");
+    window.resetAprsHistoryView();
+  } catch (e) {
+    console.error("APRS clear failed", e);
   }
-}
-updateAprsBar();
+});
 
 if (aprsFilterInput) {
   aprsFilterInput.addEventListener("input", () => {

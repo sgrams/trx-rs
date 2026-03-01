@@ -97,6 +97,11 @@ function applyWsprFilterToAll() {
   rows.forEach((row) => applyWsprFilterToRow(row));
 }
 
+window.resetWsprHistoryView = function() {
+  wsprMessagesEl.innerHTML = "";
+  if (window.clearMapMarkersByType) window.clearMapMarkersByType("wspr");
+};
+
 if (wsprFilterInput) {
   wsprFilterInput.addEventListener("input", () => {
     wsprFilterText = wsprFilterInput.value.trim().toUpperCase();
@@ -109,8 +114,12 @@ document.getElementById("wspr-decode-toggle-btn").addEventListener("click", asyn
 });
 
 document.getElementById("wspr-clear-btn").addEventListener("click", async () => {
-  wsprMessagesEl.innerHTML = "";
-  try { await postPath("/clear_wspr_decode"); } catch (e) { console.error("WSPR clear failed", e); }
+  try {
+    await postPath("/clear_wspr_decode");
+    window.resetWsprHistoryView();
+  } catch (e) {
+    console.error("WSPR clear failed", e);
+  }
 });
 
 window.onServerWspr = function(msg) {

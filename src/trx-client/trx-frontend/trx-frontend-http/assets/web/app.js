@@ -2373,6 +2373,31 @@ const locatorMarkers = new Map();
 const mapMarkers = new Set();
 const mapFilter = { aprs: true, ft8: true, wspr: true };
 
+window.clearMapMarkersByType = function(type) {
+  if (type === "aprs") {
+    stationMarkers.forEach((entry) => {
+      if (entry && entry.marker) {
+        if (aprsMap && aprsMap.hasLayer(entry.marker)) entry.marker.removeFrom(aprsMap);
+        mapMarkers.delete(entry.marker);
+      }
+    });
+    stationMarkers.clear();
+    return;
+  }
+
+  if (type === "ft8" || type === "wspr") {
+    const prefix = `${type}:`;
+    for (const [key, entry] of locatorMarkers.entries()) {
+      if (!key.startsWith(prefix)) continue;
+      if (entry && entry.marker) {
+        if (aprsMap && aprsMap.hasLayer(entry.marker)) entry.marker.removeFrom(aprsMap);
+        mapMarkers.delete(entry.marker);
+      }
+      locatorMarkers.delete(key);
+    }
+  }
+};
+
 function mapTileSpecForTheme(theme) {
   if (theme === "dark") {
     return {
@@ -3336,6 +3361,10 @@ function updateDecodeStatus(text) {
 }
 function connectDecode() {
   if (decodeSource) { decodeSource.close(); }
+  if (window.resetAprsHistoryView) window.resetAprsHistoryView();
+  if (window.resetCwHistoryView) window.resetCwHistoryView();
+  if (window.resetFt8HistoryView) window.resetFt8HistoryView();
+  if (window.resetWsprHistoryView) window.resetWsprHistoryView();
   decodeSource = new EventSource("/decode");
   decodeSource.onopen = () => {
     decodeConnected = true;

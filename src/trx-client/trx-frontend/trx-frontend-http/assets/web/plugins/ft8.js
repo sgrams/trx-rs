@@ -150,6 +150,11 @@ window.updateFt8RfDisplay = function() {
   rows.forEach((row) => updateFt8RowRf(row));
 };
 
+window.resetFt8HistoryView = function() {
+  ft8MessagesEl.innerHTML = "";
+  if (window.clearMapMarkersByType) window.clearMapMarkersByType("ft8");
+};
+
 if (ft8FilterInput) {
   ft8FilterInput.addEventListener("input", () => {
     ft8FilterText = ft8FilterInput.value.trim().toUpperCase();
@@ -162,8 +167,12 @@ document.getElementById("ft8-decode-toggle-btn").addEventListener("click", async
 });
 
 document.getElementById("ft8-clear-btn").addEventListener("click", async () => {
-  ft8MessagesEl.innerHTML = "";
-  try { await postPath("/clear_ft8_decode"); } catch (e) { console.error("FT8 clear failed", e); }
+  try {
+    await postPath("/clear_ft8_decode");
+    window.resetFt8HistoryView();
+  } catch (e) {
+    console.error("FT8 clear failed", e);
+  }
 });
 
 // --- Server-side FT8 decode handler ---
