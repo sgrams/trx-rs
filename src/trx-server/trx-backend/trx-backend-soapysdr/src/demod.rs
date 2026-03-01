@@ -43,7 +43,7 @@ const STEREO_DIFF_DC_R: f32 = 0.9995;
 /// Fractional-resampler FIR taps for WFM audio reconstruction.
 const WFM_RESAMP_TAPS: usize = 64;
 /// Polyphase slots for the WFM fractional FIR resampler.
-const WFM_RESAMP_PHASES: usize = 32;
+const WFM_RESAMP_PHASES: usize = 128;
 fn build_wfm_resample_bank(cutoff: f32) -> [[f32; WFM_RESAMP_TAPS]; WFM_RESAMP_PHASES] {
     let mut bank = [[0.0; WFM_RESAMP_TAPS]; WFM_RESAMP_PHASES];
     let anchor = (WFM_RESAMP_TAPS / 2 - 1) as f32;
@@ -63,7 +63,10 @@ fn build_wfm_resample_bank(cutoff: f32) -> [[f32; WFM_RESAMP_TAPS]; WFM_RESAMP_P
                 1.0
             } else {
                 let pos = tap_idx as f32 / (WFM_RESAMP_TAPS - 1) as f32;
-                0.54 - 0.46 * (2.0 * std::f32::consts::PI * pos).cos()
+                let tw = 2.0 * std::f32::consts::PI * pos;
+                0.35875 - 0.48829 * tw.cos()
+                    + 0.14128 * (2.0 * tw).cos()
+                    - 0.01168 * (3.0 * tw).cos()
             };
             *coeff = sinc * window;
             sum += *coeff;
@@ -614,6 +617,9 @@ pub struct WfmStereoDecoder {
     /// Notch at 19 kHz for the mono output path — keeps pilot tone out of mono
     /// audio without introducing phase mismatch with the diff channel.
     sum_notch: BiquadNotch,
+    /// Notch at 19 kHz on composite before diff demod — removes pilot that would
+    /// create intermod products when multiplied by the 38 kHz carrier.
+    diff_pilot_notch: BiquadNotch,
     /// 4th-order Butterworth cascade for L-R (matched to sum path for stereo phase accuracy).
     diff_lpf1: BiquadLowPass,
     diff_lpf2: BiquadLowPass,
@@ -691,6 +697,7 @@ impl WfmStereoDecoder {
             sum_lpf2: BiquadLowPass::new(composite_rate_f, AUDIO_BW_HZ, BW6_Q2),
             sum_lpf3: BiquadLowPass::new(composite_rate_f, AUDIO_BW_HZ, BW6_Q3),
             sum_notch: BiquadNotch::new(composite_rate_f, PILOT_HZ, PILOT_NOTCH_Q),
+            diff_pilot_notch: BiquadNotch::new(composite_rate_f, PILOT_HZ, PILOT_NOTCH_Q),
             diff_lpf1: BiquadLowPass::new(composite_rate_f, STEREO_DIFF_BW_HZ, BW6_Q1),
             diff_lpf2: BiquadLowPass::new(composite_rate_f, STEREO_DIFF_BW_HZ, BW6_Q2),
             diff_lpf3: BiquadLowPass::new(composite_rate_f, STEREO_DIFF_BW_HZ, BW6_Q3),
@@ -790,15 +797,18 @@ impl WfmStereoDecoder {
             // with the diff channel is irrelevant.
             let sum = self.sum_lpf3.process(self.sum_lpf2.process(self.sum_lpf1.process(x)));
 
-            // --- L-R (diff): 38 kHz demod + 4th-order Butterworth (unblended) ---
+            // --- L-R (diff): 38 kHz demod + 6th-order Butterworth (unblended) ---
+            // Notch the 19 kHz pilot from the composite before multiplying by the
+            // 38 kHz carrier to prevent pilot×carrier intermod products.
             // Blend is applied per-band at audio rate in the emit step below.
             let (sin_2p, cos_2p) = (2.0 * pilot_phase_est).sin_cos();
+            let x_notched = self.diff_pilot_notch.process(x);
             let diff_i = self
                 .diff_dc
-                .process(self.diff_lpf3.process(self.diff_lpf2.process(self.diff_lpf1.process(x * (cos_2p * 2.0)))));
+                .process(self.diff_lpf3.process(self.diff_lpf2.process(self.diff_lpf1.process(x_notched * (cos_2p * 2.0)))));
             let diff_q = self
                 .diff_q_dc
-                .process(self.diff_q_lpf3.process(self.diff_q_lpf2.process(self.diff_q_lpf1.process(x * (-sin_2p * 2.0)))));
+                .process(self.diff_q_lpf3.process(self.diff_q_lpf2.process(self.diff_q_lpf1.process(x_notched * (-sin_2p * 2.0)))));
 
             // --- Polyphase FIR fractional resampling ---
             // This uses a short windowed-sinc bank instead of cubic interpolation
@@ -895,6 +905,7 @@ impl WfmStereoDecoder {
         self.sum_lpf2.reset();
         self.sum_lpf3.reset();
         self.sum_notch.reset();
+        self.diff_pilot_notch.reset();
         self.diff_lpf1.reset();
         self.diff_lpf2.reset();
         self.diff_lpf3.reset();
