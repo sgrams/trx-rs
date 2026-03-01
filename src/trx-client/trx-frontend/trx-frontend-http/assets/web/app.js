@@ -82,9 +82,9 @@ function showAuthGate(allowGuest = false) {
   authGate.style.flexDirection = "column";
   authGate.style.justifyContent = "center";
   authGate.style.alignItems = "stretch";
-  const overviewStrip = document.querySelector(".overview-strip");
-  if (overviewStrip) {
-    overviewStrip.style.display = "none";
+  const signalVisualBlock = document.querySelector(".signal-visual-block");
+  if (signalVisualBlock) {
+    signalVisualBlock.style.display = "none";
   }
 
   // Hide all tab panels
@@ -108,9 +108,9 @@ function hideAuthGate() {
   const authGate = document.getElementById("auth-gate");
   authGate.style.display = "none";
   document.getElementById("loading").style.display = "block";
-  const overviewStrip = document.querySelector(".overview-strip");
-  if (overviewStrip) {
-    overviewStrip.style.display = "";
+  const signalVisualBlock = document.querySelector(".signal-visual-block");
+  if (signalVisualBlock) {
+    signalVisualBlock.style.display = "";
   }
 
   // Show Main tab by default and hide all other tabs
@@ -277,8 +277,12 @@ function applyCapabilities(caps) {
   });
 
   // Spectrum panel (SDR-only)
+  const signalVisualBlock = document.querySelector(".signal-visual-block");
   const spectrumPanel = document.getElementById("spectrum-panel");
   const centerFreqField = document.getElementById("center-freq-field");
+  if (signalVisualBlock) {
+    signalVisualBlock.style.display = caps.filter_controls ? "" : "none";
+  }
   if (spectrumPanel) {
     if (caps.filter_controls) {
       spectrumPanel.style.display = "";
