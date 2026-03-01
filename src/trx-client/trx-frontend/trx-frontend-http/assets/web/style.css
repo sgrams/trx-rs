@@ -621,8 +621,8 @@ small { color: var(--text-muted); }
   display: none;
   position: absolute;
   top: 50%;
-  left: 0;
-  right: 0;
+  left: 0.45rem;
+  right: 0.45rem;
   width: auto;
   max-width: none;
   transform: translateY(-50%);
