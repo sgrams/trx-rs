@@ -37,9 +37,10 @@ fn dc_for_mode(mode: &RigMode) -> Option<DcBlocker> {
 
 fn default_bandwidth_for_mode(mode: &RigMode) -> u32 {
     match mode {
-        RigMode::LSB | RigMode::USB | RigMode::PKT | RigMode::DIG => 3_000,
+        RigMode::LSB | RigMode::USB | RigMode::DIG => 3_000,
+        RigMode::PKT => 25_000,
         RigMode::CW | RigMode::CWR => 500,
-        RigMode::AM => 12_000,
+        RigMode::AM => 9_000,
         RigMode::FM => 12_500,
         RigMode::WFM => 180_000,
         RigMode::Other(_) => 3_000,

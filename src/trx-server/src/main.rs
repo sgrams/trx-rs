@@ -238,9 +238,10 @@ async fn wait_for_shutdown(mut shutdown_rx: watch::Receiver<bool>) {
 fn default_audio_bandwidth_for_mode(mode: &trx_core::rig::state::RigMode) -> u32 {
     use trx_core::rig::state::RigMode;
     match mode {
-        RigMode::LSB | RigMode::USB | RigMode::PKT | RigMode::DIG => 3_000,
+        RigMode::LSB | RigMode::USB | RigMode::DIG => 3_000,
+        RigMode::PKT => 25_000,
         RigMode::CW | RigMode::CWR => 500,
-        RigMode::AM => 6_000,
+        RigMode::AM => 9_000,
         RigMode::FM => 12_500,
         RigMode::WFM => 180_000,
         RigMode::Other(_) => 3_000,
