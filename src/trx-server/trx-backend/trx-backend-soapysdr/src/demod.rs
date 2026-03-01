@@ -42,10 +42,7 @@ const STEREO_DIFF_DC_R: f32 = 0.9995;
 const WFM_RESAMP_TAPS: usize = 16;
 /// Polyphase slots for the WFM fractional FIR resampler.
 const WFM_RESAMP_PHASES: usize = 32;
-/// Slightly sub-Nyquist sinc cutoff to tame top-end imaging.
-const WFM_RESAMP_CUTOFF: f32 = 0.94;
-
-fn build_wfm_resample_bank() -> [[f32; WFM_RESAMP_TAPS]; WFM_RESAMP_PHASES] {
+fn build_wfm_resample_bank(cutoff: f32) -> [[f32; WFM_RESAMP_TAPS]; WFM_RESAMP_PHASES] {
     let mut bank = [[0.0; WFM_RESAMP_TAPS]; WFM_RESAMP_PHASES];
     let anchor = (WFM_RESAMP_TAPS / 2 - 1) as f32;
     for (phase_idx, phase) in bank.iter_mut().enumerate() {
@@ -55,9 +52,9 @@ fn build_wfm_resample_bank() -> [[f32; WFM_RESAMP_TAPS]; WFM_RESAMP_PHASES] {
         for (tap_idx, coeff) in phase.iter_mut().enumerate() {
             let x = tap_idx as f32 - center;
             let sinc = if x.abs() < 1e-6 {
-                WFM_RESAMP_CUTOFF
+                cutoff
             } else {
-                let arg = std::f32::consts::PI * x * WFM_RESAMP_CUTOFF;
+                let arg = std::f32::consts::PI * x * cutoff;
                 arg.sin() / (std::f32::consts::PI * x)
             };
             let window = if WFM_RESAMP_TAPS == 1 {
@@ -703,7 +700,7 @@ impl WfmStereoDecoder {
             stereo_detect_level: 0.0,
             stereo_detected: false,
             fm_gain: composite_rate_f / (2.0 * 75_000.0),
-            resample_bank: build_wfm_resample_bank(),
+            resample_bank: build_wfm_resample_bank(audio_rate as f32 / composite_rate_f),
             sum_hist: [0.0; WFM_RESAMP_TAPS],
             diff_hist: [0.0; WFM_RESAMP_TAPS],
             diff_q_hist: [0.0; WFM_RESAMP_TAPS],
