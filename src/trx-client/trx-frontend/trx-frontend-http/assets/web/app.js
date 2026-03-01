@@ -2436,7 +2436,7 @@ function initAprsMap() {
     if (serverLat != null && serverLon != null) {
       aprsRadioPath = L.polyline(
         [[serverLat, serverLon], [ll.lat, ll.lng]],
-        { className: "aprs-radio-path", color: "#3388ff", weight: 2, opacity: 0.85, interactive: false }
+        { className: "aprs-radio-path", weight: 2, interactive: false }
       ).addTo(aprsMap);
     }
   });
