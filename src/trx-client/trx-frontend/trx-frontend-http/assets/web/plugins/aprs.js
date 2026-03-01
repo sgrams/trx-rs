@@ -107,7 +107,7 @@ function applyAprsFilterToAll() {
 function updateAprsBar() {
   if (!aprsBarOverlay) return;
   const isPkt = (document.getElementById("mode")?.value || "").toUpperCase() === "PKT";
-  const okFrames = aprsPacketHistory.filter((p) => p.crcOk).slice(0, 5);
+  const okFrames = aprsPacketHistory.filter((p) => p.crcOk);
   if (!isPkt || okFrames.length === 0) {
     aprsBarOverlay.style.display = "none";
     return;
