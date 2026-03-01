@@ -723,7 +723,7 @@ pub async fn list_bookmarks(
             list.retain(|bm| bm.category.to_lowercase() == cat_lower);
         }
     }
-    list.sort_by(|a, b| a.name.cmp(&b.name));
+    list.sort_by_key(|bm| bm.freq_hz);
     Ok(HttpResponse::Ok().json(list))
 }
 
