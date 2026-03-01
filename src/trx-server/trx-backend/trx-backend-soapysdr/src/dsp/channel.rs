@@ -395,7 +395,7 @@ impl ChannelDsp {
             }
         }
 
-        const WFM_OUTPUT_GAIN: f32 = 0.20;
+        const WFM_OUTPUT_GAIN: f32 = 0.50;
         let audio = if let Some(decoder) = self.wfm_decoder.as_mut() {
             let mut out = decoder.process_iq(decimated);
             for sample in &mut out {
