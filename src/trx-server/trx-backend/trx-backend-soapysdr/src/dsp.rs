@@ -477,6 +477,8 @@ pub struct ChannelDsp {
     output_channels: usize,
     /// Accumulator for output PCM frames.
     pub frame_buf: Vec<f32>,
+    /// Read cursor into `frame_buf` for completed frame emission.
+    frame_buf_offset: usize,
     /// Target frame size in samples.
     pub frame_size: usize,
     /// Sender for completed PCM frames.
@@ -592,6 +594,7 @@ impl ChannelDsp {
         self.audio_agc = agc_for_mode(&self.mode, self.audio_sample_rate);
         self.audio_dc = dc_for_mode(&self.mode);
         self.frame_buf.clear();
+        self.frame_buf_offset = 0;
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -649,6 +652,7 @@ impl ChannelDsp {
             decim_factor,
             output_channels,
             frame_buf: Vec::with_capacity(frame_size + output_channels),
+            frame_buf_offset: 0,
             frame_size,
             pcm_tx,
             scratch_mixed_i: Vec::with_capacity(IQ_BLOCK_SIZE),
@@ -894,9 +898,17 @@ impl ChannelDsp {
 
         // --- 5. Emit complete PCM frames ------------------------------------
         self.frame_buf.extend_from_slice(&audio);
-        while self.frame_buf.len() >= self.frame_size {
-            let frame: Vec<f32> = self.frame_buf.drain(..self.frame_size).collect();
+        while self.frame_buf.len().saturating_sub(self.frame_buf_offset) >= self.frame_size {
+            let start = self.frame_buf_offset;
+            let end = start + self.frame_size;
+            let frame = self.frame_buf[start..end].to_vec();
+            self.frame_buf_offset = end;
             let _ = self.pcm_tx.send(frame);
+        }
+        if self.frame_buf_offset > 0 && self.frame_buf_offset * 2 >= self.frame_buf.len() {
+            self.frame_buf.copy_within(self.frame_buf_offset.., 0);
+            self.frame_buf.truncate(self.frame_buf.len() - self.frame_buf_offset);
+            self.frame_buf_offset = 0;
         }
     }
 }
