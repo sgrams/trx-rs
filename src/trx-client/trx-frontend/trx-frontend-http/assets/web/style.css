@@ -661,7 +661,7 @@ small { color: var(--text-muted); }
 .aprs-bar-clear {
   background: none;
   border: 1px solid color-mix(in srgb, var(--accent-green) 40%, transparent);
-  border-radius: 999px;
+  border-radius: 3px;
   padding: 0.02rem 0.3rem;
   font-family: inherit;
   font-size: 0.78em;
