@@ -250,16 +250,25 @@ async fn send_command_no_state_update(
         writer.write_all(format!("{}\n", payload).as_bytes()),
     )
     .await
-    .map_err(|_| RigError::communication(format!("write timed out after {:?}", SPECTRUM_IO_TIMEOUT)))?
+    .map_err(|_| {
+        RigError::communication(format!("write timed out after {:?}", SPECTRUM_IO_TIMEOUT))
+    })?
     .map_err(|e| RigError::communication(format!("write failed: {e}")))?;
     time::timeout(SPECTRUM_IO_TIMEOUT, writer.flush())
         .await
-        .map_err(|_| RigError::communication(format!("flush timed out after {:?}", SPECTRUM_IO_TIMEOUT)))?
+        .map_err(|_| {
+            RigError::communication(format!("flush timed out after {:?}", SPECTRUM_IO_TIMEOUT))
+        })?
         .map_err(|e| RigError::communication(format!("flush failed: {e}")))?;
-    let line = time::timeout(SPECTRUM_IO_TIMEOUT, read_limited_line(reader, MAX_JSON_LINE_BYTES))
-        .await
-        .map_err(|_| RigError::communication(format!("read timed out after {:?}", SPECTRUM_IO_TIMEOUT)))?
-        .map_err(|e| RigError::communication(format!("read failed: {e}")))?;
+    let line = time::timeout(
+        SPECTRUM_IO_TIMEOUT,
+        read_limited_line(reader, MAX_JSON_LINE_BYTES),
+    )
+    .await
+    .map_err(|_| {
+        RigError::communication(format!("read timed out after {:?}", SPECTRUM_IO_TIMEOUT))
+    })?
+    .map_err(|e| RigError::communication(format!("read failed: {e}")))?;
     let line = line.ok_or_else(|| RigError::communication("connection closed by remote"))?;
     let resp: ClientResponse = serde_json::from_str(line.trim_end())
         .map_err(|e| RigError::communication(format!("invalid response: {e}")))?;
@@ -386,7 +395,12 @@ fn should_poll_spectrum(config: &RemoteClientConfig) -> bool {
         .known_rigs
         .lock()
         .ok()
-        .and_then(|entries| entries.iter().find(|entry| entry.rig_id == selected).cloned())
+        .and_then(|entries| {
+            entries
+                .iter()
+                .find(|entry| entry.rig_id == selected)
+                .cloned()
+        })
         .map(|entry| entry.state.initialized)
         .unwrap_or(true)
 }

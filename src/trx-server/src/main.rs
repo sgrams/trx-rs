@@ -820,11 +820,11 @@ async fn main() -> DynResult<()> {
         #[cfg(feature = "soapysdr")]
         let (sdr_prebuilt_rig, sdr_pcm_rx): (OptionalSdrRig, OptionalSdrPcmRx) =
             if rig_cfg.rig.access.access_type.as_deref() == Some("sdr") {
-            let (rig, pcm_rx) = build_sdr_rig_from_instance(rig_cfg)?;
-            (Some(rig), Some(pcm_rx))
-        } else {
-            (None, None)
-        };
+                let (rig, pcm_rx) = build_sdr_rig_from_instance(rig_cfg)?;
+                (Some(rig), Some(pcm_rx))
+            } else {
+                (None, None)
+            };
 
         #[cfg(not(feature = "soapysdr"))]
         let (sdr_prebuilt_rig, sdr_pcm_rx): (OptionalSdrRig, OptionalSdrPcmRx) = (None, None);

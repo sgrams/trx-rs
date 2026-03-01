@@ -89,7 +89,10 @@ fn inject_frontend_meta(json: &str, meta: FrontendMeta) -> String {
     serde_json::to_string(&value).unwrap_or_else(|_| json.to_string())
 }
 
-fn frontend_meta_from_context(http_clients: usize, context: &FrontendRuntimeContext) -> FrontendMeta {
+fn frontend_meta_from_context(
+    http_clients: usize,
+    context: &FrontendRuntimeContext,
+) -> FrontendMeta {
     FrontendMeta {
         http_clients,
         rigctl_clients: context.rigctl_clients.load(Ordering::Relaxed),
@@ -314,11 +317,7 @@ pub async fn spectrum(
         IntervalStream::new(time::interval(Duration::from_millis(40))).filter_map(move |_| {
             let context = context_updates.clone();
             std::future::ready({
-                let next = context
-                    .spectrum
-                    .lock()
-                    .ok()
-                    .map(|g| g.snapshot());
+                let next = context.spectrum.lock().ok().map(|g| g.snapshot());
 
                 let payload = match next {
                     Some((revision, _frame)) if last_revision == Some(revision) => None,

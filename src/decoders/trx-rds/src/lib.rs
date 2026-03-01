@@ -239,7 +239,13 @@ impl Candidate {
                 self.locked = false;
                 self.search_bits = 0;
                 self.search_reg = 0;
-                self.process_group(self.block_a, self.block_b, self.block_c, self.block_c_kind, data)
+                self.process_group(
+                    self.block_a,
+                    self.block_b,
+                    self.block_c,
+                    self.block_c_kind,
+                    data,
+                )
             }
             (_, BlockKind::A) => {
                 self.locked = true;
@@ -355,7 +361,9 @@ impl Candidate {
             self.ps_bytes[segment * 2 + 1] = sanitize_text_byte(b1);
             self.ps_seen[segment] = true;
             if self.ps_seen.iter().all(|seen| *seen) {
-                let ps = String::from_utf8_lossy(&self.ps_bytes).trim_end().to_string();
+                let ps = String::from_utf8_lossy(&self.ps_bytes)
+                    .trim_end()
+                    .to_string();
                 if !ps.is_empty() && self.state.program_service.as_deref() != Some(ps.as_str()) {
                     self.state.program_service = Some(ps);
                     changed = true;
@@ -395,7 +403,9 @@ impl Candidate {
                 } else {
                     (last_seen + 1) * 4
                 };
-                let rt = String::from_utf8_lossy(&self.rt_bytes[..rt_len]).trim_end().to_string();
+                let rt = String::from_utf8_lossy(&self.rt_bytes[..rt_len])
+                    .trim_end()
+                    .to_string();
                 if !rt.is_empty() && self.state.radio_text.as_deref() != Some(rt.as_str()) {
                     self.state.radio_text = Some(rt);
                     changed = true;
@@ -414,7 +424,9 @@ impl Candidate {
                 self.ptyn_seen[segment] = true;
             }
             if self.ptyn_seen.iter().all(|seen| *seen) {
-                let ptyn = String::from_utf8_lossy(&self.ptyn_bytes).trim_end().to_string();
+                let ptyn = String::from_utf8_lossy(&self.ptyn_bytes)
+                    .trim_end()
+                    .to_string();
                 if !ptyn.is_empty()
                     && self.state.program_type_name_long.as_deref() != Some(ptyn.as_str())
                 {
@@ -514,7 +526,10 @@ impl RdsDecoder {
                 if candidate.score >= self.best_score {
                     self.best_score = candidate.score;
                     let same_pi = self.best_state.as_ref().and_then(|state| state.pi) == update.pi;
-                    if publish_quality >= MIN_PUBLISH_QUALITY || same_pi || self.best_state.is_none() {
+                    if publish_quality >= MIN_PUBLISH_QUALITY
+                        || same_pi
+                        || self.best_state.is_none()
+                    {
                         self.best_state = Some(update);
                     }
                 }

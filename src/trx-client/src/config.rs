@@ -337,7 +337,9 @@ impl ClientConfig {
         }
         if let Some(rig_id) = &self.frontends.http.default_rig_id {
             if rig_id.trim().is_empty() {
-                return Err("[frontends.http].default_rig_id must not be empty when set".to_string());
+                return Err(
+                    "[frontends.http].default_rig_id must not be empty when set".to_string()
+                );
             }
         }
         if self.frontends.rigctl.enabled && self.frontends.rigctl.rig_ports.is_empty() {

@@ -353,8 +353,7 @@ async fn async_init() -> DynResult<AppState> {
                     first = false;
                 }
                 // Proxy channel: inject rig_id_override before forwarding to main tx.
-                let (proxy_tx, mut proxy_rx) =
-                    mpsc::channel::<RigRequest>(RIG_TASK_CHANNEL_BUFFER);
+                let (proxy_tx, mut proxy_rx) = mpsc::channel::<RigRequest>(RIG_TASK_CHANNEL_BUFFER);
                 let main_tx = tx.clone();
                 let rig_id_owned = rig_id.clone();
                 tokio::spawn(async move {
