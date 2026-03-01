@@ -25,9 +25,11 @@ const PILOT_NOTCH_Q: f32 = 5.0;
 /// Narrow 19 kHz band-pass used to derive zero-crossings for switching stereo demod.
 const PILOT_BPF_Q: f32 = 20.0;
 /// Fixed phase trim on the recovered L-R channel.
-const STEREO_SEPARATION_PHASE_TRIM: f32 = 0.001;
-/// Fixed gain trim on the recovered L-R channel.
-const STEREO_SEPARATION_GAIN: f32 = 1.00;
+const STEREO_SEPARATION_PHASE_TRIM: f32 = 0.434;
+/// Lower bound for dynamic gain trim on the recovered L-R channel.
+const STEREO_SEPARATION_GAIN_MIN: f32 = 0.92;
+/// Upper bound for dynamic gain trim on the recovered L-R channel.
+const STEREO_SEPARATION_GAIN_MAX: f32 = 1.08;
 /// Extra headroom in the stereo matrix.
 const STEREO_MATRIX_GAIN: f32 = 1.20;
 /// Stereo detection runs every N composite samples.
@@ -461,6 +463,8 @@ pub struct WfmStereoDecoder {
     deemph_r: Deemphasis,
     stereo_detect_level: f32,
     stereo_detected: bool,
+    pilot_lock_level: f32,
+    stereo_separation_gain: f32,
     detect_counter: u32,
     detect_pilot_mag_acc: f32,
     detect_pilot_abs_acc: f32,
@@ -521,6 +525,8 @@ impl WfmStereoDecoder {
             deemph_r: Deemphasis::new(audio_rate.max(1) as f32, deemphasis_us),
             stereo_detect_level: 0.0,
             stereo_detected: false,
+            pilot_lock_level: 0.0,
+            stereo_separation_gain: 1.0,
             detect_counter: 0,
             detect_pilot_mag_acc: 0.0,
             detect_pilot_abs_acc: 0.0,
@@ -585,6 +591,7 @@ impl WfmStereoDecoder {
                 let avg_abs = self.detect_pilot_abs_acc * inv_n;
                 let pilot_coherence = (avg_mag / (avg_abs + 1e-4)).clamp(0.0, 1.0);
                 let pilot_lock = ((pilot_coherence - 0.4) / 0.2).clamp(0.0, 1.0);
+                self.pilot_lock_level += 0.12 * (pilot_lock - self.pilot_lock_level);
                 let stereo_drive = (avg_mag * pilot_lock * 120.0).clamp(0.0, 1.0);
                 let detect_coeff = if stereo_drive > self.stereo_detect_level {
                     0.0008 * STEREO_DETECT_DECIMATION as f32
@@ -651,7 +658,14 @@ impl WfmStereoDecoder {
             let blend_i =
                 (self.prev_blend + frac * (stereo_blend_target - self.prev_blend)).clamp(0.0, 1.0);
             self.prev_blend = stereo_blend_target;
-            let diff_i = (diff_i * trim_cos + diff_q * trim_sin) * STEREO_SEPARATION_GAIN;
+            let separation_drive =
+                (self.pilot_lock_level * 0.65 + self.stereo_detect_level * 0.35).clamp(0.0, 1.0);
+            let separation_target = STEREO_SEPARATION_GAIN_MIN
+                + (STEREO_SEPARATION_GAIN_MAX - STEREO_SEPARATION_GAIN_MIN) * separation_drive;
+            self.stereo_separation_gain +=
+                0.015 * (separation_target - self.stereo_separation_gain);
+            let diff_i =
+                (diff_i * trim_cos + diff_q * trim_sin) * self.stereo_separation_gain;
             let diff_i = self.denoise.process(sum_i, diff_i, diff_q);
 
             if self.output_channels >= 2 && self.stereo_enabled {
@@ -735,6 +749,8 @@ impl WfmStereoDecoder {
         self.deemph_r.reset();
         self.stereo_detect_level = 0.0;
         self.stereo_detected = false;
+        self.pilot_lock_level = 0.0;
+        self.stereo_separation_gain = 1.0;
         self.detect_counter = 0;
         self.detect_pilot_mag_acc = 0.0;
         self.detect_pilot_abs_acc = 0.0;
