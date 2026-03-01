@@ -22,6 +22,8 @@ pub enum DecodedMessage {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AprsPacket {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ts_ms: Option<i64>,
     pub src_call: String,
     pub dest_call: String,
     pub path: String,

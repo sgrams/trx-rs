@@ -4,6 +4,7 @@ const aprsPacketsEl = document.getElementById("aprs-packets");
 const aprsFilterInput = document.getElementById("aprs-filter");
 const aprsBarOverlay = document.getElementById("aprs-bar-overlay");
 const APRS_MAX_PACKETS = 100;
+const APRS_BAR_WINDOW_MS = 60 * 60 * 1000;
 let aprsFilterText = "";
 let aprsPacketHistory = [];
 
@@ -105,7 +106,8 @@ function applyAprsFilterToAll() {
 function updateAprsBar() {
   if (!aprsBarOverlay) return;
   const isPkt = (document.getElementById("mode")?.value || "").toUpperCase() === "PKT";
-  const okFrames = aprsPacketHistory.filter((p) => p.crcOk);
+  const cutoffMs = Date.now() - APRS_BAR_WINDOW_MS;
+  const okFrames = aprsPacketHistory.filter((p) => p.crcOk && p._tsMs >= cutoffMs);
   if (!isPkt || okFrames.length === 0) {
     aprsBarOverlay.style.display = "none";
     return;
@@ -143,8 +145,9 @@ function addAprsPacket(pkt) {
   console.log(tag, `${pkt.srcCall}>${pkt.destCall}${pkt.path ? "," + pkt.path : ""}: ${pkt.info}`, pkt);
 
   // Stamp timestamp for persistence
-  pkt._ts = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
-  pkt._tsMs = Date.now();
+  const tsMs = Number.isFinite(pkt.ts_ms) ? Number(pkt.ts_ms) : Date.now();
+  pkt._tsMs = tsMs;
+  pkt._ts = new Date(tsMs).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
 
   aprsPacketHistory.unshift(pkt);
   if (aprsPacketHistory.length > APRS_MAX_PACKETS) aprsPacketHistory.length = APRS_MAX_PACKETS;

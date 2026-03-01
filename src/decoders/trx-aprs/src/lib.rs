@@ -416,6 +416,7 @@ fn parse_aprs(ax25: &Ax25Frame) -> AprsPacket {
     }
 
     AprsPacket {
+        ts_ms: None,
         src_call,
         dest_call,
         path,

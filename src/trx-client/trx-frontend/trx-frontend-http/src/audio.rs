@@ -12,7 +12,7 @@
 use std::collections::VecDeque;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use actix_web::{get, web, Error, HttpRequest, HttpResponse};
 use actix_ws::Message;
@@ -103,7 +103,14 @@ pub fn snapshot_aprs_history(context: &FrontendRuntimeContext) -> Vec<AprsPacket
         .lock()
         .expect("aprs history mutex poisoned");
     prune_aprs_history(&mut history);
-    history.iter().map(|(_, pkt)| pkt.clone()).collect()
+    history
+        .iter()
+        .map(|(ts, pkt)| {
+            let mut pkt = pkt.clone();
+            pkt.ts_ms = Some(timestamp_ms_for_elapsed(ts.elapsed()));
+            pkt
+        })
+        .collect()
 }
 
 pub fn snapshot_cw_history(context: &FrontendRuntimeContext) -> Vec<CwEvent> {
@@ -139,6 +146,17 @@ pub fn clear_aprs_history(context: &FrontendRuntimeContext) {
         .lock()
         .expect("aprs history mutex poisoned");
     history.clear();
+}
+
+fn timestamp_ms_for_elapsed(elapsed: Duration) -> i64 {
+    let wall_clock = SystemTime::now()
+        .checked_sub(elapsed)
+        .unwrap_or(UNIX_EPOCH);
+    let millis = wall_clock
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis();
+    i64::try_from(millis).unwrap_or(i64::MAX)
 }
 
 pub fn clear_cw_history(context: &FrontendRuntimeContext) {

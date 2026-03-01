@@ -250,6 +250,7 @@ mod tests {
 
     fn make_pkt(src: &str, dest: &str, path: &str, info: &str, crc_ok: bool) -> AprsPacket {
         AprsPacket {
+            ts_ms: None,
             src_call: src.to_string(),
             dest_call: dest.to_string(),
             path: path.to_string(),
