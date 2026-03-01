@@ -680,11 +680,19 @@ small { color: var(--text-muted); }
 .aprs-bar-frame {
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
   font-size: clamp(0.58rem, 1.05vw, 0.74rem);
+  display: flex;
+  flex-direction: column;
+  line-height: 1.45;
+  opacity: 1;
+}
+.aprs-bar-frame-main {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  line-height: 1.45;
-  opacity: 1;
+}
+.aprs-bar-frame-pos {
+  display: block;
+  white-space: nowrap;
 }
 .aprs-bar-frame + .aprs-bar-frame {
   opacity: 0.72;

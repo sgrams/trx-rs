@@ -107,7 +107,7 @@ function applyAprsFilterToAll() {
 function updateAprsBar() {
   if (!aprsBarOverlay) return;
   const isPkt = (document.getElementById("mode")?.value || "").toUpperCase() === "PKT";
-  const okFrames = aprsPacketHistory.filter((p) => p.crcOk);
+  const okFrames = aprsPacketHistory.filter((p) => p.crcOk).slice(0, 5);
   if (!isPkt || okFrames.length === 0) {
     aprsBarOverlay.style.display = "none";
     return;
@@ -119,9 +119,12 @@ function updateAprsBar() {
     const dest = escapeMapHtml(pkt.destCall || "");
     const info = escapeMapHtml(pkt.info || "");
     const posHtml = pkt.lat != null && pkt.lon != null
-      ? ` <button class="aprs-bar-pos" onclick="window.navigateToAprsMap(${pkt.lat},${pkt.lon})">${pkt.lat.toFixed(4)}, ${pkt.lon.toFixed(4)}</button>`
+      ? `<button class="aprs-bar-pos" onclick="window.navigateToAprsMap(${pkt.lat},${pkt.lon})">${pkt.lat.toFixed(4)}, ${pkt.lon.toFixed(4)}</button>`
       : "";
-    html += `<div class="aprs-bar-frame">${ts}${call}>${dest}: ${info}${posHtml}</div>`;
+    html += `<div class="aprs-bar-frame">` +
+      `<div class="aprs-bar-frame-main">${ts}${call}>${dest}: ${info}</div>` +
+      (posHtml ? `<div class="aprs-bar-frame-pos">${posHtml}</div>` : "") +
+      `</div>`;
   }
   aprsBarOverlay.innerHTML = html;
   aprsBarOverlay.style.display = "flex";
