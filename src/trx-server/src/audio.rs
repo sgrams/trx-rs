@@ -152,6 +152,9 @@ impl DecoderHistories {
     }
 
     pub fn record_aprs_packet(&self, pkt: AprsPacket) {
+        if !pkt.crc_ok {
+            return;
+        }
         let mut h = self.aprs.lock().expect("aprs history mutex poisoned");
         h.push_back((Instant::now(), pkt));
         Self::prune_aprs(&mut h);
@@ -773,10 +776,13 @@ pub async fn run_aprs_decoder(
 
                         was_active = true;
                         for pkt in decoder.process_samples(&mono) {
-                            histories.record_aprs_packet(pkt.clone());
                             if let Some(logger) = decode_logs.as_ref() {
                                 logger.log_aprs(&pkt);
                             }
+                            if !pkt.crc_ok {
+                                continue;
+                            }
+                            histories.record_aprs_packet(pkt.clone());
                             let _ = decode_tx.send(DecodedMessage::Aprs(pkt));
                         }
                     }
