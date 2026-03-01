@@ -769,7 +769,7 @@ impl WfmStereoDecoder {
         for &sample in samples {
             let x = if let Some(prev_sample) = self.prev_iq {
                 let product = sample * prev_sample.conj();
-                fast_atan2(product.im, product.re) * inv_pi
+                product.im.atan2(product.re) * inv_pi
             } else {
                 0.0
             };
@@ -784,7 +784,7 @@ impl WfmStereoDecoder {
             let (sin_p, cos_p) = self.pilot_phase.sin_cos();
             let i = self.pilot_i_lp.process(pilot_tone * cos_p);
             let q = self.pilot_q_lp.process(pilot_tone * -sin_p);
-            let phase_err = fast_atan2(q, i);
+            let phase_err = q.atan2(i);
             let pilot_phase_est = self.pilot_phase + phase_err;
             self.pilot_phase += self.pilot_freq;
             self.pilot_phase = self.pilot_phase.rem_euclid(std::f32::consts::TAU);
