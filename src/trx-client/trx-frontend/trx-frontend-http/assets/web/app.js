@@ -1266,6 +1266,7 @@ let serverBuildDate = null;
 let serverCallsign = null;
 let ownerCallsign = null;
 let ownerWebsiteUrl = null;
+let ownerWebsiteName = null;
 let serverRigs = [];
 let serverActiveRigId = null;
 let serverLat = null;
@@ -1284,7 +1285,7 @@ function updateTitle() {
   const titleEl = document.getElementById("rig-title");
   if (titleEl) {
     if (ownerWebsiteUrl) {
-      const label = ownerCallsign || displayLabelFromUrl(ownerWebsiteUrl);
+      const label = ownerWebsiteName || displayLabelFromUrl(ownerWebsiteUrl);
       titleEl.innerHTML =
         `<a class="title-link" href="${escapeMapHtml(ownerWebsiteUrl)}" target="_blank" rel="noopener">${escapeMapHtml(label)}</a>`;
     } else {
@@ -1313,6 +1314,9 @@ function render(update) {
   }
   if (typeof update.owner_website_url === "string" && update.owner_website_url.length > 0) {
     ownerWebsiteUrl = update.owner_website_url;
+  }
+  if (typeof update.owner_website_name === "string" && update.owner_website_name.length > 0) {
+    ownerWebsiteName = update.owner_website_name;
   }
   if (update.server_latitude != null) serverLat = update.server_latitude;
   if (update.server_longitude != null) serverLon = update.server_longitude;

@@ -178,6 +178,8 @@ pub struct FrontendRuntimeContext {
     pub owner_callsign: Option<String>,
     /// Optional website URL for the web UI header title link.
     pub owner_website_url: Option<String>,
+    /// Optional website name for the web UI header title label.
+    pub owner_website_name: Option<String>,
     /// Latest spectrum frame from the active SDR rig; None for non-SDR backends.
     pub spectrum: Arc<Mutex<SharedSpectrum>>,
 }
@@ -211,6 +213,7 @@ impl FrontendRuntimeContext {
             remote_rigs: Arc::new(Mutex::new(Vec::new())),
             owner_callsign: None,
             owner_website_url: None,
+            owner_website_name: None,
             spectrum: Arc::new(Mutex::new(SharedSpectrum::default())),
         }
     }

@@ -37,6 +37,7 @@ struct FrontendMeta {
     rig_ids: Vec<String>,
     owner_callsign: Option<String>,
     owner_website_url: Option<String>,
+    owner_website_name: Option<String>,
     show_sdr_gain_control: bool,
     initial_map_zoom: u8,
 }
@@ -86,6 +87,9 @@ fn inject_frontend_meta(json: &str, meta: FrontendMeta) -> String {
     if let Some(url) = meta.owner_website_url {
         map.insert("owner_website_url".to_string(), serde_json::json!(url));
     }
+    if let Some(name) = meta.owner_website_name {
+        map.insert("owner_website_name".to_string(), serde_json::json!(name));
+    }
     map.insert(
         "show_sdr_gain_control".to_string(),
         serde_json::json!(meta.show_sdr_gain_control),
@@ -110,6 +114,7 @@ fn frontend_meta_from_context(
         rig_ids: rig_ids_from_context(context),
         owner_callsign: owner_callsign_from_context(context),
         owner_website_url: owner_website_url_from_context(context),
+        owner_website_name: owner_website_name_from_context(context),
         show_sdr_gain_control: show_sdr_gain_control_from_context(context),
         initial_map_zoom: initial_map_zoom_from_context(context),
     }
@@ -147,6 +152,10 @@ fn owner_callsign_from_context(context: &FrontendRuntimeContext) -> Option<Strin
 
 fn owner_website_url_from_context(context: &FrontendRuntimeContext) -> Option<String> {
     context.owner_website_url.clone()
+}
+
+fn owner_website_name_from_context(context: &FrontendRuntimeContext) -> Option<String> {
+    context.owner_website_name.clone()
 }
 
 fn show_sdr_gain_control_from_context(context: &FrontendRuntimeContext) -> bool {

@@ -39,6 +39,8 @@ pub struct GeneralConfig {
     pub callsign: Option<String>,
     /// Optional website URL to use as the web UI header title link.
     pub website_url: Option<String>,
+    /// Optional website name to use as the web UI header title label.
+    pub website_name: Option<String>,
     /// Log level (trace, debug, info, warn, error)
     pub log_level: Option<String>,
 }
@@ -48,6 +50,7 @@ impl Default for GeneralConfig {
         Self {
             callsign: Some("N0CALL".to_string()),
             website_url: None,
+            website_name: None,
             log_level: None,
         }
     }
@@ -342,6 +345,11 @@ impl ClientConfig {
                 return Err("[general].website_url must not be empty when set".to_string());
             }
         }
+        if let Some(name) = &self.general.website_name {
+            if name.trim().is_empty() {
+                return Err("[general].website_name must not be empty when set".to_string());
+            }
+        }
 
         if self.frontends.http.enabled && self.frontends.http.port == 0 {
             return Err("[frontends.http].port must be > 0 when enabled".to_string());
@@ -433,6 +441,7 @@ impl ClientConfig {
             general: GeneralConfig {
                 callsign: Some("N0CALL".to_string()),
                 website_url: Some("https://haxx.space".to_string()),
+                website_name: Some("haxx.space".to_string()),
                 log_level: Some("info".to_string()),
             },
             remote: RemoteConfig {
@@ -555,6 +564,7 @@ mod tests {
         assert_eq!(config.frontends.http_json.port, 0);
         assert!(config.remote.url.is_none());
         assert!(config.general.website_url.is_none());
+        assert!(config.general.website_name.is_none());
         assert_eq!(config.remote.poll_interval_ms, 750);
         assert!(config.frontends.audio.enabled);
         assert_eq!(config.frontends.audio.server_port, 4531);
@@ -570,6 +580,7 @@ mod tests {
 [general]
 callsign = "W1AW"
 website_url = "https://example.com"
+website_name = "Example"
 
 [remote]
 url = "192.168.1.100:9000"
@@ -588,6 +599,7 @@ initial_map_zoom = 12
         let config: ClientConfig = toml::from_str(toml_str).unwrap();
         assert_eq!(config.general.callsign, Some("W1AW".to_string()));
         assert_eq!(config.general.website_url, Some("https://example.com".to_string()));
+        assert_eq!(config.general.website_name, Some("Example".to_string()));
         assert_eq!(config.remote.url, Some("192.168.1.100:9000".to_string()));
         assert_eq!(config.remote.rig_id, Some("hf".to_string()));
         assert_eq!(config.remote.auth.token, Some("my-token".to_string()));
