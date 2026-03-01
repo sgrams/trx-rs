@@ -165,6 +165,7 @@ pub struct BlockFirFilter {
     fft_size: usize,
     fft: Arc<dyn Fft<f32>>,
     ifft: Arc<dyn Fft<f32>>,
+    scratch_freq: Vec<FftComplex<f32>>,
 }
 
 fn mul_freq_domain_scalar(buf: &mut [FftComplex<f32>], h_freq: &[FftComplex<f32>], scale: f32) {
@@ -248,6 +249,7 @@ impl BlockFirFilter {
             fft_size,
             fft,
             ifft,
+            scratch_freq: vec![FftComplex::new(0.0, 0.0); fft_size],
         }
     }
 
@@ -255,12 +257,14 @@ impl BlockFirFilter {
     ///
     /// Internally performs one forward FFT, a point-wise multiply with the
     /// pre-computed filter response, and one inverse FFT.
-    pub fn filter_block(&mut self, input: &[f32]) -> Vec<f32> {
+    pub fn filter_block_into(&mut self, input: &[f32], output: &mut Vec<f32>) {
         let n_new = input.len();
         let n_overlap = self.n_taps.saturating_sub(1);
 
         // Build the time-domain frame: [overlap (N-1)] ++ [new input] ++ [zeros]
-        let mut buf: Vec<FftComplex<f32>> = Vec::with_capacity(self.fft_size);
+        let buf = &mut self.scratch_freq;
+        buf.clear();
+        buf.reserve(self.fft_size.saturating_sub(buf.capacity()));
         for &s in &self.overlap {
             buf.push(FftComplex::new(s, 0.0));
         }
@@ -270,19 +274,21 @@ impl BlockFirFilter {
         buf.resize(self.fft_size, FftComplex::new(0.0, 0.0));
 
         // Forward FFT.
-        self.fft.process(&mut buf);
+        self.fft.process(buf);
 
         // Point-wise multiply with H(f); fold in the IFFT normalisation here
         // to avoid a second pass.
         let scale = 1.0 / self.fft_size as f32;
-        mul_freq_domain(&mut buf, &self.h_freq, scale);
+        mul_freq_domain(buf, &self.h_freq, scale);
 
         // Inverse FFT.
-        self.ifft.process(&mut buf);
+        self.ifft.process(buf);
 
         // Extract the valid output: discard the first n_overlap samples.
         let end = (n_overlap + n_new).min(buf.len());
-        let output: Vec<f32> = buf[n_overlap..end].iter().map(|s| s.re).collect();
+        output.clear();
+        output.reserve(n_new.saturating_sub(output.capacity()));
+        output.extend(buf[n_overlap..end].iter().map(|s| s.re));
 
         // Update overlap with the tail of the current input.
         if n_overlap > 0 {
@@ -296,7 +302,11 @@ impl BlockFirFilter {
             new_overlap.extend_from_slice(&input[new_start..]);
             self.overlap = new_overlap;
         }
+    }
 
+    pub fn filter_block(&mut self, input: &[f32]) -> Vec<f32> {
+        let mut output = Vec::with_capacity(input.len());
+        self.filter_block_into(input, &mut output);
         output
     }
 }
@@ -390,6 +400,10 @@ pub struct ChannelDsp {
     scratch_mixed_i: Vec<f32>,
     /// Reusable scratch buffer for mixed Q samples.
     scratch_mixed_q: Vec<f32>,
+    /// Reusable scratch buffer for filtered I samples.
+    scratch_filtered_i: Vec<f32>,
+    /// Reusable scratch buffer for filtered Q samples.
+    scratch_filtered_q: Vec<f32>,
     /// Reusable scratch buffer for decimated IQ samples.
     scratch_decimated: Vec<Complex<f32>>,
     /// Current oscillator phase (radians).
@@ -556,6 +570,8 @@ impl ChannelDsp {
             pcm_tx,
             scratch_mixed_i: Vec::with_capacity(IQ_BLOCK_SIZE),
             scratch_mixed_q: Vec::with_capacity(IQ_BLOCK_SIZE),
+            scratch_filtered_i: Vec::with_capacity(IQ_BLOCK_SIZE),
+            scratch_filtered_q: Vec::with_capacity(IQ_BLOCK_SIZE),
             scratch_decimated: Vec::with_capacity(IQ_BLOCK_SIZE / decim_factor.max(1) + 1),
             mixer_phase: 0.0,
             mixer_phase_inc,
@@ -695,8 +711,10 @@ impl ChannelDsp {
         self.mixer_phase = (phase_start + n as f64 * phase_inc).rem_euclid(std::f64::consts::TAU);
 
         // --- 2. FFT FIR (overlap-save) --------------------------------------
-        let filtered_i = self.lpf_i.filter_block(mixed_i);
-        let filtered_q = self.lpf_q.filter_block(mixed_q);
+        self.lpf_i.filter_block_into(mixed_i, &mut self.scratch_filtered_i);
+        self.lpf_q.filter_block_into(mixed_q, &mut self.scratch_filtered_q);
+        let filtered_i = &self.scratch_filtered_i;
+        let filtered_q = &self.scratch_filtered_q;
 
         // --- 3. Decimate / resample -----------------------------------------
         let capacity = n / self.decim_factor + 1;
