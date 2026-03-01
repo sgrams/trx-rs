@@ -1525,9 +1525,7 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   height: 0;
   overflow: hidden;
   font-size: 0.68rem;
-  background: var(--bg-secondary);
-  border-top: 1px solid var(--border);
-  border-bottom: 1px solid var(--border);
+  background: var(--card-bg);
   transition: height 80ms ease;
 }
 #spectrum-bookmark-axis.bm-axis-visible {
