@@ -658,7 +658,7 @@ small { color: var(--text-muted); }
   justify-content: flex-start;
   gap: 0.14rem;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
-  font-size: clamp(0.34rem, 0.52vw, 0.44rem);
+  font-size: clamp(0.4rem, 0.6vw, 0.5rem);
   font-weight: 700;
   letter-spacing: 0.06em;
   color: var(--accent-green);
@@ -689,7 +689,7 @@ small { color: var(--text-muted); }
   padding: 0;
   line-height: 1;
   font-family: inherit;
-  font-size: 0.42em;
+  font-size: 1em;
   font-weight: 600;
   letter-spacing: 0.03em;
   color: var(--text-muted);
