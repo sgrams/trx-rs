@@ -4322,7 +4322,7 @@ function updateBookmarkAxis(range) {
       const span = document.createElement("span");
       const freqStr = typeof bmFmtFreq === "function"
         ? bmFmtFreq(bm.freq_hz) : bm.freq_hz + "\u202fHz";
-      span.title = bm.name + " \u2014 " + freqStr;
+      span.title = bm.name + " \u2014 " + freqStr + (bm.comment ? "\n" + bm.comment : "");
       span.dataset.bmId = bm.id;
       span.innerHTML =
         "<svg class='bm-icon-svg' viewBox='0 0 8 12' width='8' height='12' aria-hidden='true'>" +
