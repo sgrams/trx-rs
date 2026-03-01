@@ -277,12 +277,8 @@ function applyCapabilities(caps) {
   });
 
   // Spectrum panel (SDR-only)
-  const signalVisualBlock = document.querySelector(".signal-visual-block");
   const spectrumPanel = document.getElementById("spectrum-panel");
   const centerFreqField = document.getElementById("center-freq-field");
-  if (signalVisualBlock) {
-    signalVisualBlock.style.display = caps.filter_controls ? "" : "none";
-  }
   if (spectrumPanel) {
     if (caps.filter_controls) {
       spectrumPanel.style.display = "";
@@ -2714,6 +2710,32 @@ const MAX_RX_BUFFER_SECS = 0.25;
 const TARGET_RX_BUFFER_SECS = 0.04;
 const MIN_RX_JITTER_SAMPLES = 512;
 
+function setAudioLevel(levelPct) {
+  if (!audioLevelFill) return;
+  const clamped = Math.max(0, Math.min(100, Number.isFinite(levelPct) ? levelPct : 0));
+  audioLevelFill.style.width = `${clamped}%`;
+}
+
+function levelFromChannels(channels, frameCount) {
+  if (!Array.isArray(channels) || channels.length === 0 || !Number.isFinite(frameCount) || frameCount <= 0) {
+    return 0;
+  }
+  let sumSquares = 0;
+  let samples = 0;
+  for (const channel of channels) {
+    if (!channel) continue;
+    const limit = Math.min(frameCount, channel.length);
+    for (let i = 0; i < limit; i++) {
+      const sample = channel[i];
+      sumSquares += sample * sample;
+    }
+    samples += limit;
+  }
+  if (samples <= 0) return 0;
+  const rms = Math.sqrt(sumSquares / samples);
+  return Math.min(100, rms * 220);
+}
+
 if (wfmAudioModeEl) {
   wfmAudioModeEl.value = loadSetting("wfmAudioMode", "stereo");
   wfmAudioModeEl.addEventListener("change", () => {
@@ -2812,6 +2834,7 @@ function configureRxStream(nextInfo) {
   }
   rxGainNode.gain.value = rxVolSlider.value / 100;
   rxActive = true;
+  setAudioLevel(0);
   rxAudioBtn.style.borderColor = "#00d17f";
   rxAudioBtn.style.color = "#00d17f";
   audioStatus.textContent = "RX";
@@ -2878,14 +2901,6 @@ function startRxAudio() {
     if (!audioCtx) return;
     const data = new Uint8Array(evt.data);
 
-    // Throttle level indicator updates to max 10/sec
-    const now = Date.now();
-    if (now - lastLevelUpdate >= 100) {
-      const level = Math.min(100, (data.length / 120) * 100);
-      audioLevelFill.style.width = `${level}%`;
-      lastLevelUpdate = now;
-    }
-
     // Use WebCodecs AudioDecoder for Opus if available
     if (typeof AudioDecoder !== "undefined" && !opusDecoder) {
       try {
@@ -2894,6 +2909,11 @@ function startRxAudio() {
         opusDecoder = new AudioDecoder({
           output: (frame) => {
             const frameChannels = extractAudioFrameChannels(frame);
+            const now = Date.now();
+            if (now - lastLevelUpdate >= 50) {
+              setAudioLevel(levelFromChannels(frameChannels, frame.numberOfFrames));
+              lastLevelUpdate = now;
+            }
             const forceMono = frame.numberOfChannels >= 2
               && wfmAudioModeEl
               && wfmAudioModeEl.value === "mono"
@@ -2967,7 +2987,7 @@ function startRxAudio() {
     rxAudioBtn.style.borderColor = "";
     rxAudioBtn.style.color = "";
     audioStatus.textContent = "Off";
-    audioLevelFill.style.width = "0%";
+    setAudioLevel(0);
     rxGainNode = null;
     if (opusDecoder) {
       try { opusDecoder.close(); } catch(e) {}
@@ -2996,7 +3016,7 @@ function stopRxAudio() {
   rxAudioBtn.style.borderColor = "";
   rxAudioBtn.style.color = "";
   audioStatus.textContent = "Off";
-  audioLevelFill.style.width = "0%";
+  setAudioLevel(0);
 }
 
 function startTxAudio() {
