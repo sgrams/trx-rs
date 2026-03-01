@@ -508,7 +508,7 @@ small { color: var(--text-muted); }
 .title { font-size: 1.4rem; font-weight: 700; display: inline-flex; align-items: center; gap: 0.35rem; }
 .overview-strip {
   width: 100%;
-  margin: 0 0 0.45rem;
+  margin: 0;
   position: relative;
   z-index: 4;
 }
@@ -680,16 +680,16 @@ small { color: var(--text-muted); }
   font-size: 0.78rem;
   white-space: nowrap;
 }
-/* Theme toggle: always styled as the opposite theme so it previews what clicking will do */
+/* Theme toggle: styled to match the active theme */
 #theme-toggle {
-  background: #dde3ed;
-  color: #1a2336;
-  border-color: #a0aec0;
-}
-[data-theme="light"] #theme-toggle {
   background: #1e2a3a;
   color: #e7edf9;
   border-color: #3a5274;
+}
+[data-theme="light"] #theme-toggle {
+  background: #dde3ed;
+  color: #1a2336;
+  border-color: #a0aec0;
 }
 .header-style-pick {
   display: flex;
