@@ -2491,14 +2491,61 @@ window.navigateToAprsMap = function(lat, lon) {
   }
 };
 
-window.aprsMapAddStation = function(call, lat, lon, info, symbolTable, symbolCode) {
+function haversineKm(lat1, lon1, lat2, lon2) {
+  const R = 6371;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a = Math.sin(dLat / 2) ** 2
+    + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLon / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+function formatTimeAgo(tsMs) {
+  if (!tsMs) return null;
+  const secs = Math.round((Date.now() - tsMs) / 1000);
+  if (secs < 60) return `${secs}s ago`;
+  const mins = Math.round(secs / 60);
+  if (mins < 60) return `${mins} min ago`;
+  const hrs = Math.floor(mins / 60);
+  const remMins = mins % 60;
+  return remMins > 0 ? `${hrs}h ${remMins}min ago` : `${hrs}h ago`;
+}
+
+function buildAprsPopupHtml(call, lat, lon, info, pkt) {
+  const age = pkt?._tsMs ? formatTimeAgo(pkt._tsMs) : (pkt?._ts || null);
+  const distKm = (serverLat != null && serverLon != null)
+    ? haversineKm(serverLat, serverLon, lat, lon)
+    : null;
+  const distStr = distKm != null
+    ? (distKm < 1 ? `${Math.round(distKm * 1000)} m` : `${distKm.toFixed(1)} km`)
+    : null;
+  const path = pkt?.path || null;
+  const type = pkt?.type || null;
+
+  let meta = [age, distStr].filter(Boolean).join(" &middot; ");
+  let rows = "";
+  if (type) rows += `<tr><td class="aprs-popup-label">Type</td><td>${escapeMapHtml(type)}</td></tr>`;
+  if (path) rows += `<tr><td class="aprs-popup-label">Path</td><td>${escapeMapHtml(path)}</td></tr>`;
+  if (lat != null && lon != null)
+    rows += `<tr><td class="aprs-popup-label">Pos</td><td>${lat.toFixed(5)}, ${lon.toFixed(5)}</td></tr>`;
+
+  return `<div class="aprs-popup">` +
+    `<div class="aprs-popup-call">${escapeMapHtml(call)}</div>` +
+    (meta ? `<div class="aprs-popup-meta">${meta}</div>` : "") +
+    (rows ? `<table class="aprs-popup-table">${rows}</table>` : "") +
+    (info ? `<div class="aprs-popup-info">${escapeMapHtml(info)}</div>` : "") +
+    `</div>`;
+}
+
+window.aprsMapAddStation = function(call, lat, lon, info, symbolTable, symbolCode, pkt) {
   if (!aprsMap) initAprsMap();
   if (!aprsMap) return;
-  const popupContent = `<b>${call}</b><br>${info}`;
+  const popupContent = buildAprsPopupHtml(call, lat, lon, info, pkt);
   const existing = stationMarkers.get(call);
   if (existing) {
     existing.marker.setLatLng([lat, lon]);
     existing.marker.setPopupContent(popupContent);
+    existing.pkt = pkt;
   } else {
     const icon = aprsSymbolIcon(symbolTable, symbolCode);
     const marker = icon
@@ -2507,7 +2554,7 @@ window.aprsMapAddStation = function(call, lat, lon, info, symbolTable, symbolCod
           radius: 6, color: "#00d17f", fillColor: "#00d17f", fillOpacity: 0.8
         }).addTo(aprsMap).bindPopup(popupContent);
     marker.__trxType = "aprs";
-    stationMarkers.set(call, { marker, type: "aprs" });
+    stationMarkers.set(call, { marker, type: "aprs", pkt });
     mapMarkers.add(marker);
     applyMapFilter();
   }

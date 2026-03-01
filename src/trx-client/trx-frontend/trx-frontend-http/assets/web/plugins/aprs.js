@@ -139,6 +139,7 @@ function addAprsPacket(pkt) {
 
   // Stamp timestamp for persistence
   pkt._ts = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+  pkt._tsMs = Date.now();
 
   // Persist to history
   aprsPacketHistory.unshift(pkt);
@@ -150,7 +151,7 @@ function addAprsPacket(pkt) {
 
   const row = renderAprsRow(pkt);
   if (pkt.lat != null && pkt.lon != null && window.aprsMapAddStation) {
-    window.aprsMapAddStation(pkt.srcCall, pkt.lat, pkt.lon, pkt.info, pkt.symbolTable, pkt.symbolCode);
+    window.aprsMapAddStation(pkt.srcCall, pkt.lat, pkt.lon, pkt.info, pkt.symbolTable, pkt.symbolCode, pkt);
   }
   aprsPacketsEl.prepend(row);
   while (aprsPacketsEl.children.length > APRS_MAX_PACKETS) {
@@ -171,7 +172,7 @@ for (let i = aprsPacketHistory.length - 1; i >= 0; i--) {
   const pkt = aprsPacketHistory[i];
   aprsPacketsEl.prepend(renderAprsRow(pkt));
   if (pkt.lat != null && pkt.lon != null && window.aprsMapAddStation) {
-    window.aprsMapAddStation(pkt.srcCall, pkt.lat, pkt.lon, pkt.info, pkt.symbolTable, pkt.symbolCode);
+    window.aprsMapAddStation(pkt.srcCall, pkt.lat, pkt.lon, pkt.info, pkt.symbolTable, pkt.symbolCode, pkt);
   }
 }
 updateAprsBar();
