@@ -1083,6 +1083,7 @@ small { color: var(--text-muted); }
 .aprs-popup-label { color: var(--text-muted); white-space: nowrap; padding-right: 0.5rem !important; }
 .aprs-popup-info { font-size: 0.85em; color: var(--text); border-top: 1px solid var(--border-light); padding-top: 0.25rem; margin-top: 0.1rem; word-break: break-word; }
 .aprs-radio-path { stroke: var(--accent-green) !important; stroke-opacity: 0.8 !important; stroke-dasharray: 10 5 !important; animation: aprs-radio-path-flow 0.7s linear infinite; }
+.receiver-popup-active { font-size: 0.75em; background: rgba(194,75,26,0.15); color: var(--accent-green); border: 1px solid rgba(194,75,26,0.3); border-radius: 3px; padding: 0 0.25rem; margin-left: 0.3rem; vertical-align: middle; }
 @keyframes aprs-radio-path-flow { to { stroke-dashoffset: -15; } }
 .aprs-bar-pos { background: none; border: none; padding: 0; margin-left: 0.4em; font-family: inherit; font-size: inherit; color: var(--accent-green); cursor: pointer; }
 .aprs-bar-pos:hover { text-decoration: underline; }
