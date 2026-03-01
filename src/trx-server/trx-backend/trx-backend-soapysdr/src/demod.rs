@@ -730,24 +730,18 @@ impl WfmStereoDecoder {
             return Vec::new();
         }
 
-        let inv_pi = std::f32::consts::FRAC_1_PI;
+        // Batch FM discriminator using AVX2 atan2 when available.
+        let disc = demod_fm_with_prev(samples, &mut self.prev_iq);
+
         let mut output = Vec::with_capacity(
             ((samples.len() as f64 * self.output_phase_inc).ceil() as usize + 1)
                 * self.output_channels.max(1),
         );
         let (trim_sin, trim_cos) = STEREO_SEPARATION_PHASE_TRIM.sin_cos();
 
-        for &sample in samples {
-            let x = if let Some(prev_sample) = self.prev_iq {
-                let product = sample * prev_sample.conj();
-                product.im.atan2(product.re) * inv_pi
-            } else {
-                0.0
-            };
-            self.prev_iq = Some(sample);
-
+        for &disc_sample in &disc {
             // Normalize discriminator output so ±75 kHz deviation maps to ±1.0.
-            let x = x * self.fm_gain;
+            let x = disc_sample * self.fm_gain;
 
             let pilot_tone = self.pilot_bpf.process(x);
 
