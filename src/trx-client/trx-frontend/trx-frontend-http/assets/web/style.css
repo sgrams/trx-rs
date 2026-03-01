@@ -620,22 +620,28 @@ small { color: var(--text-muted); }
 #aprs-bar-overlay {
   display: none;
   position: absolute;
-  bottom: 0.4rem;
-  left: 1.2rem;
+  top: 50%;
+  left: 0;
+  right: 0;
+  transform: translateY(-50%);
   z-index: 5;
-  pointer-events: none;
+  pointer-events: auto;
+  cursor: default;
+  user-select: text;
   color: var(--text-heading);
   padding: 0.28rem 0.72rem 0.32rem;
-  border: 1px solid color-mix(in srgb, var(--border-light) 72%, transparent);
-  border-radius: 0.55rem;
+  border: none;
+  border-top: 1px solid color-mix(in srgb, var(--border-light) 72%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--border-light) 72%, transparent);
+  border-radius: 0;
   background: color-mix(in srgb, var(--card-bg) 52%, transparent);
   backdrop-filter: blur(14px) saturate(135%);
   -webkit-backdrop-filter: blur(14px) saturate(135%);
   box-shadow:
     0 8px 18px color-mix(in srgb, #000000 16%, transparent),
     inset 0 1px 0 color-mix(in srgb, #ffffff 10%, transparent);
-  max-width: min(92vw, 36rem);
-  overflow: hidden;
+  max-height: 60%;
+  overflow-y: auto;
   flex-direction: column;
   gap: 0.1rem;
 }
