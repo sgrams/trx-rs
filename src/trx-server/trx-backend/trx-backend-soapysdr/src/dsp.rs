@@ -13,18 +13,17 @@
 
 mod channel;
 mod filter;
+mod spectrum;
 
-use std::f32::consts::PI;
 use std::sync::{Arc, Mutex};
 
 use num_complex::Complex;
-use rustfft::num_complex::Complex as FftComplex;
-use rustfft::FftPlanner;
 use tokio::sync::broadcast;
 use trx_core::rig::state::RigMode;
 
 pub use self::channel::ChannelDsp;
 pub use self::filter::{BlockFirFilter, BlockFirFilterPair, FirFilter};
+use self::spectrum::SpectrumSnapshotter;
 
 // ---------------------------------------------------------------------------
 // IQ source abstraction
@@ -175,12 +174,6 @@ impl SdrPipeline {
 
 pub const IQ_BLOCK_SIZE: usize = 4096;
 
-/// Number of FFT bins for the spectrum display.
-const SPECTRUM_FFT_SIZE: usize = 1024;
-
-/// Update the spectrum buffer every this many IQ blocks (~10 Hz at 1.92 MHz / 4096 block).
-const SPECTRUM_UPDATE_BLOCKS: usize = 4;
-
 fn iq_read_loop(
     mut source: Box<dyn IqSource>,
     sdr_sample_rate: u32,
@@ -198,14 +191,7 @@ fn iq_read_loop(
     };
     let throttle = !source.is_blocking();
 
-    // Pre-compute Hann window coefficients.
-    let hann_window: Vec<f32> = (0..SPECTRUM_FFT_SIZE)
-        .map(|i| 0.5 * (1.0 - (2.0 * PI * i as f32 / (SPECTRUM_FFT_SIZE - 1) as f32).cos()))
-        .collect();
-
-    let mut planner = FftPlanner::<f32>::new();
-    let fft = planner.plan_fft_forward(SPECTRUM_FFT_SIZE);
-    let mut spectrum_counter: usize = 0;
+    let mut spectrum = SpectrumSnapshotter::new();
     let mut read_error_streak: u32 = 0;
 
     loop {
@@ -283,34 +269,7 @@ fn iq_read_loop(
             }
         }
 
-        // Periodically compute and store a spectrum snapshot.
-        spectrum_counter += 1;
-        if spectrum_counter >= SPECTRUM_UPDATE_BLOCKS {
-            spectrum_counter = 0;
-            let take = n.min(SPECTRUM_FFT_SIZE);
-            let mut buf: Vec<FftComplex<f32>> = samples[..take]
-                .iter()
-                .enumerate()
-                .map(|(i, s)| FftComplex::new(s.re * hann_window[i], s.im * hann_window[i]))
-                .collect();
-            buf.resize(SPECTRUM_FFT_SIZE, FftComplex::new(0.0, 0.0));
-            fft.process(&mut buf);
-
-            // FFT-shift: rearrange so negative frequencies come first (DC in centre).
-            let half = SPECTRUM_FFT_SIZE / 2;
-            let bins: Vec<f32> = buf[half..]
-                .iter()
-                .chain(buf[..half].iter())
-                .map(|c| {
-                    let mag = (c.re * c.re + c.im * c.im).sqrt() / SPECTRUM_FFT_SIZE as f32;
-                    20.0 * (mag.max(1e-10_f32)).log10()
-                })
-                .collect();
-
-            if let Ok(mut guard) = spectrum_buf.lock() {
-                *guard = Some(bins);
-            }
-        }
+        spectrum.update(samples, &spectrum_buf);
 
         if throttle {
             std::thread::sleep(std::time::Duration::from_millis(block_duration_ms));
