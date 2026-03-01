@@ -37,6 +37,7 @@ struct FrontendMeta {
     rig_ids: Vec<String>,
     owner_callsign: Option<String>,
     show_sdr_gain_control: bool,
+    initial_map_zoom: u8,
 }
 
 #[get("/status")]
@@ -85,6 +86,10 @@ fn inject_frontend_meta(json: &str, meta: FrontendMeta) -> String {
         "show_sdr_gain_control".to_string(),
         serde_json::json!(meta.show_sdr_gain_control),
     );
+    map.insert(
+        "initial_map_zoom".to_string(),
+        serde_json::json!(meta.initial_map_zoom),
+    );
 
     serde_json::to_string(&value).unwrap_or_else(|_| json.to_string())
 }
@@ -101,6 +106,7 @@ fn frontend_meta_from_context(
         rig_ids: rig_ids_from_context(context),
         owner_callsign: owner_callsign_from_context(context),
         show_sdr_gain_control: show_sdr_gain_control_from_context(context),
+        initial_map_zoom: initial_map_zoom_from_context(context),
     }
 }
 
@@ -136,6 +142,10 @@ fn owner_callsign_from_context(context: &FrontendRuntimeContext) -> Option<Strin
 
 fn show_sdr_gain_control_from_context(context: &FrontendRuntimeContext) -> bool {
     context.http_show_sdr_gain_control
+}
+
+fn initial_map_zoom_from_context(context: &FrontendRuntimeContext) -> u8 {
+    context.http_initial_map_zoom
 }
 
 #[get("/events")]

@@ -1247,6 +1247,7 @@ let serverCallsign = null;
 let ownerCallsign = null;
 let serverLat = null;
 let serverLon = null;
+let initialMapZoom = 10;
 
 function updateFooterBuildInfo() {
   const serverEl = document.getElementById("footer-server-build");
@@ -1274,6 +1275,9 @@ function render(update) {
   }
   if (update.server_latitude != null) serverLat = update.server_latitude;
   if (update.server_longitude != null) serverLon = update.server_longitude;
+  if (typeof update.initial_map_zoom === "number" && Number.isFinite(update.initial_map_zoom)) {
+    initialMapZoom = Math.max(1, Math.round(update.initial_map_zoom));
+  }
   updateTitle();
   updateFooterBuildInfo();
 
@@ -2406,7 +2410,7 @@ function initAprsMap() {
 
   const hasLocation = serverLat != null && serverLon != null;
   const center = hasLocation ? [serverLat, serverLon] : [20, 0];
-  const zoom = hasLocation ? 10 : 2;
+  const zoom = hasLocation ? initialMapZoom : 2;
 
   aprsMap = L.map("aprs-map").setView(center, zoom);
   updateMapBaseLayerForTheme(currentTheme());

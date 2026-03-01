@@ -230,6 +230,8 @@ pub struct HttpFrontendConfig {
     pub port: u16,
     /// Default rig selected in the web UI on startup.
     pub default_rig_id: Option<String>,
+    /// Initial zoom level for the APRS map when receiver coordinates are known.
+    pub initial_map_zoom: u8,
     /// Whether to expose the RF Gain control in the web UI.
     pub show_sdr_gain_control: bool,
     /// Authentication settings
@@ -243,6 +245,7 @@ impl Default for HttpFrontendConfig {
             listen: IpAddr::from([127, 0, 0, 1]),
             port: 8080,
             default_rig_id: None,
+            initial_map_zoom: 10,
             show_sdr_gain_control: true,
             auth: HttpAuthConfig::default(),
         }
@@ -342,6 +345,9 @@ impl ClientConfig {
                 );
             }
         }
+        if self.frontends.http.initial_map_zoom == 0 {
+            return Err("[frontends.http].initial_map_zoom must be > 0".to_string());
+        }
         if self.frontends.rigctl.enabled && self.frontends.rigctl.rig_ports.is_empty() {
             return Err(
                 "[frontends.rigctl].rig_ports must contain at least one rig when enabled"
@@ -434,6 +440,7 @@ impl ClientConfig {
                     listen: IpAddr::from([127, 0, 0, 1]),
                     port: 8080,
                     default_rig_id: Some("hf".to_string()),
+                    initial_map_zoom: 10,
                     show_sdr_gain_control: true,
                     auth: HttpAuthConfig {
                         enabled: false,
@@ -533,6 +540,7 @@ mod tests {
         assert!(config.frontends.http.enabled);
         assert!(!config.frontends.rigctl.enabled);
         assert_eq!(config.frontends.http.port, 8080);
+        assert_eq!(config.frontends.http.initial_map_zoom, 10);
         assert_eq!(config.frontends.rigctl.port, 4532);
         assert!(config.frontends.http_json.enabled);
         assert_eq!(config.frontends.http_json.port, 0);
@@ -562,6 +570,7 @@ poll_interval_ms = 500
 enabled = true
 listen = "127.0.0.1"
 port = 8080
+initial_map_zoom = 12
 
 "#;
 
@@ -572,6 +581,7 @@ port = 8080
         assert_eq!(config.remote.auth.token, Some("my-token".to_string()));
         assert_eq!(config.remote.poll_interval_ms, 500);
         assert!(config.frontends.http.enabled);
+        assert_eq!(config.frontends.http.initial_map_zoom, 12);
     }
 
     #[test]

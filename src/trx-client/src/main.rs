@@ -178,6 +178,7 @@ async fn async_init() -> DynResult<AppState> {
         config::CookieSameSite::None => "None".to_string(),
     };
     frontend_runtime.http_show_sdr_gain_control = cfg.frontends.http.show_sdr_gain_control;
+    frontend_runtime.http_initial_map_zoom = cfg.frontends.http.initial_map_zoom;
 
     // Resolve remote URL: CLI > config [remote] section > error
     let remote_url = cli
