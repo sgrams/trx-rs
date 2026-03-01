@@ -8,6 +8,8 @@ mod api;
 pub mod audio;
 #[path = "auth.rs"]
 pub mod auth;
+#[path = "bookmarks.rs"]
+pub mod bookmarks;
 #[path = "status.rs"]
 pub mod status;
 
@@ -82,6 +84,9 @@ fn build_server(
     let rig_tx = web::Data::new(rig_tx);
     let clients = web::Data::new(Arc::new(AtomicUsize::new(0)));
 
+    let bookmark_path = bookmarks::BookmarkStore::default_path();
+    let bookmark_store = web::Data::new(Arc::new(bookmarks::BookmarkStore::open(&bookmark_path)));
+
     // Extract auth config values before moving context
     let same_site = match context.http_auth_cookie_same_site.as_str() {
         "Strict" => SameSite::Strict,
@@ -120,6 +125,7 @@ fn build_server(
             .app_data(clients.clone())
             .app_data(context_data.clone())
             .app_data(auth_state.clone())
+            .app_data(bookmark_store.clone())
             .wrap(
                 DefaultHeaders::new()
                     .add(("Referrer-Policy", "same-origin"))
