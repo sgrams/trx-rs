@@ -18,13 +18,11 @@ const AUDIO_BW_HZ: f32 = 18_000.0;
 /// Must match AUDIO_BW_HZ so the sum and diff filter paths have identical
 /// group delay, which is critical for stereo separation across all frequencies.
 const STEREO_DIFF_BW_HZ: f32 = AUDIO_BW_HZ;
-/// Q values for a 6th-order Butterworth cascade (three 2nd-order stages).
-/// Stage 1: Q = 1 / (2 cos(π/12))
-const BW6_Q1: f32 = 0.5176;
-/// Stage 2: Q = 1 / (2 cos(3π/12))
-const BW6_Q2: f32 = 0.7071;
-/// Stage 3: Q = 1 / (2 cos(5π/12))
-const BW6_Q3: f32 = 1.9319;
+/// Q values for a 4th-order Butterworth cascade (two 2nd-order stages).
+/// Stage 1: Q = 1 / (2 cos(π/8))
+const BW4_Q1: f32 = 0.5412;
+/// Stage 2: Q = 1 / (2 cos(3π/8))
+const BW4_Q2: f32 = 1.3066;
 /// Q for the 19 kHz pilot notch (~3.8 kHz 3 dB bandwidth).
 const PILOT_NOTCH_Q: f32 = 5.0;
 /// Narrow 19 kHz band-pass used to derive zero-crossings for switching stereo demod.
@@ -94,8 +92,9 @@ fn polyphase_resample_ring(
     let phase = phase.min(WFM_RESAMP_PHASES - 1);
     let coeffs = &bank[phase];
     let mut acc = 0.0_f32;
+    let mask = WFM_RESAMP_TAPS - 1; // power-of-2 bitmask
     for tap in 0..WFM_RESAMP_TAPS {
-        acc += hist[(pos + tap) % WFM_RESAMP_TAPS] * coeffs[tap];
+        acc += hist[(pos + tap) & mask] * coeffs[tap];
     }
     acc
 }
@@ -575,7 +574,6 @@ pub struct WfmStereoDecoder {
     /// 4th-order Butterworth cascade for L+R (two 2nd-order stages, Q = BW4_Q1/BW4_Q2).
     sum_lpf1: BiquadLowPass,
     sum_lpf2: BiquadLowPass,
-    sum_lpf3: BiquadLowPass,
     /// Notch at 19 kHz for the mono output path — keeps pilot tone out of mono
     /// audio without introducing phase mismatch with the diff channel.
     sum_notch: BiquadNotch,
@@ -585,11 +583,9 @@ pub struct WfmStereoDecoder {
     /// 4th-order Butterworth cascade for L-R (matched to sum path for stereo phase accuracy).
     diff_lpf1: BiquadLowPass,
     diff_lpf2: BiquadLowPass,
-    diff_lpf3: BiquadLowPass,
     /// Quadrature companion of the L-R path used for phase trim / crosstalk adjustment.
     diff_q_lpf1: BiquadLowPass,
     diff_q_lpf2: BiquadLowPass,
-    diff_q_lpf3: BiquadLowPass,
     /// Gentle high-pass on the stereo-difference path to reduce bass-driven IMD.
     diff_dc: DcBlocker,
     diff_q_dc: DcBlocker,
@@ -657,17 +653,14 @@ impl WfmStereoDecoder {
             pilot_bpf: BiquadBandPass::new(composite_rate_f, PILOT_HZ, PILOT_BPF_Q),
             // 4th-order Butterworth: two cascaded biquads with BW4_Q1/BW4_Q2.
             // At 19 kHz (pilot): ≈ −12 dB; at 38 kHz (DSB carrier): ≈ −32 dB.
-            sum_lpf1: BiquadLowPass::new(composite_rate_f, AUDIO_BW_HZ, BW6_Q1),
-            sum_lpf2: BiquadLowPass::new(composite_rate_f, AUDIO_BW_HZ, BW6_Q2),
-            sum_lpf3: BiquadLowPass::new(composite_rate_f, AUDIO_BW_HZ, BW6_Q3),
+            sum_lpf1: BiquadLowPass::new(composite_rate_f, AUDIO_BW_HZ, BW4_Q1),
+            sum_lpf2: BiquadLowPass::new(composite_rate_f, AUDIO_BW_HZ, BW4_Q2),
             sum_notch: BiquadNotch::new(composite_rate_f, PILOT_HZ, PILOT_NOTCH_Q),
             diff_pilot_notch: BiquadNotch::new(composite_rate_f, PILOT_HZ, PILOT_NOTCH_Q),
-            diff_lpf1: BiquadLowPass::new(composite_rate_f, STEREO_DIFF_BW_HZ, BW6_Q1),
-            diff_lpf2: BiquadLowPass::new(composite_rate_f, STEREO_DIFF_BW_HZ, BW6_Q2),
-            diff_lpf3: BiquadLowPass::new(composite_rate_f, STEREO_DIFF_BW_HZ, BW6_Q3),
-            diff_q_lpf1: BiquadLowPass::new(composite_rate_f, STEREO_DIFF_BW_HZ, BW6_Q1),
-            diff_q_lpf2: BiquadLowPass::new(composite_rate_f, STEREO_DIFF_BW_HZ, BW6_Q2),
-            diff_q_lpf3: BiquadLowPass::new(composite_rate_f, STEREO_DIFF_BW_HZ, BW6_Q3),
+            diff_lpf1: BiquadLowPass::new(composite_rate_f, STEREO_DIFF_BW_HZ, BW4_Q1),
+            diff_lpf2: BiquadLowPass::new(composite_rate_f, STEREO_DIFF_BW_HZ, BW4_Q2),
+            diff_q_lpf1: BiquadLowPass::new(composite_rate_f, STEREO_DIFF_BW_HZ, BW4_Q1),
+            diff_q_lpf2: BiquadLowPass::new(composite_rate_f, STEREO_DIFF_BW_HZ, BW4_Q2),
             diff_dc: DcBlocker::new(STEREO_DIFF_DC_R),
             diff_q_dc: DcBlocker::new(STEREO_DIFF_DC_R),
             dc_m: DcBlocker::new(0.9999),
@@ -714,12 +707,20 @@ impl WfmStereoDecoder {
             let (sin_p, cos_p) = self.pilot_phase.sin_cos();
             let i = self.pilot_i_lp.process(pilot_tone * cos_p);
             let q = self.pilot_q_lp.process(pilot_tone * -sin_p);
-            let phase_err = q.atan2(i);
-            let pilot_phase_est = self.pilot_phase + phase_err;
+            let pilot_mag = (i * i + q * q).sqrt();
+            // Phase error from PLL I/Q arms.  Use atan2 for the NCO update
+            // (needs full-range angle) but derive sin/cos of the error from
+            // the already-computed I/Q magnitudes to avoid a second sin_cos.
+            // Derive sin/cos of the PLL phase error directly from the I/Q arms,
+            // avoiding both the atan2 and sin_cos calls for the 38 kHz carrier.
+            // The original NCO free-runs at pilot_freq; the phase error was only
+            // used to compute the instantaneous pilot_phase_est, which is now
+            // reconstructed via err_sin/err_cos rotation below.
+            let inv_mag = 1.0 / (pilot_mag + 1e-12);
+            let err_sin = q * inv_mag;  // sin(phase_err)
+            let err_cos = i * inv_mag;  // cos(phase_err)
             self.pilot_phase += self.pilot_freq;
             self.pilot_phase = self.pilot_phase.rem_euclid(std::f32::consts::TAU);
-
-            let pilot_mag = (i * i + q * q).sqrt();
             let pilot_abs = self.pilot_abs_lp.process(pilot_tone.abs());
             let pilot_coherence = (pilot_mag / (pilot_abs + 1e-4)).clamp(0.0, 1.0);
             let pilot_lock = ((pilot_coherence - 0.4) / 0.2).clamp(0.0, 1.0);
@@ -754,20 +755,28 @@ impl WfmStereoDecoder {
             // identical phase responses, which is required for good stereo separation.
             // The notch is applied only on the mono output path where phase matching
             // with the diff channel is irrelevant.
-            let sum = self.sum_lpf3.process(self.sum_lpf2.process(self.sum_lpf1.process(x)));
+            let sum = self.sum_lpf2.process(self.sum_lpf1.process(x));
 
             // --- L-R (diff): 38 kHz demod + 6th-order Butterworth (unblended) ---
             // Notch the 19 kHz pilot from the composite before multiplying by the
             // 38 kHz carrier to prevent pilot×carrier intermod products.
             // Blend is applied per-band at audio rate in the emit step below.
-            let (sin_2p, cos_2p) = (2.0 * pilot_phase_est).sin_cos();
+            // Reconstruct sin/cos of the estimated pilot phase from the NCO
+            // sin_p/cos_p rotated by the PLL error (whose sin/cos we derived
+            // from the I/Q arms above, avoiding a second sin_cos call).
+            let sin_est = sin_p * err_cos + cos_p * err_sin;
+            let cos_est = cos_p * err_cos - sin_p * err_sin;
+            // Double-angle identity for 38 kHz carrier: sin(2θ) = 2·sin·cos,
+            // cos(2θ) = 2·cos²-1. Eliminates the second sin_cos call entirely.
+            let sin_2p = 2.0 * sin_est * cos_est;
+            let cos_2p = 2.0 * cos_est * cos_est - 1.0;
             let x_notched = self.diff_pilot_notch.process(x);
             let diff_i = self
                 .diff_dc
-                .process(self.diff_lpf3.process(self.diff_lpf2.process(self.diff_lpf1.process(x_notched * (cos_2p * 2.0)))));
+                .process(self.diff_lpf2.process(self.diff_lpf1.process(x_notched * (cos_2p * 2.0))));
             let diff_q = self
                 .diff_q_dc
-                .process(self.diff_q_lpf3.process(self.diff_q_lpf2.process(self.diff_q_lpf1.process(x_notched * (-sin_2p * 2.0)))));
+                .process(self.diff_q_lpf2.process(self.diff_q_lpf1.process(x_notched * (-sin_2p * 2.0))));
 
             // --- Polyphase FIR fractional resampling ---
             // This uses a short windowed-sinc bank instead of cubic interpolation
@@ -777,7 +786,7 @@ impl WfmStereoDecoder {
             self.sum_hist[pos] = sum;
             self.diff_hist[pos] = diff_i;
             self.diff_q_hist[pos] = diff_q;
-            self.hist_pos = (pos + 1) % WFM_RESAMP_TAPS;
+            self.hist_pos = (pos + 1) & (WFM_RESAMP_TAPS - 1);
 
             let prev_phase = self.output_phase;
             self.output_phase += self.output_phase_inc;
@@ -866,15 +875,12 @@ impl WfmStereoDecoder {
         self.pilot_bpf.reset();
         self.sum_lpf1.reset();
         self.sum_lpf2.reset();
-        self.sum_lpf3.reset();
         self.sum_notch.reset();
         self.diff_pilot_notch.reset();
         self.diff_lpf1.reset();
         self.diff_lpf2.reset();
-        self.diff_lpf3.reset();
         self.diff_q_lpf1.reset();
         self.diff_q_lpf2.reset();
-        self.diff_q_lpf3.reset();
         self.diff_dc.reset();
         self.diff_q_dc.reset();
         self.dc_m.reset();
