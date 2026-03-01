@@ -2447,7 +2447,7 @@ function initAprsMap() {
 
   if (hasLocation) {
     aprsMapReceiverMarker = L.circleMarker([serverLat, serverLon], {
-      radius: 8, color: "#3388ff", fillColor: "#3388ff", fillOpacity: 0.8
+      radius: 8, className: "trx-receiver-marker", fillOpacity: 0.8
     }).addTo(aprsMap).bindPopup("");
   }
 
