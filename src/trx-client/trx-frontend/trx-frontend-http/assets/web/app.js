@@ -2367,6 +2367,7 @@ window.addEventListener("resize", resizeHeaderSignalCanvas);
 let aprsMap = null;
 let aprsMapBaseLayer = null;
 let aprsMapReceiverMarker = null;
+let aprsRadioPath = null;
 const stationMarkers = new Map();
 const locatorMarkers = new Map();
 const mapMarkers = new Set();
@@ -2423,13 +2424,25 @@ function initAprsMap() {
   }
 
   // Rebuild APRS popup content on open so age and distance are always fresh
+  // and draw an animated radio path from receiver to the station
   aprsMap.on("popupopen", function(e) {
     const marker = e.popup._source;
+    if (aprsRadioPath) { aprsRadioPath.remove(); aprsRadioPath = null; }
     if (!marker || !marker._aprsCall) return;
     const entry = stationMarkers.get(marker._aprsCall);
     if (!entry) return;
     const ll = marker.getLatLng();
     e.popup.setContent(buildAprsPopupHtml(marker._aprsCall, ll.lat, ll.lng, entry.info || "", entry.pkt));
+    if (serverLat != null && serverLon != null) {
+      aprsRadioPath = L.polyline(
+        [[serverLat, serverLon], [ll.lat, ll.lng]],
+        { className: "aprs-radio-path", color: "#3388ff", weight: 2, opacity: 0.85, interactive: false }
+      ).addTo(aprsMap);
+    }
+  });
+
+  aprsMap.on("popupclose", function() {
+    if (aprsRadioPath) { aprsRadioPath.remove(); aprsRadioPath = null; }
   });
 
   // Materialise any stations that were buffered before the map was ready
