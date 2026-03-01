@@ -295,6 +295,7 @@ fn run_capture(
 
     let mut encoder = opus::Encoder::new(sample_rate, opus_channels, opus::Application::Audio)?;
     encoder.set_bitrate(opus::Bitrate::Bits(bitrate_bps as i32))?;
+    encoder.set_complexity(5)?;
 
     // Start paused — only capture when clients are connected
     info!(

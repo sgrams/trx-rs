@@ -519,6 +519,9 @@ fn spawn_rig_audio_stack(
                 if let Err(e) = encoder.set_bitrate(opus::Bitrate::Bits(sdr_bitrate_bps as i32)) {
                     tracing::warn!("SDR audio: set_bitrate failed: {}", e);
                 }
+                if let Err(e) = encoder.set_complexity(5) {
+                    tracing::warn!("SDR audio: set_complexity failed: {}", e);
+                }
                 let mut opus_buf = vec![0u8; 4096];
                 loop {
                     match sdr_rx.recv().await {
