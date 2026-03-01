@@ -4273,12 +4273,14 @@ function drawSpectrum(data) {
     ? _bmListRef.filter((bm) => bm.freq_hz >= range.visLoHz && bm.freq_hz <= range.visHiHz)
     : [];
   if (visBookmarks.length > 0) {
+    const colorMap = bmCategoryColorMap();
     ctx.save();
-    ctx.strokeStyle = pal.waveformPeak.replace(/[\d.]+\)$/, "0.65)");
     ctx.lineWidth = 1 * dpr;
     ctx.setLineDash([4 * dpr, 3 * dpr]);
     for (const bm of visBookmarks) {
       const x = hzToX(bm.freq_hz);
+      const col = colorMap[bm.category || ""];
+      ctx.strokeStyle = col ? bmHexToRgba(col, 0.65) : pal.waveformPeak.replace(/[\d.]+\)$/, "0.65)");
       ctx.beginPath();
       ctx.moveTo(x, 0);
       ctx.lineTo(x, H);
@@ -4291,6 +4293,34 @@ function drawSpectrum(data) {
   updateSpectrumFreqAxis(range);
   updateBookmarkAxis(range);
   drawSignalOverlay();
+}
+
+// Distinct colours for named bookmark categories (uncategorised uses --accent-yellow).
+const BM_PALETTE = [
+  "#4299e1", // blue
+  "#48bb78", // green
+  "#ed8936", // orange
+  "#f56565", // red
+  "#9f7aea", // purple
+  "#38b2ac", // teal
+  "#ed64a6", // pink
+  "#667eea", // indigo
+];
+
+function bmHexToRgba(hex, alpha) {
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  return `rgba(${r},${g},${b},${alpha})`;
+}
+
+// Returns a map of category → hex colour. Empty-string key = uncategorised (no entry).
+function bmCategoryColorMap() {
+  const ref = typeof bmList !== "undefined" ? bmList : [];
+  const cats = [...new Set(ref.map((b) => b.category).filter(Boolean))].sort();
+  const map = {};
+  cats.forEach((cat, i) => { map[cat] = BM_PALETTE[i % BM_PALETTE.length]; });
+  return map;
 }
 
 function updateBookmarkAxis(range) {
@@ -4316,6 +4346,7 @@ function updateBookmarkAxis(range) {
   if (axisEl.dataset.bmKey !== newKey) {
     axisEl.dataset.bmKey = newKey;
     axisEl.innerHTML = "";
+    const colorMap = bmCategoryColorMap();
     const esc = (s) => String(s)
       .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
     for (const bm of visBookmarks) {
@@ -4328,6 +4359,13 @@ function updateBookmarkAxis(range) {
         "<svg class='bm-icon-svg' viewBox='0 0 8 12' width='8' height='12' aria-hidden='true'>" +
         "<path d='M0,0 h8 v10 l-4,2 l-4,-2 Z'/>" +
         "</svg>\u00a0" + esc(bm.name);
+      // Apply category colour; uncategorised falls back to --accent-yellow via CSS.
+      const col = colorMap[bm.category || ""];
+      if (col) {
+        span.style.setProperty("--bm-cat-color", col);
+        span.style.setProperty("--bm-cat-bg", bmHexToRgba(col, 0.15));
+        span.style.setProperty("--bm-cat-border", bmHexToRgba(col, 0.55));
+      }
       span.addEventListener("click", () => {
         if (typeof bmApply === "function") bmApply(bm);
       });
