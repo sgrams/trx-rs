@@ -1827,3 +1827,61 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   --wavelength-fg: #444444;
   --spectrum-bg: #f4f4f4;
 }
+
+/* ── Neon Disco style ─────────────────────────────────────────────────── */
+[data-style="neon-disco"] {
+  --bg: #0d0015;
+  --card-bg: #180026;
+  --input-bg: #100018;
+  --border: #3d0060;
+  --border-light: #7700bb;
+  --text: #f5e0ff;
+  --text-muted: #b070d8;
+  --text-heading: #fce8ff;
+  --btn-bg: #2a0042;
+  --btn-border: #9900dd;
+  --accent-green: #ff10e0;
+  --accent-yellow: #39ff14;
+  --accent-red: #ff1460;
+  --jog-hi: #360058;
+  --jog-lo: #280042;
+  --jog-shadow: rgba(0,0,0,0.65);
+  --jog-inset: rgba(255,16,224,0.08);
+  --audio-level-bg: #180026;
+  --audio-level-border: #7700bb;
+  --audio-level-fill-start: #ff10e0;
+  --audio-level-fill-end: #39ff14;
+  --filter-bg: #2a0042;
+  --filter-fg: #f5e0ff;
+  --filter-border: #9900dd;
+  --wavelength-fg: #9055b8;
+  --spectrum-bg: #090010;
+}
+[data-style="neon-disco"][data-theme="light"] {
+  --bg: #faeeff;
+  --card-bg: #fff4ff;
+  --input-bg: #f2e0ff;
+  --border: #dda8f5;
+  --border-light: #cc80e8;
+  --text: #1a0030;
+  --text-muted: #7a30a0;
+  --text-heading: #1a0030;
+  --btn-bg: #f0d8ff;
+  --btn-border: #bb80dd;
+  --accent-green: #cc00a8;
+  --accent-yellow: #1f8800;
+  --accent-red: #cc0044;
+  --jog-hi: #f0d8ff;
+  --jog-lo: #e2c8f5;
+  --jog-shadow: rgba(60,0,100,0.18);
+  --jog-inset: rgba(255,255,255,0.72);
+  --audio-level-bg: #f0d8ff;
+  --audio-level-border: #cc80e8;
+  --audio-level-fill-start: #cc00a8;
+  --audio-level-fill-end: #1f8800;
+  --filter-bg: #f0d8ff;
+  --filter-fg: #1a0030;
+  --filter-border: #bb80dd;
+  --wavelength-fg: #7030a0;
+  --spectrum-bg: #f0d8ff;
+}

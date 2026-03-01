@@ -490,6 +490,24 @@ const CANVAS_PALETTE = {
       waterfallHue: [220, 180], waterfallSat: 100, waterfallLight: [90, 42], waterfallAlpha: [0.35, 0.82],
     },
   },
+  "neon-disco": {
+    dark: {
+      bg: "#090010",
+      spectrumLine: "#ff10e0", spectrumFill: "rgba(255,16,224,0.12)",
+      spectrumGrid: "rgba(255,16,224,0.10)", spectrumLabel: "rgba(240,200,255,0.55)",
+      waveformLine: "rgba(57,255,20,0.92)", waveformPeak: "rgba(255,16,224,0.88)",
+      waveformGrid: "rgba(255,16,224,0.10)", waveformLabel: "rgba(240,200,255,0.65)",
+      waterfallHue: [300, 120], waterfallSat: 100, waterfallLight: [8, 55], waterfallAlpha: [0.30, 0.92],
+    },
+    light: {
+      bg: "#f0d8ff",
+      spectrumLine: "#cc00a8", spectrumFill: "rgba(204,0,168,0.12)",
+      spectrumGrid: "rgba(100,0,150,0.10)", spectrumLabel: "rgba(50,0,80,0.55)",
+      waveformLine: "rgba(31,136,0,0.95)", waveformPeak: "rgba(180,0,120,0.9)",
+      waveformGrid: "rgba(50,0,80,0.10)", waveformLabel: "rgba(50,0,80,0.65)",
+      waterfallHue: [300, 120], waterfallSat: 90, waterfallLight: [90, 45], waterfallAlpha: [0.35, 0.80],
+    },
+  },
 };
 
 function currentStyle() {
@@ -504,7 +522,7 @@ function canvasPalette() {
 
 function setStyle(style) {
   const remapped = style === "nord" ? "arctic" : style === "monokai" ? "lime" : style;
-  const valid = ["original", "arctic", "lime", "contrast"];
+  const valid = ["original", "arctic", "lime", "contrast", "neon-disco"];
   const next = valid.includes(remapped) ? remapped : "original";
   if (next === "original") {
     document.documentElement.removeAttribute("data-style");
