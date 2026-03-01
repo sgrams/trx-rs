@@ -277,6 +277,8 @@ pub struct RigFilterState {
     pub wfm_stereo: bool,
     #[serde(default)]
     pub wfm_stereo_detected: bool,
+    #[serde(default = "default_wfm_denoise")]
+    pub wfm_denoise: bool,
 }
 
 fn default_wfm_deemphasis_us() -> u32 {
@@ -284,6 +286,10 @@ fn default_wfm_deemphasis_us() -> u32 {
 }
 
 fn default_wfm_stereo() -> bool {
+    true
+}
+
+fn default_wfm_denoise() -> bool {
     true
 }
 

@@ -41,6 +41,8 @@ pub struct SoapySdrRig {
     wfm_deemphasis_us: u32,
     /// Whether WFM stereo decode is enabled.
     wfm_stereo: bool,
+    /// Whether WFM stereo denoise is enabled.
+    wfm_denoise: bool,
     /// Requested hardware gain setting in dB.
     gain_db: f64,
     /// Optional hard ceiling for the applied hardware gain in dB.
@@ -204,6 +206,7 @@ impl SoapySdrRig {
             retune_cmd,
             wfm_deemphasis_us,
             wfm_stereo: true,
+            wfm_denoise: true,
             gain_db,
             max_gain_db,
         })
@@ -521,6 +524,19 @@ impl RigCat for SoapySdrRig {
         })
     }
 
+    fn set_wfm_denoise<'a>(
+        &'a mut self,
+        enabled: bool,
+    ) -> Pin<Box<dyn std::future::Future<Output = DynResult<()>> + Send + 'a>> {
+        Box::pin(async move {
+            self.wfm_denoise = enabled;
+            if let Some(dsp_arc) = self.pipeline.channel_dsps.get(self.primary_channel_idx) {
+                dsp_arc.lock().unwrap().set_wfm_denoise(enabled);
+            }
+            Ok(())
+        })
+    }
+
     fn filter_state(&self) -> Option<RigFilterState> {
         let wfm_stereo_detected = self
             .pipeline
@@ -540,6 +556,7 @@ impl RigCat for SoapySdrRig {
             wfm_deemphasis_us: self.wfm_deemphasis_us,
             wfm_stereo: self.wfm_stereo,
             wfm_stereo_detected,
+            wfm_denoise: self.wfm_denoise,
         })
     }
 

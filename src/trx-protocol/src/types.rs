@@ -41,6 +41,7 @@ pub enum ClientCommand {
     SetSdrGain { gain_db: f64 },
     SetWfmDeemphasis { deemphasis_us: u32 },
     SetWfmStereo { enabled: bool },
+    SetWfmDenoise { enabled: bool },
     GetSpectrum,
 }
 

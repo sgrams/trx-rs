@@ -36,5 +36,6 @@ pub enum RigCommand {
     SetSdrGain(f64),
     SetWfmDeemphasis(u32),
     SetWfmStereo(bool),
+    SetWfmDenoise(bool),
     GetSpectrum,
 }

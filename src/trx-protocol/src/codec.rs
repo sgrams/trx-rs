@@ -301,6 +301,7 @@ mod tests {
                 wfm_deemphasis_us: 75,
                 wfm_stereo: true,
                 wfm_stereo_detected: false,
+                wfm_denoise: true,
             }),
             ..minimal_snapshot()
         })
@@ -340,6 +341,7 @@ mod tests {
                 wfm_deemphasis_us: 50,
                 wfm_stereo: true,
                 wfm_stereo_detected: true,
+                wfm_denoise: true,
             }),
             ..minimal_snapshot()
         };

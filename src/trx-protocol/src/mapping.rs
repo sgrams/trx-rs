@@ -53,6 +53,7 @@ pub fn client_command_to_rig(cmd: ClientCommand) -> RigCommand {
             RigCommand::SetWfmDeemphasis(deemphasis_us)
         }
         ClientCommand::SetWfmStereo { enabled } => RigCommand::SetWfmStereo(enabled),
+        ClientCommand::SetWfmDenoise { enabled } => RigCommand::SetWfmDenoise(enabled),
         ClientCommand::GetSpectrum => RigCommand::GetSpectrum,
     }
 }
@@ -99,6 +100,7 @@ pub fn rig_command_to_client(cmd: RigCommand) -> ClientCommand {
             ClientCommand::SetWfmDeemphasis { deemphasis_us }
         }
         RigCommand::SetWfmStereo(enabled) => ClientCommand::SetWfmStereo { enabled },
+        RigCommand::SetWfmDenoise(enabled) => ClientCommand::SetWfmDenoise { enabled },
         RigCommand::GetSpectrum => ClientCommand::GetSpectrum,
     }
 }

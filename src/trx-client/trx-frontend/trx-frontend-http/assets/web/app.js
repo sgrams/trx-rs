@@ -1373,6 +1373,12 @@ function render(update) {
         saveSetting("wfmAudioMode", nextMode);
       }
     }
+    if (wfmDenoiseEl && typeof update.filter.wfm_denoise === "boolean") {
+      if (wfmDenoiseEl.checked !== update.filter.wfm_denoise) {
+        wfmDenoiseEl.checked = update.filter.wfm_denoise;
+        saveSetting("wfmDenoise", update.filter.wfm_denoise ? "true" : "false");
+      }
+    }
     if (wfmStFlagEl && typeof update.filter.wfm_stereo_detected === "boolean") {
       const detected = update.filter.wfm_stereo_detected;
       wfmStFlagEl.textContent = detected ? "ST" : "MO";
@@ -2680,6 +2686,7 @@ const audioRow = document.getElementById("audio-row");
 const wfmControlsCol = document.getElementById("wfm-controls-col");
 const wfmDeemphasisEl = document.getElementById("wfm-deemphasis");
 const wfmAudioModeEl = document.getElementById("wfm-audio-mode");
+const wfmDenoiseEl = document.getElementById("wfm-denoise");
 const sdrGainControlsEl = document.getElementById("sdr-gain-controls");
 const sdrGainEl = document.getElementById("sdr-gain-db");
 const sdrGainSetBtn = document.getElementById("sdr-gain-set");
@@ -2746,6 +2753,14 @@ if (wfmAudioModeEl) {
     saveSetting("wfmAudioMode", wfmAudioModeEl.value);
     const enabled = wfmAudioModeEl.value !== "mono";
     postPath(`/set_wfm_stereo?enabled=${enabled ? "true" : "false"}`).catch(() => {});
+  });
+}
+if (wfmDenoiseEl) {
+  wfmDenoiseEl.checked = loadSetting("wfmDenoise", "true") === "true";
+  wfmDenoiseEl.addEventListener("change", () => {
+    const enabled = wfmDenoiseEl.checked;
+    saveSetting("wfmDenoise", enabled ? "true" : "false");
+    postPath(`/set_wfm_denoise?enabled=${enabled ? "true" : "false"}`).catch(() => {});
   });
 }
 if (wfmDeemphasisEl) {
