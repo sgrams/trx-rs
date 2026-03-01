@@ -81,20 +81,18 @@ fn build_wfm_resample_bank() -> [[f32; WFM_RESAMP_TAPS]; WFM_RESAMP_PHASES] {
 }
 
 #[inline]
-fn shift_append<const N: usize>(hist: &mut [f32; N], sample: f32) {
-    hist.rotate_left(1);
-    hist[N - 1] = sample;
-}
-
-#[inline]
 fn polyphase_resample(
     hist: &[f32; WFM_RESAMP_TAPS],
+    hist_head: usize,
     bank: &[[f32; WFM_RESAMP_TAPS]; WFM_RESAMP_PHASES],
     frac: f32,
 ) -> f32 {
     let phase = (frac.clamp(0.0, 0.999_999) * WFM_RESAMP_PHASES as f32).round() as usize;
     let phase = phase.min(WFM_RESAMP_PHASES - 1);
-    dot_product(&hist[..], &bank[phase][..])
+    let coeffs = &bank[phase];
+    let first = WFM_RESAMP_TAPS - hist_head.min(WFM_RESAMP_TAPS);
+    dot_product(&hist[hist_head..], &coeffs[..first])
+        + dot_product(&hist[..hist_head], &coeffs[first..])
 }
 
 #[inline]
@@ -694,6 +692,8 @@ pub struct WfmStereoDecoder {
     diff_hist: [f32; WFM_RESAMP_TAPS],
     /// History ring for polyphase FIR resampling of the quadrature diff channel.
     diff_q_hist: [f32; WFM_RESAMP_TAPS],
+    /// Shared ring head for the polyphase FIR histories; points to the oldest slot.
+    hist_head: usize,
     /// Previous pilot blend sample for simple linear interpolation.
     prev_blend: f32,
     /// Fractional phase increment per composite sample = audio_rate / composite_rate.
@@ -753,6 +753,7 @@ impl WfmStereoDecoder {
             sum_hist: [0.0; WFM_RESAMP_TAPS],
             diff_hist: [0.0; WFM_RESAMP_TAPS],
             diff_q_hist: [0.0; WFM_RESAMP_TAPS],
+            hist_head: 0,
             prev_blend: 0.0,
             output_phase_inc,
             output_phase: 0.0,
@@ -845,9 +846,10 @@ impl WfmStereoDecoder {
             // --- Polyphase FIR fractional resampling ---
             // This uses a short windowed-sinc bank instead of cubic interpolation
             // to reduce top-end overshoot/ringing near the audio cutoff.
-            shift_append(&mut self.sum_hist, sum);
-            shift_append(&mut self.diff_hist, diff_i);
-            shift_append(&mut self.diff_q_hist, diff_q);
+            self.sum_hist[self.hist_head] = sum;
+            self.diff_hist[self.hist_head] = diff_i;
+            self.diff_q_hist[self.hist_head] = diff_q;
+            self.hist_head = (self.hist_head + 1) % WFM_RESAMP_TAPS;
 
             let prev_phase = self.output_phase;
             self.output_phase += self.output_phase_inc;
@@ -861,9 +863,9 @@ impl WfmStereoDecoder {
             // interval. The FIR bank reconstructs a band-limited sample using
             // a fixed two-sample lookahead in the decoder.
             let frac = ((1.0 - prev_phase) / self.output_phase_inc) as f32;
-            let sum_i = polyphase_resample(&self.sum_hist, &self.resample_bank, frac);
-            let diff_i = polyphase_resample(&self.diff_hist, &self.resample_bank, frac);
-            let diff_q = polyphase_resample(&self.diff_q_hist, &self.resample_bank, frac);
+            let sum_i = polyphase_resample(&self.sum_hist, self.hist_head, &self.resample_bank, frac);
+            let diff_i = polyphase_resample(&self.diff_hist, self.hist_head, &self.resample_bank, frac);
+            let diff_q = polyphase_resample(&self.diff_q_hist, self.hist_head, &self.resample_bank, frac);
             let blend_i =
                 (self.prev_blend + frac * (stereo_blend_target - self.prev_blend)).clamp(0.0, 1.0);
             self.prev_blend = stereo_blend_target;
@@ -953,6 +955,7 @@ impl WfmStereoDecoder {
         self.sum_hist = [0.0; WFM_RESAMP_TAPS];
         self.diff_hist = [0.0; WFM_RESAMP_TAPS];
         self.diff_q_hist = [0.0; WFM_RESAMP_TAPS];
+        self.hist_head = 0;
         self.prev_blend = 0.0;
         self.output_phase = 0.0;
     }
