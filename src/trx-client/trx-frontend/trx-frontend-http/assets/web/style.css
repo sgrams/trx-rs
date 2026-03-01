@@ -679,50 +679,33 @@ small { color: var(--text-muted); }
   align-items: center;
   flex: 0 0 auto;
   padding: 0;
-  border: 1px solid color-mix(in srgb, var(--border-light) 16%, transparent);
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--card-bg) 16%, transparent);
   align-self: center;
 }
 .aprs-bar-clear {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.04rem;
+  display: inline;
   background: transparent;
   border: none;
   border-radius: 0;
-  padding: 0 0.1rem;
-  line-height: 0.8;
+  padding: 0;
+  line-height: 1;
   font-family: inherit;
-  font-size: 0.36em;
+  font-size: 0.42em;
   font-weight: 600;
-  letter-spacing: 0.02em;
+  letter-spacing: 0.03em;
   color: var(--text-muted);
   cursor: pointer;
-  opacity: 0.76;
+  opacity: 0.82;
   text-transform: uppercase;
   white-space: nowrap;
-  transition: opacity 120ms, background 120ms, border-color 120ms, color 120ms;
+  transition: opacity 120ms, color 120ms;
 }
 .aprs-bar-clear:hover {
   opacity: 1;
   color: var(--accent-green);
+  text-decoration: underline;
 }
 .aprs-bar-clear-wrap:hover {
-  background: color-mix(in srgb, var(--card-bg) 34%, transparent);
-  border-color: color-mix(in srgb, var(--accent-green) 18%, var(--border-light));
-}
-.aprs-bar-clear-icon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: auto;
-  height: auto;
-  border-radius: 0;
-  background: transparent;
-  color: color-mix(in srgb, var(--accent-green) 68%, var(--text-muted));
-  font-size: 0.7em;
-  line-height: 0.75;
+  color: inherit;
 }
 .aprs-bar-frame {
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
