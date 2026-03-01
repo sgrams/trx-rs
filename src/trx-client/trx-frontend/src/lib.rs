@@ -176,6 +176,8 @@ pub struct FrontendRuntimeContext {
     pub remote_rigs: Arc<Mutex<Vec<RemoteRigEntry>>>,
     /// Owner callsign from trx-client config/CLI for frontend display.
     pub owner_callsign: Option<String>,
+    /// Optional website URL for the web UI header title link.
+    pub owner_website_url: Option<String>,
     /// Latest spectrum frame from the active SDR rig; None for non-SDR backends.
     pub spectrum: Arc<Mutex<SharedSpectrum>>,
 }
@@ -208,6 +210,7 @@ impl FrontendRuntimeContext {
             remote_active_rig_id: Arc::new(Mutex::new(None)),
             remote_rigs: Arc::new(Mutex::new(Vec::new())),
             owner_callsign: None,
+            owner_website_url: None,
             spectrum: Arc::new(Mutex::new(SharedSpectrum::default())),
         }
     }

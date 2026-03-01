@@ -37,6 +37,8 @@ pub struct ClientConfig {
 pub struct GeneralConfig {
     /// Callsign or owner label to display in frontends
     pub callsign: Option<String>,
+    /// Optional website URL to use as the web UI header title link.
+    pub website_url: Option<String>,
     /// Log level (trace, debug, info, warn, error)
     pub log_level: Option<String>,
 }
@@ -45,6 +47,7 @@ impl Default for GeneralConfig {
     fn default() -> Self {
         Self {
             callsign: Some("N0CALL".to_string()),
+            website_url: None,
             log_level: None,
         }
     }
@@ -334,6 +337,11 @@ impl ClientConfig {
                 return Err("[remote.auth].token must not be empty when set".to_string());
             }
         }
+        if let Some(url) = &self.general.website_url {
+            if url.trim().is_empty() {
+                return Err("[general].website_url must not be empty when set".to_string());
+            }
+        }
 
         if self.frontends.http.enabled && self.frontends.http.port == 0 {
             return Err("[frontends.http].port must be > 0 when enabled".to_string());
@@ -424,6 +432,7 @@ impl ClientConfig {
         let example = ClientConfig {
             general: GeneralConfig {
                 callsign: Some("N0CALL".to_string()),
+                website_url: Some("https://haxx.space".to_string()),
                 log_level: Some("info".to_string()),
             },
             remote: RemoteConfig {
@@ -545,6 +554,7 @@ mod tests {
         assert!(config.frontends.http_json.enabled);
         assert_eq!(config.frontends.http_json.port, 0);
         assert!(config.remote.url.is_none());
+        assert!(config.general.website_url.is_none());
         assert_eq!(config.remote.poll_interval_ms, 750);
         assert!(config.frontends.audio.enabled);
         assert_eq!(config.frontends.audio.server_port, 4531);
@@ -559,6 +569,7 @@ mod tests {
         let toml_str = r#"
 [general]
 callsign = "W1AW"
+website_url = "https://example.com"
 
 [remote]
 url = "192.168.1.100:9000"
@@ -576,6 +587,7 @@ initial_map_zoom = 12
 
         let config: ClientConfig = toml::from_str(toml_str).unwrap();
         assert_eq!(config.general.callsign, Some("W1AW".to_string()));
+        assert_eq!(config.general.website_url, Some("https://example.com".to_string()));
         assert_eq!(config.remote.url, Some("192.168.1.100:9000".to_string()));
         assert_eq!(config.remote.rig_id, Some("hf".to_string()));
         assert_eq!(config.remote.auth.token, Some("my-token".to_string()));

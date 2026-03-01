@@ -1265,6 +1265,7 @@ let serverVersion = null;
 let serverBuildDate = null;
 let serverCallsign = null;
 let ownerCallsign = null;
+let ownerWebsiteUrl = null;
 let serverRigs = [];
 let serverActiveRigId = null;
 let serverLat = null;
@@ -1282,9 +1283,24 @@ function updateFooterBuildInfo() {
 function updateTitle() {
   const titleEl = document.getElementById("rig-title");
   if (titleEl) {
-    titleEl.textContent = serverVersion ? `trx-rs v${serverVersion}` : "trx-rs";
+    if (ownerWebsiteUrl) {
+      const label = ownerCallsign || displayLabelFromUrl(ownerWebsiteUrl);
+      titleEl.innerHTML =
+        `<a class="title-link" href="${escapeMapHtml(ownerWebsiteUrl)}" target="_blank" rel="noopener">${escapeMapHtml(label)}</a>`;
+    } else {
+      titleEl.textContent = serverVersion ? `trx-rs v${serverVersion}` : "trx-rs";
+    }
   }
   updateDocumentTitle(lastSpectrumData?.rds ?? null);
+}
+
+function displayLabelFromUrl(url) {
+  try {
+    const host = new URL(url).hostname.replace(/^www\./i, "");
+    return host || url;
+  } catch (_e) {
+    return url;
+  }
 }
 
 function render(update) {
@@ -1294,6 +1310,9 @@ function render(update) {
   if (update.server_callsign) serverCallsign = update.server_callsign;
   if (typeof update.owner_callsign === "string" && update.owner_callsign.length > 0) {
     ownerCallsign = update.owner_callsign;
+  }
+  if (typeof update.owner_website_url === "string" && update.owner_website_url.length > 0) {
+    ownerWebsiteUrl = update.owner_website_url;
   }
   if (update.server_latitude != null) serverLat = update.server_latitude;
   if (update.server_longitude != null) serverLon = update.server_longitude;

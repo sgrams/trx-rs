@@ -508,6 +508,14 @@ small { color: var(--text-muted); }
   flex: 0 1 auto;
 }
 .title { font-size: 1.4rem; font-weight: 700; display: inline-flex; align-items: center; gap: 0.35rem; }
+.title-link {
+  color: inherit;
+  text-decoration: none;
+}
+.title-link:hover {
+  text-decoration: underline;
+  text-underline-offset: 0.14em;
+}
 .overview-strip {
   width: 100%;
   margin: 0;
