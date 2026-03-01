@@ -4295,7 +4295,6 @@ function drawSpectrum(data) {
 
 function updateBookmarkAxis(range) {
   const axisEl = document.getElementById("spectrum-bookmark-axis");
-  const freqAxisEl = document.getElementById("spectrum-freq-axis");
   if (!axisEl) return;
 
   const _bmRef = typeof bmList !== "undefined" ? bmList : null;
@@ -4305,7 +4304,6 @@ function updateBookmarkAxis(range) {
 
   const hasVisible = visBookmarks.length > 0;
   axisEl.classList.toggle("bm-axis-visible", hasVisible);
-  if (freqAxisEl) freqAxisEl.classList.toggle("bm-axis-open", hasVisible);
 
   if (!hasVisible) {
     if (axisEl.dataset.bmKey) { axisEl.innerHTML = ""; axisEl.dataset.bmKey = ""; }

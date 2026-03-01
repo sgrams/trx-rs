@@ -1516,20 +1516,16 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   top: 2px;
   font-weight: 700;
 }
-#spectrum-freq-axis.bm-axis-open {
-  border-radius: 0;
-  border-bottom-color: transparent;
-}
 #spectrum-bookmark-axis {
   position: relative;
+  z-index: 5;
   height: 0;
   overflow: hidden;
   width: 100%;
   font-size: 0.68rem;
   background: var(--bg-secondary);
-  border-radius: 0 0 6px 6px;
-  border: 1px solid var(--border);
-  border-top: none;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
   transition: height 80ms ease;
 }
 #spectrum-bookmark-axis.bm-axis-visible {
