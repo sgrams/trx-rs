@@ -783,6 +783,26 @@ function drawSignalOverlay() {
   const range = spectrumVisibleRange(lastSpectrumData);
   const hzToX = (hz) => ((hz - range.visLoHz) / range.visSpanHz) * cssW;
 
+  // ── Bookmark frequency markers (span full overlay height = waterfall + waveform) ──
+  const _bmOvRef = typeof bmList !== "undefined" ? bmList : null;
+  if (Array.isArray(_bmOvRef) && _bmOvRef.length > 0) {
+    const colorMap = bmCategoryColorMap();
+    ctx.save();
+    ctx.lineWidth = 1;
+    ctx.setLineDash([4, 3]);
+    for (const bm of _bmOvRef) {
+      const x = hzToX(bm.freq_hz);
+      if (x < 0 || x > cssW) continue;
+      ctx.strokeStyle = bmHexToRgba(colorMap[bm.category || ""], 0.60);
+      ctx.beginPath();
+      ctx.moveTo(x, 0);
+      ctx.lineTo(x, cssH);
+      ctx.stroke();
+    }
+    ctx.setLineDash([]);
+    ctx.restore();
+  }
+
   if (lastFreqHz != null && currentBandwidthHz > 0) {
     const halfBw = currentBandwidthHz / 2;
     const xL = hzToX(lastFreqHz - halfBw);
@@ -4267,29 +4287,6 @@ function drawSpectrum(data) {
     ctx.restore();
   }
 
-  // ── Bookmark frequency markers ─────────────────────────────────────────────
-  const _bmListRef = typeof bmList !== "undefined" ? bmList : null;
-  const visBookmarks = Array.isArray(_bmListRef)
-    ? _bmListRef.filter((bm) => bm.freq_hz >= range.visLoHz && bm.freq_hz <= range.visHiHz)
-    : [];
-  if (visBookmarks.length > 0) {
-    const colorMap = bmCategoryColorMap();
-    ctx.save();
-    ctx.lineWidth = 1 * dpr;
-    ctx.setLineDash([4 * dpr, 3 * dpr]);
-    for (const bm of visBookmarks) {
-      const x = hzToX(bm.freq_hz);
-      const col = colorMap[bm.category || ""];
-      ctx.strokeStyle = col ? bmHexToRgba(col, 0.65) : pal.waveformPeak.replace(/[\d.]+\)$/, "0.65)");
-      ctx.beginPath();
-      ctx.moveTo(x, 0);
-      ctx.lineTo(x, H);
-      ctx.stroke();
-    }
-    ctx.setLineDash([]);
-    ctx.restore();
-  }
-
   updateSpectrumFreqAxis(range);
   updateBookmarkAxis(range);
   drawSignalOverlay();
@@ -4314,11 +4311,37 @@ function bmHexToRgba(hex, alpha) {
   return `rgba(${r},${g},${b},${alpha})`;
 }
 
-// Returns a map of category → hex colour. Empty-string key = uncategorised (no entry).
+// WCAG relative luminance; threshold 0.4 splits well across the palette.
+function bmLuminance(hex) {
+  const lin = (c) => c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+  const r = lin(parseInt(hex.slice(1, 3), 16) / 255);
+  const g = lin(parseInt(hex.slice(3, 5), 16) / 255);
+  const b = lin(parseInt(hex.slice(5, 7), 16) / 255);
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+}
+
+function bmContrastFg(bgHex) {
+  return bmLuminance(bgHex) >= 0.4 ? "#1a202c" : "#ffffff";
+}
+
+// Read --accent-yellow from the live theme and return it as a hex string.
+function bmResolveAccentYellow() {
+  const val = getComputedStyle(document.documentElement)
+    .getPropertyValue("--accent-yellow").trim();
+  if (/^#[0-9a-f]{6}$/i.test(val)) return val;
+  if (/^#[0-9a-f]{3}$/i.test(val))
+    return "#" + [...val.slice(1)].map((c) => c + c).join("");
+  const m = val.match(/\d+/g);
+  if (m && m.length >= 3)
+    return "#" + m.slice(0, 3).map((n) => (+n).toString(16).padStart(2, "0")).join("");
+  return "#f0ad4e";
+}
+
+// Returns a map of category → hex colour, including "" for uncategorised.
 function bmCategoryColorMap() {
   const ref = typeof bmList !== "undefined" ? bmList : [];
   const cats = [...new Set(ref.map((b) => b.category).filter(Boolean))].sort();
-  const map = {};
+  const map = { "": bmResolveAccentYellow() };
   cats.forEach((cat, i) => { map[cat] = BM_PALETTE[i % BM_PALETTE.length]; });
   return map;
 }
@@ -4359,13 +4382,9 @@ function updateBookmarkAxis(range) {
         "<svg class='bm-icon-svg' viewBox='0 0 8 12' width='8' height='12' aria-hidden='true'>" +
         "<path d='M0,0 h8 v10 l-4,2 l-4,-2 Z'/>" +
         "</svg>\u00a0" + esc(bm.name);
-      // Apply category colour; uncategorised falls back to --accent-yellow via CSS.
       const col = colorMap[bm.category || ""];
-      if (col) {
-        span.style.setProperty("--bm-cat-color", col);
-        span.style.setProperty("--bm-cat-bg", bmHexToRgba(col, 0.15));
-        span.style.setProperty("--bm-cat-border", bmHexToRgba(col, 0.55));
-      }
+      span.style.setProperty("--bm-cat-bg", col);
+      span.style.setProperty("--bm-cat-fg", bmContrastFg(col));
       span.addEventListener("click", () => {
         if (typeof bmApply === "function") bmApply(bm);
       });

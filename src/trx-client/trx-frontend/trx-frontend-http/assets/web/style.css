@@ -1539,9 +1539,9 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   cursor: pointer;
   font-weight: 600;
   font-size: 0.66rem;
-  background: var(--bm-cat-bg, var(--card-bg));
-  color: var(--bm-cat-color, var(--accent-yellow));
-  border: 1px solid var(--bm-cat-border, color-mix(in srgb, var(--accent-yellow) 55%, transparent));
+  background: var(--bm-cat-bg, var(--accent-yellow));
+  color: var(--bm-cat-fg, #1a202c);
+  border: 1px solid var(--bm-cat-bg, var(--accent-yellow));
   border-radius: 3px;
   padding: 2px 8px;
   max-width: 130px;
@@ -1553,11 +1553,10 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   gap: 4px;
 }
 #spectrum-bookmark-axis span:hover {
-  background: var(--bm-cat-bg, color-mix(in srgb, var(--accent-yellow) 28%, transparent));
   filter: brightness(1.15);
 }
 .bm-icon-svg path {
-  fill: var(--bm-cat-color, var(--accent-yellow));
+  fill: var(--bm-cat-fg, #1a202c);
 }
 #spectrum-tooltip {
   display: none;

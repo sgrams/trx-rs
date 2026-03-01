@@ -44,9 +44,21 @@ async function bmFetch(categoryFilter) {
     bmList = [];
   }
   bmSyncAccess();
-  bmRender(bmList);
+  bmApplyFilters();
   bmRefreshCategoryFilter(categoryFilter);
   if (typeof scheduleSpectrumDraw === "function") scheduleSpectrumDraw();
+}
+
+function bmApplyFilters() {
+  const text = (document.getElementById("bm-text-filter")?.value || "").trim().toLowerCase();
+  const filtered = text
+    ? bmList.filter((bm) =>
+        (bm.name || "").toLowerCase().includes(text) ||
+        (bm.category || "").toLowerCase().includes(text) ||
+        (bm.comment || "").toLowerCase().includes(text)
+      )
+    : bmList;
+  bmRender(filtered);
 }
 
 async function bmRefreshCategoryFilter(keepValue) {
@@ -274,6 +286,11 @@ async function bmApply(bm) {
   // Category filter dropdown
   document.getElementById("bm-category-filter").addEventListener("change", (e) => {
     bmFetch(e.target.value);
+  });
+
+  // Text search filter (client-side, no re-fetch)
+  document.getElementById("bm-text-filter").addEventListener("input", () => {
+    bmApplyFilters();
   });
 
   // Form submit
