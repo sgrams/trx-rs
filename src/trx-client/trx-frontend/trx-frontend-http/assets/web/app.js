@@ -1444,6 +1444,9 @@ function render(update) {
     modeEl.value = modeUpper;
     if (modeUpper === "WFM" && lastModeName !== "WFM") {
       setJogDivisor(10);
+      resetRdsDisplay();
+    } else if (modeUpper !== "WFM" && lastModeName === "WFM") {
+      resetRdsDisplay();
     }
     lastModeName = modeUpper;
     updateWfmControls();
@@ -3692,11 +3695,13 @@ function startSpectrumStreaming() {
     try {
       lastSpectrumData = JSON.parse(evt.data);
       lastSpectrumRenderData = buildSpectrumRenderData(lastSpectrumData);
-      rdsFrameCount++;
       pushOverviewWaterfallFrame(lastSpectrumData);
       refreshCenterFreqDisplay();
       scheduleSpectrumDraw();
-      updateRdsPsOverlay(lastSpectrumData.rds);
+      if (lastModeName === "WFM") {
+        rdsFrameCount++;
+        updateRdsPsOverlay(lastSpectrumData.rds);
+      }
     } catch (_) {}
   };
   spectrumSource.onerror = () => {
