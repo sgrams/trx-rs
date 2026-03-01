@@ -510,13 +510,22 @@ small { color: var(--text-muted); }
   width: 100%;
   margin: 0;
   position: relative;
-  z-index: 4;
 }
 .signal-visual-block {
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: 0;
   margin-bottom: 0.9rem;
+}
+#signal-overlay-canvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 0;
+  pointer-events: none;
+  z-index: 4;
 }
 #rds-ps-overlay {
   display: none;
@@ -1041,6 +1050,7 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   transform: translateX(-50%);
   white-space: nowrap;
   top: 2px;
+  font-weight: 700;
 }
 #spectrum-tooltip {
   display: none;

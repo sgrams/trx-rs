@@ -320,6 +320,8 @@ const ownerSubtitle = document.getElementById("owner-subtitle");
 const loadingTitle = document.getElementById("loading-title");
 const loadingSub = document.getElementById("loading-sub");
 const overviewCanvas = document.getElementById("overview-canvas");
+const signalOverlayCanvas = document.getElementById("signal-overlay-canvas");
+const signalVisualBlockEl = document.querySelector(".signal-visual-block");
 const overviewPeakHoldEl = document.getElementById("overview-peak-hold");
 const themeToggleBtn = document.getElementById("theme-toggle");
 const headerRigSwitchSelect = document.getElementById("header-rig-switch-select");
@@ -690,6 +692,98 @@ function resizeHeaderSignalCanvas() {
   drawHeaderSignalGraph();
 }
 
+function signalOverlayHeight() {
+  if (!overviewCanvas) return 0;
+  let height = overviewCanvas.clientHeight || 0;
+  const spectrumCanvasEl = document.getElementById("spectrum-canvas");
+  const spectrumPanelEl = document.getElementById("spectrum-panel");
+  const spectrumVisible =
+    spectrumCanvasEl &&
+    spectrumCanvasEl.clientHeight > 0 &&
+    spectrumPanelEl &&
+    getComputedStyle(spectrumPanelEl).display !== "none";
+  if (spectrumVisible) {
+    height += spectrumCanvasEl.clientHeight || 0;
+  }
+  return Math.floor(height);
+}
+
+function drawSignalOverlay() {
+  if (!signalOverlayCanvas || !signalVisualBlockEl) return;
+  const cssW = Math.floor(signalVisualBlockEl.clientWidth);
+  const cssH = signalOverlayHeight();
+  signalOverlayCanvas.style.height = cssH > 0 ? `${cssH}px` : "0";
+  if (cssW <= 0 || cssH <= 0) {
+    signalOverlayCanvas.width = 0;
+    signalOverlayCanvas.height = 0;
+    return;
+  }
+
+  const dpr = window.devicePixelRatio || 1;
+  const nextW = Math.floor(cssW * dpr);
+  const nextH = Math.floor(cssH * dpr);
+  if (signalOverlayCanvas.width !== nextW || signalOverlayCanvas.height !== nextH) {
+    signalOverlayCanvas.width = nextW;
+    signalOverlayCanvas.height = nextH;
+  }
+
+  const ctx = signalOverlayCanvas.getContext("2d");
+  if (!ctx) return;
+
+  ctx.save();
+  ctx.scale(dpr, dpr);
+  ctx.clearRect(0, 0, cssW, cssH);
+
+  if (lastSpectrumData) {
+    const range = spectrumVisibleRange(lastSpectrumData);
+    const hzToX = (hz) => ((hz - range.visLoHz) / range.visSpanHz) * cssW;
+
+    if (lastFreqHz != null && currentBandwidthHz > 0) {
+      const halfBw = currentBandwidthHz / 2;
+      const xL = hzToX(lastFreqHz - halfBw);
+      const xR = hzToX(lastFreqHz + halfBw);
+      const stripW = xR - xL;
+      if (stripW > 1) {
+        const grd = ctx.createLinearGradient(xL, 0, xR, 0);
+        grd.addColorStop(0, "rgba(240,173,78,0.05)");
+        grd.addColorStop(0.2, "rgba(240,173,78,0.14)");
+        grd.addColorStop(0.5, "rgba(240,173,78,0.19)");
+        grd.addColorStop(0.8, "rgba(240,173,78,0.14)");
+        grd.addColorStop(1, "rgba(240,173,78,0.05)");
+        ctx.fillStyle = grd;
+        ctx.fillRect(xL, 0, stripW, cssH);
+
+        const edgeW = 5;
+        ctx.fillStyle = "rgba(240,173,78,0.30)";
+        ctx.fillRect(xL, 0, edgeW, cssH);
+        ctx.fillRect(xR - edgeW, 0, edgeW, cssH);
+
+        ctx.strokeStyle = "rgba(240,173,78,0.70)";
+        ctx.lineWidth = 1.5;
+        ctx.beginPath(); ctx.moveTo(xL, 0); ctx.lineTo(xL, cssH); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(xR, 0); ctx.lineTo(xR, cssH); ctx.stroke();
+      }
+    }
+
+    if (lastFreqHz != null) {
+      const xf = hzToX(lastFreqHz);
+      if (xf >= 0 && xf <= cssW) {
+        ctx.save();
+        ctx.setLineDash([4, 4]);
+        ctx.strokeStyle = "#ff1744";
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(xf, 0);
+        ctx.lineTo(xf, cssH);
+        ctx.stroke();
+        ctx.restore();
+      }
+    }
+  }
+
+  ctx.restore();
+}
+
 function scheduleOverviewDraw() {
   if (!overviewCanvas || overviewDrawPending) return;
   overviewDrawPending = true;
@@ -766,9 +860,9 @@ function drawHeaderSignalGraph() {
   } else {
     drawOverviewSignalHistory(ctx, w, h, pal);
   }
-  drawOverviewTuningOverlay(ctx, w, h);
   ctx.restore();
   positionRdsPsOverlay();
+  drawSignalOverlay();
 }
 
 function _wfDrawRows(oct, rows, startRowIdx, endRowIdx, iW, iH, pal) {
@@ -836,54 +930,6 @@ function drawOverviewWaterfall(ctx, w, h, pal) {
   }
 
   ctx.drawImage(_wfOC, 0, 0, w, h);
-}
-
-function drawOverviewTuningOverlay(ctx, w, h) {
-  if (!lastSpectrumData) return;
-  const range = spectrumVisibleRange(lastSpectrumData);
-  const hzToX = (hz) => ((hz - range.visLoHz) / range.visSpanHz) * w;
-
-  if (lastFreqHz != null && currentBandwidthHz > 0) {
-    const halfBw = currentBandwidthHz / 2;
-    const xL = hzToX(lastFreqHz - halfBw);
-    const xR = hzToX(lastFreqHz + halfBw);
-    const stripW = xR - xL;
-    if (stripW > 1) {
-      const grd = ctx.createLinearGradient(xL, 0, xR, 0);
-      grd.addColorStop(0, "rgba(240,173,78,0.05)");
-      grd.addColorStop(0.2, "rgba(240,173,78,0.14)");
-      grd.addColorStop(0.5, "rgba(240,173,78,0.19)");
-      grd.addColorStop(0.8, "rgba(240,173,78,0.14)");
-      grd.addColorStop(1, "rgba(240,173,78,0.05)");
-      ctx.fillStyle = grd;
-      ctx.fillRect(xL, 0, stripW, h);
-
-      const edgeW = 5;
-      ctx.fillStyle = "rgba(240,173,78,0.30)";
-      ctx.fillRect(xL, 0, edgeW, h);
-      ctx.fillRect(xR - edgeW, 0, edgeW, h);
-
-      ctx.strokeStyle = "rgba(240,173,78,0.70)";
-      ctx.lineWidth = 1.5;
-      ctx.beginPath(); ctx.moveTo(xL, 0); ctx.lineTo(xL, h); ctx.stroke();
-      ctx.beginPath(); ctx.moveTo(xR, 0); ctx.lineTo(xR, h); ctx.stroke();
-    }
-  }
-
-  if (lastFreqHz != null) {
-    const xf = hzToX(lastFreqHz);
-    if (xf >= 0 && xf <= w) {
-      ctx.save();
-      ctx.setLineDash([4, 4]);
-      ctx.strokeStyle = "#ff1744";
-      ctx.lineWidth = 1;
-      ctx.beginPath();
-      ctx.moveTo(xf, 0);
-      ctx.lineTo(xf, h);
-      ctx.stroke();
-      ctx.restore();
-    }
-  }
 }
 
 function drawOverviewSignalHistory(ctx, w, h, pal) {
@@ -3753,66 +3799,37 @@ function drawSpectrum(data) {
 
   // ── BW strip (drawn before spectrum so traces appear on top) ──────────────
   if (lastFreqHz != null && currentBandwidthHz > 0) {
-    const halfBw = currentBandwidthHz / 2;
-    const xL = hzToX(lastFreqHz - halfBw);
-    const xR = hzToX(lastFreqHz + halfBw);
-    const stripW = xR - xL;
-
-    if (stripW > 1) {
-      // Warm amber gradient fill
-      const grd = ctx.createLinearGradient(xL, 0, xR, 0);
-      grd.addColorStop(0,   "rgba(240,173,78,0.05)");
-      grd.addColorStop(0.2, "rgba(240,173,78,0.14)");
-      grd.addColorStop(0.5, "rgba(240,173,78,0.19)");
-      grd.addColorStop(0.8, "rgba(240,173,78,0.14)");
-      grd.addColorStop(1,   "rgba(240,173,78,0.05)");
-      ctx.fillStyle = grd;
-      ctx.fillRect(xL, 0, stripW, H);
-
-      // Edge handle bars
-      const EDGE = 5 * dpr;
-      ctx.fillStyle = "rgba(240,173,78,0.30)";
-      ctx.fillRect(xL, 0, EDGE, H);
-      ctx.fillRect(xR - EDGE, 0, EDGE, H);
-
-      // Edge border lines
-      ctx.strokeStyle = "rgba(240,173,78,0.70)";
-      ctx.lineWidth = 1.5 * dpr;
-      ctx.beginPath(); ctx.moveTo(xL, 0); ctx.lineTo(xL, H); ctx.stroke();
-      ctx.beginPath(); ctx.moveTo(xR, 0); ctx.lineTo(xR, H); ctx.stroke();
-
-      if (_bwDragEdge) {
-        // Bottom bookmark tab centered on the dial frequency, shown only while resizing BW
-        const xMid = hzToX(lastFreqHz);
-        const bwText = formatBwLabel(currentBandwidthHz);
-        ctx.save();
-        ctx.font = `bold ${Math.round(10 * dpr)}px sans-serif`;
-        const tw = ctx.measureText(bwText).width;
-        const PAD  = 6 * dpr;
-        const TAB_H = 16 * dpr;
-        const TAB_OFFSET = 4 * dpr;
-        const tabX = Math.max(0, Math.min(W - tw - PAD * 2, xMid - (tw + PAD * 2) / 2));
-        const tabBottom = H - TAB_OFFSET;
-        const tabY = tabBottom - TAB_H;
-        const r = 3 * dpr;
-        // Rounded-bottom tab shape (flat top)
-        ctx.fillStyle = "rgba(240,173,78,0.85)";
-        ctx.beginPath();
-        ctx.moveTo(tabX, tabY);
-        ctx.lineTo(tabX + tw + PAD * 2, tabY);
-        ctx.lineTo(tabX + tw + PAD * 2, tabBottom - r);
-        ctx.arcTo(tabX + tw + PAD * 2, tabBottom, tabX + tw + PAD * 2 - r, tabBottom, r);
-        ctx.lineTo(tabX + r, tabBottom);
-        ctx.arcTo(tabX, tabBottom, tabX, tabBottom - r, r);
-        ctx.lineTo(tabX, tabY);
-        ctx.closePath();
-        ctx.fill();
-        // Tab text
-        ctx.fillStyle = spectrumBgColor();
-        ctx.textAlign = "left";
-        ctx.fillText(bwText, tabX + PAD, tabBottom - 4 * dpr);
-        ctx.restore();
-      }
+    if (_bwDragEdge) {
+      const xMid = hzToX(lastFreqHz);
+      // Bottom bookmark tab centered on the dial frequency, shown only while resizing BW
+      const bwText = formatBwLabel(currentBandwidthHz);
+      ctx.save();
+      ctx.font = `bold ${Math.round(10 * dpr)}px sans-serif`;
+      const tw = ctx.measureText(bwText).width;
+      const PAD  = 6 * dpr;
+      const TAB_H = 16 * dpr;
+      const TAB_OFFSET = 4 * dpr;
+      const tabX = Math.max(0, Math.min(W - tw - PAD * 2, xMid - (tw + PAD * 2) / 2));
+      const tabBottom = H - TAB_OFFSET;
+      const tabY = tabBottom - TAB_H;
+      const r = 3 * dpr;
+      // Rounded-bottom tab shape (flat top)
+      ctx.fillStyle = "rgba(240,173,78,0.85)";
+      ctx.beginPath();
+      ctx.moveTo(tabX, tabY);
+      ctx.lineTo(tabX + tw + PAD * 2, tabY);
+      ctx.lineTo(tabX + tw + PAD * 2, tabBottom - r);
+      ctx.arcTo(tabX + tw + PAD * 2, tabBottom, tabX + tw + PAD * 2 - r, tabBottom, r);
+      ctx.lineTo(tabX + r, tabBottom);
+      ctx.arcTo(tabX, tabBottom, tabX, tabBottom - r, r);
+      ctx.lineTo(tabX, tabY);
+      ctx.closePath();
+      ctx.fill();
+      // Tab text
+      ctx.fillStyle = spectrumBgColor();
+      ctx.textAlign = "left";
+      ctx.fillText(bwText, tabX + PAD, tabBottom - 4 * dpr);
+      ctx.restore();
     }
   }
 
@@ -3858,20 +3875,8 @@ function drawSpectrum(data) {
     ctx.restore();
   }
 
-  // ── Tuned-frequency marker ────────────────────────────────────────────────
-  if (lastFreqHz != null) {
-    const xf = hzToX(lastFreqHz);
-    if (xf >= 0 && xf <= W) {
-      ctx.save();
-      ctx.setLineDash([4 * dpr, 4 * dpr]);
-      ctx.strokeStyle = "#ff1744";
-      ctx.lineWidth   = Math.max(1, dpr);
-      ctx.beginPath(); ctx.moveTo(xf, 0); ctx.lineTo(xf, H); ctx.stroke();
-      ctx.restore();
-    }
-  }
-
   updateSpectrumFreqAxis(range);
+  drawSignalOverlay();
 }
 
 function updateSpectrumFreqAxis(range) {
@@ -3894,6 +3899,8 @@ function updateSpectrumFreqAxis(range) {
 
   const firstHz = Math.ceil(range.visLoHz / stepHz) * stepHz;
   spectrumFreqAxis.innerHTML = "";
+  const axisWidth = spectrumFreqAxis.clientWidth || 0;
+  const edgePad = 6;
   for (let hz = firstHz; hz <= range.visHiHz + stepHz * 0.01; hz += stepHz) {
     const frac = (hz - range.visLoHz) / range.visSpanHz;
     if (frac < 0 || frac > 1) continue;
@@ -3904,8 +3911,17 @@ function updateSpectrumFreqAxis(range) {
         : hz.toFixed(0);
     const span = document.createElement("span");
     span.textContent = label;
-    span.style.left  = (frac * 100).toFixed(2) + "%";
     spectrumFreqAxis.appendChild(span);
+    const labelWidth = span.offsetWidth || 0;
+    if (axisWidth > 0 && labelWidth > 0) {
+      const minCenter = edgePad + labelWidth / 2;
+      const maxCenter = axisWidth - edgePad - labelWidth / 2;
+      const desiredCenter = frac * axisWidth;
+      const clampedCenter = Math.max(minCenter, Math.min(maxCenter, desiredCenter));
+      span.style.left = `${clampedCenter}px`;
+    } else {
+      span.style.left = (frac * 100).toFixed(2) + "%";
+    }
   }
 }
 
