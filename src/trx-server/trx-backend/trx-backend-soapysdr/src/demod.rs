@@ -1427,6 +1427,99 @@ mod tests {
         );
     }
 
+    /// Multi-tone stereo separation test.
+    ///
+    /// Generates a composite FM stereo signal with tones at 400, 2000, 8000
+    /// and 14000 Hz on a single channel (L-only then R-only), demodulates,
+    /// and verifies that the silent channel stays quiet across the full
+    /// audio band.  This catches group-delay and phase-trim problems that
+    /// a single 1 kHz tone would miss.
+    #[test]
+    fn test_wfm_stereo_separation_multitone() {
+        use std::f32::consts::TAU;
+
+        let composite_rate: u32 = 240_000;
+        let audio_rate: u32 = 48_000;
+        let fs = composite_rate as f32;
+        let duration_secs = 0.8_f32;
+        let num_samples = (fs * duration_secs) as usize;
+        let freqs = [400.0_f32, 2_000.0, 8_000.0, 14_000.0];
+        let pilot_freq = 19_000.0_f32;
+        let carrier_freq = 38_000.0_f32;
+
+        // Test both L-only (diff = +audio) and R-only (diff = -audio).
+        for (label, diff_sign) in [("L-only", 1.0_f32), ("R-only", -1.0_f32)] {
+            let mut composite = vec![0.0_f32; num_samples];
+            for n in 0..num_samples {
+                let t = n as f32 / fs;
+                let audio: f32 = freqs.iter().map(|&f| (TAU * f * t).sin()).sum::<f32>()
+                    / freqs.len() as f32;
+                let sum = audio;                     // L + R (same for both cases)
+                let diff = audio * diff_sign;        // L - R
+                let pilot = 0.1 * (TAU * pilot_freq * t).cos();
+                let carrier = (TAU * carrier_freq * t).cos();
+                composite[n] = sum + pilot + diff * carrier;
+            }
+
+            let peak_composite = 2.1_f32;
+            let deviation_hz = 75_000.0_f32;
+            let mod_index = TAU * deviation_hz / (peak_composite * fs);
+            let mut phase: f32 = 0.0;
+            let mut iq = Vec::with_capacity(num_samples);
+            for &c in &composite {
+                phase += mod_index * c;
+                iq.push(Complex::from_polar(1.0, phase));
+            }
+
+            let mut decoder = WfmStereoDecoder::new(
+                composite_rate,
+                audio_rate,
+                2,
+                true,
+                50,
+            );
+            let output = decoder.process_iq(&iq);
+
+            let skip_samples = (0.3 * audio_rate as f32) as usize;
+            let stereo_pairs = output.len() / 2;
+            assert!(stereo_pairs > skip_samples + 100,
+                "{label}: not enough output samples");
+
+            let mut active_energy = 0.0_f64;
+            let mut silent_energy = 0.0_f64;
+            let mut count = 0_u64;
+            for i in skip_samples..stereo_pairs {
+                let l = output[2 * i] as f64;
+                let r = output[2 * i + 1] as f64;
+                if diff_sign > 0.0 {
+                    // L-only: L is active, R is silent
+                    active_energy += l * l;
+                    silent_energy += r * r;
+                } else {
+                    // R-only: R is active, L is silent
+                    active_energy += r * r;
+                    silent_energy += l * l;
+                }
+                count += 1;
+            }
+            let active_rms = (active_energy / count as f64).sqrt();
+            let silent_rms = (silent_energy / count as f64).sqrt();
+
+            let separation_db = if silent_rms > 1e-10 {
+                20.0 * (active_rms / silent_rms).log10()
+            } else {
+                f64::INFINITY
+            };
+
+            eprintln!("{label}: active RMS = {active_rms:.6}, silent RMS = {silent_rms:.6}, separation = {separation_db:.1} dB");
+
+            assert!(active_rms > 0.01,
+                "{label}: active channel has no energy: {active_rms:.6}");
+            assert!(separation_db > 15.0,
+                "{label}: multitone stereo separation too low: {separation_db:.1} dB");
+        }
+    }
+
     #[test]
     fn test_wfm_no_pilot_stays_mono_detect() {
         use std::f32::consts::TAU;
