@@ -3118,7 +3118,8 @@ let spectrumPanFrac = 0.5;
 
 // Y-axis level: floor = bottom dB value shown; range = total dB span.
 let spectrumFloor = -115;
-let spectrumRange = 80;
+let spectrumRange = 90;
+const SPECTRUM_HEADROOM_DB = 20;
 const SPECTRUM_SMOOTH_ALPHA = 0.42;
 
 // BW-strip drag state.
@@ -4073,7 +4074,7 @@ if (spectrumCanvas) {
       const noise = sorted[Math.floor(sorted.length * 0.15)];
       const peak  = sorted[sorted.length - 1];
       spectrumFloor = Math.floor(noise / 10) * 10 - 10;
-      spectrumRange = Math.max(60, Math.ceil((peak - spectrumFloor) / 10) * 10 + 10);
+      spectrumRange = Math.max(60, Math.ceil((peak - spectrumFloor) / 10) * 10 + SPECTRUM_HEADROOM_DB);
       if (floorInput) floorInput.value = spectrumFloor;
       scheduleSpectrumDraw();
     });

@@ -26,6 +26,7 @@
   --filter-border: #385577;
   --wavelength-fg: #8da3be;
   --spectrum-bg: #0a0f18;
+  --spectrum-plot-height: 160px;
   --jog-wheel-size: 83.2px;
   --header-waterfall-overlap: 0rem;
 }
@@ -488,7 +489,7 @@ small { color: var(--text-muted); }
 #rds-ps-overlay {
   display: none;
   position: absolute;
-  top: calc(var(--header-waterfall-overlap) + 0.7rem);
+  top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
   z-index: 5;
@@ -609,7 +610,7 @@ small { color: var(--text-muted); }
 }
 #overview-canvas {
   width: 100%;
-  height: calc(clamp(4.2rem, 11vh, 6.25rem) + var(--header-waterfall-overlap));
+  height: var(--spectrum-plot-height);
   display: block;
 }
 .header-left {
@@ -986,7 +987,7 @@ button:focus-visible, input:focus-visible, select:focus-visible {
 #spectrum-canvas {
   display: block;
   width: 100%;
-  height: 160px;
+  height: var(--spectrum-plot-height);
   background: var(--spectrum-bg);
   border-radius: 6px 6px 0 0;
   cursor: crosshair;
