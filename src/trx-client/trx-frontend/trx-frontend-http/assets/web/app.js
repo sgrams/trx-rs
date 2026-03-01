@@ -1419,6 +1419,7 @@ function render(update) {
     cwToneEl.disabled = disabled;
     cwToneEl.readOnly = disabled;
   }
+  let activeFreqColor = "var(--accent-green)";
   if (update.status && update.status.vfo && Array.isArray(update.status.vfo.entries)) {
     const entries = update.status.vfo.entries;
     const activeIdx = Number.isInteger(update.status.vfo.active) ? update.status.vfo.active : null;
@@ -1436,7 +1437,7 @@ function render(update) {
       if (activeIdx === idx) {
         btn.classList.add("active");
         btn.style.color = color;
-        freqEl.style.color = color;
+        activeFreqColor = color;
       } else btn.addEventListener("click", async () => {
         btn.disabled = true;
         showHint("Toggling VFO…");
@@ -1454,6 +1455,9 @@ function render(update) {
     });
   } else {
     vfoPicker.innerHTML = "<button type=\"button\" class=\"active\">--</button>";
+  }
+  if (freqEl) {
+    freqEl.style.color = activeFreqColor;
   }
   if (update.status && update.status.rx && typeof update.status.rx.sig === "number") {
     const sUnits = dbmToSUnits(update.status.rx.sig);
