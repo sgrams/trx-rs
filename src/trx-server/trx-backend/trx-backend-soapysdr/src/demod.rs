@@ -689,8 +689,8 @@ impl WfmStereoDecoder {
                 self.stereo_detected = true;
             }
             let stereo_blend_target = if self.stereo_detected {
-                let width = smoothstep01((self.stereo_detect_level - 0.30) / (0.92 - 0.30));
-                0.55 + 0.45 * width
+                let width = smoothstep01((self.stereo_detect_level - 0.30) / (0.70 - 0.30));
+                0.75 + 0.25 * width
             } else {
                 0.35 * smoothstep01((self.stereo_detect_level - 0.10) / (0.30 - 0.10))
             };
