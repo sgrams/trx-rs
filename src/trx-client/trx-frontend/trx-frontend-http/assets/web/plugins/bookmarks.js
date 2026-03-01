@@ -1,6 +1,6 @@
 // --- Bookmarks Tab ---
 
-let bmList = [];
+var bmList = [];
 let bmEditId = null;
 
 function bmFmtFreq(hz) {

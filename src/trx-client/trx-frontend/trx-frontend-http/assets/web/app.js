@@ -4268,8 +4268,9 @@ function drawSpectrum(data) {
   }
 
   // ── Bookmark frequency markers ─────────────────────────────────────────────
-  const visBookmarks = Array.isArray(window.bmList)
-    ? window.bmList.filter((bm) => bm.freq_hz >= range.visLoHz && bm.freq_hz <= range.visHiHz)
+  const _bmListRef = typeof bmList !== "undefined" ? bmList : null;
+  const visBookmarks = Array.isArray(_bmListRef)
+    ? _bmListRef.filter((bm) => bm.freq_hz >= range.visLoHz && bm.freq_hz <= range.visHiHz)
     : [];
   if (visBookmarks.length > 0) {
     ctx.save();
@@ -4317,8 +4318,9 @@ function updateBookmarkAxis(range) {
   const freqAxisEl = document.getElementById("spectrum-freq-axis");
   if (!axisEl) return;
 
-  const visBookmarks = Array.isArray(window.bmList)
-    ? window.bmList.filter((bm) => bm.freq_hz >= range.visLoHz && bm.freq_hz <= range.visHiHz)
+  const _bmRef = typeof bmList !== "undefined" ? bmList : null;
+  const visBookmarks = Array.isArray(_bmRef)
+    ? _bmRef.filter((bm) => bm.freq_hz >= range.visLoHz && bm.freq_hz <= range.visHiHz)
     : [];
 
   const hasVisible = visBookmarks.length > 0;
