@@ -1518,8 +1518,7 @@ button:focus-visible, input:focus-visible, select:focus-visible {
 }
 #spectrum-bookmark-axis {
   position: absolute;
-  top: var(--spectrum-plot-height);
-  transform: translateY(-50%);
+  top: 0;
   left: 0;
   right: 0;
   z-index: 6;
