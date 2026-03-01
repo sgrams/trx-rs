@@ -639,6 +639,8 @@ async function refreshRigList() {
         displayNames[r.rig_id] = r.rig_id;
       }
     });
+    serverRigs = rigs;
+    serverActiveRigId = data.active_rig_id || null;
     applyRigList(data.active_rig_id, rigIds, displayNames);
   } catch (e) {
     // Non-fatal: SSE/status path still drives main UI.
@@ -1245,6 +1247,8 @@ let serverVersion = null;
 let serverBuildDate = null;
 let serverCallsign = null;
 let ownerCallsign = null;
+let serverRigs = [];
+let serverActiveRigId = null;
 let serverLat = null;
 let serverLon = null;
 let initialMapZoom = 10;
@@ -2442,17 +2446,21 @@ function initAprsMap() {
   updateMapBaseLayerForTheme(currentTheme());
 
   if (hasLocation) {
-    const popupText = serverCallsign ? serverCallsign : "Receiver";
     aprsMapReceiverMarker = L.circleMarker([serverLat, serverLon], {
       radius: 8, color: "#3388ff", fillColor: "#3388ff", fillOpacity: 0.8
-    }).addTo(aprsMap).bindPopup(popupText);
+    }).addTo(aprsMap).bindPopup("");
   }
 
-  // Rebuild APRS popup content on open so age and distance are always fresh
-  // and draw an animated radio path from receiver to the station
+  // Rebuild popup content on open (keeps age/distance/rig list fresh)
   aprsMap.on("popupopen", function(e) {
     const marker = e.popup._source;
     if (aprsRadioPath) { aprsRadioPath.remove(); aprsRadioPath = null; }
+
+    if (marker === aprsMapReceiverMarker) {
+      e.popup.setContent(buildReceiverPopupHtml());
+      return;
+    }
+
     if (!marker || !marker._aprsCall) return;
     const entry = stationMarkers.get(marker._aprsCall);
     if (!entry) return;
@@ -2570,6 +2578,33 @@ function formatTimeAgo(tsMs) {
   const hrs = Math.floor(mins / 60);
   const remMins = mins % 60;
   return remMins > 0 ? `${hrs}h ${remMins}min ago` : `${hrs}h ago`;
+}
+
+function buildReceiverPopupHtml() {
+  const call = serverCallsign || ownerCallsign || "Receiver";
+  let meta = "";
+  if (serverVersion) {
+    meta = `trx-server v${escapeMapHtml(serverVersion)}`;
+    if (serverBuildDate) meta += ` &middot; ${escapeMapHtml(serverBuildDate)}`;
+  }
+  let rows = "";
+  if (ownerCallsign && ownerCallsign !== serverCallsign) {
+    rows += `<tr><td class="aprs-popup-label">Owner</td><td>${escapeMapHtml(ownerCallsign)}</td></tr>`;
+  }
+  if (serverLat != null && serverLon != null) {
+    rows += `<tr><td class="aprs-popup-label">QTH</td><td>${serverLat.toFixed(5)}, ${serverLon.toFixed(5)}</td></tr>`;
+  }
+  for (const rig of serverRigs) {
+    const name = rig.display_name || `${rig.manufacturer} ${rig.model}`.trim();
+    const active = rig.rig_id === serverActiveRigId
+      ? ` <span class="receiver-popup-active">active</span>` : "";
+    rows += `<tr><td class="aprs-popup-label">Rig</td><td>${escapeMapHtml(name)}${active}</td></tr>`;
+  }
+  return `<div class="aprs-popup">` +
+    `<div class="aprs-popup-call">${escapeMapHtml(call)}</div>` +
+    (meta ? `<div class="aprs-popup-meta">${meta}</div>` : "") +
+    (rows ? `<table class="aprs-popup-table">${rows}</table>` : "") +
+    `</div>`;
 }
 
 function buildAprsPopupHtml(call, lat, lon, info, pkt) {
