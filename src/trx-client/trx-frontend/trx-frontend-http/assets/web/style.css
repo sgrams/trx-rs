@@ -2101,3 +2101,61 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   color: var(--text-muted);
   font-size: 0.9rem;
 }
+
+/* ── Golden Rain style ────────────────────────────────────────────────── */
+[data-style="golden-rain"] {
+  --bg: #100c06;
+  --card-bg: #1a1209;
+  --input-bg: #140f08;
+  --border: #3f2d18;
+  --border-light: #6d4e23;
+  --text: #f3e4bf;
+  --text-muted: #aa9062;
+  --text-heading: #fff0ca;
+  --btn-bg: #2a1c0d;
+  --btn-border: #7c5928;
+  --accent-green: #dfac48;
+  --accent-yellow: #f4cd74;
+  --accent-red: #cf7d32;
+  --jog-hi: #392610;
+  --jog-lo: #24170b;
+  --jog-shadow: rgba(0,0,0,0.64);
+  --jog-inset: rgba(255,219,138,0.06);
+  --audio-level-bg: #1c130a;
+  --audio-level-border: #6d4e23;
+  --audio-level-fill-start: #dfac48;
+  --audio-level-fill-end: #f4cd74;
+  --filter-bg: #2b1d0f;
+  --filter-fg: #f3e4bf;
+  --filter-border: #7c5928;
+  --wavelength-fg: #ab8b52;
+  --spectrum-bg: #120d07;
+}
+[data-style="golden-rain"][data-theme="light"] {
+  --bg: #f7efdd;
+  --card-bg: #fff9ec;
+  --input-bg: #f0e3c6;
+  --border: #d4bc8a;
+  --border-light: #b99243;
+  --text: #3f2c10;
+  --text-muted: #7f6640;
+  --text-heading: #3a2609;
+  --btn-bg: #f0e3c6;
+  --btn-border: #b99243;
+  --accent-green: #a96d00;
+  --accent-yellow: #c88a16;
+  --accent-red: #b65316;
+  --jog-hi: #f2e5c8;
+  --jog-lo: #e3d1a8;
+  --jog-shadow: rgba(82,55,14,0.16);
+  --jog-inset: rgba(255,255,255,0.76);
+  --audio-level-bg: #f0e3c6;
+  --audio-level-border: #c5a15d;
+  --audio-level-fill-start: #a96d00;
+  --audio-level-fill-end: #d4a13a;
+  --filter-bg: #f0e3c6;
+  --filter-fg: #3f2c10;
+  --filter-border: #b99243;
+  --wavelength-fg: #87663a;
+  --spectrum-bg: #f5ecd9;
+}
