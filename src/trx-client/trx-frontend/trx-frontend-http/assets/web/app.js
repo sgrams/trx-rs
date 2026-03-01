@@ -1431,7 +1431,7 @@ function render(update) {
     if (wfmDenoiseEl && (typeof update.filter.wfm_denoise === "string" || typeof update.filter.wfm_denoise === "boolean")) {
       const nextDenoise = typeof update.filter.wfm_denoise === "string"
         ? normalizeWfmDenoiseLevel(update.filter.wfm_denoise)
-        : (update.filter.wfm_denoise ? "auto" : "low");
+        : (update.filter.wfm_denoise ? "auto" : "off");
       if (wfmDenoiseEl.value !== nextDenoise) {
         wfmDenoiseEl.value = nextDenoise;
         saveSetting("wfmDenoise", nextDenoise);
@@ -2994,8 +2994,7 @@ function levelFromChannels(channels, frameCount) {
 
 function normalizeWfmDenoiseLevel(value) {
   const next = String(value ?? "").toLowerCase();
-  if (next === "auto" || next === "low" || next === "medium" || next === "high") return next;
-  if (next === "off") return "low";
+  if (next === "off" || next === "auto" || next === "low" || next === "medium" || next === "high") return next;
   return "auto";
 }
 

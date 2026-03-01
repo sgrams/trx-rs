@@ -417,8 +417,9 @@ impl StereoDenoise {
             1.0
         };
         let effective_gain = match self.level {
+            WfmDenoiseLevel::Off => 1.0,
             WfmDenoiseLevel::Auto => {
-                let strength = (0.3 + (1.0 - broadband_gain) * 0.7).clamp(0.3, 1.0);
+                let strength = (0.45 + (1.0 - broadband_gain) * 0.55).clamp(0.45, 1.0);
                 1.0 - (1.0 - broadband_gain) * strength
             }
             WfmDenoiseLevel::Low => 1.0 - (1.0 - broadband_gain) * 0.35,
@@ -1060,6 +1061,22 @@ mod tests {
             let low_out = low.process(0.1, value, 0.2).abs();
             let high_out = high.process(0.1, value, 0.2).abs();
             assert!(low_out + 0.000_001 >= high_out);
+        }
+    }
+
+    #[test]
+    fn test_denoise_off_is_bypass() {
+        let mut off = StereoDenoise::new(48_000.0);
+        off.level = WfmDenoiseLevel::Off;
+
+        for &(sum, diff_i, diff_q) in &[
+            (0.1_f32, 0.5_f32, 0.2_f32),
+            (0.0_f32, -0.3_f32, 0.8_f32),
+            (1.0_f32, 1.0_f32, -0.5_f32),
+            (-0.2_f32, 0.001_f32, 0.0_f32),
+        ] {
+            let out = off.process(sum, diff_i, diff_q);
+            assert!((out - diff_i).abs() < 0.000_001);
         }
     }
 

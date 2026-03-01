@@ -284,6 +284,7 @@ pub struct RigFilterState {
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum WfmDenoiseLevel {
+    Off,
     Auto,
     Low,
     Medium,

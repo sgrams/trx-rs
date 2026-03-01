@@ -944,9 +944,9 @@ async fn index() -> impl Responder {
 
 #[get("/favicon.ico")]
 async fn favicon() -> impl Responder {
-    HttpResponse::TemporaryRedirect()
-        .insert_header((header::LOCATION, "/favicon.png?v=4"))
-        .finish()
+    HttpResponse::Ok()
+        .insert_header((header::CONTENT_TYPE, "image/png"))
+        .body(FAVICON_BYTES)
 }
 
 #[get("/favicon.png")]
