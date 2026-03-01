@@ -2909,10 +2909,10 @@ function startRxAudio() {
         opusDecoder = new AudioDecoder({
           output: (frame) => {
             const frameChannels = extractAudioFrameChannels(frame);
-            const now = Date.now();
-            if (now - lastLevelUpdate >= 50) {
+            const levelNow = Date.now();
+            if (levelNow - lastLevelUpdate >= 50) {
               setAudioLevel(levelFromChannels(frameChannels, frame.numberOfFrames));
-              lastLevelUpdate = now;
+              lastLevelUpdate = levelNow;
             }
             const forceMono = frame.numberOfChannels >= 2
               && wfmAudioModeEl
