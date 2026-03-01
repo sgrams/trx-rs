@@ -668,17 +668,19 @@ small { color: var(--text-muted); }
 }
 .aprs-bar-clear {
   background: none;
-  border: 1px solid color-mix(in srgb, var(--accent-green) 40%, transparent);
-  border-radius: 3px;
-  padding: 0.02rem 0.3rem;
+  border: 1px solid color-mix(in srgb, var(--accent-green) 35%, transparent);
+  border-radius: 2px;
+  padding: 0 0.4rem;
+  line-height: 1.5;
   font-family: inherit;
-  font-size: 0.78em;
+  font-size: 0.65em;
   font-weight: 600;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.08em;
   color: var(--accent-green);
   cursor: pointer;
-  opacity: 0.7;
+  opacity: 0.6;
   text-transform: uppercase;
+  white-space: nowrap;
   transition: opacity 120ms, background 120ms;
 }
 .aprs-bar-clear:hover {
