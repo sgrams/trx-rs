@@ -31,7 +31,7 @@ const PILOT_BPF_Q: f32 = 20.0;
 /// Fixed phase trim on the recovered L-R channel to compensate pilot-path delay.
 const STEREO_SEPARATION_PHASE_TRIM: f32 = 0.015;
 /// Fixed gain trim on the recovered L-R channel.
-const STEREO_SEPARATION_GAIN: f32 = 0.990;
+const STEREO_SEPARATION_GAIN: f32 = 1.000;
 /// Extra headroom in the stereo matrix to reduce stereo-only clipping/IMD on
 /// strong program material. This keeps bass excursions from flattening treble.
 const STEREO_MATRIX_GAIN: f32 = 0.30;
