@@ -11,14 +11,14 @@ const RDS_BPF_Q: f32 = 10.0;
 /// Pilot tone frequency (Hz).
 const PILOT_HZ: f32 = 19_000.0;
 /// Audio bandwidth for WFM (Hz).
-/// 15.8 kHz leaves more guard band below the 19 kHz pilot and reduces
-/// top-end artifacts on strong signals while still preserving the useful
-/// broadcast audio range.
-const AUDIO_BW_HZ: f32 = 15_800.0;
+/// 18 kHz matches the diff path cutoff so both have identical group delay,
+/// which is required for good stereo separation.  The 19 kHz pilot is
+/// removed by the notch filter on the mono path.
+const AUDIO_BW_HZ: f32 = 18_000.0;
 /// Stereo L-R subchannel bandwidth for WFM (Hz).
-/// Keep this a bit lower than the mono path because the recovered difference
-/// signal is noisier and more prone to high-frequency artifacts.
-const STEREO_DIFF_BW_HZ: f32 = 14_500.0;
+/// Wider than the mono path to preserve high-frequency stereo detail; the
+/// 19 kHz pilot is already removed by the coherent demodulation step.
+const STEREO_DIFF_BW_HZ: f32 = 18_000.0;
 /// Q values for a proper 4th-order Butterworth cascade (two 2nd-order stages).
 /// Stage 1: Q = 1 / (2 cos(π/8))
 const BW4_Q1: f32 = 0.5412;
