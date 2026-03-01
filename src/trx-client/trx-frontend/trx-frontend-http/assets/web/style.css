@@ -689,7 +689,7 @@ small { color: var(--text-muted); }
   padding: 0;
   line-height: 1;
   font-family: inherit;
-  font-size: 1.5em;
+  font-size: 0.8em;
   font-weight: 600;
   letter-spacing: 0.03em;
   color: var(--text-muted);
