@@ -292,15 +292,14 @@ impl BlockFirFilter {
 
         // Update overlap with the tail of the current input.
         if n_overlap > 0 {
-            let keep_old = n_overlap.saturating_sub(n_new);
-            let mut new_overlap = Vec::with_capacity(n_overlap);
-            if keep_old > 0 {
-                let start = self.overlap.len() - keep_old;
-                new_overlap.extend_from_slice(&self.overlap[start..]);
+            if n_new >= n_overlap {
+                let new_start = n_new - n_overlap;
+                self.overlap.copy_from_slice(&input[new_start..]);
+            } else {
+                let keep_old = n_overlap - n_new;
+                self.overlap.copy_within(n_new..n_overlap, 0);
+                self.overlap[keep_old..].copy_from_slice(input);
             }
-            let new_start = n_new.saturating_sub(n_overlap);
-            new_overlap.extend_from_slice(&input[new_start..]);
-            self.overlap = new_overlap;
         }
     }
 
