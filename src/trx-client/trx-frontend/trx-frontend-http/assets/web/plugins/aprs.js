@@ -112,7 +112,7 @@ function updateAprsBar() {
     aprsBarOverlay.style.display = "none";
     return;
   }
-  let html = '<div class="aprs-bar-header">APRS<button class="aprs-bar-clear" onclick="window.clearAprsBar()">Clear</button></div>';
+  let html = '<div class="aprs-bar-header"><span class="aprs-bar-title">APRS Live</span><button class="aprs-bar-clear" onclick="window.clearAprsBar()" aria-label="Clear APRS overlay"><span class="aprs-bar-clear-icon" aria-hidden="true">×</span><span>Clear</span></button></div>';
   for (const pkt of okFrames) {
     const ts = pkt._ts ? `<span class="aprs-bar-time">${pkt._ts}</span>` : "";
     const call = `<span class="aprs-bar-call">${escapeMapHtml(pkt.srcCall)}</span>`;

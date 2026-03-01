@@ -623,76 +623,100 @@ small { color: var(--text-muted); }
   top: 50%;
   left: 0;
   right: 0;
+  width: auto;
+  max-width: none;
   transform: translateY(-50%);
   z-index: 5;
   pointer-events: auto;
   cursor: default;
   user-select: text;
   color: var(--text-heading);
-  padding: 0.28rem 0.72rem 0.32rem;
-  border: none;
-  border-top: 1px solid color-mix(in srgb, var(--border-light) 72%, transparent);
-  border-bottom: 1px solid color-mix(in srgb, var(--border-light) 72%, transparent);
-  border-radius: 0;
-  background: color-mix(in srgb, var(--card-bg) 52%, transparent);
-  backdrop-filter: blur(14px) saturate(135%);
-  -webkit-backdrop-filter: blur(14px) saturate(135%);
+  padding: 0.22rem 0.55rem 0.24rem;
+  border: 1px solid color-mix(in srgb, var(--border-light) 72%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--card-bg) 68%, transparent);
+  backdrop-filter: blur(16px) saturate(130%);
+  -webkit-backdrop-filter: blur(16px) saturate(130%);
   box-shadow:
-    0 8px 18px color-mix(in srgb, #000000 16%, transparent),
-    inset 0 1px 0 color-mix(in srgb, #ffffff 10%, transparent);
-  max-height: 60%;
+    0 10px 24px color-mix(in srgb, #000000 14%, transparent),
+    inset 0 1px 0 color-mix(in srgb, #ffffff 8%, transparent),
+    inset 0 0 0 1px color-mix(in srgb, #ffffff 4%, transparent);
+  max-height: min(58%, 9.5rem);
   overflow-y: auto;
   flex-direction: column;
-  gap: 0;
+  gap: 0.12rem;
 }
 .aprs-bar-header {
   position: sticky;
   top: 0;
   z-index: 1;
-  background: color-mix(in srgb, var(--card-bg) 80%, transparent);
+  background: color-mix(in srgb, var(--card-bg) 88%, transparent);
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 0.5rem;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
-  font-size: clamp(0.52rem, 0.95vw, 0.66rem);
+  font-size: clamp(0.5rem, 0.82vw, 0.62rem);
   font-weight: 700;
-  letter-spacing: 0.12em;
+  letter-spacing: 0.1em;
   color: var(--accent-green);
   text-transform: uppercase;
-  padding-bottom: 0.1rem;
-  margin-bottom: 0.1rem;
-  border-bottom: 1px solid color-mix(in srgb, var(--border-light) 50%, transparent);
-  opacity: 0.95;
+  padding: 0.04rem 0 0.16rem;
+  margin-bottom: 0.08rem;
+  border-bottom: 1px solid color-mix(in srgb, var(--border-light) 34%, transparent);
+  opacity: 0.92;
+}
+.aprs-bar-title {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
 }
 .aprs-bar-clear {
-  background: none;
-  border: 1px solid color-mix(in srgb, var(--accent-green) 35%, transparent);
-  border-radius: 2px;
-  padding: 0 0.4rem;
-  line-height: 1.5;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.24rem;
+  background: color-mix(in srgb, var(--btn-bg) 84%, transparent);
+  border: 1px solid color-mix(in srgb, var(--border-light) 46%, transparent);
+  border-radius: 999px;
+  padding: 0.05rem 0.38rem 0.06rem;
+  line-height: 1.2;
   font-family: inherit;
-  font-size: 0.65em;
+  font-size: 0.68em;
   font-weight: 600;
-  letter-spacing: 0.08em;
-  color: var(--accent-green);
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
   cursor: pointer;
-  opacity: 0.6;
+  opacity: 0.9;
   text-transform: uppercase;
   white-space: nowrap;
-  transition: opacity 120ms, background 120ms;
+  transition: opacity 120ms, background 120ms, border-color 120ms, color 120ms;
 }
 .aprs-bar-clear:hover {
   opacity: 1;
-  background: color-mix(in srgb, var(--accent-green) 12%, transparent);
+  background: color-mix(in srgb, var(--btn-bg) 94%, transparent);
+  border-color: color-mix(in srgb, var(--accent-green) 28%, var(--border-light));
+  color: var(--text-heading);
+}
+.aprs-bar-clear-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.1em;
+  height: 1.1em;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent-red) 14%, transparent);
+  color: color-mix(in srgb, var(--accent-red) 65%, var(--text-muted));
+  font-size: 1em;
+  line-height: 1;
 }
 .aprs-bar-frame {
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
-  font-size: clamp(0.58rem, 1.05vw, 0.74rem);
-  line-height: 1.05;
-  padding: 0.1rem 0;
-  border-bottom: 1px solid color-mix(in srgb, var(--border-light) 25%, transparent);
+  font-size: clamp(0.56rem, 0.92vw, 0.7rem);
+  line-height: 1.12;
+  padding: 0.08rem 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--border-light) 18%, transparent);
   opacity: 1;
 }
 .aprs-bar-frame:last-child {
@@ -702,36 +726,47 @@ small { color: var(--text-muted); }
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  padding-right: 0.15rem;
 }
 .aprs-bar-pin {
-  background: none;
-  border: none;
-  padding: 0 0.2em 0 0;
-  font-size: 0.85em;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in srgb, var(--btn-bg) 74%, transparent);
+  border: 1px solid color-mix(in srgb, var(--border-light) 28%, transparent);
+  border-radius: 999px;
+  padding: 0;
+  margin-right: 0.28em;
+  width: 1.55em;
+  height: 1.55em;
+  font-size: 0.72em;
   line-height: 1;
   cursor: pointer;
   vertical-align: middle;
-  opacity: 0.8;
-  transition: opacity 120ms;
+  opacity: 0.82;
+  transition: opacity 120ms, border-color 120ms, background 120ms;
 }
 .aprs-bar-pin:hover {
   opacity: 1;
+  background: color-mix(in srgb, var(--btn-bg) 92%, transparent);
+  border-color: color-mix(in srgb, var(--accent-green) 28%, var(--border-light));
 }
 .aprs-bar-frame + .aprs-bar-frame {
-  opacity: 0.72;
+  opacity: 0.78;
 }
 .aprs-bar-frame + .aprs-bar-frame + .aprs-bar-frame {
-  opacity: 0.5;
+  opacity: 0.62;
 }
 .aprs-bar-frame + .aprs-bar-frame + .aprs-bar-frame + .aprs-bar-frame {
-  opacity: 0.34;
+  opacity: 0.46;
 }
 .aprs-bar-frame + .aprs-bar-frame + .aprs-bar-frame + .aprs-bar-frame + .aprs-bar-frame {
-  opacity: 0.2;
+  opacity: 0.34;
 }
 .aprs-bar-time {
-  color: var(--text-muted);
-  margin-right: 0.35em;
+  color: color-mix(in srgb, var(--text-muted) 92%, transparent);
+  margin-right: 0.42em;
+  font-size: 0.94em;
 }
 .aprs-bar-call {
   color: var(--accent-green);
@@ -1029,6 +1064,43 @@ small { color: var(--text-muted); }
 .sub-tab:hover:not(.active) { color: var(--text); }
 #aprs-map { min-height: 150px; border-radius: 6px; }
 .aprs-controls { display: flex; gap: 0.6rem; align-items: center; margin-bottom: 0.75rem; }
+#aprs-clear-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.45rem 0.72rem;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--accent-red) 26%, var(--border-light));
+  background:
+    linear-gradient(180deg,
+      color-mix(in srgb, var(--accent-red) 12%, var(--btn-bg)),
+      color-mix(in srgb, var(--btn-bg) 92%, transparent));
+  color: color-mix(in srgb, var(--text) 84%, var(--accent-red));
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, #ffffff 8%, transparent),
+    0 4px 12px color-mix(in srgb, #000000 10%, transparent);
+}
+#aprs-clear-btn:hover:not(:disabled) {
+  text-decoration: none;
+  border-color: color-mix(in srgb, var(--accent-red) 44%, var(--border-light));
+  background:
+    linear-gradient(180deg,
+      color-mix(in srgb, var(--accent-red) 18%, var(--btn-bg)),
+      color-mix(in srgb, var(--btn-bg) 94%, transparent));
+  color: color-mix(in srgb, var(--text-heading) 82%, var(--accent-red));
+}
+#aprs-clear-btn:active:not(:disabled) {
+  transform: translateY(1px);
+}
+.aprs-clear-icon {
+  width: 0.95rem;
+  height: 0.95rem;
+  flex-shrink: 0;
+  fill: currentColor;
+}
 #aprs-packets { max-height: 360px; overflow-y: auto; border: 1px solid var(--border-light); border-radius: 6px; background: var(--input-bg); font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
 .aprs-packet { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; font-size: 0.82rem; padding: 0.35rem 0.5rem; border-bottom: 1px solid var(--border); line-height: 1.4; }
 .aprs-packet:last-child { border-bottom: none; }
