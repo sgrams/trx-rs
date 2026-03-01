@@ -1537,17 +1537,17 @@ button:focus-visible, input:focus-visible, select:focus-visible {
 }
 #spectrum-bookmark-axis span {
   position: absolute;
-  transform: translateX(-50%);
+  transform: translate(-50%, -50%);
+  top: 50%;
   white-space: nowrap;
-  top: 3px;
   cursor: pointer;
   font-weight: 600;
   font-size: 0.66rem;
-  background: rgba(246,173,85,0.18);
-  color: #b05e10;
-  border: 1px solid rgba(246,173,85,0.60);
+  background: color-mix(in srgb, var(--accent-yellow) 14%, transparent);
+  color: var(--accent-yellow);
+  border: 1px solid color-mix(in srgb, var(--accent-yellow) 55%, transparent);
   border-radius: 3px;
-  padding: 2px 8px 2px 6px;
+  padding: 2px 8px;
   max-width: 130px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1557,11 +1557,10 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   gap: 4px;
 }
 #spectrum-bookmark-axis span:hover {
-  background: rgba(246,173,85,0.35);
-  color: #7a4000;
+  background: color-mix(in srgb, var(--accent-yellow) 28%, transparent);
 }
 .bm-icon-svg path {
-  fill: rgba(246,173,85,0.92);
+  fill: var(--accent-yellow);
 }
 #spectrum-tooltip {
   display: none;

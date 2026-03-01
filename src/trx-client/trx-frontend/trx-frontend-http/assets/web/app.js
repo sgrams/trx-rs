@@ -4274,7 +4274,7 @@ function drawSpectrum(data) {
     : [];
   if (visBookmarks.length > 0) {
     ctx.save();
-    ctx.strokeStyle = "rgba(246,173,85,0.65)";
+    ctx.strokeStyle = pal.waveformPeak.replace(/[\d.]+\)$/, "0.65)");
     ctx.lineWidth = 1 * dpr;
     ctx.setLineDash([4 * dpr, 3 * dpr]);
     for (const bm of visBookmarks) {
