@@ -33,7 +33,7 @@ const STEREO_SEPARATION_PHASE_TRIM: f32 = 0.0;
 const STEREO_SEPARATION_GAIN: f32 = 1.000;
 /// Extra headroom in the stereo matrix to reduce stereo-only clipping/IMD on
 /// strong program material. This keeps bass excursions from flattening treble.
-const STEREO_MATRIX_GAIN: f32 = 1.00;
+const STEREO_MATRIX_GAIN: f32 = 1.20;
 /// Stereo detection runs every N composite samples to reduce CPU.
 const STEREO_DETECT_DECIMATION: u32 = 16;
 /// Gentle high-pass memory for the stereo L-R path.

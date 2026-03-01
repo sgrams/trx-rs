@@ -869,7 +869,7 @@ impl ChannelDsp {
         // WFM: full composite decoder (handles its own DC blocks + deemphasis).
         // No AGC — WFM uses IQ hard limiting + fixed output gain to preserve
         // stereo separation and avoid AGC pumping on broadcast audio.
-        const WFM_OUTPUT_GAIN: f32 = 0.35;
+        const WFM_OUTPUT_GAIN: f32 = 0.32;
         let audio = if let Some(decoder) = self.wfm_decoder.as_mut() {
             let mut out = decoder.process_iq(decimated);
             for sample in &mut out {
