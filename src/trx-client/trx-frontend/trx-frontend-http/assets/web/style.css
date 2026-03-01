@@ -1072,6 +1072,9 @@ small { color: var(--text-muted); }
 .aprs-symbol { display: inline-block; width: 24px; height: 24px; background-size: 384px 192px; vertical-align: middle; margin-right: 0.3rem; }
 .aprs-pos { color: var(--accent-green); text-decoration: none; margin-left: 0.3rem; font-size: 0.8rem; }
 .aprs-pos:hover { text-decoration: underline; }
+.leaflet-popup-content-wrapper, .leaflet-popup-tip { background: var(--card-bg) !important; color: var(--text) !important; box-shadow: 0 3px 14px rgba(0,0,0,0.45) !important; }
+.leaflet-popup-close-button { color: var(--text-muted) !important; }
+.leaflet-popup-close-button:hover { color: var(--text) !important; }
 .aprs-popup { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; font-size: 0.82rem; min-width: 12rem; max-width: 22rem; }
 .aprs-popup-call { font-weight: 700; font-size: 1em; color: var(--accent-green); margin-bottom: 0.18rem; }
 .aprs-popup-meta { font-size: 0.85em; color: var(--text-muted); margin-bottom: 0.3rem; }

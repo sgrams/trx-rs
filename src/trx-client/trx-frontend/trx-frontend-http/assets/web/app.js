@@ -2422,6 +2422,16 @@ function initAprsMap() {
     }).addTo(aprsMap).bindPopup(popupText);
   }
 
+  // Rebuild APRS popup content on open so age and distance are always fresh
+  aprsMap.on("popupopen", function(e) {
+    const marker = e.popup._source;
+    if (!marker || !marker._aprsCall) return;
+    const entry = stationMarkers.get(marker._aprsCall);
+    if (!entry) return;
+    const ll = marker.getLatLng();
+    e.popup.setContent(buildAprsPopupHtml(marker._aprsCall, ll.lat, ll.lng, entry.pkt?.info || "", entry.pkt));
+  });
+
   const aprsFilter = document.getElementById("map-filter-aprs");
   const ft8Filter = document.getElementById("map-filter-ft8");
   const wsprFilter = document.getElementById("map-filter-wspr");
@@ -2448,9 +2458,14 @@ function initAprsMap() {
 function sizeAprsMapToViewport() {
   const mapEl = document.getElementById("aprs-map");
   if (!mapEl) return;
-  const topPadding = parseFloat(getComputedStyle(document.body).paddingTop) || 0;
-  const available = Math.max(0, window.innerHeight - topPadding);
-  const target = Math.max(150, Math.floor(available * 0.6));
+  const mapRect = mapEl.getBoundingClientRect();
+  const footer = document.querySelector(".footer");
+  let bottom = window.innerHeight;
+  if (footer) {
+    const fr = footer.getBoundingClientRect();
+    if (fr.top > mapRect.top + 50) bottom = fr.top;
+  }
+  const target = Math.max(150, Math.floor(bottom - mapRect.top - 8));
   mapEl.style.height = `${target}px`;
   if (aprsMap) aprsMap.invalidateSize();
 }
@@ -2554,6 +2569,7 @@ window.aprsMapAddStation = function(call, lat, lon, info, symbolTable, symbolCod
           radius: 6, color: "#00d17f", fillColor: "#00d17f", fillOpacity: 0.8
         }).addTo(aprsMap).bindPopup(popupContent);
     marker.__trxType = "aprs";
+    marker._aprsCall = call;
     stationMarkers.set(call, { marker, type: "aprs", pkt });
     mapMarkers.add(marker);
     applyMapFilter();
