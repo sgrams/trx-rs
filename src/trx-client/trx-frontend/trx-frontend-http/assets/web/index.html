@@ -153,25 +153,29 @@
               </div>
               <div class="controls-col controls-col-wfm label-below-col" id="wfm-controls-col" style="display:none;">
                 <div class="inline wfm-controls-inline">
-                  <label class="wfm-control">Deemphasis
+                  <label class="wfm-control">
+                    <span class="wfm-control-label">Deemp</span>
                     <select id="wfm-deemphasis" class="status-input">
                       <option value="50">50 uS</option>
                       <option value="75">75 uS</option>
                     </select>
                   </label>
-                  <label class="wfm-control">Audio
+                  <label class="wfm-control">
+                    <span class="wfm-control-label">Audio</span>
                     <select id="wfm-audio-mode" class="status-input">
                       <option value="stereo">Stereo</option>
                       <option value="mono">Mono</option>
                     </select>
                   </label>
-                  <div class="inline" id="sdr-gain-controls">
-                    <label class="wfm-control">RF Gain
+                  <div class="wfm-gain-group" id="sdr-gain-controls">
+                    <label class="wfm-control">
+                      <span class="wfm-control-label">RF Gain</span>
                       <input id="sdr-gain-db" class="status-input" type="number" min="0" max="60" step="1" inputmode="decimal">
                     </label>
-                    <button id="sdr-gain-set" type="button" class="status-input">Set</button>
+                    <button id="sdr-gain-set" type="button" class="wfm-inline-btn">Set</button>
                   </div>
                   <label class="wfm-control wfm-st-flag-wrap" aria-label="Stereo pilot status">
+                    <span class="wfm-control-label">Pilot</span>
                     <span id="wfm-st-flag" class="wfm-st-flag wfm-st-flag-mono">MO</span>
                   </label>
                 </div>
