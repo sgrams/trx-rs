@@ -112,7 +112,7 @@ function updateAprsBar() {
     aprsBarOverlay.style.display = "none";
     return;
   }
-  let html = '<div class="aprs-bar-header"><span class="aprs-bar-title">APRS Live</span><span class="aprs-bar-clear-wrap"><span class="aprs-bar-clear" role="button" tabindex="0" onclick="window.clearAprsBar()" onkeydown="if(event.key===\'Enter\'||event.key===\' \'){event.preventDefault();window.clearAprsBar();}" aria-label="Clear APRS overlay">Clear</span></span></div>';
+  let html = '<div class="aprs-bar-header"><span class="aprs-bar-title"><span class="aprs-bar-title-word">APRS</span><span class="aprs-bar-title-word">Live</span></span><span class="aprs-bar-clear-wrap"><span class="aprs-bar-clear" role="button" tabindex="0" onclick="window.clearAprsBar()" onkeydown="if(event.key===\'Enter\'||event.key===\' \'){event.preventDefault();window.clearAprsBar();}" aria-label="Clear APRS overlay">Clear</span></span></div>';
   for (const pkt of okFrames) {
     const ts = pkt._ts ? `<span class="aprs-bar-time">${pkt._ts}</span>` : "";
     const call = `<span class="aprs-bar-call">${escapeMapHtml(pkt.srcCall)}</span>`;
