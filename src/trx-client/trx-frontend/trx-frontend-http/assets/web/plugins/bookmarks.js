@@ -17,6 +17,19 @@ function bmEsc(str) {
   return d.innerHTML;
 }
 
+function bmCanControl() {
+  return (
+    (typeof authEnabled !== "undefined" && !authEnabled) ||
+    (typeof authRole !== "undefined" && authRole === "control")
+  );
+}
+
+// Show/hide the Add Bookmark button based on the current auth role.
+function bmSyncAccess() {
+  const addBtn = document.getElementById("bm-add-btn");
+  if (addBtn) addBtn.style.display = bmCanControl() ? "" : "none";
+}
+
 async function bmFetch(categoryFilter) {
   let url = "/bookmarks";
   if (categoryFilter && categoryFilter !== "") {
@@ -30,6 +43,7 @@ async function bmFetch(categoryFilter) {
     console.error("Failed to fetch bookmarks:", e);
     bmList = [];
   }
+  bmSyncAccess();
   bmRender(bmList);
   bmRefreshCategoryFilter(categoryFilter);
 }
@@ -65,17 +79,14 @@ function bmRender(list) {
   }
   if (emptyEl) emptyEl.style.display = "none";
 
-  // canControl: auth is disabled, or user has control role
-  const canControl =
-    (typeof authEnabled !== "undefined" && !authEnabled) ||
-    (typeof authRole !== "undefined" && authRole === "control");
+  const canControl = bmCanControl();
 
   list.forEach((bm) => {
     const tr = document.createElement("tr");
     tr.dataset.bmId = bm.id;
     const bwCell = bm.bandwidth_hz ? bmFmtFreq(bm.bandwidth_hz) : "--";
     const catCell = bm.category || "Uncategorised";
-    const decoderCell = (bm.decoders || []).join(", ") || "--";
+    const decoderCell = (bm.decoders || []).join(", ").toUpperCase() || "--";
     const commentCell = bm.comment || "";
     tr.innerHTML =
       `<td class="bm-col-name">${bmEsc(bm.name)}</td>` +
@@ -96,6 +107,21 @@ function bmRender(list) {
   });
 }
 
+// Read decoder checkboxes and return an array of selected decoder names.
+function bmReadDecoders() {
+  const decoders = [];
+  if (document.getElementById("bm-dec-ft8").checked) decoders.push("ft8");
+  if (document.getElementById("bm-dec-wspr").checked) decoders.push("wspr");
+  return decoders;
+}
+
+// Set decoder checkboxes to match the given array.
+function bmWriteDecoders(decoders) {
+  const list = decoders || [];
+  document.getElementById("bm-dec-ft8").checked = list.includes("ft8");
+  document.getElementById("bm-dec-wspr").checked = list.includes("wspr");
+}
+
 function bmOpenForm(bm) {
   const wrap = document.getElementById("bm-form-wrap");
   if (!wrap) return;
@@ -108,7 +134,7 @@ function bmOpenForm(bm) {
   document.getElementById("bm-bw").value = bm && bm.bandwidth_hz ? bm.bandwidth_hz : "";
   document.getElementById("bm-category-input").value = bm ? (bm.category || "") : "";
   document.getElementById("bm-comment").value = bm ? (bm.comment || "") : "";
-  document.getElementById("bm-decoders-input").value = bm ? (bm.decoders || []).join(", ") : "";
+  bmWriteDecoders(bm ? bm.decoders : []);
   document.getElementById("bm-form-title").textContent = bm ? "Edit Bookmark" : "Add Bookmark";
 
   wrap.style.display = "";
@@ -145,11 +171,7 @@ async function bmSave(e) {
   const bandwidth_hz = bwStr ? parseInt(bwStr, 10) : null;
   const category = document.getElementById("bm-category-input").value.trim();
   const comment = document.getElementById("bm-comment").value.trim();
-  const decoderStr = document.getElementById("bm-decoders-input").value;
-  const decoders = decoderStr
-    .split(",")
-    .map((s) => s.trim())
-    .filter(Boolean);
+  const decoders = bmReadDecoders();
 
   if (!name || !Number.isFinite(freq_hz) || !mode) {
     alert("Name, Frequency, and Mode are required.");
@@ -228,7 +250,11 @@ async function bmApply(bm) {
 
 // --- Event wiring ---
 (function initBookmarks() {
-  // Refresh list when the Bookmarks tab is activated
+  // Set initial button visibility (auth may already be resolved by the time
+  // scripts run if auth is disabled; otherwise bmFetch() will sync it).
+  bmSyncAccess();
+
+  // Refresh list and sync access when the Bookmarks tab is activated
   document.querySelector(".tab-bar").addEventListener("click", (e) => {
     const btn = e.target.closest('.tab[data-tab="bookmarks"]');
     if (!btn) return;

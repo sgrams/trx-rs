@@ -266,7 +266,7 @@
         <select id="bm-category-filter" class="status-input" aria-label="Filter by category">
           <option value="">All categories</option>
         </select>
-        <button id="bm-add-btn" type="button" class="bm-add-btn">+ Add Bookmark</button>
+        <button id="bm-add-btn" type="button" class="bm-add-btn" style="display:none;">+ Add Bookmark</button>
       </div>
       <div id="bm-form-wrap" style="display:none;">
         <form id="bm-form" class="bm-form">
@@ -297,9 +297,12 @@
             <label class="bm-label">Bandwidth (Hz)
               <input type="number" id="bm-bw" class="status-input" min="0" placeholder="optional" />
             </label>
-            <label class="bm-label">Decoders (comma-separated)
-              <input type="text" id="bm-decoders-input" class="status-input" placeholder="e.g. ft8, wspr" />
-            </label>
+            <div class="bm-label">Decoders
+              <div class="bm-decoder-checks">
+                <label class="bm-decoder-check"><input type="checkbox" id="bm-dec-ft8" value="ft8" /> FT8</label>
+                <label class="bm-decoder-check"><input type="checkbox" id="bm-dec-wspr" value="wspr" /> WSPR</label>
+              </div>
+            </div>
             <label class="bm-label bm-label-wide">Comment
               <input type="text" id="bm-comment" class="status-input" placeholder="optional" />
             </label>
