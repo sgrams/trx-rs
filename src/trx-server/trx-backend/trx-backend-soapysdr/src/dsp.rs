@@ -852,6 +852,17 @@ impl ChannelDsp {
             }
         }
 
+        // Hard-limit IQ magnitude before the WFM discriminator so overdeviated
+        // signals don't produce clipped composite baseband.
+        if self.wfm_decoder.is_some() {
+            for sample in decimated.iter_mut() {
+                let mag = (sample.re * sample.re + sample.im * sample.im).sqrt();
+                if mag > 1.0 {
+                    *sample /= mag;
+                }
+            }
+        }
+
         // --- 4. Demodulate + post-process -----------------------------------
         // WFM: full composite decoder (handles its own DC blocks + deemphasis),
         // then apply post-audio AGC on the decoded PCM. Other modes use the
