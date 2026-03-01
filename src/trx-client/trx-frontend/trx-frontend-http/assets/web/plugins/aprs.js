@@ -4,7 +4,7 @@ const aprsPacketsEl = document.getElementById("aprs-packets");
 const aprsFilterInput = document.getElementById("aprs-filter");
 const aprsBarOverlay = document.getElementById("aprs-bar-overlay");
 const APRS_MAX_PACKETS = 100;
-const APRS_BAR_WINDOW_MS = 60 * 60 * 1000;
+const APRS_BAR_WINDOW_MS = 15 * 60 * 1000;
 let aprsFilterText = "";
 let aprsPacketHistory = [];
 
@@ -112,7 +112,7 @@ function updateAprsBar() {
     aprsBarOverlay.style.display = "none";
     return;
   }
-  let html = '<div class="aprs-bar-header"><span class="aprs-bar-title"><span class="aprs-bar-title-word">APRS</span><span class="aprs-bar-title-word">Live</span></span><span class="aprs-bar-clear-wrap"><span class="aprs-bar-clear" role="button" tabindex="0" onclick="window.clearAprsBar()" onkeydown="if(event.key===\'Enter\'||event.key===\' \'){event.preventDefault();window.clearAprsBar();}" aria-label="Clear APRS overlay">Clear</span></span></div>';
+  let html = '<div class="aprs-bar-header"><span class="aprs-bar-title"><span class="aprs-bar-title-word">APRS</span><span class="aprs-bar-title-word">Live</span></span><span class="aprs-bar-clear-wrap"><span class="aprs-bar-clear" role="button" tabindex="0" onclick="window.clearAprsBar()" onkeydown="if(event.key===\'Enter\'||event.key===\' \'){event.preventDefault();window.clearAprsBar();}" aria-label="Clear APRS overlay">Clear</span></span><span class="aprs-bar-window">Last 15 minutes</span></div>';
   for (const pkt of okFrames) {
     const ts = pkt._ts ? `<span class="aprs-bar-time">${pkt._ts}</span>` : "";
     const call = `<span class="aprs-bar-call">${escapeMapHtml(pkt.srcCall)}</span>`;

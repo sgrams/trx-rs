@@ -686,6 +686,17 @@ small { color: var(--text-muted); }
 .aprs-bar-title-word {
   display: inline-block;
 }
+.aprs-bar-window {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  color: var(--text-muted);
+  font-size: 0.72em;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: none;
+  white-space: nowrap;
+}
 .aprs-bar-clear-wrap {
   display: inline-flex;
   align-items: center;
