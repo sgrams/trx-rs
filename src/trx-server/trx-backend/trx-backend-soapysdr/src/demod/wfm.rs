@@ -44,6 +44,8 @@ const DENOISE_BETA: f32 = 1.0;
 const DENOISE_ALPHA: f32 = 0.5;
 const DENOISE_FLOOR: f32 = 1e-10;
 const DENOISE_KNEE: f32 = 4.0;
+const DENOISE_STEREO_PRESERVE_MIN: f32 = 0.18;
+const DENOISE_STEREO_PRESERVE_MAX: f32 = 0.42;
 const STEREO_DIFF_DC_R: f32 = 0.9995;
 const WFM_RESAMP_TAPS: usize = 32;
 const WFM_RESAMP_PHASES: usize = 64;
@@ -651,7 +653,7 @@ impl WfmStereoDecoder {
             let ring_pos = self.hist_pos;
             let sum_i =
                 polyphase_resample_ring(&self.sum_hist, ring_pos, &self.resample_bank, frac);
-            let diff_i =
+            let diff_i_raw =
                 polyphase_resample_ring(&self.diff_hist, ring_pos, &self.resample_bank, frac);
             let diff_q =
                 polyphase_resample_ring(&self.diff_q_hist, ring_pos, &self.resample_bank, frac);
@@ -665,8 +667,11 @@ impl WfmStereoDecoder {
             self.stereo_separation_gain +=
                 0.015 * (separation_target - self.stereo_separation_gain);
             let diff_i =
-                (diff_i * trim_cos + diff_q * trim_sin) * self.stereo_separation_gain;
-            let diff_i = self.denoise.process(sum_i, diff_i, diff_q);
+                (diff_i_raw * trim_cos + diff_q * trim_sin) * self.stereo_separation_gain;
+            let denoised_diff_i = self.denoise.process(sum_i, diff_i, diff_q);
+            let preserve = DENOISE_STEREO_PRESERVE_MIN
+                + (DENOISE_STEREO_PRESERVE_MAX - DENOISE_STEREO_PRESERVE_MIN) * separation_drive;
+            let diff_i = denoised_diff_i + (diff_i - denoised_diff_i) * preserve;
 
             if self.output_channels >= 2 && self.stereo_enabled {
                 let diff = diff_i * blend_i;
