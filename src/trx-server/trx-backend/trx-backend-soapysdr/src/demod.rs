@@ -43,7 +43,7 @@ const STEREO_DIFF_DC_R: f32 = 0.9995;
 /// Fractional-resampler FIR taps for WFM audio reconstruction.
 const WFM_RESAMP_TAPS: usize = 32;
 /// Polyphase slots for the WFM fractional FIR resampler.
-const WFM_RESAMP_PHASES: usize = 128;
+const WFM_RESAMP_PHASES: usize = 64;
 fn build_wfm_resample_bank(cutoff: f32) -> [[f32; WFM_RESAMP_TAPS]; WFM_RESAMP_PHASES] {
     let mut bank = [[0.0; WFM_RESAMP_TAPS]; WFM_RESAMP_PHASES];
     let anchor = (WFM_RESAMP_TAPS / 2 - 1) as f32;
