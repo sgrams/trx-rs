@@ -15,9 +15,9 @@ const PILOT_HZ: f32 = 19_000.0;
 /// artifacts on strong signals while preserving the useful broadcast range.
 const AUDIO_BW_HZ: f32 = 15_800.0;
 /// Stereo L-R subchannel bandwidth for WFM (Hz).
-/// Wider than the mono path to preserve high-frequency stereo detail; the
-/// 19 kHz pilot is already removed by the coherent demodulation step.
-const STEREO_DIFF_BW_HZ: f32 = 18_000.0;
+/// Must match AUDIO_BW_HZ so the sum and diff filter paths have identical
+/// group delay, which is critical for stereo separation across all frequencies.
+const STEREO_DIFF_BW_HZ: f32 = AUDIO_BW_HZ;
 /// Q values for a proper 4th-order Butterworth cascade (two 2nd-order stages).
 /// Stage 1: Q = 1 / (2 cos(π/8))
 const BW4_Q1: f32 = 0.5412;
@@ -28,7 +28,7 @@ const PILOT_NOTCH_Q: f32 = 5.0;
 /// Narrow 19 kHz band-pass used to derive zero-crossings for switching stereo demod.
 const PILOT_BPF_Q: f32 = 20.0;
 /// Fixed phase trim on the recovered L-R channel to compensate pilot-path delay.
-const STEREO_SEPARATION_PHASE_TRIM: f32 = 0.015;
+const STEREO_SEPARATION_PHASE_TRIM: f32 = 0.0;
 /// Fixed gain trim on the recovered L-R channel.
 const STEREO_SEPARATION_GAIN: f32 = 1.000;
 /// Extra headroom in the stereo matrix to reduce stereo-only clipping/IMD on
@@ -812,10 +812,9 @@ impl WfmStereoDecoder {
                 self.stereo_detected = true;
             }
             let stereo_blend_target = if self.stereo_detected {
-                let width = smoothstep01((self.stereo_detect_level - 0.30) / (0.70 - 0.30));
-                0.75 + 0.25 * width
+                1.0
             } else {
-                0.35 * smoothstep01((self.stereo_detect_level - 0.10) / (0.30 - 0.10))
+                0.0
             };
 
             // --- RDS ---
