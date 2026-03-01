@@ -40,7 +40,7 @@ const STEREO_MATRIX_GAIN: f32 = 0.30;
 /// and modulate higher-frequency stereo detail.
 const STEREO_DIFF_DC_R: f32 = 0.9995;
 /// Fractional-resampler FIR taps for WFM audio reconstruction.
-const WFM_RESAMP_TAPS: usize = 12;
+const WFM_RESAMP_TAPS: usize = 16;
 /// Polyphase slots for the WFM fractional FIR resampler.
 const WFM_RESAMP_PHASES: usize = 32;
 /// Slightly sub-Nyquist sinc cutoff to tame top-end imaging.
@@ -182,6 +182,130 @@ fn fast_atan2(y: f32, x: f32) -> f32 {
         0.0
     };
     angle
+}
+
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+unsafe fn fast_atan_8_avx2(z: std::arch::x86_64::__m256) -> std::arch::x86_64::__m256 {
+    use std::arch::x86_64::*;
+
+    let zero = _mm256_set1_ps(0.0);
+    let one = _mm256_set1_ps(1.0);
+    let sign_mask = _mm256_set1_ps(-0.0);
+    let pi4 = _mm256_set1_ps(std::f32::consts::FRAC_PI_4);
+    let pi2 = _mm256_set1_ps(std::f32::consts::FRAC_PI_2);
+    let c = _mm256_set1_ps(0.273);
+
+    let abs_z = _mm256_andnot_ps(sign_mask, z);
+    let small_term = _mm256_add_ps(pi4, _mm256_mul_ps(c, _mm256_sub_ps(one, abs_z)));
+    let small = _mm256_mul_ps(z, small_term);
+
+    let inv = _mm256_div_ps(one, z);
+    let abs_inv = _mm256_andnot_ps(sign_mask, inv);
+    let large_term = _mm256_add_ps(pi4, _mm256_mul_ps(c, _mm256_sub_ps(one, abs_inv)));
+    let base = _mm256_mul_ps(inv, large_term);
+    let pos_large = _mm256_sub_ps(pi2, base);
+    let neg_large = _mm256_sub_ps(_mm256_sub_ps(zero, pi2), base);
+    let z_pos = _mm256_cmp_ps(z, zero, _CMP_GT_OQ);
+    let large = _mm256_blendv_ps(neg_large, pos_large, z_pos);
+
+    let le_one = _mm256_cmp_ps(abs_z, one, _CMP_LE_OQ);
+    _mm256_blendv_ps(large, small, le_one)
+}
+
+#[cfg(target_arch = "x86")]
+#[target_feature(enable = "avx2")]
+unsafe fn fast_atan_8_avx2(z: std::arch::x86::__m256) -> std::arch::x86::__m256 {
+    use std::arch::x86::*;
+
+    let zero = _mm256_set1_ps(0.0);
+    let one = _mm256_set1_ps(1.0);
+    let sign_mask = _mm256_set1_ps(-0.0);
+    let pi4 = _mm256_set1_ps(std::f32::consts::FRAC_PI_4);
+    let pi2 = _mm256_set1_ps(std::f32::consts::FRAC_PI_2);
+    let c = _mm256_set1_ps(0.273);
+
+    let abs_z = _mm256_andnot_ps(sign_mask, z);
+    let small_term = _mm256_add_ps(pi4, _mm256_mul_ps(c, _mm256_sub_ps(one, abs_z)));
+    let small = _mm256_mul_ps(z, small_term);
+
+    let inv = _mm256_div_ps(one, z);
+    let abs_inv = _mm256_andnot_ps(sign_mask, inv);
+    let large_term = _mm256_add_ps(pi4, _mm256_mul_ps(c, _mm256_sub_ps(one, abs_inv)));
+    let base = _mm256_mul_ps(inv, large_term);
+    let pos_large = _mm256_sub_ps(pi2, base);
+    let neg_large = _mm256_sub_ps(_mm256_sub_ps(zero, pi2), base);
+    let z_pos = _mm256_cmp_ps(z, zero, _CMP_GT_OQ);
+    let large = _mm256_blendv_ps(neg_large, pos_large, z_pos);
+
+    let le_one = _mm256_cmp_ps(abs_z, one, _CMP_LE_OQ);
+    _mm256_blendv_ps(large, small, le_one)
+}
+
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+unsafe fn fast_atan2_8_avx2(
+    y: std::arch::x86_64::__m256,
+    x: std::arch::x86_64::__m256,
+) -> std::arch::x86_64::__m256 {
+    use std::arch::x86_64::*;
+
+    let zero = _mm256_set1_ps(0.0);
+    let pi = _mm256_set1_ps(std::f32::consts::PI);
+    let pi2 = _mm256_set1_ps(std::f32::consts::FRAC_PI_2);
+    let neg_pi2 = _mm256_sub_ps(zero, pi2);
+
+    let z = _mm256_div_ps(y, x);
+    let base = fast_atan_8_avx2(z);
+
+    let x_pos = _mm256_cmp_ps(x, zero, _CMP_GT_OQ);
+    let x_neg = _mm256_cmp_ps(x, zero, _CMP_LT_OQ);
+    let y_nonneg = _mm256_cmp_ps(y, zero, _CMP_GE_OQ);
+    let y_pos = _mm256_cmp_ps(y, zero, _CMP_GT_OQ);
+    let y_neg = _mm256_cmp_ps(y, zero, _CMP_LT_OQ);
+    let x_zero = _mm256_cmp_ps(x, zero, _CMP_EQ_OQ);
+
+    let xneg_pos = _mm256_add_ps(base, pi);
+    let xneg_neg = _mm256_sub_ps(base, pi);
+    let xneg = _mm256_blendv_ps(xneg_neg, xneg_pos, y_nonneg);
+    let mut angle = _mm256_blendv_ps(xneg, base, x_pos);
+    angle = _mm256_blendv_ps(angle, zero, _mm256_andnot_ps(_mm256_or_ps(x_pos, x_neg), _mm256_castsi256_ps(_mm256_set1_epi32(-1))));
+
+    let zero_case = _mm256_blendv_ps(_mm256_blendv_ps(zero, neg_pi2, y_neg), pi2, y_pos);
+    _mm256_blendv_ps(angle, zero_case, x_zero)
+}
+
+#[cfg(target_arch = "x86")]
+#[target_feature(enable = "avx2")]
+unsafe fn fast_atan2_8_avx2(
+    y: std::arch::x86::__m256,
+    x: std::arch::x86::__m256,
+) -> std::arch::x86::__m256 {
+    use std::arch::x86::*;
+
+    let zero = _mm256_set1_ps(0.0);
+    let pi = _mm256_set1_ps(std::f32::consts::PI);
+    let pi2 = _mm256_set1_ps(std::f32::consts::FRAC_PI_2);
+    let neg_pi2 = _mm256_sub_ps(zero, pi2);
+
+    let z = _mm256_div_ps(y, x);
+    let base = fast_atan_8_avx2(z);
+
+    let x_pos = _mm256_cmp_ps(x, zero, _CMP_GT_OQ);
+    let x_neg = _mm256_cmp_ps(x, zero, _CMP_LT_OQ);
+    let y_nonneg = _mm256_cmp_ps(y, zero, _CMP_GE_OQ);
+    let y_pos = _mm256_cmp_ps(y, zero, _CMP_GT_OQ);
+    let y_neg = _mm256_cmp_ps(y, zero, _CMP_LT_OQ);
+    let x_zero = _mm256_cmp_ps(x, zero, _CMP_EQ_OQ);
+
+    let xneg_pos = _mm256_add_ps(base, pi);
+    let xneg_neg = _mm256_sub_ps(base, pi);
+    let xneg = _mm256_blendv_ps(xneg_neg, xneg_pos, y_nonneg);
+    let mut angle = _mm256_blendv_ps(xneg, base, x_pos);
+    angle = _mm256_blendv_ps(angle, zero, _mm256_andnot_ps(_mm256_or_ps(x_pos, x_neg), _mm256_castsi256_ps(_mm256_set1_epi32(-1))));
+
+    let zero_case = _mm256_blendv_ps(_mm256_blendv_ps(zero, neg_pi2, y_neg), pi2, y_pos);
+    _mm256_blendv_ps(angle, zero_case, x_zero)
 }
 
 #[derive(Debug, Clone)]
@@ -995,8 +1119,8 @@ unsafe fn demod_fm_body_avx2_impl(
     let mut cur_im = [0.0_f32; 8];
     let mut prev_re = [0.0_f32; 8];
     let mut prev_im = [0.0_f32; 8];
-    let mut prod_re = [0.0_f32; 8];
-    let mut prod_im = [0.0_f32; 8];
+    let mut angles = [0.0_f32; 8];
+    let inv_pi_v = _mm256_set1_ps(inv_pi);
 
     while i + 8 <= len {
         for lane in 0..8 {
@@ -1022,12 +1146,9 @@ unsafe fn demod_fm_body_avx2_impl(
             _mm256_mul_ps(cur_re_v, prev_im_v),
         );
 
-        _mm256_storeu_ps(prod_re.as_mut_ptr(), re_v);
-        _mm256_storeu_ps(prod_im.as_mut_ptr(), im_v);
-
-        for lane in 0..8 {
-            output.push(fast_atan2(prod_im[lane], prod_re[lane]) * inv_pi);
-        }
+        let angle_v = _mm256_mul_ps(fast_atan2_8_avx2(im_v, re_v), inv_pi_v);
+        _mm256_storeu_ps(angles.as_mut_ptr(), angle_v);
+        output.extend_from_slice(&angles);
 
         i += 8;
     }
