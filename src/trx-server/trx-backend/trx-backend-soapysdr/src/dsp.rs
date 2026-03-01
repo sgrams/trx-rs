@@ -168,6 +168,41 @@ pub struct BlockFirFilter {
     scratch_freq: Vec<FftComplex<f32>>,
 }
 
+pub struct BlockFirFilterPair {
+    h_freq: Vec<FftComplex<f32>>,
+    overlap: Vec<FftComplex<f32>>,
+    n_taps: usize,
+    fft_size: usize,
+    fft: Arc<dyn Fft<f32>>,
+    ifft: Arc<dyn Fft<f32>>,
+    scratch_freq: Vec<FftComplex<f32>>,
+}
+
+fn build_fir_kernel(
+    cutoff_norm: f32,
+    taps: usize,
+    block_size: usize,
+) -> (
+    Vec<FftComplex<f32>>,
+    usize,
+    Arc<dyn Fft<f32>>,
+    Arc<dyn Fft<f32>>,
+) {
+    let coeffs = windowed_sinc_coeffs(cutoff_norm, taps);
+    let fft_size = (block_size + taps - 1).next_power_of_two();
+
+    let mut planner = FftPlanner::<f32>::new();
+    let fft = planner.plan_fft_forward(fft_size);
+    let ifft = planner.plan_fft_inverse(fft_size);
+
+    let mut h_buf: Vec<FftComplex<f32>> =
+        coeffs.iter().map(|&c| FftComplex::new(c, 0.0)).collect();
+    h_buf.resize(fft_size, FftComplex::new(0.0, 0.0));
+    fft.process(&mut h_buf);
+
+    (h_buf, fft_size, fft, ifft)
+}
+
 fn mul_freq_domain_scalar(buf: &mut [FftComplex<f32>], h_freq: &[FftComplex<f32>], scale: f32) {
     for (x, &h) in buf.iter_mut().zip(h_freq.iter()) {
         *x = FftComplex::new(
@@ -227,20 +262,7 @@ impl BlockFirFilter {
     /// `block_size`: expected input block length (used to size the internal FFT).
     pub fn new(cutoff_norm: f32, taps: usize, block_size: usize) -> Self {
         let taps = taps.max(1);
-        let coeffs = windowed_sinc_coeffs(cutoff_norm, taps);
-
-        // Choose the smallest power-of-two FFT that fits the overlap-save frame.
-        let fft_size = (block_size + taps - 1).next_power_of_two();
-
-        let mut planner = FftPlanner::<f32>::new();
-        let fft = planner.plan_fft_forward(fft_size);
-        let ifft = planner.plan_fft_inverse(fft_size);
-
-        // Pre-compute H(f) = FFT of zero-padded coefficients.
-        let mut h_buf: Vec<FftComplex<f32>> =
-            coeffs.iter().map(|&c| FftComplex::new(c, 0.0)).collect();
-        h_buf.resize(fft_size, FftComplex::new(0.0, 0.0));
-        fft.process(&mut h_buf);
+        let (h_buf, fft_size, fft, ifft) = build_fir_kernel(cutoff_norm, taps, block_size);
 
         Self {
             h_freq: h_buf,
@@ -310,6 +332,72 @@ impl BlockFirFilter {
     }
 }
 
+impl BlockFirFilterPair {
+    pub fn new(cutoff_norm: f32, taps: usize, block_size: usize) -> Self {
+        let taps = taps.max(1);
+        let (h_buf, fft_size, fft, ifft) = build_fir_kernel(cutoff_norm, taps, block_size);
+        Self {
+            h_freq: h_buf,
+            overlap: vec![FftComplex::new(0.0, 0.0); taps.saturating_sub(1)],
+            n_taps: taps,
+            fft_size,
+            fft,
+            ifft,
+            scratch_freq: vec![FftComplex::new(0.0, 0.0); fft_size],
+        }
+    }
+
+    pub fn filter_block_into(
+        &mut self,
+        input_i: &[f32],
+        input_q: &[f32],
+        output_i: &mut Vec<f32>,
+        output_q: &mut Vec<f32>,
+    ) {
+        let n_new = input_i.len().min(input_q.len());
+        let n_overlap = self.n_taps.saturating_sub(1);
+
+        let buf = &mut self.scratch_freq;
+        buf.clear();
+        buf.reserve(self.fft_size.saturating_sub(buf.capacity()));
+        buf.extend(self.overlap.iter().copied());
+        for idx in 0..n_new {
+            buf.push(FftComplex::new(input_i[idx], input_q[idx]));
+        }
+        buf.resize(self.fft_size, FftComplex::new(0.0, 0.0));
+
+        self.fft.process(buf);
+        let scale = 1.0 / self.fft_size as f32;
+        mul_freq_domain(buf, &self.h_freq, scale);
+        self.ifft.process(buf);
+
+        let end = (n_overlap + n_new).min(buf.len());
+        output_i.clear();
+        output_q.clear();
+        output_i.reserve(n_new.saturating_sub(output_i.capacity()));
+        output_q.reserve(n_new.saturating_sub(output_q.capacity()));
+        for sample in &buf[n_overlap..end] {
+            output_i.push(sample.re);
+            output_q.push(sample.im);
+        }
+
+        if n_overlap > 0 {
+            if n_new >= n_overlap {
+                let new_start = n_new - n_overlap;
+                for (dst, idx) in self.overlap.iter_mut().zip(new_start..n_new) {
+                    *dst = FftComplex::new(input_i[idx], input_q[idx]);
+                }
+            } else {
+                let keep_old = n_overlap - n_new;
+                self.overlap.copy_within(n_new..n_overlap, 0);
+                for (dst, idx) in self.overlap[keep_old..].iter_mut().zip(0..n_new) {
+                    *dst = FftComplex::new(input_i[idx], input_q[idx]);
+                }
+            }
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Per-mode post-processing helpers (DC block + AGC)
 // ---------------------------------------------------------------------------
@@ -369,10 +457,8 @@ pub struct ChannelDsp {
     pub demodulator: Demodulator,
     /// Current rig mode so the decimation pipeline can be rebuilt.
     mode: RigMode,
-    /// FFT-based FIR low-pass filter applied to I component before decimation.
-    lpf_i: BlockFirFilter,
-    /// FFT-based FIR low-pass filter applied to Q component before decimation.
-    lpf_q: BlockFirFilter,
+    /// FFT-based FIR low-pass filter applied to packed I/Q before decimation.
+    lpf_iq: BlockFirFilterPair,
     /// SDR capture sample rate — kept for filter rebuilds.
     sdr_sample_rate: u32,
     /// Output audio sample rate.
@@ -479,8 +565,7 @@ impl ChannelDsp {
         } else {
             (cutoff_hz / self.sdr_sample_rate as f32).min(0.499)
         };
-        self.lpf_i = BlockFirFilter::new(cutoff_norm, self.fir_taps, IQ_BLOCK_SIZE);
-        self.lpf_q = BlockFirFilter::new(cutoff_norm, self.fir_taps, IQ_BLOCK_SIZE);
+        self.lpf_iq = BlockFirFilterPair::new(cutoff_norm, self.fir_taps, IQ_BLOCK_SIZE);
         let rate_changed = self.decim_factor != next_decim_factor;
         self.decim_factor = next_decim_factor;
         self.decim_counter = 0;
@@ -554,8 +639,7 @@ impl ChannelDsp {
             channel_if_hz,
             demodulator: Demodulator::for_mode(mode),
             mode: mode.clone(),
-            lpf_i: BlockFirFilter::new(cutoff_norm, taps, IQ_BLOCK_SIZE),
-            lpf_q: BlockFirFilter::new(cutoff_norm, taps, IQ_BLOCK_SIZE),
+            lpf_iq: BlockFirFilterPair::new(cutoff_norm, taps, IQ_BLOCK_SIZE),
             sdr_sample_rate,
             audio_sample_rate,
             audio_bandwidth_hz,
@@ -710,8 +794,12 @@ impl ChannelDsp {
         self.mixer_phase = (phase_start + n as f64 * phase_inc).rem_euclid(std::f64::consts::TAU);
 
         // --- 2. FFT FIR (overlap-save) --------------------------------------
-        self.lpf_i.filter_block_into(mixed_i, &mut self.scratch_filtered_i);
-        self.lpf_q.filter_block_into(mixed_q, &mut self.scratch_filtered_q);
+        self.lpf_iq.filter_block_into(
+            mixed_i,
+            mixed_q,
+            &mut self.scratch_filtered_i,
+            &mut self.scratch_filtered_q,
+        );
         let filtered_i = &self.scratch_filtered_i;
         let filtered_q = &self.scratch_filtered_q;
 
