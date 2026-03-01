@@ -5,7 +5,7 @@
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
-use actix_web::{get, post, web, HttpResponse, Responder};
+use actix_web::{delete, get, post, put, web, HttpRequest, HttpResponse, Responder};
 use actix_web::{http::header, Error};
 use bytes::Bytes;
 use futures_util::stream::{once, select, StreamExt};
@@ -673,6 +673,129 @@ pub async fn clear_cw_decode(
     send_command(&rig_tx, RigCommand::ResetCwDecoder).await
 }
 
+// ============================================================================
+// Bookmark CRUD endpoints
+// ============================================================================
+
+#[derive(serde::Deserialize)]
+pub struct BookmarkQuery {
+    pub category: Option<String>,
+}
+
+#[derive(serde::Deserialize)]
+pub struct BookmarkInput {
+    pub name: String,
+    pub freq_hz: u64,
+    pub mode: String,
+    pub bandwidth_hz: Option<u64>,
+    pub comment: Option<String>,
+    pub category: Option<String>,
+    pub decoders: Option<Vec<String>>,
+}
+
+fn require_control(
+    req: &HttpRequest,
+    auth_state: &crate::server::auth::AuthState,
+) -> Result<(), Error> {
+    if !auth_state.config.enabled {
+        return Ok(());
+    }
+    match crate::server::auth::get_session_role(req, auth_state) {
+        Some(crate::server::auth::AuthRole::Control) => Ok(()),
+        _ => Err(actix_web::error::ErrorForbidden("control role required")),
+    }
+}
+
+fn gen_bookmark_id() -> String {
+    hex::encode(rand::random::<[u8; 16]>())
+}
+
+#[get("/bookmarks")]
+pub async fn list_bookmarks(
+    store: web::Data<Arc<crate::server::bookmarks::BookmarkStore>>,
+    query: web::Query<BookmarkQuery>,
+) -> Result<HttpResponse, Error> {
+    let mut list = store.list();
+    if let Some(ref cat) = query.category {
+        if !cat.is_empty() {
+            let cat_lower = cat.to_lowercase();
+            list.retain(|bm| bm.category.to_lowercase() == cat_lower);
+        }
+    }
+    list.sort_by(|a, b| a.name.cmp(&b.name));
+    Ok(HttpResponse::Ok().json(list))
+}
+
+#[post("/bookmarks")]
+pub async fn create_bookmark(
+    req: HttpRequest,
+    store: web::Data<Arc<crate::server::bookmarks::BookmarkStore>>,
+    body: web::Json<BookmarkInput>,
+    auth_state: web::Data<crate::server::auth::AuthState>,
+) -> Result<HttpResponse, Error> {
+    require_control(&req, &auth_state)?;
+    let bm = crate::server::bookmarks::Bookmark {
+        id: gen_bookmark_id(),
+        name: body.name.clone(),
+        freq_hz: body.freq_hz,
+        mode: body.mode.clone(),
+        bandwidth_hz: body.bandwidth_hz,
+        comment: body.comment.clone().unwrap_or_default(),
+        category: body.category.clone().unwrap_or_default(),
+        decoders: body.decoders.clone().unwrap_or_default(),
+    };
+    if store.insert(&bm) {
+        Ok(HttpResponse::Created().json(bm))
+    } else {
+        Err(actix_web::error::ErrorInternalServerError(
+            "failed to save bookmark",
+        ))
+    }
+}
+
+#[put("/bookmarks/{id}")]
+pub async fn update_bookmark(
+    req: HttpRequest,
+    path: web::Path<String>,
+    store: web::Data<Arc<crate::server::bookmarks::BookmarkStore>>,
+    body: web::Json<BookmarkInput>,
+    auth_state: web::Data<crate::server::auth::AuthState>,
+) -> Result<HttpResponse, Error> {
+    require_control(&req, &auth_state)?;
+    let id = path.into_inner();
+    let bm = crate::server::bookmarks::Bookmark {
+        id: id.clone(),
+        name: body.name.clone(),
+        freq_hz: body.freq_hz,
+        mode: body.mode.clone(),
+        bandwidth_hz: body.bandwidth_hz,
+        comment: body.comment.clone().unwrap_or_default(),
+        category: body.category.clone().unwrap_or_default(),
+        decoders: body.decoders.clone().unwrap_or_default(),
+    };
+    if store.upsert(&id, &bm) {
+        Ok(HttpResponse::Ok().json(bm))
+    } else {
+        Err(actix_web::error::ErrorNotFound("bookmark not found"))
+    }
+}
+
+#[delete("/bookmarks/{id}")]
+pub async fn delete_bookmark(
+    req: HttpRequest,
+    path: web::Path<String>,
+    store: web::Data<Arc<crate::server::bookmarks::BookmarkStore>>,
+    auth_state: web::Data<crate::server::auth::AuthState>,
+) -> Result<HttpResponse, Error> {
+    require_control(&req, &auth_state)?;
+    let id = path.into_inner();
+    if store.remove(&id) {
+        Ok(HttpResponse::Ok().json(serde_json::json!({ "deleted": true })))
+    } else {
+        Err(actix_web::error::ErrorNotFound("bookmark not found"))
+    }
+}
+
 #[derive(serde::Serialize)]
 struct RigListItem {
     rig_id: String,
@@ -789,6 +912,11 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
         .service(clear_ft8_decode)
         .service(clear_wspr_decode)
         .service(select_rig)
+        // Bookmark CRUD
+        .service(list_bookmarks)
+        .service(create_bookmark)
+        .service(update_bookmark)
+        .service(delete_bookmark)
         .service(crate::server::audio::audio_ws)
         .service(favicon)
         .service(favicon_png)
@@ -799,6 +927,7 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
         .service(ft8_js)
         .service(wspr_js)
         .service(cw_js)
+        .service(bookmarks_js)
         // Auth endpoints
         .service(crate::server::auth::login)
         .service(crate::server::auth::logout)
@@ -888,6 +1017,16 @@ async fn cw_js() -> impl Responder {
             "application/javascript; charset=utf-8",
         ))
         .body(status::CW_JS)
+}
+
+#[get("/bookmarks.js")]
+async fn bookmarks_js() -> impl Responder {
+    HttpResponse::Ok()
+        .insert_header((
+            header::CONTENT_TYPE,
+            "application/javascript; charset=utf-8",
+        ))
+        .body(status::BOOKMARKS_JS)
 }
 
 async fn send_command(
