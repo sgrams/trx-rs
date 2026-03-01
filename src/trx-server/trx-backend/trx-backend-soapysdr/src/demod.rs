@@ -34,6 +34,8 @@ const STEREO_SEPARATION_GAIN: f32 = 1.000;
 /// Extra headroom in the stereo matrix to reduce stereo-only clipping/IMD on
 /// strong program material. This keeps bass excursions from flattening treble.
 const STEREO_MATRIX_GAIN: f32 = 0.50;
+/// Stereo detection runs every N composite samples to reduce CPU.
+const STEREO_DETECT_DECIMATION: u32 = 16;
 /// Gentle high-pass memory for the stereo L-R path.
 /// This trims only very low-frequency difference energy that can eat headroom
 /// and modulate higher-frequency stereo detail.
@@ -565,8 +567,14 @@ pub struct WfmStereoDecoder {
     rds_bpf: BiquadBandPass,
     rds_dc: DcBlocker,
     prev_iq: Option<Complex<f32>>,
-    pilot_phase: f32,
-    pilot_freq: f32,
+    /// Quadrature NCO state: (cos, sin) of pilot phase.
+    nco_cos: f32,
+    nco_sin: f32,
+    /// Precomputed rotation increment: (cos(Δ), sin(Δ)) where Δ = 2π·19000/fs.
+    nco_inc_cos: f32,
+    nco_inc_sin: f32,
+    /// Sample counter for periodic NCO renormalization.
+    nco_counter: u32,
     pilot_i_lp: OnePoleLowPass,
     pilot_q_lp: OnePoleLowPass,
     pilot_abs_lp: OnePoleLowPass,
@@ -600,6 +608,12 @@ pub struct WfmStereoDecoder {
     stereo_detect_level: f32,
     /// Hysteretic pilot-lock result used by the UI.
     stereo_detected: bool,
+    /// Decimation counter for stereo detection (runs every STEREO_DETECT_DECIMATION samples).
+    detect_counter: u32,
+    /// Accumulated pilot magnitude for decimated detection.
+    detect_pilot_mag_acc: f32,
+    /// Accumulated pilot abs for decimated detection.
+    detect_pilot_abs_acc: f32,
     /// FM discriminator gain normalization.
     ///
     /// `demod_fm` outputs `atan2(…)/π ≈ 2·Δf/fs` for small deviations.
@@ -645,8 +659,11 @@ impl WfmStereoDecoder {
             rds_bpf: BiquadBandPass::new(composite_rate_f, RDS_SUBCARRIER_HZ, RDS_BPF_Q),
             rds_dc: DcBlocker::new(0.995),
             prev_iq: None,
-            pilot_phase: 0.0,
-            pilot_freq: 2.0 * std::f32::consts::PI * PILOT_HZ / composite_rate_f,
+            nco_cos: 1.0,
+            nco_sin: 0.0,
+            nco_inc_cos: (2.0 * std::f32::consts::PI * PILOT_HZ / composite_rate_f).cos(),
+            nco_inc_sin: (2.0 * std::f32::consts::PI * PILOT_HZ / composite_rate_f).sin(),
+            nco_counter: 0,
             pilot_i_lp: OnePoleLowPass::new(composite_rate_f, 400.0),
             pilot_q_lp: OnePoleLowPass::new(composite_rate_f, 400.0),
             pilot_abs_lp: OnePoleLowPass::new(composite_rate_f, 400.0),
@@ -671,6 +688,9 @@ impl WfmStereoDecoder {
             deemph_r: Deemphasis::new(audio_rate.max(1) as f32, deemphasis_us),
             stereo_detect_level: 0.0,
             stereo_detected: false,
+            detect_counter: 0,
+            detect_pilot_mag_acc: 0.0,
+            detect_pilot_abs_acc: 0.0,
             fm_gain: composite_rate_f / (2.0 * 75_000.0),
             resample_bank: build_wfm_resample_bank(audio_rate as f32 / composite_rate_f),
             sum_hist: [0.0; WFM_RESAMP_TAPS],
@@ -703,40 +723,60 @@ impl WfmStereoDecoder {
 
             let pilot_tone = self.pilot_bpf.process(x);
 
-            // --- Pilot phase estimator ---
-            let (sin_p, cos_p) = self.pilot_phase.sin_cos();
+            // --- Pilot phase estimator (quadrature NCO) ---
+            let sin_p = self.nco_sin;
+            let cos_p = self.nco_cos;
             let i = self.pilot_i_lp.process(pilot_tone * cos_p);
             let q = self.pilot_q_lp.process(pilot_tone * -sin_p);
             let pilot_mag = (i * i + q * q).sqrt();
-            // Phase error from PLL I/Q arms.  Use atan2 for the NCO update
-            // (needs full-range angle) but derive sin/cos of the error from
-            // the already-computed I/Q magnitudes to avoid a second sin_cos.
-            // Derive sin/cos of the PLL phase error directly from the I/Q arms,
-            // avoiding both the atan2 and sin_cos calls for the 38 kHz carrier.
-            // The original NCO free-runs at pilot_freq; the phase error was only
-            // used to compute the instantaneous pilot_phase_est, which is now
-            // reconstructed via err_sin/err_cos rotation below.
+            // Derive sin/cos of the PLL phase error from the I/Q arms directly.
             let inv_mag = 1.0 / (pilot_mag + 1e-12);
-            let err_sin = q * inv_mag;  // sin(phase_err)
-            let err_cos = i * inv_mag;  // cos(phase_err)
-            self.pilot_phase += self.pilot_freq;
-            self.pilot_phase = self.pilot_phase.rem_euclid(std::f32::consts::TAU);
+            let err_sin = q * inv_mag;
+            let err_cos = i * inv_mag;
+            // Advance NCO via complex rotation: (cos,sin) *= (cos_inc,sin_inc).
+            let new_cos = self.nco_cos * self.nco_inc_cos - self.nco_sin * self.nco_inc_sin;
+            let new_sin = self.nco_cos * self.nco_inc_sin + self.nco_sin * self.nco_inc_cos;
+            self.nco_cos = new_cos;
+            self.nco_sin = new_sin;
+            // Renormalize NCO every 1024 samples to prevent drift.
+            self.nco_counter += 1;
+            if self.nco_counter >= 1024 {
+                self.nco_counter = 0;
+                let mag = (self.nco_cos * self.nco_cos + self.nco_sin * self.nco_sin).sqrt();
+                let inv = 1.0 / mag;
+                self.nco_cos *= inv;
+                self.nco_sin *= inv;
+            }
+
+            // --- Decimated stereo detection ---
             let pilot_abs = self.pilot_abs_lp.process(pilot_tone.abs());
-            let pilot_coherence = (pilot_mag / (pilot_abs + 1e-4)).clamp(0.0, 1.0);
-            let pilot_lock = ((pilot_coherence - 0.4) / 0.2).clamp(0.0, 1.0);
-            let stereo_drive = (pilot_mag * pilot_lock * 120.0).clamp(0.0, 1.0);
-            let detect_coeff = if stereo_drive > self.stereo_detect_level {
-                0.0008
-            } else {
-                0.00005
-            };
-            self.stereo_detect_level += detect_coeff * (stereo_drive - self.stereo_detect_level);
-            if self.stereo_detected {
-                if self.stereo_detect_level < 0.22 {
-                    self.stereo_detected = false;
+            self.detect_pilot_mag_acc += pilot_mag;
+            self.detect_pilot_abs_acc += pilot_abs;
+            self.detect_counter += 1;
+            if self.detect_counter >= STEREO_DETECT_DECIMATION {
+                let inv_n = 1.0 / STEREO_DETECT_DECIMATION as f32;
+                let avg_mag = self.detect_pilot_mag_acc * inv_n;
+                let avg_abs = self.detect_pilot_abs_acc * inv_n;
+                let pilot_coherence = (avg_mag / (avg_abs + 1e-4)).clamp(0.0, 1.0);
+                let pilot_lock = ((pilot_coherence - 0.4) / 0.2).clamp(0.0, 1.0);
+                let stereo_drive = (avg_mag * pilot_lock * 120.0).clamp(0.0, 1.0);
+                let detect_coeff = if stereo_drive > self.stereo_detect_level {
+                    0.0008 * STEREO_DETECT_DECIMATION as f32
+                } else {
+                    0.00005 * STEREO_DETECT_DECIMATION as f32
+                };
+                self.stereo_detect_level +=
+                    detect_coeff * (stereo_drive - self.stereo_detect_level);
+                if self.stereo_detected {
+                    if self.stereo_detect_level < 0.22 {
+                        self.stereo_detected = false;
+                    }
+                } else if self.stereo_detect_level > 0.6 {
+                    self.stereo_detected = true;
                 }
-            } else if self.stereo_detect_level > 0.6 {
-                self.stereo_detected = true;
+                self.detect_counter = 0;
+                self.detect_pilot_mag_acc = 0.0;
+                self.detect_pilot_abs_acc = 0.0;
             }
             let stereo_blend_target = if self.stereo_detected {
                 1.0
@@ -857,6 +897,9 @@ impl WfmStereoDecoder {
     pub fn reset_stereo_detect(&mut self) {
         self.stereo_detect_level = 0.0;
         self.stereo_detected = false;
+        self.detect_counter = 0;
+        self.detect_pilot_mag_acc = 0.0;
+        self.detect_pilot_abs_acc = 0.0;
     }
 
     pub fn reset_demod_state(&mut self) {
@@ -868,7 +911,9 @@ impl WfmStereoDecoder {
         self.rds_bpf.reset();
         self.rds_dc.reset();
         self.prev_iq = None;
-        self.pilot_phase = 0.0;
+        self.nco_cos = 1.0;
+        self.nco_sin = 0.0;
+        self.nco_counter = 0;
         self.pilot_i_lp.reset();
         self.pilot_q_lp.reset();
         self.pilot_abs_lp.reset();
@@ -891,6 +936,9 @@ impl WfmStereoDecoder {
         self.deemph_r.reset();
         self.stereo_detect_level = 0.0;
         self.stereo_detected = false;
+        self.detect_counter = 0;
+        self.detect_pilot_mag_acc = 0.0;
+        self.detect_pilot_abs_acc = 0.0;
         self.sum_hist = [0.0; WFM_RESAMP_TAPS];
         self.diff_hist = [0.0; WFM_RESAMP_TAPS];
         self.diff_q_hist = [0.0; WFM_RESAMP_TAPS];
