@@ -101,7 +101,7 @@ function bmRender(list) {
         `<button class="bm-tune-btn" type="button" data-bm-id="${bmEsc(bm.id)}">Tune</button>` +
         (canControl
           ? `<button class="bm-edit-btn" type="button" data-bm-id="${bmEsc(bm.id)}">Edit</button>` +
-            `<button class="bm-del-btn" type="button" data-bm-id="${bmEsc(bm.id)}">Del</button>`
+            `<button class="bm-del-btn" type="button" data-bm-id="${bmEsc(bm.id)}">Delete</button>`
           : "") +
       `</td>`;
     tbody.appendChild(tr);
