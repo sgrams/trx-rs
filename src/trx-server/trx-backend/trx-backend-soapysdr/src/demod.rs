@@ -39,8 +39,7 @@ const STEREO_MATRIX_GAIN: f32 = 0.50;
 /// and modulate higher-frequency stereo detail.
 const STEREO_DIFF_DC_R: f32 = 0.9995;
 /// Fractional-resampler FIR taps for WFM audio reconstruction.
-/// 32 taps gives ~50 dB stopband rejection, enough for clean treble.
-const WFM_RESAMP_TAPS: usize = 32;
+const WFM_RESAMP_TAPS: usize = 16;
 /// Polyphase slots for the WFM fractional FIR resampler.
 const WFM_RESAMP_PHASES: usize = 32;
 /// Slightly sub-Nyquist sinc cutoff to tame top-end imaging.
@@ -235,7 +234,13 @@ unsafe fn fast_atan2_8_avx2(
     let num = _mm256_blendv_ps(y, x, swap_mask);
     let den = _mm256_blendv_ps(x, y, swap_mask);
 
-    let atan_input = _mm256_div_ps(num, den);
+    // Add tiny epsilon to denominator to avoid 0/0 NaN when both x and y are zero.
+    let eps = _mm256_set1_ps(1.0e-30);
+    let safe_den = _mm256_or_ps(den, _mm256_and_ps(
+        _mm256_cmp_ps(den, _mm256_setzero_ps(), _CMP_EQ_OQ),
+        eps,
+    ));
+    let atan_input = _mm256_div_ps(num, safe_den);
     let mut result = atan_poly_avx2(atan_input);
 
     // If swapped, result = copysign(π/2, atan_input) - result
