@@ -352,7 +352,6 @@ function syncTopBarAccess() {
 
 let overviewDrawPending = false;
 let lastSpectrumData = null;
-let rdsFrameCount = 0;
 let lastControl;
 let lastTxEn = null;
 let lastHasTx = true;
@@ -1123,7 +1122,6 @@ function positionRdsPsOverlay() {
 }
 
 function resetRdsDisplay() {
-  rdsFrameCount = 0;
   updateRdsPsOverlay(null);
 }
 
@@ -3810,7 +3808,6 @@ function startSpectrumStreaming() {
       refreshCenterFreqDisplay();
       scheduleSpectrumDraw();
       if (lastModeName === "WFM") {
-        rdsFrameCount++;
         updateRdsPsOverlay(lastSpectrumData.rds);
       }
     } catch (_) {}
@@ -3837,7 +3834,6 @@ function stopSpectrumStreaming() {
   lastSpectrumData = null;
   lastSpectrumRenderData = null;
   clearSpectrumPeakHoldFrames();
-  rdsFrameCount = 0;
   overviewWaterfallRows = [];
   overviewWaterfallPushCount = 0;
   _wfResetOffscreen();
@@ -4063,8 +4059,6 @@ function updateRdsPsOverlay(rds) {
 
   // Always show the current mode, frame counter, and a sanitised spectrum snapshot
   if (modeEl) modeEl.textContent = document.getElementById("mode")?.value || "--";
-  const framesEl = document.getElementById("rds-frames");
-  if (framesEl) framesEl.textContent = String(rdsFrameCount);
 
   if (!rds) {
     statusEl.textContent = "No signal";
