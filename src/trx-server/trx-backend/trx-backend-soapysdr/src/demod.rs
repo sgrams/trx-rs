@@ -11,10 +11,9 @@ const RDS_BPF_Q: f32 = 10.0;
 /// Pilot tone frequency (Hz).
 const PILOT_HZ: f32 = 19_000.0;
 /// Audio bandwidth for WFM (Hz).
-/// 18 kHz matches the diff path cutoff so both have identical group delay,
-/// which is required for good stereo separation.  The 19 kHz pilot is
-/// removed by the notch filter on the mono path.
-const AUDIO_BW_HZ: f32 = 18_000.0;
+/// 15.8 kHz leaves guard band below the 19 kHz pilot and reduces top-end
+/// artifacts on strong signals while preserving the useful broadcast range.
+const AUDIO_BW_HZ: f32 = 15_800.0;
 /// Stereo L-R subchannel bandwidth for WFM (Hz).
 /// Wider than the mono path to preserve high-frequency stereo detail; the
 /// 19 kHz pilot is already removed by the coherent demodulation step.
@@ -34,7 +33,7 @@ const STEREO_SEPARATION_PHASE_TRIM: f32 = 0.015;
 const STEREO_SEPARATION_GAIN: f32 = 1.000;
 /// Extra headroom in the stereo matrix to reduce stereo-only clipping/IMD on
 /// strong program material. This keeps bass excursions from flattening treble.
-const STEREO_MATRIX_GAIN: f32 = 0.30;
+const STEREO_MATRIX_GAIN: f32 = 0.50;
 /// Gentle high-pass memory for the stereo L-R path.
 /// This trims only very low-frequency difference energy that can eat headroom
 /// and modulate higher-frequency stereo detail.
