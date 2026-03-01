@@ -633,7 +633,7 @@ small { color: var(--text-muted); }
   color: var(--text-heading);
   padding: 0.22rem 0.55rem 0.24rem;
   border: 1px solid color-mix(in srgb, var(--border-light) 72%, transparent);
-  border-radius: 999px;
+  border-radius: 6px;
   background: color-mix(in srgb, var(--card-bg) 68%, transparent);
   backdrop-filter: blur(16px) saturate(130%);
   -webkit-backdrop-filter: blur(16px) saturate(130%);
@@ -679,7 +679,7 @@ small { color: var(--text-muted); }
   gap: 0.24rem;
   background: color-mix(in srgb, var(--btn-bg) 84%, transparent);
   border: 1px solid color-mix(in srgb, var(--border-light) 46%, transparent);
-  border-radius: 999px;
+  border-radius: 4px;
   padding: 0.05rem 0.38rem 0.06rem;
   line-height: 1.2;
   font-family: inherit;
@@ -705,7 +705,7 @@ small { color: var(--text-muted); }
   justify-content: center;
   width: 1.1em;
   height: 1.1em;
-  border-radius: 999px;
+  border-radius: 3px;
   background: color-mix(in srgb, var(--accent-red) 14%, transparent);
   color: color-mix(in srgb, var(--accent-red) 65%, var(--text-muted));
   font-size: 1em;
@@ -734,7 +734,7 @@ small { color: var(--text-muted); }
   justify-content: center;
   background: color-mix(in srgb, var(--btn-bg) 74%, transparent);
   border: 1px solid color-mix(in srgb, var(--border-light) 28%, transparent);
-  border-radius: 999px;
+  border-radius: 4px;
   padding: 0;
   margin-right: 0.28em;
   width: 1.55em;
