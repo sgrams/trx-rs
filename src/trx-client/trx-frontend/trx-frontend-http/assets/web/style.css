@@ -703,10 +703,40 @@ small { color: var(--text-muted); }
   position: relative;
   z-index: 2;
 }
+.tab-bar-left {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+.tab-bar .header-main {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  max-width: min(100%, 24rem);
+  padding: 0.25rem 0.65rem 0.25rem 0.35rem;
+  margin-left: 0;
+  transform: none;
+  flex-shrink: 0;
+}
+.tab-bar .header-logo {
+  height: 2.6rem;
+}
+.tab-bar .title {
+  font-size: 1.05rem;
+  line-height: 1.1;
+}
+.tab-bar .subtitle {
+  font-size: 0.78rem;
+  line-height: 1.15;
+}
 .tab-bar-nav {
   display: flex;
   align-items: center;
   gap: 0.2rem;
+  min-width: 0;
+  flex-wrap: wrap;
 }
 .tab {
   background: transparent;
@@ -910,6 +940,16 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   }
   .header-left { justify-content: flex-end; }
   .tab-bar { flex-wrap: wrap; }
+  .tab-bar-left {
+    width: 100%;
+    flex-wrap: wrap;
+    gap: 0.7rem;
+  }
+  .tab-bar .header-main {
+    max-width: 100%;
+    margin-left: 0;
+    transform: none;
+  }
   .top-bar-actions { width: 100%; justify-content: space-between; }
   .header-rig-switch { width: auto; justify-content: flex-end; }
   .header-rig-switch select { min-width: 6.5rem; }

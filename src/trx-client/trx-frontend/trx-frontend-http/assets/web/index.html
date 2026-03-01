@@ -14,11 +14,23 @@
 <body>
   <div class="card" id="card">
     <div class="tab-bar" style="display:none;" id="tab-bar">
-      <div class="tab-bar-nav">
-        <button class="tab active" data-tab="main">Main</button>
-        <button class="tab" data-tab="plugins">Plugins</button>
-        <button class="tab" data-tab="map">Map</button>
-        <button class="tab" data-tab="about">About</button>
+      <div class="tab-bar-left">
+        <div class="header-main">
+          <div class="header-left">
+            <img id="logo" class="header-logo" src="/logo.png?v=1" alt="trx logo" onerror="this.style.display='none'" />
+          </div>
+          <div class="header-text">
+            <div class="title"><span id="rig-title">trx-rs</span></div>
+            <div class="subtitle" id="server-subtitle"></div>
+            <div class="subtitle" id="rig-subtitle" style="font-weight: 700;">Rig: --</div>
+          </div>
+        </div>
+        <div class="tab-bar-nav">
+          <button class="tab active" data-tab="main">Main</button>
+          <button class="tab" data-tab="plugins">Plugins</button>
+          <button class="tab" data-tab="map">Map</button>
+          <button class="tab" data-tab="about">About</button>
+        </div>
       </div>
       <div class="top-bar-actions">
         <div class="header-rig-switch">
@@ -34,18 +46,6 @@
         </div>
         <button id="theme-toggle" class="header-bar-btn" type="button" aria-label="Toggle dark or light theme">Light</button>
         <button id="header-auth-btn" class="header-bar-btn" type="button" style="display:none;" aria-label="Login or Logout">Login</button>
-      </div>
-    </div>
-    <div class="header">
-      <div class="header-main">
-        <div class="header-left">
-          <img id="logo" class="header-logo" src="/logo.png?v=1" alt="trx logo" onerror="this.style.display='none'" />
-        </div>
-        <div class="header-text">
-          <div class="title"><span id="rig-title">trx-rs</span></div>
-          <div class="subtitle" id="server-subtitle"></div>
-          <div class="subtitle" id="rig-subtitle" style="font-weight: 700;">Rig: --</div>
-        </div>
       </div>
     </div>
     <div class="overview-strip">
