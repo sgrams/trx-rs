@@ -1374,9 +1374,10 @@ function render(update) {
       }
     }
     if (wfmDenoiseEl && typeof update.filter.wfm_denoise === "boolean") {
-      if (wfmDenoiseEl.checked !== update.filter.wfm_denoise) {
-        wfmDenoiseEl.checked = update.filter.wfm_denoise;
-        saveSetting("wfmDenoise", update.filter.wfm_denoise ? "true" : "false");
+      const nextDenoise = update.filter.wfm_denoise ? "on" : "off";
+      if (wfmDenoiseEl.value !== nextDenoise) {
+        wfmDenoiseEl.value = nextDenoise;
+        saveSetting("wfmDenoise", nextDenoise);
       }
     }
     if (wfmStFlagEl && typeof update.filter.wfm_stereo_detected === "boolean") {
@@ -2756,10 +2757,10 @@ if (wfmAudioModeEl) {
   });
 }
 if (wfmDenoiseEl) {
-  wfmDenoiseEl.checked = loadSetting("wfmDenoise", "true") === "true";
+  wfmDenoiseEl.value = loadSetting("wfmDenoise", "on");
   wfmDenoiseEl.addEventListener("change", () => {
-    const enabled = wfmDenoiseEl.checked;
-    saveSetting("wfmDenoise", enabled ? "true" : "false");
+    saveSetting("wfmDenoise", wfmDenoiseEl.value);
+    const enabled = wfmDenoiseEl.value !== "off";
     postPath(`/set_wfm_denoise?enabled=${enabled ? "true" : "false"}`).catch(() => {});
   });
 }
