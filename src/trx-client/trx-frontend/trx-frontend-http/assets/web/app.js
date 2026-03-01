@@ -710,6 +710,12 @@ function signalOverlayHeight() {
 
 function drawSignalOverlay() {
   if (!signalOverlayCanvas || !signalVisualBlockEl) return;
+  if (!lastSpectrumData) {
+    signalOverlayCanvas.style.height = "0";
+    signalOverlayCanvas.width = 0;
+    signalOverlayCanvas.height = 0;
+    return;
+  }
   const cssW = Math.floor(signalVisualBlockEl.clientWidth);
   const cssH = signalOverlayHeight();
   signalOverlayCanvas.style.height = cssH > 0 ? `${cssH}px` : "0";
@@ -734,50 +740,48 @@ function drawSignalOverlay() {
   ctx.scale(dpr, dpr);
   ctx.clearRect(0, 0, cssW, cssH);
 
-  if (lastSpectrumData) {
-    const range = spectrumVisibleRange(lastSpectrumData);
-    const hzToX = (hz) => ((hz - range.visLoHz) / range.visSpanHz) * cssW;
+  const range = spectrumVisibleRange(lastSpectrumData);
+  const hzToX = (hz) => ((hz - range.visLoHz) / range.visSpanHz) * cssW;
 
-    if (lastFreqHz != null && currentBandwidthHz > 0) {
-      const halfBw = currentBandwidthHz / 2;
-      const xL = hzToX(lastFreqHz - halfBw);
-      const xR = hzToX(lastFreqHz + halfBw);
-      const stripW = xR - xL;
-      if (stripW > 1) {
-        const grd = ctx.createLinearGradient(xL, 0, xR, 0);
-        grd.addColorStop(0, "rgba(240,173,78,0.05)");
-        grd.addColorStop(0.2, "rgba(240,173,78,0.14)");
-        grd.addColorStop(0.5, "rgba(240,173,78,0.19)");
-        grd.addColorStop(0.8, "rgba(240,173,78,0.14)");
-        grd.addColorStop(1, "rgba(240,173,78,0.05)");
-        ctx.fillStyle = grd;
-        ctx.fillRect(xL, 0, stripW, cssH);
+  if (lastFreqHz != null && currentBandwidthHz > 0) {
+    const halfBw = currentBandwidthHz / 2;
+    const xL = hzToX(lastFreqHz - halfBw);
+    const xR = hzToX(lastFreqHz + halfBw);
+    const stripW = xR - xL;
+    if (stripW > 1) {
+      const grd = ctx.createLinearGradient(xL, 0, xR, 0);
+      grd.addColorStop(0, "rgba(240,173,78,0.05)");
+      grd.addColorStop(0.2, "rgba(240,173,78,0.14)");
+      grd.addColorStop(0.5, "rgba(240,173,78,0.19)");
+      grd.addColorStop(0.8, "rgba(240,173,78,0.14)");
+      grd.addColorStop(1, "rgba(240,173,78,0.05)");
+      ctx.fillStyle = grd;
+      ctx.fillRect(xL, 0, stripW, cssH);
 
-        const edgeW = 5;
-        ctx.fillStyle = "rgba(240,173,78,0.30)";
-        ctx.fillRect(xL, 0, edgeW, cssH);
-        ctx.fillRect(xR - edgeW, 0, edgeW, cssH);
+      const edgeW = 5;
+      ctx.fillStyle = "rgba(240,173,78,0.30)";
+      ctx.fillRect(xL, 0, edgeW, cssH);
+      ctx.fillRect(xR - edgeW, 0, edgeW, cssH);
 
-        ctx.strokeStyle = "rgba(240,173,78,0.70)";
-        ctx.lineWidth = 1.5;
-        ctx.beginPath(); ctx.moveTo(xL, 0); ctx.lineTo(xL, cssH); ctx.stroke();
-        ctx.beginPath(); ctx.moveTo(xR, 0); ctx.lineTo(xR, cssH); ctx.stroke();
-      }
+      ctx.strokeStyle = "rgba(240,173,78,0.70)";
+      ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.moveTo(xL, 0); ctx.lineTo(xL, cssH); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(xR, 0); ctx.lineTo(xR, cssH); ctx.stroke();
     }
+  }
 
-    if (lastFreqHz != null) {
-      const xf = hzToX(lastFreqHz);
-      if (xf >= 0 && xf <= cssW) {
-        ctx.save();
-        ctx.setLineDash([4, 4]);
-        ctx.strokeStyle = "#ff1744";
-        ctx.lineWidth = 1;
-        ctx.beginPath();
-        ctx.moveTo(xf, 0);
-        ctx.lineTo(xf, cssH);
-        ctx.stroke();
-        ctx.restore();
-      }
+  if (lastFreqHz != null) {
+    const xf = hzToX(lastFreqHz);
+    if (xf >= 0 && xf <= cssW) {
+      ctx.save();
+      ctx.setLineDash([4, 4]);
+      ctx.strokeStyle = "#ff1744";
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(xf, 0);
+      ctx.lineTo(xf, cssH);
+      ctx.stroke();
+      ctx.restore();
     }
   }
 
