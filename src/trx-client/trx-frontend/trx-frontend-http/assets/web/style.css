@@ -482,7 +482,7 @@ small { color: var(--text-muted); }
 .title { font-size: 1.4rem; font-weight: 700; display: inline-flex; align-items: center; gap: 0.35rem; }
 .overview-strip {
   width: 100%;
-  margin: 0 0 0.45rem;
+  margin: 0;
   position: relative;
   z-index: 4;
 }

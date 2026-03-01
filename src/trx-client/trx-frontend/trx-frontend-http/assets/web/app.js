@@ -766,6 +766,7 @@ function drawHeaderSignalGraph() {
   } else {
     drawOverviewSignalHistory(ctx, w, h, pal);
   }
+  drawOverviewTuningOverlay(ctx, w, h);
   ctx.restore();
   positionRdsPsOverlay();
 }
@@ -835,6 +836,54 @@ function drawOverviewWaterfall(ctx, w, h, pal) {
   }
 
   ctx.drawImage(_wfOC, 0, 0, w, h);
+}
+
+function drawOverviewTuningOverlay(ctx, w, h) {
+  if (!lastSpectrumData) return;
+  const range = spectrumVisibleRange(lastSpectrumData);
+  const hzToX = (hz) => ((hz - range.visLoHz) / range.visSpanHz) * w;
+
+  if (lastFreqHz != null && currentBandwidthHz > 0) {
+    const halfBw = currentBandwidthHz / 2;
+    const xL = hzToX(lastFreqHz - halfBw);
+    const xR = hzToX(lastFreqHz + halfBw);
+    const stripW = xR - xL;
+    if (stripW > 1) {
+      const grd = ctx.createLinearGradient(xL, 0, xR, 0);
+      grd.addColorStop(0, "rgba(240,173,78,0.05)");
+      grd.addColorStop(0.2, "rgba(240,173,78,0.14)");
+      grd.addColorStop(0.5, "rgba(240,173,78,0.19)");
+      grd.addColorStop(0.8, "rgba(240,173,78,0.14)");
+      grd.addColorStop(1, "rgba(240,173,78,0.05)");
+      ctx.fillStyle = grd;
+      ctx.fillRect(xL, 0, stripW, h);
+
+      const edgeW = 5;
+      ctx.fillStyle = "rgba(240,173,78,0.30)";
+      ctx.fillRect(xL, 0, edgeW, h);
+      ctx.fillRect(xR - edgeW, 0, edgeW, h);
+
+      ctx.strokeStyle = "rgba(240,173,78,0.70)";
+      ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.moveTo(xL, 0); ctx.lineTo(xL, h); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(xR, 0); ctx.lineTo(xR, h); ctx.stroke();
+    }
+  }
+
+  if (lastFreqHz != null) {
+    const xf = hzToX(lastFreqHz);
+    if (xf >= 0 && xf <= w) {
+      ctx.save();
+      ctx.setLineDash([4, 4]);
+      ctx.strokeStyle = "#ff1744";
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(xf, 0);
+      ctx.lineTo(xf, h);
+      ctx.stroke();
+      ctx.restore();
+    }
+  }
 }
 
 function drawOverviewSignalHistory(ctx, w, h, pal) {
@@ -3126,6 +3175,7 @@ const SPECTRUM_SMOOTH_ALPHA = 0.42;
 let _bwDragEdge     = null; // "left" | "right" | null
 let _bwDragStartX   = 0;
 let _bwDragStartBwHz = 0;
+let _bwDragCanvas   = null;
 
 function spectrumBgColor() {
   return canvasPalette().bg;
@@ -3233,6 +3283,13 @@ function nearestSpectrumPeak(cssX, cssW, data) {
 
 function nearestSpectrumPeakHz(cssX, cssW, data) {
   return nearestSpectrumPeak(cssX, cssW, data)?.hz ?? null;
+}
+
+function spectrumTargetHzAt(cssX, cssW, data) {
+  if (!data) return null;
+  const range = spectrumVisibleRange(data);
+  return nearestSpectrumPeakHz(cssX, cssW, data)
+    ?? Math.round(canvasXToHz(cssX, cssW, range));
 }
 
 function visibleSpectrumPeakIndices(data, limit = 24) {
@@ -3875,6 +3932,24 @@ if (spectrumCanvas) {
   }, { passive: false });
 }
 
+if (overviewCanvas) {
+  overviewCanvas.addEventListener("wheel", (e) => {
+    e.preventDefault();
+    if (!lastSpectrumData) return;
+    if (e.ctrlKey) {
+      const direction = e.deltaY < 0 ? 1 : -1;
+      jogFreq(direction);
+      return;
+    }
+    const rect = overviewCanvas.getBoundingClientRect();
+    const cssX = e.clientX - rect.left;
+    const factor = e.deltaY < 0 ? 1.25 : 1 / 1.25;
+    spectrumZoomAt(cssX, rect.width, lastSpectrumData, factor);
+    scheduleSpectrumDraw();
+    scheduleOverviewDraw();
+  }, { passive: false });
+}
+
 // ── BW strip edge hit-test (CSS pixels) ──────────────────────────────────────
 function getBwEdgeHit(cssX, cssW, range) {
   if (!lastFreqHz || !currentBandwidthHz || !lastSpectrumData) return null;
@@ -3903,6 +3978,7 @@ if (spectrumCanvas) {
         _bwDragEdge      = edge;
         _bwDragStartX    = cssX;
         _bwDragStartBwHz = currentBandwidthHz;
+        _bwDragCanvas    = spectrumCanvas;
         _sDragStart      = null;
         _sDragMoved      = true; // suppress click-to-tune
         return;
@@ -3914,7 +3990,9 @@ if (spectrumCanvas) {
 
   window.addEventListener("mousemove", (e) => {
     if (_bwDragEdge && lastSpectrumData) {
-      const rect  = spectrumCanvas.getBoundingClientRect();
+      const dragCanvas = _bwDragCanvas || spectrumCanvas;
+      if (!dragCanvas) return;
+      const rect  = dragCanvas.getBoundingClientRect();
       const cssX  = e.clientX - rect.left;
       const range = spectrumVisibleRange(lastSpectrumData);
       const dxHz  = ((cssX - _bwDragStartX) / rect.width) * range.visSpanHz;
@@ -3926,6 +4004,7 @@ if (spectrumCanvas) {
       currentBandwidthHz = newBw;
       syncBandwidthInput(newBw);
       scheduleSpectrumDraw();
+      scheduleOverviewDraw();
       return;
     }
     if (!_sDragStart || !lastSpectrumData) return;
@@ -3940,6 +4019,7 @@ if (spectrumCanvas) {
     if (_bwDragEdge) {
       try { await postPath(`/set_bandwidth?hz=${Math.round(currentBandwidthHz)}`); } catch (_) {}
       _bwDragEdge = null;
+      _bwDragCanvas = null;
       return;
     }
     _sDragStart = null;
@@ -4042,9 +4122,51 @@ if (spectrumCanvas) {
     if (!lastSpectrumData) return;
     const rect  = spectrumCanvas.getBoundingClientRect();
     const cssX = e.clientX - rect.left;
+    const targetHz = spectrumTargetHzAt(cssX, rect.width, lastSpectrumData);
+    if (!Number.isFinite(targetHz)) return;
+    postPath(`/set_freq?hz=${targetHz}`)
+      .then(() => { applyLocalTunedFrequency(targetHz); })
+      .catch(() => {});
+  });
+}
+
+if (overviewCanvas) {
+  overviewCanvas.addEventListener("mousemove", (e) => {
+    if (!lastSpectrumData) return;
+    const rect = overviewCanvas.getBoundingClientRect();
+    const cssX = e.clientX - rect.left;
     const range = spectrumVisibleRange(lastSpectrumData);
-    const targetHz = nearestSpectrumPeakHz(cssX, rect.width, lastSpectrumData)
-      ?? Math.round(canvasXToHz(cssX, rect.width, range));
+    const edge = getBwEdgeHit(cssX, rect.width, range);
+    overviewCanvas.style.cursor = edge ? "ew-resize" : "crosshair";
+  });
+
+  overviewCanvas.addEventListener("mouseleave", () => {
+    overviewCanvas.style.cursor = "crosshair";
+  });
+
+  overviewCanvas.addEventListener("mousedown", (e) => {
+    if (e.button !== 0 || !lastSpectrumData) return;
+    const rect = overviewCanvas.getBoundingClientRect();
+    const cssX = e.clientX - rect.left;
+    const range = spectrumVisibleRange(lastSpectrumData);
+    const edge = getBwEdgeHit(cssX, rect.width, range);
+    if (!edge) return;
+    _bwDragEdge = edge;
+    _bwDragStartX = cssX;
+    _bwDragStartBwHz = currentBandwidthHz;
+    _bwDragCanvas = overviewCanvas;
+    _sDragStart = null;
+    _sDragMoved = true;
+    e.preventDefault();
+  });
+
+  overviewCanvas.addEventListener("click", (e) => {
+    if (_sDragMoved) { _sDragMoved = false; return; }
+    if (!lastSpectrumData) return;
+    const rect = overviewCanvas.getBoundingClientRect();
+    const cssX = e.clientX - rect.left;
+    const targetHz = spectrumTargetHzAt(cssX, rect.width, lastSpectrumData);
+    if (!Number.isFinite(targetHz)) return;
     postPath(`/set_freq?hz=${targetHz}`)
       .then(() => { applyLocalTunedFrequency(targetHz); })
       .catch(() => {});
