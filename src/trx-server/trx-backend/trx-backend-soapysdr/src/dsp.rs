@@ -428,7 +428,9 @@ fn agc_for_mode(mode: &RigMode, audio_sample_rate: u32) -> SoftAgc {
 fn iq_agc_for_mode(mode: &RigMode, sample_rate: u32) -> Option<SoftAgc> {
     let sr = sample_rate.max(1) as f32;
     match mode {
-        RigMode::FM | RigMode::WFM | RigMode::PKT => Some(SoftAgc::new(sr, 0.5, 150.0, 0.8, 12.0)),
+        RigMode::FM | RigMode::PKT => Some(SoftAgc::new(sr, 0.5, 150.0, 0.8, 12.0)),
+        // WFM uses a hard IQ limiter instead of AGC to preserve phase accuracy.
+        RigMode::WFM => None,
         _ => None,
     }
 }
@@ -864,27 +866,14 @@ impl ChannelDsp {
         }
 
         // --- 4. Demodulate + post-process -----------------------------------
-        // WFM: full composite decoder (handles its own DC blocks + deemphasis),
-        // then apply post-audio AGC on the decoded PCM. Other modes use the
-        // normal stateless demodulator → DC blocker (where enabled) → AGC path.
+        // WFM: full composite decoder (handles its own DC blocks + deemphasis).
+        // No AGC — WFM uses IQ hard limiting + fixed output gain to preserve
+        // stereo separation and avoid AGC pumping on broadcast audio.
+        const WFM_OUTPUT_GAIN: f32 = 0.35;
         let audio = if let Some(decoder) = self.wfm_decoder.as_mut() {
             let mut out = decoder.process_iq(decimated);
-            if !self.wfm_stereo && self.output_channels >= 2 {
-                for pair in out.chunks_exact_mut(2) {
-                    let mono = self.audio_agc.process(pair[0]);
-                    pair[0] = mono;
-                    pair[1] = mono;
-                }
-            } else if self.wfm_stereo && self.output_channels >= 2 {
-                for pair in out.chunks_exact_mut(2) {
-                    let (left, right) = self.audio_agc.process_pair(pair[0], pair[1]);
-                    pair[0] = left;
-                    pair[1] = right;
-                }
-            } else {
-                for sample in &mut out {
-                    *sample = self.audio_agc.process(*sample);
-                }
+            for sample in &mut out {
+                *sample = (*sample * WFM_OUTPUT_GAIN).clamp(-1.0, 1.0);
             }
             out
         } else {

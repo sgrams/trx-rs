@@ -348,6 +348,7 @@ impl SoftAgc {
         (x * gain).clamp(-1.0, 1.0)
     }
 
+    #[allow(dead_code)]
     pub(crate) fn process_pair(&mut self, left: f32, right: f32) -> (f32, f32) {
         let gain = self.update_gain(left.abs().max(right.abs()));
         (
