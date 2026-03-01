@@ -636,17 +636,26 @@ impl WfmStereoDecoder {
     }
 
     pub fn process_iq(&mut self, samples: &[Complex<f32>]) -> Vec<f32> {
-        let composite = demod_fm_with_prev(samples, &mut self.prev_iq);
-        if composite.is_empty() {
+        if samples.is_empty() {
             return Vec::new();
         }
 
+        let inv_pi = std::f32::consts::FRAC_1_PI;
         let mut output = Vec::with_capacity(
-            ((composite.len() as f64 * self.output_phase_inc).ceil() as usize + 1)
+            ((samples.len() as f64 * self.output_phase_inc).ceil() as usize + 1)
                 * self.output_channels.max(1),
         );
+        let (trim_sin, trim_cos) = STEREO_SEPARATION_PHASE_TRIM.sin_cos();
 
-        for x in composite {
+        for &sample in samples {
+            let x = if let Some(prev_sample) = self.prev_iq {
+                let product = sample * prev_sample.conj();
+                fast_atan2(product.im, product.re) * inv_pi
+            } else {
+                0.0
+            };
+            self.prev_iq = Some(sample);
+
             // Normalize discriminator output so ±75 kHz deviation maps to ±1.0.
             let x = x * self.fm_gain;
 
@@ -656,7 +665,7 @@ impl WfmStereoDecoder {
             let (sin_p, cos_p) = self.pilot_phase.sin_cos();
             let i = self.pilot_i_lp.process(pilot_tone * cos_p);
             let q = self.pilot_q_lp.process(pilot_tone * -sin_p);
-            let phase_err = q.atan2(i);
+            let phase_err = fast_atan2(q, i);
             let pilot_phase_est = self.pilot_phase + phase_err;
             self.pilot_phase += self.pilot_freq;
             self.pilot_phase = self.pilot_phase.rem_euclid(std::f32::consts::TAU);
@@ -734,7 +743,6 @@ impl WfmStereoDecoder {
             let blend_i =
                 (self.prev_blend + frac * (stereo_blend_target - self.prev_blend)).clamp(0.0, 1.0);
             self.prev_blend = stereo_blend_target;
-            let (trim_sin, trim_cos) = STEREO_SEPARATION_PHASE_TRIM.sin_cos();
             let diff_i = (diff_i * trim_cos + diff_q * trim_sin) * STEREO_SEPARATION_GAIN;
 
             // --- Deemphasis + DC block + output ---
