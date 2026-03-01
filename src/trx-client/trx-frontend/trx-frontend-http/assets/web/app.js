@@ -543,6 +543,8 @@ if (overviewPeakHoldEl) {
   overviewPeakHoldEl.addEventListener("change", () => {
     overviewPeakHoldMs = Math.max(0, Number(overviewPeakHoldEl.value) || 0);
     saveSetting("overviewPeakHoldMs", overviewPeakHoldMs);
+    pruneSpectrumPeakHoldFrames();
+    if (lastSpectrumData) scheduleSpectrumDraw();
     scheduleOverviewDraw();
   });
 }
@@ -3493,6 +3495,7 @@ let spectrumReconnectTimer = null;
 let spectrumDrawPending = false;
 let spectrumAxisKey = "";
 let lastSpectrumRenderData = null;
+let spectrumPeakHoldFrames = [];
 
 // Zoom / pan state.  zoom >= 1; panFrac in [0,1] is the fraction of the full
 // bandwidth at the centre of the visible window.
@@ -3513,6 +3516,57 @@ let _bwDragCanvas   = null;
 
 function spectrumBgColor() {
   return canvasPalette().bg;
+}
+
+function clearSpectrumPeakHoldFrames() {
+  spectrumPeakHoldFrames = [];
+}
+
+function pruneSpectrumPeakHoldFrames(now = Date.now()) {
+  const holdMs = Math.max(0, Number.isFinite(overviewPeakHoldMs) ? overviewPeakHoldMs : 0);
+  if (holdMs <= 0) {
+    clearSpectrumPeakHoldFrames();
+    return;
+  }
+  spectrumPeakHoldFrames = spectrumPeakHoldFrames.filter((frame) => {
+    return frame && Array.isArray(frame.bins) && now - frame.t <= holdMs;
+  });
+}
+
+function pushSpectrumPeakHoldFrame(frame) {
+  if (!frame || !Array.isArray(frame.bins) || frame.bins.length === 0) {
+    clearSpectrumPeakHoldFrames();
+    return;
+  }
+  const holdMs = Math.max(0, Number.isFinite(overviewPeakHoldMs) ? overviewPeakHoldMs : 0);
+  if (holdMs <= 0) {
+    clearSpectrumPeakHoldFrames();
+    return;
+  }
+  const now = Date.now();
+  pruneSpectrumPeakHoldFrames(now);
+  const lastFrame = spectrumPeakHoldFrames[spectrumPeakHoldFrames.length - 1];
+  if (lastFrame && lastFrame.bins.length !== frame.bins.length) {
+    clearSpectrumPeakHoldFrames();
+  }
+  spectrumPeakHoldFrames.push({ t: now, bins: frame.bins.slice() });
+}
+
+function buildSpectrumPeakHoldBins(currentBins) {
+  const holdMs = Math.max(0, Number.isFinite(overviewPeakHoldMs) ? overviewPeakHoldMs : 0);
+  if (holdMs <= 0 || !Array.isArray(currentBins) || currentBins.length === 0) {
+    return null;
+  }
+  pruneSpectrumPeakHoldFrames();
+  if (spectrumPeakHoldFrames.length === 0) return null;
+  const peakBins = currentBins.slice();
+  for (const frame of spectrumPeakHoldFrames) {
+    if (!frame || !Array.isArray(frame.bins) || frame.bins.length !== peakBins.length) continue;
+    for (let i = 0; i < peakBins.length; i++) {
+      if (frame.bins[i] > peakBins[i]) peakBins[i] = frame.bins[i];
+    }
+  }
+  return peakBins;
 }
 
 function buildSpectrumRenderData(frame) {
@@ -3688,6 +3742,7 @@ function startSpectrumStreaming() {
     if (evt.data === "null") {
       lastSpectrumData = null;
       lastSpectrumRenderData = null;
+      clearSpectrumPeakHoldFrames();
       overviewWaterfallRows = [];
       overviewWaterfallPushCount = 0;
       _wfResetOffscreen();
@@ -3699,6 +3754,7 @@ function startSpectrumStreaming() {
     try {
       lastSpectrumData = JSON.parse(evt.data);
       lastSpectrumRenderData = buildSpectrumRenderData(lastSpectrumData);
+      pushSpectrumPeakHoldFrame(lastSpectrumRenderData);
       pushOverviewWaterfallFrame(lastSpectrumData);
       refreshCenterFreqDisplay();
       scheduleSpectrumDraw();
@@ -3729,6 +3785,7 @@ function stopSpectrumStreaming() {
   spectrumDrawPending = false;
   lastSpectrumData = null;
   lastSpectrumRenderData = null;
+  clearSpectrumPeakHoldFrames();
   rdsFrameCount = 0;
   overviewWaterfallRows = [];
   overviewWaterfallPushCount = 0;
@@ -4035,6 +4092,7 @@ function drawSpectrum(data) {
   const pal   = canvasPalette();
   const range = spectrumVisibleRange(data);
   const bins  = data.bins;
+  const peakHoldBins = buildSpectrumPeakHoldBins(bins);
   const n     = bins.length;
 
   // Background
@@ -4129,6 +4187,23 @@ function drawSpectrum(data) {
   ctx.fillStyle = pal.spectrumFill;
   ctx.fill();
   ctx.restore();
+
+  // ── Peak-hold shadow ───────────────────────────────────────────────────────
+  if (Array.isArray(peakHoldBins) && peakHoldBins.length === n) {
+    ctx.save();
+    ctx.beginPath();
+    ctx.strokeStyle = pal.waveformPeak;
+    ctx.globalAlpha = 0.7;
+    ctx.lineWidth = Math.max(1, dpr * 0.9);
+    for (let i = 0; i < n; i++) {
+      const x = binX(i);
+      const db = Math.max(DB_MIN, Math.min(DB_MAX, peakHoldBins[i]));
+      const y = H * (1 - (db - DB_MIN) / dbRange);
+      i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+    ctx.restore();
+  }
 
   // ── Spectrum line ─────────────────────────────────────────────────────────
   ctx.save();
