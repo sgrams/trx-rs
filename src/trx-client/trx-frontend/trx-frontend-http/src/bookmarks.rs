@@ -91,4 +91,11 @@ impl BookmarkStore {
         let mut db = self.db.write().unwrap_or_else(|e| e.into_inner());
         db.rem(&format!("bm:{id}")).unwrap_or(false)
     }
+
+    /// Returns true if any bookmark (other than `exclude_id`) has `freq_hz`.
+    pub fn freq_taken(&self, freq_hz: u64, exclude_id: Option<&str>) -> bool {
+        self.list().into_iter().any(|bm| {
+            bm.freq_hz == freq_hz && exclude_id.map_or(true, |ex| bm.id != ex)
+        })
+    }
 }

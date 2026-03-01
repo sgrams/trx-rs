@@ -46,6 +46,7 @@ async function bmFetch(categoryFilter) {
   bmSyncAccess();
   bmRender(bmList);
   bmRefreshCategoryFilter(categoryFilter);
+  if (typeof scheduleSpectrumDraw === "function") scheduleSpectrumDraw();
 }
 
 async function bmRefreshCategoryFilter(keepValue) {
@@ -197,6 +198,9 @@ async function bmSave(e) {
     }
     if (!resp.ok) {
       const text = await resp.text();
+      if (resp.status === 409) {
+        throw new Error("A bookmark for that frequency already exists.");
+      }
       throw new Error(text || "HTTP " + resp.status);
     }
     bmCloseForm();
@@ -294,4 +298,7 @@ async function bmApply(bm) {
       await bmDelete(delBtn.dataset.bmId);
     }
   });
+
+  // Pre-load bookmarks so spectrum markers are visible immediately.
+  bmFetch("");
 })();

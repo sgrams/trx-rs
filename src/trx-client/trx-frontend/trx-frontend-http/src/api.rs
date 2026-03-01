@@ -735,6 +735,11 @@ pub async fn create_bookmark(
     auth_state: web::Data<crate::server::auth::AuthState>,
 ) -> Result<HttpResponse, Error> {
     require_control(&req, &auth_state)?;
+    if store.freq_taken(body.freq_hz, None) {
+        return Err(actix_web::error::ErrorConflict(
+            "a bookmark for that frequency already exists",
+        ));
+    }
     let bm = crate::server::bookmarks::Bookmark {
         id: gen_bookmark_id(),
         name: body.name.clone(),
@@ -764,6 +769,11 @@ pub async fn update_bookmark(
 ) -> Result<HttpResponse, Error> {
     require_control(&req, &auth_state)?;
     let id = path.into_inner();
+    if store.freq_taken(body.freq_hz, Some(&id)) {
+        return Err(actix_web::error::ErrorConflict(
+            "a bookmark for that frequency already exists",
+        ));
+    }
     let bm = crate::server::bookmarks::Bookmark {
         id: id.clone(),
         name: body.name.clone(),

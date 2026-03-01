@@ -1516,6 +1516,50 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   top: 2px;
   font-weight: 700;
 }
+#spectrum-freq-axis.bm-axis-open {
+  border-radius: 0;
+  border-bottom-color: transparent;
+}
+#spectrum-bookmark-axis {
+  position: relative;
+  height: 0;
+  overflow: hidden;
+  width: 100%;
+  font-size: 0.68rem;
+  background: var(--bg-secondary);
+  border-radius: 0 0 6px 6px;
+  border: 1px solid var(--border);
+  border-top: none;
+  transition: height 80ms ease;
+}
+#spectrum-bookmark-axis.bm-axis-visible {
+  height: 22px;
+}
+#spectrum-bookmark-axis span {
+  position: absolute;
+  transform: translateX(-50%);
+  white-space: nowrap;
+  top: 3px;
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 0.66rem;
+  /* amber bookmark-ribbon appearance */
+  background: rgba(246,173,85,0.18);
+  color: #c07320;
+  border: 1px solid rgba(246,173,85,0.55);
+  border-radius: 3px 3px 0 0;
+  padding: 1px 5px 0;
+  /* clip the bottom into a V-notch bookmark shape */
+  clip-path: polygon(0 0, 100% 0, 100% 70%, 50% 100%, 0 70%);
+  max-width: 110px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1.5;
+}
+#spectrum-bookmark-axis span:hover {
+  background: rgba(246,173,85,0.38);
+  color: #7a4a00;
+}
 #spectrum-tooltip {
   display: none;
   position: absolute;
