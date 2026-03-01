@@ -13,7 +13,7 @@ const PILOT_HZ: f32 = 19_000.0;
 /// Audio bandwidth for WFM (Hz).
 /// 15.8 kHz leaves guard band below the 19 kHz pilot and reduces top-end
 /// artifacts on strong signals while preserving the useful broadcast range.
-const AUDIO_BW_HZ: f32 = 15_800.0;
+const AUDIO_BW_HZ: f32 = 18_000.0;
 /// Stereo L-R subchannel bandwidth for WFM (Hz).
 /// Must match AUDIO_BW_HZ so the sum and diff filter paths have identical
 /// group delay, which is critical for stereo separation across all frequencies.
