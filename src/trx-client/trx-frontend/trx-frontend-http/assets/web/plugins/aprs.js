@@ -2,11 +2,15 @@
 const aprsStatus = document.getElementById("aprs-status");
 const aprsPacketsEl = document.getElementById("aprs-packets");
 const aprsFilterInput = document.getElementById("aprs-filter");
+const aprsBarOverlay = document.getElementById("aprs-bar-overlay");
 const APRS_MAX_PACKETS = 100;
+const APRS_BAR_MAX = 5;
 let aprsFilterText = "";
 
 // Persistent packet history
 let aprsPacketHistory = loadSetting("aprsPackets", []);
+// Ring buffer of last N packets for the overview bar
+let aprsBarFrames = [];
 
 function renderAprsInfo(pkt) {
   const bytes = Array.isArray(pkt.info_bytes) ? pkt.info_bytes : null;
@@ -103,6 +107,25 @@ function applyAprsFilterToAll() {
   rows.forEach((row) => applyAprsFilterToRow(row));
 }
 
+function updateAprsBar() {
+  if (!aprsBarOverlay) return;
+  if (aprsBarFrames.length === 0) {
+    aprsBarOverlay.style.display = "none";
+    return;
+  }
+  let html = '<div class="aprs-bar-header">APRS</div>';
+  for (const pkt of aprsBarFrames) {
+    const ts = pkt._ts ? `<span class="aprs-bar-time">${pkt._ts}</span>` : "";
+    const call = `<span class="aprs-bar-call">${escapeMapHtml(pkt.srcCall)}</span>`;
+    const dest = escapeMapHtml(pkt.destCall || "");
+    const info = escapeMapHtml((pkt.info || "").slice(0, 60));
+    const crc = pkt.crcOk ? "" : '<span class="aprs-bar-crc">[CRC]</span>';
+    html += `<div class="aprs-bar-frame">${ts}${call}>${dest}: ${info}${crc}</div>`;
+  }
+  aprsBarOverlay.innerHTML = html;
+  aprsBarOverlay.style.display = "flex";
+}
+
 function addAprsPacket(pkt) {
   const tag = pkt.crcOk ? "[APRS]" : "[APRS-CRC-FAIL]";
   console.log(tag, `${pkt.srcCall}>${pkt.destCall}${pkt.path ? "," + pkt.path : ""}: ${pkt.info}`, pkt);
@@ -114,6 +137,11 @@ function addAprsPacket(pkt) {
   aprsPacketHistory.unshift(pkt);
   if (aprsPacketHistory.length > APRS_MAX_PACKETS) aprsPacketHistory.length = APRS_MAX_PACKETS;
   saveSetting("aprsPackets", aprsPacketHistory);
+
+  // Update overview bar
+  aprsBarFrames.unshift(pkt);
+  if (aprsBarFrames.length > APRS_BAR_MAX) aprsBarFrames.length = APRS_BAR_MAX;
+  updateAprsBar();
 
   const row = renderAprsRow(pkt);
   if (pkt.lat != null && pkt.lon != null && window.aprsMapAddStation) {
@@ -129,6 +157,8 @@ document.getElementById("aprs-clear-btn").addEventListener("click", async () => 
   aprsPacketsEl.innerHTML = "";
   aprsPacketHistory = [];
   saveSetting("aprsPackets", []);
+  aprsBarFrames = [];
+  updateAprsBar();
   try { await postPath("/clear_aprs_decode"); } catch (e) { console.error("APRS clear failed", e); }
 });
 
@@ -140,6 +170,9 @@ for (let i = aprsPacketHistory.length - 1; i >= 0; i--) {
     window.aprsMapAddStation(pkt.srcCall, pkt.lat, pkt.lon, pkt.info, pkt.symbolTable, pkt.symbolCode);
   }
 }
+// Pre-populate bar from history (most recent first)
+aprsBarFrames = aprsPacketHistory.slice(0, APRS_BAR_MAX);
+updateAprsBar();
 
 if (aprsFilterInput) {
   aprsFilterInput.addEventListener("input", () => {
