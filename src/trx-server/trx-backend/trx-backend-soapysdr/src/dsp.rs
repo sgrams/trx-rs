@@ -386,6 +386,12 @@ pub struct ChannelDsp {
     pub frame_size: usize,
     /// Sender for completed PCM frames.
     pub pcm_tx: broadcast::Sender<Vec<f32>>,
+    /// Reusable scratch buffer for mixed I samples.
+    scratch_mixed_i: Vec<f32>,
+    /// Reusable scratch buffer for mixed Q samples.
+    scratch_mixed_q: Vec<f32>,
+    /// Reusable scratch buffer for decimated IQ samples.
+    scratch_decimated: Vec<Complex<f32>>,
     /// Current oscillator phase (radians).
     pub mixer_phase: f64,
     /// Phase increment per IQ sample.
@@ -548,6 +554,9 @@ impl ChannelDsp {
             frame_buf: Vec::with_capacity(frame_size + output_channels),
             frame_size,
             pcm_tx,
+            scratch_mixed_i: Vec::with_capacity(IQ_BLOCK_SIZE),
+            scratch_mixed_q: Vec::with_capacity(IQ_BLOCK_SIZE),
+            scratch_decimated: Vec::with_capacity(IQ_BLOCK_SIZE / decim_factor.max(1) + 1),
             mixer_phase: 0.0,
             mixer_phase_inc,
             decim_counter: 0,
@@ -660,31 +669,43 @@ impl ChannelDsp {
 
         // --- 1. Batch mixer -------------------------------------------------
         // Pre-compute I and Q mixer outputs for the whole block.
-        // Each iteration is independent → the compiler can vectorise.
-        let mut mixed_i = vec![0.0_f32; n];
-        let mut mixed_q = vec![0.0_f32; n];
+        // Use an oscillator recurrence so we only call `sin_cos` once for the
+        // block instead of once per sample.
+        self.scratch_mixed_i.resize(n, 0.0);
+        self.scratch_mixed_q.resize(n, 0.0);
+        let mixed_i = &mut self.scratch_mixed_i;
+        let mixed_q = &mut self.scratch_mixed_q;
 
         let phase_start = self.mixer_phase;
         let phase_inc = self.mixer_phase_inc;
+        let (mut sin_phase, mut cos_phase) = phase_start.sin_cos();
+        let (sin_inc, cos_inc) = phase_inc.sin_cos();
         for (idx, &sample) in block.iter().enumerate() {
-            let phase = phase_start + idx as f64 * phase_inc;
-            let (sin, cos) = phase.sin_cos();
-            let lo_re = cos as f32;
-            let lo_im = -(sin as f32);
+            let lo_re = cos_phase as f32;
+            let lo_im = -(sin_phase as f32);
             // mixed = sample * exp(-j*phase) = sample * (cos - j*sin)
             mixed_i[idx] = sample.re * lo_re - sample.im * lo_im;
             mixed_q[idx] = sample.re * lo_im + sample.im * lo_re;
+            let next_sin = sin_phase * cos_inc + cos_phase * sin_inc;
+            let next_cos = cos_phase * cos_inc - sin_phase * sin_inc;
+            sin_phase = next_sin;
+            cos_phase = next_cos;
         }
         // Advance phase with wrap to avoid precision loss.
         self.mixer_phase = (phase_start + n as f64 * phase_inc).rem_euclid(std::f64::consts::TAU);
 
         // --- 2. FFT FIR (overlap-save) --------------------------------------
-        let filtered_i = self.lpf_i.filter_block(&mixed_i);
-        let filtered_q = self.lpf_q.filter_block(&mixed_q);
+        let filtered_i = self.lpf_i.filter_block(mixed_i);
+        let filtered_q = self.lpf_q.filter_block(mixed_q);
 
         // --- 3. Decimate / resample -----------------------------------------
         let capacity = n / self.decim_factor + 1;
-        let mut decimated: Vec<Complex<f32>> = Vec::with_capacity(capacity);
+        self.scratch_decimated.clear();
+        if self.scratch_decimated.capacity() < capacity {
+            self.scratch_decimated
+                .reserve(capacity - self.scratch_decimated.capacity());
+        }
+        let decimated = &mut self.scratch_decimated;
         if self.wfm_decoder.is_some() {
             // WFM: integer decimation preserves the FM composite signal at the
             // rate expected by WfmStereoDecoder.  Final rate correction is done
@@ -717,7 +738,7 @@ impl ChannelDsp {
         }
 
         if let Some(iq_agc) = &mut self.iq_agc {
-            for sample in &mut decimated {
+            for sample in decimated.iter_mut() {
                 *sample = iq_agc.process_complex(*sample);
             }
         }
@@ -727,7 +748,7 @@ impl ChannelDsp {
         // then apply post-audio AGC on the decoded PCM. Other modes use the
         // normal stateless demodulator → DC blocker (where enabled) → AGC path.
         let audio = if let Some(decoder) = self.wfm_decoder.as_mut() {
-            let mut out = decoder.process_iq(&decimated);
+            let mut out = decoder.process_iq(decimated);
             if !self.wfm_stereo && self.output_channels >= 2 {
                 for pair in out.chunks_exact_mut(2) {
                     let mono = self.audio_agc.process(pair[0]);
@@ -747,7 +768,7 @@ impl ChannelDsp {
             }
             out
         } else {
-            let mut raw = self.demodulator.demodulate(&decimated);
+            let mut raw = self.demodulator.demodulate(decimated);
             for s in &mut raw {
                 if let Some(dc) = &mut self.audio_dc {
                     *s = dc.process(*s);
