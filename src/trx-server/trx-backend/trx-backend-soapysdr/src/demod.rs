@@ -41,7 +41,7 @@ const STEREO_MATRIX_GAIN: f32 = 0.50;
 /// and modulate higher-frequency stereo detail.
 const STEREO_DIFF_DC_R: f32 = 0.9995;
 /// Fractional-resampler FIR taps for WFM audio reconstruction.
-const WFM_RESAMP_TAPS: usize = 64;
+const WFM_RESAMP_TAPS: usize = 32;
 /// Polyphase slots for the WFM fractional FIR resampler.
 const WFM_RESAMP_PHASES: usize = 128;
 fn build_wfm_resample_bank(cutoff: f32) -> [[f32; WFM_RESAMP_TAPS]; WFM_RESAMP_PHASES] {
