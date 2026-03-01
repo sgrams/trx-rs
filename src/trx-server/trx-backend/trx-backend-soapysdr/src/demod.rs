@@ -136,11 +136,6 @@ fn dot_product(a: &[f32], b: &[f32]) -> f32 {
     dot_product_scalar(a, b)
 }
 
-fn smoothstep01(x: f32) -> f32 {
-    let x = x.clamp(0.0, 1.0);
-    x * x * (3.0 - 2.0 * x)
-}
-
 #[inline]
 fn fast_atan2(y: f32, x: f32) -> f32 {
     if x == 0.0 {
