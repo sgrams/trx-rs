@@ -29,6 +29,7 @@
         </div>
         <div class="tab-bar-nav">
           <button class="tab active" data-tab="main">Main</button>
+          <button class="tab" data-tab="bookmarks">Bookmarks</button>
           <button class="tab" data-tab="plugins">Plugins</button>
           <button class="tab" data-tab="map">Map</button>
           <button class="tab" data-tab="about">About</button>
@@ -176,10 +177,12 @@
                     </select>
                   </label>
                   <label class="wfm-control">
-                    <span class="wfm-control-label">Denoise</span>
+                    <span class="wfm-control-label">Denoise Level</span>
                     <select id="wfm-denoise" class="status-input">
-                      <option value="on">On</option>
-                      <option value="off">Off</option>
+                      <option value="auto">Auto</option>
+                      <option value="low">Low</option>
+                      <option value="medium">Medium</option>
+                      <option value="high">High</option>
                     </select>
                   </label>
                   <div class="wfm-gain-group" id="sdr-gain-controls">
@@ -257,6 +260,74 @@
       </div>
     </div>
     </div>
+    </div>
+    <div id="tab-bookmarks" class="tab-panel" style="display:none;">
+      <div class="bm-toolbar">
+        <select id="bm-category-filter" class="status-input" aria-label="Filter by category">
+          <option value="">All categories</option>
+        </select>
+        <button id="bm-add-btn" type="button" class="bm-add-btn">+ Add Bookmark</button>
+      </div>
+      <div id="bm-form-wrap" style="display:none;">
+        <form id="bm-form" class="bm-form">
+          <div class="bm-form-title" id="bm-form-title">Add Bookmark</div>
+          <input type="hidden" id="bm-id" />
+          <div class="bm-form-grid">
+            <label class="bm-label">Name
+              <input type="text" id="bm-name" class="status-input" required placeholder="e.g. 40m FT8" />
+            </label>
+            <label class="bm-label">Category
+              <input type="text" id="bm-category-input" class="status-input" placeholder="Uncategorised" />
+            </label>
+            <label class="bm-label">Frequency (Hz)
+              <input type="number" id="bm-freq" class="status-input" required min="0" placeholder="e.g. 7074000" />
+            </label>
+            <label class="bm-label">Mode
+              <input type="text" id="bm-mode" class="status-input" list="bm-mode-list" required placeholder="e.g. DIG" />
+              <datalist id="bm-mode-list">
+                <option value="LSB">
+                <option value="USB">
+                <option value="AM">
+                <option value="FM">
+                <option value="DIG">
+                <option value="CW">
+                <option value="WFM">
+              </datalist>
+            </label>
+            <label class="bm-label">Bandwidth (Hz)
+              <input type="number" id="bm-bw" class="status-input" min="0" placeholder="optional" />
+            </label>
+            <label class="bm-label">Decoders (comma-separated)
+              <input type="text" id="bm-decoders-input" class="status-input" placeholder="e.g. ft8, wspr" />
+            </label>
+            <label class="bm-label bm-label-wide">Comment
+              <input type="text" id="bm-comment" class="status-input" placeholder="optional" />
+            </label>
+          </div>
+          <div class="bm-form-actions">
+            <button type="submit" class="bm-save-btn">Save</button>
+            <button type="button" id="bm-form-cancel">Cancel</button>
+          </div>
+        </form>
+      </div>
+      <div id="bm-table-wrap">
+        <table class="bm-table">
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Frequency</th>
+              <th>Mode</th>
+              <th>BW</th>
+              <th>Category</th>
+              <th>Decoders</th>
+              <th>Comment</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="bm-tbody"></tbody>
+        </table>
+        <div id="bm-empty" class="bm-empty" style="display:none;">No bookmarks yet. Click <strong>+ Add Bookmark</strong> to save a frequency.</div>
+      </div>
     </div>
     <div id="tab-plugins" class="tab-panel" style="display:none;">
       <div class="sub-tab-bar">
@@ -422,5 +493,6 @@
   <script src="/ft8.js"></script>
   <script src="/wspr.js"></script>
   <script src="/cw.js"></script>
+  <script src="/bookmarks.js"></script>
 </body>
 </html>

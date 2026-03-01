@@ -1904,3 +1904,156 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   --wavelength-fg: #7030a0;
   --spectrum-bg: #f0d8ff;
 }
+
+/* ============================================================
+   Bookmarks tab
+   ============================================================ */
+
+.bm-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.6rem 0.75rem 0.4rem;
+  flex-wrap: wrap;
+}
+
+.bm-add-btn {
+  background: var(--accent-green);
+  color: #fff;
+  border: none;
+  border-radius: 0.35rem;
+  padding: 0.4rem 0.85rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.bm-add-btn:hover {
+  opacity: 0.88;
+}
+
+.bm-form {
+  background: var(--card-bg);
+  border: 1px solid var(--border-light);
+  border-radius: 0.5rem;
+  padding: 0.9rem 1rem;
+  margin: 0 0.75rem 0.6rem;
+}
+
+.bm-form-title {
+  font-weight: 700;
+  margin-bottom: 0.65rem;
+  font-size: 0.95rem;
+  color: var(--text-heading);
+}
+
+.bm-form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(13rem, 1fr));
+  gap: 0.5rem 0.75rem;
+}
+
+.bm-label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
+.bm-label input {
+  font-size: 0.88rem;
+  padding: 0.35rem 0.5rem;
+}
+
+.bm-label-wide {
+  grid-column: 1 / -1;
+}
+
+.bm-form-actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+
+.bm-save-btn {
+  background: var(--accent-green);
+  color: #fff;
+  border: none;
+  border-radius: 0.35rem;
+  padding: 0.4rem 1rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.bm-save-btn:hover {
+  opacity: 0.88;
+}
+
+.bm-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.82rem;
+  margin: 0 0 0.5rem;
+}
+
+.bm-table th {
+  text-align: left;
+  padding: 0.35rem 0.6rem;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-muted);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.bm-table td {
+  padding: 0.35rem 0.6rem;
+  border-bottom: 1px solid var(--border);
+  vertical-align: middle;
+}
+
+.bm-table tr:hover td {
+  background: var(--btn-bg);
+}
+
+.bm-col-freq,
+.bm-col-bw {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.bm-col-mode,
+.bm-col-dec {
+  white-space: nowrap;
+}
+
+.bm-col-act {
+  white-space: nowrap;
+}
+
+.bm-col-act button {
+  font-size: 0.78rem;
+  padding: 0.2rem 0.5rem;
+  margin-right: 0.25rem;
+  border-radius: 0.25rem;
+  border: 1px solid var(--btn-border);
+  background: var(--btn-bg);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.bm-col-act button:hover {
+  background: var(--border-light);
+}
+
+.bm-del-btn {
+  color: var(--accent-red) !important;
+  border-color: var(--accent-red) !important;
+}
+
+.bm-empty {
+  padding: 2rem 1rem;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 0.9rem;
+}
