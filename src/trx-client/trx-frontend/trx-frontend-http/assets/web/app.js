@@ -4274,37 +4274,17 @@ function drawSpectrum(data) {
     : [];
   if (visBookmarks.length > 0) {
     ctx.save();
-    // Thin amber vertical line from top of canvas down to the ribbon
-    const BM_RIBBON_H = 14 * dpr; // height of the bookmark ribbon shape
-    const BM_RIBBON_W = 8 * dpr;  // half-width of the ribbon
-    ctx.strokeStyle = "rgba(246,173,85,0.70)";
+    ctx.strokeStyle = "rgba(246,173,85,0.65)";
     ctx.lineWidth = 1 * dpr;
+    ctx.setLineDash([4 * dpr, 3 * dpr]);
     for (const bm of visBookmarks) {
       const x = hzToX(bm.freq_hz);
       ctx.beginPath();
       ctx.moveTo(x, 0);
-      ctx.lineTo(x, H - BM_RIBBON_H);
+      ctx.lineTo(x, H);
       ctx.stroke();
     }
-    // Bookmark ribbon shape: rectangle with V-notch cut from the bottom
-    for (const bm of visBookmarks) {
-      const x = hzToX(bm.freq_hz);
-      const top = H - BM_RIBBON_H;
-      const bot = H;
-      const notchDepth = 4 * dpr; // depth of the V notch
-      ctx.fillStyle = "rgba(246,173,85,0.92)";
-      ctx.strokeStyle = "rgba(180,100,20,0.60)";
-      ctx.lineWidth = 0.75 * dpr;
-      ctx.beginPath();
-      ctx.moveTo(x - BM_RIBBON_W, top);
-      ctx.lineTo(x + BM_RIBBON_W, top);
-      ctx.lineTo(x + BM_RIBBON_W, bot - notchDepth);
-      ctx.lineTo(x, bot);               // V notch point
-      ctx.lineTo(x - BM_RIBBON_W, bot - notchDepth);
-      ctx.closePath();
-      ctx.fill();
-      ctx.stroke();
-    }
+    ctx.setLineDash([]);
     ctx.restore();
   }
 
@@ -4326,34 +4306,53 @@ function updateBookmarkAxis(range) {
   const hasVisible = visBookmarks.length > 0;
   axisEl.classList.toggle("bm-axis-visible", hasVisible);
   if (freqAxisEl) freqAxisEl.classList.toggle("bm-axis-open", hasVisible);
-  axisEl.innerHTML = "";
-  if (!hasVisible) return;
 
+  if (!hasVisible) {
+    if (axisEl.dataset.bmKey) { axisEl.innerHTML = ""; axisEl.dataset.bmKey = ""; }
+    return;
+  }
+
+  // Only rebuild DOM when the set of visible bookmarks changes.
+  // Positions are always updated to handle pan/zoom smoothly.
+  const newKey = visBookmarks.map((b) => b.id).join(",");
+  if (axisEl.dataset.bmKey !== newKey) {
+    axisEl.dataset.bmKey = newKey;
+    axisEl.innerHTML = "";
+    const esc = (s) => String(s)
+      .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    for (const bm of visBookmarks) {
+      const span = document.createElement("span");
+      const freqStr = typeof bmFmtFreq === "function"
+        ? bmFmtFreq(bm.freq_hz) : bm.freq_hz + "\u202fHz";
+      span.title = bm.name + " \u2014 " + freqStr;
+      span.dataset.bmId = bm.id;
+      span.innerHTML =
+        "<svg class='bm-icon-svg' viewBox='0 0 8 12' width='8' height='12' aria-hidden='true'>" +
+        "<path d='M0,0 h8 v10 l-4,2 l-4,-2 Z'/>" +
+        "</svg>\u00a0" + esc(bm.name);
+      span.addEventListener("click", () => {
+        if (typeof bmApply === "function") bmApply(bm);
+      });
+      axisEl.appendChild(span);
+    }
+  }
+
+  // Always recompute horizontal positions (pan/zoom changes frac every frame).
   const axisWidth = axisEl.clientWidth || 0;
-  const edgePad = 6;
-  for (const bm of visBookmarks) {
+  const edgePad = 8;
+  const spans = axisEl.querySelectorAll("span");
+  visBookmarks.forEach((bm, i) => {
+    const span = spans[i];
+    if (!span) return;
     const frac = (bm.freq_hz - range.visLoHz) / range.visSpanHz;
-    const span = document.createElement("span");
-    span.textContent = bm.name;
-    span.title =
-      bm.name +
-      " \u2014 " +
-      (typeof bmFmtFreq === "function" ? bmFmtFreq(bm.freq_hz) : bm.freq_hz + "\u202fHz");
-    span.dataset.bmId = bm.id;
-    span.addEventListener("click", () => {
-      if (typeof bmApply === "function") bmApply(bm);
-    });
-    axisEl.appendChild(span);
     if (axisWidth > 0) {
-      const labelWidth = span.offsetWidth || 0;
-      const minCenter = edgePad + labelWidth / 2;
-      const maxCenter = axisWidth - edgePad - labelWidth / 2;
-      const clampedCenter = Math.max(minCenter, Math.min(maxCenter, frac * axisWidth));
-      span.style.left = clampedCenter + "px";
+      const lw = span.offsetWidth || 0;
+      const clamped = Math.max(edgePad + lw / 2, Math.min(axisWidth - edgePad - lw / 2, frac * axisWidth));
+      span.style.left = clamped + "px";
     } else {
       span.style.left = (frac * 100).toFixed(2) + "%";
     }
-  }
+  });
 }
 
 function updateSpectrumFreqAxis(range) {
