@@ -118,7 +118,10 @@ function updateAprsBar() {
     const call = `<span class="aprs-bar-call">${escapeMapHtml(pkt.srcCall)}</span>`;
     const dest = escapeMapHtml(pkt.destCall || "");
     const info = escapeMapHtml(pkt.info || "");
-    html += `<div class="aprs-bar-frame">${ts}${call}>${dest}: ${info}</div>`;
+    const posHtml = pkt.lat != null && pkt.lon != null
+      ? ` <button class="aprs-bar-pos" onclick="window.navigateToAprsMap(${pkt.lat},${pkt.lon})">${pkt.lat.toFixed(4)}, ${pkt.lon.toFixed(4)}</button>`
+      : "";
+    html += `<div class="aprs-bar-frame">${ts}${call}>${dest}: ${info}${posHtml}</div>`;
   }
   aprsBarOverlay.innerHTML = html;
   aprsBarOverlay.style.display = "flex";

@@ -984,6 +984,8 @@ small { color: var(--text-muted); }
 .aprs-symbol { display: inline-block; width: 24px; height: 24px; background-size: 384px 192px; vertical-align: middle; margin-right: 0.3rem; }
 .aprs-pos { color: var(--accent-green); text-decoration: none; margin-left: 0.3rem; font-size: 0.8rem; }
 .aprs-pos:hover { text-decoration: underline; }
+.aprs-bar-pos { background: none; border: none; padding: 0; margin-left: 0.4em; font-family: inherit; font-size: inherit; color: var(--accent-green); cursor: pointer; }
+.aprs-bar-pos:hover { text-decoration: underline; }
 .aprs-byte { color: var(--accent-yellow); background: rgba(255, 214, 0, 0.12); border: 1px solid rgba(255, 214, 0, 0.25); border-radius: 4px; padding: 0 0.2rem; margin: 0 0.1rem; font-size: 0.78em; }
 .ft8-controls { display: flex; gap: 0.6rem; align-items: center; margin-bottom: 0.75rem; }
 .ft8-filter {

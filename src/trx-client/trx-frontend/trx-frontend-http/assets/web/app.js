@@ -2469,6 +2469,24 @@ function aprsSymbolIcon(symbolTable, symbolCode) {
   });
 }
 
+window.navigateToAprsMap = function(lat, lon) {
+  // Activate the map tab
+  document.querySelectorAll(".tab-bar .tab").forEach((t) => t.classList.remove("active"));
+  const mapTabBtn = document.querySelector(".tab-bar .tab[data-tab='map']");
+  if (mapTabBtn) mapTabBtn.classList.add("active");
+  document.querySelectorAll(".tab-panel").forEach((p) => (p.style.display = "none"));
+  const mapPanel = document.getElementById("tab-map");
+  if (mapPanel) mapPanel.style.display = "";
+  initAprsMap();
+  sizeAprsMapToViewport();
+  if (aprsMap) {
+    setTimeout(() => {
+      aprsMap.invalidateSize();
+      aprsMap.setView([lat, lon], 13);
+    }, 50);
+  }
+};
+
 window.aprsMapAddStation = function(call, lat, lon, info, symbolTable, symbolCode) {
   if (!aprsMap) initAprsMap();
   if (!aprsMap) return;
