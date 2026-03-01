@@ -2429,8 +2429,16 @@ function initAprsMap() {
     const entry = stationMarkers.get(marker._aprsCall);
     if (!entry) return;
     const ll = marker.getLatLng();
-    e.popup.setContent(buildAprsPopupHtml(marker._aprsCall, ll.lat, ll.lng, entry.pkt?.info || "", entry.pkt));
+    e.popup.setContent(buildAprsPopupHtml(marker._aprsCall, ll.lat, ll.lng, entry.info || "", entry.pkt));
   });
+
+  // Materialise any stations that were buffered before the map was ready
+  for (const [call, entry] of stationMarkers) {
+    if (entry.type === "aprs" && !entry.marker && entry.lat != null && entry.lon != null) {
+      _aprsAddMarkerToMap(call, entry);
+    }
+  }
+  applyMapFilter();
 
   const aprsFilter = document.getElementById("map-filter-aprs");
   const ft8Filter = document.getElementById("map-filter-ft8");
@@ -2552,27 +2560,41 @@ function buildAprsPopupHtml(call, lat, lon, info, pkt) {
     `</div>`;
 }
 
+function _aprsAddMarkerToMap(call, entry) {
+  const icon = aprsSymbolIcon(entry.symbolTable, entry.symbolCode);
+  const popupContent = buildAprsPopupHtml(call, entry.lat, entry.lon, entry.info || "", entry.pkt);
+  const marker = icon
+    ? L.marker([entry.lat, entry.lon], { icon }).addTo(aprsMap).bindPopup(popupContent)
+    : L.circleMarker([entry.lat, entry.lon], {
+        radius: 6, color: "#00d17f", fillColor: "#00d17f", fillOpacity: 0.8
+      }).addTo(aprsMap).bindPopup(popupContent);
+  marker.__trxType = "aprs";
+  marker._aprsCall = call;
+  entry.marker = marker;
+  mapMarkers.add(marker);
+}
+
 window.aprsMapAddStation = function(call, lat, lon, info, symbolTable, symbolCode, pkt) {
-  if (!aprsMap) initAprsMap();
-  if (!aprsMap) return;
-  const popupContent = buildAprsPopupHtml(call, lat, lon, info, pkt);
   const existing = stationMarkers.get(call);
   if (existing) {
-    existing.marker.setLatLng([lat, lon]);
-    existing.marker.setPopupContent(popupContent);
+    // Update stored data (preserves original _tsMs if pkt is newer)
     existing.pkt = pkt;
+    existing.lat = lat;
+    existing.lon = lon;
+    existing.info = info;
+    existing.symbolTable = symbolTable;
+    existing.symbolCode = symbolCode;
+    if (aprsMap && existing.marker) {
+      existing.marker.setLatLng([lat, lon]);
+      existing.marker.setPopupContent(buildAprsPopupHtml(call, lat, lon, info, pkt));
+    }
   } else {
-    const icon = aprsSymbolIcon(symbolTable, symbolCode);
-    const marker = icon
-      ? L.marker([lat, lon], { icon }).addTo(aprsMap).bindPopup(popupContent)
-      : L.circleMarker([lat, lon], {
-          radius: 6, color: "#00d17f", fillColor: "#00d17f", fillOpacity: 0.8
-        }).addTo(aprsMap).bindPopup(popupContent);
-    marker.__trxType = "aprs";
-    marker._aprsCall = call;
-    stationMarkers.set(call, { marker, type: "aprs", pkt });
-    mapMarkers.add(marker);
-    applyMapFilter();
+    const entry = { marker: null, type: "aprs", pkt, lat, lon, info, symbolTable, symbolCode };
+    stationMarkers.set(call, entry);
+    if (aprsMap) {
+      _aprsAddMarkerToMap(call, entry);
+      applyMapFilter();
+    }
   }
 };
 
