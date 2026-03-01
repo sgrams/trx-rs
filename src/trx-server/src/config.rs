@@ -27,7 +27,7 @@ use trx_core::rig::state::RigMode;
 /// `[behavior]` / `[decode_logs]` fields are still supported via
 /// `ServerConfig::resolved_rigs()` which synthesises a single-element list
 /// with `id = "default"` when `rigs` is empty.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct RigInstanceConfig {
     /// Stable rig identifier used in protocol routing.
@@ -49,22 +49,6 @@ pub struct RigInstanceConfig {
     pub aprsfi: AprsFiConfig,
     /// Decoder file logging for this rig.
     pub decode_logs: DecodeLogsConfig,
-}
-
-impl Default for RigInstanceConfig {
-    fn default() -> Self {
-        Self {
-            id: String::new(), // Empty by default so auto-generation triggers in resolved_rigs()
-            name: None,
-            rig: RigConfig::default(),
-            behavior: BehaviorConfig::default(),
-            audio: AudioConfig::default(),
-            sdr: SdrConfig::default(),
-            pskreporter: PskReporterConfig::default(),
-            aprsfi: AprsFiConfig::default(),
-            decode_logs: DecodeLogsConfig::default(),
-        }
-    }
 }
 
 impl RigInstanceConfig {
@@ -520,18 +504,14 @@ impl ServerConfig {
             let mut seen_ports: std::collections::HashSet<u16> = std::collections::HashSet::new();
             for rig in &self.rigs {
                 // Check for explicit duplicate IDs (empty IDs are auto-generated later).
-                if !rig.id.trim().is_empty() {
-                    if !seen_ids.insert(rig.id.clone()) {
-                        return Err(format!("[[rigs]] duplicate rig id: \"{}\"", rig.id));
-                    }
+                if !rig.id.trim().is_empty() && !seen_ids.insert(rig.id.clone()) {
+                    return Err(format!("[[rigs]] duplicate rig id: \"{}\"", rig.id));
                 }
-                if rig.audio.enabled {
-                    if !seen_ports.insert(rig.audio.port) {
-                        return Err(format!(
-                            "[[rigs]] duplicate audio port {} (rig id: \"{}\")",
-                            rig.audio.port, rig.id
-                        ));
-                    }
+                if rig.audio.enabled && !seen_ports.insert(rig.audio.port) {
+                    return Err(format!(
+                        "[[rigs]] duplicate audio port {} (rig id: \"{}\")",
+                        rig.audio.port, rig.id
+                    ));
                 }
                 if let Some(max_gain) = rig.sdr.gain.max_value {
                     if !max_gain.is_finite() {
@@ -979,12 +959,13 @@ tokens = ["secret123"]
         stream_opus: bool,
         decoders: Vec<String>,
     ) {
-        let mut ch = SdrChannelConfig::default();
-        ch.id = id.to_string();
-        ch.offset_hz = offset_hz;
-        ch.stream_opus = stream_opus;
-        ch.decoders = decoders;
-        cfg.sdr.channels.push(ch);
+        cfg.sdr.channels.push(SdrChannelConfig {
+            id: id.to_string(),
+            offset_hz,
+            stream_opus,
+            decoders,
+            ..SdrChannelConfig::default()
+        });
     }
 
     #[test]

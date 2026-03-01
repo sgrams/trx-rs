@@ -25,6 +25,7 @@ use trx_core::audio::{
 use trx_core::decode::DecodedMessage;
 
 /// Run the audio client with auto-reconnect.
+#[allow(clippy::too_many_arguments)]
 pub async fn run_audio_client(
     server_host: String,
     default_port: u16,
@@ -102,6 +103,7 @@ pub async fn run_audio_client(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn handle_audio_connection(
     stream: TcpStream,
     server_host: &str,

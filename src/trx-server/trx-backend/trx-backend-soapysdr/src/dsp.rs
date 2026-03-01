@@ -178,16 +178,18 @@ pub struct BlockFirFilterPair {
     scratch_freq: Vec<FftComplex<f32>>,
 }
 
-fn build_fir_kernel(
-    cutoff_norm: f32,
-    taps: usize,
-    block_size: usize,
-) -> (
+type FirKernel = (
     Vec<FftComplex<f32>>,
     usize,
     Arc<dyn Fft<f32>>,
     Arc<dyn Fft<f32>>,
-) {
+);
+
+fn build_fir_kernel(
+    cutoff_norm: f32,
+    taps: usize,
+    block_size: usize,
+) -> FirKernel {
     let coeffs = windowed_sinc_coeffs(cutoff_norm, taps);
     let fft_size = (block_size + taps - 1).next_power_of_two();
 
@@ -943,6 +945,7 @@ pub struct SdrPipeline {
 }
 
 impl SdrPipeline {
+    #[allow(clippy::too_many_arguments)]
     pub fn start(
         source: Box<dyn IqSource>,
         sdr_sample_rate: u32,

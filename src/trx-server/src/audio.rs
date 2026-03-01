@@ -265,6 +265,7 @@ pub fn spawn_audio_capture(
     })
 }
 
+#[allow(clippy::too_many_arguments)]
 fn run_capture(
     sample_rate: u32,
     channels: u16,
@@ -1306,6 +1307,7 @@ pub async fn run_audio_listener(
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn handle_audio_client(
     socket: TcpStream,
     peer: SocketAddr,

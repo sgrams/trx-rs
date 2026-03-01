@@ -631,7 +631,7 @@ mod tests {
         let mut candidate = Candidate::new(240_000.0, 0.0);
         let pi = 0x52ab;
         let block_a = encode_block(pi, OFFSET_A);
-        let block_b = encode_block((10 << 5) | 0, OFFSET_B);
+        let block_b = encode_block(10 << 5, OFFSET_B);
         let block_d = encode_block(u16::from_be_bytes(*b"AB"), OFFSET_D);
 
         for bit_idx in (0..26).rev() {

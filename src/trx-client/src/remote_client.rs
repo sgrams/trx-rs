@@ -523,7 +523,7 @@ fn parse_port(port_str: &str) -> Result<u16, String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_remote_url, RemoteClientConfig, RemoteEndpoint};
+    use super::{parse_remote_url, RemoteClientConfig, RemoteEndpoint, SharedSpectrum};
     use std::sync::{Arc, Mutex};
     use std::time::Duration;
 

@@ -269,14 +269,18 @@ fn parse_rig_mode(
     }
 }
 
-/// Build a `SoapySdrRig` with full channel config from a `RigInstanceConfig`.
 #[cfg(feature = "soapysdr")]
-fn build_sdr_rig_from_instance(
-    rig_cfg: &RigInstanceConfig,
-) -> DynResult<(
+type SdrRigBuildResult = DynResult<(
     Box<dyn trx_core::rig::RigCat>,
     tokio::sync::broadcast::Receiver<Vec<f32>>,
-)> {
+)>;
+
+type OptionalSdrRig = Option<Box<dyn trx_core::rig::RigCat>>;
+type OptionalSdrPcmRx = Option<broadcast::Receiver<Vec<f32>>>;
+
+/// Build a `SoapySdrRig` with full channel config from a `RigInstanceConfig`.
+#[cfg(feature = "soapysdr")]
+fn build_sdr_rig_from_instance(rig_cfg: &RigInstanceConfig) -> SdrRigBuildResult {
     use trx_core::radio::freq::Freq;
     use trx_core::rig::AudioSource;
 
@@ -332,6 +336,7 @@ fn build_sdr_rig_from_instance(
 }
 
 /// Build a `RigTaskConfig` for a single rig instance.
+#[allow(clippy::too_many_arguments)]
 fn build_rig_task_config(
     rig_cfg: &RigInstanceConfig,
     rig_model: String,
@@ -391,6 +396,7 @@ fn build_rig_task_config(
 ///
 /// `sdr_pcm_rx` carries a live SDR PCM receiver when the rig uses the
 /// SoapySDR backend; `None` selects the cpal capture path.
+#[allow(clippy::too_many_arguments)]
 fn spawn_rig_audio_stack(
     rig_cfg: &RigInstanceConfig,
     state_rx: watch::Receiver<RigState>,
@@ -812,10 +818,8 @@ async fn main() -> DynResult<()> {
 
         // Build SDR rig when applicable.
         #[cfg(feature = "soapysdr")]
-        let (sdr_prebuilt_rig, sdr_pcm_rx): (
-            Option<Box<dyn trx_core::rig::RigCat>>,
-            Option<broadcast::Receiver<Vec<f32>>>,
-        ) = if rig_cfg.rig.access.access_type.as_deref() == Some("sdr") {
+        let (sdr_prebuilt_rig, sdr_pcm_rx): (OptionalSdrRig, OptionalSdrPcmRx) =
+            if rig_cfg.rig.access.access_type.as_deref() == Some("sdr") {
             let (rig, pcm_rx) = build_sdr_rig_from_instance(rig_cfg)?;
             (Some(rig), Some(pcm_rx))
         } else {
@@ -823,10 +827,7 @@ async fn main() -> DynResult<()> {
         };
 
         #[cfg(not(feature = "soapysdr"))]
-        let (sdr_prebuilt_rig, sdr_pcm_rx): (
-            Option<Box<dyn trx_core::rig::RigCat>>,
-            Option<broadcast::Receiver<Vec<f32>>>,
-        ) = (None, None);
+        let (sdr_prebuilt_rig, sdr_pcm_rx): (OptionalSdrRig, OptionalSdrPcmRx) = (None, None);
 
         let histories = DecoderHistories::new();
 

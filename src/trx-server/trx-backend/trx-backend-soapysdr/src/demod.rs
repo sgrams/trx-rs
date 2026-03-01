@@ -154,7 +154,7 @@ fn fast_atan2(y: f32, x: f32) -> f32 {
         }
     }
 
-    let angle = if x > 0.0 {
+    if x > 0.0 {
         fast_atan(y / x)
     } else if x < 0.0 {
         if y >= 0.0 {
@@ -164,8 +164,7 @@ fn fast_atan2(y: f32, x: f32) -> f32 {
         }
     } else {
         0.0
-    };
-    angle
+    }
 }
 
 /// 7th-order minimax atan approximation for |z| ≤ 1.
@@ -1511,14 +1510,14 @@ mod tests {
         let pilot_freq = 19_000.0_f32;
         let carrier_freq = 38_000.0_f32;
         let mut composite = vec![0.0_f32; num_samples];
-        for n in 0..num_samples {
+        for (n, sample) in composite.iter_mut().enumerate() {
             let t = n as f32 / fs;
             let audio = (TAU * audio_freq * t).sin(); // L = audio, R = 0
             let sum = audio;       // L + R
             let diff = audio;      // L - R
             let pilot = 0.1 * (TAU * pilot_freq * t).cos();
             let carrier = (TAU * carrier_freq * t).cos();
-            composite[n] = sum + pilot + diff * carrier;
+            *sample = sum + pilot + diff * carrier;
         }
 
         // --- FM-modulate composite → IQ samples ---
@@ -1613,7 +1612,7 @@ mod tests {
         // Test both L-only (diff = +audio) and R-only (diff = -audio).
         for (label, diff_sign) in [("L-only", 1.0_f32), ("R-only", -1.0_f32)] {
             let mut composite = vec![0.0_f32; num_samples];
-            for n in 0..num_samples {
+            for (n, sample) in composite.iter_mut().enumerate() {
                 let t = n as f32 / fs;
                 let audio: f32 = freqs.iter().map(|&f| (TAU * f * t).sin()).sum::<f32>()
                     / freqs.len() as f32;
@@ -1621,7 +1620,7 @@ mod tests {
                 let diff = audio * diff_sign;        // L - R
                 let pilot = 0.1 * (TAU * pilot_freq * t).cos();
                 let carrier = (TAU * carrier_freq * t).cos();
-                composite[n] = sum + pilot + diff * carrier;
+                *sample = sum + pilot + diff * carrier;
             }
 
             let peak_composite = 2.1_f32;
@@ -1928,14 +1927,14 @@ mod tests {
         let pilot_freq = 19_000.0_f32;
         let carrier_freq = 38_000.0_f32;
         let mut composite = vec![0.0_f32; num_samples];
-        for n in 0..num_samples {
+        for (n, sample) in composite.iter_mut().enumerate() {
             let t = n as f32 / fs;
             let audio = (TAU * audio_freq * t).sin();
             let sum = audio;
             let diff = audio;
             let pilot = 0.1 * (TAU * pilot_freq * t).cos();
             let carrier = (TAU * carrier_freq * t).cos();
-            composite[n] = sum + pilot + diff * carrier;
+            *sample = sum + pilot + diff * carrier;
         }
 
         let peak_composite = 2.1_f32;

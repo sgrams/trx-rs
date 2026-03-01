@@ -29,6 +29,16 @@ const LOGO_BYTES: &[u8] =
     include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/assets/trx-logo.png"));
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(15);
 
+struct FrontendMeta {
+    http_clients: usize,
+    rigctl_clients: usize,
+    rigctl_addr: Option<String>,
+    active_rig_id: Option<String>,
+    rig_ids: Vec<String>,
+    owner_callsign: Option<String>,
+    show_sdr_gain_control: bool,
+}
+
 #[get("/status")]
 pub async fn status_api(
     state: web::Data<watch::Receiver<RigState>>,
@@ -39,13 +49,7 @@ pub async fn status_api(
     let json = serde_json::to_string(&state).map_err(actix_web::error::ErrorInternalServerError)?;
     let json = inject_frontend_meta(
         &json,
-        clients.load(Ordering::Relaxed),
-        context.rigctl_clients.load(Ordering::Relaxed),
-        rigctl_addr_from_context(context.get_ref().as_ref()),
-        active_rig_id_from_context(context.get_ref().as_ref()),
-        rig_ids_from_context(context.get_ref().as_ref()),
-        owner_callsign_from_context(context.get_ref().as_ref()),
-        show_sdr_gain_control_from_context(context.get_ref().as_ref()),
+        frontend_meta_from_context(clients.load(Ordering::Relaxed), context.get_ref().as_ref()),
     );
     Ok(HttpResponse::Ok()
         .insert_header((header::CONTENT_TYPE, "application/json"))
@@ -53,16 +57,7 @@ pub async fn status_api(
 }
 
 /// Inject `"clients": N` into a JSON object string.
-fn inject_frontend_meta(
-    json: &str,
-    http_clients: usize,
-    rigctl_clients: usize,
-    rigctl_addr: Option<String>,
-    active_rig_id: Option<String>,
-    rig_ids: Vec<String>,
-    owner_callsign: Option<String>,
-    show_sdr_gain_control: bool,
-) -> String {
+fn inject_frontend_meta(json: &str, meta: FrontendMeta) -> String {
     let mut value: serde_json::Value = match serde_json::from_str(json) {
         Ok(v) => v,
         Err(_) => return json.to_string(),
@@ -71,27 +66,39 @@ fn inject_frontend_meta(
     let Some(map) = value.as_object_mut() else {
         return json.to_string();
     };
-    map.insert("clients".to_string(), serde_json::json!(http_clients));
+    map.insert("clients".to_string(), serde_json::json!(meta.http_clients));
     map.insert(
         "rigctl_clients".to_string(),
-        serde_json::json!(rigctl_clients),
+        serde_json::json!(meta.rigctl_clients),
     );
-    if let Some(addr) = rigctl_addr {
+    if let Some(addr) = meta.rigctl_addr {
         map.insert("rigctl_addr".to_string(), serde_json::json!(addr));
     }
-    if let Some(rig_id) = active_rig_id {
+    if let Some(rig_id) = meta.active_rig_id {
         map.insert("active_rig_id".to_string(), serde_json::json!(rig_id));
     }
-    map.insert("rig_ids".to_string(), serde_json::json!(rig_ids));
-    if let Some(owner) = owner_callsign {
+    map.insert("rig_ids".to_string(), serde_json::json!(meta.rig_ids));
+    if let Some(owner) = meta.owner_callsign {
         map.insert("owner_callsign".to_string(), serde_json::json!(owner));
     }
     map.insert(
         "show_sdr_gain_control".to_string(),
-        serde_json::json!(show_sdr_gain_control),
+        serde_json::json!(meta.show_sdr_gain_control),
     );
 
     serde_json::to_string(&value).unwrap_or_else(|_| json.to_string())
+}
+
+fn frontend_meta_from_context(http_clients: usize, context: &FrontendRuntimeContext) -> FrontendMeta {
+    FrontendMeta {
+        http_clients,
+        rigctl_clients: context.rigctl_clients.load(Ordering::Relaxed),
+        rigctl_addr: rigctl_addr_from_context(context),
+        active_rig_id: active_rig_id_from_context(context),
+        rig_ids: rig_ids_from_context(context),
+        owner_callsign: owner_callsign_from_context(context),
+        show_sdr_gain_control: show_sdr_gain_control_from_context(context),
+    }
 }
 
 fn rigctl_addr_from_context(context: &FrontendRuntimeContext) -> Option<String> {
@@ -144,13 +151,7 @@ pub async fn events(
         serde_json::to_string(&initial).map_err(actix_web::error::ErrorInternalServerError)?;
     let initial_json = inject_frontend_meta(
         &initial_json,
-        count,
-        context.rigctl_clients.load(Ordering::Relaxed),
-        rigctl_addr_from_context(context.get_ref().as_ref()),
-        active_rig_id_from_context(context.get_ref().as_ref()),
-        rig_ids_from_context(context.get_ref().as_ref()),
-        owner_callsign_from_context(context.get_ref().as_ref()),
-        show_sdr_gain_control_from_context(context.get_ref().as_ref()),
+        frontend_meta_from_context(count, context.get_ref().as_ref()),
     );
     let initial_stream =
         once(async move { Ok::<Bytes, Error>(Bytes::from(format!("data: {initial_json}\n\n"))) });
@@ -165,13 +166,10 @@ pub async fn events(
                 serde_json::to_string(&v).ok().map(|json| {
                     let json = inject_frontend_meta(
                         &json,
-                        counter.load(Ordering::Relaxed),
-                        context.rigctl_clients.load(Ordering::Relaxed),
-                        rigctl_addr_from_context(context.as_ref()),
-                        active_rig_id_from_context(context.as_ref()),
-                        rig_ids_from_context(context.as_ref()),
-                        owner_callsign_from_context(context.as_ref()),
-                        show_sdr_gain_control_from_context(context.as_ref()),
+                        frontend_meta_from_context(
+                            counter.load(Ordering::Relaxed),
+                            context.as_ref(),
+                        ),
                     );
                     Ok::<Bytes, Error>(Bytes::from(format!("data: {json}\n\n")))
                 })

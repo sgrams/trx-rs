@@ -147,6 +147,7 @@ impl DummyRig {
 }
 
 #[cfg(test)]
+#[allow(clippy::items_after_test_module)]
 mod tests {
     use super::*;
     use trx_core::rig::Rig;
