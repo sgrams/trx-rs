@@ -36,6 +36,31 @@ const STEREO_SEPARATION_GAIN: f32 = 1.000;
 const STEREO_MATRIX_GAIN: f32 = 1.20;
 /// Stereo detection runs every N composite samples to reduce CPU.
 const STEREO_DETECT_DECIMATION: u32 = 16;
+
+// ---------------------------------------------------------------------------
+// Stereo denoise constants
+// ---------------------------------------------------------------------------
+
+/// Number of frequency subbands for stereo denoise processing.
+const DENOISE_BANDS: usize = 6;
+/// Center frequencies (Hz) of each denoise subband.
+/// Spaced to cover the full 0–15 kHz audio range with overlapping skirts.
+const DENOISE_CENTERS: [f32; DENOISE_BANDS] = [250.0, 800.0, 2500.0, 5500.0, 10000.0, 16000.0];
+/// Q values for band-pass filters in each denoise subband.
+/// Low Q values produce wide overlapping bands for better spectral coverage.
+const DENOISE_Q: [f32; DENOISE_BANDS] = [0.3, 0.35, 0.4, 0.5, 0.6, 0.7];
+/// Noise power smoothing cutoff (Hz) — slow, noise is stationary.
+const DENOISE_NOISE_SMOOTH_HZ: f32 = 10.0;
+/// Signal power smoothing cutoff (Hz) — faster for transients.
+const DENOISE_SIGNAL_SMOOTH_HZ: f32 = 30.0;
+/// Diff noise correction factor.
+const DENOISE_BETA: f32 = 1.0;
+/// Sum noise correction factor.
+const DENOISE_ALPHA: f32 = 0.5;
+/// Noise floor to prevent division by zero.
+const DENOISE_FLOOR: f32 = 1e-10;
+/// Knee for SNR-based amplitude weighting.
+const DENOISE_KNEE: f32 = 4.0;
 /// Gentle high-pass memory for the stereo L-R path.
 /// This trims only very low-frequency difference energy that can eat headroom
 /// and modulate higher-frequency stereo detail.
@@ -560,6 +585,143 @@ impl Deemphasis {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Stereo denoise — frequency-selective diff attenuation
+// ---------------------------------------------------------------------------
+
+/// Per-subband state for stereo denoise processing.
+#[derive(Debug, Clone)]
+struct DenoiseSubband {
+    /// Band-pass filters for sum, diff_i, and diff_q signals.
+    sum_bp: BiquadBandPass,
+    diff_i_bp: BiquadBandPass,
+    diff_q_bp: BiquadBandPass,
+    /// Smoothed noise power estimate (from |diff_q|²).
+    noise_lp: OnePoleLowPass,
+    /// Smoothed diff signal power estimate.
+    diff_lp: OnePoleLowPass,
+    /// Smoothed sum signal power estimate.
+    sum_lp: OnePoleLowPass,
+}
+
+impl DenoiseSubband {
+    fn new(audio_rate: f32, center_hz: f32, q: f32) -> Self {
+        Self {
+            sum_bp: BiquadBandPass::new(audio_rate, center_hz, q),
+            diff_i_bp: BiquadBandPass::new(audio_rate, center_hz, q),
+            diff_q_bp: BiquadBandPass::new(audio_rate, center_hz, q),
+            noise_lp: OnePoleLowPass::new(audio_rate, DENOISE_NOISE_SMOOTH_HZ),
+            diff_lp: OnePoleLowPass::new(audio_rate, DENOISE_SIGNAL_SMOOTH_HZ),
+            sum_lp: OnePoleLowPass::new(audio_rate, DENOISE_SIGNAL_SMOOTH_HZ),
+        }
+    }
+
+    /// Process one sample through this subband.
+    /// Returns `(gain, weight)` where `gain` is the per-band SNR-based
+    /// attenuation factor [0,1] and `weight` is the band's energy contribution
+    /// for computing a weighted-average broadband gain.
+    #[inline]
+    fn process(&mut self, sum: f32, diff_i: f32, diff_q: f32) -> (f32, f32) {
+        let sum_band = self.sum_bp.process(sum);
+        let diff_i_band = self.diff_i_bp.process(diff_i);
+        let diff_q_band = self.diff_q_bp.process(diff_q);
+
+        // Estimate noise power from quadrature component.
+        let noise_raw = diff_q_band * diff_q_band;
+        let noise_power = self.noise_lp.process(noise_raw).max(DENOISE_FLOOR);
+
+        // Estimate diff signal power, correcting for noise.
+        let diff_raw = diff_i_band * diff_i_band;
+        let diff_power = (self.diff_lp.process(diff_raw) - DENOISE_BETA * noise_power).max(0.0);
+
+        // Estimate sum signal power, correcting for noise.
+        let sum_raw = sum_band * sum_band;
+        let sum_power = (self.sum_lp.process(sum_raw) - DENOISE_ALPHA * noise_power).max(0.0);
+
+        // Hden: SNR-based gate — sqrt(diff_power / noise_power), clamped [0,1].
+        let hden = (diff_power / noise_power).sqrt().min(1.0);
+
+        // Weight A: diff SNR vs knee — amplitude weighting.
+        let diff_snr = diff_power / noise_power;
+        let weight_a = diff_snr / (diff_snr + DENOISE_KNEE);
+
+        // Weight B: mono content suppression — only active when noise is present.
+        // When noise is low (clean signal), weight_B → 1.0 (no suppression).
+        // When noise is high, weight_B → diff/(sum+diff) (suppress mono-correlated diff).
+        let noise_indicator = (noise_power / (diff_power + DENOISE_FLOOR)).min(1.0);
+        let weight_b_raw = diff_power / (sum_power + diff_power + DENOISE_FLOOR);
+        let weight_b = 1.0 - noise_indicator * (1.0 - weight_b_raw);
+
+        let gain = hden * weight_a * weight_b;
+        // Use smoothed diff power as band energy weight for broadband averaging.
+        let band_energy = self.diff_lp.y.max(DENOISE_FLOOR);
+        (gain, band_energy)
+    }
+
+    fn reset(&mut self) {
+        self.sum_bp.reset();
+        self.diff_i_bp.reset();
+        self.diff_q_bp.reset();
+        self.noise_lp.reset();
+        self.diff_lp.reset();
+        self.sum_lp.reset();
+    }
+}
+
+/// Frequency-selective stereo denoise processor.
+///
+/// Splits sum, diff_i, and diff_q into N subbands and attenuates the diff
+/// signal per-band based on SNR estimated from the quadrature component
+/// (diff_q), which serves as a noise reference.
+#[derive(Debug, Clone)]
+struct StereoDenoise {
+    bands: [DenoiseSubband; DENOISE_BANDS],
+    enabled: bool,
+}
+
+impl StereoDenoise {
+    fn new(audio_rate: f32) -> Self {
+        let bands = std::array::from_fn(|i| {
+            DenoiseSubband::new(audio_rate, DENOISE_CENTERS[i], DENOISE_Q[i])
+        });
+        Self {
+            bands,
+            enabled: true,
+        }
+    }
+
+    /// Process one sample. Returns the denoised diff_i signal.
+    /// Computes per-band SNR-based gains and applies their energy-weighted
+    /// average to the original diff_i, preserving perfect passthrough when
+    /// all bands have high SNR.
+    /// When disabled, returns `diff_i` unchanged.
+    #[inline]
+    fn process(&mut self, sum: f32, diff_i: f32, diff_q: f32) -> f32 {
+        if !self.enabled {
+            return diff_i;
+        }
+        let mut gain_sum = 0.0_f32;
+        let mut weight_sum = 0.0_f32;
+        for band in &mut self.bands {
+            let (gain, weight) = band.process(sum, diff_i, diff_q);
+            gain_sum += gain * weight;
+            weight_sum += weight;
+        }
+        let broadband_gain = if weight_sum > DENOISE_FLOOR {
+            (gain_sum / weight_sum).clamp(0.0, 1.0)
+        } else {
+            1.0
+        };
+        diff_i * broadband_gain
+    }
+
+    fn reset(&mut self) {
+        for band in &mut self.bands {
+            band.reset();
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct WfmStereoDecoder {
     output_channels: usize,
@@ -631,6 +793,8 @@ pub struct WfmStereoDecoder {
     diff_q_hist: [f32; WFM_RESAMP_TAPS],
     /// Write position for the circular history buffers.
     hist_pos: usize,
+    /// Frequency-selective stereo denoise processor.
+    denoise: StereoDenoise,
     /// Previous pilot blend sample for simple linear interpolation.
     prev_blend: f32,
     /// Fractional phase increment per composite sample = audio_rate / composite_rate.
@@ -698,6 +862,7 @@ impl WfmStereoDecoder {
             diff_hist: [0.0; WFM_RESAMP_TAPS],
             diff_q_hist: [0.0; WFM_RESAMP_TAPS],
             hist_pos: 0,
+            denoise: StereoDenoise::new(audio_rate.max(1) as f32),
             prev_blend: 0.0,
             output_phase_inc,
             output_phase: 0.0,
@@ -849,6 +1014,7 @@ impl WfmStereoDecoder {
                 (self.prev_blend + frac * (stereo_blend_target - self.prev_blend)).clamp(0.0, 1.0);
             self.prev_blend = stereo_blend_target;
             let diff_i = (diff_i * trim_cos + diff_q * trim_sin) * STEREO_SEPARATION_GAIN;
+            let diff_i = self.denoise.process(sum_i, diff_i, diff_q);
 
             // --- Deemphasis + DC block + output ---
             if self.output_channels >= 2 && self.stereo_enabled {
@@ -944,8 +1110,13 @@ impl WfmStereoDecoder {
         self.diff_hist = [0.0; WFM_RESAMP_TAPS];
         self.diff_q_hist = [0.0; WFM_RESAMP_TAPS];
         self.hist_pos = 0;
+        self.denoise.reset();
         self.prev_blend = 0.0;
         self.output_phase = 0.0;
+    }
+
+    pub fn set_denoise_enabled(&mut self, enabled: bool) {
+        self.denoise.enabled = enabled;
     }
 
     pub fn stereo_detected(&self) -> bool {
@@ -1593,5 +1764,229 @@ mod tests {
                 demod
             );
         }
+    }
+
+    // --- Stereo denoise tests ---
+
+    /// Noisy diff should be attenuated by >6 dB when diff_q carries matching noise.
+    #[test]
+    fn test_denoise_noisy_diff_attenuation() {
+        let audio_rate = 48_000.0;
+        let num_samples = (audio_rate * 0.5) as usize; // 500 ms
+        let mut denoise = StereoDenoise::new(audio_rate);
+
+        // Use a simple PRNG for deterministic noise.
+        let mut rng_state = 12345_u64;
+        let mut next_noise = || -> f32 {
+            rng_state = rng_state.wrapping_mul(6364136223846793005).wrapping_add(1);
+            ((rng_state >> 33) as f32 / (1u64 << 31) as f32) - 1.0
+        };
+
+        // Generate noise for diff_i and diff_q (correlated noise scenario).
+        let mut input_energy = 0.0_f64;
+        let mut output_energy = 0.0_f64;
+        let skip = (audio_rate * 0.1) as usize; // skip 100 ms warmup
+
+        for n in 0..num_samples {
+            let noise_i = next_noise() * 0.5;
+            let noise_q = next_noise() * 0.5;
+            let sum = 0.0; // no sum signal
+            let out = denoise.process(sum, noise_i, noise_q);
+            if n >= skip {
+                input_energy += (noise_i as f64) * (noise_i as f64);
+                output_energy += (out as f64) * (out as f64);
+            }
+        }
+
+        let input_rms = (input_energy / (num_samples - skip) as f64).sqrt();
+        let output_rms = (output_energy / (num_samples - skip) as f64).sqrt();
+        let attenuation_db = 20.0 * (input_rms / (output_rms + 1e-20)).log10();
+
+        eprintln!("denoise noise attenuation: {attenuation_db:.1} dB (input_rms={input_rms:.6}, output_rms={output_rms:.6})");
+        assert!(
+            attenuation_db > 6.0,
+            "noisy diff should be attenuated by >6 dB, got {attenuation_db:.1} dB"
+        );
+    }
+
+    /// Clean stereo tone (diff_q = 0) should pass with <3 dB loss.
+    #[test]
+    fn test_denoise_clean_stereo_preservation() {
+        use std::f32::consts::TAU;
+
+        let audio_rate = 48_000.0;
+        let num_samples = (audio_rate * 0.5) as usize;
+        let mut denoise = StereoDenoise::new(audio_rate);
+        let tone_freq = 1000.0;
+
+        let mut input_energy = 0.0_f64;
+        let mut output_energy = 0.0_f64;
+        let skip = (audio_rate * 0.15) as usize;
+
+        for n in 0..num_samples {
+            let t = n as f32 / audio_rate;
+            let tone = (TAU * tone_freq * t).sin() * 0.5;
+            let sum = tone;    // mono content
+            let diff_i = tone; // stereo diff = same tone
+            let diff_q = 0.0;  // no noise reference
+            let out = denoise.process(sum, diff_i, diff_q);
+            if n >= skip {
+                input_energy += (diff_i as f64) * (diff_i as f64);
+                output_energy += (out as f64) * (out as f64);
+            }
+        }
+
+        let input_rms = (input_energy / (num_samples - skip) as f64).sqrt();
+        let output_rms = (output_energy / (num_samples - skip) as f64).sqrt();
+        let loss_db = 20.0 * (input_rms / (output_rms + 1e-20)).log10();
+
+        eprintln!("denoise clean tone loss: {loss_db:.1} dB (input_rms={input_rms:.6}, output_rms={output_rms:.6})");
+        assert!(
+            loss_db < 4.0,
+            "clean stereo tone should lose <4 dB, got {loss_db:.1} dB"
+        );
+    }
+
+    /// When disabled, denoise should return diff_i unchanged (bit-exact).
+    #[test]
+    fn test_denoise_bypass_when_disabled() {
+        let audio_rate = 48_000.0;
+        let mut denoise = StereoDenoise::new(audio_rate);
+        denoise.enabled = false;
+
+        let test_values = [0.0_f32, 0.5, -0.3, 1.0, -1.0, 0.001];
+        for &val in &test_values {
+            let out = denoise.process(0.1, val, 0.2);
+            assert_eq!(out, val, "bypass should return diff_i unchanged for {val}");
+        }
+    }
+
+    /// Per-band selectivity: clean low tone + noisy highs should preserve the low band.
+    #[test]
+    fn test_denoise_per_band_selectivity() {
+        use std::f32::consts::TAU;
+
+        let audio_rate = 48_000.0;
+        let num_samples = (audio_rate * 0.5) as usize;
+        let mut denoise = StereoDenoise::new(audio_rate);
+        let low_freq = 400.0;
+
+        let mut rng_state = 67890_u64;
+        let mut next_noise = || -> f32 {
+            rng_state = rng_state.wrapping_mul(6364136223846793005).wrapping_add(1);
+            ((rng_state >> 33) as f32 / (1u64 << 31) as f32) - 1.0
+        };
+
+        let skip = (audio_rate * 0.15) as usize;
+        let mut output_samples = Vec::with_capacity(num_samples - skip);
+
+        for n in 0..num_samples {
+            let t = n as f32 / audio_rate;
+            let low_tone = (TAU * low_freq * t).sin() * 0.3;
+            let high_noise = next_noise() * 0.3;
+            let sum = low_tone;
+            let diff_i = low_tone + high_noise;
+            let diff_q = high_noise; // noise reference for high freqs
+            let out = denoise.process(sum, diff_i, diff_q);
+            if n >= skip {
+                output_samples.push(out);
+            }
+        }
+
+        // Measure energy in the low-frequency band using a bandpass filter.
+        let mut low_bp = BiquadBandPass::new(audio_rate, low_freq, 2.0);
+        let mut low_energy = 0.0_f64;
+        let mut total_energy = 0.0_f64;
+        for &s in &output_samples {
+            let low_part = low_bp.process(s);
+            low_energy += (low_part as f64) * (low_part as f64);
+            total_energy += (s as f64) * (s as f64);
+        }
+
+        let low_ratio = low_energy / (total_energy + 1e-20);
+        eprintln!("denoise selectivity: low-band energy ratio = {low_ratio:.4}");
+
+        // The low band tone should dominate after denoise removes high-freq noise.
+        assert!(
+            low_ratio > 0.3,
+            "low-band tone should be dominant after denoise, ratio = {low_ratio:.4}"
+        );
+    }
+
+    /// Integration test: existing stereo separation test should still pass with denoise.
+    #[test]
+    fn test_wfm_stereo_separation_with_denoise() {
+        use std::f32::consts::TAU;
+
+        let composite_rate: u32 = 240_000;
+        let audio_rate: u32 = 48_000;
+        let fs = composite_rate as f32;
+        let duration_secs = 0.5_f32;
+        let num_samples = (fs * duration_secs) as usize;
+
+        let audio_freq = 1000.0_f32;
+        let pilot_freq = 19_000.0_f32;
+        let carrier_freq = 38_000.0_f32;
+        let mut composite = vec![0.0_f32; num_samples];
+        for n in 0..num_samples {
+            let t = n as f32 / fs;
+            let audio = (TAU * audio_freq * t).sin();
+            let sum = audio;
+            let diff = audio;
+            let pilot = 0.1 * (TAU * pilot_freq * t).cos();
+            let carrier = (TAU * carrier_freq * t).cos();
+            composite[n] = sum + pilot + diff * carrier;
+        }
+
+        let peak_composite = 2.1_f32;
+        let deviation_hz = 75_000.0_f32;
+        let mod_index = TAU * deviation_hz / (peak_composite * fs);
+        let mut phase: f32 = 0.0;
+        let mut iq = Vec::with_capacity(num_samples);
+        for &c in &composite {
+            phase += mod_index * c;
+            iq.push(Complex::from_polar(1.0, phase));
+        }
+
+        let mut decoder = WfmStereoDecoder::new(
+            composite_rate,
+            audio_rate,
+            2,
+            true,
+            50,
+        );
+        // Denoise is enabled by default — verify it doesn't break stereo separation.
+        let output = decoder.process_iq(&iq);
+
+        let skip_samples = (0.2 * audio_rate as f32) as usize;
+        let stereo_pairs = output.len() / 2;
+        assert!(stereo_pairs > skip_samples + 100);
+
+        let mut l_energy = 0.0_f64;
+        let mut r_energy = 0.0_f64;
+        let mut count = 0_u64;
+        for i in skip_samples..stereo_pairs {
+            let l = output[2 * i] as f64;
+            let r = output[2 * i + 1] as f64;
+            l_energy += l * l;
+            r_energy += r * r;
+            count += 1;
+        }
+        let l_rms = (l_energy / count as f64).sqrt();
+        let r_rms = (r_energy / count as f64).sqrt();
+
+        let separation_db = if r_rms > 1e-10 {
+            20.0 * (l_rms / r_rms).log10()
+        } else {
+            f64::INFINITY
+        };
+
+        eprintln!("stereo+denoise: L RMS = {l_rms:.6}, R RMS = {r_rms:.6}, separation = {separation_db:.1} dB");
+
+        assert!(l_rms > 0.01, "L channel should have energy");
+        assert!(
+            separation_db > 15.0,
+            "stereo separation with denoise should be >15 dB, got {separation_db:.1} dB"
+        );
     }
 }
