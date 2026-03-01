@@ -536,7 +536,7 @@ function setStyle(style) {
 }
 
 if (overviewPeakHoldEl) {
-  if (!Number.isFinite(overviewPeakHoldMs) || overviewPeakHoldMs <= 0) {
+  if (!Number.isFinite(overviewPeakHoldMs) || overviewPeakHoldMs < 0) {
     overviewPeakHoldMs = 2000;
   }
   overviewPeakHoldEl.value = String(overviewPeakHoldMs);
@@ -1020,8 +1020,12 @@ function drawOverviewSignalHistory(ctx, w, h, pal) {
 }
 
 function waterfallColor(db, pal) {
-  const clamped = Math.max(-120, Math.min(-10, Number.isFinite(db) ? db : -120));
-  const t = (clamped + 120) / 110;
+  const minDb = Number.isFinite(spectrumFloor) ? spectrumFloor : -115;
+  const maxDb = minDb + Math.max(20, Number.isFinite(spectrumRange) ? spectrumRange : 90);
+  const safeDb = Number.isFinite(db) ? db : minDb;
+  const clamped = Math.max(minDb, Math.min(maxDb, safeDb));
+  const span = Math.max(1, maxDb - minDb);
+  const t = (clamped - minDb) / span;
   const hue = pal.waterfallHue[0] + t * (pal.waterfallHue[1] - pal.waterfallHue[0]);
   const light = pal.waterfallLight[0] + t * (pal.waterfallLight[1] - pal.waterfallLight[0]);
   const alpha = pal.waterfallAlpha[0] + t * (pal.waterfallAlpha[1] - pal.waterfallAlpha[0]);
