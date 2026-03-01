@@ -25,7 +25,7 @@ const PILOT_NOTCH_Q: f32 = 5.0;
 /// Narrow 19 kHz band-pass used to derive zero-crossings for switching stereo demod.
 const PILOT_BPF_Q: f32 = 20.0;
 /// Fixed phase trim on the recovered L-R channel.
-const STEREO_SEPARATION_PHASE_TRIM: f32 = 0.0;
+const STEREO_SEPARATION_PHASE_TRIM: f32 = 0.001;
 /// Fixed gain trim on the recovered L-R channel.
 const STEREO_SEPARATION_GAIN: f32 = 1.00;
 /// Extra headroom in the stereo matrix.
