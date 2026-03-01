@@ -3777,34 +3777,38 @@ function drawSpectrum(data) {
       ctx.beginPath(); ctx.moveTo(xL, 0); ctx.lineTo(xL, H); ctx.stroke();
       ctx.beginPath(); ctx.moveTo(xR, 0); ctx.lineTo(xR, H); ctx.stroke();
 
-      // Bottom bookmark tab centered on the dial frequency
-      const xMid = hzToX(lastFreqHz);
-      const bwText = formatBwLabel(currentBandwidthHz);
-      ctx.save();
-      ctx.font = `bold ${Math.round(10 * dpr)}px sans-serif`;
-      const tw = ctx.measureText(bwText).width;
-      const PAD  = 6 * dpr;
-      const TAB_H = 16 * dpr;
-      const tabX = Math.max(0, Math.min(W - tw - PAD * 2, xMid - (tw + PAD * 2) / 2));
-      const tabY = H - TAB_H;
-      const r = 3 * dpr;
-      // Rounded-bottom tab shape (flat top)
-      ctx.fillStyle = "rgba(240,173,78,0.85)";
-      ctx.beginPath();
-      ctx.moveTo(tabX, tabY);
-      ctx.lineTo(tabX + tw + PAD * 2, tabY);
-      ctx.lineTo(tabX + tw + PAD * 2, H - r);
-      ctx.arcTo(tabX + tw + PAD * 2, H, tabX + tw + PAD * 2 - r, H, r);
-      ctx.lineTo(tabX + r, H);
-      ctx.arcTo(tabX, H, tabX, H - r, r);
-      ctx.lineTo(tabX, tabY);
-      ctx.closePath();
-      ctx.fill();
-      // Tab text
-      ctx.fillStyle = spectrumBgColor();
-      ctx.textAlign = "left";
-      ctx.fillText(bwText, tabX + PAD, H - 4 * dpr);
-      ctx.restore();
+      if (_bwDragEdge) {
+        // Bottom bookmark tab centered on the dial frequency, shown only while resizing BW
+        const xMid = hzToX(lastFreqHz);
+        const bwText = formatBwLabel(currentBandwidthHz);
+        ctx.save();
+        ctx.font = `bold ${Math.round(10 * dpr)}px sans-serif`;
+        const tw = ctx.measureText(bwText).width;
+        const PAD  = 6 * dpr;
+        const TAB_H = 16 * dpr;
+        const TAB_OFFSET = 4 * dpr;
+        const tabX = Math.max(0, Math.min(W - tw - PAD * 2, xMid - (tw + PAD * 2) / 2));
+        const tabBottom = H - TAB_OFFSET;
+        const tabY = tabBottom - TAB_H;
+        const r = 3 * dpr;
+        // Rounded-bottom tab shape (flat top)
+        ctx.fillStyle = "rgba(240,173,78,0.85)";
+        ctx.beginPath();
+        ctx.moveTo(tabX, tabY);
+        ctx.lineTo(tabX + tw + PAD * 2, tabY);
+        ctx.lineTo(tabX + tw + PAD * 2, tabBottom - r);
+        ctx.arcTo(tabX + tw + PAD * 2, tabBottom, tabX + tw + PAD * 2 - r, tabBottom, r);
+        ctx.lineTo(tabX + r, tabBottom);
+        ctx.arcTo(tabX, tabBottom, tabX, tabBottom - r, r);
+        ctx.lineTo(tabX, tabY);
+        ctx.closePath();
+        ctx.fill();
+        // Tab text
+        ctx.fillStyle = spectrumBgColor();
+        ctx.textAlign = "left";
+        ctx.fillText(bwText, tabX + PAD, tabBottom - 4 * dpr);
+        ctx.restore();
+      }
     }
   }
 
