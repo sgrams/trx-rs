@@ -646,6 +646,12 @@ small { color: var(--text-muted); }
   gap: 0;
 }
 .aprs-bar-header {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: color-mix(in srgb, var(--card-bg) 80%, transparent);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -655,8 +661,10 @@ small { color: var(--text-muted); }
   letter-spacing: 0.12em;
   color: var(--accent-green);
   text-transform: uppercase;
-  margin-bottom: 0.12rem;
-  opacity: 0.85;
+  padding-bottom: 0.1rem;
+  margin-bottom: 0.1rem;
+  border-bottom: 1px solid color-mix(in srgb, var(--border-light) 50%, transparent);
+  opacity: 0.95;
 }
 .aprs-bar-clear {
   background: none;
