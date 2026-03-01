@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: BSD-2-Clause
 
 use crate::radio::freq::Freq;
+use crate::rig::state::WfmDenoiseLevel;
 use crate::RigMode;
 
 /// Internal command handled by the rig task.
@@ -36,6 +37,6 @@ pub enum RigCommand {
     SetSdrGain(f64),
     SetWfmDeemphasis(u32),
     SetWfmStereo(bool),
-    SetWfmDenoise(bool),
+    SetWfmDenoise(WfmDenoiseLevel),
     GetSpectrum,
 }

@@ -277,8 +277,17 @@ pub struct RigFilterState {
     pub wfm_stereo: bool,
     #[serde(default)]
     pub wfm_stereo_detected: bool,
-    #[serde(default = "default_wfm_denoise")]
-    pub wfm_denoise: bool,
+    #[serde(default = "default_wfm_denoise_level")]
+    pub wfm_denoise: WfmDenoiseLevel,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum WfmDenoiseLevel {
+    Auto,
+    Low,
+    Medium,
+    High,
 }
 
 fn default_wfm_deemphasis_us() -> u32 {
@@ -289,8 +298,8 @@ fn default_wfm_stereo() -> bool {
     true
 }
 
-fn default_wfm_denoise() -> bool {
-    true
+fn default_wfm_denoise_level() -> WfmDenoiseLevel {
+    WfmDenoiseLevel::Auto
 }
 
 /// Spectrum data from SDR backends (FFT magnitude over the full capture bandwidth).

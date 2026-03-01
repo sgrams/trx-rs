@@ -11,7 +11,7 @@ use std::sync::{Arc, Mutex};
 
 use trx_core::radio::freq::{Band, Freq};
 use trx_core::rig::response::RigError;
-use trx_core::rig::state::{RigFilterState, SpectrumData};
+use trx_core::rig::state::{RigFilterState, SpectrumData, WfmDenoiseLevel};
 use trx_core::rig::{
     AudioSource, Rig, RigAccessMethod, RigCapabilities, RigCat, RigInfo, RigStatusFuture,
 };
@@ -42,7 +42,7 @@ pub struct SoapySdrRig {
     /// Whether WFM stereo decode is enabled.
     wfm_stereo: bool,
     /// Whether WFM stereo denoise is enabled.
-    wfm_denoise: bool,
+    wfm_denoise: WfmDenoiseLevel,
     /// Requested hardware gain setting in dB.
     gain_db: f64,
     /// Optional hard ceiling for the applied hardware gain in dB.
@@ -206,7 +206,7 @@ impl SoapySdrRig {
             retune_cmd,
             wfm_deemphasis_us,
             wfm_stereo: true,
-            wfm_denoise: true,
+            wfm_denoise: WfmDenoiseLevel::Auto,
             gain_db,
             max_gain_db,
         })
@@ -526,12 +526,12 @@ impl RigCat for SoapySdrRig {
 
     fn set_wfm_denoise<'a>(
         &'a mut self,
-        enabled: bool,
+        level: WfmDenoiseLevel,
     ) -> Pin<Box<dyn std::future::Future<Output = DynResult<()>> + Send + 'a>> {
         Box::pin(async move {
-            self.wfm_denoise = enabled;
+            self.wfm_denoise = level;
             if let Some(dsp_arc) = self.pipeline.channel_dsps.get(self.primary_channel_idx) {
-                dsp_arc.lock().unwrap().set_wfm_denoise(enabled);
+                dsp_arc.lock().unwrap().set_wfm_denoise(level);
             }
             Ok(())
         })

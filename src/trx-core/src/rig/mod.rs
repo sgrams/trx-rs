@@ -187,7 +187,7 @@ pub trait RigCat: Rig + Send {
 
     fn set_wfm_denoise<'a>(
         &'a mut self,
-        _enabled: bool,
+        _level: state::WfmDenoiseLevel,
     ) -> Pin<Box<dyn Future<Output = DynResult<()>> + Send + 'a>> {
         Box::pin(std::future::ready(Err(
             Box::new(response::RigError::not_supported("set_wfm_denoise"))

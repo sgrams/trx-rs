@@ -13,5 +13,5 @@ pub type DynResult<T> = Result<T, Box<dyn std::error::Error + Send + Sync>>;
 pub use rig::command::RigCommand;
 pub use rig::request::RigRequest;
 pub use rig::response::{RigError, RigResult};
-pub use rig::state::{RdsData, RigFilterState, RigMode, RigSnapshot, RigState};
+pub use rig::state::{RdsData, RigFilterState, RigMode, RigSnapshot, RigState, WfmDenoiseLevel};
 pub use rig::AudioSource;

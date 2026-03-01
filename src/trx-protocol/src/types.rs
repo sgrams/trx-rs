@@ -7,6 +7,7 @@
 use serde::{Deserialize, Serialize};
 
 use trx_core::rig::state::RigSnapshot;
+use trx_core::WfmDenoiseLevel;
 
 /// Command received from network clients (JSON).
 #[derive(Debug, Serialize, Deserialize)]
@@ -41,7 +42,7 @@ pub enum ClientCommand {
     SetSdrGain { gain_db: f64 },
     SetWfmDeemphasis { deemphasis_us: u32 },
     SetWfmStereo { enabled: bool },
-    SetWfmDenoise { enabled: bool },
+    SetWfmDenoise { level: WfmDenoiseLevel },
     GetSpectrum,
 }
 

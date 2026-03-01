@@ -1428,8 +1428,10 @@ function render(update) {
         saveSetting("wfmAudioMode", nextMode);
       }
     }
-    if (wfmDenoiseEl && typeof update.filter.wfm_denoise === "boolean") {
-      const nextDenoise = update.filter.wfm_denoise ? "on" : "off";
+    if (wfmDenoiseEl && (typeof update.filter.wfm_denoise === "string" || typeof update.filter.wfm_denoise === "boolean")) {
+      const nextDenoise = typeof update.filter.wfm_denoise === "string"
+        ? normalizeWfmDenoiseLevel(update.filter.wfm_denoise)
+        : (update.filter.wfm_denoise ? "auto" : "low");
       if (wfmDenoiseEl.value !== nextDenoise) {
         wfmDenoiseEl.value = nextDenoise;
         saveSetting("wfmDenoise", nextDenoise);
@@ -2990,6 +2992,13 @@ function levelFromChannels(channels, frameCount) {
   return Math.min(100, rms * 220);
 }
 
+function normalizeWfmDenoiseLevel(value) {
+  const next = String(value ?? "").toLowerCase();
+  if (next === "auto" || next === "low" || next === "medium" || next === "high") return next;
+  if (next === "off") return "low";
+  return "auto";
+}
+
 if (wfmAudioModeEl) {
   wfmAudioModeEl.value = loadSetting("wfmAudioMode", "stereo");
   wfmAudioModeEl.addEventListener("change", () => {
@@ -2999,11 +3008,12 @@ if (wfmAudioModeEl) {
   });
 }
 if (wfmDenoiseEl) {
-  wfmDenoiseEl.value = loadSetting("wfmDenoise", "on");
+  wfmDenoiseEl.value = normalizeWfmDenoiseLevel(loadSetting("wfmDenoise", "auto"));
   wfmDenoiseEl.addEventListener("change", () => {
-    saveSetting("wfmDenoise", wfmDenoiseEl.value);
-    const enabled = wfmDenoiseEl.value !== "off";
-    postPath(`/set_wfm_denoise?enabled=${enabled ? "true" : "false"}`).catch(() => {});
+    const level = normalizeWfmDenoiseLevel(wfmDenoiseEl.value);
+    wfmDenoiseEl.value = level;
+    saveSetting("wfmDenoise", level);
+    postPath(`/set_wfm_denoise?level=${encodeURIComponent(level)}`).catch(() => {});
   });
 }
 if (wfmDeemphasisEl) {

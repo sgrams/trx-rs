@@ -14,6 +14,7 @@ use tokio::time::{self, Duration};
 use tokio_stream::wrappers::{IntervalStream, WatchStream};
 
 use trx_core::radio::freq::Freq;
+use trx_core::rig::state::WfmDenoiseLevel;
 use trx_core::rig::{RigAccessMethod, RigCapabilities, RigInfo};
 use trx_core::{RigCommand, RigRequest, RigSnapshot, RigState};
 use trx_frontend::{FrontendRuntimeContext, RemoteRigEntry};
@@ -551,7 +552,7 @@ pub async fn set_wfm_stereo(
 
 #[derive(serde::Deserialize)]
 pub struct WfmDenoiseQuery {
-    pub enabled: bool,
+    pub level: WfmDenoiseLevel,
 }
 
 #[post("/set_wfm_denoise")]
@@ -559,7 +560,7 @@ pub async fn set_wfm_denoise(
     query: web::Query<WfmDenoiseQuery>,
     rig_tx: web::Data<mpsc::Sender<RigRequest>>,
 ) -> Result<HttpResponse, Error> {
-    send_command(&rig_tx, RigCommand::SetWfmDenoise(query.enabled)).await
+    send_command(&rig_tx, RigCommand::SetWfmDenoise(query.level)).await
 }
 
 #[post("/toggle_aprs_decode")]

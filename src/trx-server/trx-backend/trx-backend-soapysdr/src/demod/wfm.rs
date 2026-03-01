@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: BSD-2-Clause
 
 use num_complex::Complex;
-use trx_core::rig::state::RdsData;
+use trx_core::rig::state::{RdsData, WfmDenoiseLevel};
 use trx_rds::RdsDecoder;
 
 use super::{math::demod_fm_with_prev, DcBlocker};
@@ -387,7 +387,7 @@ impl DenoiseSubband {
 #[derive(Debug, Clone)]
 struct StereoDenoise {
     bands: [DenoiseSubband; DENOISE_BANDS],
-    enabled: bool,
+    level: WfmDenoiseLevel,
 }
 
 impl StereoDenoise {
@@ -397,16 +397,12 @@ impl StereoDenoise {
         });
         Self {
             bands,
-            enabled: true,
+            level: WfmDenoiseLevel::Auto,
         }
     }
 
     #[inline]
     fn process(&mut self, sum: f32, diff_i: f32, diff_q: f32) -> f32 {
-        if !self.enabled {
-            return diff_i;
-        }
-
         let mut gain_sum = 0.0_f32;
         let mut weight_sum = 0.0_f32;
         for band in &mut self.bands {
@@ -420,7 +416,16 @@ impl StereoDenoise {
         } else {
             1.0
         };
-        diff_i * broadband_gain
+        let effective_gain = match self.level {
+            WfmDenoiseLevel::Auto => {
+                let strength = (0.3 + (1.0 - broadband_gain) * 0.7).clamp(0.3, 1.0);
+                1.0 - (1.0 - broadband_gain) * strength
+            }
+            WfmDenoiseLevel::Low => 1.0 - (1.0 - broadband_gain) * 0.35,
+            WfmDenoiseLevel::Medium => 1.0 - (1.0 - broadband_gain) * 0.65,
+            WfmDenoiseLevel::High => broadband_gain,
+        };
+        diff_i * effective_gain.clamp(0.0, 1.0)
     }
 
     fn reset(&mut self) {
@@ -489,6 +494,7 @@ impl WfmStereoDecoder {
         output_channels: usize,
         stereo_enabled: bool,
         deemphasis_us: u32,
+        denoise_level: WfmDenoiseLevel,
     ) -> Self {
         let composite_rate_f = composite_rate.max(1) as f32;
         let output_phase_inc = audio_rate.max(1) as f64 / composite_rate.max(1) as f64;
@@ -538,7 +544,11 @@ impl WfmStereoDecoder {
             diff_hist: [0.0; WFM_RESAMP_TAPS],
             diff_q_hist: [0.0; WFM_RESAMP_TAPS],
             hist_pos: 0,
-            denoise: StereoDenoise::new(audio_rate.max(1) as f32),
+            denoise: {
+                let mut denoise = StereoDenoise::new(audio_rate.max(1) as f32);
+                denoise.level = denoise_level;
+                denoise
+            },
             prev_blend: 0.0,
             output_phase_inc,
             output_phase: 0.0,
@@ -768,8 +778,8 @@ impl WfmStereoDecoder {
         self.output_phase = 0.0;
     }
 
-    pub fn set_denoise_enabled(&mut self, enabled: bool) {
-        self.denoise.enabled = enabled;
+    pub fn set_denoise_level(&mut self, level: WfmDenoiseLevel) {
+        self.denoise.level = level;
     }
 
     pub fn stereo_detected(&self) -> bool {
@@ -815,7 +825,8 @@ mod tests {
             iq.push(Complex::from_polar(1.0, phase));
         }
 
-        let mut decoder = WfmStereoDecoder::new(composite_rate, audio_rate, 2, true, 50);
+        let mut decoder =
+            WfmStereoDecoder::new(composite_rate, audio_rate, 2, true, 50, WfmDenoiseLevel::Auto);
         let output = decoder.process_iq(&iq);
 
         let skip_samples = (0.2 * audio_rate as f32) as usize;
@@ -883,7 +894,14 @@ mod tests {
                 iq.push(Complex::from_polar(1.0, phase));
             }
 
-            let mut decoder = WfmStereoDecoder::new(composite_rate, audio_rate, 2, true, 50);
+            let mut decoder = WfmStereoDecoder::new(
+                composite_rate,
+                audio_rate,
+                2,
+                true,
+                50,
+                WfmDenoiseLevel::Auto,
+            );
             let output = decoder.process_iq(&iq);
 
             let skip_samples = (0.3 * audio_rate as f32) as usize;
@@ -947,7 +965,8 @@ mod tests {
             iq.push(Complex::from_polar(1.0, phase));
         }
 
-        let mut decoder = WfmStereoDecoder::new(composite_rate, audio_rate, 2, true, 50);
+        let mut decoder =
+            WfmStereoDecoder::new(composite_rate, audio_rate, 2, true, 50, WfmDenoiseLevel::Auto);
         let output = decoder.process_iq(&iq);
 
         assert!(!decoder.stereo_detected());
@@ -1031,12 +1050,16 @@ mod tests {
     }
 
     #[test]
-    fn test_denoise_bypass_when_disabled() {
-        let mut denoise = StereoDenoise::new(48_000.0);
-        denoise.enabled = false;
+    fn test_denoise_low_preserves_more_than_high() {
+        let mut low = StereoDenoise::new(48_000.0);
+        low.level = WfmDenoiseLevel::Low;
+        let mut high = StereoDenoise::new(48_000.0);
+        high.level = WfmDenoiseLevel::High;
 
         for &value in &[0.0_f32, 0.5, -0.3, 1.0, -1.0, 0.001] {
-            assert_eq!(denoise.process(0.1, value, 0.2), value);
+            let low_out = low.process(0.1, value, 0.2).abs();
+            let high_out = high.process(0.1, value, 0.2).abs();
+            assert!(low_out + 0.000_001 >= high_out);
         }
     }
 
@@ -1115,7 +1138,8 @@ mod tests {
             iq.push(Complex::from_polar(1.0, phase));
         }
 
-        let mut decoder = WfmStereoDecoder::new(composite_rate, audio_rate, 2, true, 50);
+        let mut decoder =
+            WfmStereoDecoder::new(composite_rate, audio_rate, 2, true, 50, WfmDenoiseLevel::Auto);
         let output = decoder.process_iq(&iq);
 
         let skip_samples = (0.2 * audio_rate as f32) as usize;

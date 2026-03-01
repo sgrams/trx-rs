@@ -4,7 +4,7 @@
 
 use num_complex::Complex;
 use tokio::sync::broadcast;
-use trx_core::rig::state::{RdsData, RigMode};
+use trx_core::rig::state::{RdsData, RigMode, WfmDenoiseLevel};
 
 use crate::demod::{DcBlocker, Demodulator, SoftAgc, WfmStereoDecoder};
 
@@ -59,7 +59,7 @@ pub struct ChannelDsp {
     fir_taps: usize,
     wfm_deemphasis_us: u32,
     wfm_stereo: bool,
-    wfm_denoise: bool,
+    wfm_denoise: WfmDenoiseLevel,
     pub decim_factor: usize,
     output_channels: usize,
     pub frame_buf: Vec<f32>,
@@ -153,6 +153,7 @@ impl ChannelDsp {
                     self.output_channels,
                     self.wfm_stereo,
                     self.wfm_deemphasis_us,
+                    self.wfm_denoise,
                 ));
             }
         } else {
@@ -214,7 +215,7 @@ impl ChannelDsp {
             fir_taps: taps,
             wfm_deemphasis_us,
             wfm_stereo,
-            wfm_denoise: true,
+            wfm_denoise: WfmDenoiseLevel::Auto,
             decim_factor,
             output_channels,
             frame_buf: Vec::with_capacity(frame_size + output_channels),
@@ -242,6 +243,7 @@ impl ChannelDsp {
                     output_channels,
                     wfm_stereo,
                     wfm_deemphasis_us,
+                    WfmDenoiseLevel::Auto,
                 ))
             } else {
                 None
@@ -279,10 +281,10 @@ impl ChannelDsp {
         }
     }
 
-    pub fn set_wfm_denoise(&mut self, enabled: bool) {
-        self.wfm_denoise = enabled;
+    pub fn set_wfm_denoise(&mut self, level: WfmDenoiseLevel) {
+        self.wfm_denoise = level;
         if let Some(decoder) = &mut self.wfm_decoder {
-            decoder.set_denoise_enabled(enabled);
+            decoder.set_denoise_level(level);
         }
     }
 
