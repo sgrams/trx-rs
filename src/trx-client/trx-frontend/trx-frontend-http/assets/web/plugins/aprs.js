@@ -112,7 +112,7 @@ function updateAprsBar() {
     aprsBarOverlay.style.display = "none";
     return;
   }
-  let html = '<div class="aprs-bar-header">APRS</div>';
+  let html = '<div class="aprs-bar-header">APRS<button class="aprs-bar-clear" onclick="window.clearAprsBar()">Clear</button></div>';
   for (const pkt of okFrames) {
     const ts = pkt._ts ? `<span class="aprs-bar-time">${pkt._ts}</span>` : "";
     const call = `<span class="aprs-bar-call">${escapeMapHtml(pkt.srcCall)}</span>`;
@@ -127,6 +127,9 @@ function updateAprsBar() {
   aprsBarOverlay.style.display = "flex";
 }
 window.updateAprsBar = updateAprsBar;
+window.clearAprsBar = function() {
+  document.getElementById("aprs-clear-btn")?.click();
+};
 
 function addAprsPacket(pkt) {
   const tag = pkt.crcOk ? "[APRS]" : "[APRS-CRC-FAIL]";
