@@ -512,6 +512,12 @@ small { color: var(--text-muted); }
   position: relative;
   z-index: 4;
 }
+.signal-visual-block {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  margin-bottom: 0.9rem;
+}
 #rds-ps-overlay {
   display: none;
   position: absolute;
@@ -1003,7 +1009,7 @@ button:focus-visible, input:focus-visible, select:focus-visible {
 
 /* ── Spectrum display ─────────────────────────────────────────────────── */
 #spectrum-panel {
-  margin-bottom: 0.9rem;
+  margin-bottom: 0;
 }
 .spectrum-wrap {
   position: relative;

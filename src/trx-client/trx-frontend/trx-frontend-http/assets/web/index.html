@@ -48,10 +48,6 @@
         <button id="header-auth-btn" class="header-bar-btn" type="button" style="display:none;" aria-label="Login or Logout">Login</button>
       </div>
     </div>
-    <div class="overview-strip">
-      <canvas id="overview-canvas" aria-hidden="true"></canvas>
-      <div id="rds-ps-overlay" aria-live="polite" aria-label="RDS station name"></div>
-    </div>
     <!-- Auth gate (hidden by default, shown if auth is required) -->
     <div id="auth-gate" style="display:none; max-width: 30rem; margin: 0 auto 0.9rem; padding: 1.25rem 0 1.5rem; text-align: center;">
       <div style="margin-bottom: 1.5rem;">
@@ -72,33 +68,39 @@
       <div id="loading-sub" style="color:#9aa4b5;"></div>
     </div>
     <div id="content" style="display:none;">
-    <div id="spectrum-panel" style="display:none;">
-      <div class="spectrum-wrap">
-        <canvas id="spectrum-canvas"></canvas>
-        <div id="spectrum-tooltip"></div>
-        <div id="spectrum-freq-axis"></div>
+    <div class="signal-visual-block">
+      <div class="overview-strip">
+        <canvas id="overview-canvas" aria-hidden="true"></canvas>
+        <div id="rds-ps-overlay" aria-live="polite" aria-label="RDS station name"></div>
       </div>
-      <div id="spectrum-controls">
-        <div id="spectrum-bw-row">
-          <label id="spectrum-bw-label">Bandwidth <input type="number" id="spectrum-bw-input" value="" step="0.1" min="0.1" /> kHz</label>
-          <button id="spectrum-bw-set-btn" type="button">Set</button>
-          <button id="spectrum-bw-auto-btn" type="button">Auto BW</button>
+      <div id="spectrum-panel" style="display:none;">
+        <div class="spectrum-wrap">
+          <canvas id="spectrum-canvas"></canvas>
+          <div id="spectrum-tooltip"></div>
+          <div id="spectrum-freq-axis"></div>
         </div>
-        <div id="spectrum-level-row">
-          <label class="overview-control" id="spectrum-peak-hold-label">Peak Hold
-            <select id="overview-peak-hold" class="status-input">
-              <option value="500">0.5 s</option>
-              <option value="1000">1 s</option>
-              <option value="2000" selected>2 s</option>
-              <option value="5000">5 s</option>
-            </select>
-          </label>
-          <label id="spectrum-floor-label">Floor <input type="number" id="spectrum-floor-input" value="-115" step="5" /> dB</label>
-          <button id="spectrum-auto-btn" type="button">Auto</button>
+        <div id="spectrum-controls">
+          <div id="spectrum-bw-row">
+            <label id="spectrum-bw-label">Bandwidth <input type="number" id="spectrum-bw-input" value="" step="0.1" min="0.1" /> kHz</label>
+            <button id="spectrum-bw-set-btn" type="button">Set</button>
+            <button id="spectrum-bw-auto-btn" type="button">Auto BW</button>
+          </div>
+          <div id="spectrum-level-row">
+            <label class="overview-control" id="spectrum-peak-hold-label">Peak Hold
+              <select id="overview-peak-hold" class="status-input">
+                <option value="500">0.5 s</option>
+                <option value="1000">1 s</option>
+                <option value="2000" selected>2 s</option>
+                <option value="5000">5 s</option>
+              </select>
+            </label>
+            <label id="spectrum-floor-label">Floor <input type="number" id="spectrum-floor-input" value="-115" step="5" /> dB</label>
+            <button id="spectrum-auto-btn" type="button">Auto</button>
+          </div>
         </div>
+        <div id="spectrum-hint" class="spectrum-hint-mouse">Scroll to zoom &middot; Ctrl+Scroll to tune &middot; Drag to pan &middot; Drag BW edges to resize</div>
+        <div id="spectrum-hint-touch" class="spectrum-hint-touch">Pinch to zoom &middot; Drag to pan &middot; Drag BW edges to resize</div>
       </div>
-      <div id="spectrum-hint" class="spectrum-hint-mouse">Scroll to zoom &middot; Ctrl+Scroll to tune &middot; Drag to pan &middot; Drag BW edges to resize</div>
-      <div id="spectrum-hint-touch" class="spectrum-hint-touch">Pinch to zoom &middot; Drag to pan &middot; Drag BW edges to resize</div>
     </div>
     <div class="status">
       <div class="full-row freq-row">
