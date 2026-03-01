@@ -643,7 +643,7 @@ small { color: var(--text-muted); }
   max-height: 60%;
   overflow-y: auto;
   flex-direction: column;
-  gap: 0.1rem;
+  gap: 0;
 }
 .aprs-bar-header {
   display: flex;
@@ -680,7 +680,7 @@ small { color: var(--text-muted); }
 .aprs-bar-frame {
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
   font-size: clamp(0.58rem, 1.05vw, 0.74rem);
-  line-height: 1.45;
+  line-height: 1.2;
   opacity: 1;
 }
 .aprs-bar-frame-main {
