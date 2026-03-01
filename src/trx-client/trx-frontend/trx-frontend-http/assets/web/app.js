@@ -2681,6 +2681,8 @@ sigClearBtn.addEventListener("click", () => {
 // --- Audio streaming ---
 const rxAudioBtn = document.getElementById("rx-audio-btn");
 const txAudioBtn = document.getElementById("tx-audio-btn");
+const RX_AUDIO_LABEL = "Play Audio";
+const TX_AUDIO_LABEL = "Transmit Audio";
 const audioStatus = document.getElementById("audio-status");
 const audioLevelFill = document.getElementById("audio-level-fill");
 const audioRow = document.getElementById("audio-row");
@@ -2721,6 +2723,15 @@ const hasWebCodecs = typeof AudioDecoder !== "undefined" && typeof AudioEncoder 
 const MAX_RX_BUFFER_SECS = 0.25;
 const TARGET_RX_BUFFER_SECS = 0.04;
 const MIN_RX_JITTER_SAMPLES = 512;
+
+if (rxAudioBtn) {
+  rxAudioBtn.textContent = RX_AUDIO_LABEL;
+  rxAudioBtn.setAttribute("aria-label", RX_AUDIO_LABEL);
+}
+if (txAudioBtn) {
+  txAudioBtn.textContent = TX_AUDIO_LABEL;
+  txAudioBtn.setAttribute("aria-label", TX_AUDIO_LABEL);
+}
 
 function setAudioLevel(levelPct) {
   if (!audioLevelFill) return;
