@@ -658,7 +658,7 @@ small { color: var(--text-muted); }
   justify-content: flex-start;
   gap: 0.14rem;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
-  font-size: clamp(0.4rem, 0.6vw, 0.5rem);
+  font-size: clamp(0.6rem, 0.9vw, 0.75rem);
   font-weight: 700;
   letter-spacing: 0.06em;
   color: var(--accent-green);
