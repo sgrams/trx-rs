@@ -26,6 +26,7 @@
   --filter-border: #385577;
   --wavelength-fg: #8da3be;
   --spectrum-bg: #0a0f18;
+  --overview-plot-height: 160px;
   --spectrum-plot-height: 160px;
   --jog-wheel-size: 83.2px;
   --header-waterfall-overlap: 0rem;
@@ -525,10 +526,8 @@ small { color: var(--text-muted); }
   position: relative;
   display: flex;
   flex-direction: column;
-  flex: 1 1 auto;
-  min-height: 0;
   gap: 0;
-  margin-bottom: 0;
+  margin-bottom: 0.9rem;
 }
 #signal-overlay-canvas {
   position: absolute;
@@ -833,7 +832,7 @@ small { color: var(--text-muted); }
 }
 #overview-canvas {
   width: 100%;
-  height: var(--spectrum-plot-height);
+  height: var(--overview-plot-height);
   display: block;
 }
 .header-left {
@@ -914,12 +913,7 @@ small { color: var(--text-muted); }
 .meter-bar { flex: 1 1 auto; height: 12px; border-radius: 999px; background: var(--btn-bg); border: 1px solid var(--border-light); overflow: hidden; }
 .meter-fill { height: 100%; width: 0%; background: linear-gradient(90deg, var(--accent-green), var(--accent-yellow), var(--accent-red)); transition: width 150ms ease; }
 .meter-value { font-size: 0.95rem; color: var(--text-heading); min-width: 64px; text-align: right; }
-#tab-main {
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-}
-#content { display: flex; flex: 1 1 auto; flex-direction: column; gap: 1.1rem; min-height: 0; overflow: visible; }
+#content { display: flex; flex-direction: column; gap: 1.1rem; min-height: 0; overflow: visible; }
 .tab-panel { flex: 1 1 auto; min-height: 0; overflow: visible; }
 .tab-bar {
   display: flex;
@@ -1514,26 +1508,16 @@ button:focus-visible, input:focus-visible, select:focus-visible {
 /* ── Spectrum display ─────────────────────────────────────────────────── */
 #spectrum-panel {
   margin-bottom: 0;
-  flex: 1 1 auto;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
 }
 .spectrum-wrap {
   position: relative;
-  display: flex;
-  flex: 1 1 auto;
-  flex-direction: column;
-  min-height: 0;
   width: 100%;
   user-select: none;
 }
 #spectrum-canvas {
   display: block;
   width: 100%;
-  flex: 1 1 auto;
-  min-height: var(--spectrum-plot-height);
-  height: auto;
+  height: var(--spectrum-plot-height);
   background: var(--spectrum-bg);
   border-radius: 6px 6px 0 0;
   cursor: crosshair;
@@ -1541,7 +1525,7 @@ button:focus-visible, input:focus-visible, select:focus-visible {
 }
 .spectrum-edge-shift {
   position: absolute;
-  top: calc((100% - 18px) / 2);
+  top: calc(var(--spectrum-plot-height) / 2);
   transform: translateY(-50%);
   z-index: 8;
   width: 1.7rem;
@@ -1646,7 +1630,7 @@ button:focus-visible, input:focus-visible, select:focus-visible {
 }
 .spectrum-bookmark-side {
   position: absolute;
-  top: calc((100% - 18px) / 2);
+  top: calc(var(--spectrum-plot-height) / 2);
   transform: translateY(-50%);
   z-index: 7;
   width: 7.25rem;

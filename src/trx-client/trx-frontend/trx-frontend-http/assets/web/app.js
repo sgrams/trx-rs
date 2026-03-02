@@ -289,6 +289,7 @@ function applyCapabilities(caps) {
       if (centerFreqField) centerFreqField.style.display = "none";
       stopSpectrumStreaming();
     }
+    scheduleSpectrumLayout();
   }
 }
 
@@ -1653,6 +1654,8 @@ let serverLon = null;
 let initialMapZoom = 10;
 let spectrumCoverageMarginHz = 50_000;
 let spectrumUsableSpanRatio = 0.92;
+const DEFAULT_SPECTRUM_PLOT_HEIGHT_PX = 160;
+let spectrumLayoutPending = false;
 
 function updateFooterBuildInfo() {
   const serverEl = document.getElementById("footer-server-build");
@@ -1660,6 +1663,56 @@ function updateFooterBuildInfo() {
   const ver = serverVersion || "--";
   const build = serverBuildDate || "--";
   serverEl.textContent = `trx-server v${ver} ${build}`;
+}
+
+function scheduleSpectrumLayout() {
+  if (spectrumLayoutPending) return;
+  spectrumLayoutPending = true;
+  requestAnimationFrame(() => {
+    spectrumLayoutPending = false;
+    updateSpectrumAutoHeight();
+  });
+}
+
+function updateSpectrumAutoHeight() {
+  const root = document.documentElement;
+  const tabMainEl = document.getElementById("tab-main");
+  const contentEl = document.getElementById("content");
+  const spectrumPanelEl = document.getElementById("spectrum-panel");
+  const spectrumCanvasEl = document.getElementById("spectrum-canvas");
+  if (!root || !tabMainEl || !contentEl || !spectrumPanelEl || !spectrumCanvasEl) return;
+
+  const mainVisible = getComputedStyle(tabMainEl).display !== "none";
+  const contentVisible = getComputedStyle(contentEl).display !== "none";
+  const spectrumVisible = getComputedStyle(spectrumPanelEl).display !== "none";
+  const currentHeight = Math.max(
+    DEFAULT_SPECTRUM_PLOT_HEIGHT_PX,
+    Math.round(spectrumCanvasEl.clientHeight || DEFAULT_SPECTRUM_PLOT_HEIGHT_PX),
+  );
+
+  if (!mainVisible || !contentVisible || !spectrumVisible) {
+    root.style.setProperty("--spectrum-plot-height", `${DEFAULT_SPECTRUM_PLOT_HEIGHT_PX}px`);
+    if (currentHeight !== DEFAULT_SPECTRUM_PLOT_HEIGHT_PX && lastSpectrumData) {
+      scheduleSpectrumDraw();
+      scheduleOverviewDraw();
+    }
+    return;
+  }
+
+  const tabBottom = tabMainEl.getBoundingClientRect().bottom;
+  const contentBottom = contentEl.getBoundingClientRect().bottom;
+  const slackPx = Math.floor(tabBottom - contentBottom);
+  const nextHeight = Math.max(
+    DEFAULT_SPECTRUM_PLOT_HEIGHT_PX,
+    currentHeight + slackPx - 2,
+  );
+  if (Math.abs(nextHeight - currentHeight) < 2) return;
+
+  root.style.setProperty("--spectrum-plot-height", `${nextHeight}px`);
+  if (lastSpectrumData) {
+    scheduleSpectrumDraw();
+    scheduleOverviewDraw();
+  }
 }
 
 function updateTitle() {
@@ -1716,6 +1769,7 @@ function render(update) {
   ) {
     spectrumUsableSpanRatio = Math.max(0.01, Math.min(1.0, Number(update.spectrum_usable_span_ratio)));
   }
+  scheduleSpectrumLayout();
   updateTitle();
   updateFooterBuildInfo();
 
@@ -2719,12 +2773,14 @@ document.querySelector(".tab-bar").addEventListener("click", (e) => {
   btn.classList.add("active");
   document.querySelectorAll(".tab-panel").forEach((p) => p.style.display = "none");
   document.getElementById(`tab-${btn.dataset.tab}`).style.display = "";
+  scheduleSpectrumLayout();
   if (btn.dataset.tab === "map") {
     initAprsMap();
     sizeAprsMapToViewport();
     if (aprsMap) setTimeout(() => aprsMap.invalidateSize(), 50);
   }
 });
+window.addEventListener("resize", () => { scheduleSpectrumLayout(); });
 
 // --- Auth startup sequence ---
 async function initializeApp() {
@@ -4878,16 +4934,24 @@ function createBookmarkChip(bm, colorMap) {
 
 function updateSideBookmarkStack(container, bookmarks, colorMap) {
   if (!container) return;
-  container.innerHTML = "";
+  const nextKey = Array.isArray(bookmarks) ? bookmarks.map((bm) => bm.id).join(",") : "";
   if (!Array.isArray(bookmarks) || bookmarks.length === 0) {
+    if (container.dataset.bmKey) {
+      container.innerHTML = "";
+      container.dataset.bmKey = "";
+    }
     container.classList.remove("bm-side-visible");
     return;
   }
 
-  container.classList.add("bm-side-visible");
-  for (const bm of bookmarks) {
-    container.appendChild(createBookmarkChip(bm, colorMap));
+  if (container.dataset.bmKey !== nextKey) {
+    container.dataset.bmKey = nextKey;
+    container.innerHTML = "";
+    for (const bm of bookmarks) {
+      container.appendChild(createBookmarkChip(bm, colorMap));
+    }
   }
+  container.classList.add("bm-side-visible");
 }
 
 function updateBookmarkAxis(range) {
