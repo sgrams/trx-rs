@@ -17,6 +17,8 @@ use trx_core::rig::{
 };
 use trx_core::{DynResult, RigMode};
 
+const AIS_CHANNEL_SPACING_HZ: i64 = 50_000;
+
 /// RX-only backend for any SoapySDR-compatible device.
 pub struct SoapySdrRig {
     info: RigInfo,
@@ -47,9 +49,23 @@ pub struct SoapySdrRig {
     gain_db: f64,
     /// Optional hard ceiling for the applied hardware gain in dB.
     max_gain_db: Option<f64>,
+    /// Hidden AIS decoder channels (A and B) when available.
+    ais_channel_indices: Option<(usize, usize)>,
 }
 
 impl SoapySdrRig {
+    fn default_bandwidth_for_mode(mode: &RigMode) -> u32 {
+        match mode {
+            RigMode::LSB | RigMode::USB | RigMode::DIG => 3_000,
+            RigMode::PKT | RigMode::AIS => 25_000,
+            RigMode::CW | RigMode::CWR => 500,
+            RigMode::AM => 9_000,
+            RigMode::FM => 12_500,
+            RigMode::WFM => 180_000,
+            RigMode::Other(_) => 3_000,
+        }
+    }
+
     /// Full constructor.  All channel configuration is passed as plain
     /// parameters so this crate does not need to depend on `trx-server`
     /// (which is a binary, not a library crate).
@@ -130,6 +146,21 @@ impl SoapySdrRig {
             effective_gain_db,
         )?);
 
+        let primary_channel_count = channels.len();
+        let mut all_channels = channels.to_vec();
+        all_channels.push((
+            (initial_freq.hz as i64 - hardware_center_hz) as f64,
+            RigMode::FM,
+            25_000,
+            96,
+        ));
+        all_channels.push((
+            (initial_freq.hz as i64 + AIS_CHANNEL_SPACING_HZ - hardware_center_hz) as f64,
+            RigMode::FM,
+            25_000,
+            96,
+        ));
+
         let pipeline = dsp::SdrPipeline::start(
             iq_source,
             sdr_sample_rate,
@@ -138,7 +169,7 @@ impl SoapySdrRig {
             frame_duration_ms,
             wfm_deemphasis_us,
             true, // wfm_stereo: enabled by default
-            channels,
+            &all_channels,
         );
 
         let info = RigInfo {
@@ -160,6 +191,7 @@ impl SoapySdrRig {
                     RigMode::AM,
                     RigMode::WFM,
                     RigMode::FM,
+                    RigMode::AIS,
                     RigMode::DIG,
                     RigMode::PKT,
                 ],
@@ -209,6 +241,7 @@ impl SoapySdrRig {
             wfm_denoise: WfmDenoiseLevel::Auto,
             gain_db,
             max_gain_db,
+            ais_channel_indices: Some((primary_channel_count, primary_channel_count + 1)),
         })
     }
 
@@ -233,6 +266,36 @@ impl SoapySdrRig {
             0,         // center_offset_hz
         )
     }
+
+    fn update_ais_channel_offsets(&self) {
+        let Some((ais_a_idx, ais_b_idx)) = self.ais_channel_indices else {
+            return;
+        };
+
+        if let Some(dsp_arc) = self.pipeline.channel_dsps.get(ais_a_idx) {
+            let if_hz = (self.freq.hz as i64 - self.center_hz) as f64;
+            dsp_arc.lock().unwrap().set_channel_if_hz(if_hz);
+        }
+        if let Some(dsp_arc) = self.pipeline.channel_dsps.get(ais_b_idx) {
+            let if_hz = (self.freq.hz as i64 + AIS_CHANNEL_SPACING_HZ - self.center_hz) as f64;
+            dsp_arc.lock().unwrap().set_channel_if_hz(if_hz);
+        }
+    }
+
+    fn apply_ais_channel_filters(&self) {
+        let Some((ais_a_idx, ais_b_idx)) = self.ais_channel_indices else {
+            return;
+        };
+
+        for idx in [ais_a_idx, ais_b_idx] {
+            if let Some(dsp_arc) = self.pipeline.channel_dsps.get(idx) {
+                dsp_arc
+                    .lock()
+                    .unwrap()
+                    .set_filter(self.bandwidth_hz, self.fir_taps as usize);
+            }
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -251,7 +314,11 @@ impl Rig for SoapySdrRig {
 
 impl AudioSource for SoapySdrRig {
     fn subscribe_pcm(&self) -> tokio::sync::broadcast::Receiver<Vec<f32>> {
-        if let Some(sender) = self.pipeline.pcm_senders.get(self.primary_channel_idx) {
+        self.subscribe_pcm_channel(self.primary_channel_idx)
+    }
+
+    fn subscribe_pcm_channel(&self, channel_idx: usize) -> tokio::sync::broadcast::Receiver<Vec<f32>> {
+        if let Some(sender) = self.pipeline.pcm_senders.get(channel_idx) {
             sender.subscribe()
         } else {
             // No channels configured — return a receiver that will never
@@ -284,9 +351,14 @@ impl RigCat for SoapySdrRig {
             self.freq = freq;
             let half_span_hz = i128::from(self.pipeline.sdr_sample_rate) / 2;
             let current_center_hz = i128::from(self.center_hz);
-            let target_hz = i128::from(freq.hz);
-            let within_current_span = target_hz >= current_center_hz - half_span_hz
-                && target_hz <= current_center_hz + half_span_hz;
+            let target_lo_hz = i128::from(freq.hz);
+            let target_hi_hz = if self.mode == RigMode::AIS {
+                i128::from(freq.hz) + i128::from(AIS_CHANNEL_SPACING_HZ)
+            } else {
+                i128::from(freq.hz)
+            };
+            let within_current_span = target_lo_hz >= current_center_hz - half_span_hz
+                && target_hi_hz <= current_center_hz + half_span_hz;
 
             if !within_current_span {
                 // Only retune when the requested dial frequency leaves the
@@ -306,6 +378,7 @@ impl RigCat for SoapySdrRig {
                     dsp.reset_wfm_state();
                 }
             }
+            self.update_ais_channel_offsets();
             Ok(())
         })
     }
@@ -324,6 +397,7 @@ impl RigCat for SoapySdrRig {
                 let channel_if_hz = (self.freq.hz as i64 - self.center_hz) as f64;
                 dsp_arc.lock().unwrap().set_channel_if_hz(channel_if_hz);
             }
+            self.update_ais_channel_offsets();
             Ok(())
         })
     }
@@ -335,10 +409,14 @@ impl RigCat for SoapySdrRig {
         Box::pin(async move {
             tracing::debug!("SoapySdrRig: set_mode -> {:?}", mode);
             self.mode = mode.clone();
+            self.bandwidth_hz = Self::default_bandwidth_for_mode(&mode);
             // Update the primary channel's demodulator in the live pipeline.
             if let Some(dsp_arc) = self.pipeline.channel_dsps.get(self.primary_channel_idx) {
-                dsp_arc.lock().unwrap().set_mode(&mode);
+                let mut dsp = dsp_arc.lock().unwrap();
+                dsp.set_mode(&mode);
+                dsp.set_filter(self.bandwidth_hz, self.fir_taps as usize);
             }
+            self.apply_ais_channel_filters();
             Ok(())
         })
     }
@@ -490,6 +568,7 @@ impl RigCat for SoapySdrRig {
                     .unwrap()
                     .set_filter(bandwidth_hz, self.fir_taps as usize);
             }
+            self.apply_ais_channel_filters();
             Ok(())
         })
     }
@@ -507,6 +586,7 @@ impl RigCat for SoapySdrRig {
                     .unwrap()
                     .set_filter(self.bandwidth_hz, taps as usize);
             }
+            self.apply_ais_channel_filters();
             Ok(())
         })
     }

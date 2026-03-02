@@ -15,13 +15,14 @@ use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{broadcast, mpsc, watch};
 use tracing::{error, info, warn};
 
+use trx_ais::AisDecoder;
 use trx_aprs::AprsDecoder;
 use trx_core::audio::{
-    read_audio_msg, write_audio_msg, AudioStreamInfo, AUDIO_MSG_APRS_DECODE, AUDIO_MSG_CW_DECODE,
-    AUDIO_MSG_FT8_DECODE, AUDIO_MSG_RX_FRAME, AUDIO_MSG_STREAM_INFO, AUDIO_MSG_TX_FRAME,
-    AUDIO_MSG_WSPR_DECODE,
+    read_audio_msg, write_audio_msg, AudioStreamInfo, AUDIO_MSG_AIS_DECODE,
+    AUDIO_MSG_APRS_DECODE, AUDIO_MSG_CW_DECODE, AUDIO_MSG_FT8_DECODE, AUDIO_MSG_RX_FRAME,
+    AUDIO_MSG_STREAM_INFO, AUDIO_MSG_TX_FRAME, AUDIO_MSG_WSPR_DECODE,
 };
-use trx_core::decode::{AprsPacket, DecodedMessage, Ft8Message, WsprMessage};
+use trx_core::decode::{AisMessage, AprsPacket, DecodedMessage, Ft8Message, WsprMessage};
 use trx_core::rig::state::{RigMode, RigState};
 use trx_cw::CwDecoder;
 use trx_ft8::Ft8Decoder;
@@ -31,6 +32,7 @@ use crate::config::AudioConfig;
 use trx_decode_log::DecoderLoggers;
 
 const APRS_HISTORY_RETENTION: Duration = Duration::from_secs(24 * 60 * 60);
+const AIS_HISTORY_RETENTION: Duration = Duration::from_secs(24 * 60 * 60);
 const FT8_HISTORY_RETENTION: Duration = Duration::from_secs(24 * 60 * 60);
 const WSPR_HISTORY_RETENTION: Duration = Duration::from_secs(24 * 60 * 60);
 const FT8_SAMPLE_RATE: u32 = 12_000;
@@ -124,6 +126,7 @@ fn classify_stream_error(err: &str) -> &'static str {
 /// instance can maintain its own independent history.  Pass an
 /// `Arc<DecoderHistories>` into every decoder task and into the audio listener.
 pub struct DecoderHistories {
+    ais: Mutex<VecDeque<(Instant, AisMessage)>>,
     aprs: Mutex<VecDeque<(Instant, AprsPacket)>>,
     ft8: Mutex<VecDeque<(Instant, Ft8Message)>>,
     wspr: Mutex<VecDeque<(Instant, WsprMessage)>>,
@@ -132,10 +135,36 @@ pub struct DecoderHistories {
 impl DecoderHistories {
     pub fn new() -> Arc<Self> {
         Arc::new(Self {
+            ais: Mutex::new(VecDeque::new()),
             aprs: Mutex::new(VecDeque::new()),
             ft8: Mutex::new(VecDeque::new()),
             wspr: Mutex::new(VecDeque::new()),
         })
+    }
+
+    // --- AIS ---
+
+    fn prune_ais(history: &mut VecDeque<(Instant, AisMessage)>) {
+        let cutoff = Instant::now() - AIS_HISTORY_RETENTION;
+        while let Some((ts, _)) = history.front() {
+            if *ts < cutoff {
+                history.pop_front();
+            } else {
+                break;
+            }
+        }
+    }
+
+    pub fn record_ais_message(&self, msg: AisMessage) {
+        let mut h = self.ais.lock().expect("ais history mutex poisoned");
+        h.push_back((Instant::now(), msg));
+        Self::prune_ais(&mut h);
+    }
+
+    pub fn snapshot_ais_history(&self) -> Vec<AisMessage> {
+        let mut h = self.ais.lock().expect("ais history mutex poisoned");
+        Self::prune_ais(&mut h);
+        h.iter().map(|(_, msg)| msg.clone()).collect()
     }
 
     // --- APRS ---
@@ -817,6 +846,104 @@ pub async fn run_aprs_decoder(
     }
 }
 
+fn downmix_if_needed(frame: Vec<f32>, channels: u16) -> Vec<f32> {
+    if channels <= 1 {
+        return frame;
+    }
+
+    let num_frames = frame.len() / channels as usize;
+    let mut mono = Vec::with_capacity(num_frames);
+    for i in 0..num_frames {
+        mono.push(frame[i * channels as usize]);
+    }
+    mono
+}
+
+/// Run the AIS decoder task. Only processes PCM when rig mode is AIS.
+pub async fn run_ais_decoder(
+    sample_rate: u32,
+    channels: u16,
+    mut pcm_a_rx: broadcast::Receiver<Vec<f32>>,
+    mut pcm_b_rx: broadcast::Receiver<Vec<f32>>,
+    mut state_rx: watch::Receiver<RigState>,
+    decode_tx: broadcast::Sender<DecodedMessage>,
+    histories: Arc<DecoderHistories>,
+) {
+    info!("AIS decoder started ({}Hz, {} ch)", sample_rate, channels);
+    let mut decoder_a = AisDecoder::new(sample_rate);
+    let mut decoder_b = AisDecoder::new(sample_rate);
+    let mut was_active = false;
+    let mut active = matches!(state_rx.borrow().status.mode, RigMode::AIS);
+
+    loop {
+        if !active {
+            match state_rx.changed().await {
+                Ok(()) => {
+                    let state = state_rx.borrow();
+                    active = matches!(state.status.mode, RigMode::AIS);
+                    if active {
+                        pcm_a_rx = pcm_a_rx.resubscribe();
+                        pcm_b_rx = pcm_b_rx.resubscribe();
+                    }
+                }
+                Err(_) => break,
+            }
+            continue;
+        }
+
+        tokio::select! {
+            recv = pcm_a_rx.recv() => {
+                match recv {
+                    Ok(frame) => {
+                        was_active = true;
+                        for msg in decoder_a.process_samples(&downmix_if_needed(frame, channels), "A") {
+                            histories.record_ais_message(msg.clone());
+                            let _ = decode_tx.send(DecodedMessage::Ais(msg));
+                        }
+                    }
+                    Err(broadcast::error::RecvError::Lagged(n)) => {
+                        warn!("AIS decoder A: dropped {} PCM frames", n);
+                    }
+                    Err(broadcast::error::RecvError::Closed) => break,
+                }
+            }
+            recv = pcm_b_rx.recv() => {
+                match recv {
+                    Ok(frame) => {
+                        was_active = true;
+                        for msg in decoder_b.process_samples(&downmix_if_needed(frame, channels), "B") {
+                            histories.record_ais_message(msg.clone());
+                            let _ = decode_tx.send(DecodedMessage::Ais(msg));
+                        }
+                    }
+                    Err(broadcast::error::RecvError::Lagged(n)) => {
+                        warn!("AIS decoder B: dropped {} PCM frames", n);
+                    }
+                    Err(broadcast::error::RecvError::Closed) => break,
+                }
+            }
+            changed = state_rx.changed() => {
+                match changed {
+                    Ok(()) => {
+                        let state = state_rx.borrow();
+                        active = matches!(state.status.mode, RigMode::AIS);
+                        if !active && was_active {
+                            decoder_a.reset();
+                            decoder_b.reset();
+                            was_active = false;
+                        }
+                        if active {
+                            pcm_a_rx = pcm_a_rx.resubscribe();
+                            pcm_b_rx = pcm_b_rx.resubscribe();
+                        }
+                    }
+                    Err(_) => break,
+                }
+            }
+        }
+    }
+}
+
 /// Run the CW decoder task. Only processes PCM when rig mode is CW or CWR.
 pub async fn run_cw_decoder(
     sample_rate: u32,
@@ -1333,6 +1460,15 @@ async fn handle_audio_client(
     write_audio_msg(&mut writer, AUDIO_MSG_STREAM_INFO, &info_json).await?;
 
     // Send APRS history to newly connected client.
+    let history = histories.snapshot_ais_history();
+    for msg in history {
+        let msg = DecodedMessage::Ais(msg);
+        let msg_type = AUDIO_MSG_AIS_DECODE;
+        if let Ok(json) = serde_json::to_vec(&msg) {
+            write_audio_msg(&mut writer, msg_type, &json).await?;
+        }
+    }
+    // Send APRS history to newly connected client.
     let history = histories.snapshot_aprs_history();
     for pkt in history {
         let msg = DecodedMessage::Aprs(pkt);
@@ -1385,6 +1521,7 @@ async fn handle_audio_client(
                     match result {
                         Ok(msg) => {
                             let msg_type = match &msg {
+                                DecodedMessage::Ais(_) => AUDIO_MSG_AIS_DECODE,
                                 DecodedMessage::Aprs(_) => AUDIO_MSG_APRS_DECODE,
                                 DecodedMessage::Cw(_) => AUDIO_MSG_CW_DECODE,
                                 DecodedMessage::Ft8(_) => AUDIO_MSG_FT8_DECODE,

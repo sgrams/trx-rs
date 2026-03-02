@@ -78,6 +78,7 @@
       <div class="overview-strip">
         <canvas id="overview-canvas" aria-hidden="true"></canvas>
         <div id="rds-ps-overlay" aria-live="polite" aria-label="RDS station name"></div>
+        <div id="ais-bar-overlay" aria-live="polite" aria-label="Recent AIS messages"></div>
         <div id="aprs-bar-overlay" aria-live="polite" aria-label="Recent APRS frames"></div>
       </div>
       <div id="spectrum-bookmark-axis"></div>
@@ -348,6 +349,7 @@
     <div id="tab-plugins" class="tab-panel" style="display:none;">
       <div class="sub-tab-bar">
         <button class="sub-tab active" data-subtab="overview">Overview</button>
+        <button class="sub-tab" data-subtab="ais">AIS</button>
         <button class="sub-tab" data-subtab="aprs">APRS</button>
         <button class="sub-tab" data-subtab="cw">CW</button>
         <button class="sub-tab" data-subtab="ft8">FT8</button>
@@ -355,6 +357,12 @@
         <button class="sub-tab" data-subtab="rds">RDS</button>
       </div>
       <div id="subtab-overview" class="sub-tab-panel">
+        <div class="plugin-item">
+          <strong>AIS Decoder</strong>
+          <div style="color:var(--text-muted); font-size:0.85rem; margin-top:0.2rem;">
+            Decodes dual-channel AIS traffic from RX audio using 9.6 kbit/s GMSK and HDLC.
+          </div>
+        </div>
         <div class="plugin-item">
           <strong>APRS Decoder</strong>
           <div style="color:var(--text-muted); font-size:0.85rem; margin-top:0.2rem;">
@@ -410,6 +418,14 @@
           <button id="rds-raw-copy-btn" class="header-bar-btn" type="button">Copy</button>
         </div>
         <pre id="rds-raw" class="rds-raw">--</pre>
+      </div>
+      <div id="subtab-ais" class="sub-tab-panel" style="display:none;">
+        <div class="aprs-controls">
+          <button id="ais-clear-btn" type="button">Clear</button>
+          <input id="ais-filter" class="ft8-filter" type="text" placeholder="Filter (e.g. MMSI, vessel, A)" />
+          <small id="ais-status" style="color:var(--text-muted);">Waiting for server decode</small>
+        </div>
+        <div id="ais-messages"></div>
       </div>
       <div id="subtab-aprs" class="sub-tab-panel" style="display:none;">
         <div class="aprs-controls">
@@ -469,6 +485,7 @@
     </div>
     <div id="tab-map" class="tab-panel" style="display:none;">
       <div class="map-controls">
+        <label><input type="checkbox" id="map-filter-ais" checked /> AIS</label>
         <label><input type="checkbox" id="map-filter-aprs" checked /> APRS</label>
         <label><input type="checkbox" id="map-filter-ft8" checked /> FT8</label>
         <label><input type="checkbox" id="map-filter-wspr" checked /> WSPR</label>
@@ -504,6 +521,7 @@
     </div>
   </div>
   <script src="/app.js"></script>
+  <script src="/ais.js"></script>
   <script src="/aprs.js"></script>
   <script src="/ft8.js"></script>
   <script src="/wspr.js"></script>

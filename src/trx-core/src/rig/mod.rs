@@ -72,6 +72,18 @@ pub trait AudioSource: Send + Sync {
     /// Subscribe to demodulated PCM audio from the primary channel.
     /// Returns a broadcast receiver that yields 20ms frames of mono f32 PCM.
     fn subscribe_pcm(&self) -> tokio::sync::broadcast::Receiver<Vec<f32>>;
+
+    /// Subscribe to PCM from a specific backend channel when available.
+    /// Channel `0` is always the primary channel.
+    fn subscribe_pcm_channel(&self, channel_idx: usize) -> tokio::sync::broadcast::Receiver<Vec<f32>> {
+        if channel_idx == 0 {
+            self.subscribe_pcm()
+        } else {
+            let (tx, rx) = tokio::sync::broadcast::channel(1);
+            drop(tx);
+            rx
+        }
+    }
 }
 
 /// Common interface for rig backends.

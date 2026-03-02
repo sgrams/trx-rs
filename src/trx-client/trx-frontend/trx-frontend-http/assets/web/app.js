@@ -845,10 +845,11 @@ function drawSignalOverlay() {
 
   if (lastFreqHz != null && currentBandwidthHz > 0) {
     const halfBw = currentBandwidthHz / 2;
-    const xL = hzToX(lastFreqHz - halfBw);
-    const xR = hzToX(lastFreqHz + halfBw);
-    const stripW = xR - xL;
-    if (stripW > 1) {
+    for (const centerHz of visibleBandwidthCenters(lastFreqHz)) {
+      const xL = hzToX(centerHz - halfBw);
+      const xR = hzToX(centerHz + halfBw);
+      const stripW = xR - xL;
+      if (stripW <= 1) continue;
       const grd = ctx.createLinearGradient(xL, 0, xR, 0);
       grd.addColorStop(0, "rgba(240,173,78,0.05)");
       grd.addColorStop(0.2, "rgba(240,173,78,0.14)");
@@ -1204,6 +1205,31 @@ function coverageGuardBandwidthHz(mode = modeEl ? modeEl.value : "") {
   return Math.max(0, Number.isFinite(maxBw) ? maxBw : currentBandwidthHz);
 }
 
+function isAisMode(mode = modeEl ? modeEl.value : "") {
+  return String(mode || "").toUpperCase() === "AIS";
+}
+
+function coverageSpanForMode(freqHz, bandwidthHz = coverageGuardBandwidthHz(), mode = modeEl ? modeEl.value : "") {
+  if (!Number.isFinite(freqHz)) return null;
+  const safeBw = Math.max(0, Number.isFinite(bandwidthHz) ? bandwidthHz : 0);
+  let loHz = freqHz - safeBw / 2;
+  let hiHz = freqHz + safeBw / 2;
+  if (isAisMode(mode)) {
+    const aisBFreqHz = freqHz + 50_000;
+    loHz = Math.min(loHz, aisBFreqHz - safeBw / 2);
+    hiHz = Math.max(hiHz, aisBFreqHz + safeBw / 2);
+  }
+  return { loHz, hiHz };
+}
+
+function visibleBandwidthCenters(freqHz = lastFreqHz, mode = modeEl ? modeEl.value : "") {
+  if (!Number.isFinite(freqHz)) return [];
+  if (isAisMode(mode)) {
+    return [freqHz, freqHz + 50_000];
+  }
+  return [freqHz];
+}
+
 function effectiveSpectrumCoverageSpanHz(sampleRateHz) {
   const sampleRate = Number(sampleRateHz);
   if (!Number.isFinite(sampleRate) || sampleRate <= 0) return 0;
@@ -1220,17 +1246,17 @@ function requiredCenterFreqForCoverageInFrame(data, freqHz, bandwidthHz = covera
     return null;
   }
 
-  const safeBw = Math.max(0, Number.isFinite(bandwidthHz) ? bandwidthHz : 0);
   const halfSpanHz = sampleRate / 2;
-  const requiredHalfSpanHz = safeBw / 2 + spectrumCoverageMarginHz;
-  if (requiredHalfSpanHz * 2 >= sampleRate) {
+  const span = coverageSpanForMode(freqHz, bandwidthHz);
+  if (!span) return null;
+  const requiredLoHz = span.loHz - spectrumCoverageMarginHz;
+  const requiredHiHz = span.hiHz + spectrumCoverageMarginHz;
+  if (requiredHiHz - requiredLoHz >= sampleRate) {
     return alignFreqToRigStep(Math.round(freqHz));
   }
 
   const currentLoHz = currentCenterHz - halfSpanHz;
   const currentHiHz = currentCenterHz + halfSpanHz;
-  const requiredLoHz = freqHz - requiredHalfSpanHz;
-  const requiredHiHz = freqHz + requiredHalfSpanHz;
   if (requiredLoHz >= currentLoHz && requiredHiHz <= currentHiHz) {
     return null;
   }
@@ -1300,8 +1326,11 @@ function sweetSpotCandidateForFrame(data, freqHz, bandwidthHz) {
 
   const halfUsableSpanHz = usableSpanHz / 2;
   const fullHalfSpanHz = sampleRate / 2;
-  const guardHalfSpanHz = bandwidthHz / 2 + spectrumCoverageMarginHz;
-  if (guardHalfSpanHz * 2 >= usableSpanHz) {
+  const span = coverageSpanForMode(freqHz, bandwidthHz);
+  if (!span) return null;
+  const requiredLoHz = span.loHz - spectrumCoverageMarginHz;
+  const requiredHiHz = span.hiHz + spectrumCoverageMarginHz;
+  if (requiredHiHz - requiredLoHz >= usableSpanHz) {
     const fallbackCenterHz = requiredCenterFreqForCoverageInFrame(data, freqHz, bandwidthHz);
     if (!Number.isFinite(fallbackCenterHz)) return null;
     return { centerHz: fallbackCenterHz, score: Number.POSITIVE_INFINITY };
@@ -1310,8 +1339,8 @@ function sweetSpotCandidateForFrame(data, freqHz, bandwidthHz) {
   const evalHalfSpanHz = Math.max(0, (sampleRate - usableSpanHz) / 2);
   const evalMinCenterHz = currentCenterHz - evalHalfSpanHz;
   const evalMaxCenterHz = currentCenterHz + evalHalfSpanHz;
-  const fitMinCenterHz = freqHz + guardHalfSpanHz - halfUsableSpanHz;
-  const fitMaxCenterHz = freqHz - guardHalfSpanHz + halfUsableSpanHz;
+  const fitMinCenterHz = requiredHiHz - halfUsableSpanHz;
+  const fitMaxCenterHz = requiredLoHz + halfUsableSpanHz;
   const minCenterHz = Math.max(evalMinCenterHz, fitMinCenterHz);
   const maxCenterHz = Math.min(evalMaxCenterHz, fitMaxCenterHz);
   if (!Number.isFinite(minCenterHz) || !Number.isFinite(maxCenterHz) || minCenterHz > maxCenterHz) {
@@ -1334,8 +1363,8 @@ function sweetSpotCandidateForFrame(data, freqHz, bandwidthHz) {
 
   let bestStartIdx = null;
   let bestScore = Number.POSITIVE_INFINITY;
-  const signalLoHz = freqHz - bandwidthHz / 2;
-  const signalHiHz = freqHz + bandwidthHz / 2;
+  const signalLoHz = span.loHz;
+  const signalHiHz = span.hiHz;
 
   for (let startIdx = startMinIdx; startIdx <= startMaxIdx; startIdx += 1) {
     const endIdx = Math.min(maxIdx, startIdx + usableBins);
@@ -1351,7 +1380,8 @@ function sweetSpotCandidateForFrame(data, freqHz, bandwidthHz) {
     }
 
     // Keep a very small bias toward a reasonably centered passband when scores are close.
-    const centeredOffsetHz = Math.abs(candidateCenterHz - freqHz);
+    const spanMidHz = (span.loHz + span.hiHz) / 2;
+    const centeredOffsetHz = Math.abs(candidateCenterHz - spanMidHz);
     score *= 1 + centeredOffsetHz / Math.max(usableSpanHz, 1) * 0.08;
     if (score < bestScore) {
       bestScore = score;
@@ -1388,13 +1418,16 @@ function sweetSpotProbeCenters(data, freqHz, bandwidthHz) {
   if (!Number.isFinite(usableSpanHz) || usableSpanHz <= 0) return [];
 
   const halfUsableSpanHz = usableSpanHz / 2;
-  const guardHalfSpanHz = bandwidthHz / 2 + spectrumCoverageMarginHz;
-  if (guardHalfSpanHz * 2 >= usableSpanHz) {
+  const span = coverageSpanForMode(freqHz, bandwidthHz);
+  if (!span) return [];
+  const requiredLoHz = span.loHz - spectrumCoverageMarginHz;
+  const requiredHiHz = span.hiHz + spectrumCoverageMarginHz;
+  if (requiredHiHz - requiredLoHz >= usableSpanHz) {
     return [alignFreqToRigStep(Math.round(freqHz))];
   }
 
-  const minCenterHz = freqHz + guardHalfSpanHz - halfUsableSpanHz;
-  const maxCenterHz = freqHz - guardHalfSpanHz + halfUsableSpanHz;
+  const minCenterHz = requiredHiHz - halfUsableSpanHz;
+  const maxCenterHz = requiredLoHz + halfUsableSpanHz;
   if (!Number.isFinite(minCenterHz) || !Number.isFinite(maxCenterHz) || minCenterHz > maxCenterHz) {
     return [];
   }
@@ -1486,15 +1519,17 @@ function tunedFrequencyForCenterCoverage(centerHz, freqHz = lastFreqHz, bandwidt
   const sampleRate = effectiveSpectrumCoverageSpanHz(lastSpectrumData.sample_rate);
   if (!Number.isFinite(sampleRate) || sampleRate <= 0) return null;
 
-  const safeBw = Math.max(0, Number.isFinite(bandwidthHz) ? bandwidthHz : 0);
+  const span = coverageSpanForMode(freqHz, bandwidthHz);
+  if (!span) return null;
   const halfSpanHz = sampleRate / 2;
-  const requiredHalfSpanHz = safeBw / 2 + spectrumCoverageMarginHz;
-  if (requiredHalfSpanHz * 2 >= sampleRate) {
+  const requiredLoOffset = freqHz - (span.loHz - spectrumCoverageMarginHz);
+  const requiredHiOffset = (span.hiHz + spectrumCoverageMarginHz) - freqHz;
+  if (requiredLoOffset + requiredHiOffset >= sampleRate) {
     return alignFreqToRigStep(Math.round(centerHz));
   }
 
-  const minFreqHz = centerHz - halfSpanHz + requiredHalfSpanHz;
-  const maxFreqHz = centerHz + halfSpanHz - requiredHalfSpanHz;
+  const minFreqHz = centerHz - halfSpanHz + requiredLoOffset;
+  const maxFreqHz = centerHz + halfSpanHz - requiredHiOffset;
   if (freqHz >= minFreqHz && freqHz <= maxFreqHz) {
     return null;
   }
@@ -1953,10 +1988,15 @@ function render(update) {
     }
   }
   const modeUpper = update.status && update.status.mode ? normalizeMode(update.status.mode).toUpperCase() : "";
+  const aisStatus = document.getElementById("ais-status");
   const aprsStatus = document.getElementById("aprs-status");
   const cwStatus = document.getElementById("cw-status");
   const ft8Status = document.getElementById("ft8-status");
   const wsprStatus = document.getElementById("wspr-status");
+  if (aisStatus && modeUpper !== "AIS" && aisStatus.textContent === "Receiving") {
+    aisStatus.textContent = "Connected, listening for packets";
+  }
+  if (window.updateAisBar) window.updateAisBar();
   if (aprsStatus && modeUpper !== "PKT" && aprsStatus.textContent === "Receiving") {
     aprsStatus.textContent = "Connected, listening for packets";
   }
@@ -2644,6 +2684,7 @@ const MODE_BW_DEFAULTS = {
   USB:    [2_700,  300,   6_000,  100],
   AM:     [9_000,  500,   20_000, 500],
   FM:     [12_500, 2_500, 25_000, 500],
+  AIS:    [25_000, 12_500, 50_000, 500],
   WFM:    [180_000, 50_000,300_000,5_000],
   DIG:    [3_000,  300,   6_000,  100],
   PKT:    [25_000, 300,  50_000,  500],
@@ -2925,8 +2966,9 @@ let aprsRadioPath = null;
 const stationMarkers = new Map();
 const locatorMarkers = new Map();
 const mapMarkers = new Set();
-const mapFilter = { aprs: true, ft8: true, wspr: true };
+const mapFilter = { ais: true, aprs: true, ft8: true, wspr: true };
 const APRS_TRACK_MAX_POINTS = 64;
+const aisMarkers = new Map();
 
 window.clearMapMarkersByType = function(type) {
   if (type === "aprs") {
@@ -2941,6 +2983,17 @@ window.clearMapMarkersByType = function(type) {
       }
     });
     stationMarkers.clear();
+    return;
+  }
+
+  if (type === "ais") {
+    aisMarkers.forEach((entry) => {
+      if (entry && entry.marker) {
+        if (aprsMap && aprsMap.hasLayer(entry.marker)) entry.marker.removeFrom(aprsMap);
+        mapMarkers.delete(entry.marker);
+      }
+    });
+    aisMarkers.clear();
     return;
   }
 
@@ -3041,9 +3094,16 @@ function initAprsMap() {
   }
   applyMapFilter();
 
+  const aisFilter = document.getElementById("map-filter-ais");
   const aprsFilter = document.getElementById("map-filter-aprs");
   const ft8Filter = document.getElementById("map-filter-ft8");
   const wsprFilter = document.getElementById("map-filter-wspr");
+  if (aisFilter) {
+    aisFilter.addEventListener("change", () => {
+      mapFilter.ais = aisFilter.checked;
+      applyMapFilter();
+    });
+  }
   if (aprsFilter) {
     aprsFilter.addEventListener("change", () => {
       mapFilter.aprs = aprsFilter.checked;
@@ -3188,6 +3248,30 @@ function buildAprsPopupHtml(call, lat, lon, info, pkt) {
     `</div>`;
 }
 
+function buildAisPopupHtml(msg) {
+  const age = msg?._tsMs ? formatTimeAgo(msg._tsMs) : null;
+  const distKm = (serverLat != null && serverLon != null && msg?.lat != null && msg?.lon != null)
+    ? haversineKm(serverLat, serverLon, msg.lat, msg.lon)
+    : null;
+  const distStr = distKm != null
+    ? (distKm < 1 ? `${Math.round(distKm * 1000)} m` : `${distKm.toFixed(1)} km`)
+    : null;
+  const meta = [age, distStr, msg?.channel ? `AIS ${escapeMapHtml(msg.channel)}` : null].filter(Boolean).join(" &middot; ");
+  let rows = "";
+  rows += `<tr><td class="aprs-popup-label">MMSI</td><td>${escapeMapHtml(String(msg.mmsi || "--"))}</td></tr>`;
+  rows += `<tr><td class="aprs-popup-label">Type</td><td>${escapeMapHtml(String(msg.message_type || "--"))}</td></tr>`;
+  if (msg?.sog_knots != null) rows += `<tr><td class="aprs-popup-label">SOG</td><td>${Number(msg.sog_knots).toFixed(1)} kn</td></tr>`;
+  if (msg?.cog_deg != null) rows += `<tr><td class="aprs-popup-label">COG</td><td>${Number(msg.cog_deg).toFixed(1)}&deg;</td></tr>`;
+  if (msg?.lat != null && msg?.lon != null) rows += `<tr><td class="aprs-popup-label">Pos</td><td>${msg.lat.toFixed(5)}, ${msg.lon.toFixed(5)}</td></tr>`;
+  const info = [msg?.vessel_name, msg?.callsign, msg?.destination].filter(Boolean).map(escapeMapHtml).join(" · ");
+  return `<div class="aprs-popup">` +
+    `<div class="aprs-popup-call">${escapeMapHtml(msg?.vessel_name || `MMSI ${msg?.mmsi || "--"}`)}</div>` +
+    (meta ? `<div class="aprs-popup-meta">${meta}</div>` : "") +
+    (rows ? `<table class="aprs-popup-table">${rows}</table>` : "") +
+    (info ? `<div class="aprs-popup-info">${info}</div>` : "") +
+    `</div>`;
+}
+
 function aprsPositionsEqual(a, b) {
   if (!a || !b) return false;
   return Math.abs(a[0] - b[0]) < 0.000001 && Math.abs(a[1] - b[1]) < 0.000001;
@@ -3276,6 +3360,31 @@ window.aprsMapAddStation = function(call, lat, lon, info, symbolTable, symbolCod
   }
 };
 
+window.aisMapAddVessel = function(msg) {
+  if (msg == null || msg.lat == null || msg.lon == null || !Number.isFinite(msg.mmsi)) return;
+  if (!aprsMap) initAprsMap();
+  const key = String(msg.mmsi);
+  const popupHtml = buildAisPopupHtml(msg);
+  const existing = aisMarkers.get(key);
+  if (existing && existing.marker) {
+    existing.msg = msg;
+    existing.marker.setLatLng([msg.lat, msg.lon]);
+    existing.marker.setPopupContent(popupHtml);
+    return;
+  }
+  if (!aprsMap) return;
+  const marker = L.circleMarker([msg.lat, msg.lon], {
+    radius: 6,
+    color: "#e2553d",
+    fillColor: "#ff7559",
+    fillOpacity: 0.82,
+  }).addTo(aprsMap).bindPopup(popupHtml);
+  marker.__trxType = "ais";
+  mapMarkers.add(marker);
+  aisMarkers.set(key, { marker, msg });
+  applyMapFilter();
+};
+
 function maidenheadToBounds(grid) {
   if (!grid || grid.length < 4) return null;
   const g = grid.toUpperCase();
@@ -3310,6 +3419,7 @@ function applyMapFilter() {
   mapMarkers.forEach((marker) => {
     const type = marker.__trxType;
     const visible =
+      (type === "ais" && mapFilter.ais) ||
       (type === "aprs" && mapFilter.aprs) ||
       (type === "ft8" && mapFilter.ft8) ||
       (type === "wspr" && mapFilter.wspr);
@@ -3999,15 +4109,18 @@ document.getElementById("copyright-year").textContent = new Date().getFullYear()
 let decodeSource = null;
 let decodeConnected = false;
 function updateDecodeStatus(text) {
+  const ais = document.getElementById("ais-status");
   const aprs = document.getElementById("aprs-status");
   const cw = document.getElementById("cw-status");
   const ft8 = document.getElementById("ft8-status");
+  if (ais && ais.textContent !== "Receiving") ais.textContent = text;
   if (aprs && aprs.textContent !== "Receiving") aprs.textContent = text;
   if (cw && cw.textContent !== "Receiving") cw.textContent = text;
   if (ft8 && ft8.textContent !== "Receiving") ft8.textContent = text;
 }
 function connectDecode() {
   if (decodeSource) { decodeSource.close(); }
+  if (window.resetAisHistoryView) window.resetAisHistoryView();
   if (window.resetAprsHistoryView) window.resetAprsHistoryView();
   if (window.resetCwHistoryView) window.resetCwHistoryView();
   if (window.resetFt8HistoryView) window.resetFt8HistoryView();
@@ -4020,6 +4133,7 @@ function connectDecode() {
   decodeSource.onmessage = (evt) => {
     try {
       const msg = JSON.parse(evt.data);
+      if (msg.type === "ais" && window.onServerAis) window.onServerAis(msg);
       if (msg.type === "aprs" && window.onServerAprs) window.onServerAprs(msg);
       if (msg.type === "cw" && window.onServerCw) window.onServerCw(msg);
       if (msg.type === "ft8" && window.onServerFt8) window.onServerFt8(msg);
@@ -4796,36 +4910,38 @@ function drawSpectrum(data) {
   // ── BW strip (drawn before spectrum so traces appear on top) ──────────────
   if (lastFreqHz != null && currentBandwidthHz > 0) {
     if (_bwDragEdge) {
-      const xMid = hzToX(lastFreqHz);
-      // Bottom bookmark tab centered on the dial frequency, shown only while resizing BW
+      // Bottom bookmark tab centered on each visible channel, shown while resizing BW
       const bwText = formatBwLabel(currentBandwidthHz);
-      ctx.save();
-      ctx.font = `bold ${Math.round(10 * dpr)}px sans-serif`;
-      const tw = ctx.measureText(bwText).width;
-      const PAD  = 6 * dpr;
-      const TAB_H = 16 * dpr;
-      const TAB_OFFSET = 4 * dpr;
-      const tabX = Math.max(0, Math.min(W - tw - PAD * 2, xMid - (tw + PAD * 2) / 2));
-      const tabBottom = H - TAB_OFFSET;
-      const tabY = tabBottom - TAB_H;
-      const r = 3 * dpr;
-      // Rounded-bottom tab shape (flat top)
-      ctx.fillStyle = "rgba(240,173,78,0.85)";
-      ctx.beginPath();
-      ctx.moveTo(tabX, tabY);
-      ctx.lineTo(tabX + tw + PAD * 2, tabY);
-      ctx.lineTo(tabX + tw + PAD * 2, tabBottom - r);
-      ctx.arcTo(tabX + tw + PAD * 2, tabBottom, tabX + tw + PAD * 2 - r, tabBottom, r);
-      ctx.lineTo(tabX + r, tabBottom);
-      ctx.arcTo(tabX, tabBottom, tabX, tabBottom - r, r);
-      ctx.lineTo(tabX, tabY);
-      ctx.closePath();
-      ctx.fill();
-      // Tab text
-      ctx.fillStyle = spectrumBgColor();
-      ctx.textAlign = "left";
-      ctx.fillText(bwText, tabX + PAD, tabBottom - 4 * dpr);
-      ctx.restore();
+      for (const centerHz of visibleBandwidthCenters(lastFreqHz)) {
+        const xMid = hzToX(centerHz);
+        ctx.save();
+        ctx.font = `bold ${Math.round(10 * dpr)}px sans-serif`;
+        const tw = ctx.measureText(bwText).width;
+        const PAD  = 6 * dpr;
+        const TAB_H = 16 * dpr;
+        const TAB_OFFSET = 4 * dpr;
+        const tabX = Math.max(0, Math.min(W - tw - PAD * 2, xMid - (tw + PAD * 2) / 2));
+        const tabBottom = H - TAB_OFFSET;
+        const tabY = tabBottom - TAB_H;
+        const r = 3 * dpr;
+        // Rounded-bottom tab shape (flat top)
+        ctx.fillStyle = "rgba(240,173,78,0.85)";
+        ctx.beginPath();
+        ctx.moveTo(tabX, tabY);
+        ctx.lineTo(tabX + tw + PAD * 2, tabY);
+        ctx.lineTo(tabX + tw + PAD * 2, tabBottom - r);
+        ctx.arcTo(tabX + tw + PAD * 2, tabBottom, tabX + tw + PAD * 2 - r, tabBottom, r);
+        ctx.lineTo(tabX + r, tabBottom);
+        ctx.arcTo(tabX, tabBottom, tabX, tabBottom - r, r);
+        ctx.lineTo(tabX, tabY);
+        ctx.closePath();
+        ctx.fill();
+        // Tab text
+        ctx.fillStyle = spectrumBgColor();
+        ctx.textAlign = "left";
+        ctx.fillText(bwText, tabX + PAD, tabBottom - 4 * dpr);
+        ctx.restore();
+      }
     }
   }
 
@@ -5188,11 +5304,24 @@ if (overviewCanvas) {
 function getBwEdgeHit(cssX, cssW, range) {
   if (!lastFreqHz || !currentBandwidthHz || !lastSpectrumData) return null;
   const halfBw = currentBandwidthHz / 2;
-  const xL = ((lastFreqHz - halfBw - range.visLoHz) / range.visSpanHz) * cssW;
-  const xR = ((lastFreqHz + halfBw - range.visLoHz) / range.visSpanHz) * cssW;
   const HIT = 8;
-  if (Math.abs(cssX - xL) < HIT) return "left";
-  if (Math.abs(cssX - xR) < HIT) return "right";
+  let bestEdge = null;
+  let bestDist = Number.POSITIVE_INFINITY;
+  for (const centerHz of visibleBandwidthCenters(lastFreqHz)) {
+    const xL = ((centerHz - halfBw - range.visLoHz) / range.visSpanHz) * cssW;
+    const xR = ((centerHz + halfBw - range.visLoHz) / range.visSpanHz) * cssW;
+    const distL = Math.abs(cssX - xL);
+    const distR = Math.abs(cssX - xR);
+    if (distL < HIT && distL < bestDist) {
+      bestEdge = "left";
+      bestDist = distL;
+    }
+    if (distR < HIT && distR < bestDist) {
+      bestEdge = "right";
+      bestDist = distR;
+    }
+  }
+  if (bestEdge) return bestEdge;
   return null;
 }
 

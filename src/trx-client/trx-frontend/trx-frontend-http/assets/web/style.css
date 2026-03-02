@@ -629,7 +629,8 @@ small { color: var(--text-muted); }
   color: var(--text-muted);
   background: color-mix(in srgb, var(--card-bg) 62%, transparent);
 }
-#aprs-bar-overlay {
+#aprs-bar-overlay,
+#ais-bar-overlay {
   display: none;
   position: absolute;
   top: 50%;
@@ -1087,11 +1088,16 @@ small { color: var(--text-muted); }
 .sub-tab:hover:not(.active) { color: var(--text); }
 #aprs-map { min-height: 150px; border-radius: 6px; }
 .aprs-controls { display: flex; gap: 0.6rem; align-items: center; margin-bottom: 0.75rem; }
-#aprs-packets { max-height: 360px; overflow-y: auto; border: 1px solid var(--border-light); border-radius: 6px; background: var(--input-bg); font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
+#aprs-packets,
+#ais-messages { max-height: 360px; overflow-y: auto; border: 1px solid var(--border-light); border-radius: 6px; background: var(--input-bg); font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
 .aprs-packet { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; font-size: 0.82rem; padding: 0.35rem 0.5rem; border-bottom: 1px solid var(--border); line-height: 1.4; }
 .aprs-packet:last-child { border-bottom: none; }
+.ais-message { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; font-size: 0.82rem; padding: 0.35rem 0.5rem; border-bottom: 1px solid var(--border); line-height: 1.4; }
+.ais-message:last-child { border-bottom: none; }
 .aprs-call { color: var(--accent-green); font-weight: 600; }
+.ais-call { color: var(--accent-red); font-weight: 600; }
 .aprs-time { color: var(--text-muted); margin-right: 0.5rem; }
+.ais-time { color: var(--text-muted); margin-right: 0.5rem; }
 .aprs-symbol { display: inline-block; width: 24px; height: 24px; background-size: 384px 192px; vertical-align: middle; margin-right: 0.3rem; }
 .aprs-pos { color: var(--accent-green); text-decoration: none; margin-left: 0.3rem; font-size: 0.8rem; }
 .aprs-pos:hover { text-decoration: underline; }

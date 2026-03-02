@@ -11,7 +11,7 @@ use trx_core::rig::state::RigMode;
 
 /// Parse a mode string into a RigMode.
 ///
-/// Handles LSB, USB, CW, CWR, AM, FM, WFM, DIG, DIGI, PKT, PACKET.
+/// Handles LSB, USB, CW, CWR, AM, FM, WFM, AIS, DIG, DIGI, PKT, PACKET.
 /// Falls back to Other(string) for unknown modes.
 pub fn parse_mode(s: &str) -> RigMode {
     match s.to_uppercase().as_str() {
@@ -22,6 +22,7 @@ pub fn parse_mode(s: &str) -> RigMode {
         "AM" => RigMode::AM,
         "FM" => RigMode::FM,
         "WFM" => RigMode::WFM,
+        "AIS" => RigMode::AIS,
         "DIG" | "DIGI" => RigMode::DIG,
         "PKT" | "PACKET" => RigMode::PKT,
         other => RigMode::Other(other.to_string()),
@@ -41,6 +42,7 @@ pub fn mode_to_string(mode: &RigMode) -> String {
         RigMode::AM => "AM".to_string(),
         RigMode::FM => "FM".to_string(),
         RigMode::WFM => "WFM".to_string(),
+        RigMode::AIS => "AIS".to_string(),
         RigMode::DIG => "DIG".to_string(),
         RigMode::PKT => "PKT".to_string(),
         RigMode::Other(s) => s.clone(),
@@ -78,6 +80,7 @@ mod tests {
         assert_eq!(parse_mode("AM"), RigMode::AM);
         assert_eq!(parse_mode("FM"), RigMode::FM);
         assert_eq!(parse_mode("WFM"), RigMode::WFM);
+        assert_eq!(parse_mode("AIS"), RigMode::AIS);
     }
 
     #[test]
@@ -122,6 +125,7 @@ mod tests {
         assert_eq!(mode_to_string(&RigMode::AM), "AM");
         assert_eq!(mode_to_string(&RigMode::FM), "FM");
         assert_eq!(mode_to_string(&RigMode::WFM), "WFM");
+        assert_eq!(mode_to_string(&RigMode::AIS), "AIS");
         assert_eq!(mode_to_string(&RigMode::DIG), "DIG");
         assert_eq!(mode_to_string(&RigMode::PKT), "PKT");
     }
@@ -141,6 +145,7 @@ mod tests {
             RigMode::AM,
             RigMode::FM,
             RigMode::WFM,
+            RigMode::AIS,
             RigMode::DIG,
             RigMode::PKT,
         ];

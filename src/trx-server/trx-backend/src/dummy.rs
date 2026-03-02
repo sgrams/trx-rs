@@ -93,6 +93,7 @@ impl DummyRig {
                         RigMode::AM,
                         RigMode::FM,
                         RigMode::WFM,
+                        RigMode::AIS,
                         RigMode::DIG,
                         RigMode::PKT,
                     ],

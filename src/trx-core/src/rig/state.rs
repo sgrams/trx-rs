@@ -70,6 +70,7 @@ pub enum RigMode {
     AM,
     WFM,
     FM,
+    AIS,
     DIG,
     PKT,
     Other(String),

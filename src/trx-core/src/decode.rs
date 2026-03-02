@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: BSD-2-Clause
 
-//! Shared types for server-side decoded messages (APRS, CW).
+//! Shared types for server-side decoded messages (APRS, AIS, CW).
 
 use serde::{Deserialize, Serialize};
 
@@ -10,6 +10,8 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type")]
 pub enum DecodedMessage {
+    #[serde(rename = "ais")]
+    Ais(AisMessage),
     #[serde(rename = "aprs")]
     Aprs(AprsPacket),
     #[serde(rename = "cw")]
@@ -18,6 +20,37 @@ pub enum DecodedMessage {
     Ft8(Ft8Message),
     #[serde(rename = "wspr")]
     Wspr(WsprMessage),
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AisMessage {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ts_ms: Option<i64>,
+    pub channel: String,
+    pub message_type: u8,
+    pub repeat: u8,
+    pub mmsi: u32,
+    pub crc_ok: bool,
+    pub bit_len: usize,
+    pub raw_bytes: Vec<u8>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub lat: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub lon: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sog_knots: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cog_deg: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub heading_deg: Option<u16>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub nav_status: Option<u8>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub vessel_name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub callsign: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub destination: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

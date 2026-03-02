@@ -156,6 +156,7 @@ impl Demodulator {
             RigMode::AM => Self::Am,
             RigMode::FM => Self::Fm,
             RigMode::WFM => Self::Wfm,
+            RigMode::AIS => Self::Fm,
             RigMode::CW | RigMode::CWR => Self::Cw,
             RigMode::DIG => Self::Passthrough,
             // VHF/UHF packet radio (APRS, AX.25) is FM-encoded AFSK.
@@ -187,6 +188,7 @@ mod tests {
         assert_eq!(Demodulator::for_mode(&RigMode::AM), Demodulator::Am);
         assert_eq!(Demodulator::for_mode(&RigMode::FM), Demodulator::Fm);
         assert_eq!(Demodulator::for_mode(&RigMode::WFM), Demodulator::Wfm);
+        assert_eq!(Demodulator::for_mode(&RigMode::AIS), Demodulator::Fm);
         assert_eq!(Demodulator::for_mode(&RigMode::CW), Demodulator::Cw);
         assert_eq!(Demodulator::for_mode(&RigMode::CWR), Demodulator::Cw);
         assert_eq!(

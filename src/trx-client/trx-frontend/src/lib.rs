@@ -13,7 +13,7 @@ use tokio::sync::{broadcast, mpsc, watch};
 use tokio::task::JoinHandle;
 
 use trx_core::audio::AudioStreamInfo;
-use trx_core::decode::{AprsPacket, CwEvent, DecodedMessage, Ft8Message, WsprMessage};
+use trx_core::decode::{AisMessage, AprsPacket, CwEvent, DecodedMessage, Ft8Message, WsprMessage};
 use trx_core::rig::state::{RigSnapshot, SpectrumData};
 use trx_core::{DynResult, RigRequest, RigState};
 
@@ -136,6 +136,8 @@ pub struct FrontendRuntimeContext {
     pub audio_info: Option<watch::Receiver<Option<AudioStreamInfo>>>,
     /// Decode message broadcast channel
     pub decode_rx: Option<broadcast::Sender<DecodedMessage>>,
+    /// AIS decode history (timestamp, message)
+    pub ais_history: Arc<Mutex<VecDeque<(Instant, AisMessage)>>>,
     /// APRS decode history (timestamp, packet)
     pub aprs_history: Arc<Mutex<VecDeque<(Instant, AprsPacket)>>>,
     /// CW decode history (timestamp, event)
@@ -196,6 +198,7 @@ impl FrontendRuntimeContext {
             audio_tx: None,
             audio_info: None,
             decode_rx: None,
+            ais_history: Arc::new(Mutex::new(VecDeque::new())),
             aprs_history: Arc::new(Mutex::new(VecDeque::new())),
             cw_history: Arc::new(Mutex::new(VecDeque::new())),
             ft8_history: Arc::new(Mutex::new(VecDeque::new())),

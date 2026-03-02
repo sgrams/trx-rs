@@ -2376,6 +2376,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "trx-ais"
+version = "0.1.0"
+dependencies = [
+ "trx-core",
+]
+
+[[package]]
 name = "trx-app"
 version = "0.1.0"
 dependencies = [
@@ -2591,6 +2598,7 @@ dependencies = [
  "tokio-serial",
  "toml",
  "tracing",
+ "trx-ais",
  "trx-app",
  "trx-aprs",
  "trx-backend",

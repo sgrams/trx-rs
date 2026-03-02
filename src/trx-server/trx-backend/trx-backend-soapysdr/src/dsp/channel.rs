@@ -23,6 +23,7 @@ fn iq_agc_for_mode(mode: &RigMode, sample_rate: u32) -> Option<SoftAgc> {
     let sr = sample_rate.max(1) as f32;
     match mode {
         RigMode::FM | RigMode::PKT => Some(SoftAgc::new(sr, 0.5, 150.0, 0.8, 12.0)),
+        RigMode::AIS => Some(SoftAgc::new(sr, 0.5, 150.0, 0.8, 12.0)),
         RigMode::WFM => None,
         _ => None,
     }
@@ -43,6 +44,7 @@ fn default_bandwidth_for_mode(mode: &RigMode) -> u32 {
         RigMode::AM => 9_000,
         RigMode::FM => 12_500,
         RigMode::WFM => 180_000,
+        RigMode::AIS => 25_000,
         RigMode::Other(_) => 3_000,
     }
 }

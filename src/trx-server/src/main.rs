@@ -244,6 +244,7 @@ fn default_audio_bandwidth_for_mode(mode: &trx_core::rig::state::RigMode) -> u32
         RigMode::AM => 9_000,
         RigMode::FM => 12_500,
         RigMode::WFM => 180_000,
+        RigMode::AIS => 25_000,
         RigMode::Other(_) => 3_000,
     }
 }
@@ -264,6 +265,7 @@ fn parse_rig_mode(
         "AM" => RigMode::AM,
         "WFM" => RigMode::WFM,
         "FM" => RigMode::FM,
+        "AIS" => RigMode::AIS,
         "DIG" => RigMode::DIG,
         "PKT" => RigMode::PKT,
         _ => initial_mode.clone(),
@@ -274,10 +276,18 @@ fn parse_rig_mode(
 type SdrRigBuildResult = DynResult<(
     Box<dyn trx_core::rig::RigCat>,
     tokio::sync::broadcast::Receiver<Vec<f32>>,
+    (
+        tokio::sync::broadcast::Receiver<Vec<f32>>,
+        tokio::sync::broadcast::Receiver<Vec<f32>>,
+    ),
 )>;
 
 type OptionalSdrRig = Option<Box<dyn trx_core::rig::RigCat>>;
 type OptionalSdrPcmRx = Option<broadcast::Receiver<Vec<f32>>>;
+type OptionalSdrAisPcmRx = Option<(
+    broadcast::Receiver<Vec<f32>>,
+    broadcast::Receiver<Vec<f32>>,
+)>;
 
 /// Build a `SoapySdrRig` with full channel config from a `RigInstanceConfig`.
 #[cfg(feature = "soapysdr")]
@@ -312,6 +322,7 @@ fn build_sdr_rig_from_instance(rig_cfg: &RigInstanceConfig) -> SdrRigBuildResult
             64,
         ));
     }
+    let ais_channel_base_idx = channels.len();
 
     let sdr_rig = trx_backend::SoapySdrRig::new_with_config(
         args,
@@ -333,7 +344,11 @@ fn build_sdr_rig_from_instance(rig_cfg: &RigInstanceConfig) -> SdrRigBuildResult
     )?;
 
     let pcm_rx = sdr_rig.subscribe_pcm();
-    Ok((Box::new(sdr_rig) as Box<dyn trx_core::rig::RigCat>, pcm_rx))
+    let ais_pcm = (
+        sdr_rig.subscribe_pcm_channel(ais_channel_base_idx),
+        sdr_rig.subscribe_pcm_channel(ais_channel_base_idx + 1),
+    );
+    Ok((Box::new(sdr_rig) as Box<dyn trx_core::rig::RigCat>, pcm_rx, ais_pcm))
 }
 
 /// Build a `RigTaskConfig` for a single rig instance.
@@ -408,6 +423,10 @@ fn spawn_rig_audio_stack(
     longitude: Option<f64>,
     listen_override: Option<IpAddr>,
     sdr_pcm_rx: Option<broadcast::Receiver<Vec<f32>>>,
+    sdr_ais_pcm_rx: Option<(
+        broadcast::Receiver<Vec<f32>>,
+        broadcast::Receiver<Vec<f32>>,
+    )>,
 ) -> Vec<JoinHandle<()>> {
     let mut handles: Vec<JoinHandle<()>> = Vec::new();
 
@@ -592,6 +611,21 @@ fn spawn_rig_audio_stack(
                 _ = wait_for_shutdown(aprs_shutdown_rx) => {}
             }
         }));
+
+        if let Some((ais_a_pcm_rx, ais_b_pcm_rx)) = sdr_ais_pcm_rx {
+            let ais_state_rx = state_rx.clone();
+            let ais_decode_tx = decode_tx.clone();
+            let ais_shutdown_rx = shutdown_rx.clone();
+            let ais_histories = histories.clone();
+            let ais_sr = rig_cfg.audio.sample_rate;
+            let ais_ch = rig_cfg.audio.channels as u16;
+            handles.push(tokio::spawn(async move {
+                tokio::select! {
+                    _ = audio::run_ais_decoder(ais_sr, ais_ch, ais_a_pcm_rx, ais_b_pcm_rx, ais_state_rx, ais_decode_tx, ais_histories) => {}
+                    _ = wait_for_shutdown(ais_shutdown_rx) => {}
+                }
+            }));
+        }
 
         // Spawn CW decoder task (no histories needed — CW has no persistent history)
         let cw_pcm_rx = pcm_tx.subscribe();
@@ -819,16 +853,16 @@ async fn main() -> DynResult<()> {
 
         // Build SDR rig when applicable.
         #[cfg(feature = "soapysdr")]
-        let (sdr_prebuilt_rig, sdr_pcm_rx): (OptionalSdrRig, OptionalSdrPcmRx) =
+        let (sdr_prebuilt_rig, sdr_pcm_rx, sdr_ais_pcm_rx): (OptionalSdrRig, OptionalSdrPcmRx, OptionalSdrAisPcmRx) =
             if rig_cfg.rig.access.access_type.as_deref() == Some("sdr") {
-                let (rig, pcm_rx) = build_sdr_rig_from_instance(rig_cfg)?;
-                (Some(rig), Some(pcm_rx))
+                let (rig, pcm_rx, ais_pcm_rx) = build_sdr_rig_from_instance(rig_cfg)?;
+                (Some(rig), Some(pcm_rx), Some(ais_pcm_rx))
             } else {
-                (None, None)
+                (None, None, None)
             };
 
         #[cfg(not(feature = "soapysdr"))]
-        let (sdr_prebuilt_rig, sdr_pcm_rx): (OptionalSdrRig, OptionalSdrPcmRx) = (None, None);
+        let (sdr_prebuilt_rig, sdr_pcm_rx, sdr_ais_pcm_rx): (OptionalSdrRig, OptionalSdrPcmRx, OptionalSdrAisPcmRx) = (None, None, None);
 
         let histories = DecoderHistories::new();
 
@@ -889,6 +923,7 @@ async fn main() -> DynResult<()> {
             longitude,
             audio_listen_override,
             sdr_pcm_rx,
+            sdr_ais_pcm_rx,
         );
         task_handles.extend(audio_handles);
 
