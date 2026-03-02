@@ -1656,6 +1656,51 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   transform: none;
   max-width: 100%;
 }
+.spectrum-bookmark-chip-side {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.16rem;
+  width: 100%;
+  min-height: 0;
+  padding: 0.38rem 0.5rem 0.42rem;
+  border-radius: 0.55rem;
+  white-space: normal;
+  line-height: 1.1;
+}
+.spectrum-bookmark-side-head {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.32rem;
+  min-width: 0;
+  width: 100%;
+}
+.spectrum-bookmark-chip-side .bm-icon-svg {
+  flex: 0 0 auto;
+  width: 0.5rem;
+  height: 0.72rem;
+  opacity: 0.95;
+}
+.spectrum-bookmark-chip-side .spectrum-bookmark-freq,
+.spectrum-bookmark-chip-side .spectrum-bookmark-name {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.spectrum-bookmark-chip-side .spectrum-bookmark-freq {
+  min-width: 0;
+  font-size: 0.54rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  opacity: 0.9;
+}
+.spectrum-bookmark-chip-side .spectrum-bookmark-name {
+  width: 100%;
+  font-size: 0.64rem;
+  font-weight: 600;
+}
 .bm-icon-svg path {
   fill: var(--bm-cat-fg, #1a202c);
 }
@@ -2260,4 +2305,62 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   --filter-border: #b99243;
   --wavelength-fg: #87663a;
   --spectrum-bg: #f5ecd9;
+}
+
+/* ── Fire style ───────────────────────────────────────────────────────── */
+[data-style="fire"] {
+  --bg: #120706;
+  --card-bg: #1b0c0a;
+  --input-bg: #180907;
+  --border: #4c1a12;
+  --border-light: #7a2e1a;
+  --text: #ffe7d2;
+  --text-muted: #c78361;
+  --text-heading: #fff3e7;
+  --btn-bg: #2c110d;
+  --btn-border: #8f3a20;
+  --accent-green: #ff6f1f;
+  --accent-yellow: #ffb347;
+  --accent-red: #ff4a24;
+  --jog-hi: #381510;
+  --jog-lo: #24100c;
+  --jog-shadow: rgba(0,0,0,0.62);
+  --jog-inset: rgba(255,164,76,0.07);
+  --audio-level-bg: #1f0d0a;
+  --audio-level-border: #7a2e1a;
+  --audio-level-fill-start: #ff4a24;
+  --audio-level-fill-end: #ffb347;
+  --filter-bg: #2b120d;
+  --filter-fg: #ffe7d2;
+  --filter-border: #8f3a20;
+  --wavelength-fg: #d38d6a;
+  --spectrum-bg: #140907;
+}
+[data-style="fire"][data-theme="light"] {
+  --bg: #fff3ea;
+  --card-bg: #fff7f0;
+  --input-bg: #ffe9da;
+  --border: #efc7b1;
+  --border-light: #d9a487;
+  --text: #42180d;
+  --text-muted: #8a4b31;
+  --text-heading: #2f120a;
+  --btn-bg: #ffe2cf;
+  --btn-border: #cc8563;
+  --accent-green: #d24c12;
+  --accent-yellow: #d88400;
+  --accent-red: #c53114;
+  --jog-hi: #ffe2cf;
+  --jog-lo: #ffd5bc;
+  --jog-shadow: rgba(108,44,15,0.18);
+  --jog-inset: rgba(255,255,255,0.72);
+  --audio-level-bg: #ffe7d7;
+  --audio-level-border: #d9a487;
+  --audio-level-fill-start: #c53114;
+  --audio-level-fill-end: #d88400;
+  --filter-bg: #ffe2cf;
+  --filter-fg: #42180d;
+  --filter-border: #cc8563;
+  --wavelength-fg: #9a5a3a;
+  --spectrum-bg: #fff0e4;
 }

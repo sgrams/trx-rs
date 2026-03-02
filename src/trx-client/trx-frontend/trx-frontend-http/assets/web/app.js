@@ -526,6 +526,24 @@ const CANVAS_PALETTE = {
       waterfallHue: [45, 18], waterfallSat: 86, waterfallLight: [92, 42], waterfallAlpha: [0.34, 0.82],
     },
   },
+  fire: {
+    dark: {
+      bg: "#130706",
+      spectrumLine: "#ff7a1f", spectrumFill: "rgba(255,122,31,0.14)",
+      spectrumGrid: "rgba(255,110,40,0.09)", spectrumLabel: "rgba(255,202,164,0.54)",
+      waveformLine: "rgba(255,134,54,0.94)", waveformPeak: "rgba(255,220,96,0.92)",
+      waveformGrid: "rgba(255,120,36,0.11)", waveformLabel: "rgba(255,214,176,0.66)",
+      waterfallHue: [8, 42], waterfallSat: 96, waterfallLight: [8, 58], waterfallAlpha: [0.26, 0.88],
+    },
+    light: {
+      bg: "#fff2e7",
+      spectrumLine: "#c24500", spectrumFill: "rgba(194,69,0,0.14)",
+      spectrumGrid: "rgba(125,52,0,0.09)", spectrumLabel: "rgba(90,38,0,0.56)",
+      waveformLine: "rgba(176,62,0,0.95)", waveformPeak: "rgba(224,132,0,0.90)",
+      waveformGrid: "rgba(125,52,0,0.10)", waveformLabel: "rgba(90,38,0,0.68)",
+      waterfallHue: [18, 48], waterfallSat: 90, waterfallLight: [92, 42], waterfallAlpha: [0.34, 0.84],
+    },
+  },
 };
 
 function currentStyle() {
@@ -540,7 +558,7 @@ function canvasPalette() {
 
 function setStyle(style) {
   const remapped = style === "nord" ? "arctic" : style === "monokai" ? "lime" : style;
-  const valid = ["original", "arctic", "lime", "contrast", "neon-disco", "golden-rain"];
+  const valid = ["original", "arctic", "lime", "contrast", "neon-disco", "golden-rain", "fire"];
   const next = valid.includes(remapped) ? remapped : "original";
   if (next === "original") {
     document.documentElement.removeAttribute("data-style");
@@ -4910,19 +4928,35 @@ function bmCategoryColorMap() {
   return map;
 }
 
-function createBookmarkChip(bm, colorMap) {
+function createBookmarkChip(bm, colorMap, options = {}) {
   const span = document.createElement("span");
   const freqStr = typeof bmFmtFreq === "function"
     ? bmFmtFreq(bm.freq_hz) : bm.freq_hz + "\u202fHz";
   const esc = (s) => String(s)
     .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
   span.className = "spectrum-bookmark-chip";
+  if (options.sideStack) {
+    span.classList.add("spectrum-bookmark-chip-side");
+  }
   span.title = bm.name + " \u2014 " + freqStr + (bm.comment ? "\n" + bm.comment : "");
   span.dataset.bmId = bm.id;
+  const labelHtml = options.sideStack
+    ? (
+      `<span class="spectrum-bookmark-side-head">` +
+      `<svg class='bm-icon-svg' viewBox='0 0 8 12' width='8' height='12' aria-hidden='true'>` +
+      "<path d='M0,0 h8 v10 l-4,2 l-4,-2 Z'/>" +
+      `</svg>` +
+      `<span class="spectrum-bookmark-freq">${esc(freqStr)}</span>` +
+      `</span>` +
+      `<span class="spectrum-bookmark-name">${esc(bm.name)}</span>`
+    )
+    : (
+      "<svg class='bm-icon-svg' viewBox='0 0 8 12' width='8' height='12' aria-hidden='true'>" +
+      "<path d='M0,0 h8 v10 l-4,2 l-4,-2 Z'/>" +
+      "</svg>\u00a0" + esc(bm.name)
+    );
   span.innerHTML =
-    "<svg class='bm-icon-svg' viewBox='0 0 8 12' width='8' height='12' aria-hidden='true'>" +
-    "<path d='M0,0 h8 v10 l-4,2 l-4,-2 Z'/>" +
-    "</svg>\u00a0" + esc(bm.name);
+    labelHtml;
   const col = colorMap[bm.category || ""];
   span.style.setProperty("--bm-cat-bg", col);
   span.style.setProperty("--bm-cat-fg", bmContrastFg(col));
@@ -4948,7 +4982,7 @@ function updateSideBookmarkStack(container, bookmarks, colorMap) {
     container.dataset.bmKey = nextKey;
     container.innerHTML = "";
     for (const bm of bookmarks) {
-      container.appendChild(createBookmarkChip(bm, colorMap));
+      container.appendChild(createBookmarkChip(bm, colorMap, { sideStack: true }));
     }
   }
   container.classList.add("bm-side-visible");

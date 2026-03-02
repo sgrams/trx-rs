@@ -51,32 +51,51 @@ async function bmFetch(categoryFilter) {
 
 function bmApplyFilters() {
   const text = (document.getElementById("bm-text-filter")?.value || "").trim().toLowerCase();
-  const filtered = text
-    ? bmList.filter((bm) =>
+  const modeFilter = (document.getElementById("bm-mode-filter")?.value || "").trim().toUpperCase();
+  let filtered = modeFilter
+    ? bmList.filter((bm) => String(bm.mode || "").toUpperCase() === modeFilter)
+    : bmList;
+  filtered = text
+    ? filtered.filter((bm) =>
         (bm.name || "").toLowerCase().includes(text) ||
         (bm.category || "").toLowerCase().includes(text) ||
         (bm.comment || "").toLowerCase().includes(text)
       )
-    : bmList;
+    : filtered;
   bmRender(filtered);
 }
 
 async function bmRefreshCategoryFilter(keepValue) {
   const sel = document.getElementById("bm-category-filter");
-  if (!sel) return;
+  const modeSel = document.getElementById("bm-mode-filter");
+  if (!sel && !modeSel) return;
   try {
     const resp = await fetch("/bookmarks");
     if (!resp.ok) return;
     const all = await resp.json();
-    const cats = [...new Set(all.map((b) => b.category || "").filter(Boolean))].sort();
-    while (sel.options.length > 1) sel.remove(1);
-    cats.forEach((cat) => {
-      const opt = document.createElement("option");
-      opt.value = cat;
-      opt.textContent = cat;
-      sel.add(opt);
-    });
-    if (keepValue && cats.includes(keepValue)) sel.value = keepValue;
+    if (sel) {
+      const cats = [...new Set(all.map((b) => b.category || "").filter(Boolean))].sort();
+      while (sel.options.length > 1) sel.remove(1);
+      cats.forEach((cat) => {
+        const opt = document.createElement("option");
+        opt.value = cat;
+        opt.textContent = cat;
+        sel.add(opt);
+      });
+      if (keepValue && cats.includes(keepValue)) sel.value = keepValue;
+    }
+    if (modeSel) {
+      const keepMode = modeSel.value;
+      const modes = [...new Set(all.map((b) => String(b.mode || "").trim().toUpperCase()).filter(Boolean))].sort();
+      while (modeSel.options.length > 1) modeSel.remove(1);
+      modes.forEach((mode) => {
+        const opt = document.createElement("option");
+        opt.value = mode;
+        opt.textContent = mode;
+        modeSel.add(opt);
+      });
+      if (keepMode && modes.includes(keepMode)) modeSel.value = keepMode;
+    }
   } catch (_) {}
 }
 
@@ -299,6 +318,11 @@ async function bmApply(bm) {
   // Category filter dropdown
   document.getElementById("bm-category-filter").addEventListener("change", (e) => {
     bmFetch(e.target.value);
+  });
+
+  // Mode filter dropdown (client-side, no re-fetch)
+  document.getElementById("bm-mode-filter").addEventListener("change", () => {
+    bmApplyFilters();
   });
 
   // Text search filter (client-side, no re-fetch)
