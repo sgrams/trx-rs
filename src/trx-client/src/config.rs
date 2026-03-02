@@ -257,7 +257,7 @@ impl Default for HttpFrontendConfig {
             default_rig_id: None,
             initial_map_zoom: 10,
             spectrum_coverage_margin_hz: 50_000,
-            spectrum_usable_span_ratio: 1.0,
+            spectrum_usable_span_ratio: 0.92,
             show_sdr_gain_control: true,
             auth: HttpAuthConfig::default(),
         }
@@ -477,7 +477,7 @@ impl ClientConfig {
                     default_rig_id: Some("hf".to_string()),
                     initial_map_zoom: 10,
                     spectrum_coverage_margin_hz: 50_000,
-                    spectrum_usable_span_ratio: 1.0,
+                    spectrum_usable_span_ratio: 0.92,
                     show_sdr_gain_control: true,
                     auth: HttpAuthConfig {
                         enabled: false,
@@ -579,7 +579,7 @@ mod tests {
         assert_eq!(config.frontends.http.port, 8080);
         assert_eq!(config.frontends.http.initial_map_zoom, 10);
         assert_eq!(config.frontends.http.spectrum_coverage_margin_hz, 50_000);
-        assert_eq!(config.frontends.http.spectrum_usable_span_ratio, 1.0);
+        assert_eq!(config.frontends.http.spectrum_usable_span_ratio, 0.92);
         assert_eq!(config.frontends.rigctl.port, 4532);
         assert!(config.frontends.http_json.enabled);
         assert_eq!(config.frontends.http_json.port, 0);

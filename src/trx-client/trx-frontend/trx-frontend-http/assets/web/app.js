@@ -1167,7 +1167,7 @@ function effectiveSpectrumCoverageSpanHz(sampleRateHz) {
   const sampleRate = Number(sampleRateHz);
   if (!Number.isFinite(sampleRate) || sampleRate <= 0) return 0;
   // Keep a guard band at the spectrum edges; practical usable span is slightly smaller.
-  const ratio = Number.isFinite(spectrumUsableSpanRatio) ? spectrumUsableSpanRatio : 1.0;
+  const ratio = Number.isFinite(spectrumUsableSpanRatio) ? spectrumUsableSpanRatio : 0.92;
   return sampleRate * Math.max(0.01, Math.min(1.0, ratio));
 }
 
@@ -1652,7 +1652,7 @@ let serverLat = null;
 let serverLon = null;
 let initialMapZoom = 10;
 let spectrumCoverageMarginHz = 50_000;
-let spectrumUsableSpanRatio = 1.0;
+let spectrumUsableSpanRatio = 0.92;
 
 function updateFooterBuildInfo() {
   const serverEl = document.getElementById("footer-server-build");

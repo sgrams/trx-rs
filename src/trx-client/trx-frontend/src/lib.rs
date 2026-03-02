@@ -214,7 +214,7 @@ impl FrontendRuntimeContext {
             http_show_sdr_gain_control: true,
             http_initial_map_zoom: 10,
             http_spectrum_coverage_margin_hz: 50_000,
-            http_spectrum_usable_span_ratio: 1.0,
+            http_spectrum_usable_span_ratio: 0.92,
             remote_active_rig_id: Arc::new(Mutex::new(None)),
             remote_rigs: Arc::new(Mutex::new(Vec::new())),
             owner_callsign: None,
