@@ -24,6 +24,7 @@ dirs = "6"
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
 bytes = "1"
 cpal = "0.15"
+num-complex = "0.4"
 opus = "0.3"
 trx-app = { path = "../trx-app" }
 trx-backend = { path = "trx-backend", features = ["soapysdr"] }

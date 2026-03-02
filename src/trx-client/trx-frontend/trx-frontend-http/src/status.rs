@@ -12,6 +12,7 @@ pub const APP_JS: &str = include_str!("../assets/web/app.js");
 pub const LEAFLET_AIS_TRACKSYMBOL_JS: &str =
     include_str!("../assets/web/leaflet-ais-tracksymbol.js");
 pub const AIS_JS: &str = include_str!("../assets/web/plugins/ais.js");
+pub const VDES_JS: &str = include_str!("../assets/web/plugins/vdes.js");
 pub const APRS_JS: &str = include_str!("../assets/web/plugins/aprs.js");
 pub const FT8_JS: &str = include_str!("../assets/web/plugins/ft8.js");
 pub const WSPR_JS: &str = include_str!("../assets/web/plugins/wspr.js");

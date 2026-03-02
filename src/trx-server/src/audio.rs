@@ -11,6 +11,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use bytes::Bytes;
+use num_complex::Complex;
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{broadcast, mpsc, watch};
 use tracing::{error, info, warn};
@@ -978,16 +979,13 @@ pub async fn run_ais_decoder(
 /// Run the VDES decoder task. Only processes PCM when rig mode is VDES.
 pub async fn run_vdes_decoder(
     sample_rate: u32,
-    channels: u16,
-    mut pcm_a_rx: broadcast::Receiver<Vec<f32>>,
-    mut pcm_b_rx: broadcast::Receiver<Vec<f32>>,
+    mut iq_rx: broadcast::Receiver<Vec<Complex<f32>>>,
     mut state_rx: watch::Receiver<RigState>,
     decode_tx: broadcast::Sender<DecodedMessage>,
     histories: Arc<DecoderHistories>,
 ) {
-    info!("VDES decoder started ({}Hz, {} ch)", sample_rate, channels);
-    let mut decoder_a = VdesDecoder::new(sample_rate);
-    let mut decoder_b = VdesDecoder::new(sample_rate);
+    info!("VDES decoder started ({}Hz complex baseband)", sample_rate);
+    let mut decoder = VdesDecoder::new(sample_rate);
     let mut was_active = false;
     let mut active = matches!(state_rx.borrow().status.mode, RigMode::VDES);
 
@@ -998,8 +996,7 @@ pub async fn run_vdes_decoder(
                     let state = state_rx.borrow();
                     active = matches!(state.status.mode, RigMode::VDES);
                     if active {
-                        pcm_a_rx = pcm_a_rx.resubscribe();
-                        pcm_b_rx = pcm_b_rx.resubscribe();
+                        iq_rx = iq_rx.resubscribe();
                     }
                 }
                 Err(_) => break,
@@ -1008,32 +1005,17 @@ pub async fn run_vdes_decoder(
         }
 
         tokio::select! {
-            recv = pcm_a_rx.recv() => {
+            recv = iq_rx.recv() => {
                 match recv {
-                    Ok(frame) => {
+                    Ok(block) => {
                         was_active = true;
-                        for msg in decoder_a.process_samples(&downmix_if_needed(frame, channels), "A") {
+                        for msg in decoder.process_samples(&block, "Main") {
                             histories.record_vdes_message(msg.clone());
                             let _ = decode_tx.send(DecodedMessage::Vdes(msg));
                         }
                     }
                     Err(broadcast::error::RecvError::Lagged(n)) => {
-                        warn!("VDES decoder A: dropped {} PCM frames", n);
-                    }
-                    Err(broadcast::error::RecvError::Closed) => break,
-                }
-            }
-            recv = pcm_b_rx.recv() => {
-                match recv {
-                    Ok(frame) => {
-                        was_active = true;
-                        for msg in decoder_b.process_samples(&downmix_if_needed(frame, channels), "B") {
-                            histories.record_vdes_message(msg.clone());
-                            let _ = decode_tx.send(DecodedMessage::Vdes(msg));
-                        }
-                    }
-                    Err(broadcast::error::RecvError::Lagged(n)) => {
-                        warn!("VDES decoder B: dropped {} PCM frames", n);
+                        warn!("VDES decoder: dropped {} IQ blocks", n);
                     }
                     Err(broadcast::error::RecvError::Closed) => break,
                 }
@@ -1044,13 +1026,11 @@ pub async fn run_vdes_decoder(
                         let state = state_rx.borrow();
                         active = matches!(state.status.mode, RigMode::VDES);
                         if !active && was_active {
-                            decoder_a.reset();
-                            decoder_b.reset();
+                            decoder.reset();
                             was_active = false;
                         }
                         if active {
-                            pcm_a_rx = pcm_a_rx.resubscribe();
-                            pcm_b_rx = pcm_b_rx.resubscribe();
+                            iq_rx = iq_rx.resubscribe();
                         }
                     }
                     Err(_) => break,

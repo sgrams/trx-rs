@@ -80,6 +80,7 @@
         <canvas id="overview-canvas" aria-hidden="true"></canvas>
         <div id="rds-ps-overlay" aria-live="polite" aria-label="RDS station name"></div>
         <div id="ais-bar-overlay" aria-live="polite" aria-label="Recent AIS messages"></div>
+        <div id="vdes-bar-overlay" aria-live="polite" aria-label="Recent VDES bursts"></div>
         <div id="aprs-bar-overlay" aria-live="polite" aria-label="Recent APRS frames"></div>
       </div>
       <div id="spectrum-bookmark-axis"></div>
@@ -350,7 +351,8 @@
     <div id="tab-plugins" class="tab-panel" style="display:none;">
       <div class="sub-tab-bar">
         <button class="sub-tab active" data-subtab="overview">Overview</button>
-        <button class="sub-tab" data-subtab="ais">AIS/VDES</button>
+        <button class="sub-tab" data-subtab="ais">AIS</button>
+        <button class="sub-tab" data-subtab="vdes">VDES</button>
         <button class="sub-tab" data-subtab="aprs">APRS</button>
         <button class="sub-tab" data-subtab="cw">CW</button>
         <button class="sub-tab" data-subtab="ft8">FT8</button>
@@ -359,9 +361,15 @@
       </div>
       <div id="subtab-overview" class="sub-tab-panel">
         <div class="plugin-item">
-          <strong>AIS / VDES Decoder</strong>
+          <strong>AIS Decoder</strong>
           <div style="color:var(--text-muted); font-size:0.85rem; margin-top:0.2rem;">
-            Decodes dual-channel AIS and VDES traffic from RX audio using 9.6 kbit/s GMSK and HDLC.
+            Decodes dual-channel AIS traffic from RX audio using 9.6 kbit/s GMSK and HDLC.
+          </div>
+        </div>
+        <div class="plugin-item">
+          <strong>VDES Decoder</strong>
+          <div style="color:var(--text-muted); font-size:0.85rem; margin-top:0.2rem;">
+            Decodes single-channel 100 kHz VDES bursts from SDR IQ using the dedicated VDES path.
           </div>
         </div>
         <div class="plugin-item">
@@ -441,6 +449,28 @@
           </div>
         </div>
         <div id="ais-messages"></div>
+      </div>
+      <div id="subtab-vdes" class="sub-tab-panel" style="display:none;">
+        <div class="aprs-controls">
+          <button id="vdes-clear-btn" type="button">Clear</button>
+          <input id="vdes-filter" class="ft8-filter" type="text" placeholder="Filter (e.g. frame, RMS, payload)" />
+          <small id="vdes-status" style="color:var(--text-muted);">Waiting for server decode</small>
+        </div>
+        <div class="ais-summary">
+          <div class="ais-summary-card">
+            <span class="ais-summary-label">Channel</span>
+            <span id="vdes-channel-summary" class="ais-summary-value">100 kHz centered on tuned frequency</span>
+          </div>
+          <div class="ais-summary-card">
+            <span class="ais-summary-label">Frames</span>
+            <span id="vdes-frame-count" class="ais-summary-value">0 bursts</span>
+          </div>
+          <div class="ais-summary-card">
+            <span class="ais-summary-label">Latest</span>
+            <span id="vdes-latest-seen" class="ais-summary-value">No traffic yet</span>
+          </div>
+        </div>
+        <div id="vdes-messages"></div>
       </div>
       <div id="subtab-aprs" class="sub-tab-panel" style="display:none;">
         <div class="aprs-controls">
@@ -528,7 +558,7 @@
     </div>
     <div id="tab-map" class="tab-panel" style="display:none;">
       <div class="map-controls">
-        <label><input type="checkbox" id="map-filter-ais" checked /> AIS/VDES</label>
+        <label><input type="checkbox" id="map-filter-ais" checked /> AIS</label>
         <label><input type="checkbox" id="map-filter-aprs" checked /> APRS</label>
         <label><input type="checkbox" id="map-filter-ft8" checked /> FT8</label>
         <label><input type="checkbox" id="map-filter-wspr" checked /> WSPR</label>
@@ -565,6 +595,7 @@
   </div>
   <script src="/app.js"></script>
   <script src="/ais.js"></script>
+  <script src="/vdes.js"></script>
   <script src="/aprs.js"></script>
   <script src="/ft8.js"></script>
   <script src="/wspr.js"></script>

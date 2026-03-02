@@ -219,6 +219,7 @@ function applyAuthRestrictions() {
     // Note: sig-clear-btn is allowed for RX (clears local measurements only)
     const pluginToggleBtns = [
       "ais-clear-btn",
+      "vdes-clear-btn",
       "ft8-decode-toggle-btn",
       "wspr-decode-toggle-btn",
       "cw-auto",
@@ -1208,8 +1209,11 @@ function coverageGuardBandwidthHz(mode = modeEl ? modeEl.value : "") {
 }
 
 function isAisMode(mode = modeEl ? modeEl.value : "") {
-  const upper = String(mode || "").toUpperCase();
-  return upper === "AIS" || upper === "VDES";
+  return String(mode || "").toUpperCase() === "AIS";
+}
+
+function isVdesMode(mode = modeEl ? modeEl.value : "") {
+  return String(mode || "").toUpperCase() === "VDES";
 }
 
 function coverageSpanForMode(freqHz, bandwidthHz = coverageGuardBandwidthHz(), mode = modeEl ? modeEl.value : "") {
@@ -2032,17 +2036,25 @@ function render(update) {
   }
   const modeUpper = update.status && update.status.mode ? normalizeMode(update.status.mode).toUpperCase() : "";
   const aisStatus = document.getElementById("ais-status");
+  const vdesStatus = document.getElementById("vdes-status");
   const aprsStatus = document.getElementById("aprs-status");
   const cwStatus = document.getElementById("cw-status");
   const ft8Status = document.getElementById("ft8-status");
   const wsprStatus = document.getElementById("wspr-status");
   setModeBoundDecodeStatus(
     aisStatus,
-    ["AIS", "VDES"],
-    "Select AIS or VDES mode to decode",
+    ["AIS"],
+    "Select AIS mode to decode",
     "Connected, listening for packets",
   );
   if (window.updateAisBar) window.updateAisBar();
+  setModeBoundDecodeStatus(
+    vdesStatus,
+    ["VDES"],
+    "Select VDES mode to decode",
+    "Connected, listening for bursts",
+  );
+  if (window.updateVdesBar) window.updateVdesBar();
   setModeBoundDecodeStatus(
     aprsStatus,
     ["PKT"],
@@ -2734,7 +2746,7 @@ const MODE_BW_DEFAULTS = {
   AM:     [9_000,  500,   20_000, 500],
   FM:     [12_500, 2_500, 25_000, 500],
   AIS:    [25_000, 12_500, 50_000, 500],
-  VDES:   [25_000, 12_500, 50_000, 500],
+  VDES:   [100_000, 25_000, 200_000, 1_000],
   WFM:    [180_000, 50_000,300_000,5_000],
   DIG:    [3_000,  300,   6_000,  100],
   PKT:    [25_000, 300,  50_000,  500],
@@ -4328,10 +4340,13 @@ function setModeBoundDecodeStatus(el, activeModes, inactiveText, connectedText) 
 }
 function updateDecodeStatus(text) {
   const ais = document.getElementById("ais-status");
+  const vdes = document.getElementById("vdes-status");
   const aprs = document.getElementById("aprs-status");
   const cw = document.getElementById("cw-status");
   const ft8 = document.getElementById("ft8-status");
-  setModeBoundDecodeStatus(ais, ["AIS", "VDES"], "Select AIS or VDES mode to decode", text);
+  setModeBoundDecodeStatus(ais, ["AIS"], "Select AIS mode to decode", text);
+  const vdesText = text === "Connected, listening for packets" ? "Connected, listening for bursts" : text;
+  setModeBoundDecodeStatus(vdes, ["VDES"], "Select VDES mode to decode", vdesText);
   setModeBoundDecodeStatus(aprs, ["PKT"], "Select PKT mode to decode", text);
   if (cw && cw.textContent !== "Receiving") cw.textContent = text;
   if (ft8 && ft8.textContent !== "Receiving") ft8.textContent = text;
@@ -4339,6 +4354,7 @@ function updateDecodeStatus(text) {
 function connectDecode() {
   if (decodeSource) { decodeSource.close(); }
   if (window.resetAisHistoryView) window.resetAisHistoryView();
+  if (window.resetVdesHistoryView) window.resetVdesHistoryView();
   if (window.resetAprsHistoryView) window.resetAprsHistoryView();
   if (window.resetCwHistoryView) window.resetCwHistoryView();
   if (window.resetFt8HistoryView) window.resetFt8HistoryView();

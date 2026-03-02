@@ -2591,6 +2591,7 @@ dependencies = [
  "clap",
  "cpal",
  "dirs",
+ "num-complex",
  "opus",
  "serde",
  "serde_json",
@@ -2615,6 +2616,7 @@ dependencies = [
 name = "trx-vdes"
 version = "0.1.0"
 dependencies = [
+ "num-complex",
  "trx-core",
 ]
 

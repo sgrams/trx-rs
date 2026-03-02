@@ -2,505 +2,494 @@
 //
 // SPDX-License-Identifier: BSD-2-Clause
 
-//! Basic VDES GMSK/HDLC decoder.
+//! Early VDES 100 kHz decoder scaffold.
 //!
-//! This decoder operates on narrowband FM-demodulated audio. It uses a simple
-//! sign slicer at the symbol rate, HDLC flag detection with NRZI decoding and
-//! bit de-stuffing, then parses the same position/static fields used by the
-//! current AIS decoder path.
+//! This decoder no longer reuses the AIS FM-audio path. It consumes filtered
+//! complex baseband for a single 100 kHz channel and performs:
+//! - burst energy detection
+//! - coarse DC removal / normalization
+//! - differential phase extraction
+//! - coarse symbol timing at the 76.8 ksps VDE-TER baseline
+//! - `pi/4`-QPSK quadrant slicing
+//!
+//! It intentionally stops at a raw burst payload stage. Full M.2092-1 FEC,
+//! interleaving, link-layer parsing, and application payload decoding are not
+//! implemented yet.
 
+use num_complex::Complex;
 use trx_core::decode::VdesMessage;
 
-const VDES_BAUD: f32 = 9_600.0;
-
-const CRC_CCITT_TABLE: [u16; 256] = {
-    let mut table = [0u16; 256];
-    let mut i = 0usize;
-    while i < 256 {
-        let mut crc = i as u16;
-        let mut j = 0;
-        while j < 8 {
-            if crc & 1 != 0 {
-                crc = (crc >> 1) ^ 0x8408;
-            } else {
-                crc >>= 1;
-            }
-            j += 1;
-        }
-        table[i] = crc;
-        i += 1;
-    }
-    table
-};
-
-fn crc16ccitt(bytes: &[u8]) -> u16 {
-    let mut crc: u16 = 0xFFFF;
-    for &b in bytes {
-        crc = (crc >> 8) ^ CRC_CCITT_TABLE[((crc ^ b as u16) & 0xFF) as usize];
-    }
-    crc ^ 0xFFFF
-}
-
-#[derive(Debug, Clone)]
-struct RawFrame {
-    payload: Vec<u8>,
-    bits: Vec<u8>,
-    crc_ok: bool,
-}
+const VDES_SYMBOL_RATE: f32 = 76_800.0;
+const MIN_BURST_MS: f32 = 2.0;
+const BURST_END_MS: f32 = 0.4;
+const MIN_BURST_SYMBOLS: usize = 64;
+const TER_MCS1_100_BURST_SYMBOLS: usize = 1_984;
+const TER_MCS1_100_RAMP_SYMBOLS: usize = 32;
+const TER_MCS1_100_SYNC_SYMBOLS: usize = 27;
+const TER_MCS1_100_LINK_ID_SYMBOLS: usize = 16;
+const TER_MCS1_100_PAYLOAD_SYMBOLS: usize = 1_877;
 
 #[derive(Debug, Clone)]
 pub struct VdesDecoder {
     sample_rate: f32,
-    samples_per_symbol: f32,
-    sample_clock: f32,
-    dc_state: f32,
-    lp_fast: f32,
-    lp_slow: f32,
-    env_state: f32,
-    polarity: i8,
-    samples_since_transition: u32,
-    clock_locked: bool,
-    prev_raw_bit: u8,
-    ones: u32,
-    in_frame: bool,
-    frame_bits: Vec<u8>,
-    frames: Vec<RawFrame>,
+    noise_floor: f32,
+    in_burst: bool,
+    quiet_run: u32,
+    burst_samples: Vec<Complex<f32>>,
 }
 
 impl VdesDecoder {
     pub fn new(sample_rate: u32) -> Self {
-        let sample_rate = sample_rate.max(1) as f32;
         Self {
-            sample_rate,
-            samples_per_symbol: sample_rate / VDES_BAUD,
-            sample_clock: 0.0,
-            dc_state: 0.0,
-            lp_fast: 0.0,
-            lp_slow: 0.0,
-            env_state: 1e-3,
-            polarity: 1,
-            samples_since_transition: 0,
-            clock_locked: false,
-            prev_raw_bit: 0,
-            ones: 0,
-            in_frame: false,
-            frame_bits: Vec::new(),
-            frames: Vec::new(),
+            sample_rate: sample_rate.max(1) as f32,
+            noise_floor: 1.0e-4,
+            in_burst: false,
+            quiet_run: 0,
+            burst_samples: Vec::new(),
         }
     }
 
     pub fn reset(&mut self) {
-        self.samples_per_symbol = self.sample_rate / VDES_BAUD;
-        self.sample_clock = 0.0;
-        self.dc_state = 0.0;
-        self.lp_fast = 0.0;
-        self.lp_slow = 0.0;
-        self.env_state = 1e-3;
-        self.polarity = 1;
-        self.samples_since_transition = 0;
-        self.clock_locked = false;
-        self.prev_raw_bit = 0;
-        self.ones = 0;
-        self.in_frame = false;
-        self.frame_bits.clear();
-        self.frames.clear();
+        self.noise_floor = 1.0e-4;
+        self.in_burst = false;
+        self.quiet_run = 0;
+        self.burst_samples.clear();
     }
 
-    pub fn process_samples(&mut self, samples: &[f32], channel: &str) -> Vec<VdesMessage> {
-        for &sample in samples {
-            self.process_sample(sample);
-        }
-
-        let frames = std::mem::take(&mut self.frames);
+    pub fn process_samples(&mut self, samples: &[Complex<f32>], channel: &str) -> Vec<VdesMessage> {
         let mut out = Vec::new();
-        for frame in frames {
-            if let Some(msg) = parse_frame(frame, channel) {
-                out.push(msg);
+        let min_burst_samples =
+            ((self.sample_rate * (MIN_BURST_MS / 1000.0)).round() as usize).max(16);
+        let quiet_limit =
+            ((self.sample_rate * (BURST_END_MS / 1000.0)).round() as u32).max(4);
+
+        for &sample in samples {
+            let power = sample.norm_sqr();
+            if !self.in_burst {
+                self.noise_floor = 0.995 * self.noise_floor + 0.005 * power;
+                let trigger = (self.noise_floor * 8.0).max(2.0e-4);
+                if power >= trigger {
+                    self.in_burst = true;
+                    self.quiet_run = 0;
+                    self.burst_samples.clear();
+                    self.burst_samples.push(sample);
+                }
+                continue;
+            }
+
+            self.burst_samples.push(sample);
+            let sustain = (self.noise_floor * 3.0).max(1.2e-4);
+            if power < sustain {
+                self.quiet_run = self.quiet_run.saturating_add(1);
+            } else {
+                self.quiet_run = 0;
+            }
+
+            if self.quiet_run >= quiet_limit {
+                if self.burst_samples.len() >= min_burst_samples {
+                    if let Some(msg) = self.finalize_burst(channel) {
+                        out.push(msg);
+                    }
+                }
+                self.in_burst = false;
+                self.quiet_run = 0;
+                self.burst_samples.clear();
             }
         }
+
         out
     }
 
-    fn process_sample(&mut self, sample: f32) {
-        // Remove slow DC drift from the FM discriminator output.
-        self.dc_state += 0.0025 * (sample - self.dc_state);
-        let dc_free = sample - self.dc_state;
-
-        // A simple band-pass-ish response makes GMSK symbol transitions stand out
-        // without needing a full matched filter.
-        self.lp_fast += 0.32 * (dc_free - self.lp_fast);
-        self.lp_slow += 0.045 * (dc_free - self.lp_slow);
-        let shaped = self.lp_fast - self.lp_slow;
-
-        // Track envelope to keep the slicer stable on weak signals.
-        self.env_state += 0.015 * (shaped.abs() - self.env_state);
-        let normalized = if self.env_state > 1e-4 {
-            shaped / self.env_state
-        } else {
-            shaped
-        };
-
-        let threshold = 0.12;
-        let next_polarity = if normalized > threshold {
-            1
-        } else if normalized < -threshold {
-            -1
-        } else {
-            self.polarity
-        };
-
-        self.samples_since_transition = self.samples_since_transition.saturating_add(1);
-        if next_polarity != self.polarity {
-            self.observe_transition();
-            self.polarity = next_polarity;
-        }
-
-        if !self.clock_locked {
-            return;
-        }
-
-        self.sample_clock += 1.0;
-        while self.sample_clock >= self.samples_per_symbol {
-            self.sample_clock -= self.samples_per_symbol;
-            let raw_bit = if self.polarity >= 0 { 1 } else { 0 };
-            self.process_symbol(raw_bit);
-        }
-    }
-
-    fn observe_transition(&mut self) {
-        let interval = self.samples_since_transition.max(1) as f32;
-        self.samples_since_transition = 0;
-
-        let nominal = (self.sample_rate / VDES_BAUD).max(1.0);
-        let symbols = (interval / nominal).round().clamp(1.0, 8.0);
-        let estimate = (interval / symbols).clamp(nominal * 0.75, nominal * 1.25);
-        self.samples_per_symbol += 0.18 * (estimate - self.samples_per_symbol);
-        self.sample_clock = self.samples_per_symbol * 0.5;
-        self.clock_locked = true;
-    }
-
-    fn process_symbol(&mut self, raw_bit: u8) {
-        let decoded_bit = if raw_bit == self.prev_raw_bit { 1 } else { 0 };
-        self.prev_raw_bit = raw_bit;
-
-        if decoded_bit == 1 {
-            self.ones += 1;
-            return;
-        }
-
-        // A zero terminates the current run of ones.
-        if self.ones >= 7 {
-            self.in_frame = false;
-            self.frame_bits.clear();
-            self.ones = 0;
-            return;
-        }
-
-        if self.ones == 6 {
-            if self.in_frame {
-                if let Some(frame) = self.bits_to_frame() {
-                    self.frames.push(frame);
-                }
-            }
-            self.frame_bits.clear();
-            self.in_frame = true;
-            self.ones = 0;
-            return;
-        }
-
-        if self.ones == 5 {
-            if self.in_frame {
-                for _ in 0..5 {
-                    self.frame_bits.push(1);
-                }
-            }
-            self.ones = 0;
-            return;
-        }
-
-        if self.in_frame {
-            for _ in 0..self.ones {
-                self.frame_bits.push(1);
-            }
-            self.frame_bits.push(0);
-        }
-        self.ones = 0;
-    }
-
-    fn bits_to_frame(&self) -> Option<RawFrame> {
-        if self.frame_bits.len() < 24 {
+    fn finalize_burst(&self, channel: &str) -> Option<VdesMessage> {
+        let samples = self.prepare_burst();
+        if samples.len() < 8 {
             return None;
         }
 
-        let usable_bits = self.frame_bits.len() - (self.frame_bits.len() % 8);
-        if usable_bits < 24 {
+        let symbols = slice_pi4_qpsk_symbols(&samples, self.sample_rate);
+        if symbols.len() < MIN_BURST_SYMBOLS {
             return None;
         }
 
-        let bits = self.frame_bits[..usable_bits].to_vec();
-        let mut bytes = Vec::with_capacity(usable_bits / 8);
-        for chunk in bits.chunks(8) {
-            let mut byte = 0u8;
-            for (idx, &bit) in chunk.iter().enumerate() {
-                if bit != 0 {
-                    byte |= 1 << idx;
-                }
-            }
-            bytes.push(byte);
-        }
+        let framed = extract_candidate_frame(&symbols)?;
+        let link_id = decode_link_id_from_symbols(&framed.symbols);
+        let payload_symbols = framed.payload_symbols();
+        let deinterleaved = deinterleave_100khz_frame(payload_symbols);
+        let raw_bytes = pack_dibits_msb(&deinterleaved);
+        let rms = burst_rms(&samples);
+        let mode = classify_vdes_burst(framed.symbols.len());
+        let link_text = link_id
+            .map(|value| format!("LID {}", value))
+            .unwrap_or_else(|| "LID ?".to_string());
 
-        if bytes.len() < 3 {
-            return None;
-        }
-
-        let payload_len = bytes.len() - 2;
-        let payload = bytes[..payload_len].to_vec();
-        let received_fcs = u16::from_le_bytes([bytes[payload_len], bytes[payload_len + 1]]);
-        let crc_ok = crc16ccitt(&payload) == received_fcs;
-
-        Some(RawFrame {
-            payload,
-            bits,
-            crc_ok,
+        Some(VdesMessage {
+            ts_ms: None,
+            channel: channel.to_string(),
+            message_type: mode.message_type,
+            repeat: 0,
+            mmsi: 0,
+            crc_ok: false,
+            bit_len: deinterleaved.len() * 2,
+            raw_bytes,
+            lat: None,
+            lon: None,
+            sog_knots: None,
+            cog_deg: None,
+            heading_deg: None,
+            nav_status: None,
+            vessel_name: Some(format!("VDES Frame {} sym", framed.symbols.len())),
+            callsign: Some(format!("{} {} @{}", mode.label, link_text, framed.start_offset)),
+            destination: Some(format!(
+                "TER-MCS-1.100 RMS {:.2} sync {:.2} turbo FEC pending",
+                rms, framed.preamble_score
+            )),
         })
     }
+
+    fn prepare_burst(&self) -> Vec<Complex<f32>> {
+        if self.burst_samples.is_empty() {
+            return Vec::new();
+        }
+
+        let len = self.burst_samples.len() as f32;
+        let mean = self
+            .burst_samples
+            .iter()
+            .copied()
+            .fold(Complex::new(0.0_f32, 0.0_f32), |acc, sample| acc + sample)
+            / len;
+
+        let mut out: Vec<Complex<f32>> = self
+            .burst_samples
+            .iter()
+            .map(|sample| *sample - mean)
+            .collect();
+
+        let rms = burst_rms(&out);
+        if rms > 1.0e-6 {
+            for sample in &mut out {
+                *sample /= rms;
+            }
+        }
+
+        out
+    }
 }
 
-fn parse_frame(frame: RawFrame, channel: &str) -> Option<VdesMessage> {
-    if !frame.crc_ok {
-        return None;
-    }
-
-    let bits = bytes_to_msb_bits(&frame.payload);
-    if bits.len() < 40 {
-        return None;
-    }
-
-    let message_type = get_uint(&bits, 0, 6)? as u8;
-    let repeat = get_uint(&bits, 6, 2)? as u8;
-    let mmsi = get_uint(&bits, 8, 30)? as u32;
-
-    let mut msg = VdesMessage {
-        ts_ms: None,
-        channel: channel.to_string(),
-        message_type,
-        repeat,
-        mmsi,
-        crc_ok: frame.crc_ok,
-        bit_len: frame.bits.len(),
-        raw_bytes: frame.payload,
-        lat: None,
-        lon: None,
-        sog_knots: None,
-        cog_deg: None,
-        heading_deg: None,
-        nav_status: None,
-        vessel_name: None,
-        callsign: None,
-        destination: None,
-    };
-
-    match message_type {
-        1..=3 => {
-            msg.nav_status = get_uint(&bits, 38, 4).map(|v| v as u8);
-            msg.sog_knots = decode_tenths(get_uint(&bits, 50, 10)?, 1023);
-            msg.lon = decode_coord(get_int(&bits, 61, 28)?, 181.0);
-            msg.lat = decode_coord(get_int(&bits, 89, 27)?, 91.0);
-            msg.cog_deg = decode_tenths(get_uint(&bits, 116, 12)?, 3600);
-            msg.heading_deg = decode_heading(get_uint(&bits, 128, 9)?);
-        }
-        18 => {
-            msg.sog_knots = decode_tenths(get_uint(&bits, 46, 10)?, 1023);
-            msg.lon = decode_coord(get_int(&bits, 57, 28)?, 181.0);
-            msg.lat = decode_coord(get_int(&bits, 85, 27)?, 91.0);
-            msg.cog_deg = decode_tenths(get_uint(&bits, 112, 12)?, 3600);
-            msg.heading_deg = decode_heading(get_uint(&bits, 124, 9)?);
-        }
-        19 => {
-            msg.sog_knots = decode_tenths(get_uint(&bits, 46, 10)?, 1023);
-            msg.lon = decode_coord(get_int(&bits, 57, 28)?, 181.0);
-            msg.lat = decode_coord(get_int(&bits, 85, 27)?, 91.0);
-            msg.cog_deg = decode_tenths(get_uint(&bits, 112, 12)?, 3600);
-            msg.heading_deg = decode_heading(get_uint(&bits, 124, 9)?);
-            msg.vessel_name = decode_sixbit_text(&bits, 143, 120);
-        }
-        5 => {
-            msg.callsign = decode_sixbit_text(&bits, 70, 42);
-            msg.vessel_name = decode_sixbit_text(&bits, 112, 120);
-            msg.destination = decode_sixbit_text(&bits, 302, 120);
-        }
-        _ => {}
-    }
-
-    Some(msg)
+struct BurstMode<'a> {
+    label: &'a str,
+    message_type: u8,
 }
 
-fn bytes_to_msb_bits(bytes: &[u8]) -> Vec<u8> {
-    let mut bits = Vec::with_capacity(bytes.len() * 8);
-    for &byte in bytes {
-        for shift in (0..8).rev() {
-            bits.push((byte >> shift) & 1);
+struct FrameSlice {
+    start_offset: usize,
+    preamble_score: f32,
+    symbols: Vec<u8>,
+}
+
+impl FrameSlice {
+    fn payload_symbols(&self) -> &[u8] {
+        let payload_start = TER_MCS1_100_RAMP_SYMBOLS + TER_MCS1_100_SYNC_SYMBOLS + TER_MCS1_100_LINK_ID_SYMBOLS;
+        let payload_end = payload_start + TER_MCS1_100_PAYLOAD_SYMBOLS;
+        if self.symbols.len() <= payload_start {
+            return &[];
         }
+        &self.symbols[payload_start..self.symbols.len().min(payload_end)]
     }
-    bits
 }
 
-fn get_uint(bits: &[u8], start: usize, len: usize) -> Option<u32> {
-    if len == 0 || start.checked_add(len)? > bits.len() || len > 32 {
-        return None;
-    }
-    let mut out = 0u32;
-    for &bit in &bits[start..start + len] {
-        out = (out << 1) | u32::from(bit);
-    }
-    Some(out)
-}
-
-fn get_int(bits: &[u8], start: usize, len: usize) -> Option<i32> {
-    let raw = get_uint(bits, start, len)?;
-    if len == 0 || len > 31 {
-        return None;
-    }
-    let sign_mask = 1u32 << (len - 1);
-    if raw & sign_mask == 0 {
-        Some(raw as i32)
+fn classify_vdes_burst(symbols: usize) -> BurstMode<'static> {
+    if symbols >= TER_MCS1_100_BURST_SYMBOLS {
+        BurstMode {
+            label: "TER-MCS-1.100",
+            message_type: 101,
+        }
     } else {
-        Some((raw as i32) - ((1u32 << len) as i32))
+        BurstMode {
+            label: "TER-MCS-1",
+            message_type: 100,
+        }
     }
 }
 
-fn decode_tenths(raw: u32, invalid: u32) -> Option<f32> {
-    if raw == invalid {
-        None
-    } else {
-        Some(raw as f32 / 10.0)
-    }
-}
-
-fn decode_heading(raw: u32) -> Option<u16> {
-    if raw >= 360 {
-        None
-    } else {
-        Some(raw as u16)
-    }
-}
-
-fn decode_coord(raw: i32, invalid_abs: f64) -> Option<f64> {
-    let value = raw as f64 / 600_000.0;
-    if value.abs() >= invalid_abs {
-        None
-    } else {
-        Some(value)
-    }
-}
-
-fn decode_sixbit_text(bits: &[u8], start: usize, len: usize) -> Option<String> {
-    if start.checked_add(len)? > bits.len() || len % 6 != 0 {
+fn extract_candidate_frame(symbols: &[u8]) -> Option<FrameSlice> {
+    if symbols.len() < TER_MCS1_100_SYNC_SYMBOLS {
         return None;
     }
 
-    let mut out = String::new();
-    for offset in (0..len).step_by(6) {
-        let value = get_uint(bits, start + offset, 6)? as u8;
-        let ch = if value < 32 {
-            char::from(value + 64)
+    let search_limit = symbols
+        .len()
+        .saturating_sub(TER_MCS1_100_BURST_SYMBOLS.saturating_sub(TER_MCS1_100_SYNC_SYMBOLS));
+    let mut best_offset = 0usize;
+    let mut best_score = f32::MIN;
+
+    for offset in 0..=search_limit {
+        let sync_offset = offset + TER_MCS1_100_RAMP_SYMBOLS;
+        if sync_offset >= symbols.len() {
+            break;
+        }
+        let score = preamble_like_score(&symbols[sync_offset..]);
+        if score > best_score {
+            best_score = score;
+            best_offset = offset;
+        }
+    }
+
+    let available = symbols.len().saturating_sub(best_offset);
+    if available < MIN_BURST_SYMBOLS {
+        return None;
+    }
+    let take = available.min(TER_MCS1_100_BURST_SYMBOLS);
+    Some(FrameSlice {
+        start_offset: best_offset,
+        preamble_score: best_score,
+        symbols: symbols[best_offset..best_offset + take].to_vec(),
+    })
+}
+
+fn preamble_like_score(symbols: &[u8]) -> f32 {
+    if symbols.len() < TER_MCS1_100_SYNC_SYMBOLS {
+        return f32::MIN;
+    }
+    let window = &symbols[..TER_MCS1_100_SYNC_SYMBOLS];
+    let mut score = 0.0_f32;
+    for (idx, &dibit) in window.iter().enumerate() {
+        if dibit == 0b00 || dibit == 0b11 {
+            score += 1.0;
         } else {
-            char::from(value)
-        };
-        if ch != '@' {
-            out.push(ch);
+            score -= 1.5;
+        }
+        if idx > 0 {
+            if dibit != window[idx - 1] {
+                score += 0.4;
+            } else {
+                score -= 0.2;
+            }
+        }
+    }
+    score / TER_MCS1_100_SYNC_SYMBOLS as f32
+}
+
+fn deinterleave_100khz_frame(symbols: &[u8]) -> Vec<u8> {
+    if symbols.len() < 8 {
+        return symbols.to_vec();
+    }
+    let cols = 16usize;
+    let rows = symbols.len().div_ceil(cols);
+    let mut out = vec![0u8; symbols.len()];
+    for idx in 0..symbols.len() {
+        let row = idx / cols;
+        let col = idx % cols;
+        let interleaved_idx = col * rows + row;
+        if interleaved_idx < symbols.len() {
+            out[idx] = symbols[interleaved_idx];
+        } else {
+            out[idx] = symbols[idx];
+        }
+    }
+    out
+}
+
+fn decode_link_id_from_symbols(symbols: &[u8]) -> Option<u8> {
+    let start = TER_MCS1_100_RAMP_SYMBOLS + TER_MCS1_100_SYNC_SYMBOLS;
+    let end = start + TER_MCS1_100_LINK_ID_SYMBOLS;
+    if symbols.len() < end {
+        return None;
+    }
+    let bits = dibits_to_bits(&symbols[start..end]);
+    if bits.len() != 32 {
+        return None;
+    }
+    decode_rm_1_5(&bits)
+}
+
+fn dibits_to_bits(symbols: &[u8]) -> Vec<u8> {
+    let mut out = Vec::with_capacity(symbols.len() * 2);
+    for &dibit in symbols {
+        out.push((dibit >> 1) & 1);
+        out.push(dibit & 1);
+    }
+    out
+}
+
+fn decode_rm_1_5(bits: &[u8]) -> Option<u8> {
+    if bits.len() != 32 {
+        return None;
+    }
+    let mut best_id = 0u8;
+    let mut best_dist = usize::MAX;
+    for id in 0u8..64 {
+        let code = rm_1_5_codeword(id);
+        let dist = code
+            .iter()
+            .zip(bits.iter())
+            .filter(|(a, b)| a != b)
+            .count();
+        if dist < best_dist {
+            best_dist = dist;
+            best_id = id;
+        }
+    }
+    if best_dist <= 8 {
+        Some(best_id)
+    } else {
+        None
+    }
+}
+
+fn rm_1_5_codeword(value: u8) -> [u8; 32] {
+    let a0 = (value >> 5) & 1;
+    let a1 = (value >> 4) & 1;
+    let a2 = (value >> 3) & 1;
+    let a3 = (value >> 2) & 1;
+    let a4 = (value >> 1) & 1;
+    let a5 = value & 1;
+    let mut out = [0u8; 32];
+    for idx in 0..32 {
+        let x1 = ((idx >> 4) & 1) as u8;
+        let x2 = ((idx >> 3) & 1) as u8;
+        let x3 = ((idx >> 2) & 1) as u8;
+        let x4 = ((idx >> 1) & 1) as u8;
+        let x5 = (idx & 1) as u8;
+        out[idx] = a0 ^ (a1 & x1) ^ (a2 & x2) ^ (a3 & x3) ^ (a4 & x4) ^ (a5 & x5);
+    }
+    out
+}
+
+fn burst_rms(samples: &[Complex<f32>]) -> f32 {
+    if samples.is_empty() {
+        return 0.0;
+    }
+    let power = samples.iter().map(|sample| sample.norm_sqr()).sum::<f32>() / samples.len() as f32;
+    power.sqrt()
+}
+
+fn slice_pi4_qpsk_symbols(samples: &[Complex<f32>], sample_rate: f32) -> Vec<u8> {
+    if samples.len() < 2 {
+        return Vec::new();
+    }
+
+    let mut phase_clock = 0.0_f32;
+    let mut prev = samples[0];
+    let mut symbols = Vec::with_capacity(((samples.len() as f32) * VDES_SYMBOL_RATE / sample_rate) as usize + 4);
+
+    for &sample in &samples[1..] {
+        phase_clock += VDES_SYMBOL_RATE;
+        let diff = sample * prev.conj();
+        prev = sample;
+
+        while phase_clock >= sample_rate {
+            phase_clock -= sample_rate;
+            symbols.push(quantize_pi4_qpsk(diff));
         }
     }
 
-    let trimmed = out.trim().trim_matches('@').trim().to_string();
-    if trimmed.is_empty() {
-        None
-    } else {
-        Some(trimmed)
+    symbols
+}
+
+fn quantize_pi4_qpsk(sample: Complex<f32>) -> u8 {
+    let angle = sample.im.atan2(sample.re);
+    let candidates = [
+        (std::f32::consts::FRAC_PI_4, 0b00),
+        (3.0 * std::f32::consts::FRAC_PI_4, 0b01),
+        (-3.0 * std::f32::consts::FRAC_PI_4, 0b11),
+        (-std::f32::consts::FRAC_PI_4, 0b10),
+    ];
+
+    let mut best = 0b00;
+    let mut best_err = f32::MAX;
+    for (ref_angle, dibit) in candidates {
+        let mut err = angle - ref_angle;
+        while err > std::f32::consts::PI {
+            err -= std::f32::consts::TAU;
+        }
+        while err < -std::f32::consts::PI {
+            err += std::f32::consts::TAU;
+        }
+        let abs_err = err.abs();
+        if abs_err < best_err {
+            best_err = abs_err;
+            best = dibit;
+        }
     }
+
+    best
+}
+
+fn pack_dibits_msb(symbols: &[u8]) -> Vec<u8> {
+    let mut out = Vec::with_capacity((symbols.len() + 3) / 4);
+    let mut byte = 0u8;
+    let mut count = 0usize;
+
+    for &dibit in symbols {
+        let shift = 6usize.saturating_sub((count % 4) * 2);
+        byte |= (dibit & 0b11) << shift;
+        count += 1;
+        if count % 4 == 0 {
+            out.push(byte);
+            byte = 0;
+        }
+    }
+
+    if count % 4 != 0 {
+        out.push(byte);
+    }
+
+    out
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn payload_with_crc(payload: &[u8]) -> Vec<u8> {
-        let mut out = payload.to_vec();
-        out.extend_from_slice(&crc16ccitt(payload).to_le_bytes());
-        out
-    }
-
-    fn bytes_to_lsb_bits(bytes: &[u8]) -> Vec<u8> {
-        let mut bits = Vec::with_capacity(bytes.len() * 8);
-        for &byte in bytes {
-            for shift in 0..8 {
-                bits.push((byte >> shift) & 1);
-            }
-        }
-        bits
-    }
-
-    fn bitstuff(bits: &[u8]) -> Vec<u8> {
-        let mut out = Vec::with_capacity(bits.len() + bits.len() / 5);
-        let mut ones = 0u32;
-        for &bit in bits {
-            out.push(bit);
-            if bit == 1 {
-                ones += 1;
-                if ones == 5 {
-                    out.push(0);
-                    ones = 0;
-                }
-            } else {
-                ones = 0;
-            }
-        }
-        out
-    }
-
-    fn nrzi_encode(bits: &[u8]) -> Vec<u8> {
-        let mut state = 0u8;
-        let mut out = Vec::with_capacity(bits.len());
-        for &bit in bits {
-            if bit == 0 {
-                state ^= 1;
-            }
-            out.push(state);
-        }
-        out
+    fn phase(angle: f32) -> Complex<f32> {
+        Complex::new(angle.cos(), angle.sin())
     }
 
     #[test]
-    fn decodes_signed_coordinates() {
-        assert_eq!(decode_coord(60_000, 181.0), Some(0.1));
-        assert_eq!(decode_coord(-60_000, 181.0), Some(-0.1));
+    fn packs_dibits_msb_first() {
+        assert_eq!(pack_dibits_msb(&[0b00, 0b01, 0b10, 0b11]), vec![0b0001_1011]);
     }
 
     #[test]
-    fn decodes_sixbit_name() {
-        let bytes = [0x10_u8, 0x41_u8, 0x11_u8, 0x92_u8, 0x08_u8, 0x00_u8];
-        let bits = bytes_to_msb_bits(&bytes);
-        let text = decode_sixbit_text(&bits, 0, 36);
-        assert!(text.is_some());
+    fn quantizes_pi_over_four_steps() {
+        assert_eq!(quantize_pi4_qpsk(phase(std::f32::consts::FRAC_PI_4)), 0b00);
+        assert_eq!(quantize_pi4_qpsk(phase(3.0 * std::f32::consts::FRAC_PI_4)), 0b01);
+        assert_eq!(quantize_pi4_qpsk(phase(-3.0 * std::f32::consts::FRAC_PI_4)), 0b11);
+        assert_eq!(quantize_pi4_qpsk(phase(-std::f32::consts::FRAC_PI_4)), 0b10);
     }
 
     #[test]
-    fn recovers_hdlc_frame_from_raw_nrzi_bits() {
-        let payload = [0x11_u8, 0x22_u8, 0x7E_u8, 0x00_u8, 0xF0_u8];
-        let frame_bytes = payload_with_crc(&payload);
-        let mut hdlc_bits = bytes_to_lsb_bits(&[0x7E]);
-        hdlc_bits.extend(bitstuff(&bytes_to_lsb_bits(&frame_bytes)));
-        hdlc_bits.extend(bytes_to_lsb_bits(&[0x7E]));
-        let raw_bits = nrzi_encode(&hdlc_bits);
-
-        let mut decoder = VdesDecoder::new(48_000);
-        for raw_bit in raw_bits {
-            decoder.process_symbol(raw_bit);
+    fn slices_simple_symbol_stream() {
+        let sample_rate = 96_000.0;
+        let mut samples = Vec::new();
+        let mut current = phase(0.0);
+        for angle in [
+            std::f32::consts::FRAC_PI_4,
+            3.0 * std::f32::consts::FRAC_PI_4,
+            -3.0 * std::f32::consts::FRAC_PI_4,
+            -std::f32::consts::FRAC_PI_4,
+        ] {
+            current *= phase(angle);
+            samples.push(current);
+            samples.push(current);
         }
+        let symbols = slice_pi4_qpsk_symbols(&samples, sample_rate);
+        assert!(!symbols.is_empty());
+    }
 
-        assert_eq!(decoder.frames.len(), 1);
-        let frame = &decoder.frames[0];
-        assert!(frame.crc_ok);
-        assert_eq!(frame.payload, payload);
+    #[test]
+    fn extracts_candidate_frame_window() {
+        let mut symbols = vec![0u8; 40];
+        symbols.extend((0..TER_MCS1_100_BURST_SYMBOLS).map(|idx| (idx % 4) as u8));
+        let frame = extract_candidate_frame(&symbols).expect("frame should be found");
+        assert!(frame.symbols.len() >= MIN_BURST_SYMBOLS);
+    }
+
+    #[test]
+    fn deinterleave_preserves_length() {
+        let symbols: Vec<u8> = (0..127).map(|idx| (idx % 4) as u8).collect();
+        let out = deinterleave_100khz_frame(&symbols);
+        assert_eq!(out.len(), symbols.len());
     }
 }

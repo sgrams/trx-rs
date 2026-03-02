@@ -630,7 +630,8 @@ small { color: var(--text-muted); }
   background: color-mix(in srgb, var(--card-bg) 62%, transparent);
 }
 #aprs-bar-overlay,
-#ais-bar-overlay {
+#ais-bar-overlay,
+#vdes-bar-overlay {
   display: none;
   position: absolute;
   top: 50%;
@@ -1205,12 +1206,17 @@ small { color: var(--text-muted); }
   display: flex;
   flex-direction: column;
 }
+#subtab-vdes {
+  display: flex;
+  flex-direction: column;
+}
 #subtab-aprs {
   display: flex;
   flex-direction: column;
 }
 #aprs-packets,
-#ais-messages { max-height: 360px; overflow-y: auto; border: 1px solid var(--border-light); border-radius: 6px; background: var(--input-bg); font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
+#ais-messages,
+#vdes-messages { max-height: 360px; overflow-y: auto; border: 1px solid var(--border-light); border-radius: 6px; background: var(--input-bg); font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
 #aprs-packets {
   flex: 0 1 auto;
   height: calc(100vh - 28rem);
@@ -1218,6 +1224,12 @@ small { color: var(--text-muted); }
   max-height: calc(100vh - 28rem);
 }
 #ais-messages {
+  flex: 0 1 auto;
+  height: calc(100vh - 24rem);
+  min-height: 16rem;
+  max-height: calc(100vh - 24rem);
+}
+#vdes-messages {
   flex: 0 1 auto;
   height: calc(100vh - 24rem);
   min-height: 16rem;
@@ -1347,10 +1359,14 @@ small { color: var(--text-muted); }
 }
 .ais-message { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; font-size: 0.82rem; padding: 0.45rem 0.55rem; border-bottom: 1px solid var(--border); line-height: 1.35; }
 .ais-message:last-child { border-bottom: none; }
+.vdes-message { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; font-size: 0.82rem; padding: 0.45rem 0.55rem; border-bottom: 1px solid var(--border); line-height: 1.35; }
+.vdes-message:last-child { border-bottom: none; }
 .aprs-call { color: var(--accent-green); font-weight: 600; }
 .ais-call { color: var(--accent-red); font-weight: 600; }
+.vdes-call { color: #8ec8ff; font-weight: 600; }
 .aprs-time { color: var(--text-muted); margin-right: 0.5rem; }
 .ais-time { color: var(--text-muted); margin-right: 0.5rem; }
+.vdes-time { color: var(--text-muted); margin-right: 0.5rem; }
 .ais-row-head,
 .ais-row-meta,
 .ais-row-detail {
@@ -1405,6 +1421,42 @@ small { color: var(--text-muted); }
 }
 .ais-pos-link:hover {
   text-decoration: underline;
+}
+.vdes-row-head,
+.vdes-row-meta,
+.vdes-row-detail {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  flex-wrap: wrap;
+}
+.vdes-row-head + .vdes-row-meta,
+.vdes-row-meta + .vdes-row-detail {
+  margin-top: 0.2rem;
+}
+.vdes-row-detail {
+  color: var(--text-muted);
+  font-size: 0.78rem;
+}
+.vdes-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 1.2rem;
+  padding: 0.02rem 0.38rem;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, #8ec8ff 42%, transparent);
+  background: color-mix(in srgb, #8ec8ff 12%, transparent);
+  color: #8ec8ff;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+.vdes-raw {
+  color: var(--text-muted);
+  font-size: 0.76rem;
+  word-break: break-all;
 }
 .aprs-symbol { display: inline-block; width: 24px; height: 24px; background-size: 384px 192px; vertical-align: middle; margin-right: 0.3rem; }
 .aprs-pos { color: var(--accent-green); text-decoration: none; margin-left: 0.3rem; font-size: 0.8rem; }
@@ -1769,6 +1821,9 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   #subtab-ais {
     min-height: calc(100vh - 14rem);
   }
+  #subtab-vdes {
+    min-height: calc(100vh - 14rem);
+  }
   #subtab-aprs {
     min-height: calc(100vh - 14rem);
   }
@@ -1776,6 +1831,9 @@ button:focus-visible, input:focus-visible, select:focus-visible {
     min-height: calc(100vh - 26rem);
   }
   #ais-messages {
+    min-height: calc(100vh - 22rem);
+  }
+  #vdes-messages {
     min-height: calc(100vh - 22rem);
   }
   .aprs-details-grid {

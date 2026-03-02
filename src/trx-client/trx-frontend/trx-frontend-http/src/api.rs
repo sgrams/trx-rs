@@ -993,6 +993,7 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
         .service(app_js)
         .service(leaflet_ais_tracksymbol_js)
         .service(ais_js)
+        .service(vdes_js)
         .service(aprs_js)
         .service(ft8_js)
         .service(wspr_js)
@@ -1077,6 +1078,16 @@ async fn ais_js() -> impl Responder {
             "application/javascript; charset=utf-8",
         ))
         .body(status::AIS_JS)
+}
+
+#[get("/vdes.js")]
+async fn vdes_js() -> impl Responder {
+    HttpResponse::Ok()
+        .insert_header((
+            header::CONTENT_TYPE,
+            "application/javascript; charset=utf-8",
+        ))
+        .body(status::VDES_JS)
 }
 
 #[get("/ft8.js")]

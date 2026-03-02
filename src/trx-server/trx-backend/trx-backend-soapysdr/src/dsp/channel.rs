@@ -44,7 +44,8 @@ fn default_bandwidth_for_mode(mode: &RigMode) -> u32 {
         RigMode::AM => 9_000,
         RigMode::FM => 12_500,
         RigMode::WFM => 180_000,
-        RigMode::AIS | RigMode::VDES => 25_000,
+        RigMode::AIS => 25_000,
+        RigMode::VDES => 100_000,
         RigMode::Other(_) => 3_000,
     }
 }
@@ -68,14 +69,17 @@ pub struct ChannelDsp {
     frame_buf_offset: usize,
     pub frame_size: usize,
     pub pcm_tx: broadcast::Sender<Vec<f32>>,
+    pub iq_tx: broadcast::Sender<Vec<Complex<f32>>>,
     scratch_mixed_i: Vec<f32>,
     scratch_mixed_q: Vec<f32>,
     scratch_filtered_i: Vec<f32>,
     scratch_filtered_q: Vec<f32>,
     scratch_decimated: Vec<Complex<f32>>,
+    scratch_iq_tap: Vec<Complex<f32>>,
     pub mixer_phase: f64,
     pub mixer_phase_inc: f64,
     decim_counter: usize,
+    iq_tap_counter: usize,
     resample_phase: f64,
     resample_phase_inc: f64,
     wfm_decoder: Option<WfmStereoDecoder>,
@@ -141,6 +145,7 @@ impl ChannelDsp {
         let rate_changed = self.decim_factor != next_decim_factor;
         self.decim_factor = next_decim_factor;
         self.decim_counter = 0;
+        self.iq_tap_counter = 0;
         self.resample_phase = 0.0;
         self.resample_phase_inc = if self.sdr_sample_rate == 0 {
             1.0
@@ -181,6 +186,7 @@ impl ChannelDsp {
         wfm_stereo: bool,
         fir_taps: usize,
         pcm_tx: broadcast::Sender<Vec<f32>>,
+        iq_tx: broadcast::Sender<Vec<Complex<f32>>>,
     ) -> Self {
         let output_channels = output_channels.max(1);
         let audio_bandwidth_hz = Self::clamp_bandwidth_for_mode(mode, audio_bandwidth_hz);
@@ -224,14 +230,17 @@ impl ChannelDsp {
             frame_buf_offset: 0,
             frame_size,
             pcm_tx,
+            iq_tx,
             scratch_mixed_i: Vec::with_capacity(IQ_BLOCK_SIZE),
             scratch_mixed_q: Vec::with_capacity(IQ_BLOCK_SIZE),
             scratch_filtered_i: Vec::with_capacity(IQ_BLOCK_SIZE),
             scratch_filtered_q: Vec::with_capacity(IQ_BLOCK_SIZE),
             scratch_decimated: Vec::with_capacity(IQ_BLOCK_SIZE / decim_factor.max(1) + 1),
+            scratch_iq_tap: Vec::with_capacity(IQ_BLOCK_SIZE / decim_factor.max(1) + 1),
             mixer_phase: 0.0,
             mixer_phase_inc,
             decim_counter: 0,
+            iq_tap_counter: 0,
             resample_phase: 0.0,
             resample_phase_inc: if sdr_sample_rate == 0 {
                 1.0
@@ -356,6 +365,25 @@ impl ChannelDsp {
         if self.scratch_decimated.capacity() < capacity {
             self.scratch_decimated
                 .reserve(capacity - self.scratch_decimated.capacity());
+        }
+        if self.mode == RigMode::VDES && self.iq_tx.receiver_count() > 0 {
+            self.scratch_iq_tap.clear();
+            if self.scratch_iq_tap.capacity() < capacity {
+                self.scratch_iq_tap
+                    .reserve(capacity - self.scratch_iq_tap.capacity());
+            }
+            for idx in 0..n {
+                self.iq_tap_counter += 1;
+                if self.iq_tap_counter >= self.decim_factor {
+                    self.iq_tap_counter = 0;
+                    let fi = filtered_i.get(idx).copied().unwrap_or(0.0);
+                    let fq = filtered_q.get(idx).copied().unwrap_or(0.0);
+                    self.scratch_iq_tap.push(Complex::new(fi, fq));
+                }
+            }
+            if !self.scratch_iq_tap.is_empty() {
+                let _ = self.iq_tx.send(self.scratch_iq_tap.clone());
+            }
         }
         let decimated = &mut self.scratch_decimated;
         if self.wfm_decoder.is_some() {

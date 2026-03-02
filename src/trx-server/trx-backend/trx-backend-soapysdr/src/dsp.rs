@@ -82,6 +82,7 @@ impl IqSource for MockIqSource {
 
 pub struct SdrPipeline {
     pub pcm_senders: Vec<broadcast::Sender<Vec<f32>>>,
+    pub iq_senders: Vec<broadcast::Sender<Vec<Complex<f32>>>>,
     pub channel_dsps: Vec<Arc<Mutex<ChannelDsp>>>,
     /// Latest FFT magnitude bins (dBFS, FFT-shifted), updated ~10 Hz.
     pub spectrum_buf: Arc<Mutex<Option<Vec<f32>>>>,
@@ -113,10 +114,12 @@ impl SdrPipeline {
         const PCM_BROADCAST_CAPACITY: usize = 32;
 
         let mut pcm_senders = Vec::with_capacity(channels.len());
+        let mut iq_senders = Vec::with_capacity(channels.len());
         let mut channel_dsps: Vec<Arc<Mutex<ChannelDsp>>> = Vec::with_capacity(channels.len());
 
         for &(channel_if_hz, ref mode, audio_bandwidth_hz, fir_taps) in channels {
             let (pcm_tx, _pcm_rx) = broadcast::channel::<Vec<f32>>(PCM_BROADCAST_CAPACITY);
+            let (iq_tx, _iq_rx) = broadcast::channel::<Vec<Complex<f32>>>(IQ_BROADCAST_CAPACITY);
             let dsp = ChannelDsp::new(
                 channel_if_hz,
                 mode,
@@ -129,8 +132,10 @@ impl SdrPipeline {
                 wfm_stereo,
                 fir_taps,
                 pcm_tx.clone(),
+                iq_tx.clone(),
             );
             pcm_senders.push(pcm_tx);
+            iq_senders.push(iq_tx);
             channel_dsps.push(Arc::new(Mutex::new(dsp)));
         }
 
@@ -159,6 +164,7 @@ impl SdrPipeline {
 
         Self {
             pcm_senders,
+            iq_senders,
             channel_dsps,
             spectrum_buf,
             sdr_sample_rate,
