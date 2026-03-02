@@ -45,7 +45,7 @@ fn default_bandwidth_for_mode(mode: &RigMode) -> u32 {
         RigMode::FM => 12_500,
         RigMode::WFM => 180_000,
         RigMode::AIS => 25_000,
-        RigMode::VDES => 100_000,
+        RigMode::VDES | RigMode::MARINE => 100_000,
         RigMode::Other(_) => 3_000,
     }
 }

@@ -34,10 +34,7 @@ function renderFt8Row(msg) {
   const rfHz = Number.isFinite(msg.freq_hz) && Number.isFinite(baseHz) ? (baseHz + msg.freq_hz) : null;
   const freq = Number.isFinite(rfHz) ? rfHz.toFixed(0) : "--";
   const renderedMessage = renderFt8Message(rawMessage);
-  const receiverHtml = msg.receiver
-    ? `<span class="decode-rig-badge" style="--decode-rig-color:${msg.receiver.color};">${msg.receiver.label}</span>`
-    : "";
-  row.innerHTML = `<span class="ft8-time">${fmtTime(msg.ts_ms)}</span>${receiverHtml}<span class="ft8-snr">${snr}</span><span class="ft8-dt">${dt}</span><span class="ft8-freq">${freq}</span><span class="ft8-msg">${renderedMessage}</span>`;
+  row.innerHTML = `<span class="ft8-time">${fmtTime(msg.ts_ms)}</span><span class="ft8-snr">${snr}</span><span class="ft8-dt">${dt}</span><span class="ft8-freq">${freq}</span><span class="ft8-msg">${renderedMessage}</span>`;
   applyFt8FilterToRow(row);
   return row;
 }

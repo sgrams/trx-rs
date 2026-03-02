@@ -245,7 +245,7 @@ fn default_audio_bandwidth_for_mode(mode: &trx_core::rig::state::RigMode) -> u32
         RigMode::FM => 12_500,
         RigMode::WFM => 180_000,
         RigMode::AIS => 25_000,
-        RigMode::VDES => 100_000,
+        RigMode::VDES | RigMode::MARINE => 100_000,
         RigMode::Other(_) => 3_000,
     }
 }
@@ -268,6 +268,7 @@ fn parse_rig_mode(
         "FM" => RigMode::FM,
         "AIS" => RigMode::AIS,
         "VDES" => RigMode::VDES,
+        "MARINE" => RigMode::MARINE,
         "DIG" => RigMode::DIG,
         "PKT" => RigMode::PKT,
         _ => initial_mode.clone(),

@@ -33,6 +33,8 @@ const TER_MCS1_100_FEC_OUTPUT_BITS: usize = 1_872;
 const TER_MCS1_100_FEC_TAIL_BITS: usize = 10;
 const TER_MCS1_100_SYNC_BITS: &[u8; TER_MCS1_100_SYNC_SYMBOLS] = b"111111001101010000011001010";
 const PI4_QPSK_DIBITS: [u8; 4] = [0b00, 0b01, 0b11, 0b10];
+const MIN_SYNC_CANDIDATE_SCORE: f32 = 0.20;
+const MIN_SYNC_PARSE_SCORE: f32 = 0.50;
 
 #[derive(Debug, Clone)]
 pub struct VdesDecoder {
@@ -117,14 +119,32 @@ impl VdesDecoder {
         }
 
         let framed = extract_candidate_frame(&symbols)?;
-        let link_id = decode_link_id_from_symbols(&framed.symbols);
+        let rms = burst_rms(&samples);
+        let mode = classify_vdes_burst(framed.symbols.len());
         let payload_symbols = framed.payload_symbols();
         let deinterleaved = deinterleave_100khz_frame(payload_symbols);
+        if framed.sync_score < MIN_SYNC_PARSE_SCORE {
+            return Some(build_unsynced_message(
+                channel,
+                &framed,
+                &mode,
+                rms,
+                &deinterleaved,
+            ));
+        }
+
+        let link_id = decode_link_id_from_symbols(&framed.symbols);
         let (fec_input_symbols, fec_tail_symbols) = split_fec_frame(&deinterleaved);
         let coded_bits = dibits_to_bits(fec_input_symbols);
         let decoded_bits = viterbi_decode_rate_half(&coded_bits);
         if decoded_bits.is_empty() {
-            return None;
+            return Some(build_unsynced_message(
+                channel,
+                &framed,
+                &mode,
+                rms,
+                &deinterleaved,
+            ));
         }
         let parsed = parse_vdes_payload(&decoded_bits);
         let payload_bits = if parsed.payload_bits.is_empty() {
@@ -133,8 +153,6 @@ impl VdesDecoder {
             parsed.payload_bits.as_slice()
         };
         let raw_bytes = pack_bits_msb(payload_bits);
-        let rms = burst_rms(&samples);
-        let mode = classify_vdes_burst(framed.symbols.len());
         let link_text = link_id
             .map(|value| format!("LID {}", value))
             .unwrap_or_else(|| "LID ?".to_string());
@@ -308,7 +326,7 @@ fn extract_candidate_frame(symbols: &[u8]) -> Option<FrameSlice> {
             }
         }
     }
-    if best_score <= 0.5 {
+    if best_score <= MIN_SYNC_CANDIDATE_SCORE {
         return None;
     }
 
@@ -325,6 +343,53 @@ fn extract_candidate_frame(symbols: &[u8]) -> Option<FrameSlice> {
         phase_rotation: best_rotation,
         symbols: rotated,
     })
+}
+
+fn build_unsynced_message(
+    channel: &str,
+    framed: &FrameSlice,
+    mode: &BurstMode<'_>,
+    rms: f32,
+    deinterleaved: &[u8],
+) -> VdesMessage {
+    let raw_bytes = pack_dibits_msb(deinterleaved);
+    let sync_pct = framed.sync_score * 100.0;
+    VdesMessage {
+        ts_ms: None,
+        channel: channel.to_string(),
+        message_type: mode.message_type,
+        repeat: 0,
+        mmsi: 0,
+        crc_ok: false,
+        bit_len: deinterleaved.len() * 2,
+        raw_bytes,
+        lat: None,
+        lon: None,
+        sog_knots: None,
+        cog_deg: None,
+        heading_deg: None,
+        nav_status: None,
+        vessel_name: Some(format!("Unsynced {} sym", framed.symbols.len())),
+        callsign: Some(format!("{} raw @{}", mode.label, framed.start_offset)),
+        destination: Some(format!(
+            "Weak sync {:.0}% ({}) · RMS {:.2} · raw symbol dump",
+            sync_pct, framed.sync_errors, rms
+        )),
+        message_label: Some("Unsynced".to_string()),
+        session_id: None,
+        source_id: None,
+        destination_id: None,
+        data_count: None,
+        asm_identifier: None,
+        ack_nack_mask: None,
+        channel_quality: None,
+        payload_preview: None,
+        link_id: None,
+        sync_score: Some(framed.sync_score),
+        sync_errors: Some(framed.sync_errors),
+        phase_rotation: Some(framed.phase_rotation),
+        fec_state: Some("Sync below parse threshold".to_string()),
+    }
 }
 
 fn syncword_score(symbols: &[u8], rotation: u8) -> (f32, u8) {
