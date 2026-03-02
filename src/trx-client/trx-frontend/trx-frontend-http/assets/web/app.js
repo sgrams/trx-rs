@@ -2586,6 +2586,7 @@ const stationMarkers = new Map();
 const locatorMarkers = new Map();
 const mapMarkers = new Set();
 const mapFilter = { aprs: true, ft8: true, wspr: true };
+const APRS_TRACK_MAX_POINTS = 64;
 
 window.clearMapMarkersByType = function(type) {
   if (type === "aprs") {
@@ -2593,6 +2594,10 @@ window.clearMapMarkersByType = function(type) {
       if (entry && entry.marker) {
         if (aprsMap && aprsMap.hasLayer(entry.marker)) entry.marker.removeFrom(aprsMap);
         mapMarkers.delete(entry.marker);
+      }
+      if (entry && entry.track) {
+        if (aprsMap && aprsMap.hasLayer(entry.track)) entry.track.removeFrom(aprsMap);
+        mapMarkers.delete(entry.track);
       }
     });
     stationMarkers.clear();
@@ -2843,7 +2848,36 @@ function buildAprsPopupHtml(call, lat, lon, info, pkt) {
     `</div>`;
 }
 
+function aprsPositionsEqual(a, b) {
+  if (!a || !b) return false;
+  return Math.abs(a[0] - b[0]) < 0.000001 && Math.abs(a[1] - b[1]) < 0.000001;
+}
+
+function ensureAprsTrack(call, entry) {
+  if (!aprsMap || !entry || !Array.isArray(entry.trackPoints) || entry.trackPoints.length < 2) return;
+  if (entry.track) {
+    entry.track.setLatLngs(entry.trackPoints);
+    return;
+  }
+  const track = L.polyline(entry.trackPoints, {
+    color: "#f0be4d",
+    weight: 2,
+    opacity: 0.72,
+    lineCap: "round",
+    lineJoin: "round",
+    interactive: false,
+  });
+  track.__trxType = "aprs";
+  track._aprsCall = call;
+  entry.track = track;
+  mapMarkers.add(track);
+  if (mapFilter.aprs) {
+    track.addTo(aprsMap);
+  }
+}
+
 function _aprsAddMarkerToMap(call, entry) {
+  ensureAprsTrack(call, entry);
   const icon = aprsSymbolIcon(entry.symbolTable, entry.symbolCode);
   const popupContent = buildAprsPopupHtml(call, entry.lat, entry.lon, entry.info || "", entry.pkt);
   const marker = icon
@@ -2858,6 +2892,7 @@ function _aprsAddMarkerToMap(call, entry) {
 }
 
 window.aprsMapAddStation = function(call, lat, lon, info, symbolTable, symbolCode, pkt) {
+  const nextPoint = [lat, lon];
   const existing = stationMarkers.get(call);
   if (existing) {
     // Update stored data (preserves original _tsMs if pkt is newer)
@@ -2867,12 +2902,32 @@ window.aprsMapAddStation = function(call, lat, lon, info, symbolTable, symbolCod
     existing.info = info;
     existing.symbolTable = symbolTable;
     existing.symbolCode = symbolCode;
+    if (!Array.isArray(existing.trackPoints)) existing.trackPoints = [];
+    const prevPoint = existing.trackPoints[existing.trackPoints.length - 1];
+    if (!aprsPositionsEqual(prevPoint, nextPoint)) {
+      existing.trackPoints.push(nextPoint);
+      if (existing.trackPoints.length > APRS_TRACK_MAX_POINTS) {
+        existing.trackPoints.splice(0, existing.trackPoints.length - APRS_TRACK_MAX_POINTS);
+      }
+      ensureAprsTrack(call, existing);
+    }
     if (aprsMap && existing.marker) {
       existing.marker.setLatLng([lat, lon]);
       existing.marker.setPopupContent(buildAprsPopupHtml(call, lat, lon, info, pkt));
     }
   } else {
-    const entry = { marker: null, type: "aprs", pkt, lat, lon, info, symbolTable, symbolCode };
+    const entry = {
+      marker: null,
+      track: null,
+      trackPoints: [nextPoint],
+      type: "aprs",
+      pkt,
+      lat,
+      lon,
+      info,
+      symbolTable,
+      symbolCode,
+    };
     stationMarkers.set(call, entry);
     if (aprsMap) {
       _aprsAddMarkerToMap(call, entry);
