@@ -2307,7 +2307,7 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   --spectrum-bg: #f5ecd9;
 }
 
-/* ── Fire style ───────────────────────────────────────────────────────── */
+/* ── Amber style ──────────────────────────────────────────────────────── */
 [data-style="fire"] {
   --bg: #120706;
   --card-bg: #1b0c0a;
@@ -2363,4 +2363,62 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   --filter-border: #cc8563;
   --wavelength-fg: #9a5a3a;
   --spectrum-bg: #fff0e4;
+}
+
+/* ── Blood style ──────────────────────────────────────────────────────── */
+[data-style="blood"] {
+  --bg: #140406;
+  --card-bg: #1c080b;
+  --input-bg: #190709;
+  --border: #4e1520;
+  --border-light: #7d2434;
+  --text: #ffe3e5;
+  --text-muted: #ca8b93;
+  --text-heading: #fff2f3;
+  --btn-bg: #2a0d12;
+  --btn-border: #8f3142;
+  --accent-green: #c8475d;
+  --accent-yellow: #f06d6d;
+  --accent-red: #b80f2d;
+  --jog-hi: #351016;
+  --jog-lo: #230b0f;
+  --jog-shadow: rgba(0,0,0,0.64);
+  --jog-inset: rgba(255,146,160,0.07);
+  --audio-level-bg: #210a0e;
+  --audio-level-border: #7d2434;
+  --audio-level-fill-start: #b80f2d;
+  --audio-level-fill-end: #f06d6d;
+  --filter-bg: #2b0e14;
+  --filter-fg: #ffe3e5;
+  --filter-border: #8f3142;
+  --wavelength-fg: #d0939c;
+  --spectrum-bg: #150508;
+}
+[data-style="blood"][data-theme="light"] {
+  --bg: #fff0f1;
+  --card-bg: #fff6f7;
+  --input-bg: #ffe4e7;
+  --border: #efc2c8;
+  --border-light: #d6919c;
+  --text: #481018;
+  --text-muted: #8f4754;
+  --text-heading: #340a12;
+  --btn-bg: #ffd8dd;
+  --btn-border: #cb6e7e;
+  --accent-green: #bb324c;
+  --accent-yellow: #d94b5f;
+  --accent-red: #a80b28;
+  --jog-hi: #ffd8dd;
+  --jog-lo: #ffc9d0;
+  --jog-shadow: rgba(100,25,39,0.18);
+  --jog-inset: rgba(255,255,255,0.74);
+  --audio-level-bg: #ffe1e5;
+  --audio-level-border: #d6919c;
+  --audio-level-fill-start: #a80b28;
+  --audio-level-fill-end: #d94b5f;
+  --filter-bg: #ffd8dd;
+  --filter-fg: #481018;
+  --filter-border: #cb6e7e;
+  --wavelength-fg: #9e5562;
+  --spectrum-bg: #ffecef;
 }
