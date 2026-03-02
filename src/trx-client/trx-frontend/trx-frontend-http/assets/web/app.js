@@ -526,7 +526,7 @@ const CANVAS_PALETTE = {
       waterfallHue: [45, 18], waterfallSat: 86, waterfallLight: [92, 42], waterfallAlpha: [0.34, 0.82],
     },
   },
-  fire: {
+  amber: {
     dark: {
       bg: "#130706",
       spectrumLine: "#ff7a1f", spectrumFill: "rgba(255,122,31,0.14)",
@@ -544,7 +544,7 @@ const CANVAS_PALETTE = {
       waterfallHue: [18, 48], waterfallSat: 90, waterfallLight: [92, 42], waterfallAlpha: [0.34, 0.84],
     },
   },
-  blood: {
+  fire: {
     dark: {
       bg: "#140406",
       spectrumLine: "#cf1b22", spectrumFill: "rgba(207,27,34,0.14)",
@@ -575,8 +575,12 @@ function canvasPalette() {
 }
 
 function setStyle(style) {
-  const remapped = style === "nord" ? "arctic" : style === "monokai" ? "lime" : style;
-  const valid = ["original", "arctic", "lime", "contrast", "neon-disco", "golden-rain", "fire", "blood"];
+  const remapped =
+    style === "nord" ? "arctic"
+    : style === "monokai" ? "lime"
+    : style === "blood" ? "fire"
+    : style;
+  const valid = ["original", "arctic", "lime", "contrast", "neon-disco", "golden-rain", "amber", "fire"];
   const next = valid.includes(remapped) ? remapped : "original";
   if (next === "original") {
     document.documentElement.removeAttribute("data-style");

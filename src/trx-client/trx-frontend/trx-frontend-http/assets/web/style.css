@@ -2308,7 +2308,7 @@ button:focus-visible, input:focus-visible, select:focus-visible {
 }
 
 /* ── Amber style ──────────────────────────────────────────────────────── */
-[data-style="fire"] {
+[data-style="amber"] {
   --bg: #120706;
   --card-bg: #1b0c0a;
   --input-bg: #180907;
@@ -2336,7 +2336,7 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   --wavelength-fg: #d38d6a;
   --spectrum-bg: #140907;
 }
-[data-style="fire"][data-theme="light"] {
+[data-style="amber"][data-theme="light"] {
   --bg: #fff3ea;
   --card-bg: #fff7f0;
   --input-bg: #ffe9da;
@@ -2365,8 +2365,8 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   --spectrum-bg: #fff0e4;
 }
 
-/* ── Blood style ──────────────────────────────────────────────────────── */
-[data-style="blood"] {
+/* ── Fire style ───────────────────────────────────────────────────────── */
+[data-style="fire"] {
   --bg: #140406;
   --card-bg: #1d0708;
   --input-bg: #1a0607;
@@ -2394,7 +2394,7 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   --wavelength-fg: #d78d78;
   --spectrum-bg: #150508;
 }
-[data-style="blood"][data-theme="light"] {
+[data-style="fire"][data-theme="light"] {
   --bg: #fdf0ea;
   --card-bg: #fff6f1;
   --input-bg: #ffe5db;
