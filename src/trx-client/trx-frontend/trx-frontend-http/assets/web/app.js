@@ -1158,6 +1158,103 @@ function applyLocalTunedFrequency(hz, forceDisplay = false) {
   positionRdsPsOverlay();
 }
 
+function coverageGuardBandwidthHz(mode = modeEl ? modeEl.value : "") {
+  const [, , maxBw] = mwDefaultsForMode(mode);
+  return Math.max(0, Number.isFinite(maxBw) ? maxBw : currentBandwidthHz);
+}
+
+function requiredCenterFreqForCoverage(freqHz, bandwidthHz = coverageGuardBandwidthHz()) {
+  if (!lastSpectrumData || !Number.isFinite(freqHz)) return null;
+  const sampleRate = Number(lastSpectrumData.sample_rate);
+  const currentCenterHz = Number(lastSpectrumData.center_hz);
+  if (!Number.isFinite(sampleRate) || sampleRate <= 0 || !Number.isFinite(currentCenterHz)) {
+    return null;
+  }
+
+  const safeBw = Math.max(0, Number.isFinite(bandwidthHz) ? bandwidthHz : 0);
+  const halfSpanHz = sampleRate / 2;
+  const requiredHalfSpanHz = safeBw / 2 + SPECTRUM_COVERAGE_MARGIN_HZ;
+  if (requiredHalfSpanHz * 2 >= sampleRate) {
+    return alignFreqToRigStep(Math.round(freqHz));
+  }
+
+  const currentLoHz = currentCenterHz - halfSpanHz;
+  const currentHiHz = currentCenterHz + halfSpanHz;
+  const requiredLoHz = freqHz - requiredHalfSpanHz;
+  const requiredHiHz = freqHz + requiredHalfSpanHz;
+  if (requiredLoHz >= currentLoHz && requiredHiHz <= currentHiHz) {
+    return null;
+  }
+
+  let nextCenterHz = currentCenterHz;
+  if (requiredLoHz < currentLoHz) {
+    nextCenterHz = requiredLoHz + halfSpanHz;
+  }
+  if (requiredHiHz > currentHiHz) {
+    nextCenterHz = requiredHiHz - halfSpanHz;
+  }
+  return alignFreqToRigStep(Math.round(nextCenterHz));
+}
+
+async function ensureTunedBandwidthCoverage(freqHz, bandwidthHz = coverageGuardBandwidthHz()) {
+  const nextCenterHz = requiredCenterFreqForCoverage(freqHz, bandwidthHz);
+  if (!Number.isFinite(nextCenterHz)) return;
+  if (lastSpectrumData && Math.abs(nextCenterHz - Number(lastSpectrumData.center_hz)) < 1) return;
+  await postPath(`/set_center_freq?hz=${nextCenterHz}`);
+  if (centerFreqEl && !centerFreqDirty) {
+    centerFreqEl.value = formatFreqForStep(nextCenterHz, jogUnit);
+  }
+}
+
+async function setRigFrequency(freqHz) {
+  const targetHz = Math.round(freqHz);
+  await postPath(`/set_freq?hz=${targetHz}`);
+  applyLocalTunedFrequency(targetHz);
+  await ensureTunedBandwidthCoverage(targetHz);
+}
+
+function tunedFrequencyForCenterCoverage(centerHz, freqHz = lastFreqHz, bandwidthHz = coverageGuardBandwidthHz()) {
+  if (!Number.isFinite(centerHz) || !Number.isFinite(freqHz) || !lastSpectrumData) return null;
+  const sampleRate = Number(lastSpectrumData.sample_rate);
+  if (!Number.isFinite(sampleRate) || sampleRate <= 0) return null;
+
+  const safeBw = Math.max(0, Number.isFinite(bandwidthHz) ? bandwidthHz : 0);
+  const halfSpanHz = sampleRate / 2;
+  const requiredHalfSpanHz = safeBw / 2 + SPECTRUM_COVERAGE_MARGIN_HZ;
+  if (requiredHalfSpanHz * 2 >= sampleRate) {
+    return alignFreqToRigStep(Math.round(centerHz));
+  }
+
+  const minFreqHz = centerHz - halfSpanHz + requiredHalfSpanHz;
+  const maxFreqHz = centerHz + halfSpanHz - requiredHalfSpanHz;
+  if (freqHz >= minFreqHz && freqHz <= maxFreqHz) {
+    return null;
+  }
+  const clampedHz = Math.max(minFreqHz, Math.min(maxFreqHz, freqHz));
+  return alignFreqToRigStep(Math.round(clampedHz));
+}
+
+async function shiftSpectrumCenter(direction) {
+  if (!lastSpectrumData || !Number.isFinite(direction) || direction === 0) return;
+  const sampleRate = Number(lastSpectrumData.sample_rate);
+  const currentCenterHz = Number(lastSpectrumData.center_hz);
+  if (!Number.isFinite(sampleRate) || sampleRate <= 0 || !Number.isFinite(currentCenterHz)) return;
+
+  const stepHz = Math.max(50_000, Math.round(sampleRate * 0.35));
+  const nextCenterHz = alignFreqToRigStep(Math.round(currentCenterHz + direction * stepHz));
+  showHint("Shifting spectrum…", 900);
+  await postPath(`/set_center_freq?hz=${nextCenterHz}`);
+  if (centerFreqEl && !centerFreqDirty) {
+    centerFreqEl.value = formatFreqForStep(nextCenterHz, jogUnit);
+  }
+
+  const nextFreqHz = tunedFrequencyForCenterCoverage(nextCenterHz);
+  if (Number.isFinite(nextFreqHz) && Math.abs(nextFreqHz - Number(lastFreqHz)) >= 1) {
+    await postPath(`/set_freq?hz=${nextFreqHz}`);
+    applyLocalTunedFrequency(nextFreqHz);
+  }
+}
+
 function refreshCenterFreqDisplay() {
   if (!centerFreqEl || !lastSpectrumData || centerFreqDirty) return;
   centerFreqEl.value = formatFreqForStep(lastSpectrumData.center_hz, jogUnit);
@@ -1168,7 +1265,8 @@ function parseFreqInput(val, defaultStep) {
   const trimmed = val.trim().toLowerCase();
   const match = trimmed.match(/^([0-9]+(?:[.,][0-9]+)?)\s*([kmg]hz|[kmg]|hz)?$/);
   if (!match) return null;
-  let num = parseFloat(match[1].replace(",", "."));
+  const rawNumber = match[1];
+  let num = parseFloat(rawNumber.replace(",", "."));
   const unit = match[2] || "";
   if (Number.isNaN(num)) return null;
   if (unit.startsWith("gh") || unit === "g") {
@@ -1178,6 +1276,18 @@ function parseFreqInput(val, defaultStep) {
   } else if (unit.startsWith("kh") || unit === "k") {
     num *= 1_000;
   } else if (!unit) {
+    const mode = (modeEl?.value || "").toUpperCase();
+    const hasDecimalSeparator = rawNumber.includes(".") || rawNumber.includes(",");
+    if (mode === "WFM") {
+      if (hasDecimalSeparator && num >= 50 && num < 200) {
+        num *= 1_000_000;
+        return Math.round(num);
+      }
+      if (!hasDecimalSeparator && num >= 875 && num <= 1080) {
+        num = (num / 10) * 1_000_000;
+        return Math.round(num);
+      }
+    }
     // Use currently selected input unit when user omits suffix.
     if (defaultStep >= 1_000_000) {
       num *= 1_000_000;
@@ -1314,6 +1424,7 @@ let serverActiveRigId = null;
 let serverLat = null;
 let serverLon = null;
 let initialMapZoom = 10;
+const SPECTRUM_COVERAGE_MARGIN_HZ = 50_000;
 
 function updateFooterBuildInfo() {
   const serverEl = document.getElementById("footer-server-build");
@@ -1909,8 +2020,7 @@ async function applyFreqFromInput() {
   freqEl.disabled = true;
   showHint("Setting frequency…");
   try {
-    await postPath(`/set_freq?hz=${parsed}`);
-    applyLocalTunedFrequency(parsed);
+    await setRigFrequency(parsed);
     showHint("Freq set", 1500);
   } catch (err) {
     showHint("Set freq failed", 2000);
@@ -1961,6 +2071,11 @@ if (centerFreqEl) {
       applyCenterFreqFromInput();
     }
   });
+  centerFreqEl.addEventListener("wheel", (e) => {
+    e.preventDefault();
+    const direction = e.deltaY < 0 ? 1 : -1;
+    jogFreq(direction);
+  }, { passive: false });
 }
 freqEl.addEventListener("wheel", (e) => {
   e.preventDefault();
@@ -2009,8 +2124,7 @@ async function jogFreq(direction) {
   jogIndicator.style.transform = `translateX(-50%) rotate(${jogAngle}deg)`;
   showHint("Setting frequency…");
   try {
-    await postPath(`/set_freq?hz=${newHz}`);
-    applyLocalTunedFrequency(newHz);
+    await setRigFrequency(newHz);
     showHint("Freq set", 1000);
   } catch (err) {
     showHint("Set freq failed", 2000);
@@ -2256,7 +2370,12 @@ async function applyBandwidthFromInput() {
   currentBandwidthHz = clamped;
   syncBandwidthInput(clamped);
   if (lastSpectrumData) scheduleSpectrumDraw();
-  try { await postPath(`/set_bandwidth?hz=${clamped}`); } catch (_) {}
+  try {
+    await postPath(`/set_bandwidth?hz=${clamped}`);
+    if (Number.isFinite(lastFreqHz)) {
+      await ensureTunedBandwidthCoverage(lastFreqHz);
+    }
+  } catch (_) {}
 }
 
 function estimateBandwidthAroundPeak(data, centerHz) {
@@ -2326,6 +2445,9 @@ async function applyAutoBandwidth() {
   if (lastSpectrumData) scheduleSpectrumDraw();
   try {
     await postPath(`/set_bandwidth?hz=${estimated}`);
+    if (Number.isFinite(lastFreqHz)) {
+      await ensureTunedBandwidthCoverage(lastFreqHz);
+    }
   } catch (_) {}
 }
 
@@ -3539,6 +3661,8 @@ window.addEventListener("beforeunload", () => {
 const spectrumCanvas  = document.getElementById("spectrum-canvas");
 const spectrumFreqAxis = document.getElementById("spectrum-freq-axis");
 const spectrumTooltip = document.getElementById("spectrum-tooltip");
+const spectrumCenterLeftBtn = document.getElementById("spectrum-center-left-btn");
+const spectrumCenterRightBtn = document.getElementById("spectrum-center-right-btn");
 let spectrumSource = null;
 let spectrumReconnectTimer = null;
 let spectrumDrawPending = false;
@@ -3908,8 +4032,7 @@ async function tuneRdsAlternativeFrequency(hz) {
   if (!Number.isFinite(hz) || hz <= 0) return;
   const targetHz = Math.round(hz);
   try {
-    await postPath(`/set_freq?hz=${targetHz}`);
-    applyLocalTunedFrequency(targetHz);
+    await setRigFrequency(targetHz);
     showHint(`Tuned ${formatRdsAfMHz(targetHz)}`, 1200);
   } catch (_) {
     showHint("Set freq failed", 1500);
@@ -4673,8 +4796,7 @@ if (spectrumCanvas) {
     const cssX = e.clientX - rect.left;
     const targetHz = spectrumTargetHzAt(cssX, rect.width, lastSpectrumData);
     if (!Number.isFinite(targetHz)) return;
-    postPath(`/set_freq?hz=${targetHz}`)
-      .then(() => { applyLocalTunedFrequency(targetHz); })
+    setRigFrequency(targetHz)
       .catch(() => {});
   });
 }
@@ -4716,9 +4838,19 @@ if (overviewCanvas) {
     const cssX = e.clientX - rect.left;
     const targetHz = spectrumTargetHzAt(cssX, rect.width, lastSpectrumData);
     if (!Number.isFinite(targetHz)) return;
-    postPath(`/set_freq?hz=${targetHz}`)
-      .then(() => { applyLocalTunedFrequency(targetHz); })
+    setRigFrequency(targetHz)
       .catch(() => {});
+  });
+}
+
+if (spectrumCenterLeftBtn) {
+  spectrumCenterLeftBtn.addEventListener("click", () => {
+    shiftSpectrumCenter(-1).catch(() => {});
+  });
+}
+if (spectrumCenterRightBtn) {
+  spectrumCenterRightBtn.addEventListener("click", () => {
+    shiftSpectrumCenter(1).catch(() => {});
   });
 }
 

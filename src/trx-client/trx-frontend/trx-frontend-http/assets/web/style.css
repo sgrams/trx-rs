@@ -1390,6 +1390,17 @@ button:focus-visible, input:focus-visible, select:focus-visible {
     gap: 0.5rem;
     padding-top: 0.45rem;
   }
+  .spectrum-edge-shift {
+    width: 1.5rem;
+    height: 2.35rem;
+    font-size: 1.1rem;
+  }
+  .spectrum-edge-shift-left {
+    left: 0.28rem;
+  }
+  .spectrum-edge-shift-right {
+    right: 0.28rem;
+  }
   #spectrum-bw-row,
   #spectrum-level-row {
     gap: 0.4rem;
@@ -1497,6 +1508,41 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   border-radius: 6px 6px 0 0;
   cursor: crosshair;
   touch-action: none;
+}
+.spectrum-edge-shift {
+  position: absolute;
+  top: calc(var(--spectrum-plot-height) / 2);
+  transform: translateY(-50%);
+  z-index: 8;
+  width: 1.7rem;
+  height: 2.8rem;
+  border: 1px solid color-mix(in srgb, var(--border-light) 85%, transparent);
+  background: color-mix(in srgb, var(--card-bg) 78%, transparent);
+  color: var(--accent-yellow);
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.25rem;
+  line-height: 1;
+  cursor: pointer;
+  box-shadow: 0 8px 18px rgba(0,0,0,0.18);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+.spectrum-edge-shift:hover {
+  background: color-mix(in srgb, var(--btn-bg) 84%, transparent);
+  color: var(--text-heading);
+  border-color: var(--accent-yellow);
+}
+.spectrum-edge-shift:active {
+  transform: translateY(-50%) scale(0.97);
+}
+.spectrum-edge-shift-left {
+  left: 0.45rem;
+}
+.spectrum-edge-shift-right {
+  right: 0.45rem;
 }
 #spectrum-freq-axis {
   position: relative;
