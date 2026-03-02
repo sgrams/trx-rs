@@ -3224,13 +3224,16 @@ function sizeAprsMapToViewport() {
   const mapEl = document.getElementById("aprs-map");
   if (!mapEl) return;
   const mapRect = mapEl.getBoundingClientRect();
+  const width = mapEl.clientWidth || mapRect.width;
   const footer = document.querySelector(".footer");
   let bottom = window.innerHeight;
   if (footer) {
     const fr = footer.getBoundingClientRect();
     if (fr.top > mapRect.top + 50) bottom = fr.top;
   }
-  const target = Math.max(150, Math.floor(bottom - mapRect.top - 8));
+  const available = Math.max(0, Math.floor(bottom - mapRect.top - 8));
+  const widthDriven = width > 0 ? Math.floor(width / 1.55) : available;
+  const target = Math.max(0, Math.min(available, widthDriven));
   mapEl.style.height = `${target}px`;
   if (aprsMap) aprsMap.invalidateSize();
 }
@@ -3489,6 +3492,47 @@ function ensureAisTrack(mmsi, entry) {
   entry.track = track;
 }
 
+function aisMarkerOptionsFromMessage(msg) {
+  return {
+    heading: msg?.heading_deg,
+    course: msg?.cog_deg,
+    speed: msg?.sog_knots,
+    color: "#ff7559",
+    outline: "#6b2118",
+    size: 22,
+  };
+}
+
+function createAisMarker(lat, lon, msg) {
+  if (typeof L !== "undefined" && typeof L.trxAisTrackSymbol === "function") {
+    return L.trxAisTrackSymbol([lat, lon], aisMarkerOptionsFromMessage(msg));
+  }
+  return L.circleMarker([lat, lon], {
+    radius: 6,
+    color: "#e2553d",
+    fillColor: "#ff7559",
+    fillOpacity: 0.82,
+  });
+}
+
+function updateAisMarker(marker, msg, popupHtml) {
+  if (!marker) return;
+  marker.setLatLng([msg.lat, msg.lon]);
+  if (typeof marker.setAisState === "function") {
+    marker.setAisState(aisMarkerOptionsFromMessage(msg));
+  }
+  if (typeof marker.setStyle === "function" && typeof marker.setAisState !== "function") {
+    const hasHeading = Number.isFinite(msg?.heading_deg) || Number.isFinite(msg?.cog_deg);
+    marker.setStyle({
+      radius: hasHeading ? 6.5 : 6,
+      color: hasHeading ? "#c8412f" : "#e2553d",
+      fillColor: hasHeading ? "#ff6f4d" : "#ff7559",
+      fillOpacity: 0.84,
+    });
+  }
+  marker.setPopupContent(popupHtml);
+}
+
 window.aisMapAddVessel = function(msg) {
   if (msg == null || msg.lat == null || msg.lon == null || !Number.isFinite(msg.mmsi)) return;
   if (!aprsMap) initAprsMap();
@@ -3508,18 +3552,12 @@ window.aisMapAddVessel = function(msg) {
       ensureAisTrack(key, existing);
     }
     if (existing.marker) {
-      existing.marker.setLatLng([msg.lat, msg.lon]);
-      existing.marker.setPopupContent(popupHtml);
+      updateAisMarker(existing.marker, msg, popupHtml);
     }
     return;
   }
   if (!aprsMap) return;
-  const marker = L.circleMarker([msg.lat, msg.lon], {
-    radius: 6,
-    color: "#e2553d",
-    fillColor: "#ff7559",
-    fillOpacity: 0.82,
-  }).addTo(aprsMap).bindPopup(popupHtml);
+  const marker = createAisMarker(msg.lat, msg.lon, msg).addTo(aprsMap).bindPopup(popupHtml);
   marker.__trxType = "ais";
   marker._aisMmsi = key;
   mapMarkers.add(marker);

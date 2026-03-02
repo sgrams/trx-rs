@@ -1086,7 +1086,18 @@ small { color: var(--text-muted); }
 .sub-tab { flex-shrink: 0; background: transparent; border: none; border-bottom: 2px solid transparent; border-radius: 0; padding: 0.35rem 0.75rem; color: var(--text-muted); cursor: pointer; font-size: 0.85rem; height: auto; }
 .sub-tab.active { border-bottom-color: var(--accent-green); color: var(--accent-green); font-weight: 600; }
 .sub-tab:hover:not(.active) { color: var(--text); }
-#aprs-map { min-height: 150px; border-radius: 6px; }
+#tab-map {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  min-height: 0;
+}
+#aprs-map {
+  flex: 0 1 auto;
+  width: 100%;
+  min-height: 0;
+  border-radius: 6px;
+}
 .aprs-controls { display: flex; gap: 0.6rem; align-items: center; margin-bottom: 0.75rem; }
 #subtab-aprs .aprs-controls > button {
   min-height: 1.65rem;
