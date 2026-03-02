@@ -2161,7 +2161,7 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   font-size: 0.9rem;
 }
 
-/* ── Golden Rain style ────────────────────────────────────────────────── */
+/* ── Donald style ─────────────────────────────────────────────────────── */
 [data-style="golden-rain"] {
   --bg: #100c06;
   --card-bg: #1a1209;

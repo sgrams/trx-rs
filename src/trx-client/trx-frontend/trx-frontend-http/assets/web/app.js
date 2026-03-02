@@ -1167,7 +1167,7 @@ function effectiveSpectrumCoverageSpanHz(sampleRateHz) {
   const sampleRate = Number(sampleRateHz);
   if (!Number.isFinite(sampleRate) || sampleRate <= 0) return 0;
   // Keep a guard band at the spectrum edges; practical usable span is slightly smaller.
-  return sampleRate * 0.92;
+  return sampleRate * 1.0;
 }
 
 function requiredCenterFreqForCoverageInFrame(data, freqHz, bandwidthHz = coverageGuardBandwidthHz()) {
@@ -4763,18 +4763,6 @@ function drawSpectrum(data) {
   drawSignalOverlay();
 }
 
-// Distinct colours for named bookmark categories (uncategorised uses --accent-yellow).
-const BM_PALETTE = [
-  "#4299e1", // blue
-  "#48bb78", // green
-  "#ed8936", // orange
-  "#f56565", // red
-  "#9f7aea", // purple
-  "#38b2ac", // teal
-  "#ed64a6", // pink
-  "#667eea", // indigo
-];
-
 function bmHexToRgba(hex, alpha) {
   const r = parseInt(hex.slice(1, 3), 16);
   const g = parseInt(hex.slice(3, 5), 16);
@@ -4795,25 +4783,60 @@ function bmContrastFg(bgHex) {
   return bmLuminance(bgHex) >= 0.4 ? "#1a202c" : "#ffffff";
 }
 
-// Read --accent-yellow from the live theme and return it as a hex string.
-function bmResolveAccentYellow() {
+// Read a theme CSS colour variable from the live theme and return it as a hex string.
+function bmResolveThemeColor(name, fallbackHex) {
   const val = getComputedStyle(document.documentElement)
-    .getPropertyValue("--accent-yellow").trim();
+    .getPropertyValue(name).trim();
   if (/^#[0-9a-f]{6}$/i.test(val)) return val;
   if (/^#[0-9a-f]{3}$/i.test(val))
     return "#" + [...val.slice(1)].map((c) => c + c).join("");
   const m = val.match(/\d+/g);
   if (m && m.length >= 3)
     return "#" + m.slice(0, 3).map((n) => (+n).toString(16).padStart(2, "0")).join("");
-  return "#f0ad4e";
+  return fallbackHex;
+}
+
+function bmBlendHex(aHex, bHex, ratio = 0.5) {
+  const mix = Math.max(0, Math.min(1, Number.isFinite(ratio) ? ratio : 0.5));
+  const aR = parseInt(aHex.slice(1, 3), 16);
+  const aG = parseInt(aHex.slice(3, 5), 16);
+  const aB = parseInt(aHex.slice(5, 7), 16);
+  const bR = parseInt(bHex.slice(1, 3), 16);
+  const bG = parseInt(bHex.slice(3, 5), 16);
+  const bB = parseInt(bHex.slice(5, 7), 16);
+  const toHex = (value) => Math.round(value).toString(16).padStart(2, "0");
+  return "#" + [
+    aR + (bR - aR) * mix,
+    aG + (bG - aG) * mix,
+    aB + (bB - aB) * mix,
+  ].map(toHex).join("");
+}
+
+function bmThemePalette() {
+  const yellow = bmResolveThemeColor("--accent-yellow", "#f0ad4e");
+  const green = bmResolveThemeColor("--accent-green", "#c24b1a");
+  const red = bmResolveThemeColor("--accent-red", "#e55353");
+  const heading = bmResolveThemeColor("--text-heading", "#c6d5ea");
+  const border = bmResolveThemeColor("--border-light", "#304766");
+  return [
+    yellow,
+    bmBlendHex(yellow, heading, 0.28),
+    bmBlendHex(yellow, green, 0.45),
+    bmBlendHex(green, heading, 0.22),
+    bmBlendHex(yellow, red, 0.42),
+    bmBlendHex(red, heading, 0.18),
+    bmBlendHex(border, yellow, 0.58),
+    bmBlendHex(border, heading, 0.5),
+  ];
 }
 
 // Returns a map of category → hex colour, including "" for uncategorised.
 function bmCategoryColorMap() {
   const ref = typeof bmList !== "undefined" ? bmList : [];
   const cats = [...new Set(ref.map((b) => b.category).filter(Boolean))].sort();
-  const map = { "": bmResolveAccentYellow() };
-  cats.forEach((cat, i) => { map[cat] = BM_PALETTE[i % BM_PALETTE.length]; });
+  const palette = bmThemePalette();
+  const map = { "": palette[0] };
+  cats.forEach((cat, i) => { map[cat] = palette[(i + 1) % palette.length]; });
   return map;
 }
 
