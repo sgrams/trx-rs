@@ -50,15 +50,10 @@ struct RawFrame {
 #[derive(Debug, Clone)]
 pub struct AisDecoder {
     sample_rate: f32,
-    samples_per_symbol: f32,
-    sample_clock: f32,
+    symbol_phase: f32,
     dc_state: f32,
-    lp_fast: f32,
-    lp_slow: f32,
+    lp_state: f32,
     env_state: f32,
-    polarity: i8,
-    samples_since_transition: u32,
-    clock_locked: bool,
     prev_raw_bit: u8,
     ones: u32,
     in_frame: bool,
@@ -68,18 +63,12 @@ pub struct AisDecoder {
 
 impl AisDecoder {
     pub fn new(sample_rate: u32) -> Self {
-        let sample_rate = sample_rate.max(1) as f32;
         Self {
-            sample_rate,
-            samples_per_symbol: sample_rate / AIS_BAUD,
-            sample_clock: 0.0,
+            sample_rate: sample_rate.max(1) as f32,
+            symbol_phase: 0.0,
             dc_state: 0.0,
-            lp_fast: 0.0,
-            lp_slow: 0.0,
+            lp_state: 0.0,
             env_state: 1e-3,
-            polarity: 1,
-            samples_since_transition: 0,
-            clock_locked: false,
             prev_raw_bit: 0,
             ones: 0,
             in_frame: false,
@@ -89,15 +78,10 @@ impl AisDecoder {
     }
 
     pub fn reset(&mut self) {
-        self.samples_per_symbol = self.sample_rate / AIS_BAUD;
-        self.sample_clock = 0.0;
+        self.symbol_phase = 0.0;
         self.dc_state = 0.0;
-        self.lp_fast = 0.0;
-        self.lp_slow = 0.0;
+        self.lp_state = 0.0;
         self.env_state = 1e-3;
-        self.polarity = 1;
-        self.samples_since_transition = 0;
-        self.clock_locked = false;
         self.prev_raw_bit = 0;
         self.ones = 0;
         self.in_frame = false;
@@ -125,57 +109,23 @@ impl AisDecoder {
         self.dc_state += 0.0025 * (sample - self.dc_state);
         let dc_free = sample - self.dc_state;
 
-        // A simple band-pass-ish response makes GMSK symbol transitions stand out
-        // without needing a full matched filter.
-        self.lp_fast += 0.32 * (dc_free - self.lp_fast);
-        self.lp_slow += 0.045 * (dc_free - self.lp_slow);
-        let shaped = self.lp_fast - self.lp_slow;
+        // Gentle low-pass smoothing to suppress narrow impulsive noise.
+        self.lp_state += 0.28 * (dc_free - self.lp_state);
 
         // Track envelope to keep the slicer stable on weak signals.
-        self.env_state += 0.015 * (shaped.abs() - self.env_state);
+        self.env_state += 0.02 * (self.lp_state.abs() - self.env_state);
         let normalized = if self.env_state > 1e-4 {
-            shaped / self.env_state
+            self.lp_state / self.env_state
         } else {
-            shaped
+            self.lp_state
         };
 
-        let threshold = 0.12;
-        let next_polarity = if normalized > threshold {
-            1
-        } else if normalized < -threshold {
-            -1
-        } else {
-            self.polarity
-        };
-
-        self.samples_since_transition = self.samples_since_transition.saturating_add(1);
-        if next_polarity != self.polarity {
-            self.observe_transition();
-            self.polarity = next_polarity;
-        }
-
-        if !self.clock_locked {
-            return;
-        }
-
-        self.sample_clock += 1.0;
-        while self.sample_clock >= self.samples_per_symbol {
-            self.sample_clock -= self.samples_per_symbol;
-            let raw_bit = if self.polarity >= 0 { 1 } else { 0 };
+        self.symbol_phase += AIS_BAUD;
+        while self.symbol_phase >= self.sample_rate {
+            self.symbol_phase -= self.sample_rate;
+            let raw_bit = if normalized >= 0.0 { 1 } else { 0 };
             self.process_symbol(raw_bit);
         }
-    }
-
-    fn observe_transition(&mut self) {
-        let interval = self.samples_since_transition.max(1) as f32;
-        self.samples_since_transition = 0;
-
-        let nominal = (self.sample_rate / AIS_BAUD).max(1.0);
-        let symbols = (interval / nominal).round().clamp(1.0, 8.0);
-        let estimate = (interval / symbols).clamp(nominal * 0.75, nominal * 1.25);
-        self.samples_per_symbol += 0.18 * (estimate - self.samples_per_symbol);
-        self.sample_clock = self.samples_per_symbol * 0.5;
-        self.clock_locked = true;
     }
 
     fn process_symbol(&mut self, raw_bit: u8) {

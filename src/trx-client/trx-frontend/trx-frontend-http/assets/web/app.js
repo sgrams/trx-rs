@@ -733,6 +733,7 @@ function showHint(msg, duration) {
 }
 let supportedModes = [];
 let supportedBands = [];
+let lastUnsupportedFreqPopupAt = 0;
 let freqDirty = false;
 let initialized = false;
 let lastEventAt = Date.now();
@@ -1288,6 +1289,10 @@ async function ensureTunedBandwidthCoverage(freqHz, bandwidthHz = coverageGuardB
 
 async function setRigFrequency(freqHz) {
   const targetHz = Math.round(freqHz);
+  if (!freqAllowed(targetHz)) {
+    showUnsupportedFreqPopup(targetHz);
+    throw new Error(`Unsupported frequency: ${targetHz}`);
+  }
   await postPath(`/set_freq?hz=${targetHz}`);
   applyLocalTunedFrequency(targetHz);
   await ensureTunedBandwidthCoverage(targetHz);
@@ -1680,7 +1685,7 @@ function normalizeMode(modeVal) {
 function updateSupportedBands(cap) {
   if (cap && Array.isArray(cap.supported_bands)) {
     supportedBands = cap.supported_bands
-      .filter((b) => typeof b.low_hz === "number" && typeof b.high_hz === "number" && b.tx_allowed === true)
+      .filter((b) => typeof b.low_hz === "number" && typeof b.high_hz === "number")
       .map((b) => ({ low: b.low_hz, high: b.high_hz }));
   } else {
     supportedBands = [];
@@ -1691,6 +1696,32 @@ function freqAllowed(hz) {
   if (!Number.isFinite(hz)) return false;
   if (supportedBands.length === 0) return true; // if unknown, don't block
   return supportedBands.some((b) => hz >= b.low && hz <= b.high);
+}
+
+function unsupportedBandSummary() {
+  if (supportedBands.length === 0) return "No supported frequency ranges were reported by the rig.";
+  const ranges = supportedBands
+    .slice()
+    .sort((a, b) => a.low - b.low)
+    .map((b) => `${formatFreqForHumans(b.low)} to ${formatFreqForHumans(b.high)}`);
+  return `Supported ranges: ${ranges.join(", ")}`;
+}
+
+function formatFreqForHumans(hz) {
+  if (!Number.isFinite(hz)) return "--";
+  if (hz >= 1_000_000_000) return `${(hz / 1_000_000_000).toFixed(3)} GHz`;
+  if (hz >= 1_000_000) return `${(hz / 1_000_000).toFixed(3)} MHz`;
+  if (hz >= 1_000) return `${(hz / 1_000).toFixed(3)} kHz`;
+  return `${Math.round(hz)} Hz`;
+}
+
+function showUnsupportedFreqPopup(hz) {
+  const message = `Unsupported frequency: ${formatFreqForHumans(hz)}.\n\n${unsupportedBandSummary()}`;
+  showHint("Out of supported range", 1800);
+  const now = Date.now();
+  if (now - lastUnsupportedFreqPopupAt < 1200) return;
+  lastUnsupportedFreqPopupAt = now;
+  window.alert(message);
 }
 
 // Convert dBm (wire format) to S-units (S1=-121dBm, S9=-73dBm, 6dB/S-unit).
@@ -2403,7 +2434,7 @@ async function applyFreqFromInput() {
     return;
   }
   if (!freqAllowed(parsed)) {
-    showHint("Out of supported bands", 1500);
+    showUnsupportedFreqPopup(parsed);
     return;
   }
   freqDirty = false;
@@ -2429,7 +2460,7 @@ async function applyCenterFreqFromInput() {
     return;
   }
   if (!freqAllowed(parsed)) {
-    showHint("Out of supported bands", 1500);
+    showUnsupportedFreqPopup(parsed);
     return;
   }
   centerFreqDirty = false;
@@ -2507,7 +2538,7 @@ async function jogFreq(direction) {
   if (lastFreqHz === null) return;
   const newHz = alignFreqToRigStep(lastFreqHz + direction * jogStep);
   if (!freqAllowed(newHz)) {
-    showHint("Out of supported bands", 1500);
+    showUnsupportedFreqPopup(newHz);
     return;
   }
   jogAngle = (jogAngle + direction * 15) % 360;
