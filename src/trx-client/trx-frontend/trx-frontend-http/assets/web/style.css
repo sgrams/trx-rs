@@ -1088,16 +1088,99 @@ small { color: var(--text-muted); }
 .sub-tab:hover:not(.active) { color: var(--text); }
 #aprs-map { min-height: 150px; border-radius: 6px; }
 .aprs-controls { display: flex; gap: 0.6rem; align-items: center; margin-bottom: 0.75rem; }
+.ais-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.6rem;
+  margin-bottom: 0.75rem;
+}
+.ais-summary-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.18rem;
+  padding: 0.45rem 0.55rem;
+  border: 1px solid var(--border-light);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--card-bg) 84%, transparent);
+}
+.ais-summary-label {
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.ais-summary-value {
+  color: var(--text);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 0.8rem;
+  line-height: 1.3;
+}
 #aprs-packets,
 #ais-messages { max-height: 360px; overflow-y: auto; border: 1px solid var(--border-light); border-radius: 6px; background: var(--input-bg); font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
 .aprs-packet { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; font-size: 0.82rem; padding: 0.35rem 0.5rem; border-bottom: 1px solid var(--border); line-height: 1.4; }
 .aprs-packet:last-child { border-bottom: none; }
-.ais-message { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; font-size: 0.82rem; padding: 0.35rem 0.5rem; border-bottom: 1px solid var(--border); line-height: 1.4; }
+.ais-message { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; font-size: 0.82rem; padding: 0.45rem 0.55rem; border-bottom: 1px solid var(--border); line-height: 1.35; }
 .ais-message:last-child { border-bottom: none; }
 .aprs-call { color: var(--accent-green); font-weight: 600; }
 .ais-call { color: var(--accent-red); font-weight: 600; }
 .aprs-time { color: var(--text-muted); margin-right: 0.5rem; }
 .ais-time { color: var(--text-muted); margin-right: 0.5rem; }
+.ais-row-head,
+.ais-row-meta,
+.ais-row-detail {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  flex-wrap: wrap;
+}
+.ais-row-head + .ais-row-meta,
+.ais-row-meta + .ais-row-detail {
+  margin-top: 0.2rem;
+}
+.ais-row-detail {
+  color: var(--text-muted);
+  font-size: 0.78rem;
+}
+.ais-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 1.2rem;
+  padding: 0.02rem 0.38rem;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--border-light) 78%, transparent);
+  background: color-mix(in srgb, var(--card-bg) 72%, transparent);
+  color: var(--text-muted);
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+.ais-badge-channel-a {
+  color: #77d6a5;
+  border-color: color-mix(in srgb, #77d6a5 42%, transparent);
+  background: color-mix(in srgb, #77d6a5 12%, transparent);
+}
+.ais-badge-channel-b {
+  color: #ff9a7a;
+  border-color: color-mix(in srgb, #ff9a7a 42%, transparent);
+  background: color-mix(in srgb, #ff9a7a 14%, transparent);
+}
+.ais-badge-type {
+  color: var(--text);
+}
+.ais-meta-text {
+  color: var(--text-muted);
+  font-size: 0.76rem;
+}
+.ais-pos-link {
+  color: var(--accent-red);
+  text-decoration: none;
+}
+.ais-pos-link:hover {
+  text-decoration: underline;
+}
 .aprs-symbol { display: inline-block; width: 24px; height: 24px; background-size: 384px 192px; vertical-align: middle; margin-right: 0.3rem; }
 .aprs-pos { color: var(--accent-green); text-decoration: none; margin-left: 0.3rem; font-size: 0.8rem; }
 .aprs-pos:hover { text-decoration: underline; }
@@ -1448,6 +1531,9 @@ button:focus-visible, input:focus-visible, select:focus-visible {
     flex-wrap: wrap;
     align-items: stretch;
   }
+  .ais-summary {
+    grid-template-columns: minmax(0, 1fr);
+  }
   .aprs-controls > button,
   .ft8-controls > button,
   .cw-controls > button {
@@ -1694,21 +1780,26 @@ button:focus-visible, input:focus-visible, select:focus-visible {
 .spectrum-bookmark-chip-side .spectrum-bookmark-name {
   display: block;
   max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  min-width: 0;
 }
 .spectrum-bookmark-chip-side .spectrum-bookmark-freq {
-  min-width: 0;
   font-size: 0.54rem;
   font-weight: 700;
   letter-spacing: 0.04em;
   text-transform: uppercase;
   opacity: 0.9;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .spectrum-bookmark-chip-side .spectrum-bookmark-name {
   width: 100%;
   font-size: 0.64rem;
   font-weight: 600;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  line-height: 1.22;
 }
 .bm-icon-svg path {
   fill: var(--bm-cat-fg, #1a202c);

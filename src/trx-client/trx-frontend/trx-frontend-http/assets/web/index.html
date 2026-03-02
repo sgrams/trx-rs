@@ -425,6 +425,20 @@
           <input id="ais-filter" class="ft8-filter" type="text" placeholder="Filter (e.g. MMSI, vessel, A)" />
           <small id="ais-status" style="color:var(--text-muted);">Waiting for server decode</small>
         </div>
+        <div class="ais-summary">
+          <div class="ais-summary-card">
+            <span class="ais-summary-label">Channels</span>
+            <span id="ais-channel-summary" class="ais-summary-value">A 161.975 MHz · B 162.025 MHz</span>
+          </div>
+          <div class="ais-summary-card">
+            <span class="ais-summary-label">Tracked</span>
+            <span id="ais-vessel-count" class="ais-summary-value">0 vessels</span>
+          </div>
+          <div class="ais-summary-card">
+            <span class="ais-summary-label">Latest</span>
+            <span id="ais-latest-seen" class="ais-summary-value">No traffic yet</span>
+          </div>
+        </div>
         <div id="ais-messages"></div>
       </div>
       <div id="subtab-aprs" class="sub-tab-panel" style="display:none;">
