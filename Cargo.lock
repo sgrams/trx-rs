@@ -2607,7 +2607,15 @@ dependencies = [
  "trx-decode-log",
  "trx-ft8",
  "trx-protocol",
+ "trx-vdes",
  "trx-wspr",
+]
+
+[[package]]
+name = "trx-vdes"
+version = "0.1.0"
+dependencies = [
+ "trx-core",
 ]
 
 [[package]]

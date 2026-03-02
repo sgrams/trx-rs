@@ -350,7 +350,7 @@
     <div id="tab-plugins" class="tab-panel" style="display:none;">
       <div class="sub-tab-bar">
         <button class="sub-tab active" data-subtab="overview">Overview</button>
-        <button class="sub-tab" data-subtab="ais">AIS</button>
+        <button class="sub-tab" data-subtab="ais">AIS/VDES</button>
         <button class="sub-tab" data-subtab="aprs">APRS</button>
         <button class="sub-tab" data-subtab="cw">CW</button>
         <button class="sub-tab" data-subtab="ft8">FT8</button>
@@ -359,9 +359,9 @@
       </div>
       <div id="subtab-overview" class="sub-tab-panel">
         <div class="plugin-item">
-          <strong>AIS Decoder</strong>
+          <strong>AIS / VDES Decoder</strong>
           <div style="color:var(--text-muted); font-size:0.85rem; margin-top:0.2rem;">
-            Decodes dual-channel AIS traffic from RX audio using 9.6 kbit/s GMSK and HDLC.
+            Decodes dual-channel AIS and VDES traffic from RX audio using 9.6 kbit/s GMSK and HDLC.
           </div>
         </div>
         <div class="plugin-item">
@@ -528,7 +528,7 @@
     </div>
     <div id="tab-map" class="tab-panel" style="display:none;">
       <div class="map-controls">
-        <label><input type="checkbox" id="map-filter-ais" checked /> AIS</label>
+        <label><input type="checkbox" id="map-filter-ais" checked /> AIS/VDES</label>
         <label><input type="checkbox" id="map-filter-aprs" checked /> APRS</label>
         <label><input type="checkbox" id="map-filter-ft8" checked /> FT8</label>
         <label><input type="checkbox" id="map-filter-wspr" checked /> WSPR</label>

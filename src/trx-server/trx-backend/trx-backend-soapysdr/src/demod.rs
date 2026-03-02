@@ -156,7 +156,7 @@ impl Demodulator {
             RigMode::AM => Self::Am,
             RigMode::FM => Self::Fm,
             RigMode::WFM => Self::Wfm,
-            RigMode::AIS => Self::Fm,
+            RigMode::AIS | RigMode::VDES => Self::Fm,
             RigMode::CW | RigMode::CWR => Self::Cw,
             RigMode::DIG => Self::Passthrough,
             // VHF/UHF packet radio (APRS, AX.25) is FM-encoded AFSK.

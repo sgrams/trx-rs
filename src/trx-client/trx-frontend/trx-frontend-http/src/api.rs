@@ -273,6 +273,11 @@ pub async fn decode_events(
                 .map(trx_core::decode::DecodedMessage::Ais),
         );
         out.extend(
+            crate::server::audio::snapshot_vdes_history(context.get_ref())
+                .into_iter()
+                .map(trx_core::decode::DecodedMessage::Vdes),
+        );
+        out.extend(
             crate::server::audio::snapshot_aprs_history(context.get_ref())
                 .into_iter()
                 .map(trx_core::decode::DecodedMessage::Aprs),
@@ -707,6 +712,14 @@ pub async fn clear_ais_decode(
     Ok(HttpResponse::Ok().finish())
 }
 
+#[post("/clear_vdes_decode")]
+pub async fn clear_vdes_decode(
+    context: web::Data<Arc<FrontendRuntimeContext>>,
+) -> Result<HttpResponse, Error> {
+    crate::server::audio::clear_vdes_history(context.get_ref());
+    Ok(HttpResponse::Ok().finish())
+}
+
 #[post("/clear_cw_decode")]
 pub async fn clear_cw_decode(
     context: web::Data<Arc<FrontendRuntimeContext>>,
@@ -961,6 +974,7 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
         .service(toggle_ft8_decode)
         .service(toggle_wspr_decode)
         .service(clear_ais_decode)
+        .service(clear_vdes_decode)
         .service(clear_aprs_decode)
         .service(clear_cw_decode)
         .service(clear_ft8_decode)
@@ -977,6 +991,7 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
         .service(logo)
         .service(style_css)
         .service(app_js)
+        .service(leaflet_ais_tracksymbol_js)
         .service(ais_js)
         .service(aprs_js)
         .service(ft8_js)
@@ -1032,6 +1047,16 @@ async fn app_js() -> impl Responder {
             "application/javascript; charset=utf-8",
         ))
         .body(status::APP_JS)
+}
+
+#[get("/leaflet-ais-tracksymbol.js")]
+async fn leaflet_ais_tracksymbol_js() -> impl Responder {
+    HttpResponse::Ok()
+        .insert_header((
+            header::CONTENT_TYPE,
+            "application/javascript; charset=utf-8",
+        ))
+        .body(status::LEAFLET_AIS_TRACKSYMBOL_JS)
 }
 
 #[get("/aprs.js")]

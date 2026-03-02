@@ -1208,7 +1208,8 @@ function coverageGuardBandwidthHz(mode = modeEl ? modeEl.value : "") {
 }
 
 function isAisMode(mode = modeEl ? modeEl.value : "") {
-  return String(mode || "").toUpperCase() === "AIS";
+  const upper = String(mode || "").toUpperCase();
+  return upper === "AIS" || upper === "VDES";
 }
 
 function coverageSpanForMode(freqHz, bandwidthHz = coverageGuardBandwidthHz(), mode = modeEl ? modeEl.value : "") {
@@ -1870,6 +1871,7 @@ function render(update) {
   }
   if (update.server_latitude != null) serverLat = update.server_latitude;
   if (update.server_longitude != null) serverLon = update.server_longitude;
+  if (aprsMap) syncAprsReceiverMarker();
   if (typeof update.initial_map_zoom === "number" && Number.isFinite(update.initial_map_zoom)) {
     initialMapZoom = Math.max(1, Math.round(update.initial_map_zoom));
   }
@@ -2036,8 +2038,8 @@ function render(update) {
   const wsprStatus = document.getElementById("wspr-status");
   setModeBoundDecodeStatus(
     aisStatus,
-    ["AIS"],
-    "Select AIS mode to decode",
+    ["AIS", "VDES"],
+    "Select AIS or VDES mode to decode",
     "Connected, listening for packets",
   );
   if (window.updateAisBar) window.updateAisBar();
@@ -2732,6 +2734,7 @@ const MODE_BW_DEFAULTS = {
   AM:     [9_000,  500,   20_000, 500],
   FM:     [12_500, 2_500, 25_000, 500],
   AIS:    [25_000, 12_500, 50_000, 500],
+  VDES:   [25_000, 12_500, 50_000, 500],
   WFM:    [180_000, 50_000,300_000,5_000],
   DIG:    [3_000,  300,   6_000,  100],
   PKT:    [25_000, 300,  50_000,  500],
@@ -3019,6 +3022,34 @@ const AIS_TRACK_MAX_POINTS = 64;
 const aisMarkers = new Map();
 let selectedAisTrackMmsi = null;
 
+function syncAprsReceiverMarker() {
+  if (!aprsMap) return;
+  const hasLocation = serverLat != null && serverLon != null;
+  if (!hasLocation) {
+    if (aprsMapReceiverMarker && aprsMap.hasLayer(aprsMapReceiverMarker)) {
+      aprsMapReceiverMarker.removeFrom(aprsMap);
+    }
+    aprsMapReceiverMarker = null;
+    return;
+  }
+  const latLng = [serverLat, serverLon];
+  if (!aprsMapReceiverMarker) {
+    aprsMapReceiverMarker = L.circleMarker(latLng, {
+      radius: 8,
+      className: "trx-receiver-marker",
+      fillOpacity: 0.8,
+    }).addTo(aprsMap).bindPopup("");
+    if (typeof aprsMap.setView === "function") {
+      aprsMap.setView(latLng, Math.max(1, initialMapZoom));
+    }
+    return;
+  }
+  aprsMapReceiverMarker.setLatLng(latLng);
+  if (!aprsMap.hasLayer(aprsMapReceiverMarker)) {
+    aprsMapReceiverMarker.addTo(aprsMap);
+  }
+}
+
 window.clearMapMarkersByType = function(type) {
   if (type === "aprs") {
     stationMarkers.forEach((entry) => {
@@ -3106,12 +3137,7 @@ function initAprsMap() {
 
   aprsMap = L.map("aprs-map").setView(center, zoom);
   updateMapBaseLayerForTheme(currentTheme());
-
-  if (hasLocation) {
-    aprsMapReceiverMarker = L.circleMarker([serverLat, serverLon], {
-      radius: 8, className: "trx-receiver-marker", fillOpacity: 0.8
-    }).addTo(aprsMap).bindPopup("");
-  }
+  syncAprsReceiverMarker();
 
   // Rebuild popup content on open (keeps age/distance/rig list fresh)
   aprsMap.on("popupopen", function(e) {
@@ -4305,7 +4331,7 @@ function updateDecodeStatus(text) {
   const aprs = document.getElementById("aprs-status");
   const cw = document.getElementById("cw-status");
   const ft8 = document.getElementById("ft8-status");
-  setModeBoundDecodeStatus(ais, ["AIS"], "Select AIS mode to decode", text);
+  setModeBoundDecodeStatus(ais, ["AIS", "VDES"], "Select AIS or VDES mode to decode", text);
   setModeBoundDecodeStatus(aprs, ["PKT"], "Select PKT mode to decode", text);
   if (cw && cw.textContent !== "Receiving") cw.textContent = text;
   if (ft8 && ft8.textContent !== "Receiving") ft8.textContent = text;
@@ -4326,6 +4352,7 @@ function connectDecode() {
     try {
       const msg = JSON.parse(evt.data);
       if (msg.type === "ais" && window.onServerAis) window.onServerAis(msg);
+      if (msg.type === "vdes" && window.onServerVdes) window.onServerVdes(msg);
       if (msg.type === "aprs" && window.onServerAprs) window.onServerAprs(msg);
       if (msg.type === "cw" && window.onServerCw) window.onServerCw(msg);
       if (msg.type === "ft8" && window.onServerFt8) window.onServerFt8(msg);

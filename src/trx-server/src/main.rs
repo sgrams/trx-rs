@@ -245,6 +245,7 @@ fn default_audio_bandwidth_for_mode(mode: &trx_core::rig::state::RigMode) -> u32
         RigMode::FM => 12_500,
         RigMode::WFM => 180_000,
         RigMode::AIS => 25_000,
+        RigMode::VDES => 25_000,
         RigMode::Other(_) => 3_000,
     }
 }
@@ -266,6 +267,7 @@ fn parse_rig_mode(
         "WFM" => RigMode::WFM,
         "FM" => RigMode::FM,
         "AIS" => RigMode::AIS,
+        "VDES" => RigMode::VDES,
         "DIG" => RigMode::DIG,
         "PKT" => RigMode::PKT,
         _ => initial_mode.clone(),
@@ -613,6 +615,8 @@ fn spawn_rig_audio_stack(
         }));
 
         if let Some((ais_a_pcm_rx, ais_b_pcm_rx)) = sdr_ais_pcm_rx {
+            let vdes_a_pcm_rx = ais_a_pcm_rx.resubscribe();
+            let vdes_b_pcm_rx = ais_b_pcm_rx.resubscribe();
             let ais_state_rx = state_rx.clone();
             let ais_decode_tx = decode_tx.clone();
             let ais_shutdown_rx = shutdown_rx.clone();
@@ -623,6 +627,19 @@ fn spawn_rig_audio_stack(
                 tokio::select! {
                     _ = audio::run_ais_decoder(ais_sr, ais_ch, ais_a_pcm_rx, ais_b_pcm_rx, ais_state_rx, ais_decode_tx, ais_histories) => {}
                     _ = wait_for_shutdown(ais_shutdown_rx) => {}
+                }
+            }));
+
+            let vdes_state_rx = state_rx.clone();
+            let vdes_decode_tx = decode_tx.clone();
+            let vdes_shutdown_rx = shutdown_rx.clone();
+            let vdes_histories = histories.clone();
+            let vdes_sr = rig_cfg.audio.sample_rate;
+            let vdes_ch = rig_cfg.audio.channels as u16;
+            handles.push(tokio::spawn(async move {
+                tokio::select! {
+                    _ = audio::run_vdes_decoder(vdes_sr, vdes_ch, vdes_a_pcm_rx, vdes_b_pcm_rx, vdes_state_rx, vdes_decode_tx, vdes_histories) => {}
+                    _ = wait_for_shutdown(vdes_shutdown_rx) => {}
                 }
             }));
         }

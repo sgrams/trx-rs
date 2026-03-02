@@ -20,7 +20,9 @@ use bytes::Bytes;
 use tokio::sync::broadcast;
 use tracing::warn;
 
-use trx_core::decode::{AisMessage, AprsPacket, CwEvent, DecodedMessage, Ft8Message, WsprMessage};
+use trx_core::decode::{
+    AisMessage, AprsPacket, CwEvent, DecodedMessage, Ft8Message, VdesMessage, WsprMessage,
+};
 use trx_frontend::FrontendRuntimeContext;
 
 const HISTORY_RETENTION: Duration = Duration::from_secs(24 * 60 * 60);
@@ -43,6 +45,15 @@ fn prune_ais_history(history: &mut VecDeque<(Instant, AisMessage)>) {
     }
 }
 
+fn prune_vdes_history(history: &mut VecDeque<(Instant, VdesMessage)>) {
+    while let Some((ts, _)) = history.front() {
+        if ts.elapsed() <= HISTORY_RETENTION {
+            break;
+        }
+        history.pop_front();
+    }
+}
+
 fn record_ais(context: &FrontendRuntimeContext, msg: AisMessage) {
     let mut history = context
         .ais_history
@@ -50,6 +61,15 @@ fn record_ais(context: &FrontendRuntimeContext, msg: AisMessage) {
         .expect("ais history mutex poisoned");
     history.push_back((Instant::now(), msg));
     prune_ais_history(&mut history);
+}
+
+fn record_vdes(context: &FrontendRuntimeContext, msg: VdesMessage) {
+    let mut history = context
+        .vdes_history
+        .lock()
+        .expect("vdes history mutex poisoned");
+    history.push_back((Instant::now(), msg));
+    prune_vdes_history(&mut history);
 }
 
 fn prune_cw_history(history: &mut VecDeque<(Instant, CwEvent)>) {
@@ -147,6 +167,22 @@ pub fn snapshot_ais_history(context: &FrontendRuntimeContext) -> Vec<AisMessage>
         .collect()
 }
 
+pub fn snapshot_vdes_history(context: &FrontendRuntimeContext) -> Vec<VdesMessage> {
+    let mut history = context
+        .vdes_history
+        .lock()
+        .expect("vdes history mutex poisoned");
+    prune_vdes_history(&mut history);
+    history
+        .iter()
+        .map(|(ts, msg)| {
+            let mut msg = msg.clone();
+            msg.ts_ms = Some(timestamp_ms_for_elapsed(ts.elapsed()));
+            msg
+        })
+        .collect()
+}
+
 pub fn snapshot_cw_history(context: &FrontendRuntimeContext) -> Vec<CwEvent> {
     let mut history = context
         .cw_history
@@ -187,6 +223,14 @@ pub fn clear_ais_history(context: &FrontendRuntimeContext) {
         .ais_history
         .lock()
         .expect("ais history mutex poisoned");
+    history.clear();
+}
+
+pub fn clear_vdes_history(context: &FrontendRuntimeContext) {
+    let mut history = context
+        .vdes_history
+        .lock()
+        .expect("vdes history mutex poisoned");
     history.clear();
 }
 
@@ -249,6 +293,7 @@ pub fn start_decode_history_collector(context: Arc<FrontendRuntimeContext>) {
             match rx.recv().await {
                 Ok(msg) => match msg {
                     DecodedMessage::Ais(msg) => record_ais(&context, msg),
+                    DecodedMessage::Vdes(msg) => record_vdes(&context, msg),
                     DecodedMessage::Aprs(pkt) => record_aprs(&context, pkt),
                     DecodedMessage::Cw(evt) => record_cw(&context, evt),
                     DecodedMessage::Ft8(msg) => record_ft8(&context, msg),

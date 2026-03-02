@@ -57,7 +57,7 @@ impl SoapySdrRig {
     fn default_bandwidth_for_mode(mode: &RigMode) -> u32 {
         match mode {
             RigMode::LSB | RigMode::USB | RigMode::DIG => 3_000,
-            RigMode::PKT | RigMode::AIS => 25_000,
+            RigMode::PKT | RigMode::AIS | RigMode::VDES => 25_000,
             RigMode::CW | RigMode::CWR => 500,
             RigMode::AM => 9_000,
             RigMode::FM => 12_500,
@@ -192,6 +192,7 @@ impl SoapySdrRig {
                     RigMode::WFM,
                     RigMode::FM,
                     RigMode::AIS,
+                    RigMode::VDES,
                     RigMode::DIG,
                     RigMode::PKT,
                 ],
@@ -352,7 +353,7 @@ impl RigCat for SoapySdrRig {
             let half_span_hz = i128::from(self.pipeline.sdr_sample_rate) / 2;
             let current_center_hz = i128::from(self.center_hz);
             let target_lo_hz = i128::from(freq.hz);
-            let target_hi_hz = if self.mode == RigMode::AIS {
+            let target_hi_hz = if matches!(self.mode, RigMode::AIS | RigMode::VDES) {
                 i128::from(freq.hz) + i128::from(AIS_CHANNEL_SPACING_HZ)
             } else {
                 i128::from(freq.hz)

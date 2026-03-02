@@ -14,6 +14,15 @@ const AIS_CHANNEL_SPACING_HZ = 50_000;
 let aisFilterText = "";
 let aisMessageHistory = [];
 
+function isAisLikeMode() {
+  const mode = (document.getElementById("mode")?.value || "").toUpperCase();
+  return mode === "AIS" || mode === "VDES";
+}
+
+function currentAisLikeModeLabel() {
+  return (document.getElementById("mode")?.value || "").toUpperCase() === "VDES" ? "VDES" : "AIS";
+}
+
 function formatAisMhz(freqHz) {
   return `${(freqHz / 1_000_000).toFixed(3)} MHz`;
 }
@@ -30,16 +39,17 @@ function currentAisChannelPlan() {
 
 function aisChannelInfo(channel) {
   const plan = currentAisChannelPlan();
+  const modeLabel = currentAisLikeModeLabel();
   const ch = String(channel || "").trim().toUpperCase();
   if (ch === "B") {
     return {
-      label: "AIS-B",
+      label: `${modeLabel}-B`,
       badgeClass: "ais-badge ais-badge-channel-b",
       freqText: formatAisMhz(plan.bHz),
     };
   }
   return {
-    label: "AIS-A",
+    label: `${modeLabel}-A`,
     badgeClass: "ais-badge ais-badge-channel-a",
     freqText: formatAisMhz(plan.aHz),
   };
@@ -217,7 +227,8 @@ function updateAisBar() {
   if (!aisBarOverlay) return;
   updateAisSummary();
 
-  const isAis = (document.getElementById("mode")?.value || "").toUpperCase() === "AIS";
+  const isAis = isAisLikeMode();
+  const modeLabel = currentAisLikeModeLabel();
   const cutoffMs = Date.now() - AIS_BAR_WINDOW_MS;
   const recent = aisMessageHistory.filter((msg) => msg._tsMs >= cutoffMs);
   const messages = aisLatestByVessel(recent).slice(0, 8);
@@ -227,7 +238,7 @@ function updateAisBar() {
     return;
   }
 
-  let html = '<div class="aprs-bar-header"><span class="aprs-bar-title"><span class="aprs-bar-title-word">AIS</span><span class="aprs-bar-title-word">Live</span></span><span class="aprs-bar-clear-wrap"><span class="aprs-bar-clear" role="button" tabindex="0" onclick="window.clearAisBar()" onkeydown="if(event.key===\'Enter\'||event.key===\' \'){event.preventDefault();window.clearAisBar();}" aria-label="Clear AIS overlay">Clear</span></span><span class="aprs-bar-window">Last 15 minutes</span></div>';
+  let html = `<div class="aprs-bar-header"><span class="aprs-bar-title"><span class="aprs-bar-title-word">${modeLabel}</span><span class="aprs-bar-title-word">Live</span></span><span class="aprs-bar-clear-wrap"><span class="aprs-bar-clear" role="button" tabindex="0" onclick="window.clearAisBar()" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();window.clearAisBar();}" aria-label="Clear ${modeLabel} overlay">Clear</span></span><span class="aprs-bar-window">Last 15 minutes</span></div>`;
   for (const msg of messages) {
     const ts = msg._ts ? `<span class="aprs-bar-time">${msg._ts}</span>` : "";
     const pin = msg.lat != null && msg.lon != null
@@ -294,10 +305,10 @@ function addAisMessage(msg) {
 if (aisClearBtn) {
   aisClearBtn.addEventListener("click", async () => {
     try {
-      await postPath("/clear_ais_decode");
+      await postPath(currentAisLikeModeLabel() === "VDES" ? "/clear_vdes_decode" : "/clear_ais_decode");
       window.resetAisHistoryView();
     } catch (e) {
-      console.error("AIS clear failed", e);
+      console.error("AIS/VDES clear failed", e);
     }
   });
 }
@@ -310,6 +321,24 @@ if (aisFilterInput) {
 }
 
 window.onServerAis = function(msg) {
+  if (aisStatus) aisStatus.textContent = "Receiving";
+  addAisMessage({
+    channel: msg.channel,
+    message_type: msg.message_type,
+    mmsi: msg.mmsi,
+    lat: msg.lat,
+    lon: msg.lon,
+    sog_knots: msg.sog_knots,
+    cog_deg: msg.cog_deg,
+    heading_deg: msg.heading_deg,
+    vessel_name: msg.vessel_name,
+    callsign: msg.callsign,
+    destination: msg.destination,
+    ts_ms: msg.ts_ms,
+  });
+};
+
+window.onServerVdes = function(msg) {
   if (aisStatus) aisStatus.textContent = "Receiving";
   addAisMessage({
     channel: msg.channel,

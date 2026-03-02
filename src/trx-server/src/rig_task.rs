@@ -773,7 +773,7 @@ fn map_signal_strength(mode: &RigMode, raw: u8) -> i32 {
     // FT-817 returns 0-15 for signal strength
     // Map to approximate dBm / S-units
     match mode {
-        RigMode::FM | RigMode::WFM | RigMode::AIS => -120 + (raw as i32 * 6),
+        RigMode::FM | RigMode::WFM | RigMode::AIS | RigMode::VDES => -120 + (raw as i32 * 6),
         _ => -127 + (raw as i32 * 6),
     }
 }

@@ -20,12 +20,15 @@ use trx_aprs::AprsDecoder;
 use trx_core::audio::{
     read_audio_msg, write_audio_msg, AudioStreamInfo, AUDIO_MSG_AIS_DECODE,
     AUDIO_MSG_APRS_DECODE, AUDIO_MSG_CW_DECODE, AUDIO_MSG_FT8_DECODE, AUDIO_MSG_RX_FRAME,
-    AUDIO_MSG_STREAM_INFO, AUDIO_MSG_TX_FRAME, AUDIO_MSG_WSPR_DECODE,
+    AUDIO_MSG_STREAM_INFO, AUDIO_MSG_TX_FRAME, AUDIO_MSG_VDES_DECODE, AUDIO_MSG_WSPR_DECODE,
 };
-use trx_core::decode::{AisMessage, AprsPacket, DecodedMessage, Ft8Message, WsprMessage};
+use trx_core::decode::{
+    AisMessage, AprsPacket, DecodedMessage, Ft8Message, VdesMessage, WsprMessage,
+};
 use trx_core::rig::state::{RigMode, RigState};
 use trx_cw::CwDecoder;
 use trx_ft8::Ft8Decoder;
+use trx_vdes::VdesDecoder;
 use trx_wspr::WsprDecoder;
 
 use crate::config::AudioConfig;
@@ -33,6 +36,7 @@ use trx_decode_log::DecoderLoggers;
 
 const APRS_HISTORY_RETENTION: Duration = Duration::from_secs(24 * 60 * 60);
 const AIS_HISTORY_RETENTION: Duration = Duration::from_secs(24 * 60 * 60);
+const VDES_HISTORY_RETENTION: Duration = Duration::from_secs(24 * 60 * 60);
 const FT8_HISTORY_RETENTION: Duration = Duration::from_secs(24 * 60 * 60);
 const WSPR_HISTORY_RETENTION: Duration = Duration::from_secs(24 * 60 * 60);
 const FT8_SAMPLE_RATE: u32 = 12_000;
@@ -127,6 +131,7 @@ fn classify_stream_error(err: &str) -> &'static str {
 /// `Arc<DecoderHistories>` into every decoder task and into the audio listener.
 pub struct DecoderHistories {
     ais: Mutex<VecDeque<(Instant, AisMessage)>>,
+    vdes: Mutex<VecDeque<(Instant, VdesMessage)>>,
     aprs: Mutex<VecDeque<(Instant, AprsPacket)>>,
     ft8: Mutex<VecDeque<(Instant, Ft8Message)>>,
     wspr: Mutex<VecDeque<(Instant, WsprMessage)>>,
@@ -136,6 +141,7 @@ impl DecoderHistories {
     pub fn new() -> Arc<Self> {
         Arc::new(Self {
             ais: Mutex::new(VecDeque::new()),
+            vdes: Mutex::new(VecDeque::new()),
             aprs: Mutex::new(VecDeque::new()),
             ft8: Mutex::new(VecDeque::new()),
             wspr: Mutex::new(VecDeque::new()),
@@ -164,6 +170,31 @@ impl DecoderHistories {
     pub fn snapshot_ais_history(&self) -> Vec<AisMessage> {
         let mut h = self.ais.lock().expect("ais history mutex poisoned");
         Self::prune_ais(&mut h);
+        h.iter().map(|(_, msg)| msg.clone()).collect()
+    }
+
+    // --- VDES ---
+
+    fn prune_vdes(history: &mut VecDeque<(Instant, VdesMessage)>) {
+        let cutoff = Instant::now() - VDES_HISTORY_RETENTION;
+        while let Some((ts, _)) = history.front() {
+            if *ts < cutoff {
+                history.pop_front();
+            } else {
+                break;
+            }
+        }
+    }
+
+    pub fn record_vdes_message(&self, msg: VdesMessage) {
+        let mut h = self.vdes.lock().expect("vdes history mutex poisoned");
+        h.push_back((Instant::now(), msg));
+        Self::prune_vdes(&mut h);
+    }
+
+    pub fn snapshot_vdes_history(&self) -> Vec<VdesMessage> {
+        let mut h = self.vdes.lock().expect("vdes history mutex poisoned");
+        Self::prune_vdes(&mut h);
         h.iter().map(|(_, msg)| msg.clone()).collect()
     }
 
@@ -944,6 +975,91 @@ pub async fn run_ais_decoder(
     }
 }
 
+/// Run the VDES decoder task. Only processes PCM when rig mode is VDES.
+pub async fn run_vdes_decoder(
+    sample_rate: u32,
+    channels: u16,
+    mut pcm_a_rx: broadcast::Receiver<Vec<f32>>,
+    mut pcm_b_rx: broadcast::Receiver<Vec<f32>>,
+    mut state_rx: watch::Receiver<RigState>,
+    decode_tx: broadcast::Sender<DecodedMessage>,
+    histories: Arc<DecoderHistories>,
+) {
+    info!("VDES decoder started ({}Hz, {} ch)", sample_rate, channels);
+    let mut decoder_a = VdesDecoder::new(sample_rate);
+    let mut decoder_b = VdesDecoder::new(sample_rate);
+    let mut was_active = false;
+    let mut active = matches!(state_rx.borrow().status.mode, RigMode::VDES);
+
+    loop {
+        if !active {
+            match state_rx.changed().await {
+                Ok(()) => {
+                    let state = state_rx.borrow();
+                    active = matches!(state.status.mode, RigMode::VDES);
+                    if active {
+                        pcm_a_rx = pcm_a_rx.resubscribe();
+                        pcm_b_rx = pcm_b_rx.resubscribe();
+                    }
+                }
+                Err(_) => break,
+            }
+            continue;
+        }
+
+        tokio::select! {
+            recv = pcm_a_rx.recv() => {
+                match recv {
+                    Ok(frame) => {
+                        was_active = true;
+                        for msg in decoder_a.process_samples(&downmix_if_needed(frame, channels), "A") {
+                            histories.record_vdes_message(msg.clone());
+                            let _ = decode_tx.send(DecodedMessage::Vdes(msg));
+                        }
+                    }
+                    Err(broadcast::error::RecvError::Lagged(n)) => {
+                        warn!("VDES decoder A: dropped {} PCM frames", n);
+                    }
+                    Err(broadcast::error::RecvError::Closed) => break,
+                }
+            }
+            recv = pcm_b_rx.recv() => {
+                match recv {
+                    Ok(frame) => {
+                        was_active = true;
+                        for msg in decoder_b.process_samples(&downmix_if_needed(frame, channels), "B") {
+                            histories.record_vdes_message(msg.clone());
+                            let _ = decode_tx.send(DecodedMessage::Vdes(msg));
+                        }
+                    }
+                    Err(broadcast::error::RecvError::Lagged(n)) => {
+                        warn!("VDES decoder B: dropped {} PCM frames", n);
+                    }
+                    Err(broadcast::error::RecvError::Closed) => break,
+                }
+            }
+            changed = state_rx.changed() => {
+                match changed {
+                    Ok(()) => {
+                        let state = state_rx.borrow();
+                        active = matches!(state.status.mode, RigMode::VDES);
+                        if !active && was_active {
+                            decoder_a.reset();
+                            decoder_b.reset();
+                            was_active = false;
+                        }
+                        if active {
+                            pcm_a_rx = pcm_a_rx.resubscribe();
+                            pcm_b_rx = pcm_b_rx.resubscribe();
+                        }
+                    }
+                    Err(_) => break,
+                }
+            }
+        }
+    }
+}
+
 /// Run the CW decoder task. Only processes PCM when rig mode is CW or CWR.
 pub async fn run_cw_decoder(
     sample_rate: u32,
@@ -1468,6 +1584,14 @@ async fn handle_audio_client(
             write_audio_msg(&mut writer, msg_type, &json).await?;
         }
     }
+    let history = histories.snapshot_vdes_history();
+    for msg in history {
+        let msg = DecodedMessage::Vdes(msg);
+        let msg_type = AUDIO_MSG_VDES_DECODE;
+        if let Ok(json) = serde_json::to_vec(&msg) {
+            write_audio_msg(&mut writer, msg_type, &json).await?;
+        }
+    }
     // Send APRS history to newly connected client.
     let history = histories.snapshot_aprs_history();
     for pkt in history {
@@ -1522,6 +1646,7 @@ async fn handle_audio_client(
                         Ok(msg) => {
                             let msg_type = match &msg {
                                 DecodedMessage::Ais(_) => AUDIO_MSG_AIS_DECODE,
+                                DecodedMessage::Vdes(_) => AUDIO_MSG_VDES_DECODE,
                                 DecodedMessage::Aprs(_) => AUDIO_MSG_APRS_DECODE,
                                 DecodedMessage::Cw(_) => AUDIO_MSG_CW_DECODE,
                                 DecodedMessage::Ft8(_) => AUDIO_MSG_FT8_DECODE,

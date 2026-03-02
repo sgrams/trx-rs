@@ -16,6 +16,7 @@ pub const AUDIO_MSG_CW_DECODE: u8 = 0x04;
 pub const AUDIO_MSG_FT8_DECODE: u8 = 0x05;
 pub const AUDIO_MSG_WSPR_DECODE: u8 = 0x06;
 pub const AUDIO_MSG_AIS_DECODE: u8 = 0x07;
+pub const AUDIO_MSG_VDES_DECODE: u8 = 0x08;
 
 /// Maximum payload size (1 MB) to reject bogus frames early.
 const MAX_PAYLOAD_SIZE: u32 = 1_048_576;
