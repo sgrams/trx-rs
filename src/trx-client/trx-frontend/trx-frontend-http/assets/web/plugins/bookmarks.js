@@ -239,10 +239,23 @@ async function bmDelete(id) {
 
 async function bmApply(bm) {
   try {
-    await postPath("/set_freq?hz=" + bm.freq_hz);
     await postPath("/set_mode?mode=" + encodeURIComponent(bm.mode));
+    if (typeof modeEl !== "undefined" && modeEl) {
+      modeEl.value = String(bm.mode || "").toUpperCase();
+    }
     if (bm.bandwidth_hz) {
       await postPath("/set_bandwidth?hz=" + bm.bandwidth_hz);
+      if (typeof currentBandwidthHz !== "undefined") {
+        currentBandwidthHz = bm.bandwidth_hz;
+      }
+      if (typeof syncBandwidthInput === "function") {
+        syncBandwidthInput(bm.bandwidth_hz);
+      }
+    }
+    if (typeof setRigFrequency === "function") {
+      await setRigFrequency(bm.freq_hz);
+    } else {
+      await postPath("/set_freq?hz=" + bm.freq_hz);
     }
     // Toggle decoders when in DIG mode
     if (bm.mode === "DIG" && Array.isArray(bm.decoders)) {
