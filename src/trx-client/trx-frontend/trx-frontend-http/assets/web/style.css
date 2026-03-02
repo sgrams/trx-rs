@@ -1393,13 +1393,12 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   .spectrum-edge-shift {
     width: 1.5rem;
     height: 2.35rem;
-    font-size: 1.1rem;
   }
   .spectrum-edge-shift-left {
     left: -1.8rem;
   }
   .spectrum-edge-shift-right {
-    right: 0.28rem;
+    right: -1.8rem;
   }
   #spectrum-bw-row,
   #spectrum-level-row {
@@ -1523,12 +1522,25 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-size: 1.25rem;
+  font-size: 0;
   line-height: 1;
   cursor: pointer;
   box-shadow: 0 8px 18px rgba(0,0,0,0.18);
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
+}
+.spectrum-edge-shift::before {
+  content: "";
+  width: 0;
+  height: 0;
+  border-top: 0.38rem solid transparent;
+  border-bottom: 0.38rem solid transparent;
+}
+.spectrum-edge-shift-left::before {
+  border-right: 0.52rem solid currentColor;
+}
+.spectrum-edge-shift-right::before {
+  border-left: 0.52rem solid currentColor;
 }
 .spectrum-edge-shift:hover {
   background: color-mix(in srgb, var(--btn-bg) 84%, transparent);
@@ -1542,7 +1554,7 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   left: -2.05rem;
 }
 .spectrum-edge-shift-right {
-  right: 0.45rem;
+  right: -2.05rem;
 }
 #spectrum-freq-axis {
   position: relative;
