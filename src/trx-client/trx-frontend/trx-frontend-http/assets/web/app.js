@@ -1167,7 +1167,8 @@ function effectiveSpectrumCoverageSpanHz(sampleRateHz) {
   const sampleRate = Number(sampleRateHz);
   if (!Number.isFinite(sampleRate) || sampleRate <= 0) return 0;
   // Keep a guard band at the spectrum edges; practical usable span is slightly smaller.
-  return sampleRate * 1.0;
+  const ratio = Number.isFinite(spectrumUsableSpanRatio) ? spectrumUsableSpanRatio : 1.0;
+  return sampleRate * Math.max(0.01, Math.min(1.0, ratio));
 }
 
 function requiredCenterFreqForCoverageInFrame(data, freqHz, bandwidthHz = coverageGuardBandwidthHz()) {
@@ -1180,7 +1181,7 @@ function requiredCenterFreqForCoverageInFrame(data, freqHz, bandwidthHz = covera
 
   const safeBw = Math.max(0, Number.isFinite(bandwidthHz) ? bandwidthHz : 0);
   const halfSpanHz = sampleRate / 2;
-  const requiredHalfSpanHz = safeBw / 2 + SPECTRUM_COVERAGE_MARGIN_HZ;
+  const requiredHalfSpanHz = safeBw / 2 + spectrumCoverageMarginHz;
   if (requiredHalfSpanHz * 2 >= sampleRate) {
     return alignFreqToRigStep(Math.round(freqHz));
   }
@@ -1258,7 +1259,7 @@ function sweetSpotCandidateForFrame(data, freqHz, bandwidthHz) {
 
   const halfUsableSpanHz = usableSpanHz / 2;
   const fullHalfSpanHz = sampleRate / 2;
-  const guardHalfSpanHz = bandwidthHz / 2 + SPECTRUM_COVERAGE_MARGIN_HZ;
+  const guardHalfSpanHz = bandwidthHz / 2 + spectrumCoverageMarginHz;
   if (guardHalfSpanHz * 2 >= usableSpanHz) {
     const fallbackCenterHz = requiredCenterFreqForCoverageInFrame(data, freqHz, bandwidthHz);
     if (!Number.isFinite(fallbackCenterHz)) return null;
@@ -1346,7 +1347,7 @@ function sweetSpotProbeCenters(data, freqHz, bandwidthHz) {
   if (!Number.isFinite(usableSpanHz) || usableSpanHz <= 0) return [];
 
   const halfUsableSpanHz = usableSpanHz / 2;
-  const guardHalfSpanHz = bandwidthHz / 2 + SPECTRUM_COVERAGE_MARGIN_HZ;
+  const guardHalfSpanHz = bandwidthHz / 2 + spectrumCoverageMarginHz;
   if (guardHalfSpanHz * 2 >= usableSpanHz) {
     return [alignFreqToRigStep(Math.round(freqHz))];
   }
@@ -1446,7 +1447,7 @@ function tunedFrequencyForCenterCoverage(centerHz, freqHz = lastFreqHz, bandwidt
 
   const safeBw = Math.max(0, Number.isFinite(bandwidthHz) ? bandwidthHz : 0);
   const halfSpanHz = sampleRate / 2;
-  const requiredHalfSpanHz = safeBw / 2 + SPECTRUM_COVERAGE_MARGIN_HZ;
+  const requiredHalfSpanHz = safeBw / 2 + spectrumCoverageMarginHz;
   if (requiredHalfSpanHz * 2 >= sampleRate) {
     return alignFreqToRigStep(Math.round(centerHz));
   }
@@ -1650,7 +1651,8 @@ let serverActiveRigId = null;
 let serverLat = null;
 let serverLon = null;
 let initialMapZoom = 10;
-const SPECTRUM_COVERAGE_MARGIN_HZ = 50_000;
+let spectrumCoverageMarginHz = 50_000;
+let spectrumUsableSpanRatio = 1.0;
 
 function updateFooterBuildInfo() {
   const serverEl = document.getElementById("footer-server-build");
@@ -1701,6 +1703,18 @@ function render(update) {
   if (update.server_longitude != null) serverLon = update.server_longitude;
   if (typeof update.initial_map_zoom === "number" && Number.isFinite(update.initial_map_zoom)) {
     initialMapZoom = Math.max(1, Math.round(update.initial_map_zoom));
+  }
+  if (
+    typeof update.spectrum_coverage_margin_hz === "number" &&
+    Number.isFinite(update.spectrum_coverage_margin_hz)
+  ) {
+    spectrumCoverageMarginHz = Math.max(1, Math.round(update.spectrum_coverage_margin_hz));
+  }
+  if (
+    typeof update.spectrum_usable_span_ratio === "number" &&
+    Number.isFinite(update.spectrum_usable_span_ratio)
+  ) {
+    spectrumUsableSpanRatio = Math.max(0.01, Math.min(1.0, Number(update.spectrum_usable_span_ratio)));
   }
   updateTitle();
   updateFooterBuildInfo();

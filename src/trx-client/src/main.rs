@@ -179,6 +179,10 @@ async fn async_init() -> DynResult<AppState> {
     };
     frontend_runtime.http_show_sdr_gain_control = cfg.frontends.http.show_sdr_gain_control;
     frontend_runtime.http_initial_map_zoom = cfg.frontends.http.initial_map_zoom;
+    frontend_runtime.http_spectrum_coverage_margin_hz =
+        cfg.frontends.http.spectrum_coverage_margin_hz;
+    frontend_runtime.http_spectrum_usable_span_ratio =
+        cfg.frontends.http.spectrum_usable_span_ratio;
 
     // Resolve remote URL: CLI > config [remote] section > error
     let remote_url = cli

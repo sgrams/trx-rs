@@ -170,6 +170,10 @@ pub struct FrontendRuntimeContext {
     pub http_show_sdr_gain_control: bool,
     /// Initial APRS map zoom level when receiver coordinates are available.
     pub http_initial_map_zoom: u8,
+    /// Spectrum center-retune guard margin on each side of the tuned passband.
+    pub http_spectrum_coverage_margin_hz: u32,
+    /// Fraction of the sampled spectrum span treated as usable by the web UI.
+    pub http_spectrum_usable_span_ratio: f32,
     /// Currently selected remote rig id (used by remote client routing).
     pub remote_active_rig_id: Arc<Mutex<Option<String>>>,
     /// Cached remote rig list from GetRigs polling.
@@ -209,6 +213,8 @@ impl FrontendRuntimeContext {
             http_auth_cookie_same_site: "Lax".to_string(),
             http_show_sdr_gain_control: true,
             http_initial_map_zoom: 10,
+            http_spectrum_coverage_margin_hz: 50_000,
+            http_spectrum_usable_span_ratio: 1.0,
             remote_active_rig_id: Arc::new(Mutex::new(None)),
             remote_rigs: Arc::new(Mutex::new(Vec::new())),
             owner_callsign: None,

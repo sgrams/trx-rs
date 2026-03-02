@@ -41,6 +41,8 @@ struct FrontendMeta {
     owner_website_name: Option<String>,
     show_sdr_gain_control: bool,
     initial_map_zoom: u8,
+    spectrum_coverage_margin_hz: u32,
+    spectrum_usable_span_ratio: f32,
 }
 
 #[get("/status")]
@@ -99,6 +101,14 @@ fn inject_frontend_meta(json: &str, meta: FrontendMeta) -> String {
         "initial_map_zoom".to_string(),
         serde_json::json!(meta.initial_map_zoom),
     );
+    map.insert(
+        "spectrum_coverage_margin_hz".to_string(),
+        serde_json::json!(meta.spectrum_coverage_margin_hz),
+    );
+    map.insert(
+        "spectrum_usable_span_ratio".to_string(),
+        serde_json::json!(meta.spectrum_usable_span_ratio),
+    );
 
     serde_json::to_string(&value).unwrap_or_else(|_| json.to_string())
 }
@@ -118,6 +128,8 @@ fn frontend_meta_from_context(
         owner_website_name: owner_website_name_from_context(context),
         show_sdr_gain_control: show_sdr_gain_control_from_context(context),
         initial_map_zoom: initial_map_zoom_from_context(context),
+        spectrum_coverage_margin_hz: spectrum_coverage_margin_hz_from_context(context),
+        spectrum_usable_span_ratio: spectrum_usable_span_ratio_from_context(context),
     }
 }
 
@@ -165,6 +177,14 @@ fn show_sdr_gain_control_from_context(context: &FrontendRuntimeContext) -> bool 
 
 fn initial_map_zoom_from_context(context: &FrontendRuntimeContext) -> u8 {
     context.http_initial_map_zoom
+}
+
+fn spectrum_coverage_margin_hz_from_context(context: &FrontendRuntimeContext) -> u32 {
+    context.http_spectrum_coverage_margin_hz
+}
+
+fn spectrum_usable_span_ratio_from_context(context: &FrontendRuntimeContext) -> f32 {
+    context.http_spectrum_usable_span_ratio
 }
 
 #[get("/events")]

@@ -238,6 +238,10 @@ pub struct HttpFrontendConfig {
     pub default_rig_id: Option<String>,
     /// Initial zoom level for the APRS map when receiver coordinates are known.
     pub initial_map_zoom: u8,
+    /// Spectrum center-retune guard margin on each side of the selected bandwidth.
+    pub spectrum_coverage_margin_hz: u32,
+    /// Fraction of the sampled spectrum span treated as usable for center-retune logic.
+    pub spectrum_usable_span_ratio: f32,
     /// Whether to expose the RF Gain control in the web UI.
     pub show_sdr_gain_control: bool,
     /// Authentication settings
@@ -252,6 +256,8 @@ impl Default for HttpFrontendConfig {
             port: 8080,
             default_rig_id: None,
             initial_map_zoom: 10,
+            spectrum_coverage_margin_hz: 50_000,
+            spectrum_usable_span_ratio: 1.0,
             show_sdr_gain_control: true,
             auth: HttpAuthConfig::default(),
         }
@@ -364,6 +370,17 @@ impl ClientConfig {
         if self.frontends.http.initial_map_zoom == 0 {
             return Err("[frontends.http].initial_map_zoom must be > 0".to_string());
         }
+        if self.frontends.http.spectrum_coverage_margin_hz == 0 {
+            return Err("[frontends.http].spectrum_coverage_margin_hz must be > 0".to_string());
+        }
+        if !(self.frontends.http.spectrum_usable_span_ratio > 0.0
+            && self.frontends.http.spectrum_usable_span_ratio <= 1.0)
+        {
+            return Err(
+                "[frontends.http].spectrum_usable_span_ratio must be > 0.0 and <= 1.0"
+                    .to_string(),
+            );
+        }
         if self.frontends.rigctl.enabled && self.frontends.rigctl.rig_ports.is_empty() {
             return Err(
                 "[frontends.rigctl].rig_ports must contain at least one rig when enabled"
@@ -459,6 +476,8 @@ impl ClientConfig {
                     port: 8080,
                     default_rig_id: Some("hf".to_string()),
                     initial_map_zoom: 10,
+                    spectrum_coverage_margin_hz: 50_000,
+                    spectrum_usable_span_ratio: 1.0,
                     show_sdr_gain_control: true,
                     auth: HttpAuthConfig {
                         enabled: false,
@@ -559,6 +578,8 @@ mod tests {
         assert!(!config.frontends.rigctl.enabled);
         assert_eq!(config.frontends.http.port, 8080);
         assert_eq!(config.frontends.http.initial_map_zoom, 10);
+        assert_eq!(config.frontends.http.spectrum_coverage_margin_hz, 50_000);
+        assert_eq!(config.frontends.http.spectrum_usable_span_ratio, 1.0);
         assert_eq!(config.frontends.rigctl.port, 4532);
         assert!(config.frontends.http_json.enabled);
         assert_eq!(config.frontends.http_json.port, 0);
@@ -593,6 +614,8 @@ enabled = true
 listen = "127.0.0.1"
 port = 8080
 initial_map_zoom = 12
+spectrum_coverage_margin_hz = 40000
+spectrum_usable_span_ratio = 0.9
 
 "#;
 
@@ -606,6 +629,8 @@ initial_map_zoom = 12
         assert_eq!(config.remote.poll_interval_ms, 500);
         assert!(config.frontends.http.enabled);
         assert_eq!(config.frontends.http.initial_map_zoom, 12);
+        assert_eq!(config.frontends.http.spectrum_coverage_margin_hz, 40_000);
+        assert_eq!(config.frontends.http.spectrum_usable_span_ratio, 0.9);
     }
 
     #[test]
