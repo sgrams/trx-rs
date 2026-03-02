@@ -84,6 +84,16 @@ pub struct VdesMessage {
     pub callsign: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub destination: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub link_id: Option<u8>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sync_score: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sync_errors: Option<u8>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub phase_rotation: Option<u8>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fec_state: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -95,7 +95,7 @@ impl BookmarkStore {
     /// Returns true if any bookmark (other than `exclude_id`) has `freq_hz`.
     pub fn freq_taken(&self, freq_hz: u64, exclude_id: Option<&str>) -> bool {
         self.list().into_iter().any(|bm| {
-            bm.freq_hz == freq_hz && exclude_id.map_or(true, |ex| bm.id != ex)
+            bm.freq_hz == freq_hz && exclude_id.is_none_or(|ex| bm.id != ex)
         })
     }
 }

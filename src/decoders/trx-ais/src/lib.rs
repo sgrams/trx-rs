@@ -344,7 +344,7 @@ fn decode_coord(raw: i32, invalid_abs: f64) -> Option<f64> {
 }
 
 fn decode_sixbit_text(bits: &[u8], start: usize, len: usize) -> Option<String> {
-    if start.checked_add(len)? > bits.len() || len % 6 != 0 {
+    if start.checked_add(len)? > bits.len() || !len.is_multiple_of(6) {
         return None;
     }
 

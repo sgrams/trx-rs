@@ -12,9 +12,9 @@
 //! - coarse symbol timing at the 76.8 ksps VDE-TER baseline
 //! - `pi/4`-QPSK quadrant slicing
 //!
-//! It intentionally stops at a raw burst payload stage. Full M.2092-1 FEC,
-//! interleaving, link-layer parsing, and application payload decoding are not
-//! implemented yet.
+//! It performs a first hard-decision FEC stage for the `TER-MCS-1.100` 1/2-rate
+//! path after deinterleaving, but full M.2092-1 turbo/puncture handling,
+//! link-layer parsing, and application payload decoding are not implemented yet.
 
 use num_complex::Complex;
 use trx_core::decode::VdesMessage;
@@ -28,6 +28,11 @@ const TER_MCS1_100_RAMP_SYMBOLS: usize = 32;
 const TER_MCS1_100_SYNC_SYMBOLS: usize = 27;
 const TER_MCS1_100_LINK_ID_SYMBOLS: usize = 16;
 const TER_MCS1_100_PAYLOAD_SYMBOLS: usize = 1_877;
+const TER_MCS1_100_FEC_INPUT_SYMBOLS: usize = 1_872;
+const TER_MCS1_100_FEC_OUTPUT_BITS: usize = 1_872;
+const TER_MCS1_100_FEC_TAIL_BITS: usize = 10;
+const TER_MCS1_100_SYNC_BITS: &[u8; TER_MCS1_100_SYNC_SYMBOLS] = b"111111001101010000011001010";
+const PI4_QPSK_DIBITS: [u8; 4] = [0b00, 0b01, 0b11, 0b10];
 
 #[derive(Debug, Clone)]
 pub struct VdesDecoder {
@@ -115,12 +120,27 @@ impl VdesDecoder {
         let link_id = decode_link_id_from_symbols(&framed.symbols);
         let payload_symbols = framed.payload_symbols();
         let deinterleaved = deinterleave_100khz_frame(payload_symbols);
-        let raw_bytes = pack_dibits_msb(&deinterleaved);
+        let (fec_input_symbols, fec_tail_symbols) = split_fec_frame(&deinterleaved);
+        let coded_bits = dibits_to_bits(fec_input_symbols);
+        let decoded_bits = viterbi_decode_rate_half(&coded_bits);
+        if decoded_bits.is_empty() {
+            return None;
+        }
+        let raw_bytes = pack_bits_msb(&decoded_bits);
         let rms = burst_rms(&samples);
         let mode = classify_vdes_burst(framed.symbols.len());
         let link_text = link_id
             .map(|value| format!("LID {}", value))
             .unwrap_or_else(|| "LID ?".to_string());
+        let tail_zero_bits = dibits_to_bits(fec_tail_symbols)
+            .into_iter()
+            .filter(|bit| *bit == 0)
+            .count();
+        let fec_state = format!(
+            "Hard-decision 1/2 Viterbi, tail {} / {} zero bits",
+            tail_zero_bits,
+            TER_MCS1_100_FEC_TAIL_BITS
+        );
 
         Some(VdesMessage {
             ts_ms: None,
@@ -129,7 +149,7 @@ impl VdesDecoder {
             repeat: 0,
             mmsi: 0,
             crc_ok: false,
-            bit_len: deinterleaved.len() * 2,
+            bit_len: decoded_bits.len(),
             raw_bytes,
             lat: None,
             lon: None,
@@ -140,9 +160,16 @@ impl VdesDecoder {
             vessel_name: Some(format!("VDES Frame {} sym", framed.symbols.len())),
             callsign: Some(format!("{} {} @{}", mode.label, link_text, framed.start_offset)),
             destination: Some(format!(
-                "TER-MCS-1.100 RMS {:.2} sync {:.2} turbo FEC pending",
-                rms, framed.preamble_score
+                "TER-MCS-1.100 RMS {:.2} sync {:.0}% rot {}",
+                rms,
+                framed.sync_score * 100.0,
+                framed.phase_rotation
             )),
+            link_id,
+            sync_score: Some(framed.sync_score),
+            sync_errors: Some(framed.sync_errors),
+            phase_rotation: Some(framed.phase_rotation),
+            fec_state: Some(fec_state),
         })
     }
 
@@ -183,7 +210,9 @@ struct BurstMode<'a> {
 
 struct FrameSlice {
     start_offset: usize,
-    preamble_score: f32,
+    sync_score: f32,
+    sync_errors: u8,
+    phase_rotation: u8,
     symbols: Vec<u8>,
 }
 
@@ -213,26 +242,33 @@ fn classify_vdes_burst(symbols: usize) -> BurstMode<'static> {
 }
 
 fn extract_candidate_frame(symbols: &[u8]) -> Option<FrameSlice> {
-    if symbols.len() < TER_MCS1_100_SYNC_SYMBOLS {
+    if symbols.len() < TER_MCS1_100_RAMP_SYMBOLS + TER_MCS1_100_SYNC_SYMBOLS {
         return None;
     }
 
     let search_limit = symbols
         .len()
-        .saturating_sub(TER_MCS1_100_BURST_SYMBOLS.saturating_sub(TER_MCS1_100_SYNC_SYMBOLS));
+        .saturating_sub(TER_MCS1_100_RAMP_SYMBOLS + TER_MCS1_100_SYNC_SYMBOLS);
     let mut best_offset = 0usize;
-    let mut best_score = f32::MIN;
+    let mut best_score = 0.0_f32;
+    let mut best_errors = u8::MAX;
+    let mut best_rotation = 0u8;
 
     for offset in 0..=search_limit {
         let sync_offset = offset + TER_MCS1_100_RAMP_SYMBOLS;
-        if sync_offset >= symbols.len() {
-            break;
+        let sync_window = &symbols[sync_offset..sync_offset + TER_MCS1_100_SYNC_SYMBOLS];
+        for rotation in 0..4 {
+            let (score, errors) = syncword_score(sync_window, rotation);
+            if score > best_score || (score == best_score && errors < best_errors) {
+                best_score = score;
+                best_errors = errors;
+                best_rotation = rotation;
+                best_offset = offset;
+            }
         }
-        let score = preamble_like_score(&symbols[sync_offset..]);
-        if score > best_score {
-            best_score = score;
-            best_offset = offset;
-        }
+    }
+    if best_score <= 0.5 {
+        return None;
     }
 
     let available = symbols.len().saturating_sub(best_offset);
@@ -240,34 +276,29 @@ fn extract_candidate_frame(symbols: &[u8]) -> Option<FrameSlice> {
         return None;
     }
     let take = available.min(TER_MCS1_100_BURST_SYMBOLS);
+    let rotated = rotate_pi4_stream(&symbols[best_offset..best_offset + take], best_rotation);
     Some(FrameSlice {
         start_offset: best_offset,
-        preamble_score: best_score,
-        symbols: symbols[best_offset..best_offset + take].to_vec(),
+        sync_score: best_score,
+        sync_errors: best_errors,
+        phase_rotation: best_rotation,
+        symbols: rotated,
     })
 }
 
-fn preamble_like_score(symbols: &[u8]) -> f32 {
+fn syncword_score(symbols: &[u8], rotation: u8) -> (f32, u8) {
     if symbols.len() < TER_MCS1_100_SYNC_SYMBOLS {
-        return f32::MIN;
+        return (0.0, u8::MAX);
     }
-    let window = &symbols[..TER_MCS1_100_SYNC_SYMBOLS];
-    let mut score = 0.0_f32;
-    for (idx, &dibit) in window.iter().enumerate() {
-        if dibit == 0b00 || dibit == 0b11 {
-            score += 1.0;
-        } else {
-            score -= 1.5;
-        }
-        if idx > 0 {
-            if dibit != window[idx - 1] {
-                score += 0.4;
-            } else {
-                score -= 0.2;
-            }
-        }
+    let mut bit_errors = 0u8;
+    for (idx, &dibit) in symbols.iter().take(TER_MCS1_100_SYNC_SYMBOLS).enumerate() {
+        let rotated = rotate_pi4_dibit(dibit, rotation);
+        let expected = sync_reference_dibit(idx);
+        bit_errors = bit_errors.saturating_add(dibit_bit_distance(rotated, expected) as u8);
     }
-    score / TER_MCS1_100_SYNC_SYMBOLS as f32
+    let max_bits = (TER_MCS1_100_SYNC_SYMBOLS * 2) as f32;
+    let score = 1.0 - (bit_errors as f32 / max_bits);
+    (score.clamp(0.0, 1.0), bit_errors)
 }
 
 fn deinterleave_100khz_frame(symbols: &[u8]) -> Vec<u8> {
@@ -290,6 +321,84 @@ fn deinterleave_100khz_frame(symbols: &[u8]) -> Vec<u8> {
     out
 }
 
+fn split_fec_frame(symbols: &[u8]) -> (&[u8], &[u8]) {
+    let input_end = symbols.len().min(TER_MCS1_100_FEC_INPUT_SYMBOLS);
+    let tail_end = symbols
+        .len()
+        .min(TER_MCS1_100_FEC_INPUT_SYMBOLS + (TER_MCS1_100_FEC_TAIL_BITS / 2));
+    (&symbols[..input_end], &symbols[input_end..tail_end])
+}
+
+fn viterbi_decode_rate_half(coded_bits: &[u8]) -> Vec<u8> {
+    if coded_bits.len() < 2 {
+        return Vec::new();
+    }
+
+    let pair_count = coded_bits.len() / 2;
+    let mut metrics = [u16::MAX; 64];
+    let mut next_metrics = [u16::MAX; 64];
+    let mut predecessors = vec![[0u8; 64]; pair_count];
+    metrics[0] = 0;
+
+    for step in 0..pair_count {
+        next_metrics.fill(u16::MAX);
+        let recv0 = coded_bits[step * 2] & 1;
+        let recv1 = coded_bits[step * 2 + 1] & 1;
+
+        for (state, &metric) in metrics.iter().enumerate() {
+            if metric == u16::MAX {
+                continue;
+            }
+            for input_bit in 0..=1u8 {
+                let reg = ((state as u8) << 1) | input_bit;
+                let out = conv_encode_output(reg);
+                let branch = dibit_bit_distance(out, (recv0 << 1) | recv1) as u16;
+                let next_state = (reg & 0x3f) as usize;
+                let candidate = metric.saturating_add(branch);
+                if candidate < next_metrics[next_state] {
+                    next_metrics[next_state] = candidate;
+                    predecessors[step][next_state] = state as u8;
+                }
+            }
+        }
+
+        metrics = next_metrics;
+    }
+
+    let mut best_state = 0usize;
+    let mut best_metric = u16::MAX;
+    for (state, &metric) in metrics.iter().enumerate() {
+        if metric < best_metric {
+            best_metric = metric;
+            best_state = state;
+        }
+    }
+    if best_metric == u16::MAX {
+        return Vec::new();
+    }
+
+    let mut decoded = vec![0u8; pair_count];
+    let mut state = best_state;
+    for step in (0..pair_count).rev() {
+        let bit = (state as u8) & 1;
+        decoded[step] = bit;
+        state = predecessors[step][state] as usize;
+    }
+
+    decoded.truncate(TER_MCS1_100_FEC_OUTPUT_BITS.min(decoded.len()));
+    decoded
+}
+
+fn conv_encode_output(reg: u8) -> u8 {
+    let g0 = parity6_7(reg & 0o171);
+    let g1 = parity6_7(reg & 0o133);
+    (g0 << 1) | g1
+}
+
+fn parity6_7(value: u8) -> u8 {
+    (value.count_ones() as u8) & 1
+}
+
 fn decode_link_id_from_symbols(symbols: &[u8]) -> Option<u8> {
     let start = TER_MCS1_100_RAMP_SYMBOLS + TER_MCS1_100_SYNC_SYMBOLS;
     let end = start + TER_MCS1_100_LINK_ID_SYMBOLS;
@@ -303,11 +412,52 @@ fn decode_link_id_from_symbols(symbols: &[u8]) -> Option<u8> {
     decode_rm_1_5(&bits)
 }
 
+fn sync_reference_dibit(idx: usize) -> u8 {
+    match TER_MCS1_100_SYNC_BITS[idx] {
+        b'1' => 0b11,
+        _ => 0b00,
+    }
+}
+
+fn rotate_pi4_dibit(dibit: u8, rotation: u8) -> u8 {
+    let pos = PI4_QPSK_DIBITS
+        .iter()
+        .position(|candidate| *candidate == (dibit & 0b11))
+        .unwrap_or(0);
+    PI4_QPSK_DIBITS[(pos + rotation as usize) % PI4_QPSK_DIBITS.len()]
+}
+
+fn rotate_pi4_stream(symbols: &[u8], rotation: u8) -> Vec<u8> {
+    if rotation == 0 {
+        return symbols.to_vec();
+    }
+    symbols
+        .iter()
+        .map(|dibit| rotate_pi4_dibit(*dibit, rotation))
+        .collect()
+}
+
+fn dibit_bit_distance(a: u8, b: u8) -> usize {
+    ((a ^ b) & 0b11).count_ones() as usize
+}
+
 fn dibits_to_bits(symbols: &[u8]) -> Vec<u8> {
     let mut out = Vec::with_capacity(symbols.len() * 2);
     for &dibit in symbols {
         out.push((dibit >> 1) & 1);
         out.push(dibit & 1);
+    }
+    out
+}
+
+fn bits_to_dibits(bits: &[u8]) -> Vec<u8> {
+    let mut out = Vec::with_capacity(bits.len().div_ceil(2));
+    let mut idx = 0usize;
+    while idx < bits.len() {
+        let hi = bits[idx] & 1;
+        let lo = bits.get(idx + 1).copied().unwrap_or(0) & 1;
+        out.push((hi << 1) | lo);
+        idx += 2;
     }
     out
 }
@@ -345,13 +495,13 @@ fn rm_1_5_codeword(value: u8) -> [u8; 32] {
     let a4 = (value >> 1) & 1;
     let a5 = value & 1;
     let mut out = [0u8; 32];
-    for idx in 0..32 {
+    for (idx, slot) in out.iter_mut().enumerate() {
         let x1 = ((idx >> 4) & 1) as u8;
         let x2 = ((idx >> 3) & 1) as u8;
         let x3 = ((idx >> 2) & 1) as u8;
         let x4 = ((idx >> 1) & 1) as u8;
         let x5 = (idx & 1) as u8;
-        out[idx] = a0 ^ (a1 & x1) ^ (a2 & x2) ^ (a3 & x3) ^ (a4 & x4) ^ (a5 & x5);
+        *slot = a0 ^ (a1 & x1) ^ (a2 & x2) ^ (a3 & x3) ^ (a4 & x4) ^ (a5 & x5);
     }
     out
 }
@@ -417,7 +567,7 @@ fn quantize_pi4_qpsk(sample: Complex<f32>) -> u8 {
 }
 
 fn pack_dibits_msb(symbols: &[u8]) -> Vec<u8> {
-    let mut out = Vec::with_capacity((symbols.len() + 3) / 4);
+    let mut out = Vec::with_capacity(symbols.len().div_ceil(4));
     let mut byte = 0u8;
     let mut count = 0usize;
 
@@ -425,17 +575,22 @@ fn pack_dibits_msb(symbols: &[u8]) -> Vec<u8> {
         let shift = 6usize.saturating_sub((count % 4) * 2);
         byte |= (dibit & 0b11) << shift;
         count += 1;
-        if count % 4 == 0 {
+        if count.is_multiple_of(4) {
             out.push(byte);
             byte = 0;
         }
     }
 
-    if count % 4 != 0 {
+    if !count.is_multiple_of(4) {
         out.push(byte);
     }
 
     out
+}
+
+fn pack_bits_msb(bits: &[u8]) -> Vec<u8> {
+    let dibits = bits_to_dibits(bits);
+    pack_dibits_msb(&dibits)
 }
 
 #[cfg(test)]
@@ -487,9 +642,39 @@ mod tests {
     }
 
     #[test]
+    fn syncword_score_prefers_correct_rotation() {
+        let sync: Vec<u8> = (0..TER_MCS1_100_SYNC_SYMBOLS)
+            .map(sync_reference_dibit)
+            .collect();
+        let rotated = rotate_pi4_stream(&sync, 2);
+        let (wrong_score, wrong_errors) = syncword_score(&rotated, 0);
+        let (right_score, right_errors) = syncword_score(&rotated, 2);
+        assert!(right_score > wrong_score);
+        assert!(right_errors < wrong_errors);
+        assert_eq!(right_errors, 0);
+    }
+
+    #[test]
     fn deinterleave_preserves_length() {
         let symbols: Vec<u8> = (0..127).map(|idx| (idx % 4) as u8).collect();
         let out = deinterleave_100khz_frame(&symbols);
         assert_eq!(out.len(), symbols.len());
+    }
+
+    #[test]
+    fn viterbi_decodes_k7_rate_half_stream() {
+        let input: Vec<u8> = (0..TER_MCS1_100_FEC_OUTPUT_BITS)
+            .map(|idx| ((idx * 5 + 1) % 2) as u8)
+            .collect();
+        let mut state = 0u8;
+        let mut coded = Vec::with_capacity(input.len() * 2);
+        for &bit in &input {
+            state = ((state << 1) | bit) & 0x7f;
+            let dibit = conv_encode_output(state);
+            coded.push((dibit >> 1) & 1);
+            coded.push(dibit & 1);
+        }
+        let decoded = viterbi_decode_rate_half(&coded);
+        assert_eq!(decoded, input);
     }
 }

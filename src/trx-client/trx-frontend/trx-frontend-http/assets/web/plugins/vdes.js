@@ -79,8 +79,23 @@ function renderVdesRow(msg) {
   const title = msg.vessel_name || "VDES Burst";
   const label = msg.callsign || "VDES";
   const info = msg.destination || "";
+  const linkText = Number.isFinite(msg.link_id) ? `LID ${msg.link_id}` : "";
+  const syncText = Number.isFinite(msg.sync_score) ? `Sync ${(Number(msg.sync_score) * 100).toFixed(0)}%` : "";
+  const phaseText = Number.isFinite(msg.phase_rotation) ? `R${Number(msg.phase_rotation)}` : "";
+  const fecText = msg.fec_state || "";
   const rawHex = vdesHexPreview(msg.raw_bytes);
-  row.dataset.filterText = [title, label, info, rawHex, msg.message_type, msg.bit_len]
+  row.dataset.filterText = [
+    title,
+    label,
+    info,
+    linkText,
+    syncText,
+    phaseText,
+    fecText,
+    rawHex,
+    msg.message_type,
+    msg.bit_len,
+  ]
     .filter(Boolean)
     .join(" ")
     .toUpperCase();
@@ -89,12 +104,16 @@ function renderVdesRow(msg) {
       `<span class="vdes-time">${ts}</span>` +
       `<span class="vdes-call">${escapeMapHtml(title)}</span>` +
       `<span class="vdes-badge">${escapeMapHtml(label)}</span>` +
+      (linkText ? `<span class="vdes-badge">${escapeMapHtml(linkText)}</span>` : "") +
+      (syncText ? `<span class="vdes-badge">${escapeMapHtml(syncText)}</span>` : "") +
+      (phaseText ? `<span class="vdes-badge">${escapeMapHtml(phaseText)}</span>` : "") +
       `<span class="vdes-badge">T${escapeMapHtml(String(msg.message_type ?? "--"))}</span>` +
     `</div>` +
     `<div class="vdes-row-meta">` +
       `<span>${escapeMapHtml(currentVdesCenterText())}</span>` +
       `<span>${escapeMapHtml(`${msg.bit_len || 0} bits`)}</span>` +
       (info ? `<span>${escapeMapHtml(info)}</span>` : "") +
+      (fecText ? `<span>${escapeMapHtml(fecText)}</span>` : "") +
       `<span>${escapeMapHtml(vdesAgeText(msg._tsMs))}</span>` +
     `</div>` +
     `<div class="vdes-row-detail">` +
@@ -123,6 +142,9 @@ function updateVdesBar() {
     const title = escapeMapHtml(msg.vessel_name || "Burst");
     const detail = [
       `${msg.bit_len || 0} bits`,
+      Number.isFinite(msg.link_id) ? `LID ${Number(msg.link_id)}` : null,
+      Number.isFinite(msg.sync_score) ? `sync ${(Number(msg.sync_score) * 100).toFixed(0)}%` : null,
+      Number.isFinite(msg.phase_rotation) ? `rot ${Number(msg.phase_rotation)}` : null,
       msg.destination ? escapeMapHtml(msg.destination) : null,
       escapeMapHtml(vdesAgeText(msg._tsMs)),
     ]
@@ -193,6 +215,11 @@ window.onServerVdes = function(msg) {
     vessel_name: msg.vessel_name,
     callsign: msg.callsign,
     destination: msg.destination,
+    link_id: msg.link_id,
+    sync_score: msg.sync_score,
+    sync_errors: msg.sync_errors,
+    phase_rotation: msg.phase_rotation,
+    fec_state: msg.fec_state,
     ts_ms: msg.ts_ms,
   });
 };

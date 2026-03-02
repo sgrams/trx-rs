@@ -432,12 +432,9 @@ fn spawn_rig_audio_stack(
     latitude: Option<f64>,
     longitude: Option<f64>,
     listen_override: Option<IpAddr>,
-    sdr_pcm_rx: Option<broadcast::Receiver<Vec<f32>>>,
-    sdr_ais_pcm_rx: Option<(
-        broadcast::Receiver<Vec<f32>>,
-        broadcast::Receiver<Vec<f32>>,
-    )>,
-    sdr_vdes_iq_rx: Option<broadcast::Receiver<Vec<num_complex::Complex<f32>>>>,
+    sdr_pcm_rx: OptionalSdrPcmRx,
+    sdr_ais_pcm_rx: OptionalSdrAisPcmRx,
+    sdr_vdes_iq_rx: OptionalSdrVdesIqRx,
 ) -> Vec<JoinHandle<()>> {
     let mut handles: Vec<JoinHandle<()>> = Vec::new();
 
