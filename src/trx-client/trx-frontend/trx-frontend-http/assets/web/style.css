@@ -1396,7 +1396,7 @@ button:focus-visible, input:focus-visible, select:focus-visible {
     font-size: 1.1rem;
   }
   .spectrum-edge-shift-left {
-    left: -0.7rem;
+    left: -1.8rem;
   }
   .spectrum-edge-shift-right {
     right: 0.28rem;
@@ -1539,7 +1539,7 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   transform: translateY(-50%) scale(0.97);
 }
 .spectrum-edge-shift-left {
-  left: -0.9rem;
+  left: -2.05rem;
 }
 .spectrum-edge-shift-right {
   right: 0.45rem;
