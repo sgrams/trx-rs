@@ -443,9 +443,37 @@
       </div>
       <div id="subtab-aprs" class="sub-tab-panel" style="display:none;">
         <div class="aprs-controls">
+          <button id="aprs-pause-btn" type="button">Pause</button>
           <button id="aprs-clear-btn" type="button">Clear</button>
           <input id="aprs-filter" class="ft8-filter" type="text" placeholder="Filter (e.g. SP2, beacon)" />
           <small id="aprs-status" style="color:var(--text-muted);">Waiting for server decode</small>
+        </div>
+        <div class="aprs-summary">
+          <div class="aprs-summary-card">
+            <span class="aprs-summary-label">Frames</span>
+            <span id="aprs-total-count" class="aprs-summary-value">0 total</span>
+          </div>
+          <div class="aprs-summary-card">
+            <span class="aprs-summary-label">Visible</span>
+            <span id="aprs-visible-count" class="aprs-summary-value">0 shown</span>
+          </div>
+          <div class="aprs-summary-card">
+            <span class="aprs-summary-label">Latest</span>
+            <span id="aprs-latest-seen" class="aprs-summary-value">No packets yet</span>
+          </div>
+        </div>
+        <div class="aprs-filter-row">
+          <button id="aprs-type-all" class="aprs-chip active" type="button">All</button>
+          <button id="aprs-type-position" class="aprs-chip" type="button">Position</button>
+          <button id="aprs-type-message" class="aprs-chip" type="button">Message</button>
+          <button id="aprs-type-weather" class="aprs-chip" type="button">Weather</button>
+          <button id="aprs-type-telemetry" class="aprs-chip" type="button">Telemetry</button>
+          <button id="aprs-type-other" class="aprs-chip" type="button">Other</button>
+        </div>
+        <div class="aprs-filter-row">
+          <button id="aprs-only-pos-btn" class="aprs-chip" type="button">Only Pos</button>
+          <button id="aprs-hide-crc-btn" class="aprs-chip" type="button">Hide CRC</button>
+          <button id="aprs-collapse-dup-btn" class="aprs-chip" type="button">Collapse Dupes</button>
         </div>
         <div id="aprs-packets"></div>
       </div>
