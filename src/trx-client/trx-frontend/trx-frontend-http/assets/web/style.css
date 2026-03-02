@@ -1642,6 +1642,7 @@ button:focus-visible, input:focus-visible, select:focus-visible {
 #spectrum-bw-row {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 0.4rem;
 }
 #spectrum-bw-label {
@@ -1664,7 +1665,8 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   height: 1.5rem;
 }
 #spectrum-bw-set-btn,
-#spectrum-bw-auto-btn {
+#spectrum-bw-auto-btn,
+#spectrum-bw-sweet-btn {
   height: 1.5rem;
   min-height: 0;
   padding: 0 8px;
@@ -1765,6 +1767,7 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   }
   #spectrum-bw-set-btn,
   #spectrum-bw-auto-btn,
+  #spectrum-bw-sweet-btn,
   #spectrum-auto-btn {
     height: 2.2rem;
     min-height: 0;

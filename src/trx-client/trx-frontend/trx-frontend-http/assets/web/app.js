@@ -1167,13 +1167,13 @@ function effectiveSpectrumCoverageSpanHz(sampleRateHz) {
   const sampleRate = Number(sampleRateHz);
   if (!Number.isFinite(sampleRate) || sampleRate <= 0) return 0;
   // Keep a guard band at the spectrum edges; practical usable span is slightly smaller.
-  return sampleRate * 0.82;
+  return sampleRate * 0.92;
 }
 
-function requiredCenterFreqForCoverage(freqHz, bandwidthHz = coverageGuardBandwidthHz()) {
-  if (!lastSpectrumData || !Number.isFinite(freqHz)) return null;
-  const sampleRate = effectiveSpectrumCoverageSpanHz(lastSpectrumData.sample_rate);
-  const currentCenterHz = Number(lastSpectrumData.center_hz);
+function requiredCenterFreqForCoverageInFrame(data, freqHz, bandwidthHz = coverageGuardBandwidthHz()) {
+  if (!data || !Number.isFinite(freqHz)) return null;
+  const sampleRate = effectiveSpectrumCoverageSpanHz(data.sample_rate);
+  const currentCenterHz = Number(data.center_hz);
   if (!Number.isFinite(sampleRate) || sampleRate <= 0 || !Number.isFinite(currentCenterHz)) {
     return null;
   }
@@ -1203,6 +1203,10 @@ function requiredCenterFreqForCoverage(freqHz, bandwidthHz = coverageGuardBandwi
   return alignFreqToRigStep(Math.round(nextCenterHz));
 }
 
+function requiredCenterFreqForCoverage(freqHz, bandwidthHz = coverageGuardBandwidthHz()) {
+  return requiredCenterFreqForCoverageInFrame(lastSpectrumData, freqHz, bandwidthHz);
+}
+
 async function ensureTunedBandwidthCoverage(freqHz, bandwidthHz = coverageGuardBandwidthHz()) {
   const nextCenterHz = requiredCenterFreqForCoverage(freqHz, bandwidthHz);
   if (!Number.isFinite(nextCenterHz)) return;
@@ -1218,6 +1222,221 @@ async function setRigFrequency(freqHz) {
   await postPath(`/set_freq?hz=${targetHz}`);
   applyLocalTunedFrequency(targetHz);
   await ensureTunedBandwidthCoverage(targetHz);
+}
+
+function spectrumBinIndexForHz(data, hz) {
+  if (!data || !Array.isArray(data.bins) || data.bins.length < 2 || !Number.isFinite(hz)) {
+    return null;
+  }
+  const maxIdx = data.bins.length - 1;
+  const fullLoHz = Number(data.center_hz) - Number(data.sample_rate) / 2;
+  const idx = Math.round(((hz - fullLoHz) / Number(data.sample_rate)) * maxIdx);
+  return Math.max(0, Math.min(maxIdx, idx));
+}
+
+function spectrumPowerScore(db) {
+  const value = Number.isFinite(db) ? db : -160;
+  const clamped = Math.max(-160, Math.min(40, value));
+  return 10 ** (clamped / 10);
+}
+
+function sweetSpotCandidateForFrame(data, freqHz, bandwidthHz) {
+  if (!data || !Array.isArray(data.bins) || data.bins.length < 16) {
+    return null;
+  }
+  if (!Number.isFinite(freqHz) || !Number.isFinite(bandwidthHz) || bandwidthHz <= 0) {
+    return null;
+  }
+
+  const bins = data.bins;
+  const sampleRate = Number(data.sample_rate);
+  const usableSpanHz = effectiveSpectrumCoverageSpanHz(sampleRate);
+  const currentCenterHz = Number(data.center_hz);
+  if (!Number.isFinite(sampleRate) || sampleRate <= 0 || !Number.isFinite(usableSpanHz) || usableSpanHz <= 0 || !Number.isFinite(currentCenterHz)) {
+    return null;
+  }
+
+  const halfUsableSpanHz = usableSpanHz / 2;
+  const fullHalfSpanHz = sampleRate / 2;
+  const guardHalfSpanHz = bandwidthHz / 2 + SPECTRUM_COVERAGE_MARGIN_HZ;
+  if (guardHalfSpanHz * 2 >= usableSpanHz) {
+    const fallbackCenterHz = requiredCenterFreqForCoverageInFrame(data, freqHz, bandwidthHz);
+    if (!Number.isFinite(fallbackCenterHz)) return null;
+    return { centerHz: fallbackCenterHz, score: Number.POSITIVE_INFINITY };
+  }
+
+  const evalHalfSpanHz = Math.max(0, (sampleRate - usableSpanHz) / 2);
+  const evalMinCenterHz = currentCenterHz - evalHalfSpanHz;
+  const evalMaxCenterHz = currentCenterHz + evalHalfSpanHz;
+  const fitMinCenterHz = freqHz + guardHalfSpanHz - halfUsableSpanHz;
+  const fitMaxCenterHz = freqHz - guardHalfSpanHz + halfUsableSpanHz;
+  const minCenterHz = Math.max(evalMinCenterHz, fitMinCenterHz);
+  const maxCenterHz = Math.min(evalMaxCenterHz, fitMaxCenterHz);
+  if (!Number.isFinite(minCenterHz) || !Number.isFinite(maxCenterHz) || minCenterHz > maxCenterHz) {
+    const fallbackCenterHz = requiredCenterFreqForCoverageInFrame(data, freqHz, bandwidthHz);
+    if (!Number.isFinite(fallbackCenterHz)) return null;
+    return { centerHz: fallbackCenterHz, score: Number.POSITIVE_INFINITY };
+  }
+
+  const maxIdx = bins.length - 1;
+  const usableBins = Math.max(4, Math.min(maxIdx, Math.round((usableSpanHz / sampleRate) * maxIdx)));
+  const fullLoHz = currentCenterHz - fullHalfSpanHz;
+  const startMinIdx = Math.max(
+    0,
+    Math.min(maxIdx - usableBins, Math.round((((minCenterHz - halfUsableSpanHz) - fullLoHz) / sampleRate) * maxIdx)),
+  );
+  const startMaxIdx = Math.max(
+    startMinIdx,
+    Math.min(maxIdx - usableBins, Math.round((((maxCenterHz - halfUsableSpanHz) - fullLoHz) / sampleRate) * maxIdx)),
+  );
+
+  let bestStartIdx = null;
+  let bestScore = Number.POSITIVE_INFINITY;
+  const signalLoHz = freqHz - bandwidthHz / 2;
+  const signalHiHz = freqHz + bandwidthHz / 2;
+
+  for (let startIdx = startMinIdx; startIdx <= startMaxIdx; startIdx += 1) {
+    const endIdx = Math.min(maxIdx, startIdx + usableBins);
+    const windowLoHz = fullLoHz + (startIdx / maxIdx) * sampleRate;
+    const candidateCenterHz = windowLoHz + halfUsableSpanHz;
+    const signalLoIdx = Math.max(startIdx, Math.min(endIdx, spectrumBinIndexForHz(data, signalLoHz)));
+    const signalHiIdx = Math.max(startIdx, Math.min(endIdx, spectrumBinIndexForHz(data, signalHiHz)));
+
+    let score = 0;
+    for (let i = startIdx; i <= endIdx; i++) {
+      if (i >= signalLoIdx && i <= signalHiIdx) continue;
+      score += spectrumPowerScore(bins[i]);
+    }
+
+    // Keep a very small bias toward a reasonably centered passband when scores are close.
+    const centeredOffsetHz = Math.abs(candidateCenterHz - freqHz);
+    score *= 1 + centeredOffsetHz / Math.max(usableSpanHz, 1) * 0.08;
+    if (score < bestScore) {
+      bestScore = score;
+      bestStartIdx = startIdx;
+    }
+  }
+
+  if (!Number.isFinite(bestScore) || bestStartIdx == null) {
+    const fallbackCenterHz = requiredCenterFreqForCoverageInFrame(data, freqHz, bandwidthHz);
+    if (!Number.isFinite(fallbackCenterHz)) return null;
+    return { centerHz: fallbackCenterHz, score: Number.POSITIVE_INFINITY };
+  }
+
+  const bestLoHz = fullLoHz + (bestStartIdx / maxIdx) * sampleRate;
+  const bestCenterHz = bestLoHz + halfUsableSpanHz;
+  return {
+    centerHz: alignFreqToRigStep(Math.round(bestCenterHz)),
+    score: bestScore,
+  };
+}
+
+function sweetSpotCenterFreq(freqHz = lastFreqHz, bandwidthHz = currentBandwidthHz) {
+  const candidate = sweetSpotCandidateForFrame(lastSpectrumData, freqHz, bandwidthHz);
+  return candidate && Number.isFinite(candidate.centerHz) ? candidate.centerHz : null;
+}
+
+function sweetSpotProbeCenters(data, freqHz, bandwidthHz) {
+  if (!data || !Number.isFinite(freqHz) || !Number.isFinite(bandwidthHz) || bandwidthHz <= 0) {
+    return [];
+  }
+
+  const sampleRate = Number(data.sample_rate);
+  const usableSpanHz = effectiveSpectrumCoverageSpanHz(sampleRate);
+  if (!Number.isFinite(usableSpanHz) || usableSpanHz <= 0) return [];
+
+  const halfUsableSpanHz = usableSpanHz / 2;
+  const guardHalfSpanHz = bandwidthHz / 2 + SPECTRUM_COVERAGE_MARGIN_HZ;
+  if (guardHalfSpanHz * 2 >= usableSpanHz) {
+    return [alignFreqToRigStep(Math.round(freqHz))];
+  }
+
+  const minCenterHz = freqHz + guardHalfSpanHz - halfUsableSpanHz;
+  const maxCenterHz = freqHz - guardHalfSpanHz + halfUsableSpanHz;
+  if (!Number.isFinite(minCenterHz) || !Number.isFinite(maxCenterHz) || minCenterHz > maxCenterHz) {
+    return [];
+  }
+
+  const points = 5;
+  const centers = [];
+  for (let i = 0; i < points; i++) {
+    const frac = points === 1 ? 0.5 : i / (points - 1);
+    const centerHz = alignFreqToRigStep(Math.round(minCenterHz + (maxCenterHz - minCenterHz) * frac));
+    if (!centers.some((value) => Math.abs(value - centerHz) < 1)) {
+      centers.push(centerHz);
+    }
+  }
+
+  const currentCenterHz = alignFreqToRigStep(Math.round(Number(data.center_hz)));
+  if (Number.isFinite(currentCenterHz) && !centers.some((value) => Math.abs(value - currentCenterHz) < 1)) {
+    centers.push(currentCenterHz);
+    centers.sort((a, b) => a - b);
+  }
+  return centers;
+}
+
+async function applySweetSpotCenter() {
+  if (sweetSpotScanInFlight) {
+    showHint("Sweet-spot already scanning", 900);
+    return;
+  }
+  if (!Number.isFinite(lastFreqHz) || !lastSpectrumData) return;
+
+  const originalCenterHz = Number(lastSpectrumData.center_hz);
+  const probeCentersHz = sweetSpotProbeCenters(lastSpectrumData, lastFreqHz, currentBandwidthHz);
+  let bestCandidate = sweetSpotCandidateForFrame(lastSpectrumData, lastFreqHz, currentBandwidthHz);
+  if (!probeCentersHz.length && (!bestCandidate || !Number.isFinite(bestCandidate.centerHz))) {
+    showHint("Sweet-spot unavailable", 1100);
+    return;
+  }
+
+  sweetSpotScanInFlight = true;
+  try {
+    showHint("Scanning sweet spot...", 1400);
+
+    for (const probeCenterHz of probeCentersHz) {
+      if (!Number.isFinite(probeCenterHz)) continue;
+      let probeFrame = lastSpectrumData;
+      if (!probeFrame || Math.abs(Number(probeFrame.center_hz) - probeCenterHz) >= 1) {
+        await postPath(`/set_center_freq?hz=${probeCenterHz}`);
+        try {
+          probeFrame = await waitForSpectrumFrame(probeCenterHz, 1400);
+        } catch (_) {
+          continue;
+        }
+      }
+
+      const candidate = sweetSpotCandidateForFrame(probeFrame, lastFreqHz, currentBandwidthHz);
+      if (!candidate || !Number.isFinite(candidate.centerHz)) continue;
+      if (!bestCandidate || candidate.score < bestCandidate.score) {
+        bestCandidate = candidate;
+      }
+    }
+
+    const targetCenterHz = bestCandidate && Number.isFinite(bestCandidate.centerHz)
+      ? bestCandidate.centerHz
+      : sweetSpotCenterFreq(lastFreqHz, currentBandwidthHz);
+    if (!Number.isFinite(targetCenterHz)) {
+      if (Number.isFinite(originalCenterHz) && (!lastSpectrumData || Math.abs(Number(lastSpectrumData.center_hz) - originalCenterHz) >= 1)) {
+        await postPath(`/set_center_freq?hz=${alignFreqToRigStep(Math.round(originalCenterHz))}`);
+      }
+      showHint("Sweet-spot unavailable", 1100);
+      return;
+    }
+    if (!lastSpectrumData || Math.abs(targetCenterHz - Number(lastSpectrumData.center_hz)) >= 1) {
+      await postPath(`/set_center_freq?hz=${targetCenterHz}`);
+    }
+    if (centerFreqEl && !centerFreqDirty) {
+      centerFreqEl.value = formatFreqForStep(targetCenterHz, jogUnit);
+    }
+    if (Number.isFinite(originalCenterHz) && Math.abs(targetCenterHz - originalCenterHz) < 1) {
+      showHint("Already at sweet spot", 900);
+    } else {
+      showHint("Sweet-spot set", 1200);
+    }
+  } finally {
+    sweetSpotScanInFlight = false;
+  }
 }
 
 function tunedFrequencyForCenterCoverage(centerHz, freqHz = lastFreqHz, bandwidthHz = coverageGuardBandwidthHz()) {
@@ -2337,6 +2556,7 @@ let currentBandwidthHz = 3_000;
 const spectrumBwInput = document.getElementById("spectrum-bw-input");
 const spectrumBwSetBtn = document.getElementById("spectrum-bw-set-btn");
 const spectrumBwAutoBtn = document.getElementById("spectrum-bw-auto-btn");
+const spectrumBwSweetBtn = document.getElementById("spectrum-bw-sweet-btn");
 
 function formatBandwidthInputKhz(hz) {
   const khz = hz / 1000;
@@ -2471,6 +2691,9 @@ if (spectrumBwSetBtn) {
 }
 if (spectrumBwAutoBtn) {
   spectrumBwAutoBtn.addEventListener("click", () => { applyAutoBandwidth(); });
+}
+if (spectrumBwSweetBtn) {
+  spectrumBwSweetBtn.addEventListener("click", () => { applySweetSpotCenter().catch(() => {}); });
 }
 
 // --- Tab navigation ---
@@ -3731,6 +3954,8 @@ let spectrumDrawPending = false;
 let spectrumAxisKey = "";
 let lastSpectrumRenderData = null;
 let spectrumPeakHoldFrames = [];
+let pendingSpectrumFrameWaiters = [];
+let sweetSpotScanInFlight = false;
 
 // Zoom / pan state.  zoom >= 1; panFrac in [0,1] is the fraction of the full
 // bandwidth at the centre of the visible window.
@@ -3755,6 +3980,69 @@ function spectrumBgColor() {
 
 function clearSpectrumPeakHoldFrames() {
   spectrumPeakHoldFrames = [];
+}
+
+function settlePendingSpectrumFrameWaiters(frame) {
+  if (!pendingSpectrumFrameWaiters.length) return;
+  const remaining = [];
+  for (const waiter of pendingSpectrumFrameWaiters) {
+    if (!waiter) continue;
+    const targetCenterHz = Number(waiter.targetCenterHz);
+    if (
+      Number.isFinite(targetCenterHz) &&
+      (!frame || Math.abs(Number(frame.center_hz) - targetCenterHz) >= 2)
+    ) {
+      remaining.push(waiter);
+      continue;
+    }
+    if (waiter.timer) {
+      clearTimeout(waiter.timer);
+      waiter.timer = null;
+    }
+    if (typeof waiter.resolve === "function") {
+      waiter.resolve(frame);
+    }
+  }
+  pendingSpectrumFrameWaiters = remaining;
+}
+
+function rejectPendingSpectrumFrameWaiters(error) {
+  if (!pendingSpectrumFrameWaiters.length) return;
+  for (const waiter of pendingSpectrumFrameWaiters) {
+    if (!waiter) continue;
+    if (waiter.timer) {
+      clearTimeout(waiter.timer);
+      waiter.timer = null;
+    }
+    if (typeof waiter.reject === "function") {
+      waiter.reject(error || new Error("Spectrum unavailable"));
+    }
+  }
+  pendingSpectrumFrameWaiters = [];
+}
+
+function waitForSpectrumFrame(expectedCenterHz = null, timeoutMs = 1200) {
+  const targetCenterHz = Number(expectedCenterHz);
+  if (
+    lastSpectrumData &&
+    (!Number.isFinite(targetCenterHz) || Math.abs(Number(lastSpectrumData.center_hz) - targetCenterHz) < 2)
+  ) {
+    return Promise.resolve(lastSpectrumData);
+  }
+
+  return new Promise((resolve, reject) => {
+    const waiter = {
+      targetCenterHz,
+      resolve,
+      reject,
+      timer: null,
+    };
+    waiter.timer = setTimeout(() => {
+      pendingSpectrumFrameWaiters = pendingSpectrumFrameWaiters.filter((entry) => entry !== waiter);
+      reject(new Error("Timed out waiting for spectrum frame"));
+    }, Math.max(200, timeoutMs));
+    pendingSpectrumFrameWaiters.push(waiter);
+  });
 }
 
 function pruneSpectrumPeakHoldFrames(now = Date.now()) {
@@ -3975,6 +4263,7 @@ function startSpectrumStreaming() {
   spectrumSource = new EventSource("/spectrum");
   spectrumSource.onmessage = (evt) => {
     if (evt.data === "null") {
+      rejectPendingSpectrumFrameWaiters(new Error("Spectrum stream reset"));
       lastSpectrumData = null;
       lastSpectrumRenderData = null;
       clearSpectrumPeakHoldFrames();
@@ -3989,6 +4278,7 @@ function startSpectrumStreaming() {
     try {
       lastSpectrumData = JSON.parse(evt.data);
       lastSpectrumRenderData = buildSpectrumRenderData(lastSpectrumData);
+      settlePendingSpectrumFrameWaiters(lastSpectrumData);
       pushSpectrumPeakHoldFrame(lastSpectrumRenderData);
       pushOverviewWaterfallFrame(lastSpectrumData);
       refreshCenterFreqDisplay();
@@ -3999,6 +4289,7 @@ function startSpectrumStreaming() {
     } catch (_) {}
   };
   spectrumSource.onerror = () => {
+    rejectPendingSpectrumFrameWaiters(new Error("Spectrum stream disconnected"));
     if (spectrumSource) {
       spectrumSource.close();
       spectrumSource = null;
@@ -4019,6 +4310,7 @@ function stopSpectrumStreaming() {
   spectrumDrawPending = false;
   lastSpectrumData = null;
   lastSpectrumRenderData = null;
+  rejectPendingSpectrumFrameWaiters(new Error("Spectrum streaming stopped"));
   clearSpectrumPeakHoldFrames();
   overviewWaterfallRows = [];
   overviewWaterfallPushCount = 0;
