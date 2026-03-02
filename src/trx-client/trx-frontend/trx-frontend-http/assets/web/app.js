@@ -4854,14 +4854,63 @@ function bmCategoryColorMap() {
   return map;
 }
 
+function createBookmarkChip(bm, colorMap) {
+  const span = document.createElement("span");
+  const freqStr = typeof bmFmtFreq === "function"
+    ? bmFmtFreq(bm.freq_hz) : bm.freq_hz + "\u202fHz";
+  const esc = (s) => String(s)
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  span.className = "spectrum-bookmark-chip";
+  span.title = bm.name + " \u2014 " + freqStr + (bm.comment ? "\n" + bm.comment : "");
+  span.dataset.bmId = bm.id;
+  span.innerHTML =
+    "<svg class='bm-icon-svg' viewBox='0 0 8 12' width='8' height='12' aria-hidden='true'>" +
+    "<path d='M0,0 h8 v10 l-4,2 l-4,-2 Z'/>" +
+    "</svg>\u00a0" + esc(bm.name);
+  const col = colorMap[bm.category || ""];
+  span.style.setProperty("--bm-cat-bg", col);
+  span.style.setProperty("--bm-cat-fg", bmContrastFg(col));
+  span.addEventListener("click", () => {
+    if (typeof bmApply === "function") bmApply(bm);
+  });
+  return span;
+}
+
+function updateSideBookmarkStack(container, bookmarks, colorMap) {
+  if (!container) return;
+  container.innerHTML = "";
+  if (!Array.isArray(bookmarks) || bookmarks.length === 0) {
+    container.classList.remove("bm-side-visible");
+    return;
+  }
+
+  container.classList.add("bm-side-visible");
+  for (const bm of bookmarks) {
+    container.appendChild(createBookmarkChip(bm, colorMap));
+  }
+}
+
 function updateBookmarkAxis(range) {
   const axisEl = document.getElementById("spectrum-bookmark-axis");
+  const leftSideEl = document.getElementById("spectrum-bookmark-side-left");
+  const rightSideEl = document.getElementById("spectrum-bookmark-side-right");
   if (!axisEl) return;
 
   const _bmRef = typeof bmList !== "undefined" ? bmList : null;
-  const visBookmarks = Array.isArray(_bmRef)
-    ? _bmRef.filter((bm) => bm.freq_hz >= range.visLoHz && bm.freq_hz <= range.visHiHz)
-    : [];
+  const allBookmarks = Array.isArray(_bmRef) ? _bmRef : [];
+  const visBookmarks = allBookmarks.filter((bm) => bm.freq_hz >= range.visLoHz && bm.freq_hz <= range.visHiHz);
+  const leftBookmarks = allBookmarks
+    .filter((bm) => bm.freq_hz < range.visLoHz)
+    .sort((a, b) => b.freq_hz - a.freq_hz)
+    .slice(0, 3);
+  const rightBookmarks = allBookmarks
+    .filter((bm) => bm.freq_hz > range.visHiHz)
+    .sort((a, b) => a.freq_hz - b.freq_hz)
+    .slice(0, 3);
+  const colorMap = bmCategoryColorMap();
+
+  updateSideBookmarkStack(leftSideEl, leftBookmarks, colorMap);
+  updateSideBookmarkStack(rightSideEl, rightBookmarks, colorMap);
 
   const hasVisible = visBookmarks.length > 0;
   axisEl.classList.toggle("bm-axis-visible", hasVisible);
@@ -4877,26 +4926,8 @@ function updateBookmarkAxis(range) {
   if (axisEl.dataset.bmKey !== newKey) {
     axisEl.dataset.bmKey = newKey;
     axisEl.innerHTML = "";
-    const colorMap = bmCategoryColorMap();
-    const esc = (s) => String(s)
-      .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
     for (const bm of visBookmarks) {
-      const span = document.createElement("span");
-      const freqStr = typeof bmFmtFreq === "function"
-        ? bmFmtFreq(bm.freq_hz) : bm.freq_hz + "\u202fHz";
-      span.title = bm.name + " \u2014 " + freqStr + (bm.comment ? "\n" + bm.comment : "");
-      span.dataset.bmId = bm.id;
-      span.innerHTML =
-        "<svg class='bm-icon-svg' viewBox='0 0 8 12' width='8' height='12' aria-hidden='true'>" +
-        "<path d='M0,0 h8 v10 l-4,2 l-4,-2 Z'/>" +
-        "</svg>\u00a0" + esc(bm.name);
-      const col = colorMap[bm.category || ""];
-      span.style.setProperty("--bm-cat-bg", col);
-      span.style.setProperty("--bm-cat-fg", bmContrastFg(col));
-      span.addEventListener("click", () => {
-        if (typeof bmApply === "function") bmApply(bm);
-      });
-      axisEl.appendChild(span);
+      axisEl.appendChild(createBookmarkChip(bm, colorMap));
     }
   }
 

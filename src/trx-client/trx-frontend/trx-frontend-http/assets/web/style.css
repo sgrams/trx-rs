@@ -525,8 +525,10 @@ small { color: var(--text-muted); }
   position: relative;
   display: flex;
   flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
   gap: 0;
-  margin-bottom: 0.9rem;
+  margin-bottom: 0;
 }
 #signal-overlay-canvas {
   position: absolute;
@@ -912,7 +914,12 @@ small { color: var(--text-muted); }
 .meter-bar { flex: 1 1 auto; height: 12px; border-radius: 999px; background: var(--btn-bg); border: 1px solid var(--border-light); overflow: hidden; }
 .meter-fill { height: 100%; width: 0%; background: linear-gradient(90deg, var(--accent-green), var(--accent-yellow), var(--accent-red)); transition: width 150ms ease; }
 .meter-value { font-size: 0.95rem; color: var(--text-heading); min-width: 64px; text-align: right; }
-#content { display: flex; flex-direction: column; gap: 1.1rem; min-height: 0; overflow: visible; }
+#tab-main {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+#content { display: flex; flex: 1 1 auto; flex-direction: column; gap: 1.1rem; min-height: 0; overflow: visible; }
 .tab-panel { flex: 1 1 auto; min-height: 0; overflow: visible; }
 .tab-bar {
   display: flex;
@@ -1394,6 +1401,20 @@ button:focus-visible, input:focus-visible, select:focus-visible {
     width: 1.5rem;
     height: 2.35rem;
   }
+  .spectrum-bookmark-side {
+    width: 5.85rem;
+    gap: 0.22rem;
+  }
+  .spectrum-bookmark-side-left {
+    left: -7.85rem;
+  }
+  .spectrum-bookmark-side-right {
+    right: -7.85rem;
+  }
+  .spectrum-bookmark-side .spectrum-bookmark-chip {
+    font-size: 0.58rem;
+    padding: 2px 6px;
+  }
   .spectrum-edge-shift-left {
     left: -1.8rem;
   }
@@ -1493,16 +1514,26 @@ button:focus-visible, input:focus-visible, select:focus-visible {
 /* ── Spectrum display ─────────────────────────────────────────────────── */
 #spectrum-panel {
   margin-bottom: 0;
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 .spectrum-wrap {
   position: relative;
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
   width: 100%;
   user-select: none;
 }
 #spectrum-canvas {
   display: block;
   width: 100%;
-  height: var(--spectrum-plot-height);
+  flex: 1 1 auto;
+  min-height: var(--spectrum-plot-height);
+  height: auto;
   background: var(--spectrum-bg);
   border-radius: 6px 6px 0 0;
   cursor: crosshair;
@@ -1510,7 +1541,7 @@ button:focus-visible, input:focus-visible, select:focus-visible {
 }
 .spectrum-edge-shift {
   position: absolute;
-  top: calc(var(--spectrum-plot-height) / 2);
+  top: calc((100% - 18px) / 2);
   transform: translateY(-50%);
   z-index: 8;
   width: 1.7rem;
@@ -1589,7 +1620,7 @@ button:focus-visible, input:focus-visible, select:focus-visible {
 #spectrum-bookmark-axis.bm-axis-visible {
   height: 26px;
 }
-#spectrum-bookmark-axis span {
+.spectrum-bookmark-chip {
   position: absolute;
   transform: translate(-50%, -50%);
   top: 50%;
@@ -1610,8 +1641,36 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   align-items: center;
   gap: 4px;
 }
-#spectrum-bookmark-axis span:hover {
+.spectrum-bookmark-chip:hover {
   filter: brightness(1.15);
+}
+.spectrum-bookmark-side {
+  position: absolute;
+  top: calc((100% - 18px) / 2);
+  transform: translateY(-50%);
+  z-index: 7;
+  width: 7.25rem;
+  display: none;
+  flex-direction: column;
+  gap: 0.28rem;
+}
+.spectrum-bookmark-side.bm-side-visible {
+  display: flex;
+}
+.spectrum-bookmark-side-left {
+  left: -10.15rem;
+  align-items: flex-end;
+}
+.spectrum-bookmark-side-right {
+  right: -10.15rem;
+  align-items: flex-start;
+}
+.spectrum-bookmark-side .spectrum-bookmark-chip {
+  position: relative;
+  top: auto;
+  left: auto;
+  transform: none;
+  max-width: 100%;
 }
 .bm-icon-svg path {
   fill: var(--bm-cat-fg, #1a202c);
