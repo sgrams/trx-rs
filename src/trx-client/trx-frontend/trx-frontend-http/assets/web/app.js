@@ -1163,9 +1163,16 @@ function coverageGuardBandwidthHz(mode = modeEl ? modeEl.value : "") {
   return Math.max(0, Number.isFinite(maxBw) ? maxBw : currentBandwidthHz);
 }
 
+function effectiveSpectrumCoverageSpanHz(sampleRateHz) {
+  const sampleRate = Number(sampleRateHz);
+  if (!Number.isFinite(sampleRate) || sampleRate <= 0) return 0;
+  // Keep a guard band at the spectrum edges; practical usable span is slightly smaller.
+  return sampleRate * 0.82;
+}
+
 function requiredCenterFreqForCoverage(freqHz, bandwidthHz = coverageGuardBandwidthHz()) {
   if (!lastSpectrumData || !Number.isFinite(freqHz)) return null;
-  const sampleRate = Number(lastSpectrumData.sample_rate);
+  const sampleRate = effectiveSpectrumCoverageSpanHz(lastSpectrumData.sample_rate);
   const currentCenterHz = Number(lastSpectrumData.center_hz);
   if (!Number.isFinite(sampleRate) || sampleRate <= 0 || !Number.isFinite(currentCenterHz)) {
     return null;
@@ -1215,7 +1222,7 @@ async function setRigFrequency(freqHz) {
 
 function tunedFrequencyForCenterCoverage(centerHz, freqHz = lastFreqHz, bandwidthHz = coverageGuardBandwidthHz()) {
   if (!Number.isFinite(centerHz) || !Number.isFinite(freqHz) || !lastSpectrumData) return null;
-  const sampleRate = Number(lastSpectrumData.sample_rate);
+  const sampleRate = effectiveSpectrumCoverageSpanHz(lastSpectrumData.sample_rate);
   if (!Number.isFinite(sampleRate) || sampleRate <= 0) return null;
 
   const safeBw = Math.max(0, Number.isFinite(bandwidthHz) ? bandwidthHz : 0);
@@ -1236,7 +1243,7 @@ function tunedFrequencyForCenterCoverage(centerHz, freqHz = lastFreqHz, bandwidt
 
 async function shiftSpectrumCenter(direction) {
   if (!lastSpectrumData || !Number.isFinite(direction) || direction === 0) return;
-  const sampleRate = Number(lastSpectrumData.sample_rate);
+  const sampleRate = effectiveSpectrumCoverageSpanHz(lastSpectrumData.sample_rate);
   const currentCenterHz = Number(lastSpectrumData.center_hz);
   if (!Number.isFinite(sampleRate) || sampleRate <= 0 || !Number.isFinite(currentCenterHz)) return;
 
