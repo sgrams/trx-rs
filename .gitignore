@@ -27,3 +27,6 @@ benchmarks/
 
 # Claude Code
 .claude/
+
+# User-defined local files
+/.user-defined/
