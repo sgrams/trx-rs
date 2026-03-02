@@ -186,6 +186,8 @@ pub struct FrontendRuntimeContext {
     pub owner_website_url: Option<String>,
     /// Optional website name for the web UI header title label.
     pub owner_website_name: Option<String>,
+    /// Optional base URL used to link AIS vessel names as `<base><mmsi>`.
+    pub ais_vessel_url_base: Option<String>,
     /// Latest spectrum frame from the active SDR rig; None for non-SDR backends.
     pub spectrum: Arc<Mutex<SharedSpectrum>>,
 }
@@ -223,6 +225,7 @@ impl FrontendRuntimeContext {
             owner_callsign: None,
             owner_website_url: None,
             owner_website_name: None,
+            ais_vessel_url_base: None,
             spectrum: Arc::new(Mutex::new(SharedSpectrum::default())),
         }
     }

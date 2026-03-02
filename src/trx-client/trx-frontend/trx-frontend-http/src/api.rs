@@ -39,6 +39,7 @@ struct FrontendMeta {
     owner_callsign: Option<String>,
     owner_website_url: Option<String>,
     owner_website_name: Option<String>,
+    ais_vessel_url_base: Option<String>,
     show_sdr_gain_control: bool,
     initial_map_zoom: u8,
     spectrum_coverage_margin_hz: u32,
@@ -93,6 +94,9 @@ fn inject_frontend_meta(json: &str, meta: FrontendMeta) -> String {
     if let Some(name) = meta.owner_website_name {
         map.insert("owner_website_name".to_string(), serde_json::json!(name));
     }
+    if let Some(url) = meta.ais_vessel_url_base {
+        map.insert("ais_vessel_url_base".to_string(), serde_json::json!(url));
+    }
     map.insert(
         "show_sdr_gain_control".to_string(),
         serde_json::json!(meta.show_sdr_gain_control),
@@ -126,6 +130,7 @@ fn frontend_meta_from_context(
         owner_callsign: owner_callsign_from_context(context),
         owner_website_url: owner_website_url_from_context(context),
         owner_website_name: owner_website_name_from_context(context),
+        ais_vessel_url_base: ais_vessel_url_base_from_context(context),
         show_sdr_gain_control: show_sdr_gain_control_from_context(context),
         initial_map_zoom: initial_map_zoom_from_context(context),
         spectrum_coverage_margin_hz: spectrum_coverage_margin_hz_from_context(context),
@@ -169,6 +174,10 @@ fn owner_website_url_from_context(context: &FrontendRuntimeContext) -> Option<St
 
 fn owner_website_name_from_context(context: &FrontendRuntimeContext) -> Option<String> {
     context.owner_website_name.clone()
+}
+
+fn ais_vessel_url_base_from_context(context: &FrontendRuntimeContext) -> Option<String> {
+    context.ais_vessel_url_base.clone()
 }
 
 fn show_sdr_gain_control_from_context(context: &FrontendRuntimeContext) -> bool {

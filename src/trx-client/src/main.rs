@@ -250,6 +250,7 @@ async fn async_init() -> DynResult<AppState> {
     frontend_runtime.owner_callsign = callsign.clone();
     frontend_runtime.owner_website_url = cfg.general.website_url.clone();
     frontend_runtime.owner_website_name = cfg.general.website_name.clone();
+    frontend_runtime.ais_vessel_url_base = cfg.general.ais_vessel_url_base.clone();
 
     info!(
         "Starting trx-client (remote: {}, frontends: {})",

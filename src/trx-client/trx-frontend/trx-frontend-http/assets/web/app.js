@@ -1723,6 +1723,7 @@ let serverCallsign = null;
 let ownerCallsign = null;
 let ownerWebsiteUrl = null;
 let ownerWebsiteName = null;
+let aisVesselUrlBase = null;
 let serverRigs = [];
 let serverActiveRigId = null;
 let serverLat = null;
@@ -1814,6 +1815,11 @@ function displayLabelFromUrl(url) {
   }
 }
 
+window.buildAisVesselUrl = function(mmsi) {
+  if (!aisVesselUrlBase || !Number.isFinite(Number(mmsi))) return null;
+  return `${aisVesselUrlBase}${String(mmsi)}`;
+};
+
 function render(update) {
   if (!update) return;
   if (update.server_version) serverVersion = update.server_version;
@@ -1827,6 +1833,9 @@ function render(update) {
   }
   if (typeof update.owner_website_name === "string" && update.owner_website_name.length > 0) {
     ownerWebsiteName = update.owner_website_name;
+  }
+  if (typeof update.ais_vessel_url_base === "string" && update.ais_vessel_url_base.length > 0) {
+    aisVesselUrlBase = update.ais_vessel_url_base;
   }
   if (update.server_latitude != null) serverLat = update.server_latitude;
   if (update.server_longitude != null) serverLon = update.server_longitude;
@@ -1994,13 +2003,19 @@ function render(update) {
   const cwStatus = document.getElementById("cw-status");
   const ft8Status = document.getElementById("ft8-status");
   const wsprStatus = document.getElementById("wspr-status");
-  if (aisStatus && modeUpper !== "AIS" && aisStatus.textContent === "Receiving") {
-    aisStatus.textContent = "Connected, listening for packets";
-  }
+  setModeBoundDecodeStatus(
+    aisStatus,
+    ["AIS"],
+    "Select AIS mode to decode",
+    "Connected, listening for packets",
+  );
   if (window.updateAisBar) window.updateAisBar();
-  if (aprsStatus && modeUpper !== "PKT" && aprsStatus.textContent === "Receiving") {
-    aprsStatus.textContent = "Connected, listening for packets";
-  }
+  setModeBoundDecodeStatus(
+    aprsStatus,
+    ["PKT"],
+    "Select PKT mode to decode",
+    "Connected, listening for packets",
+  );
   if (window.updateAprsBar) window.updateAprsBar();
   if (cwStatus && modeUpper !== "CW" && modeUpper !== "CWR" && cwStatus.textContent === "Receiving") {
     cwStatus.textContent = "Connected, listening for packets";
@@ -2969,6 +2984,7 @@ const locatorMarkers = new Map();
 const mapMarkers = new Set();
 const mapFilter = { ais: true, aprs: true, ft8: true, wspr: true };
 const APRS_TRACK_MAX_POINTS = 64;
+const AIS_TRACK_MAX_POINTS = 64;
 const aisMarkers = new Map();
 
 window.clearMapMarkersByType = function(type) {
@@ -2992,6 +3008,10 @@ window.clearMapMarkersByType = function(type) {
       if (entry && entry.marker) {
         if (aprsMap && aprsMap.hasLayer(entry.marker)) entry.marker.removeFrom(aprsMap);
         mapMarkers.delete(entry.marker);
+      }
+      if (entry && entry.track) {
+        if (aprsMap && aprsMap.hasLayer(entry.track)) entry.track.removeFrom(aprsMap);
+        mapMarkers.delete(entry.track);
       }
     });
     aisMarkers.clear();
@@ -3261,12 +3281,20 @@ function buildAisPopupHtml(msg) {
   let rows = "";
   rows += `<tr><td class="aprs-popup-label">MMSI</td><td>${escapeMapHtml(String(msg.mmsi || "--"))}</td></tr>`;
   rows += `<tr><td class="aprs-popup-label">Type</td><td>${escapeMapHtml(String(msg.message_type || "--"))}</td></tr>`;
+  if (distStr) rows += `<tr><td class="aprs-popup-label">Range</td><td>${distStr} from TRX</td></tr>`;
   if (msg?.sog_knots != null) rows += `<tr><td class="aprs-popup-label">SOG</td><td>${Number(msg.sog_knots).toFixed(1)} kn</td></tr>`;
   if (msg?.cog_deg != null) rows += `<tr><td class="aprs-popup-label">COG</td><td>${Number(msg.cog_deg).toFixed(1)}&deg;</td></tr>`;
+  if (msg?.heading_deg != null) rows += `<tr><td class="aprs-popup-label">HDG</td><td>${Number(msg.heading_deg).toFixed(0)}&deg;</td></tr>`;
+  if (msg?.nav_status != null) rows += `<tr><td class="aprs-popup-label">Nav</td><td>${escapeMapHtml(String(msg.nav_status))}</td></tr>`;
   if (msg?.lat != null && msg?.lon != null) rows += `<tr><td class="aprs-popup-label">Pos</td><td>${msg.lat.toFixed(5)}, ${msg.lon.toFixed(5)}</td></tr>`;
   const info = [msg?.vessel_name, msg?.callsign, msg?.destination].filter(Boolean).map(escapeMapHtml).join(" · ");
+  const vesselLabel = escapeMapHtml(msg?.vessel_name || `MMSI ${msg?.mmsi || "--"}`);
+  const vesselUrl = window.buildAisVesselUrl ? window.buildAisVesselUrl(msg?.mmsi) : null;
+  const vesselTitle = vesselUrl
+    ? `<a class="title-link" href="${escapeMapHtml(vesselUrl)}" target="_blank" rel="noopener">${vesselLabel}</a>`
+    : vesselLabel;
   return `<div class="aprs-popup">` +
-    `<div class="aprs-popup-call">${escapeMapHtml(msg?.vessel_name || `MMSI ${msg?.mmsi || "--"}`)}</div>` +
+    `<div class="aprs-popup-call">${vesselTitle}</div>` +
     (meta ? `<div class="aprs-popup-meta">${meta}</div>` : "") +
     (rows ? `<table class="aprs-popup-table">${rows}</table>` : "") +
     (info ? `<div class="aprs-popup-info">${info}</div>` : "") +
@@ -3274,6 +3302,11 @@ function buildAisPopupHtml(msg) {
 }
 
 function aprsPositionsEqual(a, b) {
+  if (!a || !b) return false;
+  return Math.abs(a[0] - b[0]) < 0.000001 && Math.abs(a[1] - b[1]) < 0.000001;
+}
+
+function aisPositionsEqual(a, b) {
   if (!a || !b) return false;
   return Math.abs(a[0] - b[0]) < 0.000001 && Math.abs(a[1] - b[1]) < 0.000001;
 }
@@ -3361,16 +3394,52 @@ window.aprsMapAddStation = function(call, lat, lon, info, symbolTable, symbolCod
   }
 };
 
+function ensureAisTrack(mmsi, entry) {
+  if (!aprsMap || !entry || !Array.isArray(entry.trackPoints) || entry.trackPoints.length < 2) return;
+  if (entry.track) {
+    entry.track.setLatLngs(entry.trackPoints);
+    return;
+  }
+  const track = L.polyline(entry.trackPoints, {
+    color: "#ff7559",
+    weight: 2,
+    opacity: 0.68,
+    lineCap: "round",
+    lineJoin: "round",
+    interactive: false,
+    dashArray: "5 4",
+  });
+  track.__trxType = "ais";
+  track._aisMmsi = mmsi;
+  entry.track = track;
+  mapMarkers.add(track);
+  if (mapFilter.ais) {
+    track.addTo(aprsMap);
+  }
+}
+
 window.aisMapAddVessel = function(msg) {
   if (msg == null || msg.lat == null || msg.lon == null || !Number.isFinite(msg.mmsi)) return;
   if (!aprsMap) initAprsMap();
   const key = String(msg.mmsi);
   const popupHtml = buildAisPopupHtml(msg);
+  const nextPoint = [msg.lat, msg.lon];
   const existing = aisMarkers.get(key);
-  if (existing && existing.marker) {
+  if (existing) {
     existing.msg = msg;
-    existing.marker.setLatLng([msg.lat, msg.lon]);
-    existing.marker.setPopupContent(popupHtml);
+    if (!Array.isArray(existing.trackPoints)) existing.trackPoints = [];
+    const prevPoint = existing.trackPoints[existing.trackPoints.length - 1];
+    if (!aisPositionsEqual(prevPoint, nextPoint)) {
+      existing.trackPoints.push(nextPoint);
+      if (existing.trackPoints.length > AIS_TRACK_MAX_POINTS) {
+        existing.trackPoints.splice(0, existing.trackPoints.length - AIS_TRACK_MAX_POINTS);
+      }
+      ensureAisTrack(key, existing);
+    }
+    if (existing.marker) {
+      existing.marker.setLatLng([msg.lat, msg.lon]);
+      existing.marker.setPopupContent(popupHtml);
+    }
     return;
   }
   if (!aprsMap) return;
@@ -3381,8 +3450,14 @@ window.aisMapAddVessel = function(msg) {
     fillOpacity: 0.82,
   }).addTo(aprsMap).bindPopup(popupHtml);
   marker.__trxType = "ais";
+  marker._aisMmsi = key;
   mapMarkers.add(marker);
-  aisMarkers.set(key, { marker, msg });
+  aisMarkers.set(key, {
+    marker,
+    track: null,
+    trackPoints: [nextPoint],
+    msg,
+  });
   applyMapFilter();
 };
 
@@ -4109,13 +4184,20 @@ document.getElementById("copyright-year").textContent = new Date().getFullYear()
 // --- Server-side decode SSE ---
 let decodeSource = null;
 let decodeConnected = false;
+function setModeBoundDecodeStatus(el, activeModes, inactiveText, connectedText) {
+  if (!el) return;
+  const modeUpper = (document.getElementById("mode")?.value || "").toUpperCase();
+  const isActiveMode = activeModes.includes(modeUpper);
+  if (el.textContent === "Receiving" && isActiveMode) return;
+  el.textContent = isActiveMode ? connectedText : inactiveText;
+}
 function updateDecodeStatus(text) {
   const ais = document.getElementById("ais-status");
   const aprs = document.getElementById("aprs-status");
   const cw = document.getElementById("cw-status");
   const ft8 = document.getElementById("ft8-status");
-  if (ais && ais.textContent !== "Receiving") ais.textContent = text;
-  if (aprs && aprs.textContent !== "Receiving") aprs.textContent = text;
+  setModeBoundDecodeStatus(ais, ["AIS"], "Select AIS mode to decode", text);
+  setModeBoundDecodeStatus(aprs, ["PKT"], "Select PKT mode to decode", text);
   if (cw && cw.textContent !== "Receiving") cw.textContent = text;
   if (ft8 && ft8.textContent !== "Receiving") ft8.textContent = text;
 }

@@ -49,6 +49,13 @@ function aisDisplayName(msg) {
   return msg.vessel_name || msg.callsign || `MMSI ${msg.mmsi}`;
 }
 
+function aisDisplayNameHtml(msg) {
+  const label = escapeMapHtml(aisDisplayName(msg));
+  const url = window.buildAisVesselUrl ? window.buildAisVesselUrl(msg?.mmsi) : null;
+  if (!url) return label;
+  return `<a class="title-link" href="${escapeMapHtml(url)}" target="_blank" rel="noopener">${label}</a>`;
+}
+
 function aisTypeLabel(type) {
   switch (Number(type)) {
     case 1:
@@ -97,6 +104,16 @@ function aisRouteText(msg) {
   return [msg.callsign, msg.destination].filter(Boolean).join(" -> ");
 }
 
+function aisDistanceText(msg) {
+  if (serverLat == null || serverLon == null || msg?.lat == null || msg?.lon == null) {
+    return "";
+  }
+  const distKm = haversineKm(serverLat, serverLon, msg.lat, msg.lon);
+  if (!Number.isFinite(distKm)) return "";
+  if (distKm < 1) return `${Math.round(distKm * 1000)} m from TRX`;
+  return `${distKm.toFixed(1)} km from TRX`;
+}
+
 function aisLatestByVessel(messages) {
   const byMmsi = new Map();
   for (const msg of messages) {
@@ -138,9 +155,11 @@ function renderAisRow(msg) {
     second: "2-digit",
   });
   const name = aisDisplayName(msg);
+  const nameHtml = aisDisplayNameHtml(msg);
   const channel = aisChannelInfo(msg.channel);
   const motion = aisMotionText(msg);
   const route = aisRouteText(msg);
+  const distance = aisDistanceText(msg);
   const pos = msg.lat != null && msg.lon != null
     ? `<a class="ais-pos-link" href="javascript:void(0)" onclick="window.navigateToAprsMap(${msg.lat},${msg.lon})">${msg.lat.toFixed(4)}, ${msg.lon.toFixed(4)}</a>`
     : "";
@@ -160,7 +179,7 @@ function renderAisRow(msg) {
   row.innerHTML =
     `<div class="ais-row-head">` +
       `<span class="ais-time">${ts}</span>` +
-      `<span class="ais-call">${escapeMapHtml(name)}</span>` +
+      `<span class="ais-call">${nameHtml}</span>` +
       `<span class="${channel.badgeClass}">${escapeMapHtml(channel.label)}</span>` +
       `<span class="ais-badge ais-badge-type">${escapeMapHtml(aisTypeLabel(msg.message_type))}</span>` +
     `</div>` +
@@ -171,6 +190,7 @@ function renderAisRow(msg) {
     `</div>` +
     `<div class="ais-row-detail">` +
       (motion ? `<span>${escapeMapHtml(motion)}</span>` : `<span>No motion data</span>`) +
+      (distance ? `<span>${escapeMapHtml(distance)}</span>` : "") +
       (pos ? `<span>${pos}</span>` : "") +
       `<span>${escapeMapHtml(aisAgeText(msg._tsMs))}</span>` +
     `</div>`;
@@ -213,13 +233,15 @@ function updateAisBar() {
     const pin = msg.lat != null && msg.lon != null
       ? `<button class="aprs-bar-pin" title="${msg.lat.toFixed(4)}, ${msg.lon.toFixed(4)}" onclick="window.navigateToAprsMap(${msg.lat},${msg.lon})">📍</button>`
       : "";
-    const name = `<span class="ais-call">${escapeMapHtml(aisDisplayName(msg))}</span>`;
+    const name = `<span class="ais-call">${aisDisplayNameHtml(msg)}</span>`;
     const channel = aisChannelInfo(msg.channel);
+    const distance = aisDistanceText(msg);
     const details = [
       `MMSI ${escapeMapHtml(String(msg.mmsi))}`,
       escapeMapHtml(channel.label),
       msg.sog_knots != null ? `${Number(msg.sog_knots).toFixed(1)} kn` : null,
       msg.cog_deg != null ? `${Number(msg.cog_deg).toFixed(1)}°` : null,
+      distance ? escapeMapHtml(distance) : null,
       escapeMapHtml(aisAgeText(msg._tsMs)),
     ]
       .filter(Boolean)

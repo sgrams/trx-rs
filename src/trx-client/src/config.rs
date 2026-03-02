@@ -41,6 +41,8 @@ pub struct GeneralConfig {
     pub website_url: Option<String>,
     /// Optional website name to use as the web UI header title label.
     pub website_name: Option<String>,
+    /// Optional base URL used to link AIS vessel names as `<base><mmsi>`.
+    pub ais_vessel_url_base: Option<String>,
     /// Log level (trace, debug, info, warn, error)
     pub log_level: Option<String>,
 }
@@ -51,6 +53,7 @@ impl Default for GeneralConfig {
             callsign: Some("N0CALL".to_string()),
             website_url: None,
             website_name: None,
+            ais_vessel_url_base: Some("https://www.vesselfinder.com/?mmsi=".to_string()),
             log_level: None,
         }
     }
@@ -356,6 +359,11 @@ impl ClientConfig {
                 return Err("[general].website_name must not be empty when set".to_string());
             }
         }
+        if let Some(url) = &self.general.ais_vessel_url_base {
+            if url.trim().is_empty() {
+                return Err("[general].ais_vessel_url_base must not be empty when set".to_string());
+            }
+        }
 
         if self.frontends.http.enabled && self.frontends.http.port == 0 {
             return Err("[frontends.http].port must be > 0 when enabled".to_string());
@@ -459,6 +467,7 @@ impl ClientConfig {
                 callsign: Some("N0CALL".to_string()),
                 website_url: Some("https://haxx.space".to_string()),
                 website_name: Some("haxx.space".to_string()),
+                ais_vessel_url_base: Some("https://www.vesselfinder.com/?mmsi=".to_string()),
                 log_level: Some("info".to_string()),
             },
             remote: RemoteConfig {
@@ -586,6 +595,7 @@ mod tests {
         assert!(config.remote.url.is_none());
         assert!(config.general.website_url.is_none());
         assert!(config.general.website_name.is_none());
+        assert!(config.general.ais_vessel_url_base.is_none());
         assert_eq!(config.remote.poll_interval_ms, 750);
         assert!(config.frontends.audio.enabled);
         assert_eq!(config.frontends.audio.server_port, 4531);
@@ -602,6 +612,7 @@ mod tests {
 callsign = "W1AW"
 website_url = "https://example.com"
 website_name = "Example"
+ais_vessel_url_base = "https://example.com/vessel/"
 
 [remote]
 url = "192.168.1.100:9000"
@@ -623,6 +634,10 @@ spectrum_usable_span_ratio = 0.9
         assert_eq!(config.general.callsign, Some("W1AW".to_string()));
         assert_eq!(config.general.website_url, Some("https://example.com".to_string()));
         assert_eq!(config.general.website_name, Some("Example".to_string()));
+        assert_eq!(
+            config.general.ais_vessel_url_base,
+            Some("https://example.com/vessel/".to_string())
+        );
         assert_eq!(config.remote.url, Some("192.168.1.100:9000".to_string()));
         assert_eq!(config.remote.rig_id, Some("hf".to_string()));
         assert_eq!(config.remote.auth.token, Some("my-token".to_string()));
