@@ -3017,6 +3017,7 @@ const mapFilter = { ais: true, aprs: true, ft8: true, wspr: true };
 const APRS_TRACK_MAX_POINTS = 64;
 const AIS_TRACK_MAX_POINTS = 64;
 const aisMarkers = new Map();
+let selectedAisTrackMmsi = null;
 
 window.clearMapMarkersByType = function(type) {
   if (type === "aprs") {
@@ -3045,6 +3046,7 @@ window.clearMapMarkersByType = function(type) {
         mapMarkers.delete(entry.track);
       }
     });
+    selectedAisTrackMmsi = null;
     aisMarkers.clear();
     return;
   }
@@ -3115,27 +3117,63 @@ function initAprsMap() {
   aprsMap.on("popupopen", function(e) {
     const marker = e.popup._source;
     if (aprsRadioPath) { aprsRadioPath.remove(); aprsRadioPath = null; }
+    if (selectedAisTrackMmsi) {
+      const prevEntry = aisMarkers.get(String(selectedAisTrackMmsi));
+      if (prevEntry && prevEntry.track && aprsMap && aprsMap.hasLayer(prevEntry.track)) {
+        prevEntry.track.removeFrom(aprsMap);
+      }
+      selectedAisTrackMmsi = null;
+    }
 
     if (marker === aprsMapReceiverMarker) {
       e.popup.setContent(buildReceiverPopupHtml());
       return;
     }
 
-    if (!marker || !marker._aprsCall) return;
-    const entry = stationMarkers.get(marker._aprsCall);
-    if (!entry) return;
+    if (!marker) return;
+
     const ll = marker.getLatLng();
-    e.popup.setContent(buildAprsPopupHtml(marker._aprsCall, ll.lat, ll.lng, entry.info || "", entry.pkt));
-    if (serverLat != null && serverLon != null) {
-      aprsRadioPath = L.polyline(
-        [[serverLat, serverLon], [ll.lat, ll.lng]],
-        { className: "aprs-radio-path", weight: 2, interactive: false }
-      ).addTo(aprsMap);
+
+    if (marker._aprsCall) {
+      const entry = stationMarkers.get(marker._aprsCall);
+      if (!entry) return;
+      e.popup.setContent(buildAprsPopupHtml(marker._aprsCall, ll.lat, ll.lng, entry.info || "", entry.pkt));
+      if (serverLat != null && serverLon != null) {
+        aprsRadioPath = L.polyline(
+          [[serverLat, serverLon], [ll.lat, ll.lng]],
+          { className: "aprs-radio-path", weight: 2, interactive: false }
+        ).addTo(aprsMap);
+      }
+      return;
+    }
+
+    if (marker._aisMmsi) {
+      const entry = aisMarkers.get(String(marker._aisMmsi));
+      if (!entry || !entry.msg) return;
+      e.popup.setContent(buildAisPopupHtml(entry.msg));
+      ensureAisTrack(String(marker._aisMmsi), entry);
+      if (entry.track && aprsMap && mapFilter.ais && !aprsMap.hasLayer(entry.track)) {
+        entry.track.addTo(aprsMap);
+      }
+      selectedAisTrackMmsi = String(marker._aisMmsi);
+      if (serverLat != null && serverLon != null) {
+        aprsRadioPath = L.polyline(
+          [[serverLat, serverLon], [ll.lat, ll.lng]],
+          { className: "aprs-radio-path", weight: 2, interactive: false }
+        ).addTo(aprsMap);
+      }
     }
   });
 
   aprsMap.on("popupclose", function() {
     if (aprsRadioPath) { aprsRadioPath.remove(); aprsRadioPath = null; }
+    if (selectedAisTrackMmsi) {
+      const entry = aisMarkers.get(String(selectedAisTrackMmsi));
+      if (entry && entry.track && aprsMap && aprsMap.hasLayer(entry.track)) {
+        entry.track.removeFrom(aprsMap);
+      }
+      selectedAisTrackMmsi = null;
+    }
   });
 
   // Materialise any stations that were buffered before the map was ready
@@ -3154,6 +3192,12 @@ function initAprsMap() {
     aisFilter.addEventListener("change", () => {
       mapFilter.ais = aisFilter.checked;
       applyMapFilter();
+      if (!mapFilter.ais && selectedAisTrackMmsi) {
+        const entry = aisMarkers.get(String(selectedAisTrackMmsi));
+        if (entry && entry.track && aprsMap && aprsMap.hasLayer(entry.track)) {
+          entry.track.removeFrom(aprsMap);
+        }
+      }
     });
   }
   if (aprsFilter) {
@@ -3443,10 +3487,6 @@ function ensureAisTrack(mmsi, entry) {
   track.__trxType = "ais";
   track._aisMmsi = mmsi;
   entry.track = track;
-  mapMarkers.add(track);
-  if (mapFilter.ais) {
-    track.addTo(aprsMap);
-  }
 }
 
 window.aisMapAddVessel = function(msg) {

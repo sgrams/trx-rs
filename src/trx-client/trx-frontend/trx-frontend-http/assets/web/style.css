@@ -1088,6 +1088,22 @@ small { color: var(--text-muted); }
 .sub-tab:hover:not(.active) { color: var(--text); }
 #aprs-map { min-height: 150px; border-radius: 6px; }
 .aprs-controls { display: flex; gap: 0.6rem; align-items: center; margin-bottom: 0.75rem; }
+#subtab-aprs .aprs-controls > button {
+  min-height: 1.65rem;
+  padding: 0.08rem 0.5rem;
+  border-radius: 0.4rem;
+  border: 1px solid var(--filter-border);
+  background: var(--filter-bg);
+  color: var(--filter-fg);
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  cursor: pointer;
+}
+#subtab-aprs .aprs-controls > button:hover {
+  border-color: var(--accent-green);
+  color: var(--text);
+}
 .aprs-summary {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -1126,15 +1142,15 @@ small { color: var(--text-muted); }
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-height: 1.9rem;
-  padding: 0.18rem 0.55rem;
-  border-radius: 999px;
+  min-height: 1.65rem;
+  padding: 0.08rem 0.5rem;
+  border-radius: 0.4rem;
   border: 1px solid var(--filter-border);
   background: var(--filter-bg);
   color: var(--filter-fg);
-  font-size: 0.75rem;
+  font-size: 0.68rem;
   font-weight: 700;
-  letter-spacing: 0.02em;
+  letter-spacing: 0.03em;
   cursor: pointer;
 }
 .aprs-chip.active {
@@ -1177,24 +1193,24 @@ small { color: var(--text-muted); }
 #subtab-ais {
   display: flex;
   flex-direction: column;
-  min-height: calc(100vh - 18rem);
 }
 #subtab-aprs {
   display: flex;
   flex-direction: column;
-  min-height: calc(100vh - 18rem);
 }
 #aprs-packets,
 #ais-messages { max-height: 360px; overflow-y: auto; border: 1px solid var(--border-light); border-radius: 6px; background: var(--input-bg); font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
 #aprs-packets {
-  flex: 1 1 auto;
-  min-height: calc(100vh - 28rem);
-  max-height: none;
+  flex: 0 1 auto;
+  height: calc(100vh - 28rem);
+  min-height: 16rem;
+  max-height: calc(100vh - 28rem);
 }
 #ais-messages {
-  flex: 1 1 auto;
-  min-height: calc(100vh - 24rem);
-  max-height: none;
+  flex: 0 1 auto;
+  height: calc(100vh - 24rem);
+  min-height: 16rem;
+  max-height: calc(100vh - 24rem);
 }
 .aprs-packet { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; font-size: 0.82rem; padding: 0.45rem 0.55rem; border-bottom: 1px solid var(--border); line-height: 1.35; }
 .aprs-packet:last-child { border-bottom: none; }
