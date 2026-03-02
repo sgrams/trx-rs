@@ -85,6 +85,24 @@ pub struct VdesMessage {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub destination: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub message_label: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub session_id: Option<u8>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source_id: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub destination_id: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub data_count: Option<u16>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub asm_identifier: Option<u16>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ack_nack_mask: Option<u16>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub channel_quality: Option<u8>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub payload_preview: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub link_id: Option<u8>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub sync_score: Option<f32>,

@@ -126,7 +126,13 @@ impl VdesDecoder {
         if decoded_bits.is_empty() {
             return None;
         }
-        let raw_bytes = pack_bits_msb(&decoded_bits);
+        let parsed = parse_vdes_payload(&decoded_bits);
+        let payload_bits = if parsed.payload_bits.is_empty() {
+            decoded_bits.as_slice()
+        } else {
+            parsed.payload_bits.as_slice()
+        };
+        let raw_bytes = pack_bits_msb(payload_bits);
         let rms = burst_rms(&samples);
         let mode = classify_vdes_burst(framed.symbols.len());
         let link_text = link_id
@@ -141,30 +147,46 @@ impl VdesDecoder {
             tail_zero_bits,
             TER_MCS1_100_FEC_TAIL_BITS
         );
-
-        Some(VdesMessage {
-            ts_ms: None,
-            channel: channel.to_string(),
-            message_type: mode.message_type,
-            repeat: 0,
-            mmsi: 0,
-            crc_ok: false,
-            bit_len: decoded_bits.len(),
-            raw_bytes,
-            lat: None,
-            lon: None,
-            sog_knots: None,
-            cog_deg: None,
-            heading_deg: None,
-            nav_status: None,
-            vessel_name: Some(format!("VDES Frame {} sym", framed.symbols.len())),
-            callsign: Some(format!("{} {} @{}", mode.label, link_text, framed.start_offset)),
-            destination: Some(format!(
+        let destination = parsed.summary.clone().or_else(|| {
+            Some(format!(
                 "TER-MCS-1.100 RMS {:.2} sync {:.0}% rot {}",
                 rms,
                 framed.sync_score * 100.0,
                 framed.phase_rotation
+            ))
+        });
+
+        Some(VdesMessage {
+            ts_ms: None,
+            channel: channel.to_string(),
+            message_type: parsed.message_id.unwrap_or(mode.message_type),
+            repeat: parsed.repeat,
+            mmsi: parsed.source_id.unwrap_or(0),
+            crc_ok: false,
+            bit_len: payload_bits.len(),
+            raw_bytes,
+            lat: parsed.lat,
+            lon: parsed.lon,
+            sog_knots: None,
+            cog_deg: None,
+            heading_deg: None,
+            nav_status: None,
+            vessel_name: Some(format!(
+                "{} {} sym",
+                parsed.message_label.unwrap_or("VDES Frame"),
+                framed.symbols.len()
             )),
+            callsign: Some(format!("{} {} @{}", mode.label, link_text, framed.start_offset)),
+            destination,
+            message_label: parsed.message_label.map(str::to_string),
+            session_id: parsed.session_id,
+            source_id: parsed.source_id,
+            destination_id: parsed.destination_id,
+            data_count: parsed.data_count,
+            asm_identifier: parsed.asm_identifier,
+            ack_nack_mask: parsed.ack_nack_mask,
+            channel_quality: parsed.channel_quality,
+            payload_preview: parsed.payload_preview,
             link_id,
             sync_score: Some(framed.sync_score),
             sync_errors: Some(framed.sync_errors),
@@ -206,6 +228,25 @@ impl VdesDecoder {
 struct BurstMode<'a> {
     label: &'a str,
     message_type: u8,
+}
+
+#[derive(Default)]
+struct ParsedPayload {
+    message_id: Option<u8>,
+    message_label: Option<&'static str>,
+    repeat: u8,
+    session_id: Option<u8>,
+    source_id: Option<u32>,
+    destination_id: Option<u32>,
+    data_count: Option<u16>,
+    asm_identifier: Option<u16>,
+    ack_nack_mask: Option<u16>,
+    channel_quality: Option<u8>,
+    payload_bits: Vec<u8>,
+    payload_preview: Option<String>,
+    summary: Option<String>,
+    lat: Option<f64>,
+    lon: Option<f64>,
 }
 
 struct FrameSlice {
@@ -329,6 +370,172 @@ fn split_fec_frame(symbols: &[u8]) -> (&[u8], &[u8]) {
     (&symbols[..input_end], &symbols[input_end..tail_end])
 }
 
+fn parse_vdes_payload(bits: &[u8]) -> ParsedPayload {
+    let Some(message_id) = read_bits_u8(bits, 0, 4) else {
+        return ParsedPayload::default();
+    };
+    let repeat = read_bits_u8(bits, 5, 2).unwrap_or(0);
+    let session_id = read_bits_u8(bits, 7, 6);
+    let source_id = read_bits_u32(bits, 13, 32);
+    let common = ParsedPayload {
+        message_id: Some(message_id),
+        repeat,
+        session_id,
+        source_id,
+        ..Default::default()
+    };
+
+    match message_id {
+        0 => parse_msg_0(bits, common),
+        1 => parse_msg_1(bits, common),
+        2 => parse_msg_2(bits, common),
+        3 => parse_msg_3(bits, common),
+        4 => parse_msg_4(bits, common),
+        5 => parse_msg_5(bits, common),
+        6 => parse_msg_6(bits, common),
+        _ => parse_unknown_msg(bits, common),
+    }
+}
+
+fn parse_msg_0(bits: &[u8], mut parsed: ParsedPayload) -> ParsedPayload {
+    parsed.message_label = Some("Broadcast");
+    parsed.data_count = read_bits_u16(bits, 45, 11);
+    parsed.payload_bits = extract_counted_payload(bits, 56, parsed.data_count);
+    parsed.payload_preview = ascii_preview(&parsed.payload_bits);
+    parsed.summary = Some(format!(
+        "Broadcast from {} · {} data bits",
+        parsed.source_id.unwrap_or(0),
+        parsed.payload_bits.len()
+    ));
+    parsed
+}
+
+fn parse_msg_1(bits: &[u8], mut parsed: ParsedPayload) -> ParsedPayload {
+    parsed.message_label = Some("Scheduled");
+    parsed.data_count = read_bits_u16(bits, 45, 11);
+    parsed.asm_identifier = read_bits_u16(bits, 56, 16);
+    parsed.payload_bits = extract_counted_payload(bits, 72, parsed.data_count);
+    parsed.payload_preview = ascii_preview(&parsed.payload_bits);
+    parsed.summary = Some(format!(
+        "Scheduled ASM {} · {} data bits",
+        parsed.asm_identifier.unwrap_or(0),
+        parsed.payload_bits.len()
+    ));
+    parsed
+}
+
+fn parse_msg_2(bits: &[u8], mut parsed: ParsedPayload) -> ParsedPayload {
+    parsed.message_label = Some("Scheduled");
+    parsed.data_count = read_bits_u16(bits, 45, 11);
+    parsed.asm_identifier = read_bits_u16(bits, 56, 16);
+    parsed.payload_bits = extract_counted_payload(bits, 72, parsed.data_count);
+    parsed.payload_preview = ascii_preview(&parsed.payload_bits);
+    parsed.summary = Some(format!(
+        "Scheduled ITDMA ASM {} · {} data bits",
+        parsed.asm_identifier.unwrap_or(0),
+        parsed.payload_bits.len()
+    ));
+    parsed
+}
+
+fn parse_msg_3(bits: &[u8], mut parsed: ParsedPayload) -> ParsedPayload {
+    parsed.message_label = Some("Addressed");
+    parsed.destination_id = read_bits_u32(bits, 45, 32);
+    parsed.data_count = read_bits_u16(bits, 77, 11);
+    parsed.asm_identifier = read_bits_u16(bits, 88, 16);
+    parsed.payload_bits = extract_counted_payload(bits, 104, parsed.data_count);
+    parsed.payload_preview = ascii_preview(&parsed.payload_bits);
+    parsed.summary = Some(format!(
+        "{} -> {} · ASM {} · {} data bits",
+        parsed.source_id.unwrap_or(0),
+        parsed.destination_id.unwrap_or(0),
+        parsed.asm_identifier.unwrap_or(0),
+        parsed.payload_bits.len()
+    ));
+    parsed
+}
+
+fn parse_msg_4(bits: &[u8], mut parsed: ParsedPayload) -> ParsedPayload {
+    parsed.message_label = Some("Addressed");
+    parsed.destination_id = read_bits_u32(bits, 45, 32);
+    parsed.data_count = read_bits_u16(bits, 77, 11);
+    parsed.asm_identifier = read_bits_u16(bits, 88, 16);
+    parsed.payload_bits = extract_counted_payload(bits, 104, parsed.data_count);
+    parsed.payload_preview = ascii_preview(&parsed.payload_bits);
+    parsed.summary = Some(format!(
+        "{} -> {} · ITDMA ASM {} · {} data bits",
+        parsed.source_id.unwrap_or(0),
+        parsed.destination_id.unwrap_or(0),
+        parsed.asm_identifier.unwrap_or(0),
+        parsed.payload_bits.len()
+    ));
+    parsed
+}
+
+fn parse_msg_5(bits: &[u8], mut parsed: ParsedPayload) -> ParsedPayload {
+    parsed.message_label = Some("Acknowledge");
+    parsed.destination_id = read_bits_u32(bits, 45, 32);
+    parsed.ack_nack_mask = read_bits_u16(bits, 77, 16);
+    parsed.channel_quality = read_bits_u8(bits, 95, 8);
+    parsed.summary = Some(format!(
+        "{} -> {} · ack 0x{:04X} · CQ {}",
+        parsed.source_id.unwrap_or(0),
+        parsed.destination_id.unwrap_or(0),
+        parsed.ack_nack_mask.unwrap_or(0),
+        parsed.channel_quality.unwrap_or(0)
+    ));
+    parsed
+}
+
+fn parse_msg_6(bits: &[u8], mut parsed: ParsedPayload) -> ParsedPayload {
+    parsed.message_label = Some("Geo");
+    let ne_lon = read_signed_bits(bits, 45, 18);
+    let ne_lat = read_signed_bits(bits, 63, 17);
+    let sw_lon = read_signed_bits(bits, 80, 18);
+    let sw_lat = read_signed_bits(bits, 98, 17);
+    parsed.data_count = read_bits_u16(bits, 115, 11);
+    parsed.asm_identifier = read_bits_u16(bits, 128, 16);
+    parsed.payload_bits = extract_counted_payload(bits, 144, parsed.data_count);
+    parsed.payload_preview = ascii_preview(&parsed.payload_bits);
+    if let (Some(ne_lon), Some(ne_lat), Some(sw_lon), Some(sw_lat)) = (ne_lon, ne_lat, sw_lon, sw_lat)
+    {
+        let ne_lon_deg = ne_lon as f64 / 600.0;
+        let ne_lat_deg = ne_lat as f64 / 600.0;
+        let sw_lon_deg = sw_lon as f64 / 600.0;
+        let sw_lat_deg = sw_lat as f64 / 600.0;
+        parsed.lon = Some((ne_lon_deg + sw_lon_deg) * 0.5);
+        parsed.lat = Some((ne_lat_deg + sw_lat_deg) * 0.5);
+        parsed.summary = Some(format!(
+            "Geo ASM {} · {} data bits · box {:.3},{:.3} to {:.3},{:.3}",
+            parsed.asm_identifier.unwrap_or(0),
+            parsed.payload_bits.len(),
+            sw_lat_deg,
+            sw_lon_deg,
+            ne_lat_deg,
+            ne_lon_deg
+        ));
+    } else {
+        parsed.summary = Some(format!(
+            "Geo ASM {} · {} data bits",
+            parsed.asm_identifier.unwrap_or(0),
+            parsed.payload_bits.len()
+        ));
+    }
+    parsed
+}
+
+fn parse_unknown_msg(bits: &[u8], mut parsed: ParsedPayload) -> ParsedPayload {
+    parsed.message_label = Some("Unknown");
+    parsed.payload_bits = bits.to_vec();
+    parsed.payload_preview = ascii_preview(&parsed.payload_bits);
+    parsed.summary = Some(format!(
+        "Message {} · {} bits",
+        parsed.message_id.unwrap_or(255),
+        parsed.payload_bits.len()
+    ));
+    parsed
+}
+
 fn viterbi_decode_rate_half(coded_bits: &[u8]) -> Vec<u8> {
     if coded_bits.len() < 2 {
         return Vec::new();
@@ -397,6 +604,73 @@ fn conv_encode_output(reg: u8) -> u8 {
 
 fn parity6_7(value: u8) -> u8 {
     (value.count_ones() as u8) & 1
+}
+
+fn extract_counted_payload(bits: &[u8], start: usize, count: Option<u16>) -> Vec<u8> {
+    let Some(count) = count.map(usize::from) else {
+        return Vec::new();
+    };
+    let end = start.saturating_add(count).min(bits.len());
+    if start >= end {
+        return Vec::new();
+    }
+    bits[start..end].to_vec()
+}
+
+fn ascii_preview(bits: &[u8]) -> Option<String> {
+    let bytes = pack_bits_msb(bits);
+    let mut out = String::new();
+    for &byte in bytes.iter().take(24) {
+        let ch = if byte.is_ascii_graphic() || byte == b' ' {
+            byte as char
+        } else {
+            '.'
+        };
+        out.push(ch);
+    }
+    let trimmed = out.trim_matches('.').trim();
+    if trimmed.is_empty() {
+        None
+    } else if bytes.len() > 24 {
+        Some(format!("{}...", trimmed))
+    } else {
+        Some(trimmed.to_string())
+    }
+}
+
+fn read_bits_u8(bits: &[u8], start: usize, len: usize) -> Option<u8> {
+    read_bits_u32(bits, start, len).and_then(|value| u8::try_from(value).ok())
+}
+
+fn read_bits_u16(bits: &[u8], start: usize, len: usize) -> Option<u16> {
+    read_bits_u32(bits, start, len).and_then(|value| u16::try_from(value).ok())
+}
+
+fn read_bits_u32(bits: &[u8], start: usize, len: usize) -> Option<u32> {
+    if len == 0 || len > 32 {
+        return None;
+    }
+    let end = start.checked_add(len)?;
+    let slice = bits.get(start..end)?;
+    let mut value = 0u32;
+    for &bit in slice {
+        value = (value << 1) | u32::from(bit & 1);
+    }
+    Some(value)
+}
+
+fn read_signed_bits(bits: &[u8], start: usize, len: usize) -> Option<i32> {
+    let raw = read_bits_u32(bits, start, len)?;
+    if len == 0 || len > 31 {
+        return None;
+    }
+    let sign_mask = 1u32 << (len - 1);
+    if raw & sign_mask == 0 {
+        Some(raw as i32)
+    } else {
+        let extended = raw | (!0u32 << len);
+        Some(extended as i32)
+    }
 }
 
 fn decode_link_id_from_symbols(symbols: &[u8]) -> Option<u8> {

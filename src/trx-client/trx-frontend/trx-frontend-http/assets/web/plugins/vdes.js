@@ -79,15 +79,33 @@ function renderVdesRow(msg) {
   const title = msg.vessel_name || "VDES Burst";
   const label = msg.callsign || "VDES";
   const info = msg.destination || "";
+  const labelText = msg.message_label || "";
   const linkText = Number.isFinite(msg.link_id) ? `LID ${msg.link_id}` : "";
   const syncText = Number.isFinite(msg.sync_score) ? `Sync ${(Number(msg.sync_score) * 100).toFixed(0)}%` : "";
   const phaseText = Number.isFinite(msg.phase_rotation) ? `R${Number(msg.phase_rotation)}` : "";
   const fecText = msg.fec_state || "";
+  const srcText = Number.isFinite(msg.source_id) ? `SRC ${Number(msg.source_id)}` : "";
+  const dstText = Number.isFinite(msg.destination_id) ? `DST ${Number(msg.destination_id)}` : "";
+  const sessionText = Number.isFinite(msg.session_id) ? `S${Number(msg.session_id)}` : "";
+  const asmText = Number.isFinite(msg.asm_identifier) ? `ASM ${Number(msg.asm_identifier)}` : "";
+  const countText = Number.isFinite(msg.data_count) ? `${Number(msg.data_count)} data bits` : "";
+  const ackText = Number.isFinite(msg.ack_nack_mask) ? `ACK 0x${Number(msg.ack_nack_mask).toString(16).toUpperCase().padStart(4, "0")}` : "";
+  const cqiText = Number.isFinite(msg.channel_quality) ? `CQ ${Number(msg.channel_quality)}` : "";
+  const previewText = msg.payload_preview || "";
   const rawHex = vdesHexPreview(msg.raw_bytes);
   row.dataset.filterText = [
     title,
     label,
+    labelText,
     info,
+    srcText,
+    dstText,
+    sessionText,
+    asmText,
+    countText,
+    ackText,
+    cqiText,
+    previewText,
     linkText,
     syncText,
     phaseText,
@@ -104,7 +122,10 @@ function renderVdesRow(msg) {
       `<span class="vdes-time">${ts}</span>` +
       `<span class="vdes-call">${escapeMapHtml(title)}</span>` +
       `<span class="vdes-badge">${escapeMapHtml(label)}</span>` +
+      (labelText ? `<span class="vdes-badge">${escapeMapHtml(labelText)}</span>` : "") +
       (linkText ? `<span class="vdes-badge">${escapeMapHtml(linkText)}</span>` : "") +
+      (srcText ? `<span class="vdes-badge">${escapeMapHtml(srcText)}</span>` : "") +
+      (dstText ? `<span class="vdes-badge">${escapeMapHtml(dstText)}</span>` : "") +
       (syncText ? `<span class="vdes-badge">${escapeMapHtml(syncText)}</span>` : "") +
       (phaseText ? `<span class="vdes-badge">${escapeMapHtml(phaseText)}</span>` : "") +
       `<span class="vdes-badge">T${escapeMapHtml(String(msg.message_type ?? "--"))}</span>` +
@@ -112,11 +133,18 @@ function renderVdesRow(msg) {
     `<div class="vdes-row-meta">` +
       `<span>${escapeMapHtml(currentVdesCenterText())}</span>` +
       `<span>${escapeMapHtml(`${msg.bit_len || 0} bits`)}</span>` +
+      (sessionText ? `<span>${escapeMapHtml(sessionText)}</span>` : "") +
+      (asmText ? `<span>${escapeMapHtml(asmText)}</span>` : "") +
+      (countText ? `<span>${escapeMapHtml(countText)}</span>` : "") +
+      (ackText ? `<span>${escapeMapHtml(ackText)}</span>` : "") +
+      (cqiText ? `<span>${escapeMapHtml(cqiText)}</span>` : "") +
       (info ? `<span>${escapeMapHtml(info)}</span>` : "") +
       (fecText ? `<span>${escapeMapHtml(fecText)}</span>` : "") +
       `<span>${escapeMapHtml(vdesAgeText(msg._tsMs))}</span>` +
     `</div>` +
     `<div class="vdes-row-detail">` +
+      (previewText ? `<span>${escapeMapHtml(previewText)}</span>` : "") +
+      (previewText ? `<span>·</span>` : "") +
       `<span class="vdes-raw">${escapeMapHtml(rawHex)}</span>` +
     `</div>`;
   applyVdesFilterToRow(row);
@@ -142,7 +170,11 @@ function updateVdesBar() {
     const title = escapeMapHtml(msg.vessel_name || "Burst");
     const detail = [
       `${msg.bit_len || 0} bits`,
+      msg.message_label ? escapeMapHtml(msg.message_label) : null,
+      Number.isFinite(msg.source_id) ? `src ${Number(msg.source_id)}` : null,
+      Number.isFinite(msg.destination_id) ? `dst ${Number(msg.destination_id)}` : null,
       Number.isFinite(msg.link_id) ? `LID ${Number(msg.link_id)}` : null,
+      Number.isFinite(msg.asm_identifier) ? `ASM ${Number(msg.asm_identifier)}` : null,
       Number.isFinite(msg.sync_score) ? `sync ${(Number(msg.sync_score) * 100).toFixed(0)}%` : null,
       Number.isFinite(msg.phase_rotation) ? `rot ${Number(msg.phase_rotation)}` : null,
       msg.destination ? escapeMapHtml(msg.destination) : null,
@@ -215,6 +247,15 @@ window.onServerVdes = function(msg) {
     vessel_name: msg.vessel_name,
     callsign: msg.callsign,
     destination: msg.destination,
+    message_label: msg.message_label,
+    session_id: msg.session_id,
+    source_id: msg.source_id,
+    destination_id: msg.destination_id,
+    data_count: msg.data_count,
+    asm_identifier: msg.asm_identifier,
+    ack_nack_mask: msg.ack_nack_mask,
+    channel_quality: msg.channel_quality,
+    payload_preview: msg.payload_preview,
     link_id: msg.link_id,
     sync_score: msg.sync_score,
     sync_errors: msg.sync_errors,
