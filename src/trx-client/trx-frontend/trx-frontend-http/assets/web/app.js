@@ -4445,6 +4445,20 @@ function formatOverlayPs(ps) {
     .replaceAll(" ", "_");
 }
 
+function formatPsHtml(ps) {
+  const clipped = String(ps ?? "").slice(0, 8);
+  let html = "";
+  for (let i = 0; i < 8; i += 1) {
+    const ch = clipped[i];
+    if (ch == null || ch === " ") {
+      html += `<span class="rds-ps-gap">_</span>`;
+    } else {
+      html += escapeMapHtml(ch);
+    }
+  }
+  return html;
+}
+
 function formatOverlayPi(pi) {
   return pi != null
     ? `PI 0x${pi.toString(16).toUpperCase().padStart(4, "0")}`
@@ -4611,7 +4625,7 @@ function updateRdsPsOverlay(rds) {
         `${overlayTrafficFlagHtml("TA", rds?.traffic_announcement)}` +
         `</span>`;
       rdsPsOverlay.innerHTML =
-        `<span class="${mainClass}">${escapeMapHtml(mainText)}</span>` +
+        `<span class="${mainClass}">${hasPs ? formatPsHtml(ps) : escapeMapHtml(mainText)}</span>` +
         `<span class="rds-ps-meta">` +
         `<span class="rds-ps-meta-text">${escapeMapHtml(metaText)}</span>` +
         `${trafficFlags}` +
@@ -4678,7 +4692,13 @@ function updateRdsPsOverlay(rds) {
   statusEl.textContent = "Decoding";
   statusEl.className = "rds-value rds-decoding";
   piEl.textContent = rds.pi != null ? `0x${rds.pi.toString(16).toUpperCase().padStart(4, "0")}` : "--";
-  psEl.textContent = rds.program_service ?? "--";
+  if (psEl) {
+    if (rds.program_service) {
+      psEl.innerHTML = formatPsHtml(rds.program_service);
+    } else {
+      psEl.textContent = "--";
+    }
+  }
   ptyEl.textContent = rds.pty_name ?? (rds.pty != null ? String(rds.pty) : "--");
   ptyNameEl.textContent = rds.pty != null ? String(rds.pty) : "--";
   if (ptynEl) ptynEl.textContent = rds.program_type_name_long ?? "--";

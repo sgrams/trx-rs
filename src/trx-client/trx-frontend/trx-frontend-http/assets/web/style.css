@@ -577,6 +577,9 @@ small { color: var(--text-muted); }
   letter-spacing: 0.08em;
   white-space: pre;
 }
+.rds-ps-gap {
+  color: color-mix(in srgb, currentColor 34%, var(--text-muted));
+}
 .rds-ps-fallback {
   display: block;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
