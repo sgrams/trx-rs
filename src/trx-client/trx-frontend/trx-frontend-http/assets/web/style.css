@@ -1585,6 +1585,38 @@ small { color: var(--text-muted); }
   flex-wrap: wrap;
   gap: 0.45rem;
 }
+.map-locator-phase-row {
+  display: flex;
+  flex: 1 1 auto;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+.map-locator-phase-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 1.9rem;
+  padding: 0.2rem 0.8rem;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--border-light) 76%, transparent);
+  background: color-mix(in srgb, var(--input-bg) 88%, transparent);
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: transform 120ms ease, border-color 120ms ease, background 120ms ease, color 120ms ease;
+}
+.map-locator-phase-btn:hover {
+  transform: translateY(-1px);
+  border-color: color-mix(in srgb, var(--accent-green) 32%, var(--border-light));
+}
+.map-locator-phase-btn.is-active {
+  border-color: color-mix(in srgb, var(--accent-green) 62%, var(--border-light));
+  background: color-mix(in srgb, var(--accent-green) 14%, var(--input-bg));
+  color: var(--text-heading);
+}
 .map-locator-empty {
   font-size: 0.75rem;
   color: var(--text-muted);

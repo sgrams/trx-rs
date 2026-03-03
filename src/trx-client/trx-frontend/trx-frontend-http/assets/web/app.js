@@ -3171,7 +3171,7 @@ const stationMarkers = new Map();
 const locatorMarkers = new Map();
 const mapMarkers = new Set();
 const mapFilter = { ais: true, vdes: true, aprs: true, bookmark: true, ft8: true, wspr: true };
-const mapLocatorFilter = { types: new Set(), bands: new Set() };
+const mapLocatorFilter = { phase: "type", types: new Set(), bands: new Set() };
 const APRS_TRACK_MAX_POINTS = 64;
 const AIS_TRACK_MAX_POINTS = 64;
 const aisMarkers = new Map();
@@ -3247,8 +3247,11 @@ function renderMapLocatorChipRow(container, items, selectedSet, kind) {
   if (!container) return;
   container.innerHTML = "";
   if (!Array.isArray(items) || items.length === 0) {
-    container.innerHTML = `<span class="map-locator-empty">All ${kind === "type" ? "locator sources" : "bands"} visible</span>`;
+    container.innerHTML = `<span class="map-locator-empty">No ${kind === "type" ? "sources" : "bands"} available</span>`;
     return;
+  }
+  if (!(selectedSet instanceof Set) || selectedSet.size === 0) {
+    container.innerHTML = `<span class="map-locator-empty">All ${kind === "type" ? "sources" : "bands"} visible by default</span>`;
   }
   for (const item of items) {
     const btn = document.createElement("button");
@@ -3265,10 +3268,29 @@ function renderMapLocatorChipRow(container, items, selectedSet, kind) {
   }
 }
 
+function renderMapLocatorPhaseRow(container, phase) {
+  if (!container) return;
+  container.innerHTML = "";
+  const phases = [
+    { key: "type", label: "Source" },
+    { key: "band", label: "Band" },
+  ];
+  for (const item of phases) {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "map-locator-phase-btn";
+    if (phase === item.key) btn.classList.add("is-active");
+    btn.dataset.phase = item.key;
+    btn.textContent = item.label;
+    container.appendChild(btn);
+  }
+}
+
 function rebuildMapLocatorFilters() {
-  const typeEl = document.getElementById("map-locator-mode-filter");
-  const bandEl = document.getElementById("map-locator-band-filter");
-  if (!typeEl || !bandEl) return;
+  const phaseEl = document.getElementById("map-locator-phase");
+  const choiceEl = document.getElementById("map-locator-choice-filter");
+  const choiceLabelEl = document.getElementById("map-locator-choice-label");
+  if (!phaseEl || !choiceEl || !choiceLabelEl) return;
 
   const typeMap = new Map();
   const bandMap = new Map();
@@ -3285,15 +3307,23 @@ function rebuildMapLocatorFilters() {
     }
     const meta = entry?.bandMeta instanceof Map ? entry.bandMeta : new Map();
     for (const [label, hz] of meta.entries()) {
-      const key = `${sourceType}:${label}`;
-      if (bandMap.has(key)) continue;
-      bandMap.set(key, {
-        key,
-        label,
-        color: locatorFilterColor(sourceType),
-        kind: "band",
-        sortHz: Number.isFinite(hz) ? hz : 0,
-      });
+      if (!bandMap.has(label)) {
+        bandMap.set(label, {
+          key: label,
+          label,
+          color: locatorFilterColor(sourceType),
+          kind: "band",
+          sortHz: Number.isFinite(hz) ? hz : 0,
+        });
+        continue;
+      }
+      const existing = bandMap.get(label);
+      if (existing && Number.isFinite(hz) && (!Number.isFinite(existing.sortHz) || hz > existing.sortHz)) {
+        existing.sortHz = hz;
+      }
+      if (existing && !existing.color) {
+        existing.color = locatorFilterColor(sourceType);
+      }
     }
   }
 
@@ -3310,26 +3340,29 @@ function rebuildMapLocatorFilters() {
   const bandItems = Array.from(bandMap.values())
     .sort((a, b) => (b.sortHz - a.sortHz) || a.label.localeCompare(b.label));
 
-  renderMapLocatorChipRow(typeEl, typeItems, mapLocatorFilter.types, "type");
-  renderMapLocatorChipRow(bandEl, bandItems, mapLocatorFilter.bands, "band");
+  renderMapLocatorPhaseRow(phaseEl, mapLocatorFilter.phase);
+  if (mapLocatorFilter.phase === "band") {
+    choiceLabelEl.textContent = "Visible Bands";
+    renderMapLocatorChipRow(choiceEl, bandItems, mapLocatorFilter.bands, "band");
+  } else {
+    choiceLabelEl.textContent = "Visible Sources";
+    renderMapLocatorChipRow(choiceEl, typeItems, mapLocatorFilter.types, "type");
+  }
 }
 
 function markerPassesLocatorFilters(marker) {
   const meta = marker?._locatorFilterMeta;
   if (!meta) return true;
-  if (mapLocatorFilter.types.size > 0 && !mapLocatorFilter.types.has(meta.sourceType)) {
+  if (mapLocatorFilter.phase === "band") {
+    if (mapLocatorFilter.bands.size === 0) return true;
+    if (!(meta.bands instanceof Set)) return false;
+    for (const label of mapLocatorFilter.bands) {
+      if (meta.bands.has(label)) return true;
+    }
     return false;
   }
-  if (mapLocatorFilter.bands.size > 0) {
-    const wanted = Array.from(mapLocatorFilter.bands);
-    const matches = wanted.some((key) => {
-      const sep = key.indexOf(":");
-      if (sep < 0) return false;
-      const sourceType = key.slice(0, sep);
-      const label = key.slice(sep + 1);
-      return sourceType === meta.sourceType && meta.bands instanceof Set && meta.bands.has(label);
-    });
-    if (!matches) return false;
+  if (mapLocatorFilter.types.size > 0 && !mapLocatorFilter.types.has(meta.sourceType)) {
+    return false;
   }
   return true;
 }
@@ -3579,8 +3612,8 @@ function initAprsMap() {
   const bookmarkFilter = document.getElementById("map-filter-bookmark");
   const ft8Filter = document.getElementById("map-filter-ft8");
   const wsprFilter = document.getElementById("map-filter-wspr");
-  const locatorModeFilterEl = document.getElementById("map-locator-mode-filter");
-  const locatorBandFilterEl = document.getElementById("map-locator-band-filter");
+  const locatorPhaseEl = document.getElementById("map-locator-phase");
+  const locatorChoiceEl = document.getElementById("map-locator-choice-filter");
   if (aisFilter) {
     aisFilter.addEventListener("change", () => {
       mapFilter.ais = aisFilter.checked;
@@ -3623,31 +3656,30 @@ function initAprsMap() {
       applyMapFilter();
     });
   }
-  if (locatorModeFilterEl) {
-    locatorModeFilterEl.addEventListener("click", (e) => {
-      const chip = e.target.closest(".map-locator-chip[data-filter-kind='type']");
-      if (!chip) return;
-      const key = String(chip.dataset.filterKey || "");
-      if (!key) return;
-      if (mapLocatorFilter.types.has(key)) {
-        mapLocatorFilter.types.delete(key);
-      } else {
-        mapLocatorFilter.types.add(key);
-      }
+  if (locatorPhaseEl) {
+    locatorPhaseEl.addEventListener("click", (e) => {
+      const btn = e.target.closest(".map-locator-phase-btn[data-phase]");
+      if (!btn) return;
+      const phase = String(btn.dataset.phase || "");
+      if (phase !== "type" && phase !== "band") return;
+      if (mapLocatorFilter.phase === phase) return;
+      mapLocatorFilter.phase = phase;
       rebuildMapLocatorFilters();
       applyMapFilter();
     });
   }
-  if (locatorBandFilterEl) {
-    locatorBandFilterEl.addEventListener("click", (e) => {
-      const chip = e.target.closest(".map-locator-chip[data-filter-kind='band']");
+  if (locatorChoiceEl) {
+    locatorChoiceEl.addEventListener("click", (e) => {
+      const chip = e.target.closest(".map-locator-chip[data-filter-kind]");
       if (!chip) return;
+      const kind = String(chip.dataset.filterKind || "");
       const key = String(chip.dataset.filterKey || "");
       if (!key) return;
-      if (mapLocatorFilter.bands.has(key)) {
-        mapLocatorFilter.bands.delete(key);
+      const selectedSet = kind === "band" ? mapLocatorFilter.bands : mapLocatorFilter.types;
+      if (selectedSet.has(key)) {
+        selectedSet.delete(key);
       } else {
-        mapLocatorFilter.bands.add(key);
+        selectedSet.add(key);
       }
       rebuildMapLocatorFilters();
       applyMapFilter();
