@@ -355,6 +355,7 @@ function syncTopBarAccess() {
 
 let overviewDrawPending = false;
 let lastSpectrumData = null;
+window.lastSpectrumData = null;
 let lastControl;
 let lastTxEn = null;
 let lastHasTx = true;
@@ -368,6 +369,7 @@ let sigMeasureAccumMs = 0;
 let sigMeasureWeighted = 0;
 let sigMeasurePeak = null;
 let lastFreqHz = null;
+window.lastFreqHz = null;
 let centerFreqDirty = false;
 let jogUnit = loadSetting("jogUnit", 1000);   // base unit: 1, 1000, 1000000
 let jogMult = loadSetting("jogMult", 1);      // divisor: 1, 10, 100
@@ -1185,6 +1187,7 @@ function applyLocalTunedFrequency(hz, forceDisplay = false) {
     resetWfmStereoIndicator();
   }
   lastFreqHz = hz;
+  window.lastFreqHz = lastFreqHz;
   updateDocumentTitle(lastSpectrumData?.rds ?? null);
   refreshWavelengthDisplay(lastFreqHz);
   if (forceDisplay) {
@@ -2085,6 +2088,7 @@ function render(update) {
   // Sync filter state (SDR backends only)
   if (update.filter && typeof update.filter.bandwidth_hz === "number") {
     currentBandwidthHz = update.filter.bandwidth_hz;
+    window.currentBandwidthHz = currentBandwidthHz;
     syncBandwidthInput(currentBandwidthHz);
     if (window.refreshCwTonePicker) {
       window.refreshCwTonePicker();
@@ -2879,6 +2883,7 @@ function formatBwLabel(hz) {
 
 // Current receive bandwidth (Hz) — updated by server sync and BW drag.
 let currentBandwidthHz = 3_000;
+window.currentBandwidthHz = currentBandwidthHz;
 const spectrumBwInput = document.getElementById("spectrum-bw-input");
 const spectrumBwSetBtn = document.getElementById("spectrum-bw-set-btn");
 const spectrumBwAutoBtn = document.getElementById("spectrum-bw-auto-btn");
@@ -2904,6 +2909,7 @@ function syncBandwidthInput(hz) {
 async function applyBwDefaultForMode(mode, sendToServer) {
   const [def] = mwDefaultsForMode(mode);
   currentBandwidthHz = def;
+  window.currentBandwidthHz = currentBandwidthHz;
   syncBandwidthInput(def);
   if (sendToServer) {
     try { await postPath(`/set_bandwidth?hz=${def}`); } catch (_) {}
@@ -2921,6 +2927,7 @@ async function applyBandwidthFromInput() {
   }
   const clamped = Math.max(minBw, Math.min(maxBw, next));
   currentBandwidthHz = clamped;
+  window.currentBandwidthHz = currentBandwidthHz;
   syncBandwidthInput(clamped);
   if (lastSpectrumData) scheduleSpectrumDraw();
   try {
@@ -2994,6 +3001,7 @@ async function applyAutoBandwidth() {
     return;
   }
   currentBandwidthHz = estimated;
+  window.currentBandwidthHz = currentBandwidthHz;
   syncBandwidthInput(estimated);
   if (lastSpectrumData) scheduleSpectrumDraw();
   try {
@@ -4964,6 +4972,7 @@ function startSpectrumStreaming() {
     }
     try {
       lastSpectrumData = JSON.parse(evt.data);
+      window.lastSpectrumData = lastSpectrumData;
       lastSpectrumRenderData = buildSpectrumRenderData(lastSpectrumData);
       settlePendingSpectrumFrameWaiters(lastSpectrumData);
       pushSpectrumPeakHoldFrame(lastSpectrumRenderData);
@@ -5832,6 +5841,7 @@ if (spectrumCanvas) {
       const [, minBw, maxBw] = mwDefaultsForMode(modeEl ? modeEl.value : "USB");
       newBw = Math.round(Math.max(minBw, Math.min(maxBw, newBw)));
       currentBandwidthHz = newBw;
+      window.currentBandwidthHz = currentBandwidthHz;
       syncBandwidthInput(newBw);
       scheduleSpectrumDraw();
       scheduleOverviewDraw();
