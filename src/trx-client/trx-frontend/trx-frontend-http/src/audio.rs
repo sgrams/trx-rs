@@ -235,9 +235,7 @@ pub fn clear_vdes_history(context: &FrontendRuntimeContext) {
 }
 
 fn timestamp_ms_for_elapsed(elapsed: Duration) -> i64 {
-    let wall_clock = SystemTime::now()
-        .checked_sub(elapsed)
-        .unwrap_or(UNIX_EPOCH);
+    let wall_clock = SystemTime::now().checked_sub(elapsed).unwrap_or(UNIX_EPOCH);
     let millis = wall_clock
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
