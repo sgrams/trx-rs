@@ -15,6 +15,8 @@ pub struct Bookmark {
     pub freq_hz: u64,
     pub mode: String,
     pub bandwidth_hz: Option<u64>,
+    #[serde(default)]
+    pub locator: Option<String>,
     pub comment: String,
     pub category: String,
     pub decoders: Vec<String>,
@@ -31,12 +33,24 @@ impl BookmarkStore {
             let _ = std::fs::create_dir_all(parent);
         }
         let db = if path.exists() {
-            PickleDb::load(path, PickleDbDumpPolicy::AutoDump, SerializationMethod::Json)
-                .unwrap_or_else(|_| {
-                    PickleDb::new(path, PickleDbDumpPolicy::AutoDump, SerializationMethod::Json)
-                })
+            PickleDb::load(
+                path,
+                PickleDbDumpPolicy::AutoDump,
+                SerializationMethod::Json,
+            )
+            .unwrap_or_else(|_| {
+                PickleDb::new(
+                    path,
+                    PickleDbDumpPolicy::AutoDump,
+                    SerializationMethod::Json,
+                )
+            })
         } else {
-            PickleDb::new(path, PickleDbDumpPolicy::AutoDump, SerializationMethod::Json)
+            PickleDb::new(
+                path,
+                PickleDbDumpPolicy::AutoDump,
+                SerializationMethod::Json,
+            )
         };
         Self {
             db: Arc::new(RwLock::new(db)),
@@ -94,8 +108,8 @@ impl BookmarkStore {
 
     /// Returns true if any bookmark (other than `exclude_id`) has `freq_hz`.
     pub fn freq_taken(&self, freq_hz: u64, exclude_id: Option<&str>) -> bool {
-        self.list().into_iter().any(|bm| {
-            bm.freq_hz == freq_hz && exclude_id.is_none_or(|ex| bm.id != ex)
-        })
+        self.list()
+            .into_iter()
+            .any(|bm| bm.freq_hz == freq_hz && exclude_id.is_none_or(|ex| bm.id != ex))
     }
 }

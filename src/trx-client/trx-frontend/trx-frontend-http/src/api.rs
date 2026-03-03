@@ -744,6 +744,7 @@ pub struct BookmarkInput {
     pub freq_hz: u64,
     pub mode: String,
     pub bandwidth_hz: Option<u64>,
+    pub locator: Option<String>,
     pub comment: Option<String>,
     pub category: Option<String>,
     pub decoders: Option<Vec<String>>,
@@ -764,6 +765,17 @@ fn require_control(
 
 fn gen_bookmark_id() -> String {
     hex::encode(rand::random::<[u8; 16]>())
+}
+
+fn normalize_bookmark_locator(locator: Option<String>) -> Option<String> {
+    locator.and_then(|value| {
+        let trimmed = value.trim().to_uppercase();
+        if trimmed.is_empty() {
+            None
+        } else {
+            Some(trimmed)
+        }
+    })
 }
 
 #[get("/bookmarks")]
@@ -801,6 +813,7 @@ pub async fn create_bookmark(
         freq_hz: body.freq_hz,
         mode: body.mode.clone(),
         bandwidth_hz: body.bandwidth_hz,
+        locator: normalize_bookmark_locator(body.locator.clone()),
         comment: body.comment.clone().unwrap_or_default(),
         category: body.category.clone().unwrap_or_default(),
         decoders: body.decoders.clone().unwrap_or_default(),
@@ -835,6 +848,7 @@ pub async fn update_bookmark(
         freq_hz: body.freq_hz,
         mode: body.mode.clone(),
         bandwidth_hz: body.bandwidth_hz,
+        locator: normalize_bookmark_locator(body.locator.clone()),
         comment: body.comment.clone().unwrap_or_default(),
         category: body.category.clone().unwrap_or_default(),
         decoders: body.decoders.clone().unwrap_or_default(),

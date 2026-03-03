@@ -58,6 +58,7 @@ function bmApplyFilters() {
   filtered = text
     ? filtered.filter((bm) =>
         (bm.name || "").toLowerCase().includes(text) ||
+        (bm.locator || "").toLowerCase().includes(text) ||
         (bm.category || "").toLowerCase().includes(text) ||
         (bm.comment || "").toLowerCase().includes(text)
       )
@@ -117,6 +118,7 @@ function bmRender(list) {
     const tr = document.createElement("tr");
     tr.dataset.bmId = bm.id;
     const bwCell = bm.bandwidth_hz ? bmFmtFreq(bm.bandwidth_hz) : "--";
+    const locatorCell = bm.locator || "--";
     const catCell = bm.category || "Uncategorised";
     const decoderCell = (bm.decoders || []).join(", ").toUpperCase() || "--";
     const commentCell = bm.comment || "";
@@ -125,6 +127,7 @@ function bmRender(list) {
       `<td class="bm-col-freq">${bmFmtFreq(bm.freq_hz)}</td>` +
       `<td class="bm-col-mode">${bmEsc(bm.mode)}</td>` +
       `<td class="bm-col-bw">${bwCell}</td>` +
+      `<td class="bm-col-loc">${bmEsc(locatorCell)}</td>` +
       `<td class="bm-col-cat">${bmEsc(catCell)}</td>` +
       `<td class="bm-col-dec">${bmEsc(decoderCell)}</td>` +
       `<td class="bm-col-cmt">${bmEsc(commentCell)}</td>` +
@@ -164,6 +167,7 @@ function bmOpenForm(bm) {
   document.getElementById("bm-freq").value = bm ? bm.freq_hz : "";
   document.getElementById("bm-mode").value = bm ? bm.mode : "";
   document.getElementById("bm-bw").value = bm && bm.bandwidth_hz ? bm.bandwidth_hz : "";
+  document.getElementById("bm-locator").value = bm ? (bm.locator || "") : "";
   document.getElementById("bm-category-input").value = bm ? (bm.category || "") : "";
   document.getElementById("bm-comment").value = bm ? (bm.comment || "") : "";
   bmWriteDecoders(bm ? bm.decoders : []);
@@ -201,6 +205,7 @@ async function bmSave(e) {
   const mode = document.getElementById("bm-mode").value.trim();
   const bwStr = document.getElementById("bm-bw").value;
   const bandwidth_hz = bwStr ? parseInt(bwStr, 10) : null;
+  const locator = document.getElementById("bm-locator").value.trim().toUpperCase();
   const category = document.getElementById("bm-category-input").value.trim();
   const comment = document.getElementById("bm-comment").value.trim();
   const decoders = bmReadDecoders();
@@ -210,7 +215,16 @@ async function bmSave(e) {
     return;
   }
 
-  const body = { name, freq_hz, mode, bandwidth_hz, category, comment, decoders };
+  const body = {
+    name,
+    freq_hz,
+    mode,
+    bandwidth_hz,
+    locator: locator || null,
+    category,
+    comment,
+    decoders,
+  };
 
   try {
     let resp;

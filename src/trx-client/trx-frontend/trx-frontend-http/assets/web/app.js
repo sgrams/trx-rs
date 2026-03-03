@@ -3476,6 +3476,73 @@ function haversineKm(lat1, lon1, lat2, lon2) {
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
+function locatorToLatLon(locator) {
+  const raw = String(locator || "").trim().toUpperCase();
+  if (!/^[A-R]{2}\d{2}([A-X]{2})?$/.test(raw)) return null;
+  let lon = -180;
+  let lat = -90;
+  lon += (raw.charCodeAt(0) - 65) * 20;
+  lat += (raw.charCodeAt(1) - 65) * 10;
+  lon += Number(raw.slice(2, 3)) * 2;
+  lat += Number(raw.slice(3, 4));
+  if (raw.length >= 6) {
+    lon += (raw.charCodeAt(4) - 65) * (5 / 60);
+    lat += (raw.charCodeAt(5) - 65) * (2.5 / 60);
+    lon += 2.5 / 60;
+    lat += 1.25 / 60;
+  } else {
+    lon += 1;
+    lat += 0.5;
+  }
+  return { lat, lon };
+}
+
+function formatDistanceKm(distKm) {
+  if (!Number.isFinite(distKm)) return null;
+  return distKm < 1 ? `${Math.round(distKm * 1000)} m` : `${distKm.toFixed(1)} km`;
+}
+
+function bookmarkDistanceText(bm) {
+  if (!bm || serverLat == null || serverLon == null) return null;
+  const latLon = locatorToLatLon(bm.locator);
+  if (!latLon) return null;
+  return formatDistanceKm(haversineKm(serverLat, serverLon, latLon.lat, latLon.lon));
+}
+
+function buildBookmarkTooltipText(bm) {
+  if (!bm) return null;
+  const parts = [];
+  if (bm.name) parts.push(String(bm.name));
+  if (typeof bmFmtFreq === "function") parts.push(bmFmtFreq(bm.freq_hz));
+  if (bm.mode) parts.push(String(bm.mode));
+  if (bm.locator) parts.push(String(bm.locator));
+  const distance = bookmarkDistanceText(bm);
+  if (distance) parts.push(distance);
+  let text = parts.join(" · ");
+  if (bm.comment) {
+    text += (text ? "\n" : "") + String(bm.comment);
+  }
+  return text;
+}
+
+function nearestBookmarkForHz(hz, widthPx, range) {
+  const ref = typeof bmList !== "undefined" ? bmList : null;
+  if (!Array.isArray(ref) || !Number.isFinite(hz) || !widthPx || !range || !Number.isFinite(range.visSpanHz) || range.visSpanHz <= 0) {
+    return null;
+  }
+  const maxDeltaHz = Math.max((range.visSpanHz / widthPx) * 6, 10);
+  let best = null;
+  let bestDelta = Number.POSITIVE_INFINITY;
+  for (const bm of ref) {
+    const delta = Math.abs(Number(bm.freq_hz) - hz);
+    if (delta <= maxDeltaHz && delta < bestDelta) {
+      best = bm;
+      bestDelta = delta;
+    }
+  }
+  return best;
+}
+
 function formatTimeAgo(tsMs) {
   if (!tsMs) return null;
   const secs = Math.round((Date.now() - tsMs) / 1000);
@@ -5571,7 +5638,7 @@ function createBookmarkChip(bm, colorMap, options = {}) {
   if (options.sideStack) {
     span.classList.add("spectrum-bookmark-chip-side");
   }
-  span.title = bm.name + " \u2014 " + freqStr + (bm.comment ? "\n" + bm.comment : "");
+  span.title = buildBookmarkTooltipText(bm) || (bm.name + " \u2014 " + freqStr + (bm.comment ? "\n" + bm.comment : ""));
   span.dataset.bmId = bm.id;
   const labelHtml = options.sideStack
     ? (
@@ -5931,10 +5998,13 @@ if (spectrumCanvas) {
     const edge = getBwEdgeHit(cssX, rect.width, range);
     spectrumCanvas.style.cursor = edge ? "ew-resize" : "crosshair";
     const hz = canvasXToHz(cssX, rect.width, range);
+    const bookmark = edge ? null : nearestBookmarkForHz(hz, rect.width, range);
     const peak = edge ? null : nearestSpectrumPeak(cssX, rect.width, lastSpectrumData);
     const peakHz = peak?.hz ?? null;
     const peakDb = peak && Number.isFinite(peak.db) ? `${peak.db.toFixed(1)} dB` : null;
-    if (peakHz != null && Math.abs(peakHz - hz) >= Math.max(minFreqStepHz, 10)) {
+    if (bookmark) {
+      spectrumTooltip.textContent = buildBookmarkTooltipText(bookmark);
+    } else if (peakHz != null && Math.abs(peakHz - hz) >= Math.max(minFreqStepHz, 10)) {
       spectrumTooltip.textContent = peakDb
         ? `Peak ${formatSpectrumFreq(peakHz)} · ${peakDb}`
         : `Peak ${formatSpectrumFreq(peakHz)}`;
