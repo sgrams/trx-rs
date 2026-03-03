@@ -847,10 +847,10 @@ function drawSignalOverlay() {
   }
 
   if (lastFreqHz != null && currentBandwidthHz > 0) {
-    const halfBw = currentBandwidthHz / 2;
-    for (const centerHz of visibleBandwidthCenters(lastFreqHz)) {
-      const xL = hzToX(centerHz - halfBw);
-      const xR = hzToX(centerHz + halfBw);
+    for (const spec of visibleBandwidthSpecs(lastFreqHz)) {
+      const halfBw = spec.widthHz / 2;
+      const xL = hzToX(spec.centerHz - halfBw);
+      const xR = hzToX(spec.centerHz + halfBw);
       const stripW = xR - xL;
       if (stripW <= 1) continue;
       const grd = ctx.createLinearGradient(xL, 0, xR, 0);
@@ -1216,25 +1216,53 @@ function isVdesMode(mode = modeEl ? modeEl.value : "") {
   return String(mode || "").toUpperCase() === "VDES";
 }
 
+function isMarineMode(mode = modeEl ? modeEl.value : "") {
+  return String(mode || "").toUpperCase() === "MARINE";
+}
+
+function visibleBandwidthSpecs(freqHz = lastFreqHz, mode = modeEl ? modeEl.value : "") {
+  if (!Number.isFinite(freqHz)) return [];
+  const modeUpper = String(mode || "").toUpperCase();
+  if (modeUpper === "MARINE") {
+    return [
+      { centerHz: freqHz - 137_500, widthHz: 100_000 },
+      { centerHz: freqHz, widthHz: 12_500 },
+      { centerHz: freqHz + 50_000, widthHz: 12_500 },
+    ];
+  }
+  if (modeUpper === "AIS") {
+    return [
+      { centerHz: freqHz, widthHz: currentBandwidthHz },
+      { centerHz: freqHz + 50_000, widthHz: currentBandwidthHz },
+    ];
+  }
+  return [{ centerHz: freqHz, widthHz: currentBandwidthHz }];
+}
+
 function coverageSpanForMode(freqHz, bandwidthHz = coverageGuardBandwidthHz(), mode = modeEl ? modeEl.value : "") {
   if (!Number.isFinite(freqHz)) return null;
-  const safeBw = Math.max(0, Number.isFinite(bandwidthHz) ? bandwidthHz : 0);
-  let loHz = freqHz - safeBw / 2;
-  let hiHz = freqHz + safeBw / 2;
-  if (isAisMode(mode)) {
-    const aisBFreqHz = freqHz + 50_000;
-    loHz = Math.min(loHz, aisBFreqHz - safeBw / 2);
-    hiHz = Math.max(hiHz, aisBFreqHz + safeBw / 2);
+  const specs = visibleBandwidthSpecs(freqHz, mode).map((spec) => {
+    const widthHz = Math.max(
+      0,
+      Number.isFinite(spec.widthHz) ? spec.widthHz : Math.max(0, Number.isFinite(bandwidthHz) ? bandwidthHz : 0),
+    );
+    return {
+      loHz: spec.centerHz - widthHz / 2,
+      hiHz: spec.centerHz + widthHz / 2,
+    };
+  });
+  if (specs.length === 0) return null;
+  let loHz = specs[0].loHz;
+  let hiHz = specs[0].hiHz;
+  for (const spec of specs.slice(1)) {
+    loHz = Math.min(loHz, spec.loHz);
+    hiHz = Math.max(hiHz, spec.hiHz);
   }
   return { loHz, hiHz };
 }
 
 function visibleBandwidthCenters(freqHz = lastFreqHz, mode = modeEl ? modeEl.value : "") {
-  if (!Number.isFinite(freqHz)) return [];
-  if (isAisMode(mode)) {
-    return [freqHz, freqHz + 50_000];
-  }
-  return [freqHz];
+  return visibleBandwidthSpecs(freqHz, mode).map((spec) => spec.centerHz);
 }
 
 function effectiveSpectrumCoverageSpanHz(sampleRateHz) {
@@ -2043,14 +2071,14 @@ function render(update) {
   const wsprStatus = document.getElementById("wspr-status");
   setModeBoundDecodeStatus(
     aisStatus,
-    ["AIS"],
+    ["AIS", "MARINE"],
     "Select AIS mode to decode",
     "Connected, listening for packets",
   );
   if (window.updateAisBar) window.updateAisBar();
   setModeBoundDecodeStatus(
     vdesStatus,
-    ["VDES"],
+    ["VDES", "MARINE"],
     "Select VDES mode to decode",
     "Connected, listening for bursts",
   );
@@ -2748,6 +2776,7 @@ const MODE_BW_DEFAULTS = {
   FM:     [12_500, 2_500, 25_000, 500],
   AIS:    [25_000, 12_500, 50_000, 500],
   VDES:   [100_000, 25_000, 200_000, 1_000],
+  MARINE: [100_000, 12_500, 100_000, 500],
   WFM:    [180_000, 50_000,300_000,5_000],
   DIG:    [3_000,  300,   6_000,  100],
   PKT:    [25_000, 300,  50_000,  500],
@@ -4345,9 +4374,9 @@ function updateDecodeStatus(text) {
   const aprs = document.getElementById("aprs-status");
   const cw = document.getElementById("cw-status");
   const ft8 = document.getElementById("ft8-status");
-  setModeBoundDecodeStatus(ais, ["AIS"], "Select AIS mode to decode", text);
+  setModeBoundDecodeStatus(ais, ["AIS", "MARINE"], "Select AIS mode to decode", text);
   const vdesText = text === "Connected, listening for packets" ? "Connected, listening for bursts" : text;
-  setModeBoundDecodeStatus(vdes, ["VDES"], "Select VDES mode to decode", vdesText);
+  setModeBoundDecodeStatus(vdes, ["VDES", "MARINE"], "Select VDES mode to decode", vdesText);
   setModeBoundDecodeStatus(aprs, ["PKT"], "Select PKT mode to decode", text);
   if (cw && cw.textContent !== "Receiving") cw.textContent = text;
   if (ft8 && ft8.textContent !== "Receiving") ft8.textContent = text;
@@ -5148,8 +5177,8 @@ function drawSpectrum(data) {
     if (_bwDragEdge) {
       // Bottom bookmark tab centered on each visible channel, shown while resizing BW
       const bwText = formatBwLabel(currentBandwidthHz);
-      for (const centerHz of visibleBandwidthCenters(lastFreqHz)) {
-        const xMid = hzToX(centerHz);
+      for (const spec of visibleBandwidthSpecs(lastFreqHz)) {
+        const xMid = hzToX(spec.centerHz);
         ctx.save();
         ctx.font = `bold ${Math.round(10 * dpr)}px sans-serif`;
         const tw = ctx.measureText(bwText).width;
@@ -5539,13 +5568,14 @@ if (overviewCanvas) {
 // ── BW strip edge hit-test (CSS pixels) ──────────────────────────────────────
 function getBwEdgeHit(cssX, cssW, range) {
   if (!lastFreqHz || !currentBandwidthHz || !lastSpectrumData) return null;
-  const halfBw = currentBandwidthHz / 2;
+  if (isMarineMode()) return null;
   const HIT = 8;
   let bestEdge = null;
   let bestDist = Number.POSITIVE_INFINITY;
-  for (const centerHz of visibleBandwidthCenters(lastFreqHz)) {
-    const xL = ((centerHz - halfBw - range.visLoHz) / range.visSpanHz) * cssW;
-    const xR = ((centerHz + halfBw - range.visLoHz) / range.visSpanHz) * cssW;
+  for (const spec of visibleBandwidthSpecs(lastFreqHz)) {
+    const halfBw = spec.widthHz / 2;
+    const xL = ((spec.centerHz - halfBw - range.visLoHz) / range.visSpanHz) * cssW;
+    const xR = ((spec.centerHz + halfBw - range.visLoHz) / range.visSpanHz) * cssW;
     const distL = Math.abs(cssX - xL);
     const distR = Math.abs(cssX - xR);
     if (distL < HIT && distL < bestDist) {

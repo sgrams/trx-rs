@@ -37,9 +37,9 @@ const PI4_QPSK_DIBITS: [u8; 4] = [0b00, 0b01, 0b11, 0b10];
 const MIN_SYNC_CANDIDATE_SCORE: f32 = 0.20;
 const MIN_SYNC_PARSE_SCORE: f32 = 0.50;
 const BURST_TRIGGER_NOISE_MULT: f32 = 1.8;
-const BURST_TRIGGER_FLOOR: f32 = 1.0e-6;
+const BURST_TRIGGER_FLOOR: f32 = 1.0e-12;
 const BURST_SUSTAIN_NOISE_MULT: f32 = 1.02;
-const BURST_SUSTAIN_FLOOR: f32 = 5.0e-7;
+const BURST_SUSTAIN_FLOOR: f32 = 1.0e-13;
 
 #[derive(Debug, Clone)]
 pub struct VdesDecoder {
@@ -54,7 +54,7 @@ impl VdesDecoder {
     pub fn new(sample_rate: u32) -> Self {
         Self {
             sample_rate: sample_rate.max(1) as f32,
-            noise_floor: 1.0e-4,
+            noise_floor: 1.0e-12,
             in_burst: false,
             quiet_run: 0,
             burst_samples: Vec::new(),
@@ -62,7 +62,7 @@ impl VdesDecoder {
     }
 
     pub fn reset(&mut self) {
-        self.noise_floor = 1.0e-4;
+        self.noise_floor = 1.0e-12;
         self.in_burst = false;
         self.quiet_run = 0;
         self.burst_samples.clear();
