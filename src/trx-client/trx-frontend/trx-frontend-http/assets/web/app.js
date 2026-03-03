@@ -2201,9 +2201,12 @@ function render(update) {
   );
   if (window.updateAprsBar) window.updateAprsBar();
   if (window.updateFt8Bar) window.updateFt8Bar();
-  if (cwStatus && modeUpper !== "CW" && modeUpper !== "CWR" && cwStatus.textContent === "Receiving") {
-    cwStatus.textContent = "Connected, listening for packets";
-  }
+  setModeBoundDecodeStatus(
+    cwStatus,
+    ["CW", "CWR"],
+    "Select CW mode to decode",
+    "Connected, listening for CW",
+  );
   const ft8Enabled = !!update.ft8_decode_enabled;
   if (ft8Status && (!ft8Enabled || (modeUpper !== "DIG" && modeUpper !== "USB")) && ft8Status.textContent === "Receiving") {
     ft8Status.textContent = "Connected, listening for packets";
@@ -5096,7 +5099,8 @@ function updateDecodeStatus(text) {
   const vdesText = text === "Connected, listening for packets" ? "Connected, listening for bursts" : text;
   setModeBoundDecodeStatus(vdes, ["VDES", "MARINE"], "Select VDES mode to decode", vdesText);
   setModeBoundDecodeStatus(aprs, ["PKT"], "Select PKT mode to decode", text);
-  if (cw && cw.textContent !== "Receiving") cw.textContent = text;
+  const cwText = text === "Connected, listening for packets" ? "Connected, listening for CW" : text;
+  setModeBoundDecodeStatus(cw, ["CW", "CWR"], "Select CW mode to decode", cwText);
   if (ft8 && ft8.textContent !== "Receiving") ft8.textContent = text;
 }
 function connectDecode() {
