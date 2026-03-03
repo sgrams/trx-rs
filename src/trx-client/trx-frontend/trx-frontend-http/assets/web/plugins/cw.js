@@ -67,6 +67,7 @@ function drawCwTonePicker() {
   const fullLoHz = centerHz - sampleRate / 2;
   const tones = new Array(width).fill(0);
   let maxPower = 0;
+  let minPower = Number.POSITIVE_INFINITY;
   for (let x = 0; x < width; x += 1) {
     const frac = width <= 1 ? 0 : x / (width - 1);
     const toneHz = range.lowHz + frac * (range.highHz - range.lowHz);
@@ -74,13 +75,14 @@ function drawCwTonePicker() {
     const power = Math.max(0, Number(bins[idx]) || 0);
     tones[x] = power;
     if (power > maxPower) maxPower = power;
+    if (power < minPower) minPower = power;
   }
 
+  const powerSpan = Math.max(1, maxPower - minPower);
   for (let x = 0; x < width; x += 1) {
-    const frac = width <= 1 ? 0 : x / (width - 1);
-    const level = maxPower > 0 ? tones[x] / maxPower : 0;
+    const level = Math.max(0, Math.min(1, (tones[x] - minPower) / powerSpan));
     const hue = 200 - level * 155;
-    const light = 18 + level * 55;
+    const light = 14 + Math.pow(level, 0.75) * 58;
     ctx.fillStyle = `hsl(${hue} 85% ${light}%)`;
     ctx.fillRect(x, 0, 1, height);
   }
@@ -109,7 +111,7 @@ if (cwAutoInput) {
   cwAutoInput.addEventListener("change", async () => {
     const enabled = cwAutoInput.checked;
     applyCwAutoUi(enabled);
-    try { await postPath(`/set_cw_auto?enabled=${enabled ? 1 : 0}`); }
+    try { await postPath(`/set_cw_auto?enabled=${enabled ? "true" : "false"}`); }
     catch (e) { console.error("CW auto toggle failed", e); }
   });
 }
