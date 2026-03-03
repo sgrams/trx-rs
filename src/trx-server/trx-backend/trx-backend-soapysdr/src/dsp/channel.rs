@@ -14,7 +14,7 @@ fn agc_for_mode(mode: &RigMode, audio_sample_rate: u32) -> SoftAgc {
     let sr = audio_sample_rate.max(1) as f32;
     match mode {
         RigMode::CW | RigMode::CWR => SoftAgc::new(sr, 1.0, 50.0, 0.5, 30.0),
-        RigMode::AM => SoftAgc::new(sr, 500.0, 5_000.0, 0.5, 30.0),
+        RigMode::AM => SoftAgc::new(sr, 250.0, 4_000.0, 0.8, 40.0),
         _ => SoftAgc::new(sr, 5.0, 500.0, 0.5, 30.0),
     }
 }
