@@ -3282,13 +3282,14 @@ function renderMapLocatorChipRow(container, items, selectedSet, kind) {
     container.innerHTML = `<span class="map-locator-empty">No ${kind === "band" ? "bands" : "sources"} available</span>`;
     return;
   }
+  let helperText = "";
   if (kind === "source") {
     const allVisible = items.every((item) => mapFilter[item.key]);
     if (allVisible) {
-      container.innerHTML = '<span class="map-locator-empty">All sources visible by default</span>';
+      helperText = "All sources visible by default";
     }
   } else if (!(selectedSet instanceof Set) || selectedSet.size === 0) {
-    container.innerHTML = `<span class="map-locator-empty">All ${kind === "band" ? "bands" : "sources"} visible by default</span>`;
+    helperText = `All ${kind === "band" ? "bands" : "sources"} visible by default`;
   }
   for (const item of items) {
     const btn = document.createElement("button");
@@ -3303,6 +3304,12 @@ function renderMapLocatorChipRow(container, items, selectedSet, kind) {
       ? `<span class="map-locator-chip-band">${escapeMapHtml(item.label)}</span>`
       : `<span class="map-locator-chip-text">${escapeMapHtml(item.label)}</span>`;
     container.appendChild(btn);
+  }
+  if (helperText) {
+    const hint = document.createElement("span");
+    hint.className = "map-locator-empty";
+    hint.textContent = helperText;
+    container.appendChild(hint);
   }
 }
 
@@ -3330,10 +3337,20 @@ function rebuildMapLocatorFilters() {
   const choiceLabelEl = document.getElementById("map-locator-choice-label");
   if (!phaseEl || !choiceEl || !choiceLabelEl) return;
 
+  const availableSources = new Set();
+  if (aisMarkers.size > 0) availableSources.add("ais");
+  if (vdesMarkers.size > 0) availableSources.add("vdes");
+  for (const entry of stationMarkers.values()) {
+    if (entry?.type === "aprs" && (entry.marker || (entry.lat != null && entry.lon != null))) {
+      availableSources.add("aprs");
+      break;
+    }
+  }
   const bandMap = new Map();
   for (const entry of locatorMarkers.values()) {
     const sourceType = entry?.sourceType;
     if (!sourceType) continue;
+    availableSources.add(sourceType);
     const meta = entry?.bandMeta instanceof Map ? entry.bandMeta : new Map();
     for (const [label, hz] of meta.entries()) {
       if (!bandMap.has(label)) {
@@ -3360,12 +3377,14 @@ function rebuildMapLocatorFilters() {
     if (!bandMap.has(key)) mapLocatorFilter.bands.delete(key);
   }
 
-  const sourceItems = ["ais", "vdes", "aprs", "bookmark", "ft8", "wspr"].map((key) => ({
-    key,
-    label: mapSourceLabel(key),
-    color: mapSourceColor(key),
-    kind: "source",
-  }));
+  const sourceItems = ["ais", "vdes", "aprs", "bookmark", "ft8", "wspr"]
+    .filter((key) => availableSources.has(key))
+    .map((key) => ({
+      key,
+      label: mapSourceLabel(key),
+      color: mapSourceColor(key),
+      kind: "source",
+    }));
   const bandItems = Array.from(bandMap.values())
     .sort((a, b) => (b.sortHz - a.sortHz) || a.label.localeCompare(b.label));
 

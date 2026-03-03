@@ -1552,8 +1552,6 @@ small { color: var(--text-muted); }
   flex-direction: column;
   gap: 0.3rem;
   margin-bottom: 0.55rem;
-  padding-top: 0.15rem;
-  border-top: 1px solid color-mix(in srgb, var(--border) 86%, transparent);
 }
 .map-locator-filter-group {
   display: flex;
