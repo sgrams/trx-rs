@@ -244,6 +244,8 @@ window.onServerVdes = function(msg) {
     message_type: msg.message_type,
     bit_len: msg.bit_len,
     raw_bytes: msg.raw_bytes,
+    lat: msg.lat,
+    lon: msg.lon,
     vessel_name: msg.vessel_name,
     callsign: msg.callsign,
     destination: msg.destination,
@@ -263,6 +265,9 @@ window.onServerVdes = function(msg) {
     fec_state: msg.fec_state,
     ts_ms: msg.ts_ms,
   });
+  if (msg.lat != null && msg.lon != null && window.vdesMapAddPoint) {
+    window.vdesMapAddPoint(msg);
+  }
 };
 
 updateVdesSummary();

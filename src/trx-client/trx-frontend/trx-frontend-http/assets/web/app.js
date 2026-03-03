@@ -3139,10 +3139,11 @@ let aprsRadioPath = null;
 const stationMarkers = new Map();
 const locatorMarkers = new Map();
 const mapMarkers = new Set();
-const mapFilter = { ais: true, aprs: true, ft8: true, wspr: true };
+const mapFilter = { ais: true, vdes: true, aprs: true, ft8: true, wspr: true };
 const APRS_TRACK_MAX_POINTS = 64;
 const AIS_TRACK_MAX_POINTS = 64;
 const aisMarkers = new Map();
+const vdesMarkers = new Map();
 let selectedAisTrackMmsi = null;
 
 function syncAprsReceiverMarker() {
@@ -3202,6 +3203,17 @@ window.clearMapMarkersByType = function(type) {
     });
     selectedAisTrackMmsi = null;
     aisMarkers.clear();
+    return;
+  }
+
+  if (type === "vdes") {
+    vdesMarkers.forEach((entry) => {
+      if (entry && entry.marker) {
+        if (aprsMap && aprsMap.hasLayer(entry.marker)) entry.marker.removeFrom(aprsMap);
+        mapMarkers.delete(entry.marker);
+      }
+    });
+    vdesMarkers.clear();
     return;
   }
 
@@ -3311,6 +3323,19 @@ function initAprsMap() {
           { className: "aprs-radio-path", weight: 2, interactive: false }
         ).addTo(aprsMap);
       }
+      return;
+    }
+
+    if (marker._vdesKey) {
+      const entry = vdesMarkers.get(String(marker._vdesKey));
+      if (!entry || !entry.msg) return;
+      e.popup.setContent(buildVdesPopupHtml(entry.msg));
+      if (serverLat != null && serverLon != null) {
+        aprsRadioPath = L.polyline(
+          [[serverLat, serverLon], [ll.lat, ll.lng]],
+          { className: "aprs-radio-path", weight: 2, interactive: false }
+        ).addTo(aprsMap);
+      }
     }
   });
 
@@ -3334,6 +3359,7 @@ function initAprsMap() {
   applyMapFilter();
 
   const aisFilter = document.getElementById("map-filter-ais");
+  const vdesFilter = document.getElementById("map-filter-vdes");
   const aprsFilter = document.getElementById("map-filter-aprs");
   const ft8Filter = document.getElementById("map-filter-ft8");
   const wsprFilter = document.getElementById("map-filter-wspr");
@@ -3347,6 +3373,12 @@ function initAprsMap() {
           entry.track.removeFrom(aprsMap);
         }
       }
+    });
+  }
+  if (vdesFilter) {
+    vdesFilter.addEventListener("change", () => {
+      mapFilter.vdes = vdesFilter.checked;
+      applyMapFilter();
     });
   }
   if (aprsFilter) {
@@ -3528,6 +3560,43 @@ function buildAisPopupHtml(msg) {
     `</div>`;
 }
 
+function buildVdesPopupHtml(msg) {
+  const age = formatTimeAgo(msg?.ts_ms);
+  const distKm = (serverLat != null && serverLon != null && msg?.lat != null && msg?.lon != null)
+    ? haversineKm(serverLat, serverLon, msg.lat, msg.lon)
+    : null;
+  const distStr = distKm != null
+    ? (distKm < 1 ? `${Math.round(distKm * 1000)} m` : `${distKm.toFixed(1)} km`)
+    : null;
+  const meta = [
+    age,
+    distStr,
+    msg?.message_label ? escapeMapHtml(msg.message_label) : null,
+    Number.isFinite(msg?.link_id) ? `LID ${Number(msg.link_id)}` : null,
+  ].filter(Boolean).join(" &middot; ");
+  let rows = "";
+  if (distStr) rows += `<tr><td class="aprs-popup-label">Range</td><td>${distStr} from TRX</td></tr>`;
+  rows += `<tr><td class="aprs-popup-label">Type</td><td>${escapeMapHtml(String(msg?.message_type ?? "--"))}</td></tr>`;
+  if (Number.isFinite(msg?.source_id)) rows += `<tr><td class="aprs-popup-label">Source</td><td>${escapeMapHtml(String(msg.source_id))}</td></tr>`;
+  if (Number.isFinite(msg?.destination_id)) rows += `<tr><td class="aprs-popup-label">Dest</td><td>${escapeMapHtml(String(msg.destination_id))}</td></tr>`;
+  if (msg?.lat != null && msg?.lon != null) rows += `<tr><td class="aprs-popup-label">Pos</td><td>${msg.lat.toFixed(5)}, ${msg.lon.toFixed(5)}</td></tr>`;
+  if (Number.isFinite(msg?.sync_score)) rows += `<tr><td class="aprs-popup-label">Sync</td><td>${(Number(msg.sync_score) * 100).toFixed(0)}%</td></tr>`;
+  if (msg?.fec_state) rows += `<tr><td class="aprs-popup-label">FEC</td><td>${escapeMapHtml(String(msg.fec_state))}</td></tr>`;
+  const info = [
+    msg?.vessel_name,
+    msg?.callsign,
+    msg?.destination,
+    msg?.payload_preview,
+  ].filter(Boolean).map(escapeMapHtml).join(" · ");
+  const title = escapeMapHtml(msg?.vessel_name || msg?.callsign || "VDES Position");
+  return `<div class="aprs-popup">` +
+    `<div class="aprs-popup-call">${title}</div>` +
+    (meta ? `<div class="aprs-popup-meta">${meta}</div>` : "") +
+    (rows ? `<table class="aprs-popup-table">${rows}</table>` : "") +
+    (info ? `<div class="aprs-popup-info">${info}</div>` : "") +
+    `</div>`;
+}
+
 function aprsPositionsEqual(a, b) {
   if (!a || !b) return false;
   return Math.abs(a[0] - b[0]) < 0.000001 && Math.abs(a[1] - b[1]) < 0.000001;
@@ -3536,6 +3605,15 @@ function aprsPositionsEqual(a, b) {
 function aisPositionsEqual(a, b) {
   if (!a || !b) return false;
   return Math.abs(a[0] - b[0]) < 0.000001 && Math.abs(a[1] - b[1]) < 0.000001;
+}
+
+function vdesMarkerKey(msg) {
+  if (Number.isFinite(msg?.source_id)) return `src:${Number(msg.source_id)}`;
+  if (Number.isFinite(msg?.mmsi) && Number(msg.mmsi) > 0) return `mmsi:${Number(msg.mmsi)}`;
+  if (msg?.lat != null && msg?.lon != null) {
+    return `pos:${Number(msg.lat).toFixed(4)}:${Number(msg.lon).toFixed(4)}:${Number(msg?.message_type ?? 0)}`;
+  }
+  return null;
 }
 
 function ensureAprsTrack(call, entry) {
@@ -3719,6 +3797,40 @@ window.aisMapAddVessel = function(msg) {
   applyMapFilter();
 };
 
+window.vdesMapAddPoint = function(msg) {
+  if (msg == null || msg.lat == null || msg.lon == null) return;
+  const key = vdesMarkerKey(msg);
+  if (!key) return;
+  if (!aprsMap) initAprsMap();
+  const popupHtml = buildVdesPopupHtml(msg);
+  const existing = vdesMarkers.get(key);
+  if (existing) {
+    existing.msg = msg;
+    if (existing.marker) {
+      existing.marker.setLatLng([msg.lat, msg.lon]);
+      existing.marker.setPopupContent(popupHtml);
+    }
+    return;
+  }
+  const entry = {
+    marker: null,
+    msg,
+  };
+  vdesMarkers.set(key, entry);
+  if (!aprsMap) return;
+  const marker = L.circleMarker([msg.lat, msg.lon], {
+    radius: 5,
+    color: "#5c394f",
+    fillColor: "#c46392",
+    fillOpacity: 0.82,
+  }).addTo(aprsMap).bindPopup(popupHtml);
+  marker.__trxType = "vdes";
+  marker._vdesKey = key;
+  entry.marker = marker;
+  mapMarkers.add(marker);
+  applyMapFilter();
+};
+
 function maidenheadToBounds(grid) {
   if (!grid || grid.length < 4) return null;
   const g = grid.toUpperCase();
@@ -3754,6 +3866,7 @@ function applyMapFilter() {
     const type = marker.__trxType;
     const visible =
       (type === "ais" && mapFilter.ais) ||
+      (type === "vdes" && mapFilter.vdes) ||
       (type === "aprs" && mapFilter.aprs) ||
       (type === "ft8" && mapFilter.ft8) ||
       (type === "wspr" && mapFilter.wspr);
