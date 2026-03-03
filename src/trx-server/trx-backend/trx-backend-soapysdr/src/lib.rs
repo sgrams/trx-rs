@@ -333,7 +333,10 @@ impl AudioSource for SoapySdrRig {
         self.subscribe_pcm_channel(self.primary_channel_idx)
     }
 
-    fn subscribe_pcm_channel(&self, channel_idx: usize) -> tokio::sync::broadcast::Receiver<Vec<f32>> {
+    fn subscribe_pcm_channel(
+        &self,
+        channel_idx: usize,
+    ) -> tokio::sync::broadcast::Receiver<Vec<f32>> {
         if let Some(sender) = self.pipeline.pcm_senders.get(channel_idx) {
             sender.subscribe()
         } else {

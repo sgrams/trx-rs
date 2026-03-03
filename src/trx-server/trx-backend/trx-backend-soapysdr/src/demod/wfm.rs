@@ -677,8 +677,7 @@ impl WfmStereoDecoder {
                 + (STEREO_SEPARATION_GAIN_MAX - STEREO_SEPARATION_GAIN_MIN) * separation_drive;
             self.stereo_separation_gain +=
                 0.015 * (separation_target - self.stereo_separation_gain);
-            let diff_i =
-                (diff_i_raw * trim_cos + diff_q * trim_sin) * self.stereo_separation_gain;
+            let diff_i = (diff_i_raw * trim_cos + diff_q * trim_sin) * self.stereo_separation_gain;
             let denoised_diff_i = self.denoise.process(sum_i, diff_i, diff_q);
             let preserve = DENOISE_STEREO_PRESERVE_MIN
                 + (DENOISE_STEREO_PRESERVE_MAX - DENOISE_STEREO_PRESERVE_MIN) * separation_drive;
@@ -826,8 +825,14 @@ mod tests {
             iq.push(Complex::from_polar(1.0, phase));
         }
 
-        let mut decoder =
-            WfmStereoDecoder::new(composite_rate, audio_rate, 2, true, 50, WfmDenoiseLevel::Auto);
+        let mut decoder = WfmStereoDecoder::new(
+            composite_rate,
+            audio_rate,
+            2,
+            true,
+            50,
+            WfmDenoiseLevel::Auto,
+        );
         let output = decoder.process_iq(&iq);
 
         let skip_samples = (0.2 * audio_rate as f32) as usize;
@@ -966,8 +971,14 @@ mod tests {
             iq.push(Complex::from_polar(1.0, phase));
         }
 
-        let mut decoder =
-            WfmStereoDecoder::new(composite_rate, audio_rate, 2, true, 50, WfmDenoiseLevel::Auto);
+        let mut decoder = WfmStereoDecoder::new(
+            composite_rate,
+            audio_rate,
+            2,
+            true,
+            50,
+            WfmDenoiseLevel::Auto,
+        );
         let output = decoder.process_iq(&iq);
 
         assert!(!decoder.stereo_detected());
@@ -1155,8 +1166,14 @@ mod tests {
             iq.push(Complex::from_polar(1.0, phase));
         }
 
-        let mut decoder =
-            WfmStereoDecoder::new(composite_rate, audio_rate, 2, true, 50, WfmDenoiseLevel::Auto);
+        let mut decoder = WfmStereoDecoder::new(
+            composite_rate,
+            audio_rate,
+            2,
+            true,
+            50,
+            WfmDenoiseLevel::Auto,
+        );
         let output = decoder.process_iq(&iq);
 
         let skip_samples = (0.2 * audio_rate as f32) as usize;
