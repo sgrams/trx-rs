@@ -385,8 +385,7 @@ impl ClientConfig {
             && self.frontends.http.spectrum_usable_span_ratio <= 1.0)
         {
             return Err(
-                "[frontends.http].spectrum_usable_span_ratio must be > 0.0 and <= 1.0"
-                    .to_string(),
+                "[frontends.http].spectrum_usable_span_ratio must be > 0.0 and <= 1.0".to_string(),
             );
         }
         if self.frontends.rigctl.enabled && self.frontends.rigctl.rig_ports.is_empty() {
@@ -632,7 +631,10 @@ spectrum_usable_span_ratio = 0.9
 
         let config: ClientConfig = toml::from_str(toml_str).unwrap();
         assert_eq!(config.general.callsign, Some("W1AW".to_string()));
-        assert_eq!(config.general.website_url, Some("https://example.com".to_string()));
+        assert_eq!(
+            config.general.website_url,
+            Some("https://example.com".to_string())
+        );
         assert_eq!(config.general.website_name, Some("Example".to_string()));
         assert_eq!(
             config.general.ais_vessel_url_base,
