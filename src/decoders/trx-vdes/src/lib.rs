@@ -22,6 +22,7 @@ use trx_core::decode::VdesMessage;
 const VDES_SYMBOL_RATE: f32 = 76_800.0;
 const MIN_BURST_MS: f32 = 1.5;
 const BURST_END_MS: f32 = 0.35;
+const MAX_BURST_MS: f32 = 45.0;
 const MIN_BURST_SYMBOLS: usize = 64;
 const TER_MCS1_100_BURST_SYMBOLS: usize = 1_984;
 const TER_MCS1_100_RAMP_SYMBOLS: usize = 32;
@@ -73,6 +74,8 @@ impl VdesDecoder {
             ((self.sample_rate * (MIN_BURST_MS / 1000.0)).round() as usize).max(16);
         let quiet_limit =
             ((self.sample_rate * (BURST_END_MS / 1000.0)).round() as u32).max(4);
+        let max_burst_samples =
+            ((self.sample_rate * (MAX_BURST_MS / 1000.0)).round() as usize).max(min_burst_samples);
 
         for &sample in samples {
             let power = sample.norm_sqr();
@@ -94,6 +97,16 @@ impl VdesDecoder {
                 self.quiet_run = self.quiet_run.saturating_add(1);
             } else {
                 self.quiet_run = 0;
+            }
+
+            if self.burst_samples.len() >= max_burst_samples {
+                if let Some(msg) = self.finalize_burst(channel) {
+                    out.push(msg);
+                }
+                self.in_burst = false;
+                self.quiet_run = 0;
+                self.burst_samples.clear();
+                continue;
             }
 
             if self.quiet_run >= quiet_limit {
