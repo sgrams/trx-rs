@@ -3178,30 +3178,43 @@ const aisMarkers = new Map();
 const vdesMarkers = new Map();
 let selectedAisTrackMmsi = null;
 const HAM_BANDS = [
-  { label: "2200m", lo: 135_700, hi: 137_800 },
-  { label: "630m", lo: 472_000, hi: 479_000 },
-  { label: "160m", lo: 1_800_000, hi: 2_000_000 },
-  { label: "80m", lo: 3_500_000, hi: 4_000_000 },
-  { label: "60m", lo: 5_351_500, hi: 5_366_500 },
-  { label: "40m", lo: 7_000_000, hi: 7_300_000 },
-  { label: "30m", lo: 10_100_000, hi: 10_150_000 },
-  { label: "20m", lo: 14_000_000, hi: 14_350_000 },
-  { label: "17m", lo: 18_068_000, hi: 18_168_000 },
-  { label: "15m", lo: 21_000_000, hi: 21_450_000 },
-  { label: "12m", lo: 24_890_000, hi: 24_990_000 },
-  { label: "10m", lo: 28_000_000, hi: 29_700_000 },
-  { label: "6m", lo: 50_000_000, hi: 54_000_000 },
-  { label: "4m", lo: 70_000_000, hi: 71_000_000 },
-  { label: "3m", lo: 88_000_000, hi: 108_000_000 },
-  { label: "2m", lo: 144_000_000, hi: 148_000_000 },
-  { label: "1m", lo: 222_000_000, hi: 225_000_000 },
-  { label: "70cm", lo: 420_000_000, hi: 450_000_000 },
-  { label: "23cm", lo: 1_240_000_000, hi: 1_300_000_000 },
-  { label: "13cm", lo: 2_300_000_000, hi: 2_450_000_000 },
-  { label: "9cm", lo: 3_300_000_000, hi: 3_500_000_000 },
-  { label: "6cm", lo: 5_650_000_000, hi: 5_925_000_000 },
-  { label: "3cm", lo: 10_000_000_000, hi: 10_500_000_000 },
-];
+  { label: "2200m", meters: 2200 },
+  { label: "630m", meters: 630 },
+  { label: "160m", meters: 160 },
+  { label: "80m", meters: 80 },
+  { label: "60m", meters: 60 },
+  { label: "40m", meters: 40 },
+  { label: "30m", meters: 30 },
+  { label: "20m", meters: 20 },
+  { label: "17m", meters: 17 },
+  { label: "15m", meters: 15 },
+  { label: "12m", meters: 12 },
+  { label: "10m", meters: 10 },
+  { label: "6m", meters: 6 },
+  { label: "4m", meters: 4 },
+  { label: "3m", meters: 3 },
+  { label: "2m", meters: 2 },
+  { label: "1m", meters: 1 },
+  { label: "70cm", meters: 0.7 },
+  { label: "23cm", meters: 0.23 },
+  { label: "13cm", meters: 0.13 },
+  { label: "9cm", meters: 0.09 },
+  { label: "6cm", meters: 0.06 },
+  { label: "3cm", meters: 0.03 },
+].map((band) => ({
+  ...band,
+  nominalHz: 299_792_458 / band.meters,
+}));
+
+function normalizeLocatorFreqHz(hz) {
+  if (!Number.isFinite(hz) || hz <= 0) return null;
+  if (hz >= 100_000) return hz;
+  const baseHz = Number(window.ft8BaseHz);
+  if (Number.isFinite(baseHz) && baseHz > 0) {
+    return baseHz + hz;
+  }
+  return hz;
+}
 
 function locatorSourceLabel(type) {
   if (type === "bookmark") return "Bookmarks";
@@ -3216,11 +3229,18 @@ function locatorFilterColor(type) {
 }
 
 function bandForHz(hz) {
-  if (!Number.isFinite(hz) || hz <= 0) return null;
+  const rfHz = normalizeLocatorFreqHz(hz);
+  if (!Number.isFinite(rfHz) || rfHz <= 0) return null;
+  let bestBand = null;
+  let bestDistance = Infinity;
   for (const band of HAM_BANDS) {
-    if (hz >= band.lo && hz <= band.hi) return band;
+    const distance = Math.abs(Math.log(rfHz / band.nominalHz));
+    if (distance < bestDistance) {
+      bestDistance = distance;
+      bestBand = band;
+    }
   }
-  return null;
+  return bestBand;
 }
 
 function collectBandMeta(freqs) {
@@ -3228,7 +3248,7 @@ function collectBandMeta(freqs) {
   if (!Array.isArray(freqs)) return out;
   for (const hz of freqs) {
     const band = bandForHz(hz);
-    if (band && !out.has(band.label)) out.set(band.label, band.lo);
+    if (band && !out.has(band.label)) out.set(band.label, band.nominalHz);
   }
   return out;
 }
