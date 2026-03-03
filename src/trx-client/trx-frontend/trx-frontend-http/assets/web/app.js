@@ -2062,6 +2062,7 @@ function render(update) {
     "Connected, listening for packets",
   );
   if (window.updateAprsBar) window.updateAprsBar();
+  if (window.updateFt8Bar) window.updateFt8Bar();
   if (cwStatus && modeUpper !== "CW" && modeUpper !== "CWR" && cwStatus.textContent === "Receiving") {
     cwStatus.textContent = "Connected, listening for packets";
   }

@@ -194,6 +194,7 @@ impl SoapySdrRig {
                     RigMode::FM,
                     RigMode::AIS,
                     RigMode::VDES,
+                    RigMode::MARINE,
                     RigMode::DIG,
                     RigMode::PKT,
                 ],

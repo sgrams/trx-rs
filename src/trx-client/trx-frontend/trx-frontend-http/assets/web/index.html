@@ -81,6 +81,7 @@
         <div id="rds-ps-overlay" aria-live="polite" aria-label="RDS station name"></div>
         <div id="ais-bar-overlay" aria-live="polite" aria-label="Recent AIS messages"></div>
         <div id="vdes-bar-overlay" aria-live="polite" aria-label="Recent VDES bursts"></div>
+        <div id="ft8-bar-overlay" aria-live="polite" aria-label="Recent FT8 decodes"></div>
         <div id="aprs-bar-overlay" aria-live="polite" aria-label="Recent APRS frames"></div>
       </div>
       <div id="spectrum-bookmark-axis"></div>
@@ -473,7 +474,7 @@
         <div id="vdes-messages"></div>
       </div>
       <div id="subtab-aprs" class="sub-tab-panel" style="display:none;">
-        <div class="aprs-controls">
+        <div class="ft8-controls aprs-controls">
           <button id="aprs-pause-btn" type="button">Pause</button>
           <button id="aprs-clear-btn" type="button">Clear</button>
           <input id="aprs-filter" class="ft8-filter" type="text" placeholder="Filter (e.g. SP2, beacon)" />

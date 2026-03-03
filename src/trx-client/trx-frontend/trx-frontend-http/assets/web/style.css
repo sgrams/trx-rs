@@ -631,7 +631,8 @@ small { color: var(--text-muted); }
 }
 #aprs-bar-overlay,
 #ais-bar-overlay,
-#vdes-bar-overlay {
+#vdes-bar-overlay,
+#ft8-bar-overlay {
   display: none;
   position: absolute;
   top: 50%;
@@ -1100,22 +1101,6 @@ small { color: var(--text-muted); }
   border-radius: 6px;
 }
 .aprs-controls { display: flex; gap: 0.6rem; align-items: center; margin-bottom: 0.75rem; }
-#subtab-aprs .aprs-controls > button {
-  min-height: 1.65rem;
-  padding: 0.08rem 0.5rem;
-  border-radius: 0.4rem;
-  border: 1px solid var(--filter-border);
-  background: var(--filter-bg);
-  color: var(--filter-fg);
-  font-size: 0.68rem;
-  font-weight: 700;
-  letter-spacing: 0.03em;
-  cursor: pointer;
-}
-#subtab-aprs .aprs-controls > button:hover {
-  border-color: var(--accent-green);
-  color: var(--text);
-}
 .aprs-summary {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));

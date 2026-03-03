@@ -118,7 +118,7 @@ impl VdesDecoder {
             return None;
         }
 
-        let framed = extract_candidate_frame(&symbols)?;
+        let framed = extract_candidate_frame(&symbols).unwrap_or_else(|| fallback_frame_slice(&symbols));
         let rms = burst_rms(&samples);
         let mode = classify_vdes_burst(framed.symbols.len());
         let payload_symbols = framed.payload_symbols();
@@ -129,7 +129,7 @@ impl VdesDecoder {
                 &framed,
                 &mode,
                 rms,
-                &deinterleaved,
+                &framed.symbols,
             ));
         }
 
@@ -143,7 +143,7 @@ impl VdesDecoder {
                 &framed,
                 &mode,
                 rms,
-                &deinterleaved,
+                &framed.symbols,
             ));
         }
         let parsed = parse_vdes_payload(&decoded_bits);
@@ -345,14 +345,25 @@ fn extract_candidate_frame(symbols: &[u8]) -> Option<FrameSlice> {
     })
 }
 
+fn fallback_frame_slice(symbols: &[u8]) -> FrameSlice {
+    let take = symbols.len().min(TER_MCS1_100_BURST_SYMBOLS);
+    FrameSlice {
+        start_offset: 0,
+        sync_score: 0.0,
+        sync_errors: (TER_MCS1_100_SYNC_SYMBOLS * 2) as u8,
+        phase_rotation: 0,
+        symbols: symbols[..take].to_vec(),
+    }
+}
+
 fn build_unsynced_message(
     channel: &str,
     framed: &FrameSlice,
     mode: &BurstMode<'_>,
     rms: f32,
-    deinterleaved: &[u8],
+    raw_symbols: &[u8],
 ) -> VdesMessage {
-    let raw_bytes = pack_dibits_msb(deinterleaved);
+    let raw_bytes = pack_dibits_msb(raw_symbols);
     let sync_pct = framed.sync_score * 100.0;
     VdesMessage {
         ts_ms: None,
@@ -361,7 +372,7 @@ fn build_unsynced_message(
         repeat: 0,
         mmsi: 0,
         crc_ok: false,
-        bit_len: deinterleaved.len() * 2,
+        bit_len: raw_symbols.len() * 2,
         raw_bytes,
         lat: None,
         lon: None,
