@@ -135,7 +135,7 @@ pub enum Demodulator {
     Usb,
     /// Lower sideband SSB: negate imaginary part before taking real part.
     Lsb,
-    /// AM coherent detector using a limiter-derived carrier reference.
+    /// AM envelope detector: magnitude of IQ, DC-removed.
     Am,
     /// Narrow-band FM: instantaneous frequency via quadrature.
     Fm,
