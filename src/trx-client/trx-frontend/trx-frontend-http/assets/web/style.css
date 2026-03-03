@@ -1570,6 +1570,72 @@ small { color: var(--text-muted); }
   color: var(--filter-fg);
 }
 .map-controls input[type="checkbox"] { margin-right: 0.3rem; }
+.map-locator-filters {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  margin-bottom: 0.7rem;
+}
+.map-locator-filter-group {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  flex-wrap: wrap;
+}
+.map-locator-filter-label {
+  flex: 0 0 auto;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.map-locator-chip-row {
+  display: flex;
+  flex: 1 1 auto;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+.map-locator-empty {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  opacity: 0.8;
+}
+.map-locator-chip {
+  --chip-color: var(--filter-border);
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-height: 1.9rem;
+  padding: 0.2rem 0.7rem;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--chip-color) 72%, var(--border-light));
+  background: color-mix(in srgb, var(--chip-color) 12%, var(--input-bg));
+  color: var(--text);
+  cursor: pointer;
+  transition: transform 120ms ease, border-color 120ms ease, background 120ms ease, opacity 120ms ease;
+}
+.map-locator-chip:hover {
+  transform: translateY(-1px);
+}
+.map-locator-chip.is-inactive {
+  opacity: 0.55;
+  background: color-mix(in srgb, var(--input-bg) 92%, transparent);
+}
+.map-locator-chip-text {
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+.map-locator-chip-wavelength {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--chip-color);
+  padding: 0.08rem 0.4rem;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--chip-color) 38%, transparent);
+  background: color-mix(in srgb, var(--chip-color) 12%, transparent);
+  font-variant-numeric: tabular-nums;
+}
 
 .rds-grid { display: grid; grid-template-columns: auto 1fr; gap: 0.4rem 1rem; align-items: baseline; margin-bottom: 1rem; }
 .rds-field { display: contents; }
@@ -1909,6 +1975,12 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   .map-controls label {
     flex: 1 1 calc(50% - 0.5rem);
     justify-content: center;
+  }
+  .map-locator-filter-group {
+    align-items: stretch;
+  }
+  .map-locator-filter-label {
+    width: 100%;
   }
   .rds-grid {
     grid-template-columns: minmax(0, 1fr);

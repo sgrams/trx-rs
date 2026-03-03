@@ -3171,11 +3171,136 @@ const stationMarkers = new Map();
 const locatorMarkers = new Map();
 const mapMarkers = new Set();
 const mapFilter = { ais: true, vdes: true, aprs: true, bookmark: true, ft8: true, wspr: true };
+const mapLocatorFilter = { types: new Set(), wavelengths: new Set() };
 const APRS_TRACK_MAX_POINTS = 64;
 const AIS_TRACK_MAX_POINTS = 64;
 const aisMarkers = new Map();
 const vdesMarkers = new Map();
 let selectedAisTrackMmsi = null;
+
+function locatorSourceLabel(type) {
+  if (type === "bookmark") return "Bookmarks";
+  if (type === "wspr") return "WSPR";
+  return "FT8";
+}
+
+function locatorFilterColor(type) {
+  if (type === "bookmark") return "#22c55e";
+  if (type === "wspr") return "#ff6a3d";
+  return "#ff9b1a";
+}
+
+function collectWavelengthMeta(freqs) {
+  const out = new Map();
+  if (!Array.isArray(freqs)) return out;
+  for (const hz of freqs) {
+    if (!Number.isFinite(hz) || hz <= 0) continue;
+    const label = formatWavelength(hz);
+    if (label !== "--" && !out.has(label)) out.set(label, hz);
+  }
+  return out;
+}
+
+function assignLocatorMarkerMeta(marker, sourceType, wavelengthMeta) {
+  if (!marker) return;
+  const safeMeta = wavelengthMeta instanceof Map ? wavelengthMeta : new Map();
+  marker._locatorFilterMeta = {
+    sourceType,
+    wavelengths: new Set(safeMeta.keys()),
+    wavelengthMeta: new Map(safeMeta),
+  };
+}
+
+function renderMapLocatorChipRow(container, items, selectedSet, kind) {
+  if (!container) return;
+  container.innerHTML = "";
+  if (!Array.isArray(items) || items.length === 0) {
+    container.innerHTML = `<span class="map-locator-empty">All ${kind === "type" ? "locator sources" : "wavelengths"} visible</span>`;
+    return;
+  }
+  for (const item of items) {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "map-locator-chip";
+    if (!selectedSet.has(item.key)) btn.classList.add("is-inactive");
+    btn.dataset.filterKind = kind;
+    btn.dataset.filterKey = item.key;
+    btn.style.setProperty("--chip-color", item.color);
+    btn.innerHTML = item.kind === "wavelength"
+      ? `<span class="map-locator-chip-wavelength">${escapeMapHtml(item.label)}</span>`
+      : `<span class="map-locator-chip-text">${escapeMapHtml(item.label)}</span>`;
+    container.appendChild(btn);
+  }
+}
+
+function rebuildMapLocatorFilters() {
+  const typeEl = document.getElementById("map-locator-mode-filter");
+  const wavelengthEl = document.getElementById("map-locator-wavelength-filter");
+  if (!typeEl || !wavelengthEl) return;
+
+  const typeMap = new Map();
+  const wavelengthMap = new Map();
+  for (const entry of locatorMarkers.values()) {
+    const sourceType = entry?.sourceType;
+    if (!sourceType) continue;
+    if (!typeMap.has(sourceType)) {
+      typeMap.set(sourceType, {
+        key: sourceType,
+        label: locatorSourceLabel(sourceType),
+        color: locatorFilterColor(sourceType),
+        kind: "type",
+      });
+    }
+    const meta = entry?.wavelengthMeta instanceof Map ? entry.wavelengthMeta : new Map();
+    for (const [label, hz] of meta.entries()) {
+      const key = `${sourceType}:${label}`;
+      if (wavelengthMap.has(key)) continue;
+      wavelengthMap.set(key, {
+        key,
+        label,
+        color: locatorFilterColor(sourceType),
+        kind: "wavelength",
+        sortHz: Number.isFinite(hz) ? hz : 0,
+      });
+    }
+  }
+
+  for (const key of Array.from(mapLocatorFilter.types)) {
+    if (!typeMap.has(key)) mapLocatorFilter.types.delete(key);
+  }
+  for (const key of Array.from(mapLocatorFilter.wavelengths)) {
+    if (!wavelengthMap.has(key)) mapLocatorFilter.wavelengths.delete(key);
+  }
+
+  const typeItems = ["bookmark", "ft8", "wspr"]
+    .filter((key) => typeMap.has(key))
+    .map((key) => typeMap.get(key));
+  const wavelengthItems = Array.from(wavelengthMap.values())
+    .sort((a, b) => (b.sortHz - a.sortHz) || a.label.localeCompare(b.label));
+
+  renderMapLocatorChipRow(typeEl, typeItems, mapLocatorFilter.types, "type");
+  renderMapLocatorChipRow(wavelengthEl, wavelengthItems, mapLocatorFilter.wavelengths, "wavelength");
+}
+
+function markerPassesLocatorFilters(marker) {
+  const meta = marker?._locatorFilterMeta;
+  if (!meta) return true;
+  if (mapLocatorFilter.types.size > 0 && !mapLocatorFilter.types.has(meta.sourceType)) {
+    return false;
+  }
+  if (mapLocatorFilter.wavelengths.size > 0) {
+    const wanted = Array.from(mapLocatorFilter.wavelengths);
+    const matches = wanted.some((key) => {
+      const sep = key.indexOf(":");
+      if (sep < 0) return false;
+      const sourceType = key.slice(0, sep);
+      const label = key.slice(sep + 1);
+      return sourceType === meta.sourceType && meta.wavelengths instanceof Set && meta.wavelengths.has(label);
+    });
+    if (!matches) return false;
+  }
+  return true;
+}
 
 function syncAprsReceiverMarker() {
   if (!aprsMap) return;
@@ -3258,6 +3383,7 @@ window.clearMapMarkersByType = function(type) {
       }
       locatorMarkers.delete(key);
     }
+    rebuildMapLocatorFilters();
   }
 
   if (type === "bookmark") {
@@ -3269,6 +3395,7 @@ window.clearMapMarkersByType = function(type) {
       }
       locatorMarkers.delete(key);
     }
+    rebuildMapLocatorFilters();
   }
 };
 
@@ -3402,12 +3529,16 @@ function initAprsMap() {
     if (!key.startsWith("bookmark:") || entry?.marker || !entry?.grid) continue;
     const bounds = maidenheadToBounds(entry.grid);
     if (!bounds) continue;
+    entry.sourceType = "bookmark";
+    entry.wavelengthMeta = collectWavelengthMeta((entry.bookmarks || []).map((bm) => Number(bm?.freq_hz)));
     entry.marker = L.rectangle(bounds, locatorStyleForCount(entry.bookmarks?.length || 1, "bookmark"))
       .addTo(aprsMap)
       .bindPopup(buildBookmarkLocatorPopupHtml(entry.grid, entry.bookmarks || []));
     entry.marker.__trxType = "bookmark";
+    assignLocatorMarkerMeta(entry.marker, entry.sourceType, entry.wavelengthMeta);
     mapMarkers.add(entry.marker);
   }
+  rebuildMapLocatorFilters();
   applyMapFilter();
 
   const aisFilter = document.getElementById("map-filter-ais");
@@ -3416,6 +3547,8 @@ function initAprsMap() {
   const bookmarkFilter = document.getElementById("map-filter-bookmark");
   const ft8Filter = document.getElementById("map-filter-ft8");
   const wsprFilter = document.getElementById("map-filter-wspr");
+  const locatorModeFilterEl = document.getElementById("map-locator-mode-filter");
+  const locatorWavelengthFilterEl = document.getElementById("map-locator-wavelength-filter");
   if (aisFilter) {
     aisFilter.addEventListener("change", () => {
       mapFilter.ais = aisFilter.checked;
@@ -3458,6 +3591,37 @@ function initAprsMap() {
       applyMapFilter();
     });
   }
+  if (locatorModeFilterEl) {
+    locatorModeFilterEl.addEventListener("click", (e) => {
+      const chip = e.target.closest(".map-locator-chip[data-filter-kind='type']");
+      if (!chip) return;
+      const key = String(chip.dataset.filterKey || "");
+      if (!key) return;
+      if (mapLocatorFilter.types.has(key)) {
+        mapLocatorFilter.types.delete(key);
+      } else {
+        mapLocatorFilter.types.add(key);
+      }
+      rebuildMapLocatorFilters();
+      applyMapFilter();
+    });
+  }
+  if (locatorWavelengthFilterEl) {
+    locatorWavelengthFilterEl.addEventListener("click", (e) => {
+      const chip = e.target.closest(".map-locator-chip[data-filter-kind='wavelength']");
+      if (!chip) return;
+      const key = String(chip.dataset.filterKey || "");
+      if (!key) return;
+      if (mapLocatorFilter.wavelengths.has(key)) {
+        mapLocatorFilter.wavelengths.delete(key);
+      } else {
+        mapLocatorFilter.wavelengths.add(key);
+      }
+      rebuildMapLocatorFilters();
+      applyMapFilter();
+    });
+  }
+  rebuildMapLocatorFilters();
 }
 
 function sizeAprsMapToViewport() {
@@ -3990,13 +4154,14 @@ function applyMapFilter() {
   if (!aprsMap) return;
   mapMarkers.forEach((marker) => {
     const type = marker.__trxType;
-    const visible =
+    const visible = markerPassesLocatorFilters(marker) && (
       (type === "bookmark" && mapFilter.bookmark) ||
       (type === "ais" && mapFilter.ais) ||
       (type === "vdes" && mapFilter.vdes) ||
       (type === "aprs" && mapFilter.aprs) ||
       (type === "ft8" && mapFilter.ft8) ||
-      (type === "wspr" && mapFilter.wspr);
+      (type === "wspr" && mapFilter.wspr)
+    );
     const onMap = aprsMap.hasLayer(marker);
     if (visible && !onMap) marker.addTo(aprsMap);
     if (!visible && onMap) marker.removeFrom(aprsMap);
@@ -4122,14 +4287,18 @@ window.syncBookmarkMapLocators = function(bookmarks) {
   for (const [key, next] of grouped.entries()) {
     const existing = locatorMarkers.get(key);
     const popupHtml = buildBookmarkLocatorPopupHtml(next.grid, next.bookmarks);
+    const wavelengthMeta = collectWavelengthMeta(next.bookmarks.map((bm) => Number(bm?.freq_hz)));
     if (existing) {
       existing.grid = next.grid;
       existing.bounds = next.bounds;
       existing.bookmarks = next.bookmarks;
+      existing.sourceType = "bookmark";
+      existing.wavelengthMeta = wavelengthMeta;
       if (existing.marker) {
         existing.marker.setBounds(next.bounds);
         existing.marker.setStyle(locatorStyleForCount(next.bookmarks.length, "bookmark"));
         existing.marker.setPopupContent(popupHtml);
+        assignLocatorMarkerMeta(existing.marker, existing.sourceType, existing.wavelengthMeta);
       }
       continue;
     }
@@ -4139,6 +4308,8 @@ window.syncBookmarkMapLocators = function(bookmarks) {
       grid: next.grid,
       bounds: next.bounds,
       bookmarks: next.bookmarks,
+      sourceType: "bookmark",
+      wavelengthMeta,
     };
     locatorMarkers.set(key, entry);
     if (aprsMap) {
@@ -4146,10 +4317,12 @@ window.syncBookmarkMapLocators = function(bookmarks) {
         .addTo(aprsMap)
         .bindPopup(popupHtml);
       entry.marker.__trxType = "bookmark";
+      assignLocatorMarkerMeta(entry.marker, entry.sourceType, entry.wavelengthMeta);
       mapMarkers.add(entry.marker);
     }
   }
 
+  rebuildMapLocatorFilters();
   applyMapFilter();
 };
 
@@ -4178,11 +4351,18 @@ window.ft8MapAddLocator = function(message, grids, type = "ft8", station = null,
       if (stationId) existing.stations.add(stationId);
       if (!(existing.stationDetails instanceof Map)) existing.stationDetails = new Map();
       existing.stationDetails.set(detailKey, { ...detailEntry });
+      existing.sourceType = markerType;
+      existing.wavelengthMeta = collectWavelengthMeta(
+        Array.from(existing.stationDetails.values()).map((detail) => Number(detail?.freq_hz))
+      );
       const count = Math.max(existing.stationDetails.size, existing.stations.size || 0, 1);
       const tooltipHtml = buildDecodeLocatorTooltipHtml(grid, existing, markerType);
       existing.marker.setStyle(locatorStyleForCount(count, markerType));
       existing.marker.setPopupContent(tooltipHtml);
       existing.marker.setTooltipContent(tooltipHtml);
+      assignLocatorMarkerMeta(existing.marker, existing.sourceType, existing.wavelengthMeta);
+      rebuildMapLocatorFilters();
+      applyMapFilter();
       continue;
     }
 
@@ -4202,9 +4382,14 @@ window.ft8MapAddLocator = function(message, grids, type = "ft8", station = null,
         opacity: 1,
       });
     marker.__trxType = markerType;
-    locatorMarkers.set(key, { marker, stations, stationDetails });
+    const wavelengthMeta = collectWavelengthMeta(
+      Array.from(stationDetails.values()).map((detail) => Number(detail?.freq_hz))
+    );
+    assignLocatorMarkerMeta(marker, markerType, wavelengthMeta);
+    locatorMarkers.set(key, { marker, stations, stationDetails, sourceType: markerType, wavelengthMeta });
     mapMarkers.add(marker);
   }
+  rebuildMapLocatorFilters();
   applyMapFilter();
 };
 
