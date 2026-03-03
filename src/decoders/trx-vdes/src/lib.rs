@@ -35,6 +35,10 @@ const TER_MCS1_100_SYNC_BITS: &[u8; TER_MCS1_100_SYNC_SYMBOLS] = b"1111110011010
 const PI4_QPSK_DIBITS: [u8; 4] = [0b00, 0b01, 0b11, 0b10];
 const MIN_SYNC_CANDIDATE_SCORE: f32 = 0.20;
 const MIN_SYNC_PARSE_SCORE: f32 = 0.50;
+const BURST_TRIGGER_NOISE_MULT: f32 = 4.0;
+const BURST_TRIGGER_FLOOR: f32 = 8.0e-5;
+const BURST_SUSTAIN_NOISE_MULT: f32 = 1.5;
+const BURST_SUSTAIN_FLOOR: f32 = 5.0e-5;
 
 #[derive(Debug, Clone)]
 pub struct VdesDecoder {
@@ -74,7 +78,7 @@ impl VdesDecoder {
             let power = sample.norm_sqr();
             if !self.in_burst {
                 self.noise_floor = 0.995 * self.noise_floor + 0.005 * power;
-                let trigger = (self.noise_floor * 8.0).max(2.0e-4);
+                let trigger = (self.noise_floor * BURST_TRIGGER_NOISE_MULT).max(BURST_TRIGGER_FLOOR);
                 if power >= trigger {
                     self.in_burst = true;
                     self.quiet_run = 0;
@@ -85,7 +89,7 @@ impl VdesDecoder {
             }
 
             self.burst_samples.push(sample);
-            let sustain = (self.noise_floor * 3.0).max(1.2e-4);
+            let sustain = (self.noise_floor * BURST_SUSTAIN_NOISE_MULT).max(BURST_SUSTAIN_FLOOR);
             if power < sustain {
                 self.quiet_run = self.quiet_run.saturating_add(1);
             } else {
