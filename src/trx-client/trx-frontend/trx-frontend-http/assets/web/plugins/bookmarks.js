@@ -43,6 +43,9 @@ async function bmFetch(categoryFilter) {
     console.error("Failed to fetch bookmarks:", e);
     bmList = [];
   }
+  if (typeof window.syncBookmarkMapLocators === "function") {
+    window.syncBookmarkMapLocators(bmList);
+  }
   bmSyncAccess();
   bmApplyFilters();
   bmRefreshCategoryFilter(categoryFilter);
@@ -173,7 +176,7 @@ function bmOpenForm(bm) {
   bmWriteDecoders(bm ? bm.decoders : []);
   document.getElementById("bm-form-title").textContent = bm ? "Edit Bookmark" : "Add Bookmark";
 
-  wrap.style.display = "";
+  wrap.style.display = "flex";
   document.getElementById("bm-name").focus();
 }
 
@@ -349,6 +352,19 @@ async function bmApply(bm) {
 
   // Form cancel
   document.getElementById("bm-form-cancel").addEventListener("click", bmCloseForm);
+
+  const formWrap = document.getElementById("bm-form-wrap");
+  if (formWrap) {
+    formWrap.addEventListener("click", (e) => {
+      if (e.target === formWrap) bmCloseForm();
+    });
+  }
+
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && document.getElementById("bm-form-wrap")?.style.display === "flex") {
+      bmCloseForm();
+    }
+  });
 
   // Table action buttons (event delegation)
   document.getElementById("bm-tbody").addEventListener("click", async (e) => {

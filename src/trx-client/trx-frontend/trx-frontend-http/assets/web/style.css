@@ -1456,6 +1456,73 @@ small { color: var(--text-muted); }
 .aprs-popup-table td { padding: 0.06rem 0.3rem 0.06rem 0; vertical-align: top; font-size: 0.88em; }
 .aprs-popup-label { color: var(--text-muted); white-space: nowrap; padding-right: 0.5rem !important; }
 .aprs-popup-info { font-size: 0.85em; color: var(--text); border-top: 1px solid var(--border-light); padding-top: 0.25rem; margin-top: 0.1rem; word-break: break-word; }
+.bookmark-locator-tip-shell {
+  background: transparent;
+  border: none;
+  box-shadow: none;
+}
+.bookmark-locator-tip-shell .leaflet-tooltip-content {
+  margin: 0;
+}
+.bookmark-locator-tip-shell.leaflet-tooltip-top::before {
+  border-top-color: color-mix(in srgb, var(--card-bg) 94%, transparent);
+}
+.bookmark-locator-tip {
+  min-width: 15rem;
+  max-width: 24rem;
+  padding: 0.55rem 0.65rem;
+  border: 1px solid color-mix(in srgb, var(--accent-green) 26%, var(--border-light));
+  border-radius: 0.65rem;
+  background: color-mix(in srgb, var(--card-bg) 94%, transparent);
+  color: var(--text);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.28);
+}
+.bookmark-locator-tip-title {
+  color: var(--accent-green);
+  font-weight: 700;
+  font-size: 0.9rem;
+  letter-spacing: 0.03em;
+}
+.bookmark-locator-tip-subtitle {
+  margin-top: 0.1rem;
+  margin-bottom: 0.45rem;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+.bookmark-locator-tip-row + .bookmark-locator-tip-row {
+  margin-top: 0.45rem;
+  padding-top: 0.4rem;
+  border-top: 1px solid color-mix(in srgb, var(--border-light) 70%, transparent);
+}
+.bookmark-locator-tip-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+.bookmark-locator-tip-name {
+  font-weight: 600;
+  color: var(--text-heading);
+}
+.bookmark-locator-tip-freq {
+  flex: 0 0 auto;
+  font-size: 0.78rem;
+  color: var(--accent-yellow);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.bookmark-locator-tip-meta {
+  margin-top: 0.12rem;
+  font-size: 0.74rem;
+  color: var(--text-muted);
+}
+.bookmark-locator-tip-note {
+  margin-top: 0.2rem;
+  font-size: 0.76rem;
+  line-height: 1.3;
+  color: var(--text);
+  word-break: break-word;
+}
 .aprs-radio-path { stroke: var(--accent-green) !important; stroke-opacity: 0.8 !important; stroke-dasharray: 10 5 !important; animation: aprs-radio-path-flow 0.7s linear infinite; }
 .trx-receiver-marker { stroke: var(--accent-green) !important; fill: var(--accent-green) !important; }
 .receiver-popup-active { font-size: 0.75em; background: rgba(194,75,26,0.15); color: var(--accent-green); border: 1px solid rgba(194,75,26,0.3); border-radius: 3px; padding: 0 0.25rem; margin-left: 0.3rem; vertical-align: middle; }
@@ -2517,12 +2584,28 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   opacity: 0.88;
 }
 
+#bm-form-wrap {
+  position: fixed;
+  inset: 0;
+  z-index: 120;
+  padding: 1.25rem;
+  background: rgba(7, 12, 18, 0.72);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  align-items: center;
+  justify-content: center;
+}
+
 .bm-form {
   background: var(--card-bg);
   border: 1px solid var(--border-light);
-  border-radius: 0.5rem;
-  padding: 0.9rem 1rem;
-  margin: 0 0.75rem 0.6rem;
+  border-radius: 0.8rem;
+  padding: 1rem 1.1rem;
+  margin: 0;
+  width: min(46rem, calc(100vw - 2.5rem));
+  max-height: min(85vh, 42rem);
+  overflow: auto;
+  box-shadow: 0 1.2rem 2.6rem rgba(0, 0, 0, 0.38);
 }
 
 .bm-form-title {
@@ -2544,9 +2627,11 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   gap: 0.2rem;
   font-size: 0.78rem;
   color: var(--text-muted);
+  min-width: 0;
 }
 
-.bm-label input {
+.bm-label input,
+.bm-label select {
   font-size: 0.88rem;
   padding: 0.35rem 0.5rem;
 }
@@ -2559,9 +2644,11 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   display: flex;
   gap: 0.5rem;
   margin-top: 0.75rem;
+  justify-content: flex-end;
 }
 
-.bm-save-btn {
+.bm-save-btn,
+#bm-form-cancel {
   background: var(--accent-green);
   color: #fff;
   border: none;
@@ -2571,8 +2658,38 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   cursor: pointer;
 }
 
-.bm-save-btn:hover {
+.bm-save-btn:hover,
+#bm-form-cancel:hover {
   opacity: 0.88;
+}
+
+#bm-form-cancel {
+  background: var(--btn-bg);
+  color: var(--text);
+  border: 1px solid var(--btn-border);
+}
+
+.bm-decoder-checks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  min-height: 2.2rem;
+  padding: 0.5rem 0.65rem;
+  border: 1px solid var(--border-light);
+  border-radius: 0.45rem;
+  background: var(--input-bg);
+}
+
+.bm-decoder-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  color: var(--text);
+  font-size: 0.84rem;
+}
+
+.bm-decoder-check input {
+  margin: 0;
 }
 
 .bm-table {

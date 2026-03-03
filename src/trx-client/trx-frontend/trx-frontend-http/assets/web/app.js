@@ -3259,6 +3259,17 @@ window.clearMapMarkersByType = function(type) {
       locatorMarkers.delete(key);
     }
   }
+
+  if (type === "bookmark") {
+    for (const [key, entry] of locatorMarkers.entries()) {
+      if (!key.startsWith("bookmark:")) continue;
+      if (entry && entry.marker) {
+        if (aprsMap && aprsMap.hasLayer(entry.marker)) entry.marker.removeFrom(aprsMap);
+        mapMarkers.delete(entry.marker);
+      }
+      locatorMarkers.delete(key);
+    }
+  }
 };
 
 function mapTileSpecForTheme(theme) {
@@ -3386,6 +3397,22 @@ function initAprsMap() {
     if (entry.type === "aprs" && !entry.marker && entry.lat != null && entry.lon != null) {
       _aprsAddMarkerToMap(call, entry);
     }
+  }
+  for (const [key, entry] of locatorMarkers) {
+    if (!key.startsWith("bookmark:") || entry?.marker || !entry?.grid) continue;
+    const bounds = maidenheadToBounds(entry.grid);
+    if (!bounds) continue;
+    entry.marker = L.rectangle(bounds, locatorStyleForCount(entry.bookmarks?.length || 1, "bookmark"))
+      .addTo(aprsMap)
+      .bindPopup(buildBookmarkLocatorPopupHtml(entry.grid, entry.bookmarks || []))
+      .bindTooltip(buildBookmarkLocatorTooltipHtml(entry.grid, entry.bookmarks || []), {
+        className: "bookmark-locator-tip-shell",
+        direction: "top",
+        sticky: true,
+        opacity: 1,
+      });
+    entry.marker.__trxType = "bookmark";
+    mapMarkers.add(entry.marker);
   }
   applyMapFilter();
 
@@ -3963,6 +3990,7 @@ function applyMapFilter() {
   mapMarkers.forEach((marker) => {
     const type = marker.__trxType;
     const visible =
+      type === "bookmark" ||
       (type === "ais" && mapFilter.ais) ||
       (type === "vdes" && mapFilter.vdes) ||
       (type === "aprs" && mapFilter.aprs) ||
@@ -3986,14 +4014,129 @@ function locatorStyleForCount(count, type) {
   const safeCount = Math.max(1, Number.isFinite(count) ? count : 1);
   const intensity = Math.min(1, Math.log2(safeCount + 1) / 5);
   const isWspr = type === "wspr";
+  const isBookmark = type === "bookmark";
   return {
-    color: isWspr ? "#ff8f2a" : "#ffb020",
+    color: isBookmark ? "#38b48b" : (isWspr ? "#ff8f2a" : "#ffb020"),
     opacity: 0.45 + intensity * 0.5,
     weight: 1 + intensity * 1.2,
-    fillColor: isWspr ? "#ff6a3d" : "#ff9b1a",
+    fillColor: isBookmark ? "#22c55e" : (isWspr ? "#ff6a3d" : "#ff9b1a"),
     fillOpacity: 0.18 + intensity * 0.55,
   };
 }
+
+function buildBookmarkLocatorPopupHtml(grid, bookmarks) {
+  const list = Array.isArray(bookmarks) ? bookmarks : [];
+  const rows = list
+    .map((bm) => {
+      const title = escapeMapHtml(String(bm.name || "Bookmark"));
+      const freq = typeof bmFmtFreq === "function"
+        ? escapeMapHtml(bmFmtFreq(bm.freq_hz))
+        : escapeMapHtml(String(bm.freq_hz || "--"));
+      const mode = bm.mode ? ` · ${escapeMapHtml(String(bm.mode))}` : "";
+      return `${title} <span style="opacity:0.75">${freq}${mode}</span>`;
+    })
+    .join("<br>");
+  return `<b>${escapeMapHtml(grid)}</b><br>Bookmarks: ${list.length || 1}` + (rows ? `<br>${rows}` : "");
+}
+
+function buildBookmarkLocatorTooltipHtml(grid, bookmarks) {
+  const list = Array.isArray(bookmarks) ? [...bookmarks] : [];
+  list.sort((a, b) => Number(a?.freq_hz || 0) - Number(b?.freq_hz || 0));
+  const rows = list
+    .map((bm) => {
+      const name = escapeMapHtml(String(bm?.name || "Bookmark"));
+      const freq = typeof bmFmtFreq === "function"
+        ? escapeMapHtml(bmFmtFreq(bm?.freq_hz))
+        : escapeMapHtml(String(bm?.freq_hz || "--"));
+      const meta = [
+        bm?.mode ? escapeMapHtml(String(bm.mode)) : null,
+        bm?.category ? escapeMapHtml(String(bm.category)) : null,
+      ].filter(Boolean).join(" · ");
+      return `<div class="bookmark-locator-tip-row">` +
+        `<div class="bookmark-locator-tip-head">` +
+          `<span class="bookmark-locator-tip-name">${name}</span>` +
+          `<span class="bookmark-locator-tip-freq">${freq}</span>` +
+        `</div>` +
+        (meta ? `<div class="bookmark-locator-tip-meta">${meta}</div>` : "") +
+        (bm?.comment ? `<div class="bookmark-locator-tip-note">${escapeMapHtml(String(bm.comment))}</div>` : "") +
+      `</div>`;
+    })
+    .join("");
+  return `<div class="bookmark-locator-tip">` +
+    `<div class="bookmark-locator-tip-title">${escapeMapHtml(grid)}</div>` +
+    `<div class="bookmark-locator-tip-subtitle">${list.length} bookmark${list.length === 1 ? "" : "s"}</div>` +
+    rows +
+  `</div>`;
+}
+
+window.syncBookmarkMapLocators = function(bookmarks) {
+  const list = Array.isArray(bookmarks) ? bookmarks : [];
+  const grouped = new Map();
+  for (const bm of list) {
+    const grid = String(bm?.locator || "").trim().toUpperCase();
+    if (!grid) continue;
+    const bounds = maidenheadToBounds(grid);
+    if (!bounds) continue;
+    const key = `bookmark:${grid}`;
+    const bucket = grouped.get(key);
+    if (bucket) {
+      bucket.bookmarks.push(bm);
+    } else {
+      grouped.set(key, { grid, bounds, bookmarks: [bm] });
+    }
+  }
+
+  for (const [key, entry] of locatorMarkers.entries()) {
+    if (!key.startsWith("bookmark:")) continue;
+    if (!grouped.has(key)) {
+      if (entry && entry.marker) {
+        if (aprsMap && aprsMap.hasLayer(entry.marker)) entry.marker.removeFrom(aprsMap);
+        mapMarkers.delete(entry.marker);
+      }
+      locatorMarkers.delete(key);
+    }
+  }
+
+  for (const [key, next] of grouped.entries()) {
+    const existing = locatorMarkers.get(key);
+    const popupHtml = buildBookmarkLocatorPopupHtml(next.grid, next.bookmarks);
+    if (existing) {
+      existing.grid = next.grid;
+      existing.bounds = next.bounds;
+      existing.bookmarks = next.bookmarks;
+      if (existing.marker) {
+        existing.marker.setBounds(next.bounds);
+        existing.marker.setStyle(locatorStyleForCount(next.bookmarks.length, "bookmark"));
+        existing.marker.setPopupContent(popupHtml);
+        existing.marker.setTooltipContent(buildBookmarkLocatorTooltipHtml(next.grid, next.bookmarks));
+      }
+      continue;
+    }
+
+    const entry = {
+      marker: null,
+      grid: next.grid,
+      bounds: next.bounds,
+      bookmarks: next.bookmarks,
+    };
+    locatorMarkers.set(key, entry);
+    if (aprsMap) {
+      entry.marker = L.rectangle(next.bounds, locatorStyleForCount(next.bookmarks.length, "bookmark"))
+        .addTo(aprsMap)
+        .bindPopup(popupHtml)
+        .bindTooltip(buildBookmarkLocatorTooltipHtml(next.grid, next.bookmarks), {
+          className: "bookmark-locator-tip-shell",
+          direction: "top",
+          sticky: true,
+          opacity: 1,
+        });
+      entry.marker.__trxType = "bookmark";
+      mapMarkers.add(entry.marker);
+    }
+  }
+
+  applyMapFilter();
+};
 
 window.ft8MapAddLocator = function(message, grids, type = "ft8", station = null) {
   if (!aprsMap) initAprsMap();
