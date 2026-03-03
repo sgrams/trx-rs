@@ -600,17 +600,15 @@ fn parse_msg_6(bits: &[u8], mut parsed: ParsedPayload) -> ParsedPayload {
     if let (Some(ne_lon), Some(ne_lat), Some(sw_lon), Some(sw_lat)) =
         (ne_lon, ne_lat, sw_lon, sw_lat)
     {
-        let ne_lon_deg = ne_lon as f64 / 600.0;
-        let ne_lat_deg = ne_lat as f64 / 600.0;
-        let sw_lon_deg = sw_lon as f64 / 600.0;
-        let sw_lat_deg = sw_lat as f64 / 600.0;
-        let valid_box = valid_geo_coord(sw_lat_deg, sw_lon_deg)
-            && valid_geo_coord(ne_lat_deg, ne_lon_deg)
-            && ne_lat_deg >= sw_lat_deg
-            && ne_lon_deg >= sw_lon_deg;
-        if valid_box {
-            parsed.lon = Some((ne_lon_deg + sw_lon_deg) * 0.5);
-            parsed.lat = Some((ne_lat_deg + sw_lat_deg) * 0.5);
+        let first_lon_deg = ne_lon as f64 / 600.0;
+        let first_lat_deg = ne_lat as f64 / 600.0;
+        let second_lon_deg = sw_lon as f64 / 600.0;
+        let second_lat_deg = sw_lat as f64 / 600.0;
+        if let Some((sw_lat_deg, sw_lon_deg, ne_lat_deg, ne_lon_deg)) =
+            normalize_geo_box(first_lat_deg, first_lon_deg, second_lat_deg, second_lon_deg)
+        {
+            parsed.lon = Some((sw_lon_deg + ne_lon_deg) * 0.5);
+            parsed.lat = Some((sw_lat_deg + ne_lat_deg) * 0.5);
             parsed.summary = Some(format!(
                 "Geo ASM {} · {} data bits · box {:.3},{:.3} to {:.3},{:.3}",
                 parsed.asm_identifier.unwrap_or(0),
@@ -744,6 +742,23 @@ fn valid_station_id(id: Option<u32>) -> bool {
 
 fn valid_geo_coord(lat: f64, lon: f64) -> bool {
     (-90.0..=90.0).contains(&lat) && (-180.0..=180.0).contains(&lon)
+}
+
+fn normalize_geo_box(
+    first_lat: f64,
+    first_lon: f64,
+    second_lat: f64,
+    second_lon: f64,
+) -> Option<(f64, f64, f64, f64)> {
+    if !valid_geo_coord(first_lat, first_lon) || !valid_geo_coord(second_lat, second_lon) {
+        return None;
+    }
+
+    let south = first_lat.min(second_lat);
+    let north = first_lat.max(second_lat);
+    let west = first_lon.min(second_lon);
+    let east = first_lon.max(second_lon);
+    Some((south, west, north, east))
 }
 
 fn viterbi_decode_rate_half(coded_bits: &[u8]) -> Vec<u8> {
@@ -1082,6 +1097,22 @@ mod tests {
         Complex::new(angle.cos(), angle.sin())
     }
 
+    fn write_bits(bits: &mut [u8], start: usize, len: usize, value: u32) {
+        for idx in 0..len {
+            let shift = len - idx - 1;
+            bits[start + idx] = ((value >> shift) & 1) as u8;
+        }
+    }
+
+    fn write_signed_bits(bits: &mut [u8], start: usize, len: usize, value: i32) {
+        let mask = if len >= 32 {
+            u32::MAX
+        } else {
+            (1u32 << len) - 1
+        };
+        write_bits(bits, start, len, (value as u32) & mask);
+    }
+
     #[test]
     fn packs_dibits_msb_first() {
         assert_eq!(
@@ -1166,5 +1197,22 @@ mod tests {
         }
         let decoded = viterbi_decode_rate_half(&coded);
         assert_eq!(decoded, input);
+    }
+
+    #[test]
+    fn parses_geo_box_even_when_corners_arrive_reversed() {
+        let mut bits = vec![0u8; 160];
+        write_bits(&mut bits, 0, 4, 6);
+        write_bits(&mut bits, 13, 32, 12345);
+        write_signed_bits(&mut bits, 45, 18, (10.0_f64 * 600.0) as i32);
+        write_signed_bits(&mut bits, 63, 17, (20.0_f64 * 600.0) as i32);
+        write_signed_bits(&mut bits, 80, 18, (-5.0_f64 * 600.0) as i32);
+        write_signed_bits(&mut bits, 98, 17, (15.0_f64 * 600.0) as i32);
+
+        let parsed = parse_vdes_payload(&bits);
+
+        assert_eq!(parsed.message_id, Some(6));
+        assert_eq!(parsed.lat, Some(17.5));
+        assert_eq!(parsed.lon, Some(2.5));
     }
 }
