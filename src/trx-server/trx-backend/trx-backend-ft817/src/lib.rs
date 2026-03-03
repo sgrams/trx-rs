@@ -195,8 +195,6 @@ impl Ft817 {
                     RigMode::AM,
                     RigMode::WFM,
                     RigMode::FM,
-                    RigMode::AIS,
-                    RigMode::VDES,
                     RigMode::DIG,
                     RigMode::PKT,
                 ],
