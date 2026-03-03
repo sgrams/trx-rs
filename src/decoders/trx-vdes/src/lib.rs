@@ -20,8 +20,8 @@ use num_complex::Complex;
 use trx_core::decode::VdesMessage;
 
 const VDES_SYMBOL_RATE: f32 = 76_800.0;
-const MIN_BURST_MS: f32 = 0.8;
-const BURST_END_MS: f32 = 0.25;
+const MIN_BURST_MS: f32 = 1.5;
+const BURST_END_MS: f32 = 0.35;
 const MAX_BURST_MS: f32 = 45.0;
 const MIN_BURST_SYMBOLS: usize = 64;
 const TER_MCS1_100_BURST_SYMBOLS: usize = 1_984;
@@ -36,10 +36,10 @@ const TER_MCS1_100_SYNC_BITS: &[u8; TER_MCS1_100_SYNC_SYMBOLS] = b"1111110011010
 const PI4_QPSK_DIBITS: [u8; 4] = [0b00, 0b01, 0b11, 0b10];
 const MIN_SYNC_CANDIDATE_SCORE: f32 = 0.20;
 const MIN_SYNC_PARSE_SCORE: f32 = 0.50;
-const BURST_TRIGGER_NOISE_MULT: f32 = 1.8;
-const BURST_TRIGGER_FLOOR: f32 = 1.0e-12;
-const BURST_SUSTAIN_NOISE_MULT: f32 = 1.02;
-const BURST_SUSTAIN_FLOOR: f32 = 1.0e-13;
+const BURST_TRIGGER_NOISE_MULT: f32 = 3.0;
+const BURST_TRIGGER_FLOOR: f32 = 1.0e-10;
+const BURST_SUSTAIN_NOISE_MULT: f32 = 1.15;
+const BURST_SUSTAIN_FLOOR: f32 = 1.0e-11;
 
 #[derive(Debug, Clone)]
 pub struct VdesDecoder {
