@@ -30,12 +30,10 @@ function renderFt8Row(msg) {
   row.className = "ft8-row";
   const rawMessage = (msg.message || "").toString();
   row.dataset.message = rawMessage.toUpperCase();
-  row.dataset.offsetHz = Number.isFinite(msg.freq_hz) ? String(msg.freq_hz) : "";
+  row.dataset.storedFreqHz = Number.isFinite(msg.freq_hz) ? String(msg.freq_hz) : "";
   const snr = Number.isFinite(msg.snr_db) ? msg.snr_db.toFixed(1) : "--";
   const dt = Number.isFinite(msg.dt_s) ? msg.dt_s.toFixed(2) : "--";
-  const baseHz = Number.isFinite(window.ft8BaseHz) ? window.ft8BaseHz : null;
-  const rfHz = Number.isFinite(msg.freq_hz) && Number.isFinite(baseHz) ? (baseHz + msg.freq_hz) : null;
-  const freq = Number.isFinite(rfHz) ? rfHz.toFixed(0) : "--";
+  const freq = Number.isFinite(msg.freq_hz) ? msg.freq_hz.toFixed(0) : "--";
   const renderedMessage = renderFt8Message(rawMessage);
   row.innerHTML = `<span class="ft8-time">${fmtTime(msg.ts_ms)}</span><span class="ft8-snr">${snr}</span><span class="ft8-dt">${dt}</span><span class="ft8-freq">${freq}</span><span class="ft8-msg">${renderedMessage}</span>`;
   applyFt8FilterToRow(row);
@@ -53,9 +51,8 @@ function addFt8Message(msg) {
 }
 
 function ft8BarRfText(msg) {
-  const baseHz = Number.isFinite(window.ft8BaseHz) ? window.ft8BaseHz : null;
-  if (!Number.isFinite(msg.freq_hz) || !Number.isFinite(baseHz)) return null;
-  return `${(baseHz + msg.freq_hz).toFixed(0)} Hz`;
+  if (!Number.isFinite(msg.freq_hz)) return null;
+  return `${msg.freq_hz.toFixed(0)} Hz`;
 }
 
 function updateFt8Bar() {
@@ -175,10 +172,9 @@ function applyFt8FilterToAll() {
 function updateFt8RowRf(row) {
   const freqEl = row.querySelector(".ft8-freq");
   if (!freqEl) return;
-  const baseHz = Number.isFinite(window.ft8BaseHz) ? window.ft8BaseHz : null;
-  const offset = row.dataset.offsetHz ? Number(row.dataset.offsetHz) : NaN;
-  if (Number.isFinite(baseHz) && Number.isFinite(offset)) {
-    freqEl.textContent = (baseHz + offset).toFixed(0);
+  const storedFreqHz = row.dataset.storedFreqHz ? Number(row.dataset.storedFreqHz) : NaN;
+  if (Number.isFinite(storedFreqHz)) {
+    freqEl.textContent = storedFreqHz.toFixed(0);
   } else {
     freqEl.textContent = "--";
   }
@@ -224,7 +220,7 @@ window.onServerFt8 = function(msg) {
   const grids = extractAllGrids(raw);
   const station = extractLikelyCallsign(raw);
   if (grids.length > 0 && window.ft8MapAddLocator) {
-    window.ft8MapAddLocator(raw, grids, "ft8", station);
+    window.ft8MapAddLocator(raw, grids, "ft8", station, msg);
   }
   addFt8Message({
     receiver: window.getDecodeRigMeta ? window.getDecodeRigMeta() : null,

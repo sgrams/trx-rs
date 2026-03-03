@@ -125,7 +125,7 @@ window.onServerWspr = function(msg) {
   const grids = extractAllGrids(raw);
   const station = extractLikelyCallsign(raw);
   if (grids.length > 0 && window.ft8MapAddLocator) {
-    window.ft8MapAddLocator(raw, grids, "wspr", station);
+    window.ft8MapAddLocator(raw, grids, "wspr", station, msg);
   }
   addWsprMessage({
     receiver: window.getDecodeRigMeta ? window.getDecodeRigMeta() : null,

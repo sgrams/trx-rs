@@ -1456,67 +1456,68 @@ small { color: var(--text-muted); }
 .aprs-popup-table td { padding: 0.06rem 0.3rem 0.06rem 0; vertical-align: top; font-size: 0.88em; }
 .aprs-popup-label { color: var(--text-muted); white-space: nowrap; padding-right: 0.5rem !important; }
 .aprs-popup-info { font-size: 0.85em; color: var(--text); border-top: 1px solid var(--border-light); padding-top: 0.25rem; margin-top: 0.1rem; word-break: break-word; }
-.bookmark-locator-tip-shell {
+.decode-locator-tip-shell {
   background: transparent;
   border: none;
   box-shadow: none;
 }
-.bookmark-locator-tip-shell .leaflet-tooltip-content {
+.decode-locator-tip-shell .leaflet-tooltip-content {
   margin: 0;
 }
-.bookmark-locator-tip-shell.leaflet-tooltip-top::before {
+.decode-locator-tip-shell.leaflet-tooltip-top::before {
   border-top-color: color-mix(in srgb, var(--card-bg) 94%, transparent);
 }
-.bookmark-locator-tip {
-  min-width: 15rem;
-  max-width: 24rem;
+.decode-locator-tip {
+  min-width: 16rem;
+  max-width: 26rem;
+  max-height: min(22rem, 60vh);
+  overflow: auto;
   padding: 0.55rem 0.65rem;
-  border: 1px solid color-mix(in srgb, var(--accent-green) 26%, var(--border-light));
+  border: 1px solid color-mix(in srgb, var(--accent-yellow) 26%, var(--border-light));
   border-radius: 0.65rem;
   background: color-mix(in srgb, var(--card-bg) 94%, transparent);
   color: var(--text);
   box-shadow: 0 10px 24px rgba(0, 0, 0, 0.28);
 }
-.bookmark-locator-tip-title {
-  color: var(--accent-green);
+.decode-locator-tip-title {
+  color: var(--accent-yellow);
   font-weight: 700;
   font-size: 0.9rem;
   letter-spacing: 0.03em;
 }
-.bookmark-locator-tip-subtitle {
+.decode-locator-tip-subtitle {
   margin-top: 0.1rem;
   margin-bottom: 0.45rem;
   font-size: 0.75rem;
   color: var(--text-muted);
 }
-.bookmark-locator-tip-row + .bookmark-locator-tip-row {
+.decode-locator-tip-row + .decode-locator-tip-row {
   margin-top: 0.45rem;
   padding-top: 0.4rem;
   border-top: 1px solid color-mix(in srgb, var(--border-light) 70%, transparent);
 }
-.bookmark-locator-tip-head {
+.decode-locator-tip-head {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
   gap: 0.75rem;
 }
-.bookmark-locator-tip-name {
+.decode-locator-tip-name {
   font-weight: 600;
   color: var(--text-heading);
 }
-.bookmark-locator-tip-freq {
+.decode-locator-tip-time {
   flex: 0 0 auto;
-  font-size: 0.78rem;
-  color: var(--accent-yellow);
-  font-variant-numeric: tabular-nums;
+  font-size: 0.75rem;
+  color: var(--text-muted);
   white-space: nowrap;
 }
-.bookmark-locator-tip-meta {
+.decode-locator-tip-meta {
   margin-top: 0.12rem;
   font-size: 0.74rem;
   color: var(--text-muted);
 }
-.bookmark-locator-tip-note {
+.decode-locator-tip-note {
   margin-top: 0.2rem;
   font-size: 0.76rem;
   line-height: 1.3;

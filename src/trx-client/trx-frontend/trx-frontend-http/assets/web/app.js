@@ -3170,7 +3170,7 @@ let aprsRadioPath = null;
 const stationMarkers = new Map();
 const locatorMarkers = new Map();
 const mapMarkers = new Set();
-const mapFilter = { ais: true, vdes: true, aprs: true, ft8: true, wspr: true };
+const mapFilter = { ais: true, vdes: true, aprs: true, bookmark: true, ft8: true, wspr: true };
 const APRS_TRACK_MAX_POINTS = 64;
 const AIS_TRACK_MAX_POINTS = 64;
 const aisMarkers = new Map();
@@ -3404,13 +3404,7 @@ function initAprsMap() {
     if (!bounds) continue;
     entry.marker = L.rectangle(bounds, locatorStyleForCount(entry.bookmarks?.length || 1, "bookmark"))
       .addTo(aprsMap)
-      .bindPopup(buildBookmarkLocatorPopupHtml(entry.grid, entry.bookmarks || []))
-      .bindTooltip(buildBookmarkLocatorTooltipHtml(entry.grid, entry.bookmarks || []), {
-        className: "bookmark-locator-tip-shell",
-        direction: "top",
-        sticky: true,
-        opacity: 1,
-      });
+      .bindPopup(buildBookmarkLocatorPopupHtml(entry.grid, entry.bookmarks || []));
     entry.marker.__trxType = "bookmark";
     mapMarkers.add(entry.marker);
   }
@@ -3419,6 +3413,7 @@ function initAprsMap() {
   const aisFilter = document.getElementById("map-filter-ais");
   const vdesFilter = document.getElementById("map-filter-vdes");
   const aprsFilter = document.getElementById("map-filter-aprs");
+  const bookmarkFilter = document.getElementById("map-filter-bookmark");
   const ft8Filter = document.getElementById("map-filter-ft8");
   const wsprFilter = document.getElementById("map-filter-wspr");
   if (aisFilter) {
@@ -3442,6 +3437,12 @@ function initAprsMap() {
   if (aprsFilter) {
     aprsFilter.addEventListener("change", () => {
       mapFilter.aprs = aprsFilter.checked;
+      applyMapFilter();
+    });
+  }
+  if (bookmarkFilter) {
+    bookmarkFilter.addEventListener("change", () => {
+      mapFilter.bookmark = bookmarkFilter.checked;
       applyMapFilter();
     });
   }
@@ -3990,7 +3991,7 @@ function applyMapFilter() {
   mapMarkers.forEach((marker) => {
     const type = marker.__trxType;
     const visible =
-      type === "bookmark" ||
+      (type === "bookmark" && mapFilter.bookmark) ||
       (type === "ais" && mapFilter.ais) ||
       (type === "vdes" && mapFilter.vdes) ||
       (type === "aprs" && mapFilter.aprs) ||
@@ -4024,6 +4025,57 @@ function locatorStyleForCount(count, type) {
   };
 }
 
+function formatDecodeLocatorTime(tsMs) {
+  if (!Number.isFinite(tsMs)) return "--:--:--";
+  return new Date(tsMs).toLocaleTimeString([], {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  });
+}
+
+function buildDecodeLocatorTooltipHtml(grid, entry, type) {
+  const details = entry?.stationDetails instanceof Map
+    ? Array.from(entry.stationDetails.values())
+    : [];
+  details.sort((a, b) => Number(b?.ts_ms || 0) - Number(a?.ts_ms || 0));
+  const title = type === "wspr" ? "WSPR" : "FT8";
+  const rows = details
+    .map((detail) => {
+      const station = escapeMapHtml(String(detail?.station || "Unknown"));
+      const freq = Number.isFinite(detail?.freq_hz)
+        ? `${Number(detail.freq_hz).toFixed(0)} Hz`
+        : "--";
+      const meta = [
+        Number.isFinite(detail?.snr_db) ? `${Number(detail.snr_db).toFixed(1)} dB` : null,
+        Number.isFinite(detail?.dt_s) ? `dt ${Number(detail.dt_s).toFixed(2)}` : null,
+        escapeMapHtml(freq),
+      ].filter(Boolean).join(" · ");
+      const message = detail?.message
+        ? `<div class="decode-locator-tip-note">${escapeMapHtml(String(detail.message))}</div>`
+        : "";
+      return `<div class="decode-locator-tip-row">` +
+        `<div class="decode-locator-tip-head">` +
+          `<span class="decode-locator-tip-name">${station}</span>` +
+          `<span class="decode-locator-tip-time">${escapeMapHtml(formatDecodeLocatorTime(Number(detail?.ts_ms)))}</span>` +
+        `</div>` +
+        (meta ? `<div class="decode-locator-tip-meta">${meta}</div>` : "") +
+        message +
+      `</div>`;
+    })
+    .join("");
+  const count = Math.max(
+    1,
+    details.length,
+    entry?.stations instanceof Set ? entry.stations.size : 0,
+  );
+  return `<div class="decode-locator-tip">` +
+    `<div class="decode-locator-tip-title">${escapeMapHtml(grid)}</div>` +
+    `<div class="decode-locator-tip-subtitle">${title} · ${count} station${count === 1 ? "" : "s"}</div>` +
+    rows +
+  `</div>`;
+}
+
 function buildBookmarkLocatorPopupHtml(grid, bookmarks) {
   const list = Array.isArray(bookmarks) ? bookmarks : [];
   const rows = list
@@ -4037,36 +4089,6 @@ function buildBookmarkLocatorPopupHtml(grid, bookmarks) {
     })
     .join("<br>");
   return `<b>${escapeMapHtml(grid)}</b><br>Bookmarks: ${list.length || 1}` + (rows ? `<br>${rows}` : "");
-}
-
-function buildBookmarkLocatorTooltipHtml(grid, bookmarks) {
-  const list = Array.isArray(bookmarks) ? [...bookmarks] : [];
-  list.sort((a, b) => Number(a?.freq_hz || 0) - Number(b?.freq_hz || 0));
-  const rows = list
-    .map((bm) => {
-      const name = escapeMapHtml(String(bm?.name || "Bookmark"));
-      const freq = typeof bmFmtFreq === "function"
-        ? escapeMapHtml(bmFmtFreq(bm?.freq_hz))
-        : escapeMapHtml(String(bm?.freq_hz || "--"));
-      const meta = [
-        bm?.mode ? escapeMapHtml(String(bm.mode)) : null,
-        bm?.category ? escapeMapHtml(String(bm.category)) : null,
-      ].filter(Boolean).join(" · ");
-      return `<div class="bookmark-locator-tip-row">` +
-        `<div class="bookmark-locator-tip-head">` +
-          `<span class="bookmark-locator-tip-name">${name}</span>` +
-          `<span class="bookmark-locator-tip-freq">${freq}</span>` +
-        `</div>` +
-        (meta ? `<div class="bookmark-locator-tip-meta">${meta}</div>` : "") +
-        (bm?.comment ? `<div class="bookmark-locator-tip-note">${escapeMapHtml(String(bm.comment))}</div>` : "") +
-      `</div>`;
-    })
-    .join("");
-  return `<div class="bookmark-locator-tip">` +
-    `<div class="bookmark-locator-tip-title">${escapeMapHtml(grid)}</div>` +
-    `<div class="bookmark-locator-tip-subtitle">${list.length} bookmark${list.length === 1 ? "" : "s"}</div>` +
-    rows +
-  `</div>`;
 }
 
 window.syncBookmarkMapLocators = function(bookmarks) {
@@ -4108,7 +4130,6 @@ window.syncBookmarkMapLocators = function(bookmarks) {
         existing.marker.setBounds(next.bounds);
         existing.marker.setStyle(locatorStyleForCount(next.bookmarks.length, "bookmark"));
         existing.marker.setPopupContent(popupHtml);
-        existing.marker.setTooltipContent(buildBookmarkLocatorTooltipHtml(next.grid, next.bookmarks));
       }
       continue;
     }
@@ -4123,13 +4144,7 @@ window.syncBookmarkMapLocators = function(bookmarks) {
     if (aprsMap) {
       entry.marker = L.rectangle(next.bounds, locatorStyleForCount(next.bookmarks.length, "bookmark"))
         .addTo(aprsMap)
-        .bindPopup(popupHtml)
-        .bindTooltip(buildBookmarkLocatorTooltipHtml(next.grid, next.bookmarks), {
-          className: "bookmark-locator-tip-shell",
-          direction: "top",
-          sticky: true,
-          opacity: 1,
-        });
+        .bindPopup(popupHtml);
       entry.marker.__trxType = "bookmark";
       mapMarkers.add(entry.marker);
     }
@@ -4138,37 +4153,56 @@ window.syncBookmarkMapLocators = function(bookmarks) {
   applyMapFilter();
 };
 
-window.ft8MapAddLocator = function(message, grids, type = "ft8", station = null) {
+window.ft8MapAddLocator = function(message, grids, type = "ft8", station = null, details = null) {
   if (!aprsMap) initAprsMap();
   if (!aprsMap) return;
   if (!Array.isArray(grids) || grids.length === 0) return;
   const markerType = type === "wspr" ? "wspr" : "ft8";
   const unique = [...new Set(grids.map((g) => String(g).toUpperCase()))];
-  const locatorsLines = unique.map((g) => escapeMapHtml(g)).join("<br>");
+  const stationId = station && String(station).trim() ? String(station).trim().toUpperCase() : "";
+  const detailEntry = {
+    station: stationId || null,
+    ts_ms: Number.isFinite(details?.ts_ms) ? Number(details.ts_ms) : null,
+    snr_db: Number.isFinite(details?.snr_db) ? Number(details.snr_db) : null,
+    dt_s: Number.isFinite(details?.dt_s) ? Number(details.dt_s) : null,
+    freq_hz: Number.isFinite(details?.freq_hz) ? Number(details.freq_hz) : null,
+    message: String(details?.message || message || "").trim() || null,
+  };
+  const detailKey = stationId || `${detailEntry.message || "decode"}:${detailEntry.ts_ms || Date.now()}`;
   for (const grid of unique) {
     const bounds = maidenheadToBounds(grid);
     if (!bounds) continue;
     const key = `${markerType}:${grid}`;
-    const stationId = station && String(station).trim() ? String(station).trim().toUpperCase() : "";
     const existing = locatorMarkers.get(key);
     if (existing) {
       if (stationId) existing.stations.add(stationId);
-      const count = existing.stations.size || 1;
+      if (!(existing.stationDetails instanceof Map)) existing.stationDetails = new Map();
+      existing.stationDetails.set(detailKey, { ...detailEntry });
+      const count = Math.max(existing.stationDetails.size, existing.stations.size || 0, 1);
+      const tooltipHtml = buildDecodeLocatorTooltipHtml(grid, existing, markerType);
       existing.marker.setStyle(locatorStyleForCount(count, markerType));
-      existing.marker.setPopupContent(
-        `<b>${escapeMapHtml(grid)}</b><br>Stations: ${count}<br>${locatorsLines}`
-      );
+      existing.marker.setPopupContent(tooltipHtml);
+      existing.marker.setTooltipContent(tooltipHtml);
       continue;
     }
 
     const stations = new Set();
     if (stationId) stations.add(stationId);
-    const count = stations.size || 1;
+    const stationDetails = new Map();
+    stationDetails.set(detailKey, { ...detailEntry });
+    const count = Math.max(stationDetails.size, stations.size || 0, 1);
+    const tooltipHtml = buildDecodeLocatorTooltipHtml(grid, { stations, stationDetails }, markerType);
     const marker = L.rectangle(bounds, locatorStyleForCount(count, markerType))
       .addTo(aprsMap)
-      .bindPopup(`<b>${escapeMapHtml(grid)}</b><br>Stations: ${count}<br>${locatorsLines}`);
+      .bindPopup(tooltipHtml)
+      .bindTooltip(tooltipHtml, {
+        className: "decode-locator-tip-shell",
+        direction: "top",
+        sticky: true,
+        opacity: 1,
+      });
     marker.__trxType = markerType;
-    locatorMarkers.set(key, { marker, stations });
+    locatorMarkers.set(key, { marker, stations, stationDetails });
     mapMarkers.add(marker);
   }
   applyMapFilter();
