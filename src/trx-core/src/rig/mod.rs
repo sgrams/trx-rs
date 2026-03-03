@@ -75,7 +75,10 @@ pub trait AudioSource: Send + Sync {
 
     /// Subscribe to PCM from a specific backend channel when available.
     /// Channel `0` is always the primary channel.
-    fn subscribe_pcm_channel(&self, channel_idx: usize) -> tokio::sync::broadcast::Receiver<Vec<f32>> {
+    fn subscribe_pcm_channel(
+        &self,
+        channel_idx: usize,
+    ) -> tokio::sync::broadcast::Receiver<Vec<f32>> {
         if channel_idx == 0 {
             self.subscribe_pcm()
         } else {
