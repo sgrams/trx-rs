@@ -71,14 +71,14 @@ impl VdesDecoder {
         let mut out = Vec::new();
         let min_burst_samples =
             ((self.sample_rate * (MIN_BURST_MS / 1000.0)).round() as usize).max(16);
-        let quiet_limit =
-            ((self.sample_rate * (BURST_END_MS / 1000.0)).round() as u32).max(4);
+        let quiet_limit = ((self.sample_rate * (BURST_END_MS / 1000.0)).round() as u32).max(4);
 
         for &sample in samples {
             let power = sample.norm_sqr();
             if !self.in_burst {
                 self.noise_floor = 0.995 * self.noise_floor + 0.005 * power;
-                let trigger = (self.noise_floor * BURST_TRIGGER_NOISE_MULT).max(BURST_TRIGGER_FLOOR);
+                let trigger =
+                    (self.noise_floor * BURST_TRIGGER_NOISE_MULT).max(BURST_TRIGGER_FLOOR);
                 if power >= trigger {
                     self.in_burst = true;
                     self.quiet_run = 0;
@@ -122,7 +122,8 @@ impl VdesDecoder {
             return None;
         }
 
-        let framed = extract_candidate_frame(&symbols).unwrap_or_else(|| fallback_frame_slice(&symbols));
+        let framed =
+            extract_candidate_frame(&symbols).unwrap_or_else(|| fallback_frame_slice(&symbols));
         let rms = burst_rms(&samples);
         let mode = classify_vdes_burst(framed.symbols.len());
         let payload_symbols = framed.payload_symbols();
@@ -178,7 +179,11 @@ impl VdesDecoder {
             "Hard-decision 1/2 Viterbi, tail {} / {} zero bits{}",
             tail_zero_bits,
             TER_MCS1_100_FEC_TAIL_BITS,
-            if plausibility < 15 { " · Low confidence" } else { "" }
+            if plausibility < 15 {
+                " · Low confidence"
+            } else {
+                ""
+            }
         );
         let destination = parsed.summary.clone().or_else(|| {
             Some(format!(
@@ -209,7 +214,10 @@ impl VdesDecoder {
                 parsed.message_label.unwrap_or("VDES Frame"),
                 framed.symbols.len()
             )),
-            callsign: Some(format!("{} {} @{}", mode.label, link_text, framed.start_offset)),
+            callsign: Some(format!(
+                "{} {} @{}",
+                mode.label, link_text, framed.start_offset
+            )),
             destination,
             message_label: parsed.message_label.map(str::to_string),
             session_id: parsed.session_id,
@@ -292,7 +300,8 @@ struct FrameSlice {
 
 impl FrameSlice {
     fn payload_symbols(&self) -> &[u8] {
-        let payload_start = TER_MCS1_100_RAMP_SYMBOLS + TER_MCS1_100_SYNC_SYMBOLS + TER_MCS1_100_LINK_ID_SYMBOLS;
+        let payload_start =
+            TER_MCS1_100_RAMP_SYMBOLS + TER_MCS1_100_SYNC_SYMBOLS + TER_MCS1_100_LINK_ID_SYMBOLS;
         let payload_end = payload_start + TER_MCS1_100_PAYLOAD_SYMBOLS;
         if self.symbols.len() <= payload_start {
             return &[];
@@ -588,7 +597,8 @@ fn parse_msg_6(bits: &[u8], mut parsed: ParsedPayload) -> ParsedPayload {
     parsed.asm_identifier = read_bits_u16(bits, 128, 16);
     parsed.payload_bits = extract_counted_payload(bits, 144, parsed.data_count);
     parsed.payload_preview = ascii_preview(&parsed.payload_bits);
-    if let (Some(ne_lon), Some(ne_lat), Some(sw_lon), Some(sw_lat)) = (ne_lon, ne_lat, sw_lon, sw_lat)
+    if let (Some(ne_lon), Some(ne_lat), Some(sw_lon), Some(sw_lat)) =
+        (ne_lon, ne_lat, sw_lon, sw_lat)
     {
         let ne_lon_deg = ne_lon as f64 / 600.0;
         let ne_lat_deg = ne_lat as f64 / 600.0;
@@ -639,7 +649,11 @@ fn parse_unknown_msg(bits: &[u8], mut parsed: ParsedPayload) -> ParsedPayload {
     parsed
 }
 
-fn vdes_plausibility_score(parsed: &ParsedPayload, link_id: Option<u8>, tail_zero_bits: usize) -> i32 {
+fn vdes_plausibility_score(
+    parsed: &ParsedPayload,
+    link_id: Option<u8>,
+    tail_zero_bits: usize,
+) -> i32 {
     let mut score = 0i32;
 
     match parsed.message_id {
@@ -940,11 +954,7 @@ fn decode_rm_1_5(bits: &[u8]) -> Option<u8> {
     let mut best_dist = usize::MAX;
     for id in 0u8..64 {
         let code = rm_1_5_codeword(id);
-        let dist = code
-            .iter()
-            .zip(bits.iter())
-            .filter(|(a, b)| a != b)
-            .count();
+        let dist = code.iter().zip(bits.iter()).filter(|(a, b)| a != b).count();
         if dist < best_dist {
             best_dist = dist;
             best_id = id;
@@ -991,7 +1001,8 @@ fn slice_pi4_qpsk_symbols(samples: &[Complex<f32>], sample_rate: f32) -> Vec<u8>
 
     let mut phase_clock = 0.0_f32;
     let mut prev = samples[0];
-    let mut symbols = Vec::with_capacity(((samples.len() as f32) * VDES_SYMBOL_RATE / sample_rate) as usize + 4);
+    let mut symbols =
+        Vec::with_capacity(((samples.len() as f32) * VDES_SYMBOL_RATE / sample_rate) as usize + 4);
 
     for &sample in &samples[1..] {
         phase_clock += VDES_SYMBOL_RATE;
@@ -1073,14 +1084,23 @@ mod tests {
 
     #[test]
     fn packs_dibits_msb_first() {
-        assert_eq!(pack_dibits_msb(&[0b00, 0b01, 0b10, 0b11]), vec![0b0001_1011]);
+        assert_eq!(
+            pack_dibits_msb(&[0b00, 0b01, 0b10, 0b11]),
+            vec![0b0001_1011]
+        );
     }
 
     #[test]
     fn quantizes_pi_over_four_steps() {
         assert_eq!(quantize_pi4_qpsk(phase(std::f32::consts::FRAC_PI_4)), 0b00);
-        assert_eq!(quantize_pi4_qpsk(phase(3.0 * std::f32::consts::FRAC_PI_4)), 0b01);
-        assert_eq!(quantize_pi4_qpsk(phase(-3.0 * std::f32::consts::FRAC_PI_4)), 0b11);
+        assert_eq!(
+            quantize_pi4_qpsk(phase(3.0 * std::f32::consts::FRAC_PI_4)),
+            0b01
+        );
+        assert_eq!(
+            quantize_pi4_qpsk(phase(-3.0 * std::f32::consts::FRAC_PI_4)),
+            0b11
+        );
         assert_eq!(quantize_pi4_qpsk(phase(-std::f32::consts::FRAC_PI_4)), 0b10);
     }
 
