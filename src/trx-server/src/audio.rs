@@ -19,9 +19,9 @@ use tracing::{error, info, warn};
 use trx_ais::AisDecoder;
 use trx_aprs::AprsDecoder;
 use trx_core::audio::{
-    read_audio_msg, write_audio_msg, AudioStreamInfo, AUDIO_MSG_AIS_DECODE,
-    AUDIO_MSG_APRS_DECODE, AUDIO_MSG_CW_DECODE, AUDIO_MSG_FT8_DECODE, AUDIO_MSG_RX_FRAME,
-    AUDIO_MSG_STREAM_INFO, AUDIO_MSG_TX_FRAME, AUDIO_MSG_VDES_DECODE, AUDIO_MSG_WSPR_DECODE,
+    read_audio_msg, write_audio_msg, AudioStreamInfo, AUDIO_MSG_AIS_DECODE, AUDIO_MSG_APRS_DECODE,
+    AUDIO_MSG_CW_DECODE, AUDIO_MSG_FT8_DECODE, AUDIO_MSG_RX_FRAME, AUDIO_MSG_STREAM_INFO,
+    AUDIO_MSG_TX_FRAME, AUDIO_MSG_VDES_DECODE, AUDIO_MSG_WSPR_DECODE,
 };
 use trx_core::decode::{
     AisMessage, AprsPacket, DecodedMessage, Ft8Message, VdesMessage, WsprMessage,
@@ -905,7 +905,10 @@ pub async fn run_ais_decoder(
     let mut decoder_a = AisDecoder::new(sample_rate);
     let mut decoder_b = AisDecoder::new(sample_rate);
     let mut was_active = false;
-    let mut active = matches!(state_rx.borrow().status.mode, RigMode::AIS | RigMode::MARINE);
+    let mut active = matches!(
+        state_rx.borrow().status.mode,
+        RigMode::AIS | RigMode::MARINE
+    );
 
     loop {
         if !active {
@@ -987,7 +990,10 @@ pub async fn run_vdes_decoder(
     info!("VDES decoder started ({}Hz complex baseband)", sample_rate);
     let mut decoder = VdesDecoder::new(sample_rate);
     let mut was_active = false;
-    let mut active = matches!(state_rx.borrow().status.mode, RigMode::VDES | RigMode::MARINE);
+    let mut active = matches!(
+        state_rx.borrow().status.mode,
+        RigMode::VDES | RigMode::MARINE
+    );
 
     loop {
         if !active {

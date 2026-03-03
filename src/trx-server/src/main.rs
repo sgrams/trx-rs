@@ -288,10 +288,7 @@ type SdrRigBuildResult = DynResult<(
 
 type OptionalSdrRig = Option<Box<dyn trx_core::rig::RigCat>>;
 type OptionalSdrPcmRx = Option<broadcast::Receiver<Vec<f32>>>;
-type OptionalSdrAisPcmRx = Option<(
-    broadcast::Receiver<Vec<f32>>,
-    broadcast::Receiver<Vec<f32>>,
-)>;
+type OptionalSdrAisPcmRx = Option<(broadcast::Receiver<Vec<f32>>, broadcast::Receiver<Vec<f32>>)>;
 type OptionalSdrVdesIqRx = Option<broadcast::Receiver<Vec<num_complex::Complex<f32>>>>;
 
 /// Build a `SoapySdrRig` with full channel config from a `RigInstanceConfig`.
@@ -641,7 +638,8 @@ fn spawn_rig_audio_stack(
             let vdes_decode_tx = decode_tx.clone();
             let vdes_shutdown_rx = shutdown_rx.clone();
             let vdes_histories = histories.clone();
-            let vdes_sr = (rig_cfg.sdr.sample_rate / (rig_cfg.sdr.sample_rate / 96_000).max(1)).max(1);
+            let vdes_sr =
+                (rig_cfg.sdr.sample_rate / (rig_cfg.sdr.sample_rate / 96_000).max(1)).max(1);
             handles.push(tokio::spawn(async move {
                 tokio::select! {
                     _ = audio::run_vdes_decoder(vdes_sr, vdes_iq_rx, vdes_state_rx, vdes_decode_tx, vdes_histories) => {}
@@ -881,13 +879,12 @@ async fn main() -> DynResult<()> {
             OptionalSdrPcmRx,
             OptionalSdrAisPcmRx,
             OptionalSdrVdesIqRx,
-        ) =
-            if rig_cfg.rig.access.access_type.as_deref() == Some("sdr") {
-                let (rig, pcm_rx, ais_pcm_rx, vdes_iq_rx) = build_sdr_rig_from_instance(rig_cfg)?;
-                (Some(rig), Some(pcm_rx), Some(ais_pcm_rx), Some(vdes_iq_rx))
-            } else {
-                (None, None, None, None)
-            };
+        ) = if rig_cfg.rig.access.access_type.as_deref() == Some("sdr") {
+            let (rig, pcm_rx, ais_pcm_rx, vdes_iq_rx) = build_sdr_rig_from_instance(rig_cfg)?;
+            (Some(rig), Some(pcm_rx), Some(ais_pcm_rx), Some(vdes_iq_rx))
+        } else {
+            (None, None, None, None)
+        };
 
         #[cfg(not(feature = "soapysdr"))]
         let (sdr_prebuilt_rig, sdr_pcm_rx, sdr_ais_pcm_rx, sdr_vdes_iq_rx): (
