@@ -113,10 +113,10 @@ impl ChannelDsp {
             return (1, audio_sample_rate.max(1));
         }
 
-        let target_rate = if *mode == RigMode::WFM {
-            audio_bandwidth_hz.max(audio_sample_rate.saturating_mul(4))
-        } else {
-            audio_sample_rate.max(1)
+        let target_rate = match mode {
+            RigMode::WFM => audio_bandwidth_hz.max(audio_sample_rate.saturating_mul(4)),
+            RigMode::VDES | RigMode::MARINE => audio_sample_rate.max(96_000),
+            _ => audio_sample_rate.max(1),
         };
         let decim_factor = (sdr_sample_rate / target_rate.max(1)).max(1) as usize;
         let channel_sample_rate = (sdr_sample_rate / decim_factor as u32).max(1);
@@ -366,7 +366,7 @@ impl ChannelDsp {
             self.scratch_decimated
                 .reserve(capacity - self.scratch_decimated.capacity());
         }
-        if self.mode == RigMode::VDES && self.iq_tx.receiver_count() > 0 {
+        if matches!(self.mode, RigMode::VDES | RigMode::MARINE) && self.iq_tx.receiver_count() > 0 {
             self.scratch_iq_tap.clear();
             if self.scratch_iq_tap.capacity() < capacity {
                 self.scratch_iq_tap
