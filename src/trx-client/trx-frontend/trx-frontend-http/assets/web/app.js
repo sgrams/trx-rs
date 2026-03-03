@@ -1273,6 +1273,54 @@ function effectiveSpectrumCoverageSpanHz(sampleRateHz) {
   return sampleRate * Math.max(0.01, Math.min(1.0, ratio));
 }
 
+function sweetSpotMinimumOffsetHz(bandwidthHz) {
+  if (!Number.isFinite(bandwidthHz) || bandwidthHz <= 0) return 0;
+  return bandwidthHz / 2;
+}
+
+function sweetSpotCenterHasRequiredOffset(centerHz, freqHz, bandwidthHz) {
+  if (!Number.isFinite(centerHz) || !Number.isFinite(freqHz)) return false;
+  const minOffsetHz = sweetSpotMinimumOffsetHz(bandwidthHz);
+  if (!Number.isFinite(minOffsetHz) || minOffsetHz <= 0) return true;
+  return Math.abs(centerHz - freqHz) >= minOffsetHz - 1;
+}
+
+function chooseSweetSpotCenterOutsideOffsetRange(freqHz, bandwidthHz, minCenterHz, maxCenterHz, preferredCenterHz = null) {
+  if (!Number.isFinite(freqHz) || !Number.isFinite(minCenterHz) || !Number.isFinite(maxCenterHz) || minCenterHz > maxCenterHz) {
+    return null;
+  }
+
+  const minOffsetHz = sweetSpotMinimumOffsetHz(bandwidthHz);
+  if (!Number.isFinite(minOffsetHz) || minOffsetHz <= 0) {
+    const fallbackCenterHz = Number.isFinite(preferredCenterHz) ? preferredCenterHz : freqHz;
+    return alignFreqToRigStep(Math.round(Math.max(minCenterHz, Math.min(maxCenterHz, fallbackCenterHz))));
+  }
+
+  const targetCentersHz = [];
+  const lowerTargetHz = alignFreqToRigStep(Math.round(freqHz - minOffsetHz));
+  const upperTargetHz = alignFreqToRigStep(Math.round(freqHz + minOffsetHz));
+  if (lowerTargetHz >= minCenterHz && lowerTargetHz <= maxCenterHz) targetCentersHz.push(lowerTargetHz);
+  if (upperTargetHz >= minCenterHz && upperTargetHz <= maxCenterHz && !targetCentersHz.some((value) => Math.abs(value - upperTargetHz) < 1)) {
+    targetCentersHz.push(upperTargetHz);
+  }
+  if (!targetCentersHz.length) return null;
+
+  if (Number.isFinite(preferredCenterHz)) {
+    let bestCenterHz = targetCentersHz[0];
+    let bestDistance = Math.abs(bestCenterHz - preferredCenterHz);
+    for (const targetCenterHz of targetCentersHz.slice(1)) {
+      const distance = Math.abs(targetCenterHz - preferredCenterHz);
+      if (distance < bestDistance) {
+        bestDistance = distance;
+        bestCenterHz = targetCenterHz;
+      }
+    }
+    return bestCenterHz;
+  }
+
+  return targetCentersHz[0];
+}
+
 function requiredCenterFreqForCoverageInFrame(data, freqHz, bandwidthHz = coverageGuardBandwidthHz()) {
   if (!data || !Number.isFinite(freqHz)) return null;
   const sampleRate = effectiveSpectrumCoverageSpanHz(data.sample_rate);
@@ -1370,7 +1418,13 @@ function sweetSpotCandidateForFrame(data, freqHz, bandwidthHz) {
   const requiredLoHz = span.loHz - spectrumCoverageMarginHz;
   const requiredHiHz = span.hiHz + spectrumCoverageMarginHz;
   if (requiredHiHz - requiredLoHz >= usableSpanHz) {
-    const fallbackCenterHz = requiredCenterFreqForCoverageInFrame(data, freqHz, bandwidthHz);
+    const fallbackCenterHz = chooseSweetSpotCenterOutsideOffsetRange(
+      freqHz,
+      bandwidthHz,
+      currentCenterHz - halfUsableSpanHz,
+      currentCenterHz + halfUsableSpanHz,
+      requiredCenterFreqForCoverageInFrame(data, freqHz, bandwidthHz),
+    );
     if (!Number.isFinite(fallbackCenterHz)) return null;
     return { centerHz: fallbackCenterHz, score: Number.POSITIVE_INFINITY };
   }
@@ -1383,7 +1437,13 @@ function sweetSpotCandidateForFrame(data, freqHz, bandwidthHz) {
   const minCenterHz = Math.max(evalMinCenterHz, fitMinCenterHz);
   const maxCenterHz = Math.min(evalMaxCenterHz, fitMaxCenterHz);
   if (!Number.isFinite(minCenterHz) || !Number.isFinite(maxCenterHz) || minCenterHz > maxCenterHz) {
-    const fallbackCenterHz = requiredCenterFreqForCoverageInFrame(data, freqHz, bandwidthHz);
+    const fallbackCenterHz = chooseSweetSpotCenterOutsideOffsetRange(
+      freqHz,
+      bandwidthHz,
+      evalMinCenterHz,
+      evalMaxCenterHz,
+      requiredCenterFreqForCoverageInFrame(data, freqHz, bandwidthHz),
+    );
     if (!Number.isFinite(fallbackCenterHz)) return null;
     return { centerHz: fallbackCenterHz, score: Number.POSITIVE_INFINITY };
   }
@@ -1409,6 +1469,9 @@ function sweetSpotCandidateForFrame(data, freqHz, bandwidthHz) {
     const endIdx = Math.min(maxIdx, startIdx + usableBins);
     const windowLoHz = fullLoHz + (startIdx / maxIdx) * sampleRate;
     const candidateCenterHz = windowLoHz + halfUsableSpanHz;
+    if (!sweetSpotCenterHasRequiredOffset(candidateCenterHz, freqHz, bandwidthHz)) {
+      continue;
+    }
     const signalLoIdx = Math.max(startIdx, Math.min(endIdx, spectrumBinIndexForHz(data, signalLoHz)));
     const signalHiIdx = Math.max(startIdx, Math.min(endIdx, spectrumBinIndexForHz(data, signalHiHz)));
 
@@ -1429,7 +1492,13 @@ function sweetSpotCandidateForFrame(data, freqHz, bandwidthHz) {
   }
 
   if (!Number.isFinite(bestScore) || bestStartIdx == null) {
-    const fallbackCenterHz = requiredCenterFreqForCoverageInFrame(data, freqHz, bandwidthHz);
+    const fallbackCenterHz = chooseSweetSpotCenterOutsideOffsetRange(
+      freqHz,
+      bandwidthHz,
+      minCenterHz,
+      maxCenterHz,
+      requiredCenterFreqForCoverageInFrame(data, freqHz, bandwidthHz),
+    );
     if (!Number.isFinite(fallbackCenterHz)) return null;
     return { centerHz: fallbackCenterHz, score: Number.POSITIVE_INFINITY };
   }
@@ -1462,7 +1531,16 @@ function sweetSpotProbeCenters(data, freqHz, bandwidthHz) {
   const requiredLoHz = span.loHz - spectrumCoverageMarginHz;
   const requiredHiHz = span.hiHz + spectrumCoverageMarginHz;
   if (requiredHiHz - requiredLoHz >= usableSpanHz) {
-    return [alignFreqToRigStep(Math.round(freqHz))];
+    const probeCenters = [];
+    const minOffsetHz = sweetSpotMinimumOffsetHz(bandwidthHz);
+    for (const centerHz of [freqHz - minOffsetHz, freqHz + minOffsetHz]) {
+      const alignedHz = alignFreqToRigStep(Math.round(centerHz));
+      if (sweetSpotCenterHasRequiredOffset(alignedHz, freqHz, bandwidthHz)
+        && !probeCenters.some((value) => Math.abs(value - alignedHz) < 1)) {
+        probeCenters.push(alignedHz);
+      }
+    }
+    return probeCenters;
   }
 
   const minCenterHz = requiredHiHz - halfUsableSpanHz;
@@ -1476,13 +1554,16 @@ function sweetSpotProbeCenters(data, freqHz, bandwidthHz) {
   for (let i = 0; i < points; i++) {
     const frac = points === 1 ? 0.5 : i / (points - 1);
     const centerHz = alignFreqToRigStep(Math.round(minCenterHz + (maxCenterHz - minCenterHz) * frac));
-    if (!centers.some((value) => Math.abs(value - centerHz) < 1)) {
+    if (sweetSpotCenterHasRequiredOffset(centerHz, freqHz, bandwidthHz)
+      && !centers.some((value) => Math.abs(value - centerHz) < 1)) {
       centers.push(centerHz);
     }
   }
 
   const currentCenterHz = alignFreqToRigStep(Math.round(Number(data.center_hz)));
-  if (Number.isFinite(currentCenterHz) && !centers.some((value) => Math.abs(value - currentCenterHz) < 1)) {
+  if (Number.isFinite(currentCenterHz)
+    && sweetSpotCenterHasRequiredOffset(currentCenterHz, freqHz, bandwidthHz)
+    && !centers.some((value) => Math.abs(value - currentCenterHz) < 1)) {
     centers.push(currentCenterHz);
     centers.sort((a, b) => a - b);
   }
