@@ -1536,6 +1536,9 @@ small { color: var(--text-muted); }
 .cw-config { display: flex; gap: 1rem; align-items: center; flex-wrap: wrap; margin-bottom: 0.75rem; }
 .cw-config label { display: flex; flex-direction: column; gap: 0.2rem; color: var(--text-muted); font-size: 0.82rem; }
 .cw-config input[type="number"] { width: 5rem; padding: 0.3rem 0.4rem; font-size: 0.9rem; border: 1px solid var(--border-light); border-radius: 6px; background: var(--input-bg); color: var(--text); }
+.cw-tone-picker { margin-bottom: 0.75rem; border: 1px solid var(--border-light); border-radius: 8px; background: var(--input-bg); padding: 0.5rem 0.6rem; }
+.cw-tone-picker-head { display: flex; align-items: baseline; justify-content: space-between; gap: 0.6rem; margin-bottom: 0.35rem; color: var(--text-muted); font-size: 0.78rem; }
+#cw-tone-waterfall { width: 100%; height: 56px; display: block; border-radius: 6px; background: linear-gradient(180deg, rgba(8, 14, 18, 0.92), rgba(18, 28, 36, 0.98)); cursor: crosshair; }
 #cw-output { max-height: 360px; overflow-y: auto; border: 1px solid var(--border-light); border-radius: 6px; background: var(--input-bg); font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; font-size: 0.85rem; padding: 0.4rem 0.5rem; min-height: 60px; white-space: pre-wrap; word-break: break-all; }
 .cw-line { line-height: 1.5; }
 .cw-signal-on { width: 10px; height: 10px; border-radius: 50%; background: var(--accent-green); box-shadow: 0 0 6px var(--accent-green); flex-shrink: 0; }

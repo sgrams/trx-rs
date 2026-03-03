@@ -1197,6 +1197,9 @@ function applyLocalTunedFrequency(hz, forceDisplay = false) {
   if (window.updateFt8RfDisplay) {
     window.updateFt8RfDisplay();
   }
+  if (window.refreshCwTonePicker) {
+    window.refreshCwTonePicker();
+  }
   if (lastSpectrumData) {
     scheduleSpectrumDraw();
   }
@@ -2083,6 +2086,9 @@ function render(update) {
   if (update.filter && typeof update.filter.bandwidth_hz === "number") {
     currentBandwidthHz = update.filter.bandwidth_hz;
     syncBandwidthInput(currentBandwidthHz);
+    if (window.refreshCwTonePicker) {
+      window.refreshCwTonePicker();
+    }
     if (
       sdrGainEl
       && typeof update.filter.sdr_gain_db === "number"
@@ -2222,12 +2228,10 @@ function render(update) {
   if (cwToneEl && typeof update.cw_tone_hz === "number") {
     cwToneEl.value = update.cw_tone_hz;
   }
-  if (cwWpmEl && cwToneEl && typeof update.cw_auto === "boolean") {
+  if (cwWpmEl && typeof update.cw_auto === "boolean") {
     const disabled = update.cw_auto;
     cwWpmEl.disabled = disabled;
     cwWpmEl.readOnly = disabled;
-    cwToneEl.disabled = disabled;
-    cwToneEl.readOnly = disabled;
   }
   let activeFreqColor = "var(--accent-green)";
   if (update.status && update.status.vfo && Array.isArray(update.status.vfo.entries)) {
@@ -4965,6 +4969,9 @@ function startSpectrumStreaming() {
       pushSpectrumPeakHoldFrame(lastSpectrumRenderData);
       pushOverviewWaterfallFrame(lastSpectrumData);
       refreshCenterFreqDisplay();
+      if (window.refreshCwTonePicker) {
+        window.refreshCwTonePicker();
+      }
       scheduleSpectrumDraw();
       if (lastModeName === "WFM") {
         updateRdsPsOverlay(lastSpectrumData.rds);
