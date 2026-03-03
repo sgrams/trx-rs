@@ -1626,7 +1626,7 @@ small { color: var(--text-muted); }
   font-size: 0.8rem;
   font-weight: 600;
 }
-.map-locator-chip-wavelength {
+.map-locator-chip-band {
   font-size: 0.78rem;
   font-weight: 700;
   color: var(--chip-color);
