@@ -292,7 +292,8 @@ impl Ft817 {
         let _ = self.port.clear(ClearBuffer::Input);
 
         // Data byte 1 = mode, data bytes 2-4 = 0x00, command = 0x07.
-        let mode_code = encode_mode(mode);
+        let mode_code = encode_mode(mode)
+            .ok_or_else(|| format!("Mode {mode:?} not supported on FT-817"))?;
         tracing::debug!("FT-817 set_mode -> code 0x{:02X} ({:?})", mode_code, mode);
         let frame = [mode_code, 0x00, 0x00, 0x00, CMD_SET_MODE];
         self.write_frame(&frame).await?;
@@ -579,8 +580,8 @@ const CMD_LOCK: u8 = 0x00;
 const CMD_UNLOCK: u8 = 0x80;
 const CMD_READ_METER: u8 = 0xE7;
 
-fn encode_mode(mode: &RigMode) -> u8 {
-    match mode {
+fn encode_mode(mode: &RigMode) -> Option<u8> {
+    Some(match mode {
         RigMode::LSB => 0x00,
         RigMode::USB => 0x01,
         RigMode::CW => 0x02,
@@ -588,11 +589,10 @@ fn encode_mode(mode: &RigMode) -> u8 {
         RigMode::AM => 0x04,
         RigMode::WFM => 0x06,
         RigMode::FM => 0x08,
-        RigMode::AIS | RigMode::VDES | RigMode::MARINE => 0x08,
         RigMode::DIG => 0x0A,
         RigMode::PKT => 0x0C,
-        RigMode::Other(_) => 0x00,
-    }
+        RigMode::AIS | RigMode::VDES | RigMode::MARINE | RigMode::Other(_) => return None,
+    })
 }
 
 fn decode_mode(code: u8) -> RigMode {
