@@ -39,13 +39,12 @@ function currentCwToneRange() {
   if (toneMaxHz < toneMinHz) {
     return null;
   }
-  const rfLowHz = lowerSideband ? centerHz - toneMaxHz : centerHz + toneMinHz;
-  const rfHighHz = lowerSideband ? centerHz - toneMinHz : centerHz + toneMaxHz;
   return {
-    lowHz: Math.min(rfLowHz, rfHighHz),
-    highHz: Math.max(rfLowHz, rfHighHz),
+    lowHz: centerHz - halfBwHz,
+    highHz: centerHz + halfBwHz,
     centerHz,
     bandwidthHz,
+    halfBwHz,
     toneMinHz,
     toneMaxHz,
     lowerSideband,
@@ -70,7 +69,7 @@ function drawCwTonePicker() {
   }
 
   if (cwToneRangeEl) {
-    cwToneRangeEl.textContent = `${range.toneMinHz} - ${range.toneMaxHz} Hz`;
+    cwToneRangeEl.textContent = `${(range.bandwidthHz / 1000).toFixed(range.bandwidthHz >= 10_000 ? 0 : 1)} kHz span`;
   }
 
   const bins = window.lastSpectrumData.bins;
@@ -101,10 +100,18 @@ function drawCwTonePicker() {
   }
 
   const currentTone = clampCwTone(cwToneInput ? cwToneInput.value : 700);
-  const markerFrac = (currentTone - range.toneMinHz) / Math.max(1, (range.toneMaxHz - range.toneMinHz));
+  const markerHz = range.lowerSideband
+    ? range.centerHz - currentTone
+    : range.centerHz + currentTone;
+  const markerFrac = (markerHz - range.lowHz) / Math.max(1, (range.highHz - range.lowHz));
   const markerX = Math.max(0, Math.min(width - 1, Math.round(markerFrac * (width - 1))));
   ctx.fillStyle = "rgba(255, 255, 255, 0.9)";
   ctx.fillRect(markerX, 0, 2, height);
+
+  const centerFrac = (range.centerHz - range.lowHz) / Math.max(1, (range.highHz - range.lowHz));
+  const centerX = Math.max(0, Math.min(width - 1, Math.round(centerFrac * (width - 1))));
+  ctx.fillStyle = "rgba(255, 255, 255, 0.22)";
+  ctx.fillRect(centerX, 0, 1, height);
 }
 
 async function setCwTone(tone, { syncInput = true } = {}) {
@@ -152,7 +159,11 @@ if (cwToneCanvas) {
     const range = currentCwToneRange();
     if (!range) return;
     const frac = Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width));
-    const tone = range.toneMinHz + frac * (range.toneMaxHz - range.toneMinHz);
+    const rfHz = range.lowHz + frac * (range.highHz - range.lowHz);
+    const signedOffsetHz = range.lowerSideband
+      ? range.centerHz - rfHz
+      : rfHz - range.centerHz;
+    const tone = Math.max(range.toneMinHz, Math.min(range.toneMaxHz, signedOffsetHz));
     await setCwTone(tone);
   });
 }
