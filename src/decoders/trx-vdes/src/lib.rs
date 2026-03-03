@@ -164,6 +164,15 @@ impl VdesDecoder {
             .into_iter()
             .filter(|bit| *bit == 0)
             .count();
+        if vdes_plausibility_score(&parsed, link_id, tail_zero_bits) < 15 {
+            return Some(build_unsynced_message(
+                channel,
+                &framed,
+                &mode,
+                rms,
+                &framed.symbols,
+            ));
+        }
         let fec_state = format!(
             "Hard-decision 1/2 Viterbi, tail {} / {} zero bits",
             tail_zero_bits,
@@ -583,17 +592,29 @@ fn parse_msg_6(bits: &[u8], mut parsed: ParsedPayload) -> ParsedPayload {
         let ne_lat_deg = ne_lat as f64 / 600.0;
         let sw_lon_deg = sw_lon as f64 / 600.0;
         let sw_lat_deg = sw_lat as f64 / 600.0;
-        parsed.lon = Some((ne_lon_deg + sw_lon_deg) * 0.5);
-        parsed.lat = Some((ne_lat_deg + sw_lat_deg) * 0.5);
-        parsed.summary = Some(format!(
-            "Geo ASM {} · {} data bits · box {:.3},{:.3} to {:.3},{:.3}",
-            parsed.asm_identifier.unwrap_or(0),
-            parsed.payload_bits.len(),
-            sw_lat_deg,
-            sw_lon_deg,
-            ne_lat_deg,
-            ne_lon_deg
-        ));
+        let valid_box = valid_geo_coord(sw_lat_deg, sw_lon_deg)
+            && valid_geo_coord(ne_lat_deg, ne_lon_deg)
+            && ne_lat_deg >= sw_lat_deg
+            && ne_lon_deg >= sw_lon_deg;
+        if valid_box {
+            parsed.lon = Some((ne_lon_deg + sw_lon_deg) * 0.5);
+            parsed.lat = Some((ne_lat_deg + sw_lat_deg) * 0.5);
+            parsed.summary = Some(format!(
+                "Geo ASM {} · {} data bits · box {:.3},{:.3} to {:.3},{:.3}",
+                parsed.asm_identifier.unwrap_or(0),
+                parsed.payload_bits.len(),
+                sw_lat_deg,
+                sw_lon_deg,
+                ne_lat_deg,
+                ne_lon_deg
+            ));
+        } else {
+            parsed.summary = Some(format!(
+                "Geo ASM {} · {} data bits · invalid box",
+                parsed.asm_identifier.unwrap_or(0),
+                parsed.payload_bits.len()
+            ));
+        }
     } else {
         parsed.summary = Some(format!(
             "Geo ASM {} · {} data bits",
@@ -614,6 +635,99 @@ fn parse_unknown_msg(bits: &[u8], mut parsed: ParsedPayload) -> ParsedPayload {
         parsed.payload_bits.len()
     ));
     parsed
+}
+
+fn vdes_plausibility_score(parsed: &ParsedPayload, link_id: Option<u8>, tail_zero_bits: usize) -> i32 {
+    let mut score = 0i32;
+
+    match parsed.message_id {
+        Some(0..=6) => score += 30,
+        Some(_) | None => score -= 40,
+    }
+
+    if valid_station_id(parsed.source_id) {
+        score += 20;
+    } else {
+        score -= 40;
+    }
+
+    if link_id.is_some() {
+        score += 10;
+    }
+
+    score += match tail_zero_bits {
+        4.. => 20,
+        2..=3 => 8,
+        _ => -20,
+    };
+
+    if !parsed.payload_bits.is_empty() {
+        score += i32::try_from((parsed.payload_bits.len() / 128).min(12)).unwrap_or(0);
+    }
+
+    match parsed.message_id {
+        Some(0) => {
+            score += counted_payload_score(parsed, 56);
+        }
+        Some(1 | 2) => {
+            score += counted_payload_score(parsed, 72);
+        }
+        Some(3 | 4) => {
+            score += counted_payload_score(parsed, 104);
+            if valid_station_id(parsed.destination_id) {
+                score += 15;
+            } else {
+                score -= 20;
+            }
+        }
+        Some(5) => {
+            if valid_station_id(parsed.destination_id) {
+                score += 15;
+            } else {
+                score -= 20;
+            }
+            if parsed.ack_nack_mask.is_some() {
+                score += 5;
+            }
+        }
+        Some(6) => {
+            score += counted_payload_score(parsed, 144);
+            if parsed.lat.is_some() && parsed.lon.is_some() {
+                score += 20;
+            } else {
+                score -= 20;
+            }
+        }
+        _ => {}
+    }
+
+    if parsed.message_label == Some("Unknown") {
+        score -= 20;
+    }
+
+    score
+}
+
+fn counted_payload_score(parsed: &ParsedPayload, payload_start_bit: usize) -> i32 {
+    let Some(data_count) = parsed.data_count else {
+        return -15;
+    };
+    let Some(expected_end) = payload_start_bit.checked_add(usize::from(data_count)) else {
+        return -15;
+    };
+    if parsed.payload_bits.len() == usize::from(data_count) && expected_end >= payload_start_bit {
+        15
+    } else {
+        -15
+    }
+}
+
+fn valid_station_id(id: Option<u32>) -> bool {
+    matches!(id, Some(value) if value != 0 && value != u32::MAX)
+}
+
+fn valid_geo_coord(lat: f64, lon: f64) -> bool {
+    (-90.0..=90.0).contains(&lat) && (-180.0..=180.0).contains(&lon)
 }
 
 fn viterbi_decode_rate_half(coded_bits: &[u8]) -> Vec<u8> {
