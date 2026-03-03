@@ -346,6 +346,7 @@ impl CwDecoder {
                 }
             }
             self.tone_on_at = now;
+            self.emit_event("");
         } else if !detected && self.tone_on {
             // Tone just turned off
             self.tone_on = false;
@@ -366,6 +367,8 @@ impl CwDecoder {
                 }
                 self.auto_detect_wpm();
             }
+
+            self.emit_event("");
         }
 
         // Flush pending character after long silence
@@ -379,13 +382,17 @@ impl CwDecoder {
         }
     }
 
-    fn emit_text(&mut self, text: &str) {
+    fn emit_event(&mut self, text: &str) {
         self.events.push(CwEvent {
             text: text.to_string(),
             wpm: self.wpm,
             tone_hz: self.tone_freq,
             signal_on: self.tone_on,
         });
+    }
+
+    fn emit_text(&mut self, text: &str) {
+        self.emit_event(text);
     }
 
     pub fn process_samples(&mut self, samples: &[f32]) -> Vec<CwEvent> {
@@ -422,5 +429,62 @@ impl CwDecoder {
         self.tone_stable_count = 0;
         self.on_durations.clear();
         self.events.clear();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::CwDecoder;
+
+    fn tone_samples(sample_rate: u32, freq_hz: f32, ms: u32) -> Vec<f32> {
+        let len = (sample_rate as usize * ms as usize) / 1000;
+        let step = 2.0 * std::f32::consts::PI * freq_hz / sample_rate as f32;
+        (0..len).map(|i| (i as f32 * step).sin() * 0.8).collect()
+    }
+
+    fn silence_samples(sample_rate: u32, ms: u32) -> Vec<f32> {
+        vec![0.0; (sample_rate as usize * ms as usize) / 1000]
+    }
+
+    #[test]
+    fn emits_signal_transition_events() {
+        let sample_rate = 48_000;
+        let mut decoder = CwDecoder::new(sample_rate);
+        decoder.set_auto(false);
+        decoder.set_wpm(15);
+        decoder.set_tone_hz(700);
+
+        let mut input = tone_samples(sample_rate, 700.0, 100);
+        input.extend(silence_samples(sample_rate, 500));
+
+        let events = decoder.process_samples(&input);
+
+        assert!(events
+            .iter()
+            .any(|evt| evt.text.is_empty() && evt.signal_on));
+        assert!(events
+            .iter()
+            .any(|evt| evt.text.is_empty() && !evt.signal_on));
+    }
+
+    #[test]
+    fn decodes_single_e_from_synthetic_tone() {
+        let sample_rate = 48_000;
+        let mut decoder = CwDecoder::new(sample_rate);
+        decoder.set_auto(false);
+        decoder.set_wpm(15);
+        decoder.set_tone_hz(700);
+
+        let mut input = tone_samples(sample_rate, 700.0, 100);
+        input.extend(silence_samples(sample_rate, 500));
+
+        let events = decoder.process_samples(&input);
+        let text: String = events
+            .iter()
+            .filter(|evt| !evt.text.is_empty())
+            .map(|evt| evt.text.as_str())
+            .collect();
+
+        assert_eq!(text, "E");
     }
 }
