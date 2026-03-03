@@ -1882,6 +1882,7 @@ let serverLon = null;
 let initialMapZoom = 10;
 let spectrumCoverageMarginHz = 50_000;
 let spectrumUsableSpanRatio = 0.92;
+const DEFAULT_OVERVIEW_PLOT_HEIGHT_PX = 160;
 const DEFAULT_SPECTRUM_PLOT_HEIGHT_PX = 160;
 let spectrumLayoutPending = false;
 
@@ -1906,21 +1907,31 @@ function updateSpectrumAutoHeight() {
   const root = document.documentElement;
   const tabMainEl = document.getElementById("tab-main");
   const contentEl = document.getElementById("content");
+  const overviewCanvasEl = document.getElementById("overview-canvas");
   const spectrumPanelEl = document.getElementById("spectrum-panel");
   const spectrumCanvasEl = document.getElementById("spectrum-canvas");
-  if (!root || !tabMainEl || !contentEl || !spectrumPanelEl || !spectrumCanvasEl) return;
+  if (!root || !tabMainEl || !contentEl || !overviewCanvasEl || !spectrumPanelEl || !spectrumCanvasEl) return;
 
   const mainVisible = getComputedStyle(tabMainEl).display !== "none";
   const contentVisible = getComputedStyle(contentEl).display !== "none";
   const spectrumVisible = getComputedStyle(spectrumPanelEl).display !== "none";
-  const currentHeight = Math.max(
+  const currentOverviewHeight = Math.max(
+    DEFAULT_OVERVIEW_PLOT_HEIGHT_PX,
+    Math.round(overviewCanvasEl.clientHeight || DEFAULT_OVERVIEW_PLOT_HEIGHT_PX),
+  );
+  const currentSpectrumHeight = Math.max(
     DEFAULT_SPECTRUM_PLOT_HEIGHT_PX,
     Math.round(spectrumCanvasEl.clientHeight || DEFAULT_SPECTRUM_PLOT_HEIGHT_PX),
   );
 
   if (!mainVisible || !contentVisible || !spectrumVisible) {
+    root.style.setProperty("--overview-plot-height", `${DEFAULT_OVERVIEW_PLOT_HEIGHT_PX}px`);
     root.style.setProperty("--spectrum-plot-height", `${DEFAULT_SPECTRUM_PLOT_HEIGHT_PX}px`);
-    if (currentHeight !== DEFAULT_SPECTRUM_PLOT_HEIGHT_PX && lastSpectrumData) {
+    if (
+      (currentOverviewHeight !== DEFAULT_OVERVIEW_PLOT_HEIGHT_PX
+        || currentSpectrumHeight !== DEFAULT_SPECTRUM_PLOT_HEIGHT_PX)
+      && lastSpectrumData
+    ) {
       scheduleSpectrumDraw();
       scheduleOverviewDraw();
     }
@@ -1930,12 +1941,20 @@ function updateSpectrumAutoHeight() {
   const tabBottom = tabMainEl.getBoundingClientRect().bottom;
   const contentBottom = contentEl.getBoundingClientRect().bottom;
   const slackPx = Math.floor(tabBottom - contentBottom);
+  const nextCombinedHeight = Math.max(
+    DEFAULT_OVERVIEW_PLOT_HEIGHT_PX + DEFAULT_SPECTRUM_PLOT_HEIGHT_PX,
+    currentOverviewHeight + currentSpectrumHeight + slackPx - 2,
+  );
   const nextHeight = Math.max(
     DEFAULT_SPECTRUM_PLOT_HEIGHT_PX,
-    currentHeight + slackPx - 2,
+    Math.round(nextCombinedHeight / 2),
   );
-  if (Math.abs(nextHeight - currentHeight) < 2) return;
+  if (
+    Math.abs(nextHeight - currentOverviewHeight) < 2
+    && Math.abs(nextHeight - currentSpectrumHeight) < 2
+  ) return;
 
+  root.style.setProperty("--overview-plot-height", `${nextHeight}px`);
   root.style.setProperty("--spectrum-plot-height", `${nextHeight}px`);
   if (lastSpectrumData) {
     scheduleSpectrumDraw();
