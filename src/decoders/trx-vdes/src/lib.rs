@@ -164,7 +164,8 @@ impl VdesDecoder {
             .into_iter()
             .filter(|bit| *bit == 0)
             .count();
-        if vdes_plausibility_score(&parsed, link_id, tail_zero_bits) < 15 {
+        let plausibility = vdes_plausibility_score(&parsed, link_id, tail_zero_bits);
+        if plausibility < -35 {
             return Some(build_unsynced_message(
                 channel,
                 &framed,
@@ -174,9 +175,10 @@ impl VdesDecoder {
             ));
         }
         let fec_state = format!(
-            "Hard-decision 1/2 Viterbi, tail {} / {} zero bits",
+            "Hard-decision 1/2 Viterbi, tail {} / {} zero bits{}",
             tail_zero_bits,
-            TER_MCS1_100_FEC_TAIL_BITS
+            TER_MCS1_100_FEC_TAIL_BITS,
+            if plausibility < 15 { " · Low confidence" } else { "" }
         );
         let destination = parsed.summary.clone().or_else(|| {
             Some(format!(
@@ -642,13 +644,13 @@ fn vdes_plausibility_score(parsed: &ParsedPayload, link_id: Option<u8>, tail_zer
 
     match parsed.message_id {
         Some(0..=6) => score += 30,
-        Some(_) | None => score -= 40,
+        Some(_) | None => score -= 10,
     }
 
     if valid_station_id(parsed.source_id) {
         score += 20;
     } else {
-        score -= 40;
+        score -= 20;
     }
 
     if link_id.is_some() {
@@ -658,7 +660,7 @@ fn vdes_plausibility_score(parsed: &ParsedPayload, link_id: Option<u8>, tail_zer
     score += match tail_zero_bits {
         4.. => 20,
         2..=3 => 8,
-        _ => -20,
+        _ => -8,
     };
 
     if !parsed.payload_bits.is_empty() {
@@ -677,14 +679,14 @@ fn vdes_plausibility_score(parsed: &ParsedPayload, link_id: Option<u8>, tail_zer
             if valid_station_id(parsed.destination_id) {
                 score += 15;
             } else {
-                score -= 20;
+                score -= 8;
             }
         }
         Some(5) => {
             if valid_station_id(parsed.destination_id) {
                 score += 15;
             } else {
-                score -= 20;
+                score -= 8;
             }
             if parsed.ack_nack_mask.is_some() {
                 score += 5;
@@ -695,14 +697,14 @@ fn vdes_plausibility_score(parsed: &ParsedPayload, link_id: Option<u8>, tail_zer
             if parsed.lat.is_some() && parsed.lon.is_some() {
                 score += 20;
             } else {
-                score -= 20;
+                score -= 8;
             }
         }
         _ => {}
     }
 
     if parsed.message_label == Some("Unknown") {
-        score -= 20;
+        score -= 8;
     }
 
     score
@@ -710,15 +712,15 @@ fn vdes_plausibility_score(parsed: &ParsedPayload, link_id: Option<u8>, tail_zer
 
 fn counted_payload_score(parsed: &ParsedPayload, payload_start_bit: usize) -> i32 {
     let Some(data_count) = parsed.data_count else {
-        return -15;
+        return -8;
     };
     let Some(expected_end) = payload_start_bit.checked_add(usize::from(data_count)) else {
-        return -15;
+        return -8;
     };
     if parsed.payload_bits.len() == usize::from(data_count) && expected_end >= payload_start_bit {
         15
     } else {
-        -15
+        -8
     }
 }
 
