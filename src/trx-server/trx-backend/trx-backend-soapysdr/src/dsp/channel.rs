@@ -478,6 +478,7 @@ mod tests {
     #[test]
     fn channel_dsp_processes_silence() {
         let (pcm_tx, _pcm_rx) = broadcast::channel::<Vec<f32>>(8);
+        let (iq_tx, _iq_rx) = broadcast::channel::<Vec<Complex<f32>>>(8);
         let mut dsp = ChannelDsp::new(
             0.0,
             &RigMode::USB,
@@ -490,6 +491,7 @@ mod tests {
             true,
             31,
             pcm_tx,
+            iq_tx,
         );
         let block = vec![Complex::new(0.0_f32, 0.0_f32); 4096];
         dsp.process_block(&block);
@@ -498,6 +500,7 @@ mod tests {
     #[test]
     fn channel_dsp_set_mode() {
         let (pcm_tx, _) = broadcast::channel::<Vec<f32>>(8);
+        let (iq_tx, _) = broadcast::channel::<Vec<Complex<f32>>>(8);
         let mut dsp = ChannelDsp::new(
             0.0,
             &RigMode::USB,
@@ -510,6 +513,7 @@ mod tests {
             true,
             31,
             pcm_tx,
+            iq_tx,
         );
         assert_eq!(dsp.demodulator, Demodulator::Usb);
         dsp.set_mode(&RigMode::FM);
