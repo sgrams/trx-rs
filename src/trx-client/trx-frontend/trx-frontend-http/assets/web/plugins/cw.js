@@ -20,7 +20,9 @@ function applyCwAutoUi(enabled) {
 }
 
 function clampCwTone(tone) {
-  return Math.max(CW_TONE_MIN_HZ, Math.min(CW_TONE_MAX_HZ, Number(tone)));
+  const numeric = Number(tone);
+  if (!Number.isFinite(numeric)) return 700;
+  return Math.round(Math.max(CW_TONE_MIN_HZ, Math.min(CW_TONE_MAX_HZ, numeric)));
 }
 
 function currentCwToneRange() {
@@ -29,11 +31,24 @@ function currentCwToneRange() {
   if (!Number.isFinite(centerHz) || !Number.isFinite(bandwidthHz) || bandwidthHz <= 0) {
     return null;
   }
+  const mode = String(document.getElementById("mode")?.value || "").toUpperCase();
+  const lowerSideband = mode === "CWR" || mode === "LSB";
+  const halfBwHz = bandwidthHz / 2;
+  const toneMinHz = CW_TONE_MIN_HZ;
+  const toneMaxHz = Math.max(toneMinHz, Math.min(CW_TONE_MAX_HZ, Math.round(halfBwHz)));
+  if (toneMaxHz < toneMinHz) {
+    return null;
+  }
+  const rfLowHz = lowerSideband ? centerHz - toneMaxHz : centerHz + toneMinHz;
+  const rfHighHz = lowerSideband ? centerHz - toneMinHz : centerHz + toneMaxHz;
   return {
-    lowHz: centerHz - bandwidthHz / 2,
-    highHz: centerHz + bandwidthHz / 2,
+    lowHz: Math.min(rfLowHz, rfHighHz),
+    highHz: Math.max(rfLowHz, rfHighHz),
     centerHz,
     bandwidthHz,
+    toneMinHz,
+    toneMaxHz,
+    lowerSideband,
   };
 }
 
@@ -55,9 +70,7 @@ function drawCwTonePicker() {
   }
 
   if (cwToneRangeEl) {
-    const lowKHz = (range.lowHz / 1000).toFixed(range.bandwidthHz >= 10_000 ? 0 : 1);
-    const highKHz = (range.highHz / 1000).toFixed(range.bandwidthHz >= 10_000 ? 0 : 1);
-    cwToneRangeEl.textContent = `${lowKHz} - ${highKHz} kHz`;
+    cwToneRangeEl.textContent = `${range.toneMinHz} - ${range.toneMaxHz} Hz`;
   }
 
   const bins = window.lastSpectrumData.bins;
@@ -72,7 +85,7 @@ function drawCwTonePicker() {
     const frac = width <= 1 ? 0 : x / (width - 1);
     const toneHz = range.lowHz + frac * (range.highHz - range.lowHz);
     const idx = Math.max(0, Math.min(maxIdx, Math.round((((toneHz - fullLoHz) / sampleRate) * maxIdx))));
-    const power = Math.max(0, Number(bins[idx]) || 0);
+    const power = Number.isFinite(Number(bins[idx])) ? Number(bins[idx]) : -140;
     tones[x] = power;
     if (power > maxPower) maxPower = power;
     if (power < minPower) minPower = power;
@@ -88,7 +101,7 @@ function drawCwTonePicker() {
   }
 
   const currentTone = clampCwTone(cwToneInput ? cwToneInput.value : 700);
-  const markerFrac = (currentTone - CW_TONE_MIN_HZ) / (CW_TONE_MAX_HZ - CW_TONE_MIN_HZ);
+  const markerFrac = (currentTone - range.toneMinHz) / Math.max(1, (range.toneMaxHz - range.toneMinHz));
   const markerX = Math.max(0, Math.min(width - 1, Math.round(markerFrac * (width - 1))));
   ctx.fillStyle = "rgba(255, 255, 255, 0.9)";
   ctx.fillRect(markerX, 0, 2, height);
@@ -136,8 +149,10 @@ if (cwToneCanvas) {
   cwToneCanvas.addEventListener("click", async (event) => {
     const rect = cwToneCanvas.getBoundingClientRect();
     if (rect.width <= 0) return;
+    const range = currentCwToneRange();
+    if (!range) return;
     const frac = Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width));
-    const tone = CW_TONE_MIN_HZ + frac * (CW_TONE_MAX_HZ - CW_TONE_MIN_HZ);
+    const tone = range.toneMinHz + frac * (range.toneMaxHz - range.toneMinHz);
     await setCwTone(tone);
   });
 }
@@ -182,9 +197,6 @@ window.onServerCw = function(evt) {
   cwSignalIndicator.className = evt.signal_on ? "cw-signal-on" : "cw-signal-off";
   if (!cwAutoInput || cwAutoInput.checked) {
     cwWpmInput.value = evt.wpm;
-  }
-  if (cwToneInput && Number.isFinite(Number(evt.tone_hz))) {
-    cwToneInput.value = clampCwTone(evt.tone_hz);
   }
   drawCwTonePicker();
 };
