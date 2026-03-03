@@ -12,7 +12,7 @@ use num_complex::Complex;
 /// the conjugate reference and take the in-phase projection.
 pub(super) fn demod_am(samples: &[Complex<f32>]) -> Vec<f32> {
     const EPSILON: f32 = 1.0e-12;
-    const REF_BLEND: f32 = 0.08;
+    const REF_BLEND: f32 = 0.02;
 
     let mut out = Vec::with_capacity(samples.len());
     let mut carrier_ref = Complex::new(1.0_f32, 0.0);
@@ -36,7 +36,7 @@ pub(super) fn demod_am(samples: &[Complex<f32>]) -> Vec<f32> {
 
         // Project the original signal onto the limiter-derived carrier phase.
         let mixed = sample * carrier_ref.conj();
-        out.push(mixed.re.max(0.0));
+        out.push(mixed.re);
     }
 
     out
