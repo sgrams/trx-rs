@@ -1456,17 +1456,6 @@ small { color: var(--text-muted); }
 .aprs-popup-table td { padding: 0.06rem 0.3rem 0.06rem 0; vertical-align: top; font-size: 0.88em; }
 .aprs-popup-label { color: var(--text-muted); white-space: nowrap; padding-right: 0.5rem !important; }
 .aprs-popup-info { font-size: 0.85em; color: var(--text); border-top: 1px solid var(--border-light); padding-top: 0.25rem; margin-top: 0.1rem; word-break: break-word; }
-.decode-locator-tip-shell {
-  background: transparent;
-  border: none;
-  box-shadow: none;
-}
-.decode-locator-tip-shell .leaflet-tooltip-content {
-  margin: 0;
-}
-.decode-locator-tip-shell.leaflet-tooltip-top::before {
-  border-top-color: color-mix(in srgb, var(--card-bg) 94%, transparent);
-}
 .decode-locator-tip {
   min-width: 16rem;
   max-width: 26rem;

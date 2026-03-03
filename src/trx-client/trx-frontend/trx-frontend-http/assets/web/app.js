@@ -4391,7 +4391,6 @@ window.ft8MapAddLocator = function(message, grids, type = "ft8", station = null,
       const tooltipHtml = buildDecodeLocatorTooltipHtml(grid, existing, markerType);
       existing.marker.setStyle(locatorStyleForCount(count, markerType));
       existing.marker.setPopupContent(tooltipHtml);
-      existing.marker.setTooltipContent(tooltipHtml);
       assignLocatorMarkerMeta(existing.marker, existing.sourceType, existing.bandMeta);
       rebuildMapLocatorFilters();
       applyMapFilter();
@@ -4406,13 +4405,7 @@ window.ft8MapAddLocator = function(message, grids, type = "ft8", station = null,
     const tooltipHtml = buildDecodeLocatorTooltipHtml(grid, { stations, stationDetails }, markerType);
     const marker = L.rectangle(bounds, locatorStyleForCount(count, markerType))
       .addTo(aprsMap)
-      .bindPopup(tooltipHtml)
-      .bindTooltip(tooltipHtml, {
-        className: "decode-locator-tip-shell",
-        direction: "top",
-        sticky: true,
-        opacity: 1,
-      });
+      .bindPopup(tooltipHtml);
     marker.__trxType = markerType;
     const bandMeta = collectBandMeta(
       Array.from(stationDetails.values()).map((detail) => Number(detail?.freq_hz))
