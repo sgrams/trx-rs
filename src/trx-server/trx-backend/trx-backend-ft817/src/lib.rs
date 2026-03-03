@@ -292,8 +292,8 @@ impl Ft817 {
         let _ = self.port.clear(ClearBuffer::Input);
 
         // Data byte 1 = mode, data bytes 2-4 = 0x00, command = 0x07.
-        let mode_code = encode_mode(mode)
-            .ok_or_else(|| format!("Mode {mode:?} not supported on FT-817"))?;
+        let mode_code =
+            encode_mode(mode).ok_or_else(|| format!("Mode {mode:?} not supported on FT-817"))?;
         tracing::debug!("FT-817 set_mode -> code 0x{:02X} ({:?})", mode_code, mode);
         let frame = [mode_code, 0x00, 0x00, 0x00, CMD_SET_MODE];
         self.write_frame(&frame).await?;
