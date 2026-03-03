@@ -1053,7 +1053,8 @@ pub async fn run_cw_decoder(
     let mut decoder = CwDecoder::new(sample_rate);
     let mut was_active = false;
     let mut last_reset_seq: u64 = 0;
-    let mut active = matches!(state_rx.borrow().status.mode, RigMode::CW | RigMode::CWR);
+    let mut active = state_rx.borrow().cw_decode_enabled
+        && matches!(state_rx.borrow().status.mode, RigMode::CW | RigMode::CWR);
     let mut last_auto = state_rx.borrow().cw_auto;
     let mut last_wpm = state_rx.borrow().cw_wpm;
     let mut last_tone = state_rx.borrow().cw_tone_hz;
@@ -1066,7 +1067,8 @@ pub async fn run_cw_decoder(
             match state_rx.changed().await {
                 Ok(()) => {
                     let state = state_rx.borrow();
-                    active = matches!(state.status.mode, RigMode::CW | RigMode::CWR);
+                    active = state.cw_decode_enabled
+                        && matches!(state.status.mode, RigMode::CW | RigMode::CWR);
                     if active {
                         pcm_rx = pcm_rx.resubscribe();
                     }
@@ -1146,7 +1148,8 @@ pub async fn run_cw_decoder(
                 match changed {
                     Ok(()) => {
                         let state = state_rx.borrow();
-                        active = matches!(state.status.mode, RigMode::CW | RigMode::CWR);
+                        active = state.cw_decode_enabled
+                            && matches!(state.status.mode, RigMode::CW | RigMode::CWR);
                         if state.cw_auto != last_auto {
                             last_auto = state.cw_auto;
                             decoder.set_auto(last_auto);
