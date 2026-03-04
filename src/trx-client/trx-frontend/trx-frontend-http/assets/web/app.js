@@ -4396,6 +4396,15 @@ function formatDecodeLocatorTime(tsMs) {
   });
 }
 
+function formatMapPopupFreq(hz) {
+  if (!Number.isFinite(hz)) return "--";
+  const value = Number(hz);
+  if (value >= 1_000_000_000) return `${(value / 1_000_000_000).toFixed(6).replace(/\.?0+$/, "")} GHz`;
+  if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(6).replace(/\.?0+$/, "")} MHz`;
+  if (value >= 1_000) return `${(value / 1_000).toFixed(3).replace(/\.?0+$/, "")} kHz`;
+  return `${Math.round(value)} Hz`;
+}
+
 function buildDecodeLocatorTooltipHtml(grid, entry, type) {
   const details = entry?.stationDetails instanceof Map
     ? Array.from(entry.stationDetails.values())
@@ -4405,9 +4414,7 @@ function buildDecodeLocatorTooltipHtml(grid, entry, type) {
   const rows = details
     .map((detail) => {
       const station = escapeMapHtml(String(detail?.station || "Unknown"));
-      const freq = Number.isFinite(detail?.freq_hz)
-        ? `${Number(detail.freq_hz).toFixed(0)} Hz`
-        : "--";
+      const freq = formatMapPopupFreq(Number(detail?.freq_hz));
       const meta = [
         Number.isFinite(detail?.snr_db) ? `${Number(detail.snr_db).toFixed(1)} dB` : null,
         Number.isFinite(detail?.dt_s) ? `dt ${Number(detail.dt_s).toFixed(2)}` : null,
