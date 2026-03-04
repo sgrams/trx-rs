@@ -1094,11 +1094,50 @@ small { color: var(--text-muted); }
   gap: 0.75rem;
   min-height: 0;
 }
-#aprs-map {
+#map-stage {
+  position: relative;
   flex: 0 1 auto;
+  min-height: 0;
+}
+#aprs-map {
   width: 100%;
   min-height: 0;
   border-radius: 6px;
+}
+.map-fullscreen-btn {
+  position: absolute;
+  top: 0.7rem;
+  right: 0.7rem;
+  z-index: 410;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 1.9rem;
+  padding: 0.18rem 0.65rem;
+  border-radius: 6px;
+  border: 1px solid color-mix(in srgb, var(--border-light) 74%, transparent);
+  background: color-mix(in srgb, var(--card-bg) 82%, transparent);
+  color: var(--text);
+  font-size: 0.76rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+.map-fullscreen-btn:hover {
+  border-color: color-mix(in srgb, var(--accent-green) 34%, var(--border-light));
+  color: var(--text-heading);
+}
+#map-stage:fullscreen,
+#map-stage:-webkit-full-screen {
+  background: var(--bg);
+  padding: 0.75rem;
+  box-sizing: border-box;
+}
+#map-stage:fullscreen #aprs-map,
+#map-stage:-webkit-full-screen #aprs-map {
+  border-radius: 8px;
 }
 .aprs-controls { display: flex; gap: 0.6rem; align-items: center; margin-bottom: 0.75rem; }
 .aprs-summary {

@@ -3217,6 +3217,7 @@ let aprsMapBaseLayer = null;
 let aprsMapReceiverMarker = null;
 let aprsRadioPath = null;
 let selectedLocatorMarker = null;
+let mapFullscreenListenerBound = false;
 const stationMarkers = new Map();
 const locatorMarkers = new Map();
 const mapMarkers = new Set();
@@ -3663,6 +3664,45 @@ function updateMapBaseLayerForTheme(theme) {
   aprsMapBaseLayer = L.tileLayer(spec.url, spec.options).addTo(aprsMap);
 }
 
+function mapStageEl() {
+  return document.getElementById("map-stage");
+}
+
+function mapIsFullscreen() {
+  const stage = mapStageEl();
+  if (!stage) return false;
+  return document.fullscreenElement === stage || document.webkitFullscreenElement === stage;
+}
+
+function updateMapFullscreenButton() {
+  const btn = document.getElementById("map-fullscreen-btn");
+  if (!btn) return;
+  btn.textContent = mapIsFullscreen() ? "Exit Fullscreen" : "Fullscreen";
+}
+
+async function toggleMapFullscreen() {
+  const stage = mapStageEl();
+  if (!stage) return;
+  try {
+    if (mapIsFullscreen()) {
+      if (document.exitFullscreen) {
+        await document.exitFullscreen();
+      } else if (document.webkitExitFullscreen) {
+        await document.webkitExitFullscreen();
+      }
+    } else if (stage.requestFullscreen) {
+      await stage.requestFullscreen();
+    } else if (stage.webkitRequestFullscreen) {
+      await stage.webkitRequestFullscreen();
+    }
+  } catch (err) {
+    console.error("Map fullscreen toggle failed", err);
+  } finally {
+    updateMapFullscreenButton();
+    sizeAprsMapToViewport();
+  }
+}
+
 function initAprsMap() {
   const mapEl = document.getElementById("aprs-map");
   if (!mapEl) return;
@@ -3776,6 +3816,7 @@ function initAprsMap() {
 
   const locatorPhaseEl = document.getElementById("map-locator-phase");
   const locatorChoiceEl = document.getElementById("map-locator-choice-filter");
+  const fullscreenBtn = document.getElementById("map-fullscreen-btn");
   if (locatorPhaseEl) {
     locatorPhaseEl.addEventListener("click", (e) => {
       const btn = e.target.closest(".map-locator-phase-btn[data-phase]");
@@ -3815,6 +3856,21 @@ function initAprsMap() {
       applyMapFilter();
     });
   }
+  if (fullscreenBtn) {
+    fullscreenBtn.addEventListener("click", () => {
+      toggleMapFullscreen();
+    });
+    updateMapFullscreenButton();
+  }
+  if (!mapFullscreenListenerBound) {
+    const onFullscreenChange = () => {
+      updateMapFullscreenButton();
+      sizeAprsMapToViewport();
+    };
+    document.addEventListener("fullscreenchange", onFullscreenChange);
+    document.addEventListener("webkitfullscreenchange", onFullscreenChange);
+    mapFullscreenListenerBound = true;
+  }
   rebuildMapLocatorFilters();
 }
 
@@ -3822,16 +3878,21 @@ function sizeAprsMapToViewport() {
   const mapEl = document.getElementById("aprs-map");
   if (!mapEl) return;
   const mapRect = mapEl.getBoundingClientRect();
+  const stage = mapStageEl();
   const width = mapEl.clientWidth || mapRect.width;
   const footer = document.querySelector(".footer");
-  let bottom = window.innerHeight;
-  if (footer) {
+  let bottom = mapIsFullscreen() && stage
+    ? stage.getBoundingClientRect().bottom
+    : window.innerHeight;
+  if (!mapIsFullscreen() && footer) {
     const fr = footer.getBoundingClientRect();
     if (fr.top > mapRect.top + 50) bottom = fr.top;
   }
   const available = Math.max(0, Math.floor(bottom - mapRect.top - 8));
   const widthDriven = width > 0 ? Math.floor(width / 2.05) : available;
-  const viewportCap = Math.floor(window.innerHeight * 0.56);
+  const viewportCap = mapIsFullscreen()
+    ? Math.floor(window.innerHeight * 0.9)
+    : Math.floor(window.innerHeight * 0.56);
   const minHeight = Math.min(260, available);
   const target = Math.max(minHeight, Math.min(available, viewportCap, widthDriven));
   mapEl.style.height = `${target}px`;
