@@ -219,8 +219,15 @@ window.onServerFt8 = function(msg) {
   const raw = (msg.message || "").toString();
   const grids = extractAllGrids(raw);
   const station = extractLikelyCallsign(raw);
+  const baseHz = Number.isFinite(window.ft8BaseHz) ? Number(window.ft8BaseHz) : null;
+  const rfHz = Number.isFinite(msg.freq_hz) && Number.isFinite(baseHz)
+    ? (baseHz + Number(msg.freq_hz))
+    : (Number.isFinite(msg.freq_hz) ? Number(msg.freq_hz) : null);
   if (grids.length > 0 && window.ft8MapAddLocator) {
-    window.ft8MapAddLocator(raw, grids, "ft8", station, msg);
+    window.ft8MapAddLocator(raw, grids, "ft8", station, {
+      ...msg,
+      freq_hz: rfHz,
+    });
   }
   addFt8Message({
     receiver: window.getDecodeRigMeta ? window.getDecodeRigMeta() : null,

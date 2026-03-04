@@ -3397,9 +3397,9 @@ function renderMapLocatorChipRow(container, items, selectedSet, kind) {
     return;
   }
   let helperText = "";
+  const isDefaultSourceState = kind === "source" && items.every((item) => mapFilter[item.key]);
   if (kind === "source") {
-    const allVisible = items.every((item) => mapFilter[item.key]);
-    if (allVisible) {
+    if (isDefaultSourceState) {
       helperText = "All sources visible by default";
     }
   } else if (!(selectedSet instanceof Set) || selectedSet.size === 0) {
@@ -3410,7 +3410,11 @@ function renderMapLocatorChipRow(container, items, selectedSet, kind) {
     btn.type = "button";
     btn.className = "map-locator-chip";
     const isActive = kind === "source" ? !!mapFilter[item.key] : selectedSet.has(item.key);
-    if (!isActive) btn.classList.add("is-inactive");
+    if (kind === "source" && isDefaultSourceState) {
+      btn.classList.add("is-default");
+    } else if (!isActive) {
+      btn.classList.add("is-inactive");
+    }
     btn.dataset.filterKind = kind;
     btn.dataset.filterKey = item.key;
     btn.style.setProperty("--chip-color", item.color);

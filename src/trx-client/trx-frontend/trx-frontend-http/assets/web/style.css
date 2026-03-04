@@ -1464,7 +1464,7 @@ small { color: var(--text-muted); }
   padding: 0.55rem 0.65rem;
   border: 1px solid color-mix(in srgb, var(--accent-yellow) 26%, var(--border-light));
   border-radius: 0.65rem;
-  background: color-mix(in srgb, var(--card-bg) 94%, transparent);
+  background: color-mix(in srgb, var(--card-bg) 90%, transparent);
   color: var(--text);
   box-shadow: 0 10px 24px rgba(0, 0, 0, 0.28);
 }
@@ -1634,6 +1634,11 @@ small { color: var(--text-muted); }
 }
 .map-locator-chip:hover {
   color: var(--text-heading);
+}
+.map-locator-chip.is-default {
+  border-color: color-mix(in srgb, var(--border-light) 74%, transparent);
+  background: color-mix(in srgb, var(--input-bg) 94%, transparent);
+  color: var(--text-muted);
 }
 .map-locator-chip.is-inactive {
   opacity: 0.62;
