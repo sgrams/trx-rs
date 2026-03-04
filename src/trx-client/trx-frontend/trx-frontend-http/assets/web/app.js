@@ -6905,7 +6905,12 @@ if (spectrumCanvas) {
 
   window.addEventListener("mouseup", async () => {
     if (_bwDragEdge) {
-      try { await postPath(`/set_bandwidth?hz=${Math.round(currentBandwidthHz)}`); } catch (_) {}
+      try {
+        await postPath(`/set_bandwidth?hz=${Math.round(currentBandwidthHz)}`);
+        if (Number.isFinite(lastFreqHz)) {
+          await ensureTunedBandwidthCoverage(lastFreqHz, currentBandwidthHz);
+        }
+      } catch (_) {}
       _bwDragEdge = null;
       _bwDragCanvas = null;
       return;
