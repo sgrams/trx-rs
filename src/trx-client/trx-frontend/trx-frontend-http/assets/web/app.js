@@ -850,29 +850,57 @@ function drawSignalOverlay() {
 
   if (lastFreqHz != null && currentBandwidthHz > 0) {
     for (const spec of visibleBandwidthSpecs(lastFreqHz)) {
-      const halfBw = spec.widthHz / 2;
-      const xL = hzToX(spec.centerHz - halfBw);
-      const xR = hzToX(spec.centerHz + halfBw);
+      const span = displaySpanForBandwidthSpec(spec);
+      const xL = hzToX(span.loHz);
+      const xR = hzToX(span.hiHz);
       const stripW = xR - xL;
       if (stripW <= 1) continue;
       const grd = ctx.createLinearGradient(xL, 0, xR, 0);
-      grd.addColorStop(0, "rgba(240,173,78,0.05)");
-      grd.addColorStop(0.2, "rgba(240,173,78,0.14)");
-      grd.addColorStop(0.5, "rgba(240,173,78,0.19)");
-      grd.addColorStop(0.8, "rgba(240,173,78,0.14)");
-      grd.addColorStop(1, "rgba(240,173,78,0.05)");
+      if (span.side < 0) {
+        grd.addColorStop(0, "rgba(240,173,78,0.05)");
+        grd.addColorStop(0.2, "rgba(240,173,78,0.14)");
+        grd.addColorStop(0.7, "rgba(240,173,78,0.19)");
+        grd.addColorStop(1, "rgba(240,173,78,0.19)");
+      } else if (span.side > 0) {
+        grd.addColorStop(0, "rgba(240,173,78,0.19)");
+        grd.addColorStop(0.3, "rgba(240,173,78,0.19)");
+        grd.addColorStop(0.8, "rgba(240,173,78,0.14)");
+        grd.addColorStop(1, "rgba(240,173,78,0.05)");
+      } else {
+        grd.addColorStop(0, "rgba(240,173,78,0.05)");
+        grd.addColorStop(0.2, "rgba(240,173,78,0.14)");
+        grd.addColorStop(0.5, "rgba(240,173,78,0.19)");
+        grd.addColorStop(0.8, "rgba(240,173,78,0.14)");
+        grd.addColorStop(1, "rgba(240,173,78,0.05)");
+      }
       ctx.fillStyle = grd;
       ctx.fillRect(xL, 0, stripW, cssH);
 
       const edgeW = 5;
-      ctx.fillStyle = "rgba(240,173,78,0.30)";
-      ctx.fillRect(xL, 0, edgeW, cssH);
-      ctx.fillRect(xR - edgeW, 0, edgeW, cssH);
+      const edgeFill = "rgba(240,173,78,0.30)";
+      if (span.side <= 0) {
+        ctx.fillStyle = edgeFill;
+        ctx.fillRect(xL, 0, edgeW, cssH);
+      }
+      if (span.side >= 0) {
+        ctx.fillStyle = edgeFill;
+        ctx.fillRect(xR - edgeW, 0, edgeW, cssH);
+      }
 
       ctx.strokeStyle = "rgba(240,173,78,0.70)";
       ctx.lineWidth = 1.5;
-      ctx.beginPath(); ctx.moveTo(xL, 0); ctx.lineTo(xL, cssH); ctx.stroke();
-      ctx.beginPath(); ctx.moveTo(xR, 0); ctx.lineTo(xR, cssH); ctx.stroke();
+      if (span.side <= 0) {
+        ctx.beginPath(); ctx.moveTo(xL, 0); ctx.lineTo(xL, cssH); ctx.stroke();
+      }
+      if (span.side >= 0) {
+        ctx.beginPath(); ctx.moveTo(xR, 0); ctx.lineTo(xR, cssH); ctx.stroke();
+      }
+      if (span.side !== 0) {
+        ctx.strokeStyle = "rgba(240,173,78,0.38)";
+        ctx.lineWidth = 1;
+        const hardX = span.side < 0 ? xR : xL;
+        ctx.beginPath(); ctx.moveTo(hardX, 0); ctx.lineTo(hardX, cssH); ctx.stroke();
+      }
     }
   }
 
@@ -1245,6 +1273,27 @@ function visibleBandwidthSpecs(freqHz = lastFreqHz, mode = modeEl ? modeEl.value
   return [{ centerHz: freqHz, widthHz: currentBandwidthHz }];
 }
 
+function sidebandDirectionForMode(mode = modeEl ? modeEl.value : "") {
+  const modeUpper = String(mode || "").toUpperCase();
+  if (modeUpper === "LSB" || modeUpper === "CWR") return -1;
+  if (modeUpper === "USB" || modeUpper === "CW" || modeUpper === "DIG") return 1;
+  return 0;
+}
+
+function displaySpanForBandwidthSpec(spec, mode = modeEl ? modeEl.value : "") {
+  const centerHz = Number(spec?.centerHz);
+  const widthHz = Math.max(0, Number.isFinite(spec?.widthHz) ? Number(spec.widthHz) : 0);
+  const side = sidebandDirectionForMode(mode);
+  if (side < 0) {
+    return { loHz: centerHz - widthHz, hiHz: centerHz, side };
+  }
+  if (side > 0) {
+    return { loHz: centerHz, hiHz: centerHz + widthHz, side };
+  }
+  const halfBw = widthHz / 2;
+  return { loHz: centerHz - halfBw, hiHz: centerHz + halfBw, side };
+}
+
 function coverageSpanForMode(freqHz, bandwidthHz = coverageGuardBandwidthHz(), mode = modeEl ? modeEl.value : "") {
   if (!Number.isFinite(freqHz)) return null;
   const specs = visibleBandwidthSpecs(freqHz, mode).map((spec) => {
@@ -1252,10 +1301,7 @@ function coverageSpanForMode(freqHz, bandwidthHz = coverageGuardBandwidthHz(), m
       0,
       Number.isFinite(spec.widthHz) ? spec.widthHz : Math.max(0, Number.isFinite(bandwidthHz) ? bandwidthHz : 0),
     );
-    return {
-      loHz: spec.centerHz - widthHz / 2,
-      hiHz: spec.centerHz + widthHz / 2,
-    };
+    return displaySpanForBandwidthSpec({ centerHz: spec.centerHz, widthHz }, mode);
   });
   if (specs.length === 0) return null;
   let loHz = specs[0].loHz;
