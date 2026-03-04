@@ -6507,9 +6507,25 @@ function getBwEdgeHit(cssX, cssW, range) {
   let bestEdge = null;
   let bestDist = Number.POSITIVE_INFINITY;
   for (const spec of visibleBandwidthSpecs(lastFreqHz)) {
-    const halfBw = spec.widthHz / 2;
-    const xL = ((spec.centerHz - halfBw - range.visLoHz) / range.visSpanHz) * cssW;
-    const xR = ((spec.centerHz + halfBw - range.visLoHz) / range.visSpanHz) * cssW;
+    const span = displaySpanForBandwidthSpec(spec);
+    const xL = ((span.loHz - range.visLoHz) / range.visSpanHz) * cssW;
+    const xR = ((span.hiHz - range.visLoHz) / range.visSpanHz) * cssW;
+    if (span.side < 0) {
+      const distL = Math.abs(cssX - xL);
+      if (distL < HIT && distL < bestDist) {
+        bestEdge = "left";
+        bestDist = distL;
+      }
+      continue;
+    }
+    if (span.side > 0) {
+      const distR = Math.abs(cssX - xR);
+      if (distR < HIT && distR < bestDist) {
+        bestEdge = "right";
+        bestDist = distR;
+      }
+      continue;
+    }
     const distL = Math.abs(cssX - xL);
     const distR = Math.abs(cssX - xR);
     if (distL < HIT && distL < bestDist) {
@@ -6559,9 +6575,17 @@ if (spectrumCanvas) {
       const cssX  = e.clientX - rect.left;
       const range = spectrumVisibleRange(lastSpectrumData);
       const dxHz  = ((cssX - _bwDragStartX) / rect.width) * range.visSpanHz;
-      let newBw   = _bwDragEdge === "right"
-        ? _bwDragStartBwHz + dxHz * 2
-        : _bwDragStartBwHz - dxHz * 2;
+      const side = sidebandDirectionForMode(modeEl ? modeEl.value : "USB");
+      let newBw;
+      if (side === 0) {
+        newBw = _bwDragEdge === "right"
+          ? _bwDragStartBwHz + dxHz * 2
+          : _bwDragStartBwHz - dxHz * 2;
+      } else {
+        newBw = _bwDragEdge === "right"
+          ? _bwDragStartBwHz + dxHz
+          : _bwDragStartBwHz - dxHz;
+      }
       const [, minBw, maxBw] = mwDefaultsForMode(modeEl ? modeEl.value : "USB");
       newBw = Math.round(Math.max(minBw, Math.min(maxBw, newBw)));
       currentBandwidthHz = newBw;
