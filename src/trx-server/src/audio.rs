@@ -1108,6 +1108,8 @@ pub async fn run_cw_decoder(
                 match recv {
                     Ok(frame) => {
                         let state = state_rx.borrow();
+                        let process_enabled = state.cw_decode_enabled
+                            && matches!(state.status.mode, RigMode::CW | RigMode::CWR);
                         if state.cw_auto != last_auto {
                             last_auto = state.cw_auto;
                             decoder.set_auto(last_auto);
@@ -1125,9 +1127,17 @@ pub async fn run_cw_decoder(
                             decoder.reset();
                             info!("CW decoder reset (seq={})", last_reset_seq);
                         }
+                        if !process_enabled {
+                            if was_active {
+                                decoder.reset();
+                                was_active = false;
+                            }
+                            active = false;
+                            continue;
+                        }
 
                         // Downmix to mono if stereo
-                        let mut mono = if channels > 1 {
+                        let mono = if channels > 1 {
                             let num_frames = frame.len() / channels as usize;
                             let mut mono = Vec::with_capacity(num_frames);
                             for i in 0..num_frames {
@@ -1137,8 +1147,6 @@ pub async fn run_cw_decoder(
                         } else {
                             frame
                         };
-                        apply_decode_audio_gate(&mut mono);
-
                         was_active = true;
                         for evt in decoder.process_samples(&mono) {
                             if let Some(logger) = decode_logs.as_ref() {
