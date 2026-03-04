@@ -2302,10 +2302,20 @@ function render(update) {
   if (cwToneEl && typeof update.cw_tone_hz === "number") {
     cwToneEl.value = update.cw_tone_hz;
   }
-  if (cwWpmEl && typeof update.cw_auto === "boolean") {
+  if ((cwWpmEl || cwToneEl) && typeof update.cw_auto === "boolean") {
     const disabled = update.cw_auto;
-    cwWpmEl.disabled = disabled;
-    cwWpmEl.readOnly = disabled;
+    if (typeof window.applyCwAutoUi === "function") {
+      window.applyCwAutoUi(disabled);
+    } else {
+      if (cwWpmEl) {
+        cwWpmEl.disabled = disabled;
+        cwWpmEl.readOnly = disabled;
+      }
+      if (cwToneEl) {
+        cwToneEl.disabled = disabled;
+        cwToneEl.readOnly = disabled;
+      }
+    }
   }
   let activeFreqColor = "var(--accent-green)";
   if (update.status && update.status.vfo && Array.isArray(update.status.vfo.entries)) {
