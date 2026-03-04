@@ -132,7 +132,7 @@ impl RigState {
             server_longitude: None,
             pskreporter_status: None,
             aprs_decode_enabled: false,
-            cw_decode_enabled: false,
+            cw_decode_enabled: true,
             ft8_decode_enabled: false,
             wspr_decode_enabled: false,
             cw_auto: true,
