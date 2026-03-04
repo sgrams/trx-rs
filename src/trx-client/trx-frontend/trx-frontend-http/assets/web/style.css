@@ -1638,16 +1638,6 @@ small { color: var(--text-muted); }
   font-size: 0.77rem;
   font-weight: 600;
 }
-.map-locator-chip-band {
-  font-size: 0.75rem;
-  font-weight: 700;
-  color: var(--chip-color);
-  padding: 0.05rem 0.34rem;
-  border-radius: 999px;
-  border: 1px solid color-mix(in srgb, var(--chip-color) 28%, transparent);
-  background: color-mix(in srgb, var(--chip-color) 10%, transparent);
-  font-variant-numeric: tabular-nums;
-}
 
 .rds-grid { display: grid; grid-template-columns: auto 1fr; gap: 0.4rem 1rem; align-items: baseline; margin-bottom: 1rem; }
 .rds-field { display: contents; }
@@ -2677,6 +2667,7 @@ button:focus-visible, input:focus-visible, select:focus-visible {
 }
 
 .bm-form {
+  box-sizing: border-box;
   background: var(--card-bg);
   border: 1px solid var(--border-light);
   border-radius: 0.8rem;
@@ -2684,7 +2675,8 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   margin: 0;
   width: min(46rem, calc(100vw - 2.5rem));
   max-height: min(85vh, 42rem);
-  overflow: auto;
+  overflow-x: hidden;
+  overflow-y: auto;
   box-shadow: 0 1.2rem 2.6rem rgba(0, 0, 0, 0.38);
 }
 

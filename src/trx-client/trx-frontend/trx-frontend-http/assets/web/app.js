@@ -3303,9 +3303,7 @@ function renderMapLocatorChipRow(container, items, selectedSet, kind) {
     btn.dataset.filterKind = kind;
     btn.dataset.filterKey = item.key;
     btn.style.setProperty("--chip-color", item.color);
-    btn.innerHTML = item.kind === "band"
-      ? `<span class="map-locator-chip-band">${escapeMapHtml(item.label)}</span>`
-      : `<span class="map-locator-chip-text">${escapeMapHtml(item.label)}</span>`;
+    btn.innerHTML = `<span class="map-locator-chip-text">${escapeMapHtml(item.label)}</span>`;
     container.appendChild(btn);
   }
   if (helperText) {
