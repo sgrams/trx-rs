@@ -1690,6 +1690,20 @@ small { color: var(--text-muted); }
   font-size: 0.77rem;
   font-weight: 600;
 }
+.map-search-input {
+  width: 100%;
+  max-width: 22rem;
+  min-height: 1.95rem;
+  padding: 0.3rem 0.55rem;
+  border-radius: 7px;
+  border: 1px solid color-mix(in srgb, var(--border-light) 76%, transparent);
+  background: color-mix(in srgb, var(--card-bg) 78%, transparent);
+  color: var(--text);
+  font-size: 0.82rem;
+}
+.map-search-input::placeholder {
+  color: color-mix(in srgb, var(--text-muted) 92%, transparent);
+}
 
 .rds-grid { display: grid; grid-template-columns: auto 1fr; gap: 0.4rem 1rem; align-items: baseline; margin-bottom: 1rem; }
 .rds-field { display: contents; }

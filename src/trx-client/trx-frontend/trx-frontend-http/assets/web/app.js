@@ -3227,6 +3227,7 @@ const mapMarkers = new Set();
 const DEFAULT_MAP_SOURCE_FILTER = { ais: true, vdes: true, aprs: true, bookmark: false, ft8: true, wspr: true };
 const mapFilter = { ...DEFAULT_MAP_SOURCE_FILTER };
 const mapLocatorFilter = { phase: "type", bands: new Set() };
+let mapSearchFilter = "";
 const APRS_TRACK_MAX_POINTS = 64;
 const AIS_TRACK_MAX_POINTS = 64;
 const aisMarkers = new Map();
@@ -3757,6 +3758,82 @@ function markerPassesLocatorFilters(marker) {
   return true;
 }
 
+function markerSearchText(marker) {
+  const type = marker?.__trxType;
+  if (type === "bookmark" || type === "ft8" || type === "wspr") {
+    const entry = locatorEntryForMarker(marker);
+    const parts = [];
+    if (entry?.grid) parts.push(entry.grid);
+    if (entry?.sourceType) parts.push(locatorSourceLabel(entry.sourceType));
+    if (entry?.bandMeta instanceof Map) parts.push(...Array.from(entry.bandMeta.keys()));
+    if (Array.isArray(entry?.bookmarks)) {
+      for (const bm of entry.bookmarks) {
+        if (bm?.name) parts.push(String(bm.name));
+        if (bm?.locator) parts.push(String(bm.locator));
+        if (bm?.mode) parts.push(String(bm.mode));
+        if (bm?.category) parts.push(String(bm.category));
+        if (bm?.comment) parts.push(String(bm.comment));
+        if (Number.isFinite(bm?.freq_hz)) parts.push(String(Math.round(Number(bm.freq_hz))));
+      }
+    }
+    if (entry?.stations instanceof Set) {
+      parts.push(...Array.from(entry.stations.values()).map((v) => String(v)));
+    }
+    if (entry?.stationDetails instanceof Map) {
+      for (const detail of entry.stationDetails.values()) {
+        if (detail?.station) parts.push(String(detail.station));
+        if (detail?.message) parts.push(String(detail.message));
+        if (Number.isFinite(detail?.freq_hz)) parts.push(String(Math.round(Number(detail.freq_hz))));
+      }
+    }
+    return parts.join(" ").toLowerCase();
+  }
+  if (type === "aprs") {
+    const call = marker?._aprsCall ? String(marker._aprsCall) : "";
+    const entry = stationMarkers.get(call);
+    const info = entry?.info ? String(entry.info) : "";
+    const pktRaw = entry?.pkt?.raw ? String(entry.pkt.raw) : "";
+    return `${call} ${info} ${pktRaw}`.toLowerCase();
+  }
+  if (type === "ais") {
+    const key = marker?._aisMmsi ? String(marker._aisMmsi) : "";
+    const msg = aisMarkers.get(key)?.msg;
+    return [
+      key,
+      msg?.name,
+      msg?.callsign,
+      msg?.destination,
+      Number.isFinite(msg?.mmsi) ? String(msg.mmsi) : "",
+      Number.isFinite(msg?.lat) ? String(msg.lat) : "",
+      Number.isFinite(msg?.lon) ? String(msg.lon) : "",
+    ].join(" ").toLowerCase();
+  }
+  if (type === "vdes") {
+    const key = marker?._vdesKey ? String(marker._vdesKey) : "";
+    const msg = vdesMarkers.get(key)?.msg;
+    return [
+      key,
+      msg?.name,
+      msg?.mmsi,
+      msg?.message,
+      msg?.raw,
+      Number.isFinite(msg?.lat) ? String(msg.lat) : "",
+      Number.isFinite(msg?.lon) ? String(msg.lon) : "",
+    ].join(" ").toLowerCase();
+  }
+  return "";
+}
+
+function markerPassesSearchFilter(marker) {
+  const query = String(mapSearchFilter || "").trim().toLowerCase();
+  if (!query) return true;
+  const terms = query.split(/\s+/).filter(Boolean);
+  if (terms.length === 0) return true;
+  const haystack = markerSearchText(marker);
+  if (!haystack) return false;
+  return terms.every((term) => haystack.includes(term));
+}
+
 function syncAprsReceiverMarker() {
   if (!aprsMap) return;
   const hasLocation = serverLat != null && serverLon != null;
@@ -4044,6 +4121,7 @@ function initAprsMap() {
 
   const locatorPhaseEl = document.getElementById("map-locator-phase");
   const locatorChoiceEl = document.getElementById("map-locator-choice-filter");
+  const mapSearchEl = document.getElementById("map-search-filter");
   const fullscreenBtn = document.getElementById("map-fullscreen-btn");
   if (locatorPhaseEl) {
     locatorPhaseEl.addEventListener("click", (e) => {
@@ -4081,6 +4159,13 @@ function initAprsMap() {
         }
       }
       rebuildMapLocatorFilters();
+      applyMapFilter();
+    });
+  }
+  if (mapSearchEl) {
+    mapSearchEl.value = mapSearchFilter;
+    mapSearchEl.addEventListener("input", () => {
+      mapSearchFilter = String(mapSearchEl.value || "").trim();
       applyMapFilter();
     });
   }
@@ -4646,7 +4731,7 @@ function applyMapFilter() {
   if (!aprsMap) return;
   mapMarkers.forEach((marker) => {
     const type = marker.__trxType;
-    const visible = markerPassesLocatorFilters(marker) && (
+    const visible = markerPassesSearchFilter(marker) && markerPassesLocatorFilters(marker) && (
       (type === "bookmark" && mapFilter.bookmark) ||
       (type === "ais" && mapFilter.ais) ||
       (type === "vdes" && mapFilter.vdes) ||
@@ -4842,6 +4927,7 @@ window.ft8MapAddLocator = function(message, grids, type = "ft8", station = null,
     const key = `${markerType}:${grid}`;
     const existing = locatorMarkers.get(key);
     if (existing) {
+      existing.grid = grid;
       if (stationId) existing.stations.add(stationId);
       if (!(existing.stationDetails instanceof Map)) existing.stationDetails = new Map();
       existing.stationDetails.set(detailKey, { ...detailEntry });
@@ -4875,7 +4961,7 @@ window.ft8MapAddLocator = function(message, grids, type = "ft8", station = null,
     marker.__trxType = markerType;
     sendLocatorOverlayToBack(marker);
     assignLocatorMarkerMeta(marker, markerType, bandMeta);
-    locatorMarkers.set(key, { marker, stations, stationDetails, sourceType: markerType, bandMeta });
+    locatorMarkers.set(key, { marker, grid, stations, stationDetails, sourceType: markerType, bandMeta });
     mapMarkers.add(marker);
   }
   rebuildMapLocatorFilters();
