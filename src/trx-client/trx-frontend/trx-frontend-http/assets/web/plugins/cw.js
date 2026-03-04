@@ -58,28 +58,10 @@ function currentCwToneRange() {
   const upperSideband = mode === "CW";
   if (!lowerSideband && !upperSideband) return null;
 
-  const spectrumSampleRateHz = Number(window.lastSpectrumData?.sample_rate);
-  const spectrumCenterHz = Number(window.lastSpectrumData?.center_hz);
-  let maxToneFromSpectrumHz = Number.POSITIVE_INFINITY;
-  if (
-    Number.isFinite(spectrumSampleRateHz)
-    && spectrumSampleRateHz > 0
-    && Number.isFinite(spectrumCenterHz)
-  ) {
-    const spectrumLoHz = spectrumCenterHz - spectrumSampleRateHz / 2;
-    const spectrumHiHz = spectrumCenterHz + spectrumSampleRateHz / 2;
-    maxToneFromSpectrumHz = lowerSideband
-      ? tunedHz - spectrumLoHz
-      : spectrumHiHz - tunedHz;
-  }
-
   const toneMinHz = CW_TONE_MIN_HZ;
   const toneMaxHz = Math.min(
     CW_TONE_MAX_HZ,
     Math.round(bandwidthHz),
-    Number.isFinite(maxToneFromSpectrumHz)
-      ? Math.floor(maxToneFromSpectrumHz)
-      : CW_TONE_MAX_HZ,
   );
   if (toneMaxHz < toneMinHz) {
     return null;
@@ -141,8 +123,6 @@ function drawCwTonePicker() {
         cwToneRangeEl.textContent = "CW/CWR mode required";
       } else if (!window.lastSpectrumData || !Array.isArray(window.lastSpectrumData.bins) || !window.lastSpectrumData.bins.length) {
         cwToneRangeEl.textContent = "Waiting for spectrum";
-      } else {
-        cwToneRangeEl.textContent = "Audio tone window is outside spectrum";
       }
     }
     ctx.fillStyle = "rgba(130, 150, 165, 0.22)";
