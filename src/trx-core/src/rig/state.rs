@@ -166,7 +166,7 @@ impl RigState {
         state.status.freq = Freq {
             hz: initial_freq_hz,
         };
-        state.status.mode = initial_mode;
+        state.apply_mode(initial_mode);
         state
     }
 
@@ -250,7 +250,11 @@ impl RigState {
 
     /// Apply a mode change into the state.
     pub fn apply_mode(&mut self, mode: RigMode) {
+        let cw_mode = matches!(mode, RigMode::CW | RigMode::CWR);
         self.status.mode = mode;
+        if cw_mode {
+            self.cw_decode_enabled = true;
+        }
     }
 
     /// Apply a PTT change, resetting meters on TX off.
