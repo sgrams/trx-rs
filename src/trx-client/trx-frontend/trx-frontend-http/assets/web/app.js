@@ -3219,11 +3219,13 @@ let aprsMapBaseLayer = null;
 let aprsMapReceiverMarker = null;
 let aprsRadioPath = null;
 let selectedLocatorMarker = null;
+let selectedLocatorPulseRaf = null;
 let mapFullscreenListenerBound = false;
 const stationMarkers = new Map();
 const locatorMarkers = new Map();
 const mapMarkers = new Set();
-const mapFilter = { ais: true, vdes: true, aprs: true, bookmark: true, ft8: true, wspr: true };
+const DEFAULT_MAP_SOURCE_FILTER = { ais: true, vdes: true, aprs: true, bookmark: false, ft8: true, wspr: true };
+const mapFilter = { ...DEFAULT_MAP_SOURCE_FILTER };
 const mapLocatorFilter = { phase: "type", bands: new Set() };
 const APRS_TRACK_MAX_POINTS = 64;
 const AIS_TRACK_MAX_POINTS = 64;
@@ -3489,11 +3491,47 @@ function locatorEntryCount(entry) {
   return 1;
 }
 
+function locatorEntryForMarker(marker) {
+  if (!marker) return null;
+  for (const entry of locatorMarkers.values()) {
+    if (entry?.marker === marker) return entry;
+  }
+  return null;
+}
+
 function syncLocatorMarkerStyles() {
   for (const entry of locatorMarkers.values()) {
     if (!entry?.marker) continue;
     entry.marker.setStyle(locatorStyleForEntry(entry, locatorEntryCount(entry)));
   }
+}
+
+function stopSelectedLocatorPulse() {
+  if (selectedLocatorPulseRaf != null) {
+    cancelAnimationFrame(selectedLocatorPulseRaf);
+    selectedLocatorPulseRaf = null;
+  }
+}
+
+function startSelectedLocatorPulse(marker) {
+  stopSelectedLocatorPulse();
+  if (!marker || !aprsMap || !aprsMap.hasLayer(marker)) return;
+  const tick = (ts) => {
+    if (!selectedLocatorMarker || selectedLocatorMarker !== marker || !aprsMap || !aprsMap.hasLayer(marker)) {
+      return;
+    }
+    const entry = locatorEntryForMarker(marker);
+    const base = locatorStyleForEntry(entry, locatorEntryCount(entry));
+    const phase = (ts % 1600) / 1600;
+    const wave = (Math.sin(phase * Math.PI * 2 - Math.PI / 2) + 1) / 2;
+    marker.setStyle({
+      ...base,
+      opacity: Math.min(1, (base.opacity || 0.8) + 0.12 * wave),
+      weight: (base.weight || 1.8) + 1.8 * wave,
+    });
+    selectedLocatorPulseRaf = requestAnimationFrame(tick);
+  };
+  selectedLocatorPulseRaf = requestAnimationFrame(tick);
 }
 
 function clearMapRadioPath() {
@@ -3543,10 +3581,16 @@ function setLocatorMarkerHighlight(marker, enabled) {
 function setSelectedLocatorMarker(marker) {
   if (selectedLocatorMarker && selectedLocatorMarker !== marker) {
     setLocatorMarkerHighlight(selectedLocatorMarker, false);
+    const prevEntry = locatorEntryForMarker(selectedLocatorMarker);
+    if (prevEntry?.marker) {
+      prevEntry.marker.setStyle(locatorStyleForEntry(prevEntry, locatorEntryCount(prevEntry)));
+    }
   }
+  stopSelectedLocatorPulse();
   selectedLocatorMarker = marker || null;
   if (selectedLocatorMarker) {
     setLocatorMarkerHighlight(selectedLocatorMarker, true);
+    startSelectedLocatorPulse(selectedLocatorMarker);
   }
 }
 
@@ -3568,10 +3612,16 @@ function renderMapLocatorChipRow(container, items, selectedSet, kind) {
     return;
   }
   let helperText = "";
-  const isDefaultSourceState = kind === "source" && items.every((item) => mapFilter[item.key]);
+  const isDefaultSourceState = kind === "source"
+    && items.every((item) => {
+      const def = Object.prototype.hasOwnProperty.call(DEFAULT_MAP_SOURCE_FILTER, item.key)
+        ? !!DEFAULT_MAP_SOURCE_FILTER[item.key]
+        : true;
+      return !!mapFilter[item.key] === def;
+    });
   if (kind === "source") {
     if (isDefaultSourceState) {
-      helperText = "All sources visible by default";
+      helperText = "Default: all non-bookmark sources visible";
     }
   } else if (!(selectedSet instanceof Set) || selectedSet.size === 0) {
     helperText = `All ${kind === "band" ? "bands" : "sources"} visible by default`;
@@ -3582,7 +3632,14 @@ function renderMapLocatorChipRow(container, items, selectedSet, kind) {
     btn.className = "map-locator-chip";
     const isActive = kind === "source" ? !!mapFilter[item.key] : selectedSet.has(item.key);
     if (kind === "source" && isDefaultSourceState) {
-      btn.classList.add("is-default");
+      const def = Object.prototype.hasOwnProperty.call(DEFAULT_MAP_SOURCE_FILTER, item.key)
+        ? !!DEFAULT_MAP_SOURCE_FILTER[item.key]
+        : true;
+      if (def) {
+        btn.classList.add("is-default");
+      } else {
+        btn.classList.add("is-inactive");
+      }
     } else if (!isActive) {
       btn.classList.add("is-inactive");
     }
