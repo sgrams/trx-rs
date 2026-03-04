@@ -2716,18 +2716,7 @@ button:focus-visible, input:focus-visible, select:focus-visible {
 }
 
 .bm-add-btn {
-  background: var(--accent-green);
-  color: #fff;
-  border: none;
-  border-radius: 0.35rem;
-  padding: 0.4rem 0.85rem;
-  font-size: 0.85rem;
-  font-weight: 600;
-  cursor: pointer;
-}
-
-.bm-add-btn:hover {
-  opacity: 0.88;
+  white-space: nowrap;
 }
 
 #bm-form-wrap {
