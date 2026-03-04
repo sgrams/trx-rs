@@ -1132,12 +1132,14 @@ small { color: var(--text-muted); }
 #map-stage:fullscreen,
 #map-stage:-webkit-full-screen {
   background: var(--bg);
-  padding: 0.75rem;
+  width: 100%;
+  height: 100%;
+  padding: 0;
   box-sizing: border-box;
 }
 #map-stage:fullscreen #aprs-map,
 #map-stage:-webkit-full-screen #aprs-map {
-  border-radius: 8px;
+  border-radius: 0;
 }
 .aprs-controls { display: flex; gap: 0.6rem; align-items: center; margin-bottom: 0.75rem; }
 .aprs-summary {

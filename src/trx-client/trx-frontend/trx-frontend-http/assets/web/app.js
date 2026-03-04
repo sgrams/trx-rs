@@ -3877,8 +3877,15 @@ function initAprsMap() {
 function sizeAprsMapToViewport() {
   const mapEl = document.getElementById("aprs-map");
   if (!mapEl) return;
-  const mapRect = mapEl.getBoundingClientRect();
   const stage = mapStageEl();
+  if (mapIsFullscreen() && stage) {
+    const stageHeight = stage.clientHeight || stage.getBoundingClientRect().height;
+    const target = Math.max(260, Math.floor(stageHeight));
+    mapEl.style.height = `${target}px`;
+    if (aprsMap) aprsMap.invalidateSize();
+    return;
+  }
+  const mapRect = mapEl.getBoundingClientRect();
   const width = mapEl.clientWidth || mapRect.width;
   const footer = document.querySelector(".footer");
   let bottom = mapIsFullscreen() && stage

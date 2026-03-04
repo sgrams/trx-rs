@@ -286,6 +286,8 @@ async fn async_init() -> DynResult<AppState> {
     }));
 
     // Audio streaming setup
+    let mut pending_audio_client = None;
+    let mut pending_audio_bridge = None;
     if cfg.frontends.audio.enabled {
         let (rx_audio_tx, _) = broadcast::channel::<Bytes>(256);
         let (tx_audio_tx, tx_audio_rx) = mpsc::channel::<Bytes>(64);
@@ -304,7 +306,7 @@ async fn async_init() -> DynResult<AppState> {
 
         let audio_rig_ports: HashMap<String, u16> = cfg.frontends.audio.rig_ports.clone();
         let audio_shutdown_rx = shutdown_rx.clone();
-        task_handles.push(tokio::spawn(audio_client::run_audio_client(
+        pending_audio_client = Some(tokio::spawn(audio_client::run_audio_client(
             remote_host,
             cfg.frontends.audio.server_port,
             audio_rig_ports,
@@ -318,26 +320,7 @@ async fn async_init() -> DynResult<AppState> {
         )));
 
         if cfg.frontends.audio.bridge.enabled {
-            info!("Audio bridge enabled (local virtual-device integration)");
-            task_handles.push(audio_bridge::spawn_audio_bridge(
-                cfg.frontends.audio.bridge.clone(),
-                frontend_runtime
-                    .audio_rx
-                    .as_ref()
-                    .expect("audio rx must be set")
-                    .clone(),
-                frontend_runtime
-                    .audio_tx
-                    .as_ref()
-                    .expect("audio tx must be set")
-                    .clone(),
-                frontend_runtime
-                    .audio_info
-                    .as_ref()
-                    .expect("audio info must be set")
-                    .clone(),
-                shutdown_rx.clone(),
-            ));
+            pending_audio_bridge = Some(cfg.frontends.audio.bridge.clone());
         }
     } else {
         info!("Audio disabled in config, decode will not be available");
@@ -402,6 +385,34 @@ async fn async_init() -> DynResult<AppState> {
             addr,
             frontend_runtime_ctx.clone(),
         )?;
+    }
+
+    // Start the audio connection only after frontends are running so decode
+    // subscribers can capture the server's initial history replay.
+    if let Some(handle) = pending_audio_client {
+        task_handles.push(handle);
+    }
+    if let Some(bridge_cfg) = pending_audio_bridge {
+        info!("Audio bridge enabled (local virtual-device integration)");
+        task_handles.push(audio_bridge::spawn_audio_bridge(
+            bridge_cfg,
+            frontend_runtime_ctx
+                .audio_rx
+                .as_ref()
+                .expect("audio rx must be set")
+                .clone(),
+            frontend_runtime_ctx
+                .audio_tx
+                .as_ref()
+                .expect("audio tx must be set")
+                .clone(),
+            frontend_runtime_ctx
+                .audio_info
+                .as_ref()
+                .expect("audio info must be set")
+                .clone(),
+            shutdown_rx.clone(),
+        ));
     }
 
     Ok(AppState {

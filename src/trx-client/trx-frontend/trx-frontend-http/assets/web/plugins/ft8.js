@@ -10,6 +10,16 @@ const FT8_PERIOD_SECONDS = 15;
 let ft8FilterText = "";
 let ft8MessageHistory = [];
 
+function normalizeFt8DisplayFreqHz(freqHz) {
+  const rawHz = Number(freqHz);
+  if (!Number.isFinite(rawHz)) return null;
+  const baseHz = Number.isFinite(window.ft8BaseHz) ? Number(window.ft8BaseHz) : null;
+  if (Number.isFinite(baseHz) && baseHz > 0 && rawHz >= 0 && rawHz < 100000) {
+    return baseHz + rawHz;
+  }
+  return rawHz;
+}
+
 function fmtTime(tsMs) {
   if (!tsMs) return "--:--:--";
   return new Date(tsMs).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
@@ -33,7 +43,8 @@ function renderFt8Row(msg) {
   row.dataset.storedFreqHz = Number.isFinite(msg.freq_hz) ? String(msg.freq_hz) : "";
   const snr = Number.isFinite(msg.snr_db) ? msg.snr_db.toFixed(1) : "--";
   const dt = Number.isFinite(msg.dt_s) ? msg.dt_s.toFixed(2) : "--";
-  const freq = Number.isFinite(msg.freq_hz) ? msg.freq_hz.toFixed(0) : "--";
+  const displayFreqHz = normalizeFt8DisplayFreqHz(msg.freq_hz);
+  const freq = Number.isFinite(displayFreqHz) ? displayFreqHz.toFixed(0) : "--";
   const renderedMessage = renderFt8Message(rawMessage);
   row.innerHTML = `<span class="ft8-time">${fmtTime(msg.ts_ms)}</span><span class="ft8-snr">${snr}</span><span class="ft8-dt">${dt}</span><span class="ft8-freq">${freq}</span><span class="ft8-msg">${renderedMessage}</span>`;
   applyFt8FilterToRow(row);
@@ -51,8 +62,9 @@ function addFt8Message(msg) {
 }
 
 function ft8BarRfText(msg) {
-  if (!Number.isFinite(msg.freq_hz)) return null;
-  return `${msg.freq_hz.toFixed(0)} Hz`;
+  const displayFreqHz = normalizeFt8DisplayFreqHz(msg.freq_hz);
+  if (!Number.isFinite(displayFreqHz)) return null;
+  return `${displayFreqHz.toFixed(0)} Hz`;
 }
 
 function updateFt8Bar() {
@@ -173,8 +185,9 @@ function updateFt8RowRf(row) {
   const freqEl = row.querySelector(".ft8-freq");
   if (!freqEl) return;
   const storedFreqHz = row.dataset.storedFreqHz ? Number(row.dataset.storedFreqHz) : NaN;
-  if (Number.isFinite(storedFreqHz)) {
-    freqEl.textContent = storedFreqHz.toFixed(0);
+  const displayFreqHz = normalizeFt8DisplayFreqHz(storedFreqHz);
+  if (Number.isFinite(displayFreqHz)) {
+    freqEl.textContent = displayFreqHz.toFixed(0);
   } else {
     freqEl.textContent = "--";
   }
