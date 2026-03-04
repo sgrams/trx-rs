@@ -2937,8 +2937,8 @@ lockBtn.addEventListener("click", async () => {
 
 // Per-mode defaults: [default bandwidth Hz, min Hz, max Hz, step Hz]
 const MODE_BW_DEFAULTS = {
-  CW:     [500,    50,    2_000,  50],
-  CWR:    [500,    50,    2_000,  50],
+  CW:     [500,    100,   9_000,  50],
+  CWR:    [500,    100,   9_000,  50],
   LSB:    [2_700,  300,   6_000,  100],
   USB:    [2_700,  300,   6_000,  100],
   AM:     [9_000,  500,   20_000, 500],
@@ -4987,7 +4987,13 @@ document.querySelectorAll(".sub-tab-bar").forEach((bar) => {
     btn.classList.add("active");
     const parent = bar.parentElement;
     parent.querySelectorAll(".sub-tab-panel").forEach((p) => p.style.display = "none");
-    parent.querySelector(`#subtab-${btn.dataset.subtab}`).style.display = "";
+    const nextPanel = parent.querySelector(`#subtab-${btn.dataset.subtab}`);
+    if (nextPanel) nextPanel.style.display = "";
+    if (btn.dataset.subtab === "cw" && window.refreshCwTonePicker) {
+      requestAnimationFrame(() => {
+        if (window.refreshCwTonePicker) window.refreshCwTonePicker();
+      });
+    }
   });
 });
 

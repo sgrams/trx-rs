@@ -10,8 +10,8 @@ const cwToneCanvas = document.getElementById("cw-tone-waterfall");
 const cwTonePickerEl = document.querySelector(".cw-tone-picker");
 const cwToneRangeEl = document.getElementById("cw-tone-range");
 const CW_MAX_LINES = 200;
-const CW_TONE_MIN_HZ = 300;
-const CW_TONE_MAX_HZ = 1200;
+const CW_TONE_MIN_HZ = 100;
+const CW_TONE_MAX_HZ = 10_000;
 const CW_WPM_MIN = 5;
 const CW_WPM_MAX = 40;
 let cwLastAppendTime = 0;
@@ -59,10 +59,7 @@ function currentCwToneRange() {
   if (!lowerSideband && !upperSideband) return null;
 
   const toneMinHz = CW_TONE_MIN_HZ;
-  const toneMaxHz = Math.min(
-    CW_TONE_MAX_HZ,
-    Math.round(bandwidthHz),
-  );
+  const toneMaxHz = CW_TONE_MAX_HZ;
   if (toneMaxHz < toneMinHz) {
     return null;
   }
@@ -93,11 +90,14 @@ function toneClampForRange(tone, range) {
 function ensureCwToneCanvasResolution() {
   if (!cwToneCanvas) return false;
   const rect = cwToneCanvas.getBoundingClientRect();
-  const cssWidth = Math.max(1, Math.round(rect.width));
-  const cssHeight = Math.max(1, Math.round(rect.height));
+  const cssWidth = Math.round(rect.width);
+  const cssHeight = Math.round(rect.height);
+  if (cssWidth < 8 || cssHeight < 8) {
+    return false;
+  }
   const dpr = window.devicePixelRatio || 1;
-  const nextWidth = Math.max(1, Math.round(cssWidth * dpr));
-  const nextHeight = Math.max(1, Math.round(cssHeight * dpr));
+  const nextWidth = Math.round(cssWidth * dpr);
+  const nextHeight = Math.round(cssHeight * dpr);
   if (cwToneCanvas.width !== nextWidth || cwToneCanvas.height !== nextHeight) {
     cwToneCanvas.width = nextWidth;
     cwToneCanvas.height = nextHeight;
@@ -108,6 +108,8 @@ function ensureCwToneCanvasResolution() {
 
 function drawCwTonePicker() {
   if (!cwToneCanvas) return;
+  ensureCwToneCanvasResolution();
+  if (cwToneCanvas.width < 8 || cwToneCanvas.height < 8) return;
   const ctx = cwToneCanvas.getContext("2d");
   if (!ctx) return;
 
@@ -382,7 +384,10 @@ if (cwPauseBtn) {
   });
 }
 
-window.refreshCwTonePicker = drawCwTonePicker;
+window.refreshCwTonePicker = function refreshCwTonePicker() {
+  ensureCwToneCanvasResolution();
+  drawCwTonePicker();
+};
 window.addEventListener("resize", () => {
   if (ensureCwToneCanvasResolution()) drawCwTonePicker();
 });
