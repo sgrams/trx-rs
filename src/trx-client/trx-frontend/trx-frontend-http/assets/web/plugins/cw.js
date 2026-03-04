@@ -160,9 +160,7 @@ function drawCwTonePicker() {
   const centerHz = Number(window.lastSpectrumData.center_hz);
   const maxIdx = Math.max(1, bins.length - 1);
   const fullLoHz = centerHz - sampleRate / 2;
-  const tones = new Array(width).fill(0);
-  let maxPower = 0;
-  let minPower = Number.POSITIVE_INFINITY;
+  const tones = new Array(width).fill(-140);
   for (let x = 0; x < width; x += 1) {
     const frac = width <= 1 ? 0 : x / (width - 1);
     const toneHz = range.toneMinHz + frac * range.toneSpanHz;
@@ -170,24 +168,101 @@ function drawCwTonePicker() {
     const idx = Math.max(0, Math.min(maxIdx, Math.round((((rfHz - fullLoHz) / sampleRate) * maxIdx))));
     const power = Number.isFinite(Number(bins[idx])) ? Number(bins[idx]) : -140;
     tones[x] = power;
-    if (power > maxPower) maxPower = power;
-    if (power < minPower) minPower = power;
   }
 
-  const powerSpan = Math.max(1, maxPower - minPower);
+  const smoothed = new Array(width).fill(-140);
+  const smoothRadius = Math.max(1, Math.round(width / 180));
   for (let x = 0; x < width; x += 1) {
-    const level = Math.max(0, Math.min(1, (tones[x] - minPower) / powerSpan));
-    const hue = 200 - level * 155;
-    const light = 14 + Math.pow(level, 0.75) * 58;
-    ctx.fillStyle = `hsl(${hue} 85% ${light}%)`;
-    ctx.fillRect(x, 0, 1, height);
+    let sum = 0;
+    let count = 0;
+    for (let i = x - smoothRadius; i <= x + smoothRadius; i += 1) {
+      if (i < 0 || i >= width) continue;
+      sum += tones[i];
+      count += 1;
+    }
+    smoothed[x] = count > 0 ? sum / count : tones[x];
   }
+
+  const sorted = smoothed.slice().sort((a, b) => a - b);
+  const q20 = sorted[Math.floor((sorted.length - 1) * 0.2)] ?? -120;
+  const q95 = sorted[Math.floor((sorted.length - 1) * 0.95)] ?? -70;
+  const floorDb = Math.min(q20 - 2, q95 - 10);
+  const ceilDb = Math.max(floorDb + 18, q95 + 2);
+  const dbSpan = Math.max(1, ceilDb - floorDb);
+  const yForDb = (db) => {
+    const n = Math.max(0, Math.min(1, (db - floorDb) / dbSpan));
+    return Math.round((1 - n) * (height - 1));
+  };
+
+  const rootStyle = getComputedStyle(document.documentElement);
+  const accent = (rootStyle.getPropertyValue("--accent-green") || "").trim() || "#00d17f";
+  const axisColor = "rgba(230, 235, 245, 0.15)";
+  const textColor = "rgba(230, 235, 245, 0.58)";
+
+  ctx.fillStyle = "rgba(7, 12, 18, 0.94)";
+  ctx.fillRect(0, 0, width, height);
+
+  const hGridCount = 4;
+  ctx.strokeStyle = axisColor;
+  ctx.lineWidth = 1;
+  for (let i = 1; i <= hGridCount; i += 1) {
+    const y = Math.round((i / (hGridCount + 1)) * (height - 1)) + 0.5;
+    ctx.beginPath();
+    ctx.moveTo(0, y);
+    ctx.lineTo(width, y);
+    ctx.stroke();
+  }
+
+  const toneStep = range.toneSpanHz <= 500 ? 50 : range.toneSpanHz <= 1000 ? 100 : 200;
+  const firstTick = Math.ceil(range.toneMinHz / toneStep) * toneStep;
+  ctx.font = `${Math.max(10, Math.round(height * 0.18))}px ui-monospace, SFMono-Regular, Menlo, monospace`;
+  ctx.fillStyle = textColor;
+  for (let tone = firstTick; tone <= range.toneMaxHz; tone += toneStep) {
+    const frac = (tone - range.toneMinHz) / range.toneSpanHz;
+    const x = Math.max(0, Math.min(width - 1, Math.round(frac * (width - 1)))) + 0.5;
+    ctx.beginPath();
+    ctx.moveTo(x, 0);
+    ctx.lineTo(x, height);
+    ctx.stroke();
+    if (tone % (toneStep * 2) === 0) {
+      const label = `${Math.round(tone)}`;
+      const textWidth = ctx.measureText(label).width;
+      ctx.fillText(label, Math.max(1, Math.min(width - textWidth - 1, x + 2)), height - 3);
+    }
+  }
+
+  ctx.beginPath();
+  ctx.moveTo(0, height - 0.5);
+  for (let x = 0; x < width; x += 1) {
+    ctx.lineTo(x + 0.5, yForDb(smoothed[x]) + 0.5);
+  }
+  ctx.lineTo(width - 0.5, height - 0.5);
+  ctx.closePath();
+  ctx.save();
+  ctx.globalAlpha = 0.24;
+  ctx.fillStyle = accent;
+  ctx.fill();
+  ctx.restore();
+
+  ctx.beginPath();
+  for (let x = 0; x < width; x += 1) {
+    const y = yForDb(smoothed[x]) + 0.5;
+    if (x === 0) ctx.moveTo(0.5, y);
+    else ctx.lineTo(x + 0.5, y);
+  }
+  ctx.lineWidth = 1.8;
+  ctx.strokeStyle = accent;
+  ctx.stroke();
 
   const currentTone = toneClampForRange(cwToneInput ? cwToneInput.value : 700, range);
   const markerFrac = (currentTone - range.toneMinHz) / range.toneSpanHz;
   const markerX = Math.max(0, Math.min(width - 1, Math.round(markerFrac * (width - 1))));
+  const markerY = yForDb(smoothed[Math.max(0, Math.min(width - 1, markerX))]);
   ctx.fillStyle = "rgba(255, 255, 255, 0.9)";
-  ctx.fillRect(markerX, 0, 2, height);
+  ctx.fillRect(markerX, 0, 1.5, height);
+  ctx.beginPath();
+  ctx.arc(markerX, markerY, Math.max(2, Math.round(height * 0.055)), 0, Math.PI * 2);
+  ctx.fill();
 
   if (cwAutoInput?.checked) {
     ctx.fillStyle = "rgba(0, 0, 0, 0.22)";
