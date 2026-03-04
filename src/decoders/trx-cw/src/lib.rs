@@ -89,18 +89,20 @@ fn goertzel_energy(buf: &[f32], coeff: f32) -> f32 {
 // Tone scan bins
 // ---------------------------------------------------------------------------
 
-const TONE_SCAN_LOW: u32 = 100;
-const TONE_SCAN_HIGH: u32 = 10_000;
+const TONE_SET_LOW: u32 = 100;
+const TONE_SET_HIGH: u32 = 10_000;
+const TONE_SCAN_LOW: u32 = 300;
+const TONE_SCAN_HIGH: u32 = 1200;
 const TONE_SCAN_STEP: u32 = 25;
 const TONE_STABLE_NEEDED: u32 = 3;
 const THRESHOLD: f32 = 0.05;
 
-fn tone_scan_high_for_sample_rate(sample_rate: u32) -> u32 {
+fn tone_high_for_sample_rate(sample_rate: u32, low: u32, high: u32) -> u32 {
     let nyquist = sample_rate / 2;
-    if nyquist <= TONE_SCAN_LOW + 1 {
-        TONE_SCAN_LOW
+    if nyquist <= low + 1 {
+        low
     } else {
-        TONE_SCAN_HIGH.min(nyquist - 1)
+        high.min(nyquist - 1)
     }
 }
 
@@ -161,7 +163,7 @@ impl CwDecoder {
         // Build scan bins
         let mut tone_scan_bins = Vec::new();
         let mut f = TONE_SCAN_LOW;
-        let scan_high = tone_scan_high_for_sample_rate(sample_rate);
+        let scan_high = tone_high_for_sample_rate(sample_rate, TONE_SCAN_LOW, TONE_SCAN_HIGH);
         while f <= scan_high {
             let bk = (f as f32 * window_size as f32 / sample_rate as f32).round();
             let b_omega = (2.0 * std::f32::consts::PI * bk) / window_size as f32;
@@ -206,8 +208,8 @@ impl CwDecoder {
 
     pub fn set_tone_hz(&mut self, tone_hz: u32) {
         let tone_hz = tone_hz.clamp(
-            TONE_SCAN_LOW,
-            tone_scan_high_for_sample_rate(self.sample_rate),
+            TONE_SET_LOW,
+            tone_high_for_sample_rate(self.sample_rate, TONE_SET_LOW, TONE_SET_HIGH),
         );
         self.recompute_goertzel(tone_hz);
     }
