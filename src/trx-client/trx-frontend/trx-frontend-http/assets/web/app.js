@@ -625,6 +625,7 @@ if (themeToggleBtn) {
   themeToggleBtn.addEventListener("click", () => {
     setTheme(currentTheme() === "dark" ? "light" : "dark");
     updateMapBaseLayerForTheme(currentTheme());
+    syncLocatorMarkerStyles();
     scheduleOverviewDraw();
     if (typeof scheduleSpectrumDraw === "function" && lastSpectrumData) scheduleSpectrumDraw();
   });
@@ -634,6 +635,7 @@ if (headerStylePickSelect) {
   headerStylePickSelect.addEventListener("change", () => {
     setStyle(headerStylePickSelect.value);
     updateMapBaseLayerForTheme(currentTheme());
+    syncLocatorMarkerStyles();
   });
 }
 
@@ -3326,6 +3328,160 @@ function assignLocatorMarkerMeta(marker, sourceType, bandMeta) {
   };
 }
 
+function parseMapColor(input) {
+  const value = String(input || "").trim();
+  if (!value) return null;
+  const hex = value.match(/^#([0-9a-f]{3,8})$/i);
+  if (hex) {
+    const raw = hex[1];
+    if (raw.length === 3 || raw.length === 4) {
+      const chars = raw.split("");
+      return {
+        r: parseInt(chars[0] + chars[0], 16),
+        g: parseInt(chars[1] + chars[1], 16),
+        b: parseInt(chars[2] + chars[2], 16),
+      };
+    }
+    if (raw.length === 6 || raw.length === 8) {
+      return {
+        r: parseInt(raw.slice(0, 2), 16),
+        g: parseInt(raw.slice(2, 4), 16),
+        b: parseInt(raw.slice(4, 6), 16),
+      };
+    }
+  }
+  const rgb = value.match(/^rgba?\(\s*([0-9.]+)\s*,\s*([0-9.]+)\s*,\s*([0-9.]+)/i);
+  if (rgb) {
+    return {
+      r: Math.max(0, Math.min(255, Number(rgb[1]))),
+      g: Math.max(0, Math.min(255, Number(rgb[2]))),
+      b: Math.max(0, Math.min(255, Number(rgb[3]))),
+    };
+  }
+  return null;
+}
+
+function rgbToHsl(rgb) {
+  if (!rgb) return null;
+  const r = rgb.r / 255;
+  const g = rgb.g / 255;
+  const b = rgb.b / 255;
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  const l = (max + min) / 2;
+  if (max === min) {
+    return { h: 0, s: 0, l: l * 100 };
+  }
+  const d = max - min;
+  const s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+  let h;
+  switch (max) {
+    case r:
+      h = ((g - b) / d) + (g < b ? 6 : 0);
+      break;
+    case g:
+      h = ((b - r) / d) + 2;
+      break;
+    default:
+      h = ((r - g) / d) + 4;
+      break;
+  }
+  return { h: (h * 60) % 360, s: s * 100, l: l * 100 };
+}
+
+function wrapHue(hue) {
+  const value = Number(hue) || 0;
+  return ((value % 360) + 360) % 360;
+}
+
+function paletteHue(input, fallback) {
+  const hsl = rgbToHsl(parseMapColor(input));
+  return Number.isFinite(hsl?.h) ? hsl.h : fallback;
+}
+
+function locatorThemeHues() {
+  const pal = canvasPalette();
+  const baseHue = paletteHue(pal?.spectrumLine, 145);
+  const waveHue = paletteHue(pal?.waveformLine, baseHue + 34);
+  const peakHue = paletteHue(pal?.waveformPeak, baseHue - 42);
+  return {
+    bookmark: wrapHue(baseHue),
+    ft8: wrapHue(peakHue),
+    wspr: wrapHue((waveHue + baseHue) / 2),
+    bandBase: wrapHue((baseHue * 0.65) + (peakHue * 0.35)),
+  };
+}
+
+function locatorBandIndex(label) {
+  const idx = HAM_BANDS.findIndex((band) => band.label === label);
+  return idx >= 0 ? idx : 0;
+}
+
+function locatorBandLabelForEntry(entry) {
+  const meta = entry?.bandMeta instanceof Map ? entry.bandMeta : new Map();
+  if (meta.size === 0) return null;
+  if (mapLocatorFilter.phase === "band" && mapLocatorFilter.bands.size > 0) {
+    for (const label of mapLocatorFilter.bands) {
+      if (meta.has(label)) return label;
+    }
+  }
+  let bestLabel = null;
+  let bestHz = -Infinity;
+  for (const [label, hz] of meta.entries()) {
+    const value = Number.isFinite(hz) ? Number(hz) : 0;
+    if (value > bestHz) {
+      bestHz = value;
+      bestLabel = label;
+    }
+  }
+  return bestLabel;
+}
+
+function locatorHueForEntry(entry) {
+  const hues = locatorThemeHues();
+  if (mapLocatorFilter.phase === "band") {
+    const label = locatorBandLabelForEntry(entry);
+    if (label) {
+      return wrapHue(hues.bandBase + locatorBandIndex(label) * 137.508);
+    }
+  }
+  if (entry?.sourceType === "bookmark") return hues.bookmark;
+  if (entry?.sourceType === "wspr") return hues.wspr;
+  return hues.ft8;
+}
+
+function locatorStyleForEntry(entry, count) {
+  const safeCount = Math.max(1, Number.isFinite(count) ? count : 1);
+  const intensity = Math.min(1, Math.log2(safeCount + 1) / 5);
+  const hue = locatorHueForEntry(entry);
+  const lightTheme = currentTheme() === "light";
+  const strokeSat = lightTheme ? 62 : 74;
+  const fillSat = lightTheme ? 68 : 78;
+  const strokeLight = lightTheme ? 40 : 56;
+  const fillLight = lightTheme ? 60 : 42;
+  return {
+    color: `hsl(${hue.toFixed(1)} ${Math.min(92, strokeSat + intensity * 10).toFixed(1)}% ${Math.max(24, strokeLight - intensity * 4).toFixed(1)}%)`,
+    opacity: 0.42 + intensity * 0.5,
+    weight: 1 + intensity * 1.2,
+    fillColor: `hsl(${hue.toFixed(1)} ${Math.min(96, fillSat + intensity * 8).toFixed(1)}% ${Math.max(20, fillLight - intensity * 5).toFixed(1)}%)`,
+    fillOpacity: 0.16 + intensity * 0.34,
+  };
+}
+
+function locatorEntryCount(entry) {
+  if (Array.isArray(entry?.bookmarks)) return Math.max(entry.bookmarks.length, 1);
+  if (entry?.stationDetails instanceof Map) return Math.max(entry.stationDetails.size, 1);
+  if (entry?.stations instanceof Set) return Math.max(entry.stations.size, 1);
+  return 1;
+}
+
+function syncLocatorMarkerStyles() {
+  for (const entry of locatorMarkers.values()) {
+    if (!entry?.marker) continue;
+    entry.marker.setStyle(locatorStyleForEntry(entry, locatorEntryCount(entry)));
+  }
+}
+
 function clearMapRadioPath() {
   if (aprsRadioPath) {
     aprsRadioPath.remove();
@@ -3513,6 +3669,7 @@ function rebuildMapLocatorFilters() {
     choiceLabelEl.textContent = "Visible Sources";
     renderMapLocatorChipRow(choiceEl, sourceItems, null, "source");
   }
+  syncLocatorMarkerStyles();
 }
 
 function markerPassesLocatorFilters(marker) {
@@ -3803,7 +3960,7 @@ function initAprsMap() {
     if (!bounds) continue;
     entry.sourceType = "bookmark";
     entry.bandMeta = collectBandMeta((entry.bookmarks || []).map((bm) => Number(bm?.freq_hz)));
-    entry.marker = L.rectangle(bounds, locatorStyleForCount(entry.bookmarks?.length || 1, "bookmark"))
+    entry.marker = L.rectangle(bounds, locatorStyleForEntry(entry, entry.bookmarks?.length || 1))
       .addTo(aprsMap)
       .bindPopup(buildBookmarkLocatorPopupHtml(entry.grid, entry.bookmarks || []));
     entry.marker.__trxType = "bookmark";
@@ -3896,10 +4053,10 @@ function sizeAprsMapToViewport() {
     if (fr.top > mapRect.top + 50) bottom = fr.top;
   }
   const available = Math.max(0, Math.floor(bottom - mapRect.top - 8));
-  const widthDriven = width > 0 ? Math.floor(width / 2.05) : available;
+  const widthDriven = width > 0 ? Math.floor(width / 1.9) : available;
   const viewportCap = mapIsFullscreen()
     ? Math.floor(window.innerHeight * 0.9)
-    : Math.floor(window.innerHeight * 0.56);
+    : Math.floor(window.innerHeight * 0.6);
   const minHeight = Math.min(260, available);
   const target = Math.max(minHeight, Math.min(available, viewportCap, widthDriven));
   mapEl.style.height = `${target}px`;
@@ -4443,20 +4600,6 @@ function escapeMapHtml(input) {
     .replaceAll("\"", "&quot;");
 }
 
-function locatorStyleForCount(count, type) {
-  const safeCount = Math.max(1, Number.isFinite(count) ? count : 1);
-  const intensity = Math.min(1, Math.log2(safeCount + 1) / 5);
-  const isWspr = type === "wspr";
-  const isBookmark = type === "bookmark";
-  return {
-    color: isBookmark ? "#38b48b" : (isWspr ? "#ff8f2a" : "#ffb020"),
-    opacity: 0.45 + intensity * 0.5,
-    weight: 1 + intensity * 1.2,
-    fillColor: isBookmark ? "#22c55e" : (isWspr ? "#ff6a3d" : "#ff9b1a"),
-    fillOpacity: 0.18 + intensity * 0.55,
-  };
-}
-
 function formatDecodeLocatorTime(tsMs) {
   if (!Number.isFinite(tsMs)) return "--:--:--";
   return new Date(tsMs).toLocaleTimeString([], {
@@ -4574,7 +4717,7 @@ window.syncBookmarkMapLocators = function(bookmarks) {
       existing.bandMeta = bandMeta;
       if (existing.marker) {
         existing.marker.setBounds(next.bounds);
-        existing.marker.setStyle(locatorStyleForCount(next.bookmarks.length, "bookmark"));
+        existing.marker.setStyle(locatorStyleForEntry(existing, next.bookmarks.length));
         existing.marker.setPopupContent(popupHtml);
         sendLocatorOverlayToBack(existing.marker);
         assignLocatorMarkerMeta(existing.marker, existing.sourceType, existing.bandMeta);
@@ -4592,7 +4735,7 @@ window.syncBookmarkMapLocators = function(bookmarks) {
     };
     locatorMarkers.set(key, entry);
     if (aprsMap) {
-      entry.marker = L.rectangle(next.bounds, locatorStyleForCount(next.bookmarks.length, "bookmark"))
+      entry.marker = L.rectangle(next.bounds, locatorStyleForEntry(entry, next.bookmarks.length))
         .addTo(aprsMap)
         .bindPopup(popupHtml);
       entry.marker.__trxType = "bookmark";
@@ -4637,7 +4780,7 @@ window.ft8MapAddLocator = function(message, grids, type = "ft8", station = null,
       );
       const count = Math.max(existing.stationDetails.size, existing.stations.size || 0, 1);
       const tooltipHtml = buildDecodeLocatorTooltipHtml(grid, existing, markerType);
-      existing.marker.setStyle(locatorStyleForCount(count, markerType));
+      existing.marker.setStyle(locatorStyleForEntry(existing, count));
       existing.marker.setPopupContent(tooltipHtml);
       sendLocatorOverlayToBack(existing.marker);
       assignLocatorMarkerMeta(existing.marker, existing.sourceType, existing.bandMeta);
@@ -4650,16 +4793,16 @@ window.ft8MapAddLocator = function(message, grids, type = "ft8", station = null,
     if (stationId) stations.add(stationId);
     const stationDetails = new Map();
     stationDetails.set(detailKey, { ...detailEntry });
+    const bandMeta = collectBandMeta(
+      Array.from(stationDetails.values()).map((detail) => Number(detail?.freq_hz))
+    );
     const count = Math.max(stationDetails.size, stations.size || 0, 1);
     const tooltipHtml = buildDecodeLocatorTooltipHtml(grid, { stations, stationDetails }, markerType);
-    const marker = L.rectangle(bounds, locatorStyleForCount(count, markerType))
+    const marker = L.rectangle(bounds, locatorStyleForEntry({ sourceType: markerType, bandMeta }, count))
       .addTo(aprsMap)
       .bindPopup(tooltipHtml);
     marker.__trxType = markerType;
     sendLocatorOverlayToBack(marker);
-    const bandMeta = collectBandMeta(
-      Array.from(stationDetails.values()).map((detail) => Number(detail?.freq_hz))
-    );
     assignLocatorMarkerMeta(marker, markerType, bandMeta);
     locatorMarkers.set(key, { marker, stations, stationDetails, sourceType: markerType, bandMeta });
     mapMarkers.add(marker);
