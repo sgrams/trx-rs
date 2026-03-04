@@ -1514,9 +1514,15 @@ small { color: var(--text-muted); }
   word-break: break-word;
 }
 .aprs-radio-path { stroke: var(--accent-green) !important; stroke-opacity: 0.8 !important; stroke-dasharray: 10 5 !important; animation: aprs-radio-path-flow 0.7s linear infinite; }
+.locator-radio-path { stroke: #6ee7b7 !important; stroke-opacity: 0.9 !important; stroke-dasharray: 12 6 !important; animation: aprs-radio-path-flow 0.7s linear infinite; }
+.trx-locator-selected { stroke-opacity: 1 !important; stroke-width: 3.25px !important; filter: drop-shadow(0 0 6px rgba(110, 231, 183, 0.5)); animation: trx-locator-breathe 1.6s ease-in-out infinite; }
 .trx-receiver-marker { stroke: var(--accent-green) !important; fill: var(--accent-green) !important; }
 .receiver-popup-active { font-size: 0.75em; background: rgba(194,75,26,0.15); color: var(--accent-green); border: 1px solid rgba(194,75,26,0.3); border-radius: 3px; padding: 0 0.25rem; margin-left: 0.3rem; vertical-align: middle; }
 @keyframes aprs-radio-path-flow { to { stroke-dashoffset: -15; } }
+@keyframes trx-locator-breathe {
+  0%, 100% { stroke-width: 2.4px; stroke-opacity: 0.78; filter: drop-shadow(0 0 2px rgba(110, 231, 183, 0.18)); }
+  50% { stroke-width: 4.2px; stroke-opacity: 1; filter: drop-shadow(0 0 10px rgba(110, 231, 183, 0.52)); }
+}
 .aprs-bar-pos { background: none; border: none; padding: 0; margin-left: 0.4em; font-family: inherit; font-size: inherit; color: var(--accent-green); cursor: pointer; }
 .aprs-bar-pos:hover { text-decoration: underline; }
 .aprs-byte { color: var(--accent-yellow); background: rgba(255, 214, 0, 0.12); border: 1px solid rgba(255, 214, 0, 0.25); border-radius: 4px; padding: 0 0.2rem; margin: 0 0.1rem; font-size: 0.78em; }

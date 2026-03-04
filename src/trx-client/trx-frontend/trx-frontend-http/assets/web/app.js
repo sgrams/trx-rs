@@ -3170,6 +3170,7 @@ let aprsMap = null;
 let aprsMapBaseLayer = null;
 let aprsMapReceiverMarker = null;
 let aprsRadioPath = null;
+let selectedLocatorMarker = null;
 const stationMarkers = new Map();
 const locatorMarkers = new Map();
 const mapMarkers = new Set();
@@ -3276,6 +3277,70 @@ function assignLocatorMarkerMeta(marker, sourceType, bandMeta) {
     bands: new Set(safeMeta.keys()),
     bandMeta: new Map(safeMeta),
   };
+}
+
+function clearMapRadioPath() {
+  if (aprsRadioPath) {
+    aprsRadioPath.remove();
+    aprsRadioPath = null;
+  }
+}
+
+function setMapRadioPathTo(lat, lon, className = "aprs-radio-path") {
+  clearMapRadioPath();
+  if (serverLat == null || serverLon == null || !Number.isFinite(lat) || !Number.isFinite(lon) || !aprsMap) {
+    return;
+  }
+  aprsRadioPath = L.polyline(
+    [[serverLat, serverLon], [lat, lon]],
+    { className, weight: 2, interactive: false }
+  ).addTo(aprsMap);
+}
+
+function locatorMarkerCenter(marker) {
+  if (!marker) return null;
+  if (typeof marker.getBounds === "function") {
+    const bounds = marker.getBounds();
+    if (bounds && typeof bounds.getCenter === "function") {
+      const center = bounds.getCenter();
+      if (Number.isFinite(center?.lat) && Number.isFinite(center?.lng)) {
+        return { lat: center.lat, lon: center.lng };
+      }
+    }
+  }
+  if (typeof marker.getLatLng === "function") {
+    const ll = marker.getLatLng();
+    if (Number.isFinite(ll?.lat) && Number.isFinite(ll?.lng)) {
+      return { lat: ll.lat, lon: ll.lng };
+    }
+  }
+  return null;
+}
+
+function setLocatorMarkerHighlight(marker, enabled) {
+  const element = typeof marker?.getElement === "function" ? marker.getElement() : marker?._path;
+  if (!element) return;
+  element.classList.toggle("trx-locator-selected", !!enabled);
+}
+
+function setSelectedLocatorMarker(marker) {
+  if (selectedLocatorMarker && selectedLocatorMarker !== marker) {
+    setLocatorMarkerHighlight(selectedLocatorMarker, false);
+  }
+  selectedLocatorMarker = marker || null;
+  if (selectedLocatorMarker) {
+    setLocatorMarkerHighlight(selectedLocatorMarker, true);
+  }
+}
+
+function isLocatorOverlay(marker) {
+  const type = marker?.__trxType;
+  return type === "bookmark" || type === "ft8" || type === "wspr";
+}
+
+function sendLocatorOverlayToBack(marker) {
+  if (!isLocatorOverlay(marker) || typeof marker?.bringToBack !== "function") return;
+  marker.bringToBack();
 }
 
 function renderMapLocatorChipRow(container, items, selectedSet, kind) {
@@ -3489,6 +3554,10 @@ window.clearMapMarkersByType = function(type) {
     for (const [key, entry] of locatorMarkers.entries()) {
       if (!key.startsWith(prefix)) continue;
       if (entry && entry.marker) {
+        if (entry.marker === selectedLocatorMarker) {
+          setSelectedLocatorMarker(null);
+          clearMapRadioPath();
+        }
         if (aprsMap && aprsMap.hasLayer(entry.marker)) entry.marker.removeFrom(aprsMap);
         mapMarkers.delete(entry.marker);
       }
@@ -3501,6 +3570,10 @@ window.clearMapMarkersByType = function(type) {
     for (const [key, entry] of locatorMarkers.entries()) {
       if (!key.startsWith("bookmark:")) continue;
       if (entry && entry.marker) {
+        if (entry.marker === selectedLocatorMarker) {
+          setSelectedLocatorMarker(null);
+          clearMapRadioPath();
+        }
         if (aprsMap && aprsMap.hasLayer(entry.marker)) entry.marker.removeFrom(aprsMap);
         mapMarkers.delete(entry.marker);
       }
@@ -3557,7 +3630,8 @@ function initAprsMap() {
   // Rebuild popup content on open (keeps age/distance/rig list fresh)
   aprsMap.on("popupopen", function(e) {
     const marker = e.popup._source;
-    if (aprsRadioPath) { aprsRadioPath.remove(); aprsRadioPath = null; }
+    clearMapRadioPath();
+    setSelectedLocatorMarker(null);
     if (selectedAisTrackMmsi) {
       const prevEntry = aisMarkers.get(String(selectedAisTrackMmsi));
       if (prevEntry && prevEntry.track && aprsMap && aprsMap.hasLayer(prevEntry.track)) {
@@ -3572,23 +3646,19 @@ function initAprsMap() {
     }
 
     if (!marker) return;
-
-    const ll = marker.getLatLng();
+    const ll = typeof marker.getLatLng === "function" ? marker.getLatLng() : null;
 
     if (marker._aprsCall) {
+      if (!ll) return;
       const entry = stationMarkers.get(marker._aprsCall);
       if (!entry) return;
       e.popup.setContent(buildAprsPopupHtml(marker._aprsCall, ll.lat, ll.lng, entry.info || "", entry.pkt));
-      if (serverLat != null && serverLon != null) {
-        aprsRadioPath = L.polyline(
-          [[serverLat, serverLon], [ll.lat, ll.lng]],
-          { className: "aprs-radio-path", weight: 2, interactive: false }
-        ).addTo(aprsMap);
-      }
+      setMapRadioPathTo(ll.lat, ll.lng, "aprs-radio-path");
       return;
     }
 
     if (marker._aisMmsi) {
+      if (!ll) return;
       const entry = aisMarkers.get(String(marker._aisMmsi));
       if (!entry || !entry.msg) return;
       e.popup.setContent(buildAisPopupHtml(entry.msg));
@@ -3597,30 +3667,31 @@ function initAprsMap() {
         entry.track.addTo(aprsMap);
       }
       selectedAisTrackMmsi = String(marker._aisMmsi);
-      if (serverLat != null && serverLon != null) {
-        aprsRadioPath = L.polyline(
-          [[serverLat, serverLon], [ll.lat, ll.lng]],
-          { className: "aprs-radio-path", weight: 2, interactive: false }
-        ).addTo(aprsMap);
-      }
+      setMapRadioPathTo(ll.lat, ll.lng, "aprs-radio-path");
       return;
     }
 
     if (marker._vdesKey) {
+      if (!ll) return;
       const entry = vdesMarkers.get(String(marker._vdesKey));
       if (!entry || !entry.msg) return;
       e.popup.setContent(buildVdesPopupHtml(entry.msg));
-      if (serverLat != null && serverLon != null) {
-        aprsRadioPath = L.polyline(
-          [[serverLat, serverLon], [ll.lat, ll.lng]],
-          { className: "aprs-radio-path", weight: 2, interactive: false }
-        ).addTo(aprsMap);
+      setMapRadioPathTo(ll.lat, ll.lng, "aprs-radio-path");
+      return;
+    }
+
+    if (marker.__trxType === "bookmark" || marker.__trxType === "ft8" || marker.__trxType === "wspr") {
+      const center = locatorMarkerCenter(marker);
+      if (center) {
+        setSelectedLocatorMarker(marker);
+        setMapRadioPathTo(center.lat, center.lon, "locator-radio-path");
       }
     }
   });
 
   aprsMap.on("popupclose", function() {
-    if (aprsRadioPath) { aprsRadioPath.remove(); aprsRadioPath = null; }
+    clearMapRadioPath();
+    setSelectedLocatorMarker(null);
     if (selectedAisTrackMmsi) {
       const entry = aisMarkers.get(String(selectedAisTrackMmsi));
       if (entry && entry.track && aprsMap && aprsMap.hasLayer(entry.track)) {
@@ -3646,6 +3717,7 @@ function initAprsMap() {
       .addTo(aprsMap)
       .bindPopup(buildBookmarkLocatorPopupHtml(entry.grid, entry.bookmarks || []));
     entry.marker.__trxType = "bookmark";
+    sendLocatorOverlayToBack(entry.marker);
     assignLocatorMarkerMeta(entry.marker, entry.sourceType, entry.bandMeta);
     mapMarkers.add(entry.marker);
   }
@@ -4235,7 +4307,10 @@ function applyMapFilter() {
       (type === "wspr" && mapFilter.wspr)
     );
     const onMap = aprsMap.hasLayer(marker);
-    if (visible && !onMap) marker.addTo(aprsMap);
+    if (visible && !onMap) {
+      marker.addTo(aprsMap);
+      sendLocatorOverlayToBack(marker);
+    }
     if (!visible && onMap) marker.removeFrom(aprsMap);
   });
 }
@@ -4349,6 +4424,10 @@ window.syncBookmarkMapLocators = function(bookmarks) {
     if (!key.startsWith("bookmark:")) continue;
     if (!grouped.has(key)) {
       if (entry && entry.marker) {
+        if (entry.marker === selectedLocatorMarker) {
+          setSelectedLocatorMarker(null);
+          clearMapRadioPath();
+        }
         if (aprsMap && aprsMap.hasLayer(entry.marker)) entry.marker.removeFrom(aprsMap);
         mapMarkers.delete(entry.marker);
       }
@@ -4370,6 +4449,7 @@ window.syncBookmarkMapLocators = function(bookmarks) {
         existing.marker.setBounds(next.bounds);
         existing.marker.setStyle(locatorStyleForCount(next.bookmarks.length, "bookmark"));
         existing.marker.setPopupContent(popupHtml);
+        sendLocatorOverlayToBack(existing.marker);
         assignLocatorMarkerMeta(existing.marker, existing.sourceType, existing.bandMeta);
       }
       continue;
@@ -4389,6 +4469,7 @@ window.syncBookmarkMapLocators = function(bookmarks) {
         .addTo(aprsMap)
         .bindPopup(popupHtml);
       entry.marker.__trxType = "bookmark";
+      sendLocatorOverlayToBack(entry.marker);
       assignLocatorMarkerMeta(entry.marker, entry.sourceType, entry.bandMeta);
       mapMarkers.add(entry.marker);
     }
@@ -4431,6 +4512,7 @@ window.ft8MapAddLocator = function(message, grids, type = "ft8", station = null,
       const tooltipHtml = buildDecodeLocatorTooltipHtml(grid, existing, markerType);
       existing.marker.setStyle(locatorStyleForCount(count, markerType));
       existing.marker.setPopupContent(tooltipHtml);
+      sendLocatorOverlayToBack(existing.marker);
       assignLocatorMarkerMeta(existing.marker, existing.sourceType, existing.bandMeta);
       rebuildMapLocatorFilters();
       applyMapFilter();
@@ -4447,6 +4529,7 @@ window.ft8MapAddLocator = function(message, grids, type = "ft8", station = null,
       .addTo(aprsMap)
       .bindPopup(tooltipHtml);
     marker.__trxType = markerType;
+    sendLocatorOverlayToBack(marker);
     const bandMeta = collectBandMeta(
       Array.from(stationDetails.values()).map((detail) => Number(detail?.freq_hz))
     );
