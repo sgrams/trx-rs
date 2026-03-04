@@ -393,7 +393,7 @@ async fn process_command(
             return snapshot_from(ctx.state);
         }
         RigCommand::SetCwToneHz(tone_hz) => {
-            ctx.state.cw_tone_hz = tone_hz.clamp(300, 1200);
+            ctx.state.cw_tone_hz = tone_hz.clamp(100, 10_000);
             let _ = ctx.state_tx.send(ctx.state.clone());
             return snapshot_from(ctx.state);
         }
