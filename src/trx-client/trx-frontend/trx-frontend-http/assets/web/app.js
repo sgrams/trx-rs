@@ -3281,9 +3281,14 @@ function mapSourceLabel(type) {
 }
 
 function locatorFilterColor(type) {
-  if (type === "bookmark") return "#22c55e";
-  if (type === "wspr") return "#ff6a3d";
-  return "#ff9b1a";
+  const hues = locatorThemeHues();
+  const lightTheme = currentTheme() === "light";
+  const sat = lightTheme ? 66 : 76;
+  const light = lightTheme ? 42 : 56;
+  const hue = type === "bookmark"
+    ? hues.bookmark
+    : (type === "wspr" ? hues.wspr : hues.ft8);
+  return `hsl(${hue.toFixed(1)} ${sat}% ${light}%)`;
 }
 
 function mapSourceColor(type) {
@@ -3415,6 +3420,15 @@ function locatorThemeHues() {
 function locatorBandIndex(label) {
   const idx = HAM_BANDS.findIndex((band) => band.label === label);
   return idx >= 0 ? idx : 0;
+}
+
+function locatorBandChipColor(label) {
+  const hues = locatorThemeHues();
+  const lightTheme = currentTheme() === "light";
+  const hue = wrapHue(hues.bandBase + locatorBandIndex(label) * 137.508);
+  const sat = lightTheme ? 68 : 78;
+  const light = lightTheme ? 44 : 58;
+  return `hsl(${hue.toFixed(1)} ${sat}% ${light}%)`;
 }
 
 function locatorBandLabelForEntry(entry) {
@@ -3630,7 +3644,7 @@ function rebuildMapLocatorFilters() {
         bandMap.set(label, {
           key: label,
           label,
-          color: locatorFilterColor(sourceType),
+          color: locatorBandChipColor(label),
           kind: "band",
           sortHz: Number.isFinite(hz) ? hz : 0,
         });
@@ -3641,7 +3655,7 @@ function rebuildMapLocatorFilters() {
         existing.sortHz = hz;
       }
       if (existing && !existing.color) {
-        existing.color = locatorFilterColor(sourceType);
+        existing.color = locatorBandChipColor(label);
       }
     }
   }
