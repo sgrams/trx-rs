@@ -1142,6 +1142,13 @@ small { color: var(--text-muted); }
   border-radius: 0;
 }
 .aprs-controls { display: flex; gap: 0.6rem; align-items: center; margin-bottom: 0.75rem; }
+.aprs-controls > button.active,
+.ft8-controls > button.active,
+.cw-controls > button.active {
+  border-color: color-mix(in srgb, var(--accent-green) 58%, var(--border-light));
+  color: var(--accent-green);
+  background: color-mix(in srgb, var(--accent-green) 10%, var(--btn-bg));
+}
 .aprs-summary {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -1895,7 +1902,7 @@ button:focus-visible, input:focus-visible, select:focus-visible {
     min-width: 0;
   }
   #tab-main,
-  #tab-plugins,
+  #tab-decoders,
   #tab-map,
   #tab-about {
     scroll-margin-top: 0.75rem;

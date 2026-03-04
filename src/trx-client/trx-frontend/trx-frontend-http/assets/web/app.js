@@ -4978,7 +4978,7 @@ window.ft8MapAddLocator = function(message, grids, type = "ft8", station = null,
   applyMapFilter();
 };
 
-// --- Sub-tab navigation (Plugins tab) ---
+// --- Sub-tab navigation (Decoders tab) ---
 document.querySelectorAll(".sub-tab-bar").forEach((bar) => {
   bar.addEventListener("click", (e) => {
     const btn = e.target.closest(".sub-tab[data-subtab]");

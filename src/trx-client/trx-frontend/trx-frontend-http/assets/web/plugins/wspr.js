@@ -3,9 +3,13 @@ const wsprStatus = document.getElementById("wspr-status");
 const wsprPeriodEl = document.getElementById("wspr-period");
 const wsprMessagesEl = document.getElementById("wspr-messages");
 const wsprFilterInput = document.getElementById("wspr-filter");
+const wsprPauseBtn = document.getElementById("wspr-pause-btn");
 const WSPR_MAX_MESSAGES = 200;
 const WSPR_PERIOD_SECONDS = 120;
 let wsprFilterText = "";
+let wsprMessageHistory = [];
+let wsprPaused = false;
+let wsprBufferedWhilePaused = 0;
 
 function fmtWsprTime(tsMs) {
   if (!tsMs) return "--:--:--";
@@ -39,11 +43,33 @@ function renderWsprRow(msg) {
   return row;
 }
 
-function addWsprMessage(msg) {
-  wsprMessagesEl.prepend(renderWsprRow(msg));
-  while (wsprMessagesEl.children.length > WSPR_MAX_MESSAGES) {
-    wsprMessagesEl.removeChild(wsprMessagesEl.lastChild);
+function updateWsprPauseUi() {
+  if (!wsprPauseBtn) return;
+  wsprPauseBtn.textContent = wsprPaused ? "Resume" : "Pause";
+  wsprPauseBtn.classList.toggle("active", wsprPaused);
+}
+
+function renderWsprHistory() {
+  if (!wsprMessagesEl || wsprPaused) {
+    updateWsprPauseUi();
+    return;
   }
+  wsprMessagesEl.innerHTML = "";
+  for (let i = 0; i < wsprMessageHistory.length; i += 1) {
+    wsprMessagesEl.appendChild(renderWsprRow(wsprMessageHistory[i]));
+  }
+  updateWsprPauseUi();
+}
+
+function addWsprMessage(msg) {
+  wsprMessageHistory.unshift(msg);
+  if (wsprMessageHistory.length > WSPR_MAX_MESSAGES) wsprMessageHistory.length = WSPR_MAX_MESSAGES;
+  if (wsprPaused) {
+    wsprBufferedWhilePaused += 1;
+    updateWsprPauseUi();
+    return;
+  }
+  renderWsprHistory();
 }
 
 function escapeWsprHtml(input) {
@@ -96,13 +122,28 @@ function applyWsprFilterToAll() {
 
 window.resetWsprHistoryView = function() {
   wsprMessagesEl.innerHTML = "";
+  wsprMessageHistory = [];
+  wsprBufferedWhilePaused = 0;
+  renderWsprHistory();
   if (window.clearMapMarkersByType) window.clearMapMarkersByType("wspr");
 };
 
 if (wsprFilterInput) {
   wsprFilterInput.addEventListener("input", () => {
     wsprFilterText = wsprFilterInput.value.trim().toUpperCase();
-    applyWsprFilterToAll();
+    renderWsprHistory();
+  });
+}
+
+if (wsprPauseBtn) {
+  wsprPauseBtn.addEventListener("click", () => {
+    wsprPaused = !wsprPaused;
+    if (!wsprPaused) {
+      wsprBufferedWhilePaused = 0;
+      renderWsprHistory();
+    } else {
+      updateWsprPauseUi();
+    }
   });
 }
 
@@ -120,7 +161,7 @@ document.getElementById("wspr-clear-btn").addEventListener("click", async () => 
 });
 
 window.onServerWspr = function(msg) {
-  wsprStatus.textContent = "Receiving";
+  wsprStatus.textContent = wsprPaused ? "Paused" : "Receiving";
   const raw = (msg.message || "").toString();
   const grids = extractAllGrids(raw);
   const station = extractLikelyCallsign(raw);
@@ -143,3 +184,5 @@ window.onServerWspr = function(msg) {
     message: raw,
   });
 };
+
+updateWsprPauseUi();

@@ -1,6 +1,7 @@
 // --- CW (Morse) Decoder Plugin (server-side decode) ---
 const cwStatusEl = document.getElementById("cw-status");
 const cwOutputEl = document.getElementById("cw-output");
+const cwPauseBtn = document.getElementById("cw-pause-btn");
 const cwAutoInput = document.getElementById("cw-auto");
 const cwWpmInput = document.getElementById("cw-wpm");
 const cwToneInput = document.getElementById("cw-tone");
@@ -15,6 +16,8 @@ const CW_WPM_MIN = 5;
 const CW_WPM_MAX = 40;
 let cwLastAppendTime = 0;
 let cwTonePickerRaf = null;
+let cwPaused = false;
+let cwBufferedWhilePaused = 0;
 
 function applyCwAutoUi(enabled) {
   if (cwAutoInput) cwAutoInput.checked = enabled;
@@ -242,8 +245,16 @@ if (cwToneCanvas) {
 window.resetCwHistoryView = function() {
   if (cwOutputEl) cwOutputEl.innerHTML = "";
   cwLastAppendTime = 0;
+  cwBufferedWhilePaused = 0;
+  updateCwPauseUi();
   drawCwTonePicker();
 };
+
+function updateCwPauseUi() {
+  if (!cwPauseBtn) return;
+  cwPauseBtn.textContent = cwPaused ? "Resume" : "Pause";
+  cwPauseBtn.classList.toggle("active", cwPaused);
+}
 
 document.getElementById("cw-clear-btn").addEventListener("click", async () => {
   try {
@@ -256,8 +267,8 @@ document.getElementById("cw-clear-btn").addEventListener("click", async () => {
 
 // --- Server-side CW decode handler ---
 window.onServerCw = function(evt) {
-  if (cwStatusEl) cwStatusEl.textContent = "Receiving";
-  if (evt.text && cwOutputEl) {
+  if (cwStatusEl) cwStatusEl.textContent = cwPaused ? "Paused" : "Receiving";
+  if (evt.text && cwOutputEl && !cwPaused) {
     // Append decoded text to output
     const now = Date.now();
     if (!cwOutputEl.lastElementChild || now - cwLastAppendTime > 10000 || evt.text === "\n") {
@@ -278,6 +289,9 @@ window.onServerCw = function(evt) {
   if (cwSignalIndicator) {
     cwSignalIndicator.className = evt.signal_on ? "cw-signal-on" : "cw-signal-off";
   }
+  if (cwPaused && evt.text) {
+    cwBufferedWhilePaused += 1;
+  }
   if (!cwAutoInput || cwAutoInput.checked) {
     if (cwWpmInput && Number.isFinite(Number(evt.wpm))) {
       cwWpmInput.value = clampCwWpm(evt.wpm);
@@ -293,10 +307,21 @@ window.onServerCw = function(evt) {
   });
 };
 
+if (cwPauseBtn) {
+  cwPauseBtn.addEventListener("click", () => {
+    cwPaused = !cwPaused;
+    if (!cwPaused) {
+      cwBufferedWhilePaused = 0;
+    }
+    updateCwPauseUi();
+  });
+}
+
 window.refreshCwTonePicker = drawCwTonePicker;
 window.addEventListener("resize", () => {
   if (ensureCwToneCanvasResolution()) drawCwTonePicker();
 });
 applyCwAutoUi(!!cwAutoInput?.checked);
+updateCwPauseUi();
 ensureCwToneCanvasResolution();
 drawCwTonePicker();

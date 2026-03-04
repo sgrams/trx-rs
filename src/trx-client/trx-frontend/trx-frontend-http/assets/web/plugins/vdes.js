@@ -2,6 +2,7 @@
 const vdesStatus = document.getElementById("vdes-status");
 const vdesMessagesEl = document.getElementById("vdes-messages");
 const vdesFilterInput = document.getElementById("vdes-filter");
+const vdesPauseBtn = document.getElementById("vdes-pause-btn");
 const vdesClearBtn = document.getElementById("vdes-clear-btn");
 const vdesBarOverlay = document.getElementById("vdes-bar-overlay");
 const vdesChannelSummaryEl = document.getElementById("vdes-channel-summary");
@@ -11,6 +12,8 @@ const VDES_MAX_MESSAGES = 200;
 const VDES_BAR_WINDOW_MS = 15 * 60 * 1000;
 let vdesFilterText = "";
 let vdesMessageHistory = [];
+let vdesPaused = false;
+let vdesBufferedWhilePaused = 0;
 
 function currentVdesCenterText() {
   const raw = (document.getElementById("freq")?.value || "").replace(/[^\d]/g, "");
@@ -46,11 +49,19 @@ function updateVdesSummary() {
   }
   if (vdesFrameCountEl) {
     const count = vdesMessageHistory.length;
-    vdesFrameCountEl.textContent = `${count} burst${count === 1 ? "" : "s"}`;
+    let text = `${count} burst${count === 1 ? "" : "s"}`;
+    if (vdesPaused && vdesBufferedWhilePaused > 0) {
+      text += ` · ${vdesBufferedWhilePaused} buffered`;
+    }
+    vdesFrameCountEl.textContent = text;
   }
   if (vdesLatestSeenEl) {
     const latest = vdesMessageHistory[0];
     vdesLatestSeenEl.textContent = latest ? vdesAgeText(latest._tsMs) : "No traffic yet";
+  }
+  if (vdesPauseBtn) {
+    vdesPauseBtn.textContent = vdesPaused ? "Resume" : "Pause";
+    vdesPauseBtn.classList.toggle("active", vdesPaused);
   }
 }
 
@@ -195,8 +206,22 @@ window.clearVdesBar = function() {
 window.resetVdesHistoryView = function() {
   if (vdesMessagesEl) vdesMessagesEl.innerHTML = "";
   vdesMessageHistory = [];
+  vdesBufferedWhilePaused = 0;
   updateVdesBar();
+  renderVdesHistory();
 };
+
+function renderVdesHistory() {
+  if (!vdesMessagesEl || vdesPaused) {
+    updateVdesSummary();
+    return;
+  }
+  vdesMessagesEl.innerHTML = "";
+  for (let i = 0; i < vdesMessageHistory.length; i += 1) {
+    vdesMessagesEl.appendChild(renderVdesRow(vdesMessageHistory[i]));
+  }
+  updateVdesSummary();
+}
 
 function addVdesMessage(msg) {
   const tsMs = Number.isFinite(msg.ts_ms) ? Number(msg.ts_ms) : Date.now();
@@ -211,12 +236,11 @@ function addVdesMessage(msg) {
   if (vdesMessageHistory.length > VDES_MAX_MESSAGES) vdesMessageHistory.length = VDES_MAX_MESSAGES;
   updateVdesBar();
 
-  if (vdesMessagesEl) {
-    const row = renderVdesRow(msg);
-    vdesMessagesEl.prepend(row);
-    while (vdesMessagesEl.children.length > VDES_MAX_MESSAGES) {
-      vdesMessagesEl.removeChild(vdesMessagesEl.lastChild);
-    }
+  if (vdesPaused) {
+    vdesBufferedWhilePaused += 1;
+    updateVdesSummary();
+  } else {
+    renderVdesHistory();
   }
 }
 
@@ -231,15 +255,27 @@ if (vdesClearBtn) {
   });
 }
 
+if (vdesPauseBtn) {
+  vdesPauseBtn.addEventListener("click", () => {
+    vdesPaused = !vdesPaused;
+    if (!vdesPaused) {
+      vdesBufferedWhilePaused = 0;
+      renderVdesHistory();
+    } else {
+      updateVdesSummary();
+    }
+  });
+}
+
 if (vdesFilterInput) {
   vdesFilterInput.addEventListener("input", () => {
     vdesFilterText = vdesFilterInput.value.trim().toUpperCase();
-    applyVdesFilterToAll();
+    renderVdesHistory();
   });
 }
 
 window.onServerVdes = function(msg) {
-  if (vdesStatus) vdesStatus.textContent = "Receiving";
+  if (vdesStatus) vdesStatus.textContent = vdesPaused ? "Paused" : "Receiving";
   addVdesMessage({
     message_type: msg.message_type,
     bit_len: msg.bit_len,

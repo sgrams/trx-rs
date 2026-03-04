@@ -30,7 +30,7 @@
         <div class="tab-bar-nav">
           <button class="tab active" data-tab="main">Main</button>
           <button class="tab" data-tab="bookmarks">Bookmarks</button>
-          <button class="tab" data-tab="plugins">Plugins</button>
+          <button class="tab" data-tab="decoders">Decoders</button>
           <button class="tab" data-tab="map">Map</button>
           <button class="tab" data-tab="about">About</button>
         </div>
@@ -353,7 +353,7 @@
         <div id="bm-empty" class="bm-empty" style="display:none;">No bookmarks yet. Click <strong>+ Add Bookmark</strong> to save a frequency.</div>
       </div>
     </div>
-    <div id="tab-plugins" class="tab-panel" style="display:none;">
+    <div id="tab-decoders" class="tab-panel" style="display:none;">
       <div class="sub-tab-bar">
         <button class="sub-tab active" data-subtab="overview">Overview</button>
         <button class="sub-tab" data-subtab="ais">AIS</button>
@@ -435,6 +435,7 @@
       </div>
       <div id="subtab-ais" class="sub-tab-panel" style="display:none;">
         <div class="aprs-controls">
+          <button id="ais-pause-btn" type="button">Pause</button>
           <button id="ais-clear-btn" type="button">Clear</button>
           <input id="ais-filter" class="ft8-filter" type="text" placeholder="Filter (e.g. MMSI, vessel, A)" />
           <small id="ais-status" style="color:var(--text-muted);">Waiting for server decode</small>
@@ -457,6 +458,7 @@
       </div>
       <div id="subtab-vdes" class="sub-tab-panel" style="display:none;">
         <div class="aprs-controls">
+          <button id="vdes-pause-btn" type="button">Pause</button>
           <button id="vdes-clear-btn" type="button">Clear</button>
           <input id="vdes-filter" class="ft8-filter" type="text" placeholder="Filter (e.g. frame, RMS, payload)" />
           <small id="vdes-status" style="color:var(--text-muted);">Waiting for server decode</small>
@@ -516,6 +518,7 @@
       <div id="subtab-ft8" class="sub-tab-panel" style="display:none;">
         <div class="ft8-controls">
           <button id="ft8-decode-toggle-btn" type="button">Enable FT8</button>
+          <button id="ft8-pause-btn" type="button">Pause</button>
           <button id="ft8-clear-btn" type="button">Clear</button>
           <input id="ft8-filter" class="ft8-filter" type="text" placeholder="Filter (e.g. CQ, DL4)" />
           <small id="ft8-status" style="color:var(--text-muted);">Waiting for server decode</small>
@@ -533,6 +536,7 @@
       <div id="subtab-wspr" class="sub-tab-panel" style="display:none;">
         <div class="ft8-controls">
           <button id="wspr-decode-toggle-btn" type="button">Enable WSPR</button>
+          <button id="wspr-pause-btn" type="button">Pause</button>
           <button id="wspr-clear-btn" type="button">Clear</button>
           <input id="wspr-filter" class="ft8-filter" type="text" placeholder="Filter (e.g. K1ABC, FN31)" />
           <small id="wspr-status" style="color:var(--text-muted);">Waiting for server decode</small>
@@ -549,6 +553,7 @@
       </div>
       <div id="subtab-cw" class="sub-tab-panel" style="display:none;">
         <div class="cw-controls">
+          <button id="cw-pause-btn" type="button">Pause</button>
           <button id="cw-clear-btn" type="button">Clear</button>
           <small id="cw-status" style="color:var(--text-muted);">Waiting for server decode</small>
           <div id="cw-signal-indicator" class="cw-signal-off"></div>

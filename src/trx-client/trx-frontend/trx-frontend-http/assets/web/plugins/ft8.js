@@ -3,12 +3,15 @@ const ft8Status = document.getElementById("ft8-status");
 const ft8PeriodEl = document.getElementById("ft8-period");
 const ft8MessagesEl = document.getElementById("ft8-messages");
 const ft8FilterInput = document.getElementById("ft8-filter");
+const ft8PauseBtn = document.getElementById("ft8-pause-btn");
 const ft8BarOverlay = document.getElementById("ft8-bar-overlay");
 const FT8_MAX_MESSAGES = 200;
 const FT8_BAR_WINDOW_MS = 15 * 60 * 1000;
 const FT8_PERIOD_SECONDS = 15;
 let ft8FilterText = "";
 let ft8MessageHistory = [];
+let ft8Paused = false;
+let ft8BufferedWhilePaused = 0;
 
 function normalizeFt8DisplayFreqHz(freqHz) {
   const rawHz = Number(freqHz);
@@ -51,14 +54,34 @@ function renderFt8Row(msg) {
   return row;
 }
 
+function updateFt8PauseUi() {
+  if (!ft8PauseBtn) return;
+  ft8PauseBtn.textContent = ft8Paused ? "Resume" : "Pause";
+  ft8PauseBtn.classList.toggle("active", ft8Paused);
+}
+
+function renderFt8History() {
+  if (!ft8MessagesEl || ft8Paused) {
+    updateFt8PauseUi();
+    return;
+  }
+  ft8MessagesEl.innerHTML = "";
+  for (let i = 0; i < ft8MessageHistory.length; i += 1) {
+    ft8MessagesEl.appendChild(renderFt8Row(ft8MessageHistory[i]));
+  }
+  updateFt8PauseUi();
+}
+
 function addFt8Message(msg) {
   ft8MessageHistory.unshift(msg);
   if (ft8MessageHistory.length > FT8_MAX_MESSAGES) ft8MessageHistory.length = FT8_MAX_MESSAGES;
   updateFt8Bar();
-  ft8MessagesEl.prepend(renderFt8Row(msg));
-  while (ft8MessagesEl.children.length > FT8_MAX_MESSAGES) {
-    ft8MessagesEl.removeChild(ft8MessagesEl.lastChild);
+  if (ft8Paused) {
+    ft8BufferedWhilePaused += 1;
+    updateFt8PauseUi();
+    return;
   }
+  renderFt8History();
 }
 
 function ft8BarRfText(msg) {
@@ -202,14 +225,28 @@ window.updateFt8RfDisplay = function() {
 window.resetFt8HistoryView = function() {
   ft8MessagesEl.innerHTML = "";
   ft8MessageHistory = [];
+  ft8BufferedWhilePaused = 0;
   updateFt8Bar();
+  renderFt8History();
   if (window.clearMapMarkersByType) window.clearMapMarkersByType("ft8");
 };
 
 if (ft8FilterInput) {
   ft8FilterInput.addEventListener("input", () => {
     ft8FilterText = ft8FilterInput.value.trim().toUpperCase();
-    applyFt8FilterToAll();
+    renderFt8History();
+  });
+}
+
+if (ft8PauseBtn) {
+  ft8PauseBtn.addEventListener("click", () => {
+    ft8Paused = !ft8Paused;
+    if (!ft8Paused) {
+      ft8BufferedWhilePaused = 0;
+      renderFt8History();
+    } else {
+      updateFt8PauseUi();
+    }
   });
 }
 
@@ -228,7 +265,7 @@ document.getElementById("ft8-clear-btn").addEventListener("click", async () => {
 
 // --- Server-side FT8 decode handler ---
 window.onServerFt8 = function(msg) {
-  ft8Status.textContent = "Receiving";
+  ft8Status.textContent = ft8Paused ? "Paused" : "Receiving";
   const raw = (msg.message || "").toString();
   const grids = extractAllGrids(raw);
   const station = extractLikelyCallsign(raw);
@@ -251,3 +288,5 @@ window.onServerFt8 = function(msg) {
     message: msg.message,
   });
 };
+
+updateFt8PauseUi();

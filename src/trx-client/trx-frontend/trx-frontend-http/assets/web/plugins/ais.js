@@ -2,6 +2,7 @@
 const aisStatus = document.getElementById("ais-status");
 const aisMessagesEl = document.getElementById("ais-messages");
 const aisFilterInput = document.getElementById("ais-filter");
+const aisPauseBtn = document.getElementById("ais-pause-btn");
 const aisClearBtn = document.getElementById("ais-clear-btn");
 const aisBarOverlay = document.getElementById("ais-bar-overlay");
 const aisChannelSummaryEl = document.getElementById("ais-channel-summary");
@@ -13,6 +14,8 @@ const AIS_DEFAULT_A_HZ = 161_975_000;
 const AIS_CHANNEL_SPACING_HZ = 50_000;
 let aisFilterText = "";
 let aisMessageHistory = [];
+let aisPaused = false;
+let aisBufferedWhilePaused = 0;
 
 function formatAisMhz(freqHz) {
   return `${(freqHz / 1_000_000).toFixed(3)} MHz`;
@@ -132,7 +135,11 @@ function updateAisSummary() {
   const vessels = aisLatestByVessel(aisMessageHistory);
   if (aisVesselCountEl) {
     const count = vessels.length;
-    aisVesselCountEl.textContent = `${count} vessel${count === 1 ? "" : "s"}`;
+    let text = `${count} vessel${count === 1 ? "" : "s"}`;
+    if (aisPaused && aisBufferedWhilePaused > 0) {
+      text += ` · ${aisBufferedWhilePaused} buffered`;
+    }
+    aisVesselCountEl.textContent = text;
   }
 
   if (aisLatestSeenEl) {
@@ -143,6 +150,10 @@ function updateAisSummary() {
       const channel = aisChannelInfo(latest.channel);
       aisLatestSeenEl.textContent = `${channel.label} ${aisAgeText(latest._tsMs)}`;
     }
+  }
+  if (aisPauseBtn) {
+    aisPauseBtn.textContent = aisPaused ? "Resume" : "Pause";
+    aisPauseBtn.classList.toggle("active", aisPaused);
   }
 }
 
@@ -261,9 +272,23 @@ window.clearAisBar = function() {
 window.resetAisHistoryView = function() {
   if (aisMessagesEl) aisMessagesEl.innerHTML = "";
   aisMessageHistory = [];
+  aisBufferedWhilePaused = 0;
   updateAisBar();
+  renderAisHistory();
   if (window.clearMapMarkersByType) window.clearMapMarkersByType("ais");
 };
+
+function renderAisHistory() {
+  if (!aisMessagesEl || aisPaused) {
+    updateAisSummary();
+    return;
+  }
+  aisMessagesEl.innerHTML = "";
+  for (let i = 0; i < aisMessageHistory.length; i += 1) {
+    aisMessagesEl.appendChild(renderAisRow(aisMessageHistory[i]));
+  }
+  updateAisSummary();
+}
 
 function addAisMessage(msg) {
   const tsMs = Number.isFinite(msg.ts_ms) ? Number(msg.ts_ms) : Date.now();
@@ -278,12 +303,11 @@ function addAisMessage(msg) {
   if (aisMessageHistory.length > AIS_MAX_MESSAGES) aisMessageHistory.length = AIS_MAX_MESSAGES;
   updateAisBar();
 
-  if (aisMessagesEl) {
-    const row = renderAisRow(msg);
-    aisMessagesEl.prepend(row);
-    while (aisMessagesEl.children.length > AIS_MAX_MESSAGES) {
-      aisMessagesEl.removeChild(aisMessagesEl.lastChild);
-    }
+  if (aisPaused) {
+    aisBufferedWhilePaused += 1;
+    updateAisSummary();
+  } else {
+    renderAisHistory();
   }
 
   if (msg.lat != null && msg.lon != null && window.aisMapAddVessel) {
@@ -302,15 +326,27 @@ if (aisClearBtn) {
   });
 }
 
+if (aisPauseBtn) {
+  aisPauseBtn.addEventListener("click", () => {
+    aisPaused = !aisPaused;
+    if (!aisPaused) {
+      aisBufferedWhilePaused = 0;
+      renderAisHistory();
+    } else {
+      updateAisSummary();
+    }
+  });
+}
+
 if (aisFilterInput) {
   aisFilterInput.addEventListener("input", () => {
     aisFilterText = aisFilterInput.value.trim().toUpperCase();
-    applyAisFilterToAll();
+    renderAisHistory();
   });
 }
 
 window.onServerAis = function(msg) {
-  if (aisStatus) aisStatus.textContent = "Receiving";
+  if (aisStatus) aisStatus.textContent = aisPaused ? "Paused" : "Receiving";
   addAisMessage({
     channel: msg.channel,
     message_type: msg.message_type,
