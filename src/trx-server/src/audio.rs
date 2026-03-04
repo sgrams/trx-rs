@@ -41,6 +41,7 @@ const VDES_HISTORY_RETENTION: Duration = Duration::from_secs(24 * 60 * 60);
 const FT8_HISTORY_RETENTION: Duration = Duration::from_secs(24 * 60 * 60);
 const WSPR_HISTORY_RETENTION: Duration = Duration::from_secs(24 * 60 * 60);
 const FT8_SAMPLE_RATE: u32 = 12_000;
+const DECODE_AUDIO_GATE_RMS: f32 = 2.5e-4;
 const AUDIO_STREAM_ERROR_LOG_INTERVAL: Duration = Duration::from_secs(60);
 const AUDIO_STREAM_RECOVERY_DELAY: Duration = Duration::from_secs(1);
 
@@ -824,7 +825,7 @@ pub async fn run_aprs_decoder(
                         }
 
                         // Downmix to mono if stereo
-                        let mono = if channels > 1 {
+                        let mut mono = if channels > 1 {
                             let num_frames = frame.len() / channels as usize;
                             let mut mono = Vec::with_capacity(num_frames);
                             for i in 0..num_frames {
@@ -834,6 +835,7 @@ pub async fn run_aprs_decoder(
                         } else {
                             frame
                         };
+                        apply_decode_audio_gate(&mut mono);
 
                         was_active = true;
                         for pkt in decoder.process_samples(&mono) {
@@ -1125,7 +1127,7 @@ pub async fn run_cw_decoder(
                         }
 
                         // Downmix to mono if stereo
-                        let mono = if channels > 1 {
+                        let mut mono = if channels > 1 {
                             let num_frames = frame.len() / channels as usize;
                             let mut mono = Vec::with_capacity(num_frames);
                             for i in 0..num_frames {
@@ -1135,6 +1137,7 @@ pub async fn run_cw_decoder(
                         } else {
                             frame
                         };
+                        apply_decode_audio_gate(&mut mono);
 
                         was_active = true;
                         for evt in decoder.process_samples(&mono) {
@@ -1198,6 +1201,27 @@ fn downmix_mono(frame: Vec<f32>, channels: u16) -> Vec<f32> {
         mono.push(frame[i * channels as usize]);
     }
     mono
+}
+
+fn frame_rms(samples: &[f32]) -> f32 {
+    if samples.is_empty() {
+        return 0.0;
+    }
+    let mut sum_sq = 0.0f32;
+    for &sample in samples {
+        sum_sq += sample * sample;
+    }
+    (sum_sq / samples.len() as f32).sqrt()
+}
+
+fn apply_decode_audio_gate(samples: &mut [f32]) -> bool {
+    if frame_rms(samples) >= DECODE_AUDIO_GATE_RMS {
+        return false;
+    }
+    for sample in samples {
+        *sample = 0.0;
+    }
+    true
 }
 
 fn resample_to_12k(samples: &[f32], sample_rate: u32) -> Option<Vec<f32>> {
@@ -1291,7 +1315,8 @@ pub async fn run_ft8_decoder(
                             ft8_buf.clear();
                         }
 
-                        let mono = downmix_mono(frame, channels);
+                        let mut mono = downmix_mono(frame, channels);
+                        apply_decode_audio_gate(&mut mono);
                         let Some(resampled) = resample_to_12k(&mono, sample_rate) else {
                             warn!("FT8 decoder: unsupported sample rate {}", sample_rate);
                             break;
@@ -1452,7 +1477,8 @@ pub async fn run_wspr_decoder(
                             last_slot = slot;
                         }
 
-                        let mono = downmix_mono(frame, channels);
+                        let mut mono = downmix_mono(frame, channels);
+                        apply_decode_audio_gate(&mut mono);
                         let Some(resampled) = resample_to_12k(&mono, sample_rate) else {
                             warn!("WSPR decoder: unsupported sample rate {}", sample_rate);
                             break;
