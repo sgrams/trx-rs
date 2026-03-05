@@ -6973,6 +6973,10 @@ function handleSpectrumWheel(e, canvasEl) {
 }
 
 function handleSpectrumClick(e, canvasEl) {
+  if (_sDragMoved) {
+    _sDragMoved = false;
+    return;
+  }
   if (!lastSpectrumData || !canvasEl) return;
   const rect = canvasEl.getBoundingClientRect();
   const cssX = e.clientX - rect.left;
@@ -7043,29 +7047,39 @@ function getBwEdgeHit(cssX, cssW, range) {
 // ── Mouse drag to pan / BW resize ─────────────────────────────────────────────
 let _sDragStart = null;  // { clientX, panFrac }
 let _sDragMoved = false;
+let _sDragCanvas = null;
+
+function onSpectrumMouseDown(e, canvasEl) {
+  if (!canvasEl || e.button !== 0) return;
+  if (lastSpectrumData) {
+    const rect = canvasEl.getBoundingClientRect();
+    const cssX = e.clientX - rect.left;
+    const range = spectrumVisibleRange(lastSpectrumData);
+    const edge = getBwEdgeHit(cssX, rect.width, range);
+    if (edge) {
+      _bwDragEdge = edge;
+      _bwDragStartX = cssX;
+      _bwDragStartBwHz = currentBandwidthHz;
+      _bwDragCanvas = canvasEl;
+      _sDragStart = null;
+      _sDragCanvas = null;
+      _sDragMoved = true; // suppress click-to-tune
+      return;
+    }
+  }
+  _sDragStart = { clientX: e.clientX, panFrac: spectrumPanFrac };
+  _sDragCanvas = canvasEl;
+  _sDragMoved = false;
+}
 
 if (spectrumCanvas) {
-  spectrumCanvas.addEventListener("mousedown", (e) => {
-    if (e.button !== 0) return;
-    if (lastSpectrumData) {
-      const rect  = spectrumCanvas.getBoundingClientRect();
-      const cssX  = e.clientX - rect.left;
-      const range = spectrumVisibleRange(lastSpectrumData);
-      const edge  = getBwEdgeHit(cssX, rect.width, range);
-      if (edge) {
-        _bwDragEdge      = edge;
-        _bwDragStartX    = cssX;
-        _bwDragStartBwHz = currentBandwidthHz;
-        _bwDragCanvas    = spectrumCanvas;
-        _sDragStart      = null;
-        _sDragMoved      = true; // suppress click-to-tune
-        return;
-      }
-    }
-    _sDragStart = { clientX: e.clientX, panFrac: spectrumPanFrac };
-    _sDragMoved = false;
-  });
+  spectrumCanvas.addEventListener("mousedown", (e) => { onSpectrumMouseDown(e, spectrumCanvas); });
+}
+if (overviewCanvas) {
+  overviewCanvas.addEventListener("mousedown", (e) => { onSpectrumMouseDown(e, overviewCanvas); });
+}
 
+if (spectrumCanvas || overviewCanvas) {
   window.addEventListener("mousemove", (e) => {
     if (_bwDragEdge && lastSpectrumData) {
       const dragCanvas = _bwDragCanvas || spectrumCanvas;
@@ -7095,7 +7109,9 @@ if (spectrumCanvas) {
       return;
     }
     if (!_sDragStart || !lastSpectrumData) return;
-    const rect  = spectrumCanvas.getBoundingClientRect();
+    const dragCanvas = _sDragCanvas || spectrumCanvas || overviewCanvas;
+    if (!dragCanvas) return;
+    const rect  = dragCanvas.getBoundingClientRect();
     const dx    = e.clientX - _sDragStart.clientX;
     if (Math.abs(dx) > 3) _sDragMoved = true;
     spectrumPanFrac = _sDragStart.panFrac - (dx / rect.width) / spectrumZoom;
@@ -7115,6 +7131,7 @@ if (spectrumCanvas) {
       return;
     }
     _sDragStart = null;
+    _sDragCanvas = null;
   });
 }
 
@@ -7213,7 +7230,6 @@ if (spectrumCanvas) {
 // ── Click to tune (only when not dragging) ────────────────────────────────────
 if (spectrumCanvas) {
   spectrumCanvas.addEventListener("click", (e) => {
-    if (_sDragMoved) { _sDragMoved = false; return; }
     handleSpectrumClick(e, spectrumCanvas);
   });
 }
