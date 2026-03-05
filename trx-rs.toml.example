@@ -128,6 +128,12 @@ wspr_file = "TRXRS-WSPR-%YYYY%-%MM%-%DD%.log"
 # mode  = "auto"
 # value = 30.0
 #
+# [trx-server.sdr.squelch]
+# enabled       = false
+# threshold_db  = -65.0
+# hysteresis_db = 3.0
+# tail_ms       = 180
+#
 # [[trx-server.sdr.channels]]
 # id               = "primary"
 # offset_hz        = 0

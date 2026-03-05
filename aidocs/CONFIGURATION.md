@@ -122,6 +122,12 @@ Notes:
 - `mode` (`string`, default: `"auto"`): `"auto"` enables hardware AGC (falls back to `"manual"` with a warning if the device does not support it); `"manual"` uses the fixed `value`.
 - `value` (`f64`, default: `30.0`): Gain in dB. Used only when `mode = "manual"`.
 
+### `[sdr.squelch]`
+- `enabled` (`bool`, default: `false`): Enables virtual software squelch for demodulated audio except WFM on the primary SDR channel.
+- `threshold_db` (`f32`, default: `-65.0`, valid: `-140..=0`): Open threshold in dBFS.
+- `hysteresis_db` (`f32`, default: `3.0`, valid: `0..=40`): Close hysteresis in dB.
+- `tail_ms` (`u32`, default: `180`, valid: `0..=10000`): Tail hold time after signal drops below threshold.
+
 ### `[[sdr.channels]]`
 
 Defines one virtual receiver channel within the wideband IQ stream. At least one channel is required when using the `soapysdr` backend. The **first** channel in the list is the *primary* channel: `set_freq` and `set_mode` from rig control apply to it, and `get_status` reads from it.

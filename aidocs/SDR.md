@@ -224,6 +224,18 @@ value = 30.0      # dB; ignored when mode = "auto"
 
 Advanced per-element gain is out of scope for this phase (no `lna`/`vga`/`if` sub-keys initially).
 
+### 4.1 Virtual Squelch
+
+Software squelch is configured globally under `[sdr.squelch]` and currently applies to the primary channel's demodulated audio path except WFM.
+
+```toml
+[sdr.squelch]
+enabled       = false
+threshold_db  = -65.0   # dBFS open threshold
+hysteresis_db = 3.0     # dB close hysteresis
+tail_ms       = 180     # hold time after signal drops
+```
+
 ---
 
 ## 5. Filter Configuration
@@ -310,6 +322,12 @@ center_offset_hz = 200000      # SDR tunes this many Hz below dial frequency
 [sdr.gain]
 mode  = "auto"
 value = 30.0                   # Effective only when mode = "manual"
+
+[sdr.squelch]
+enabled       = false
+threshold_db  = -65.0
+hysteresis_db = 3.0
+tail_ms       = 180
 
 [[sdr.channels]]
 id               = "primary"
