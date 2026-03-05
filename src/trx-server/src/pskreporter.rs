@@ -205,6 +205,12 @@ fn parse_sender_callsign_ft8(message: &str) -> Option<String> {
             }
         }
     }
+    // Directed FT8/FT4-style messages are usually "<target> <source> ...".
+    if let (Some(first), Some(second)) = (tokens.first(), tokens.get(1)) {
+        if is_callsign(first) && is_callsign(second) {
+            return Some(second.clone());
+        }
+    }
     tokens.into_iter().find(|t| is_callsign(t))
 }
 
@@ -439,6 +445,14 @@ mod tests {
     fn parses_ft8_sender_and_locator() {
         assert_eq!(
             parse_sender_callsign_ft8("CQ SP2SJG JO93"),
+            Some("SP2SJG".to_string())
+        );
+        assert_eq!(
+            parse_sender_callsign_ft8("K1ABC SP2SJG JO93"),
+            Some("SP2SJG".to_string())
+        );
+        assert_eq!(
+            parse_sender_callsign_ft8("K1ABC SP2SJG -07"),
             Some("SP2SJG".to_string())
         );
         assert_eq!(parse_locator("CQ SP2SJG JO93"), Some("JO93".to_string()));

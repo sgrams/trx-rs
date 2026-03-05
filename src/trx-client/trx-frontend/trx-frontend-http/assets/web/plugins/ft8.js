@@ -168,15 +168,33 @@ function extractAllGrids(message) {
 }
 
 function extractLikelyCallsign(message) {
-  const parts = String(message || "").toUpperCase().split(/[^A-Z0-9/]+/);
-  for (const token of parts) {
-    if (!token) continue;
-    if (token.length < 3 || token.length > 12) continue;
-    if (token === "CQ" || token === "DE" || token === "QRZ" || token === "DX") continue;
-    if (isMaidenheadGridToken(token)) continue;
-    if (/^[A-Z0-9/]{1,5}\d[A-Z0-9/]{1,6}$/.test(token)) return token;
+  const tokens = String(message || "")
+    .toUpperCase()
+    .split(/[^A-Z0-9/]+/)
+    .filter(Boolean);
+  if (tokens.length === 0) return null;
+  const head = tokens[0];
+  if (head === "CQ" || head === "DE" || head === "QRZ") {
+    if (isLikelyCallsignToken(tokens[1])) return tokens[1];
+    for (let i = 1; i < tokens.length; i += 1) {
+      if (isLikelyCallsignToken(tokens[i])) return tokens[i];
+    }
+    return null;
+  }
+  // Directed messages are usually "<target> <source> ...".
+  if (isLikelyCallsignToken(tokens[0]) && isLikelyCallsignToken(tokens[1])) return tokens[1];
+  for (const token of tokens) {
+    if (isLikelyCallsignToken(token)) return token;
   }
   return null;
+}
+
+function isLikelyCallsignToken(token) {
+  if (!token) return false;
+  if (token.length < 3 || token.length > 12) return false;
+  if (token === "CQ" || token === "DE" || token === "QRZ" || token === "DX") return false;
+  if (isMaidenheadGridToken(token)) return false;
+  return /^[A-Z0-9/]{1,5}\d[A-Z0-9/]{1,6}$/.test(token);
 }
 
 function isFtxFarewellToken(token) {
