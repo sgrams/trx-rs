@@ -171,7 +171,10 @@ pub async fn run_rig_task(
             Ok(()) => {
                 state.control.enabled = Some(true);
                 if let Err(e) = refresh_after_power_on(&mut rig, &mut state, retry).await {
-                    warn!("Initial PowerOn refresh failed after retries (continuing): {}", e);
+                    warn!(
+                        "Initial PowerOn refresh failed after retries (continuing): {}",
+                        e
+                    );
                 } else {
                     initial_status_read = true;
                 }

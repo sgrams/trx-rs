@@ -27,9 +27,12 @@ use trx_core::rig::state::RigMode;
 /// `[behavior]` / `[decode_logs]` fields are still supported via
 /// `ServerConfig::resolved_rigs()` which synthesises a single-element list
 /// with `id = "default"` when `rigs` is empty.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct RigInstanceConfig {
+    /// Whether this rig instance should be started.
+    /// Defaults to true so existing configs remain unchanged.
+    pub enable: bool,
     /// Stable rig identifier used in protocol routing.
     pub id: String,
     /// Display name for the rig (e.g., "HF Transceiver", "VHF/UHF SDR").
@@ -49,6 +52,23 @@ pub struct RigInstanceConfig {
     pub aprsfi: AprsFiConfig,
     /// Decoder file logging for this rig.
     pub decode_logs: DecodeLogsConfig,
+}
+
+impl Default for RigInstanceConfig {
+    fn default() -> Self {
+        Self {
+            enable: true,
+            id: String::new(),
+            name: None,
+            rig: RigConfig::default(),
+            behavior: BehaviorConfig::default(),
+            audio: AudioConfig::default(),
+            sdr: SdrConfig::default(),
+            pskreporter: PskReporterConfig::default(),
+            aprsfi: AprsFiConfig::default(),
+            decode_logs: DecodeLogsConfig::default(),
+        }
+    }
 }
 
 impl RigInstanceConfig {
@@ -502,7 +522,12 @@ impl ServerConfig {
         if !self.rigs.is_empty() {
             let mut seen_ids: std::collections::HashSet<String> = std::collections::HashSet::new();
             let mut seen_ports: std::collections::HashSet<u16> = std::collections::HashSet::new();
+            let mut enabled_count = 0usize;
             for rig in &self.rigs {
+                if !rig.enable {
+                    continue;
+                }
+                enabled_count += 1;
                 // Check for explicit duplicate IDs (empty IDs are auto-generated later).
                 if !rig.id.trim().is_empty() && !seen_ids.insert(rig.id.clone()) {
                     return Err(format!("[[rigs]] duplicate rig id: \"{}\"", rig.id));
@@ -527,6 +552,12 @@ impl ServerConfig {
                         ));
                     }
                 }
+            }
+            if enabled_count == 0 {
+                return Err(
+                    "[[rigs]] has no enabled entries; set at least one [[rigs]].enable = true"
+                        .to_string(),
+                );
             }
         }
 
@@ -631,7 +662,7 @@ impl ServerConfig {
 
     /// Return the effective list of rig instances to spawn.
     ///
-    /// When `[[rigs]]` entries are present they are returned as-is.
+    /// When `[[rigs]]` entries are present, only enabled entries are returned.
     /// Otherwise the legacy flat `[rig]` / `[audio]` / … fields are synthesised
     /// into a single `RigInstanceConfig` with `id = "default"`.
     pub fn resolved_rigs(&self) -> Vec<RigInstanceConfig> {
@@ -641,6 +672,7 @@ impl ServerConfig {
                 .rigs
                 .iter()
                 .enumerate()
+                .filter(|(_, rig)| rig.enable)
                 .map(|(idx, rig)| {
                     let id = if rig.id.trim().is_empty() {
                         // Generate ID from model name with counter.
@@ -655,6 +687,7 @@ impl ServerConfig {
                 .collect();
         }
         vec![RigInstanceConfig {
+            enable: true,
             id: "default".to_string(),
             name: None,
             rig: self.rig.clone(),
@@ -1206,6 +1239,38 @@ port = 4532
     }
 
     #[test]
+    fn test_resolved_rigs_skips_disabled_entries() {
+        let toml_str = r#"
+[[rigs]]
+id = "disabled"
+enable = false
+[rigs.rig]
+model = "ft817"
+[rigs.rig.access]
+type = "serial"
+port = "/dev/ttyUSB0"
+baud = 9600
+[rigs.audio]
+port = 4531
+
+[[rigs]]
+id = "enabled"
+[rigs.rig]
+model = "ft450d"
+[rigs.rig.access]
+type = "serial"
+port = "/dev/ttyUSB1"
+baud = 9600
+[rigs.audio]
+port = 4532
+"#;
+        let cfg: ServerConfig = toml::from_str(toml_str).unwrap();
+        let rigs = cfg.resolved_rigs();
+        assert_eq!(rigs.len(), 1);
+        assert_eq!(rigs[0].id, "enabled");
+    }
+
+    #[test]
     fn test_validate_rejects_duplicate_rig_ids() {
         let toml_str = r#"
 [[rigs]]
@@ -1270,6 +1335,63 @@ port = 4531
         assert!(
             result.unwrap_err().contains("duplicate audio port"),
             "expected error about duplicate audio port"
+        );
+    }
+
+    #[test]
+    fn test_validate_allows_disabled_duplicate_rig_ids() {
+        let toml_str = r#"
+[[rigs]]
+id = "rig1"
+[rigs.rig]
+model = "ft817"
+[rigs.rig.access]
+type = "serial"
+port = "/dev/ttyUSB0"
+baud = 9600
+[rigs.audio]
+port = 4531
+
+[[rigs]]
+id = "rig1"
+enable = false
+[rigs.rig]
+model = "ft450d"
+[rigs.rig.access]
+type = "serial"
+port = "/dev/ttyUSB1"
+baud = 9600
+[rigs.audio]
+port = 4532
+"#;
+        let cfg: ServerConfig = toml::from_str(toml_str).unwrap();
+        assert!(
+            cfg.validate().is_ok(),
+            "expected Ok because disabled rigs are excluded from uniqueness checks"
+        );
+    }
+
+    #[test]
+    fn test_validate_rejects_when_all_multi_rigs_disabled() {
+        let toml_str = r#"
+[[rigs]]
+id = "rig1"
+enable = false
+[rigs.rig]
+model = "ft817"
+[rigs.rig.access]
+type = "serial"
+port = "/dev/ttyUSB0"
+baud = 9600
+[rigs.audio]
+port = 4531
+"#;
+        let cfg: ServerConfig = toml::from_str(toml_str).unwrap();
+        let result = cfg.validate();
+        assert!(result.is_err());
+        assert!(
+            result.unwrap_err().contains("no enabled entries"),
+            "expected error about enabled rig entries"
         );
     }
 
