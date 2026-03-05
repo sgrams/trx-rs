@@ -2111,6 +2111,11 @@ button:focus-visible, input:focus-visible, select:focus-visible {
 #spectrum-panel {
   margin-bottom: 0;
 }
+.spectrum-resizing,
+.spectrum-resizing * {
+  cursor: ns-resize !important;
+  user-select: none !important;
+}
 .spectrum-wrap {
   position: relative;
   width: 100%;
@@ -2183,6 +2188,26 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   border-radius: 0 0 6px 6px;
   border: 1px solid var(--border);
   border-top: none;
+}
+#spectrum-size-grip {
+  position: relative;
+  height: 0.9rem;
+  margin-top: 0.1rem;
+  margin-bottom: 0.3rem;
+  cursor: ns-resize;
+  touch-action: none;
+}
+#spectrum-size-grip::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 3.8rem;
+  height: 0.26rem;
+  transform: translate(-50%, -50%);
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--border-light) 76%, transparent);
+  background: color-mix(in srgb, var(--btn-bg) 78%, transparent);
 }
 #spectrum-freq-axis span {
   position: absolute;

@@ -1932,7 +1932,10 @@ let spectrumCoverageMarginHz = 50_000;
 let spectrumUsableSpanRatio = 0.92;
 const DEFAULT_OVERVIEW_PLOT_HEIGHT_PX = 160;
 const DEFAULT_SPECTRUM_PLOT_HEIGHT_PX = 160;
+const MIN_SPECTRUM_PLOT_HEIGHT_PX = 130;
 let spectrumLayoutPending = false;
+let spectrumManualPlotHeightPx = null;
+let spectrumResizeState = null;
 
 function updateFooterBuildInfo() {
   const serverEl = document.getElementById("footer-server-build");
@@ -1949,6 +1952,28 @@ function scheduleSpectrumLayout() {
     spectrumLayoutPending = false;
     updateSpectrumAutoHeight();
   });
+}
+
+function currentSpectrumHeightPx(spectrumCanvasEl) {
+  return Math.max(
+    MIN_SPECTRUM_PLOT_HEIGHT_PX,
+    Math.round(spectrumCanvasEl?.clientHeight || DEFAULT_SPECTRUM_PLOT_HEIGHT_PX),
+  );
+}
+
+function spectrumHeightBoundsPx(tabMainEl, contentEl, spectrumCanvasEl) {
+  const currentSpectrumHeight = currentSpectrumHeightPx(spectrumCanvasEl);
+  const tabBottom = tabMainEl.getBoundingClientRect().bottom;
+  const contentBottom = contentEl.getBoundingClientRect().bottom;
+  const slackPx = Math.floor(tabBottom - contentBottom);
+  const maxHeight = Math.max(
+    MIN_SPECTRUM_PLOT_HEIGHT_PX,
+    currentSpectrumHeight + slackPx - 2,
+  );
+  return {
+    min: MIN_SPECTRUM_PLOT_HEIGHT_PX,
+    max: maxHeight,
+  };
 }
 
 function updateSpectrumAutoHeight() {
@@ -1986,28 +2011,84 @@ function updateSpectrumAutoHeight() {
     return;
   }
 
-  const tabBottom = tabMainEl.getBoundingClientRect().bottom;
-  const contentBottom = contentEl.getBoundingClientRect().bottom;
-  const slackPx = Math.floor(tabBottom - contentBottom);
-  const nextCombinedHeight = Math.max(
-    DEFAULT_OVERVIEW_PLOT_HEIGHT_PX + DEFAULT_SPECTRUM_PLOT_HEIGHT_PX,
-    currentOverviewHeight + currentSpectrumHeight + slackPx - 2,
+  const bounds = spectrumHeightBoundsPx(tabMainEl, contentEl, spectrumCanvasEl);
+  const requestedSpectrumHeight = spectrumManualPlotHeightPx == null
+    ? bounds.max
+    : spectrumManualPlotHeightPx;
+  const nextSpectrumHeight = Math.max(
+    bounds.min,
+    Math.min(bounds.max, Math.round(requestedSpectrumHeight)),
   );
-  const nextHeight = Math.max(
-    DEFAULT_SPECTRUM_PLOT_HEIGHT_PX,
-    Math.round(nextCombinedHeight / 2),
-  );
+  if (spectrumManualPlotHeightPx != null) {
+    spectrumManualPlotHeightPx = nextSpectrumHeight;
+  }
   if (
-    Math.abs(nextHeight - currentOverviewHeight) < 2
-    && Math.abs(nextHeight - currentSpectrumHeight) < 2
+    Math.abs(DEFAULT_OVERVIEW_PLOT_HEIGHT_PX - currentOverviewHeight) < 2
+    && Math.abs(nextSpectrumHeight - currentSpectrumHeight) < 2
   ) return;
 
-  root.style.setProperty("--overview-plot-height", `${nextHeight}px`);
-  root.style.setProperty("--spectrum-plot-height", `${nextHeight}px`);
+  root.style.setProperty("--overview-plot-height", `${DEFAULT_OVERVIEW_PLOT_HEIGHT_PX}px`);
+  root.style.setProperty("--spectrum-plot-height", `${nextSpectrumHeight}px`);
   if (lastSpectrumData) {
     scheduleSpectrumDraw();
     scheduleOverviewDraw();
   }
+}
+
+function beginSpectrumResize(clientY) {
+  const tabMainEl = document.getElementById("tab-main");
+  const contentEl = document.getElementById("content");
+  const spectrumCanvasEl = document.getElementById("spectrum-canvas");
+  const spectrumPanelEl = document.getElementById("spectrum-panel");
+  if (!tabMainEl || !contentEl || !spectrumCanvasEl || !spectrumPanelEl) return false;
+  if (getComputedStyle(spectrumPanelEl).display === "none") return false;
+  spectrumResizeState = {
+    startY: clientY,
+    startHeight: currentSpectrumHeightPx(spectrumCanvasEl),
+  };
+  document.body.classList.add("spectrum-resizing");
+  return true;
+}
+
+function updateSpectrumResize(clientY) {
+  if (!spectrumResizeState) return;
+  const deltaY = clientY - spectrumResizeState.startY;
+  spectrumManualPlotHeightPx = spectrumResizeState.startHeight + deltaY;
+  updateSpectrumAutoHeight();
+}
+
+function endSpectrumResize() {
+  spectrumResizeState = null;
+  document.body.classList.remove("spectrum-resizing");
+}
+
+const spectrumSizeGrip = document.getElementById("spectrum-size-grip");
+if (spectrumSizeGrip) {
+  spectrumSizeGrip.addEventListener("pointerdown", (event) => {
+    if (event.button !== 0) return;
+    if (!beginSpectrumResize(event.clientY)) return;
+    event.preventDefault();
+    if (typeof spectrumSizeGrip.setPointerCapture === "function") {
+      spectrumSizeGrip.setPointerCapture(event.pointerId);
+    }
+  });
+  spectrumSizeGrip.addEventListener("pointermove", (event) => {
+    if (!spectrumResizeState) return;
+    updateSpectrumResize(event.clientY);
+  });
+  const finishResize = (event) => {
+    if (!spectrumResizeState) return;
+    if (typeof spectrumSizeGrip.releasePointerCapture === "function" && spectrumSizeGrip.hasPointerCapture(event.pointerId)) {
+      spectrumSizeGrip.releasePointerCapture(event.pointerId);
+    }
+    endSpectrumResize();
+  };
+  spectrumSizeGrip.addEventListener("pointerup", finishResize);
+  spectrumSizeGrip.addEventListener("pointercancel", finishResize);
+  spectrumSizeGrip.addEventListener("dblclick", () => {
+    spectrumManualPlotHeightPx = null;
+    scheduleSpectrumLayout();
+  });
 }
 
 function updateTitle() {
