@@ -341,6 +341,8 @@ pub struct SdrConfig {
     pub center_offset_hz: i64,
     /// Gain configuration.
     pub gain: SdrGainConfig,
+    /// Virtual software squelch applied to demodulated audio except WFM.
+    pub squelch: SdrSquelchConfig,
     /// Virtual receiver channels (at least one required when SDR backend is active).
     pub channels: Vec<SdrChannelConfig>,
 }
@@ -353,7 +355,33 @@ impl Default for SdrConfig {
             wfm_deemphasis_us: 50,
             center_offset_hz: 100_000,
             gain: SdrGainConfig::default(),
+            squelch: SdrSquelchConfig::default(),
             channels: Vec::new(),
+        }
+    }
+}
+
+/// Virtual squelch settings for SoapySDR demodulated audio (except WFM mode).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct SdrSquelchConfig {
+    /// Enables software squelch for demodulated audio except WFM.
+    pub enabled: bool,
+    /// Open threshold in dBFS (typical range: -120..0).
+    pub threshold_db: f32,
+    /// Hysteresis in dB used when closing the squelch.
+    pub hysteresis_db: f32,
+    /// Tail hold time after dropping below threshold.
+    pub tail_ms: u32,
+}
+
+impl Default for SdrSquelchConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            threshold_db: -65.0,
+            hysteresis_db: 3.0,
+            tail_ms: 180,
         }
     }
 }
@@ -517,6 +545,7 @@ impl ServerConfig {
                 return Err("[sdr.gain].max_value must be >= 0".to_string());
             }
         }
+        validate_sdr_squelch_config("[sdr.squelch]", &self.sdr.squelch)?;
 
         // Multi-rig uniqueness checks.
         if !self.rigs.is_empty() {
@@ -552,6 +581,10 @@ impl ServerConfig {
                         ));
                     }
                 }
+                validate_sdr_squelch_config(
+                    &format!("[[rigs]] [sdr.squelch] (rig id: \"{}\")", rig.id),
+                    &rig.sdr.squelch,
+                )?;
             }
             if enabled_count == 0 {
                 return Err(
@@ -821,6 +854,25 @@ fn validate_access(access: &AccessConfig) -> Result<(), String> {
                 other
             ))
         }
+    }
+    Ok(())
+}
+
+fn validate_sdr_squelch_config(path: &str, squelch: &SdrSquelchConfig) -> Result<(), String> {
+    if !squelch.threshold_db.is_finite() {
+        return Err(format!("{path}.threshold_db must be finite"));
+    }
+    if !(-140.0..=0.0).contains(&squelch.threshold_db) {
+        return Err(format!("{path}.threshold_db must be in range -140..=0"));
+    }
+    if !squelch.hysteresis_db.is_finite() {
+        return Err(format!("{path}.hysteresis_db must be finite"));
+    }
+    if !(0.0..=40.0).contains(&squelch.hysteresis_db) {
+        return Err(format!("{path}.hysteresis_db must be in range 0..=40"));
+    }
+    if squelch.tail_ms > 10_000 {
+        return Err(format!("{path}.tail_ms must be <= 10000"));
     }
     Ok(())
 }
@@ -1174,6 +1226,36 @@ tokens = ["secret123"]
             3,
             "expected exactly 3 errors, got: {:?}",
             errors
+        );
+    }
+
+    #[test]
+    fn test_validate_rejects_invalid_sdr_squelch_threshold() {
+        let mut cfg = ServerConfig::default();
+        cfg.rig.access.port = Some("/dev/ttyUSB0".to_string());
+        cfg.rig.access.baud = Some(9600);
+        cfg.sdr.squelch.threshold_db = 10.0;
+        let err = cfg
+            .validate()
+            .expect_err("expected squelch threshold validation error");
+        assert!(
+            err.contains("squelch") && err.contains("threshold_db"),
+            "unexpected validation error: {err}"
+        );
+    }
+
+    #[test]
+    fn test_validate_rejects_invalid_sdr_squelch_hysteresis() {
+        let mut cfg = ServerConfig::default();
+        cfg.rig.access.port = Some("/dev/ttyUSB0".to_string());
+        cfg.rig.access.baud = Some(9600);
+        cfg.sdr.squelch.hysteresis_db = 99.0;
+        let err = cfg
+            .validate()
+            .expect_err("expected squelch hysteresis validation error");
+        assert!(
+            err.contains("squelch") && err.contains("hysteresis_db"),
+            "unexpected validation error: {err}"
         );
     }
 

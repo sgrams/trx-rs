@@ -343,6 +343,10 @@ fn build_sdr_rig_from_instance(rig_cfg: &RigInstanceConfig) -> SdrRigBuildResult
         rig_cfg.sdr.sample_rate,
         rig_cfg.sdr.bandwidth,
         rig_cfg.sdr.center_offset_hz,
+        rig_cfg.sdr.squelch.enabled,
+        rig_cfg.sdr.squelch.threshold_db,
+        rig_cfg.sdr.squelch.hysteresis_db,
+        rig_cfg.sdr.squelch.tail_ms,
     )?;
 
     let pcm_rx = sdr_rig.subscribe_pcm();
