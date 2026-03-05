@@ -770,6 +770,7 @@ let overviewWfTexWidth = 0;
 let overviewWfTexHeight = 0;
 let overviewWfTexPushCount = 0;
 let overviewWfTexPalKey = "";
+let overviewWfTexReady = false;
 
 function cssColorToRgba(color, alphaMul = 1) {
   const parser = typeof window.trxParseCssColor === "function" ? window.trxParseCssColor : null;
@@ -786,12 +787,22 @@ function rgbaWithAlpha(color, alphaMul = 1) {
   return cssColorToRgba(color, alphaMul);
 }
 
+const BW_OVERLAY_COLORS = {
+  soft: [240 / 255, 173 / 255, 78 / 255, 0.05],
+  mid: [240 / 255, 173 / 255, 78 / 255, 0.19],
+  edge: [240 / 255, 173 / 255, 78 / 255, 0.30],
+  stroke: [240 / 255, 173 / 255, 78 / 255, 0.70],
+  hard: [240 / 255, 173 / 255, 78 / 255, 0.38],
+};
+const BOOKMARK_MARKER_FALLBACK = "#66d9ef";
+
 function overviewWfResetTextureCache() {
   overviewWfTexData = null;
   overviewWfTexWidth = 0;
   overviewWfTexHeight = 0;
   overviewWfTexPushCount = 0;
   overviewWfTexPalKey = "";
+  overviewWfTexReady = false;
 }
 
 function overviewWfPaletteKey(pal, viewKey = "") {
@@ -860,11 +871,30 @@ function drawSignalOverlay() {
 
   const range = spectrumVisibleRange(lastSpectrumData);
   const hzToX = (hz) => ((hz - range.visLoHz) / range.visSpanHz) * W;
-  const bwSoft = cssColorToRgba("rgba(240,173,78,0.05)");
-  const bwMid = cssColorToRgba("rgba(240,173,78,0.19)");
-  const bwEdge = cssColorToRgba("rgba(240,173,78,0.30)");
-  const bwStroke = cssColorToRgba("rgba(240,173,78,0.70)");
-  const bwHard = cssColorToRgba("rgba(240,173,78,0.38)");
+  const bwSoft = BW_OVERLAY_COLORS.soft;
+  const bwMid = BW_OVERLAY_COLORS.mid;
+  const bwEdge = BW_OVERLAY_COLORS.edge;
+  const bwStroke = BW_OVERLAY_COLORS.stroke;
+  const bwHard = BW_OVERLAY_COLORS.hard;
+  const bmRef = typeof bmList !== "undefined" ? bmList : null;
+  if (Array.isArray(bmRef) && bmRef.length > 0) {
+    const colorMap = bmCategoryColorMap();
+    const grouped = new Map();
+    for (const bm of bmRef) {
+      const f = Number(bm?.freq_hz);
+      if (!Number.isFinite(f) || f < range.visLoHz || f > range.visHiHz) continue;
+      if (Number.isFinite(lastFreqHz) && Math.abs(f - lastFreqHz) <= Math.max(minFreqStepHz, 5)) continue;
+      const x = hzToX(f);
+      if (!Number.isFinite(x) || x < 0 || x > W) continue;
+      const color = colorMap[bm?.category || ""] || BOOKMARK_MARKER_FALLBACK;
+      if (!grouped.has(color)) grouped.set(color, []);
+      grouped.get(color).push(x, 0, x, H);
+    }
+    for (const [color, segments] of grouped.entries()) {
+      if (!Array.isArray(segments) || segments.length === 0) continue;
+      signalOverlayGl.drawSegments(segments, rgbaWithAlpha(color, 0.72), Math.max(1, dpr * 0.9));
+    }
+  }
 
   if (lastFreqHz != null && currentBandwidthHz > 0) {
     for (const spec of visibleBandwidthSpecs(lastFreqHz)) {
@@ -1015,6 +1045,7 @@ function drawOverviewWaterfall(W, H, pal) {
   const sizeChanged = overviewWfTexWidth !== iW || overviewWfTexHeight !== iH;
   const palChanged = overviewWfTexPalKey !== palKey;
   const needsFull = !overviewWfTexData || sizeChanged || palChanged || overviewWfTexPushCount === 0;
+  let texUpdated = false;
 
   if (!overviewWfTexData || overviewWfTexData.length !== expectedSize) {
     overviewWfTexData = new Uint8Array(expectedSize);
@@ -1045,6 +1076,7 @@ function drawOverviewWaterfall(W, H, pal) {
     }
     overviewWfTexPushCount = overviewWaterfallPushCount;
     overviewWfTexPalKey = palKey;
+    texUpdated = true;
   } else if (newPushes > 0) {
     const newCount = Math.min(newPushes, iH);
     if (newCount >= iH) {
@@ -1059,9 +1091,13 @@ function drawOverviewWaterfall(W, H, pal) {
     }
     overviewWfTexPushCount = overviewWaterfallPushCount;
     overviewWfTexPalKey = palKey;
+    texUpdated = true;
   }
 
-  overviewGl.uploadRgbaTexture("overview-waterfall", iW, iH, overviewWfTexData, "linear");
+  if (texUpdated || !overviewWfTexReady) {
+    overviewGl.uploadRgbaTexture("overview-waterfall", iW, iH, overviewWfTexData, "linear");
+    overviewWfTexReady = true;
+  }
   overviewGl.drawTexture("overview-waterfall", 0, 0, W, H, 1, true);
 }
 
@@ -5884,6 +5920,10 @@ let lastSpectrumRenderData = null;
 let spectrumPeakHoldFrames = [];
 let pendingSpectrumFrameWaiters = [];
 let sweetSpotScanInFlight = false;
+const spectrumTmpGridSegments = [];
+const spectrumTmpFillPoints = [];
+const spectrumTmpPeakPoints = [];
+const spectrumTmpMarkerPoints = [];
 
 // Zoom / pan state.  zoom >= 1; panFrac in [0,1] is the fraction of the full
 // bandwidth at the centre of the visible window.
@@ -6579,12 +6619,12 @@ function drawSpectrum(data) {
   const loHz = data.center_hz - fullSpanHz / 2;
 
   const gridStep = spectrumRange > 100 ? 20 : 10;
-  const gridSegments = [];
+  spectrumTmpGridSegments.length = 0;
   for (let db = Math.ceil(DB_MIN / gridStep) * gridStep; db <= DB_MAX; db += gridStep) {
     const y = Math.round(H * (1 - (db - DB_MIN) / dbRange));
-    gridSegments.push(0, y, W, y);
+    spectrumTmpGridSegments.push(0, y, W, y);
   }
-  spectrumGl.drawSegments(gridSegments, cssColorToRgba(pal.spectrumGrid), 1);
+  spectrumGl.drawSegments(spectrumTmpGridSegments, cssColorToRgba(pal.spectrumGrid), 1);
   updateSpectrumDbAxis(DB_MIN, DB_MAX, gridStep, H, dpr);
 
   function hzToX(hz) {
@@ -6598,29 +6638,29 @@ function drawSpectrum(data) {
     return H * (1 - (db - DB_MIN) / dbRange);
   }
 
-  const fillPoints = [];
+  spectrumTmpFillPoints.length = 0;
   for (let i = 0; i < n; i++) {
-    fillPoints.push(binX(i), binYFromBins(bins, i));
+    spectrumTmpFillPoints.push(binX(i), binYFromBins(bins, i));
   }
-  spectrumGl.drawFilledArea(fillPoints, H, cssColorToRgba(pal.spectrumFill));
+  spectrumGl.drawFilledArea(spectrumTmpFillPoints, H, cssColorToRgba(pal.spectrumFill));
 
   if (Array.isArray(peakHoldBins) && peakHoldBins.length === n) {
-    const peakPoints = [];
+    spectrumTmpPeakPoints.length = 0;
     for (let i = 0; i < n; i++) {
-      peakPoints.push(binX(i), binYFromBins(peakHoldBins, i));
+      spectrumTmpPeakPoints.push(binX(i), binYFromBins(peakHoldBins, i));
     }
-    spectrumGl.drawPolyline(peakPoints, rgbaWithAlpha(pal.waveformPeak, 0.7), Math.max(1, dpr * 0.9));
+    spectrumGl.drawPolyline(spectrumTmpPeakPoints, rgbaWithAlpha(pal.waveformPeak, 0.7), Math.max(1, dpr * 0.9));
   }
 
-  spectrumGl.drawPolyline(fillPoints, cssColorToRgba(pal.spectrumLine), Math.max(1, dpr));
+  spectrumGl.drawPolyline(spectrumTmpFillPoints, cssColorToRgba(pal.spectrumLine), Math.max(1, dpr));
 
   const markerPeaks = visibleSpectrumPeakIndices(data);
   if (markerPeaks.length > 0) {
-    const markerPoints = [];
+    spectrumTmpMarkerPoints.length = 0;
     for (const idx of markerPeaks) {
-      markerPoints.push(binX(idx), binYFromBins(bins, idx));
+      spectrumTmpMarkerPoints.push(binX(idx), binYFromBins(bins, idx));
     }
-    spectrumGl.drawPoints(markerPoints, Math.max(2, dpr * 1.6), cssColorToRgba(pal.waveformPeak));
+    spectrumGl.drawPoints(spectrumTmpMarkerPoints, Math.max(2, dpr * 1.6), cssColorToRgba(pal.waveformPeak));
   }
 
   updateSpectrumFreqAxis(range);
@@ -6916,21 +6956,45 @@ function spectrumZoomAt(cssX, cssW, data, factor) {
 }
 
 // ── Scroll to zoom ────────────────────────────────────────────────────────────
+function handleSpectrumWheel(e, canvasEl) {
+  e.preventDefault();
+  if (!lastSpectrumData || !canvasEl) return;
+  if (e.ctrlKey) {
+    const direction = e.deltaY < 0 ? 1 : -1;
+    jogFreq(direction);
+    return;
+  }
+  const rect = canvasEl.getBoundingClientRect();
+  const cssX = e.clientX - rect.left;
+  const factor = e.deltaY < 0 ? 1.25 : 1 / 1.25;
+  spectrumZoomAt(cssX, rect.width, lastSpectrumData, factor);
+  scheduleSpectrumDraw();
+  scheduleOverviewDraw();
+}
+
+function handleSpectrumClick(e, canvasEl) {
+  if (!lastSpectrumData || !canvasEl) return;
+  const rect = canvasEl.getBoundingClientRect();
+  const cssX = e.clientX - rect.left;
+  const targetHz = spectrumTargetHzAt(cssX, rect.width, lastSpectrumData);
+  if (!Number.isFinite(targetHz)) return;
+  setRigFrequency(targetHz).catch(() => {});
+}
+
 if (spectrumCanvas) {
   spectrumCanvas.addEventListener("wheel", (e) => {
-    e.preventDefault();
-    if (!lastSpectrumData) return;
-    if (e.ctrlKey) {
-      const direction = e.deltaY < 0 ? 1 : -1;
-      jogFreq(direction);
-      return;
-    }
-    const rect   = spectrumCanvas.getBoundingClientRect();
-    const cssX   = e.clientX - rect.left;
-    const factor = e.deltaY < 0 ? 1.25 : 1 / 1.25;
-    spectrumZoomAt(cssX, rect.width, lastSpectrumData, factor);
-    scheduleSpectrumDraw();
+    handleSpectrumWheel(e, spectrumCanvas);
   }, { passive: false });
+}
+
+// Keep waterfall (overview strip) wheel behavior aligned with waveform/spectrum.
+if (overviewCanvas) {
+  overviewCanvas.addEventListener("wheel", (e) => {
+    handleSpectrumWheel(e, overviewCanvas);
+  }, { passive: false });
+  overviewCanvas.addEventListener("click", (e) => {
+    handleSpectrumClick(e, overviewCanvas);
+  });
 }
 
 
@@ -7150,13 +7214,7 @@ if (spectrumCanvas) {
 if (spectrumCanvas) {
   spectrumCanvas.addEventListener("click", (e) => {
     if (_sDragMoved) { _sDragMoved = false; return; }
-    if (!lastSpectrumData) return;
-    const rect  = spectrumCanvas.getBoundingClientRect();
-    const cssX = e.clientX - rect.left;
-    const targetHz = spectrumTargetHzAt(cssX, rect.width, lastSpectrumData);
-    if (!Number.isFinite(targetHz)) return;
-    setRigFrequency(targetHz)
-      .catch(() => {});
+    handleSpectrumClick(e, spectrumCanvas);
   });
 }
 
