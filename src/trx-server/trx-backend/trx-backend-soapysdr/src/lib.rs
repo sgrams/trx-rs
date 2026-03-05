@@ -49,6 +49,10 @@ pub struct SoapySdrRig {
     gain_db: f64,
     /// Optional hard ceiling for the applied hardware gain in dB.
     max_gain_db: Option<f64>,
+    /// Whether software squelch is enabled on primary channel (except WFM mode).
+    squelch_enabled: bool,
+    /// Software squelch threshold (dBFS) on primary channel.
+    squelch_threshold_db: f32,
     /// Hidden AIS decoder channels (A and B) when available.
     ais_channel_indices: Option<(usize, usize)>,
 }
@@ -90,6 +94,10 @@ impl SoapySdrRig {
     /// - `center_offset_hz`: the hardware is tuned this many Hz *below* the
     ///   dial frequency so the desired signal lands off-DC.  The DSP mixer
     ///   shifts it back.  Pass 0 to tune exactly to the dial frequency.
+    /// - `squelch_enabled`: enable software squelch for all modes except WFM.
+    /// - `squelch_threshold_db`: squelch open threshold in dBFS.
+    /// - `squelch_hysteresis_db`: close hysteresis in dB.
+    /// - `squelch_tail_ms`: tail hold time in milliseconds.
     #[allow(clippy::too_many_arguments)]
     pub fn new_with_config(
         args: &str,
@@ -106,6 +114,10 @@ impl SoapySdrRig {
         sdr_sample_rate: u32,
         bandwidth_hz: u32,
         center_offset_hz: i64,
+        squelch_enabled: bool,
+        squelch_threshold_db: f32,
+        squelch_hysteresis_db: f32,
+        squelch_tail_ms: u32,
     ) -> DynResult<Self> {
         tracing::info!(
             "initialising SoapySDR backend (args={:?}, gain_mode={:?}, gain_db={}, max_gain_db={:?})",
@@ -161,6 +173,16 @@ impl SoapySdrRig {
             25_000,
             96,
         ));
+        let block_ms = if sdr_sample_rate == 0 {
+            0.0
+        } else {
+            dsp::IQ_BLOCK_SIZE as f64 * 1000.0 / sdr_sample_rate as f64
+        };
+        let squelch_tail_blocks = if block_ms <= 0.0 {
+            0
+        } else {
+            (squelch_tail_ms as f64 / block_ms).ceil().max(0.0) as u32
+        };
 
         let pipeline = dsp::SdrPipeline::start(
             iq_source,
@@ -170,6 +192,12 @@ impl SoapySdrRig {
             frame_duration_ms,
             wfm_deemphasis_us,
             true, // wfm_stereo: enabled by default
+            dsp::VirtualSquelchConfig {
+                enabled: squelch_enabled,
+                threshold_db: squelch_threshold_db,
+                hysteresis_db: squelch_hysteresis_db,
+                tail_blocks: squelch_tail_blocks,
+            },
             &all_channels,
         );
 
@@ -244,6 +272,8 @@ impl SoapySdrRig {
             wfm_denoise: WfmDenoiseLevel::Auto,
             gain_db,
             max_gain_db,
+            squelch_enabled,
+            squelch_threshold_db,
             ais_channel_indices: Some((primary_channel_count, primary_channel_count + 1)),
         };
         rig.apply_ais_channel_activity();
@@ -269,6 +299,10 @@ impl SoapySdrRig {
             1_920_000,
             1_500_000, // bandwidth_hz
             0,         // center_offset_hz
+            false,     // squelch_enabled
+            -65.0,     // squelch_threshold_db
+            3.0,       // squelch_hysteresis_db
+            180,       // squelch_tail_ms
         )
     }
 
@@ -497,6 +531,30 @@ impl RigCat for SoapySdrRig {
         })
     }
 
+    fn set_sdr_squelch<'a>(
+        &'a mut self,
+        enabled: bool,
+        threshold_db: f64,
+    ) -> Pin<Box<dyn std::future::Future<Output = DynResult<()>> + Send + 'a>> {
+        Box::pin(async move {
+            if !threshold_db.is_finite() {
+                return Err("squelch threshold must be finite".into());
+            }
+            if !(-140.0..=0.0).contains(&threshold_db) {
+                return Err("squelch threshold must be in range -140..=0 dBFS".into());
+            }
+            self.squelch_enabled = enabled;
+            self.squelch_threshold_db = threshold_db as f32;
+            if let Some(dsp_arc) = self.pipeline.channel_dsps.get(self.primary_channel_idx) {
+                dsp_arc
+                    .lock()
+                    .unwrap()
+                    .set_squelch(enabled, self.squelch_threshold_db);
+            }
+            Ok(())
+        })
+    }
+
     fn get_signal_strength<'a>(
         &'a mut self,
     ) -> Pin<Box<dyn std::future::Future<Output = DynResult<u8>> + Send + 'a>> {
@@ -667,6 +725,8 @@ impl RigCat for SoapySdrRig {
                     .map(|max_gain| self.gain_db.min(max_gain))
                     .unwrap_or(self.gain_db),
             ),
+            sdr_squelch_enabled: Some(self.squelch_enabled),
+            sdr_squelch_threshold_db: Some(self.squelch_threshold_db as f64),
             wfm_deemphasis_us: self.wfm_deemphasis_us,
             wfm_stereo: self.wfm_stereo,
             wfm_stereo_detected,

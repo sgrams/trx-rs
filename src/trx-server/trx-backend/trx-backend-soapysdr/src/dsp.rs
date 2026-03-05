@@ -22,7 +22,7 @@ use num_complex::Complex;
 use tokio::sync::broadcast;
 use trx_core::rig::state::RigMode;
 
-pub use self::channel::ChannelDsp;
+pub use self::channel::{ChannelDsp, VirtualSquelchConfig};
 pub use self::filter::{BlockFirFilter, BlockFirFilterPair, FirFilter};
 use self::spectrum::SpectrumSnapshotter;
 
@@ -107,6 +107,7 @@ impl SdrPipeline {
         frame_duration_ms: u16,
         wfm_deemphasis_us: u32,
         wfm_stereo: bool,
+        squelch_cfg: VirtualSquelchConfig,
         channels: &[(f64, RigMode, u32, usize)],
     ) -> Self {
         const IQ_BROADCAST_CAPACITY: usize = 64;
@@ -118,9 +119,16 @@ impl SdrPipeline {
         let mut iq_senders = Vec::with_capacity(channels.len());
         let mut channel_dsps: Vec<Arc<Mutex<ChannelDsp>>> = Vec::with_capacity(channels.len());
 
-        for &(channel_if_hz, ref mode, audio_bandwidth_hz, fir_taps) in channels {
+        for (channel_idx, &(channel_if_hz, ref mode, audio_bandwidth_hz, fir_taps)) in
+            channels.iter().enumerate()
+        {
             let (pcm_tx, _pcm_rx) = broadcast::channel::<Vec<f32>>(PCM_BROADCAST_CAPACITY);
             let (iq_tx, _iq_rx) = broadcast::channel::<Vec<Complex<f32>>>(IQ_BROADCAST_CAPACITY);
+            let channel_squelch_cfg = if channel_idx == 0 {
+                squelch_cfg
+            } else {
+                VirtualSquelchConfig::default()
+            };
             let dsp = ChannelDsp::new(
                 channel_if_hz,
                 mode,
@@ -132,6 +140,7 @@ impl SdrPipeline {
                 wfm_deemphasis_us,
                 wfm_stereo,
                 fir_taps,
+                channel_squelch_cfg,
                 pcm_tx.clone(),
                 iq_tx.clone(),
             );
@@ -405,6 +414,7 @@ mod tests {
             20,
             75,
             true,
+            VirtualSquelchConfig::default(),
             &[(200_000.0, RigMode::USB, 3000, 64)],
         );
         assert_eq!(pipeline.pcm_senders.len(), 1);
@@ -421,6 +431,7 @@ mod tests {
             20,
             75,
             true,
+            VirtualSquelchConfig::default(),
             &[],
         );
         assert_eq!(pipeline.pcm_senders.len(), 0);

@@ -424,7 +424,8 @@ impl StereoDenoise {
             }
             WfmDenoiseLevel::Low => 1.0 - (1.0 - broadband_gain) * 0.35,
             WfmDenoiseLevel::Medium => 1.0 - (1.0 - broadband_gain) * 0.65,
-            WfmDenoiseLevel::High => broadband_gain,
+            // Extra attenuation profile for noisy stereo difference channels.
+            WfmDenoiseLevel::High => broadband_gain.powf(1.45),
         };
         diff_i * effective_gain.clamp(0.0, 1.0)
     }

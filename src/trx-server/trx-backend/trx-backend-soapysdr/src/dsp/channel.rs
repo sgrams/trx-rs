@@ -10,6 +10,88 @@ use crate::demod::{DcBlocker, Demodulator, SoftAgc, WfmStereoDecoder};
 
 use super::{BlockFirFilterPair, IQ_BLOCK_SIZE};
 
+#[derive(Debug, Clone, Copy)]
+pub struct VirtualSquelchConfig {
+    pub enabled: bool,
+    pub threshold_db: f32,
+    pub hysteresis_db: f32,
+    pub tail_blocks: u32,
+}
+
+impl Default for VirtualSquelchConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            threshold_db: -65.0,
+            hysteresis_db: 3.0,
+            tail_blocks: 0,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+struct VirtualSquelch {
+    cfg: VirtualSquelchConfig,
+    open: bool,
+    tail_countdown: u32,
+}
+
+impl VirtualSquelch {
+    fn new(cfg: VirtualSquelchConfig) -> Self {
+        Self {
+            cfg,
+            open: !cfg.enabled,
+            tail_countdown: 0,
+        }
+    }
+
+    fn reset(&mut self) {
+        self.open = !self.cfg.enabled;
+        self.tail_countdown = 0;
+    }
+
+    fn set_enabled(&mut self, enabled: bool) {
+        if self.cfg.enabled == enabled {
+            return;
+        }
+        self.cfg.enabled = enabled;
+        self.reset();
+    }
+
+    fn set_threshold_db(&mut self, threshold_db: f32) {
+        self.cfg.threshold_db = threshold_db;
+        self.reset();
+    }
+
+    fn supports_mode(mode: &RigMode) -> bool {
+        !matches!(mode, RigMode::WFM)
+    }
+
+    fn update(&mut self, mode: &RigMode, level_db: f32) -> bool {
+        if !self.cfg.enabled || !Self::supports_mode(mode) {
+            self.open = true;
+            self.tail_countdown = 0;
+            return true;
+        }
+
+        let close_threshold_db = self.cfg.threshold_db - self.cfg.hysteresis_db.max(0.0);
+        if self.open {
+            if level_db >= close_threshold_db {
+                self.tail_countdown = self.cfg.tail_blocks;
+            } else if self.tail_countdown > 0 {
+                self.tail_countdown -= 1;
+            } else {
+                self.open = false;
+            }
+        } else if level_db >= self.cfg.threshold_db {
+            self.open = true;
+            self.tail_countdown = self.cfg.tail_blocks;
+        }
+
+        self.open
+    }
+}
+
 fn agc_for_mode(mode: &RigMode, audio_sample_rate: u32) -> SoftAgc {
     let sr = audio_sample_rate.max(1) as f32;
     match mode {
@@ -87,6 +169,7 @@ pub struct ChannelDsp {
     audio_agc: SoftAgc,
     audio_dc: Option<DcBlocker>,
     processing_enabled: bool,
+    squelch: VirtualSquelch,
 }
 
 impl ChannelDsp {
@@ -186,6 +269,7 @@ impl ChannelDsp {
         wfm_deemphasis_us: u32,
         wfm_stereo: bool,
         fir_taps: usize,
+        squelch_cfg: VirtualSquelchConfig,
         pcm_tx: broadcast::Sender<Vec<f32>>,
         iq_tx: broadcast::Sender<Vec<Complex<f32>>>,
     ) -> Self {
@@ -264,11 +348,17 @@ impl ChannelDsp {
             audio_agc: agc_for_mode(mode, audio_sample_rate),
             audio_dc: dc_for_mode(mode),
             processing_enabled: true,
+            squelch: VirtualSquelch::new(squelch_cfg),
         }
     }
 
     pub fn set_processing_enabled(&mut self, enabled: bool) {
         self.processing_enabled = enabled;
+    }
+
+    pub fn set_squelch(&mut self, enabled: bool, threshold_db: f32) {
+        self.squelch.set_enabled(enabled);
+        self.squelch.set_threshold_db(threshold_db);
     }
 
     pub fn set_mode(&mut self, mode: &RigMode) {
@@ -277,6 +367,7 @@ impl ChannelDsp {
             self.audio_bandwidth_hz = default_bandwidth_for_mode(mode);
         }
         self.demodulator = Demodulator::for_mode(mode);
+        self.squelch.reset();
         self.rebuild_filters(true);
     }
 
@@ -427,6 +518,12 @@ impl ChannelDsp {
             }
         }
 
+        let signal_power = decimated
+            .iter()
+            .map(|s| s.re * s.re + s.im * s.im)
+            .sum::<f32>()
+            / decimated.len() as f32;
+        let signal_db = 10.0 * signal_power.max(1e-12).log10();
         if self.wfm_decoder.is_some() {
             for sample in decimated.iter_mut() {
                 let mag = (sample.re * sample.re + sample.im * sample.im).sqrt();
@@ -437,7 +534,7 @@ impl ChannelDsp {
         }
 
         const WFM_OUTPUT_GAIN: f32 = 0.50;
-        let audio = if let Some(decoder) = self.wfm_decoder.as_mut() {
+        let mut audio = if let Some(decoder) = self.wfm_decoder.as_mut() {
             let mut out = decoder.process_iq(decimated);
             for sample in &mut out {
                 *sample = (*sample * WFM_OUTPUT_GAIN).clamp(-1.0, 1.0);
@@ -462,6 +559,9 @@ impl ChannelDsp {
                 raw
             }
         };
+        if !self.squelch.update(&self.mode, signal_db) {
+            audio.fill(0.0);
+        }
 
         self.frame_buf.extend_from_slice(&audio);
         while self.frame_buf.len().saturating_sub(self.frame_buf_offset) >= self.frame_size {
@@ -499,6 +599,7 @@ mod tests {
             75,
             true,
             31,
+            VirtualSquelchConfig::default(),
             pcm_tx,
             iq_tx,
         );
@@ -521,6 +622,7 @@ mod tests {
             75,
             true,
             31,
+            VirtualSquelchConfig::default(),
             pcm_tx,
             iq_tx,
         );
