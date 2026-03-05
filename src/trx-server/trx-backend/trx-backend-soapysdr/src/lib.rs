@@ -227,7 +227,7 @@ impl SoapySdrRig {
         let spectrum_buf = pipeline.spectrum_buf.clone();
         let retune_cmd = pipeline.retune_cmd.clone();
 
-        Ok(Self {
+        let rig = Self {
             info,
             freq: initial_freq,
             mode: initial_mode,
@@ -245,7 +245,9 @@ impl SoapySdrRig {
             gain_db,
             max_gain_db,
             ais_channel_indices: Some((primary_channel_count, primary_channel_count + 1)),
-        })
+        };
+        rig.apply_ais_channel_activity();
+        Ok(rig)
     }
 
     /// Simple constructor for backward compatibility with the factory function.
@@ -296,6 +298,18 @@ impl SoapySdrRig {
                     .lock()
                     .unwrap()
                     .set_filter(self.bandwidth_hz, self.fir_taps as usize);
+            }
+        }
+    }
+
+    fn apply_ais_channel_activity(&self) {
+        let Some((ais_a_idx, ais_b_idx)) = self.ais_channel_indices else {
+            return;
+        };
+        let enabled = matches!(self.mode, RigMode::AIS | RigMode::MARINE);
+        for idx in [ais_a_idx, ais_b_idx] {
+            if let Some(dsp_arc) = self.pipeline.channel_dsps.get(idx) {
+                dsp_arc.lock().unwrap().set_processing_enabled(enabled);
             }
         }
     }
@@ -435,6 +449,7 @@ impl RigCat for SoapySdrRig {
                 dsp.set_mode(&mode);
                 dsp.set_filter(self.bandwidth_hz, self.fir_taps as usize);
             }
+            self.apply_ais_channel_activity();
             self.apply_ais_channel_filters();
             Ok(())
         })

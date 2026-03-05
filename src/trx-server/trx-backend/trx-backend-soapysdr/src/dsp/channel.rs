@@ -86,6 +86,7 @@ pub struct ChannelDsp {
     iq_agc: Option<SoftAgc>,
     audio_agc: SoftAgc,
     audio_dc: Option<DcBlocker>,
+    processing_enabled: bool,
 }
 
 impl ChannelDsp {
@@ -262,7 +263,12 @@ impl ChannelDsp {
             iq_agc: iq_agc_for_mode(mode, channel_sample_rate),
             audio_agc: agc_for_mode(mode, audio_sample_rate),
             audio_dc: dc_for_mode(mode),
+            processing_enabled: true,
         }
+    }
+
+    pub fn set_processing_enabled(&mut self, enabled: bool) {
+        self.processing_enabled = enabled;
     }
 
     pub fn set_mode(&mut self, mode: &RigMode) {
@@ -325,6 +331,9 @@ impl ChannelDsp {
     }
 
     pub fn process_block(&mut self, block: &[Complex<f32>]) {
+        if !self.processing_enabled {
+            return;
+        }
         let n = block.len();
         if n == 0 {
             return;
