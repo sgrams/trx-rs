@@ -538,33 +538,29 @@ small { color: var(--text-muted); }
   display: none;
   flex-direction: column;
   align-items: center;
-  gap: 0.3rem;
-  padding: 0.32rem 0.25rem;
-  border: 1px solid color-mix(in srgb, var(--border-light) 78%, transparent);
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--card-bg) 78%, transparent);
-  backdrop-filter: blur(8px) saturate(125%);
-  -webkit-backdrop-filter: blur(8px) saturate(125%);
-  box-shadow:
-    0 8px 16px color-mix(in srgb, #000000 14%, transparent),
-    inset 0 1px 0 color-mix(in srgb, #ffffff 8%, transparent);
+  gap: 0.24rem;
+  padding: 0.24rem 0.2rem;
+  border: 1px solid var(--btn-border);
+  border-radius: 6px;
+  background: var(--btn-bg);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, #ffffff 6%, transparent);
 }
 #signal-split-slider {
   writing-mode: vertical-lr;
   direction: rtl;
-  width: 0.95rem;
-  height: 7.2rem;
+  width: 0.76rem;
+  height: 5.4rem;
   margin: 0;
-  accent-color: var(--accent-yellow);
+  accent-color: var(--accent-green);
   cursor: ns-resize;
 }
 #signal-split-value {
-  min-width: 2.9rem;
+  min-width: 2.4rem;
   text-align: center;
-  font-size: 0.64rem;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  color: var(--text-muted);
+  font-size: 0.6rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  color: var(--text);
 }
 #signal-overlay-canvas {
   position: absolute;
@@ -1847,14 +1843,14 @@ button:focus-visible, input:focus-visible, select:focus-visible {
     right: 0.35rem;
     transform: none;
     flex-direction: row;
-    gap: 0.4rem;
-    border-radius: 0.7rem;
-    padding: 0.28rem 0.42rem;
+    gap: 0.32rem;
+    border-radius: 6px;
+    padding: 0.24rem 0.32rem;
   }
   #signal-split-slider {
     writing-mode: horizontal-tb;
     direction: ltr;
-    width: 5.5rem;
+    width: 4.6rem;
     height: 1rem;
     cursor: ew-resize;
   }
@@ -2185,7 +2181,7 @@ button:focus-visible, input:focus-visible, select:focus-visible {
 }
 .spectrum-edge-shift {
   position: absolute;
-  top: 50%;
+  top: calc((var(--spectrum-plot-height) - var(--overview-plot-height)) / 2);
   transform: translateY(-50%);
   z-index: 8;
   width: 1.7rem;
@@ -2314,7 +2310,7 @@ button:focus-visible, input:focus-visible, select:focus-visible {
 }
 .spectrum-bookmark-side {
   position: absolute;
-  top: 50%;
+  top: calc((var(--spectrum-plot-height) - var(--overview-plot-height)) / 2);
   transform: translateY(-50%);
   z-index: 7;
   width: 7.25rem;
