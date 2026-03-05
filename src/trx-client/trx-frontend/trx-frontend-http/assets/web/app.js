@@ -245,6 +245,7 @@ function applyAuthRestrictions() {
 function applyCapabilities(caps) {
   if (!caps) return;
   lastHasTx = !!caps.tx;
+  if (signalVisualBlockEl) signalVisualBlockEl.style.display = "";
 
   // PTT / TX controls
   const pttBtn = document.getElementById("ptt-btn");
@@ -292,6 +293,8 @@ function applyCapabilities(caps) {
       setSignalSplitControlVisible(false);
       if (centerFreqField) centerFreqField.style.display = "none";
       stopSpectrumStreaming();
+      resizeHeaderSignalCanvas();
+      scheduleOverviewDraw();
     }
     scheduleSpectrumLayout();
   }
@@ -767,10 +770,16 @@ function _wfPalKey(pal) {
 }
 
 function resizeHeaderSignalCanvas() {
-  if (!overviewCanvas) return;
+  if (!ensureOverviewCanvasBackingStore()) return;
+  positionRdsPsOverlay();
+  drawHeaderSignalGraph();
+}
+
+function ensureOverviewCanvasBackingStore() {
+  if (!overviewCanvas) return false;
   const cssW = Math.floor(overviewCanvas.clientWidth);
   const cssH = Math.floor(overviewCanvas.clientHeight);
-  if (cssW <= 0 || cssH <= 0) return;
+  if (cssW <= 0 || cssH <= 0) return false;
   const dpr = window.devicePixelRatio || 1;
   const nextW = Math.floor(cssW * dpr);
   const nextH = Math.floor(cssH * dpr);
@@ -780,8 +789,7 @@ function resizeHeaderSignalCanvas() {
     _wfResetOffscreen();
     trimOverviewWaterfallRows();
   }
-  positionRdsPsOverlay();
-  drawHeaderSignalGraph();
+  return true;
 }
 
 function signalOverlayHeight() {
@@ -834,26 +842,6 @@ function drawSignalOverlay() {
 
   const range = spectrumVisibleRange(lastSpectrumData);
   const hzToX = (hz) => ((hz - range.visLoHz) / range.visSpanHz) * cssW;
-
-  // ── Bookmark frequency markers (span full overlay height = waterfall + waveform) ──
-  const _bmOvRef = typeof bmList !== "undefined" ? bmList : null;
-  if (Array.isArray(_bmOvRef) && _bmOvRef.length > 0) {
-    const colorMap = bmCategoryColorMap();
-    ctx.save();
-    ctx.lineWidth = 1;
-    ctx.setLineDash([4, 3]);
-    for (const bm of _bmOvRef) {
-      const x = hzToX(bm.freq_hz);
-      if (x < 0 || x > cssW) continue;
-      ctx.strokeStyle = bmHexToRgba(colorMap[bm.category || ""], 0.60);
-      ctx.beginPath();
-      ctx.moveTo(x, 0);
-      ctx.lineTo(x, cssH);
-      ctx.stroke();
-    }
-    ctx.setLineDash([]);
-    ctx.restore();
-  }
 
   if (lastFreqHz != null && currentBandwidthHz > 0) {
     for (const spec of visibleBandwidthSpecs(lastFreqHz)) {
@@ -988,7 +976,7 @@ function startHeaderSignalSampling() {
 }
 
 function drawHeaderSignalGraph() {
-  if (!overviewCanvas) return;
+  if (!ensureOverviewCanvasBackingStore()) return;
   const ctx = overviewCanvas.getContext("2d");
   if (!ctx) return;
   const pal = canvasPalette();
@@ -2033,15 +2021,15 @@ function updateSpectrumAutoHeight() {
 
   if (!mainVisible || !contentVisible || !spectrumVisible) {
     setSignalSplitControlVisible(false);
+    const dimensionsChanged =
+      currentOverviewHeight !== DEFAULT_OVERVIEW_PLOT_HEIGHT_PX
+      || currentSpectrumHeight !== DEFAULT_SPECTRUM_PLOT_HEIGHT_PX;
     root.style.setProperty("--overview-plot-height", `${DEFAULT_OVERVIEW_PLOT_HEIGHT_PX}px`);
     root.style.setProperty("--spectrum-plot-height", `${DEFAULT_SPECTRUM_PLOT_HEIGHT_PX}px`);
-    if (
-      (currentOverviewHeight !== DEFAULT_OVERVIEW_PLOT_HEIGHT_PX
-        || currentSpectrumHeight !== DEFAULT_SPECTRUM_PLOT_HEIGHT_PX)
-      && lastSpectrumData
-    ) {
-      scheduleSpectrumDraw();
+    if (dimensionsChanged) {
+      resizeHeaderSignalCanvas();
       scheduleOverviewDraw();
+      if (lastSpectrumData) scheduleSpectrumDraw();
     }
     return;
   }
@@ -7003,23 +6991,6 @@ if (spectrumCanvas) {
   }, { passive: false });
 }
 
-if (overviewCanvas) {
-  overviewCanvas.addEventListener("wheel", (e) => {
-    e.preventDefault();
-    if (!lastSpectrumData) return;
-    if (e.ctrlKey) {
-      const direction = e.deltaY < 0 ? 1 : -1;
-      jogFreq(direction);
-      return;
-    }
-    const rect = overviewCanvas.getBoundingClientRect();
-    const cssX = e.clientX - rect.left;
-    const factor = e.deltaY < 0 ? 1.25 : 1 / 1.25;
-    spectrumZoomAt(cssX, rect.width, lastSpectrumData, factor);
-    scheduleSpectrumDraw();
-    scheduleOverviewDraw();
-  }, { passive: false });
-}
 
 // ── BW strip edge hit-test (CSS pixels) ──────────────────────────────────────
 function getBwEdgeHit(cssX, cssW, range) {
@@ -7239,48 +7210,6 @@ if (spectrumCanvas) {
     if (_sDragMoved) { _sDragMoved = false; return; }
     if (!lastSpectrumData) return;
     const rect  = spectrumCanvas.getBoundingClientRect();
-    const cssX = e.clientX - rect.left;
-    const targetHz = spectrumTargetHzAt(cssX, rect.width, lastSpectrumData);
-    if (!Number.isFinite(targetHz)) return;
-    setRigFrequency(targetHz)
-      .catch(() => {});
-  });
-}
-
-if (overviewCanvas) {
-  overviewCanvas.addEventListener("mousemove", (e) => {
-    if (!lastSpectrumData) return;
-    const rect = overviewCanvas.getBoundingClientRect();
-    const cssX = e.clientX - rect.left;
-    const range = spectrumVisibleRange(lastSpectrumData);
-    const edge = getBwEdgeHit(cssX, rect.width, range);
-    overviewCanvas.style.cursor = edge ? "ew-resize" : "crosshair";
-  });
-
-  overviewCanvas.addEventListener("mouseleave", () => {
-    overviewCanvas.style.cursor = "crosshair";
-  });
-
-  overviewCanvas.addEventListener("mousedown", (e) => {
-    if (e.button !== 0 || !lastSpectrumData) return;
-    const rect = overviewCanvas.getBoundingClientRect();
-    const cssX = e.clientX - rect.left;
-    const range = spectrumVisibleRange(lastSpectrumData);
-    const edge = getBwEdgeHit(cssX, rect.width, range);
-    if (!edge) return;
-    _bwDragEdge = edge;
-    _bwDragStartX = cssX;
-    _bwDragStartBwHz = currentBandwidthHz;
-    _bwDragCanvas = overviewCanvas;
-    _sDragStart = null;
-    _sDragMoved = true;
-    e.preventDefault();
-  });
-
-  overviewCanvas.addEventListener("click", (e) => {
-    if (_sDragMoved) { _sDragMoved = false; return; }
-    if (!lastSpectrumData) return;
-    const rect = overviewCanvas.getBoundingClientRect();
     const cssX = e.clientX - rect.left;
     const targetHz = spectrumTargetHzAt(cssX, rect.width, lastSpectrumData);
     if (!Number.isFinite(targetHz)) return;
