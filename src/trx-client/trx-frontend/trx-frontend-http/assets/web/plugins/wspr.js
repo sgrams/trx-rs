@@ -86,7 +86,7 @@ function extractAllGrids(message) {
   const parts = message.toUpperCase().split(/[^A-Z0-9]+/);
   for (const token of parts) {
     if (!token) continue;
-    if (/^[A-R]{2}\d{2}(?:[A-X]{2})?$/.test(token) && !seen.has(token)) {
+    if (isMaidenheadGridToken(token) && !seen.has(token)) {
       seen.add(token);
       out.push(token);
     }
@@ -100,10 +100,20 @@ function extractLikelyCallsign(message) {
     if (!token) continue;
     if (token.length < 3 || token.length > 12) continue;
     if (token === "CQ" || token === "DE" || token === "QRZ" || token === "DX") continue;
-    if (/^[A-R]{2}\d{2}(?:[A-X]{2})?$/.test(token)) continue;
+    if (isMaidenheadGridToken(token)) continue;
     if (/^[A-Z0-9/]{1,5}\d[A-Z0-9/]{1,6}$/.test(token)) return token;
   }
   return null;
+}
+
+function isFtxFarewellToken(token) {
+  const normalized = String(token || "").trim().toUpperCase();
+  return normalized === "RR73" || normalized === "73" || normalized === "RR";
+}
+
+function isMaidenheadGridToken(token) {
+  const normalized = String(token || "").trim().toUpperCase();
+  return /^[A-R]{2}\d{2}(?:[A-X]{2})?$/.test(normalized) && !isFtxFarewellToken(normalized);
 }
 
 function applyWsprFilterToRow(row) {

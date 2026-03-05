@@ -219,7 +219,7 @@ fn normalize_token(token: &str) -> String {
 fn parse_locator(message: &str) -> Option<String> {
     message.split_whitespace().find_map(|raw| {
         let t = normalize_token(raw);
-        if is_locator(&t) {
+        if !is_ftx_farewell_token(&t) && is_locator(&t) {
             Some(t)
         } else {
             None
@@ -270,6 +270,10 @@ fn is_locator(token: &str) -> bool {
     } else {
         true
     }
+}
+
+fn is_ftx_farewell_token(token: &str) -> bool {
+    matches!(token, "RR73" | "73" | "RR")
 }
 
 fn maidenhead_from_lat_lon(lat: f64, lon: f64) -> String {
@@ -433,6 +437,8 @@ mod tests {
             Some("SP2SJG".to_string())
         );
         assert_eq!(parse_locator("CQ SP2SJG JO93"), Some("JO93".to_string()));
+        assert_eq!(parse_locator("CQ SP2SJG RR73"), None);
+        assert_eq!(parse_locator("SP2SJG RR 73"), None);
     }
 
     #[test]
