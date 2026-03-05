@@ -360,10 +360,16 @@ impl Ft817 {
         let frame = [0x00, 0x00, 0x00, 0x00, CMD_LOCK];
         self.write_frame(&frame).await?;
         let mut buf = [0u8; 1];
-        if let Err(e) = self.port.read_exact(&mut buf).await {
-            tracing::warn!("LOCK read failed: {:?}", e);
-        } else {
-            tracing::debug!("LOCK response: 0x{:02X}", buf[0]);
+        match timeout(Self::READ_TIMEOUT, self.port.read_exact(&mut buf)).await {
+            Ok(Ok(_)) => {
+                tracing::debug!("LOCK response: 0x{:02X}", buf[0]);
+            }
+            Ok(Err(e)) => {
+                tracing::warn!("LOCK read failed: {:?}", e);
+            }
+            Err(_) => {
+                tracing::warn!("LOCK read timed out");
+            }
         }
         Ok(())
     }
@@ -373,10 +379,16 @@ impl Ft817 {
         let frame = [0x00, 0x00, 0x00, 0x00, CMD_UNLOCK];
         self.write_frame(&frame).await?;
         let mut buf = [0u8; 1];
-        if let Err(e) = self.port.read_exact(&mut buf).await {
-            tracing::warn!("UNLOCK read failed: {:?}", e);
-        } else {
-            tracing::debug!("UNLOCK response: 0x{:02X}", buf[0]);
+        match timeout(Self::READ_TIMEOUT, self.port.read_exact(&mut buf)).await {
+            Ok(Ok(_)) => {
+                tracing::debug!("UNLOCK response: 0x{:02X}", buf[0]);
+            }
+            Ok(Err(e)) => {
+                tracing::warn!("UNLOCK read failed: {:?}", e);
+            }
+            Err(_) => {
+                tracing::warn!("UNLOCK read timed out");
+            }
         }
         Ok(())
     }
