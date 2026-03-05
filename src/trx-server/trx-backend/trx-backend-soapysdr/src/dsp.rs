@@ -200,6 +200,7 @@ fn iq_read_loop(
 
     let mut spectrum = SpectrumSnapshotter::new();
     let mut read_error_streak: u32 = 0;
+    let mut zero_read_streak: u32 = 0;
     let mut overflow_log_window_start: Option<Instant> = None;
     let mut overflow_log_suppressed: u32 = 0;
 
@@ -227,6 +228,9 @@ fn iq_read_loop(
         let n = match source.read_into(&mut block) {
             Ok(n) => {
                 read_error_streak = 0;
+                if n > 0 {
+                    zero_read_streak = 0;
+                }
                 n
             }
             Err(e) => {
@@ -290,13 +294,21 @@ fn iq_read_loop(
         };
 
         if n == 0 {
-            std::thread::sleep(std::time::Duration::from_millis(1));
+            zero_read_streak = zero_read_streak.saturating_add(1);
+            let base_sleep_ms = block_duration_ms.max(2);
+            let sleep_ms = (base_sleep_ms as u128)
+                .saturating_mul(1u128 << zero_read_streak.saturating_sub(1).min(4))
+                .min(50) as u64;
+            std::thread::sleep(std::time::Duration::from_millis(sleep_ms));
             continue;
         }
 
         let samples = &block[..n];
 
-        let _ = iq_tx.send(samples.to_vec());
+        // Avoid per-block allocation/copy when there are no IQ subscribers.
+        if iq_tx.receiver_count() > 0 {
+            let _ = iq_tx.send(samples.to_vec());
+        }
 
         for dsp_arc in &channel_dsps {
             match dsp_arc.lock() {
