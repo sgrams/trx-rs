@@ -2012,13 +2012,9 @@ function updateSpectrumAutoHeight() {
   }
 
   const bounds = spectrumHeightBoundsPx(tabMainEl, contentEl, spectrumCanvasEl);
-  const requestedSpectrumHeight = spectrumManualPlotHeightPx == null
+  const nextSpectrumHeight = spectrumManualPlotHeightPx == null
     ? bounds.max
-    : spectrumManualPlotHeightPx;
-  const nextSpectrumHeight = Math.max(
-    bounds.min,
-    Math.min(bounds.max, Math.round(requestedSpectrumHeight)),
-  );
+    : Math.max(bounds.min, Math.round(spectrumManualPlotHeightPx));
   if (spectrumManualPlotHeightPx != null) {
     spectrumManualPlotHeightPx = nextSpectrumHeight;
   }
@@ -2042,9 +2038,12 @@ function beginSpectrumResize(clientY) {
   const spectrumPanelEl = document.getElementById("spectrum-panel");
   if (!tabMainEl || !contentEl || !spectrumCanvasEl || !spectrumPanelEl) return false;
   if (getComputedStyle(spectrumPanelEl).display === "none") return false;
+  const bounds = spectrumHeightBoundsPx(tabMainEl, contentEl, spectrumCanvasEl);
+  const startHeight = Math.max(bounds.min, currentSpectrumHeightPx(spectrumCanvasEl));
   spectrumResizeState = {
     startY: clientY,
-    startHeight: currentSpectrumHeightPx(spectrumCanvasEl),
+    startHeight,
+    minHeight: bounds.min,
   };
   document.body.classList.add("spectrum-resizing");
   return true;
@@ -2053,7 +2052,10 @@ function beginSpectrumResize(clientY) {
 function updateSpectrumResize(clientY) {
   if (!spectrumResizeState) return;
   const deltaY = clientY - spectrumResizeState.startY;
-  spectrumManualPlotHeightPx = spectrumResizeState.startHeight + deltaY;
+  spectrumManualPlotHeightPx = Math.max(
+    spectrumResizeState.minHeight,
+    Math.round(spectrumResizeState.startHeight + deltaY),
+  );
   updateSpectrumAutoHeight();
 }
 
