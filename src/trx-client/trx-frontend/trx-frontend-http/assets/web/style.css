@@ -548,7 +548,7 @@ small { color: var(--text-muted); }
 #signal-split-slider {
   writing-mode: vertical-lr;
   direction: rtl;
-  width: 0.62rem;
+  width: 0.5rem;
   height: 5.4rem;
   margin: 0;
   accent-color: var(--accent-green);
@@ -1850,7 +1850,7 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   #signal-split-slider {
     writing-mode: horizontal-tb;
     direction: ltr;
-    width: 4rem;
+    width: 3.6rem;
     height: 1rem;
     cursor: ew-resize;
   }
