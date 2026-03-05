@@ -2151,6 +2151,14 @@ if (signalSplitSliderEl) {
     saveSetting("signalSplitPercent", signalSplitPercent);
     scheduleSpectrumLayout();
   });
+  signalSplitSliderEl.addEventListener("dblclick", (event) => {
+    event.preventDefault();
+    signalSplitPercent = DEFAULT_SIGNAL_SPLIT_PERCENT;
+    signalSplitSliderEl.value = String(signalSplitPercent);
+    updateSignalSplitControlText();
+    saveSetting("signalSplitPercent", signalSplitPercent);
+    scheduleSpectrumLayout();
+  });
 }
 updateSignalSplitControlText();
 
