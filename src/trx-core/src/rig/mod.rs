@@ -190,6 +190,17 @@ pub trait RigCat: Rig + Send {
         )))
     }
 
+    fn set_sdr_squelch<'a>(
+        &'a mut self,
+        _enabled: bool,
+        _threshold_db: f64,
+    ) -> Pin<Box<dyn Future<Output = DynResult<()>> + Send + 'a>> {
+        Box::pin(std::future::ready(Err(
+            Box::new(response::RigError::not_supported("set_sdr_squelch"))
+                as Box<dyn std::error::Error + Send + Sync>,
+        )))
+    }
+
     fn set_wfm_stereo<'a>(
         &'a mut self,
         _enabled: bool,
