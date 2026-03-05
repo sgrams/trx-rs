@@ -298,6 +298,10 @@ function applyCapabilities(caps) {
     }
     scheduleSpectrumLayout();
   }
+  if (!caps.filter_controls) {
+    sdrSquelchSupported = false;
+  }
+  updateSdrSquelchControlVisibility();
 }
 
 const freqEl = document.getElementById("freq");
@@ -400,6 +404,7 @@ function vfoColor(idx) {
 let jogAngle = 0;
 let lastClientCount = null;
 let lastLocked = false;
+let sdrSquelchSupported = false;
 let lastRigIds = [];
 let lastRigDisplayNames = {};
 let lastActiveRigId = null;
@@ -2362,6 +2367,16 @@ function render(update) {
       wfmStFlagEl.classList.toggle("wfm-st-flag-stereo", detected);
       wfmStFlagEl.classList.toggle("wfm-st-flag-mono", !detected);
     }
+    const hasSdrSquelchEnabled = typeof update.filter.sdr_squelch_enabled === "boolean";
+    const hasSdrSquelchThreshold = typeof update.filter.sdr_squelch_threshold_db === "number";
+    if (hasSdrSquelchEnabled || hasSdrSquelchThreshold) {
+      sdrSquelchSupported = true;
+      syncSdrSquelchFromServer(
+        hasSdrSquelchEnabled ? update.filter.sdr_squelch_enabled : true,
+        hasSdrSquelchThreshold ? update.filter.sdr_squelch_threshold_db : -120,
+      );
+    }
+    updateSdrSquelchControlVisibility();
   }
   if (sdrGainControlsEl && typeof update.show_sdr_gain_control === "boolean") {
     sdrGainControlsEl.style.display = update.show_sdr_gain_control ? "" : "none";
@@ -2381,6 +2396,7 @@ function render(update) {
     }
     lastModeName = modeUpper;
     updateWfmControls();
+    updateSdrSquelchControlVisibility();
     // When filter panel is active (SDR backend), update the BW slider range
     // to match the new mode — but only if the server hasn't already sent a
     // filter state that overrides it.
@@ -5312,6 +5328,12 @@ const sdrGainControlsEl = document.getElementById("sdr-gain-controls");
 const sdrGainEl = document.getElementById("sdr-gain-db");
 const sdrGainSetBtn = document.getElementById("sdr-gain-set");
 const wfmStFlagEl = document.getElementById("wfm-st-flag");
+const sdrSquelchWrapEl = document.getElementById("sdr-squelch-wrap");
+const sdrSquelchEl = document.getElementById("sdr-squelch");
+const sdrSquelchPctEl = document.getElementById("sdr-squelch-pct");
+const SDR_SQUELCH_MIN_DB = -120;
+const SDR_SQUELCH_MAX_DB = -30;
+let syncFromServerSdrSquelch = false;
 
 // Hide audio row if audio is not configured on the server
 fetch("/audio", { method: "GET" }).then((r) => {
@@ -5381,6 +5403,74 @@ function normalizeWfmDenoiseLevel(value) {
   const next = String(value ?? "").toLowerCase();
   if (next === "off" || next === "auto" || next === "low" || next === "medium" || next === "high") return next;
   return "auto";
+}
+
+function clampSdrSquelchPercent(value) {
+  if (!Number.isFinite(value)) return 0;
+  return Math.max(0, Math.min(100, Math.round(value)));
+}
+
+function sdrSquelchPercentToServer(percent) {
+  const pct = clampSdrSquelchPercent(percent);
+  if (pct <= 0) {
+    return { enabled: false, thresholdDb: SDR_SQUELCH_MIN_DB };
+  }
+  const ratio = pct / 100;
+  const thresholdDb = SDR_SQUELCH_MIN_DB + ratio * (SDR_SQUELCH_MAX_DB - SDR_SQUELCH_MIN_DB);
+  return { enabled: true, thresholdDb };
+}
+
+function sdrSquelchServerToPercent(enabled, thresholdDb) {
+  if (!enabled) return 0;
+  if (!Number.isFinite(thresholdDb)) return 0;
+  const ratio = (thresholdDb - SDR_SQUELCH_MIN_DB) / (SDR_SQUELCH_MAX_DB - SDR_SQUELCH_MIN_DB);
+  return clampSdrSquelchPercent(ratio * 100);
+}
+
+function updateSdrSquelchPctLabel() {
+  if (!sdrSquelchEl || !sdrSquelchPctEl) return;
+  const pct = clampSdrSquelchPercent(Number(sdrSquelchEl.value));
+  sdrSquelchPctEl.textContent = pct <= 0 ? "Open" : `${pct}%`;
+}
+
+function updateSdrSquelchControlVisibility() {
+  if (!sdrSquelchWrapEl) return;
+  const mode = (modeEl && modeEl.value ? modeEl.value : "").toUpperCase();
+  sdrSquelchWrapEl.style.display = sdrSquelchSupported && mode !== "WFM" ? "" : "none";
+}
+
+function syncSdrSquelchFromServer(enabled, thresholdDb) {
+  if (!sdrSquelchEl) return;
+  if (document.activeElement === sdrSquelchEl) return;
+  const pct = sdrSquelchServerToPercent(enabled, thresholdDb);
+  syncFromServerSdrSquelch = true;
+  sdrSquelchEl.value = String(pct);
+  updateSdrSquelchPctLabel();
+  syncFromServerSdrSquelch = false;
+  saveSetting("sdrSquelchPct", pct);
+}
+
+function submitSdrSquelchPercent(percent) {
+  if (!sdrSquelchSupported) return;
+  const { enabled, thresholdDb } = sdrSquelchPercentToServer(percent);
+  postPath(
+    `/set_sdr_squelch?enabled=${enabled ? "true" : "false"}&threshold_db=${encodeURIComponent(thresholdDb.toFixed(2))}`,
+  ).catch(() => {});
+}
+
+if (sdrSquelchEl) {
+  const savedPct = clampSdrSquelchPercent(Number(loadSetting("sdrSquelchPct", 0)));
+  sdrSquelchEl.value = String(savedPct);
+  updateSdrSquelchPctLabel();
+  sdrSquelchEl.addEventListener("input", () => {
+    const pct = clampSdrSquelchPercent(Number(sdrSquelchEl.value));
+    sdrSquelchEl.value = String(pct);
+    updateSdrSquelchPctLabel();
+    saveSetting("sdrSquelchPct", pct);
+    if (!syncFromServerSdrSquelch) {
+      submitSdrSquelchPercent(pct);
+    }
+  });
 }
 
 if (wfmAudioModeEl) {
@@ -5824,6 +5914,17 @@ function volWheel(slider, pctEl, getGain, storageKey) {
 }
 volWheel(rxVolSlider, rxVolPct, () => rxGainNode, "rxVol");
 volWheel(txVolSlider, txVolPct, () => txGainNode, "txVol");
+if (sdrSquelchEl) {
+  sdrSquelchEl.addEventListener("wheel", (e) => {
+    e.preventDefault();
+    const step = e.deltaY < 0 ? 2 : -2;
+    const next = clampSdrSquelchPercent(Number(sdrSquelchEl.value) + step);
+    sdrSquelchEl.value = String(next);
+    updateSdrSquelchPctLabel();
+    saveSetting("sdrSquelchPct", next);
+    submitSdrSquelchPercent(next);
+  }, { passive: false });
+}
 
 document.getElementById("copyright-year").textContent = new Date().getFullYear();
 
@@ -6941,6 +7042,233 @@ function updateSpectrumDbAxis(dbMin, dbMax, gridStep, heightPx, dpr) {
     spectrumDbAxis.appendChild(span);
   }
 }
+
+function isVisibleForSnapshot(el) {
+  if (!el) return false;
+  const style = getComputedStyle(el);
+  if (style.display === "none" || style.visibility === "hidden") return false;
+  const opacity = Number(style.opacity);
+  if (Number.isFinite(opacity) && opacity <= 0) return false;
+  const rect = el.getBoundingClientRect();
+  return rect.width > 0 && rect.height > 0;
+}
+
+function drawRoundedRectPath(ctx, x, y, w, h, r) {
+  const radius = Math.max(0, Math.min(r, Math.min(w, h) / 2));
+  ctx.beginPath();
+  ctx.moveTo(x + radius, y);
+  ctx.lineTo(x + w - radius, y);
+  ctx.quadraticCurveTo(x + w, y, x + w, y + radius);
+  ctx.lineTo(x + w, y + h - radius);
+  ctx.quadraticCurveTo(x + w, y + h, x + w - radius, y + h);
+  ctx.lineTo(x + radius, y + h);
+  ctx.quadraticCurveTo(x, y + h, x, y + h - radius);
+  ctx.lineTo(x, y + radius);
+  ctx.quadraticCurveTo(x, y, x + radius, y);
+  ctx.closePath();
+}
+
+function drawElementChrome(ctx, el, rootRect) {
+  if (!isVisibleForSnapshot(el)) return null;
+  const rect = el.getBoundingClientRect();
+  const style = getComputedStyle(el);
+  const x = rect.left - rootRect.left;
+  const y = rect.top - rootRect.top;
+  const w = rect.width;
+  const h = rect.height;
+  const radius = parseFloat(style.borderTopLeftRadius) || 0;
+  const bg = cssColorToRgba(style.backgroundColor || "rgba(0,0,0,0)");
+  const borderWidth = Math.max(0, parseFloat(style.borderTopWidth) || 0);
+  const border = cssColorToRgba(style.borderTopColor || "rgba(0,0,0,0)");
+
+  if (bg[3] > 0.01) {
+    drawRoundedRectPath(ctx, x, y, w, h, radius);
+    ctx.fillStyle = `rgba(${Math.round(bg[0])}, ${Math.round(bg[1])}, ${Math.round(bg[2])}, ${bg[3]})`;
+    ctx.fill();
+  }
+  if (borderWidth > 0 && border[3] > 0.01) {
+    drawRoundedRectPath(ctx, x + borderWidth * 0.5, y + borderWidth * 0.5, w - borderWidth, h - borderWidth, Math.max(0, radius - borderWidth * 0.5));
+    ctx.lineWidth = borderWidth;
+    ctx.strokeStyle = `rgba(${Math.round(border[0])}, ${Math.round(border[1])}, ${Math.round(border[2])}, ${border[3]})`;
+    ctx.stroke();
+  }
+  return { x, y, w, h, style };
+}
+
+function drawWrappedText(ctx, text, x, y, maxWidth, lineHeight, maxLines) {
+  const words = String(text || "").split(/\s+/).filter(Boolean);
+  if (!words.length) return;
+  let line = "";
+  let lineIdx = 0;
+  for (let i = 0; i < words.length; i += 1) {
+    const candidate = line ? `${line} ${words[i]}` : words[i];
+    if (ctx.measureText(candidate).width <= maxWidth || !line) {
+      line = candidate;
+      continue;
+    }
+    ctx.fillText(line, x, y + lineIdx * lineHeight);
+    lineIdx += 1;
+    if (lineIdx >= maxLines) return;
+    line = words[i];
+  }
+  if (line && lineIdx < maxLines) {
+    ctx.fillText(line, x, y + lineIdx * lineHeight);
+  }
+}
+
+function drawElementTextBlock(ctx, el, rootRect, fallbackText = null) {
+  const chrome = drawElementChrome(ctx, el, rootRect);
+  if (!chrome) return;
+  const text = (fallbackText == null ? el.innerText : fallbackText) || "";
+  const clean = text.replace(/\s+\n/g, "\n").replace(/\n\s+/g, "\n").trim();
+  if (!clean) return;
+  const style = chrome.style;
+  const fontSize = parseFloat(style.fontSize) || 12;
+  const lineHeight = (parseFloat(style.lineHeight) || fontSize * 1.25);
+  const padX = 6;
+  const padY = 4;
+  const maxWidth = Math.max(20, chrome.w - padX * 2);
+  const maxLines = Math.max(1, Math.floor((chrome.h - padY * 2) / lineHeight));
+  ctx.fillStyle = style.color || "#ffffff";
+  ctx.font = `${style.fontStyle || "normal"} ${style.fontWeight || "400"} ${style.fontSize || "12px"} ${style.fontFamily || "sans-serif"}`;
+  ctx.textBaseline = "top";
+  const lines = clean.split(/\n+/);
+  let lineCursor = 0;
+  for (const line of lines) {
+    if (lineCursor >= maxLines) break;
+    drawWrappedText(
+      ctx,
+      line,
+      chrome.x + padX,
+      chrome.y + padY + lineCursor * lineHeight,
+      maxWidth,
+      lineHeight,
+      maxLines - lineCursor,
+    );
+    lineCursor += 1;
+  }
+}
+
+function drawAxisLabels(ctx, axisEl, rootRect) {
+  if (!isVisibleForSnapshot(axisEl)) return;
+  for (const node of axisEl.children) {
+    if (!(node instanceof HTMLElement)) continue;
+    if (!(node.matches("span") || node.matches("button"))) continue;
+    if (!isVisibleForSnapshot(node)) continue;
+    const chrome = drawElementChrome(ctx, node, rootRect);
+    const text = (node.textContent || "").trim();
+    if (!chrome || !text) continue;
+    const style = chrome.style;
+    ctx.fillStyle = style.color || "#ffffff";
+    ctx.font = `${style.fontStyle || "normal"} ${style.fontWeight || "400"} ${style.fontSize || "12px"} ${style.fontFamily || "sans-serif"}`;
+    ctx.textBaseline = "middle";
+    ctx.fillText(text, chrome.x + 4, chrome.y + chrome.h / 2);
+  }
+}
+
+function buildSpectrumSnapshotCanvas() {
+  const rootEl = signalVisualBlockEl || document.querySelector(".signal-visual-block");
+  const spectrumPanelEl = document.getElementById("spectrum-panel");
+  if (!rootEl || !isVisibleForSnapshot(rootEl) || !isVisibleForSnapshot(spectrumPanelEl)) {
+    return null;
+  }
+  const rootRect = rootEl.getBoundingClientRect();
+  const dpr = window.devicePixelRatio || 1;
+  const out = document.createElement("canvas");
+  out.width = Math.max(1, Math.round(rootRect.width * dpr));
+  out.height = Math.max(1, Math.round(rootRect.height * dpr));
+  const ctx = out.getContext("2d");
+  if (!ctx) return null;
+  ctx.scale(dpr, dpr);
+
+  const bg = getComputedStyle(document.documentElement).getPropertyValue("--bg").trim() || getComputedStyle(document.body).backgroundColor || "#000";
+  ctx.fillStyle = bg;
+  ctx.fillRect(0, 0, rootRect.width, rootRect.height);
+
+  const canvases = [overviewCanvas, spectrumCanvas, signalOverlayCanvas];
+  for (const canvas of canvases) {
+    if (!canvas || !isVisibleForSnapshot(canvas)) continue;
+    const rect = canvas.getBoundingClientRect();
+    ctx.drawImage(
+      canvas,
+      rect.left - rootRect.left,
+      rect.top - rootRect.top,
+      rect.width,
+      rect.height,
+    );
+  }
+
+  // Decoder overlays over the signal view.
+  const decoderOverlayIds = [
+    "ais-bar-overlay",
+    "vdes-bar-overlay",
+    "ft8-bar-overlay",
+    "aprs-bar-overlay",
+    "rds-ps-overlay",
+  ];
+  for (const id of decoderOverlayIds) {
+    const overlayEl = document.getElementById(id);
+    if (!overlayEl || !isVisibleForSnapshot(overlayEl)) continue;
+    drawElementTextBlock(ctx, overlayEl, rootRect);
+  }
+
+  // Spectrum axis labels and bookmark chips (includes freq bar).
+  drawAxisLabels(ctx, spectrumFreqAxis, rootRect);
+  drawAxisLabels(ctx, spectrumDbAxis, rootRect);
+  drawAxisLabels(ctx, document.getElementById("spectrum-bookmark-axis"), rootRect);
+  drawAxisLabels(ctx, document.getElementById("spectrum-bookmark-side-left"), rootRect);
+  drawAxisLabels(ctx, document.getElementById("spectrum-bookmark-side-right"), rootRect);
+
+  return out;
+}
+
+function saveCanvasAsPng(canvas, fileName) {
+  if (!canvas) return;
+  if (typeof canvas.toBlob === "function") {
+    canvas.toBlob((blob) => {
+      if (!blob) return;
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = fileName;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    }, "image/png");
+    return;
+  }
+  const a = document.createElement("a");
+  a.href = canvas.toDataURL("image/png");
+  a.download = fileName;
+  a.click();
+}
+
+function captureSpectrumScreenshot() {
+  const snapshotCanvas = buildSpectrumSnapshotCanvas();
+  if (!snapshotCanvas) {
+    showHint("Spectrum view not ready", 1300);
+    return;
+  }
+  const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+  saveCanvasAsPng(snapshotCanvas, `trx-spectrum-${stamp}.png`);
+  showHint("Spectrum screenshot saved", 1500);
+}
+
+function shouldIgnoreGlobalShortcut(target) {
+  if (!(target instanceof HTMLElement)) return false;
+  const tag = target.tagName;
+  if (target.isContentEditable) return true;
+  if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return true;
+  return !!target.closest("[contenteditable='true']");
+}
+
+window.addEventListener("keydown", (event) => {
+  if (event.defaultPrevented || event.repeat) return;
+  if (event.ctrlKey || event.metaKey || event.altKey) return;
+  if (shouldIgnoreGlobalShortcut(event.target)) return;
+  if ((event.key || "").toLowerCase() !== "s") return;
+  event.preventDefault();
+  captureSpectrumScreenshot();
+});
 
 // ── Zoom helpers ──────────────────────────────────────────────────────────────
 function spectrumZoomAt(cssX, cssW, data, factor) {

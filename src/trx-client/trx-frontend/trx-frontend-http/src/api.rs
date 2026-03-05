@@ -567,6 +567,27 @@ pub async fn set_sdr_gain(
 }
 
 #[derive(serde::Deserialize)]
+pub struct SdrSquelchQuery {
+    pub enabled: bool,
+    pub threshold_db: f64,
+}
+
+#[post("/set_sdr_squelch")]
+pub async fn set_sdr_squelch(
+    query: web::Query<SdrSquelchQuery>,
+    rig_tx: web::Data<mpsc::Sender<RigRequest>>,
+) -> Result<HttpResponse, Error> {
+    send_command(
+        &rig_tx,
+        RigCommand::SetSdrSquelch {
+            enabled: query.enabled,
+            threshold_db: query.threshold_db,
+        },
+    )
+    .await
+}
+
+#[derive(serde::Deserialize)]
 pub struct WfmDeemphasisQuery {
     pub us: u32,
 }
@@ -980,6 +1001,7 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
         .service(set_bandwidth)
         .service(set_fir_taps)
         .service(set_sdr_gain)
+        .service(set_sdr_squelch)
         .service(set_wfm_deemphasis)
         .service(set_wfm_stereo)
         .service(set_wfm_denoise)
