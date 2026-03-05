@@ -179,17 +179,22 @@ impl IqSource for RealIqSource {
             .map_err(|e| format!("Failed to set SDR gain: {}", e))
     }
 
-    fn handle_read_error(&mut self, err: &str) -> Result<bool, String> {
+    fn handle_read_error(&mut self, err: &str, streak: u32) -> Result<bool, String> {
         let err_lc = err.to_ascii_lowercase();
         let is_overrun = err_lc.contains("overflow") || err_lc.contains("overrun");
         if !is_overrun {
             return Ok(false);
         }
-
-        tracing::warn!("SoapySDR RX overflow detected; restarting RX stream");
-        self.stream
-            .deactivate(None)
-            .map_err(|e| format!("Failed to deactivate RX stream after overflow: {}", e))?;
+        // Overflow is often transient; avoid immediate stream restart churn.
+        // Only restart after several consecutive read failures.
+        if streak < 3 {
+            return Ok(true);
+        }
+        tracing::warn!(
+            "SoapySDR RX overflow persists (streak={}); restarting RX stream",
+            streak
+        );
+        let _ = self.stream.deactivate(None);
         std::thread::sleep(std::time::Duration::from_millis(25));
         self.stream
             .activate(None)

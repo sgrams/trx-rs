@@ -16,6 +16,7 @@ mod filter;
 mod spectrum;
 
 use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 use num_complex::Complex;
 use tokio::sync::broadcast;
@@ -57,7 +58,7 @@ pub trait IqSource: Send + 'static {
     /// Gives a source-specific implementation a chance to recover from a
     /// read error (for example, by rearming a hardware stream after overflow).
     /// Returns `true` when an active recovery action was attempted.
-    fn handle_read_error(&mut self, _err: &str) -> Result<bool, String> {
+    fn handle_read_error(&mut self, _err: &str, _streak: u32) -> Result<bool, String> {
         Ok(false)
     }
 }
@@ -199,6 +200,8 @@ fn iq_read_loop(
 
     let mut spectrum = SpectrumSnapshotter::new();
     let mut read_error_streak: u32 = 0;
+    let mut overflow_log_window_start: Option<Instant> = None;
+    let mut overflow_log_suppressed: u32 = 0;
 
     loop {
         // Apply any pending hardware retune before the next read.
@@ -228,7 +231,9 @@ fn iq_read_loop(
             }
             Err(e) => {
                 read_error_streak = read_error_streak.saturating_add(1);
-                let recovered = match source.handle_read_error(&e) {
+                let err_lc = e.to_ascii_lowercase();
+                let is_overflow = err_lc.contains("overflow") || err_lc.contains("overrun");
+                let recovered = match source.handle_read_error(&e, read_error_streak) {
                     Ok(result) => result,
                     Err(recovery_err) => {
                         tracing::warn!(
@@ -238,12 +243,39 @@ fn iq_read_loop(
                         false
                     }
                 };
-                tracing::warn!(
-                    "IQ source read error: {}; retrying (streak={}, recovered={})",
-                    e,
-                    read_error_streak,
-                    recovered
-                );
+                if is_overflow {
+                    let now = Instant::now();
+                    if overflow_log_window_start
+                        .map(|ts| now.duration_since(ts) >= Duration::from_secs(3))
+                        .unwrap_or(true)
+                    {
+                        let suppressed = overflow_log_suppressed;
+                        overflow_log_window_start = Some(now);
+                        overflow_log_suppressed = 0;
+                        tracing::warn!(
+                            "IQ source overflow: {}; retrying (streak={}, recovered={}, suppressed={})",
+                            e,
+                            read_error_streak,
+                            recovered,
+                            suppressed
+                        );
+                    } else {
+                        overflow_log_suppressed = overflow_log_suppressed.saturating_add(1);
+                        tracing::debug!(
+                            "IQ source overflow suppressed: {} (streak={}, recovered={})",
+                            e,
+                            read_error_streak,
+                            recovered
+                        );
+                    }
+                } else {
+                    tracing::warn!(
+                        "IQ source read error: {}; retrying (streak={}, recovered={})",
+                        e,
+                        read_error_streak,
+                        recovered
+                    );
+                }
                 let base_sleep_ms = if recovered {
                     block_duration_ms.max(20)
                 } else {

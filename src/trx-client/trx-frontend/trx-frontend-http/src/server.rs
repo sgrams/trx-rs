@@ -20,7 +20,7 @@ use std::time::Duration;
 
 use actix_web::dev::Server;
 use actix_web::{
-    middleware::{DefaultHeaders, Logger},
+    middleware::{Compress, DefaultHeaders, Logger},
     web, App, HttpServer,
 };
 use tokio::signal;
@@ -126,6 +126,7 @@ fn build_server(
             .app_data(context_data.clone())
             .app_data(auth_state.clone())
             .app_data(bookmark_store.clone())
+            .wrap(Compress::default())
             .wrap(
                 DefaultHeaders::new()
                     .add(("Referrer-Policy", "same-origin"))

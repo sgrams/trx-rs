@@ -250,6 +250,7 @@ pub async fn events(
 
     Ok(HttpResponse::Ok()
         .insert_header((header::CONTENT_TYPE, "text/event-stream"))
+        .insert_header((header::CONTENT_ENCODING, "identity"))
         .insert_header((header::CACHE_CONTROL, "no-cache"))
         .insert_header((header::CONNECTION, "keep-alive"))
         .streaming(stream))
@@ -330,6 +331,7 @@ pub async fn decode_events(
 
     Ok(HttpResponse::Ok()
         .insert_header((header::CONTENT_TYPE, "text/event-stream"))
+        .insert_header((header::CONTENT_ENCODING, "identity"))
         .insert_header((header::CACHE_CONTROL, "no-cache"))
         .insert_header((header::CONNECTION, "keep-alive"))
         .streaming(stream))
@@ -416,6 +418,7 @@ pub async fn spectrum(
 
     Ok(HttpResponse::Ok()
         .insert_header((header::CONTENT_TYPE, "text/event-stream"))
+        .insert_header((header::CONTENT_ENCODING, "identity"))
         .insert_header((header::CACHE_CONTROL, "no-cache"))
         .insert_header((header::CONNECTION, "keep-alive"))
         .streaming(stream))

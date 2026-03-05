@@ -170,19 +170,8 @@ pub async fn run_rig_task(
         match rig.power_on().await {
             Ok(()) => {
                 state.control.enabled = Some(true);
-                time::sleep(Duration::from_secs(3)).await;
-                if let Err(e) = refresh_state_with_retry(&mut rig, &mut state, retry).await {
-                    warn!(
-                        "Initial PowerOn refresh failed: {:?}; retrying once after short delay",
-                        e
-                    );
-                    time::sleep(Duration::from_millis(500)).await;
-                    if let Err(e2) = refresh_state_with_retry(&mut rig, &mut state, retry).await {
-                        warn!(
-                            "Initial PowerOn second refresh failed (continuing): {:?}",
-                            e2
-                        );
-                    }
+                if let Err(e) = refresh_after_power_on(&mut rig, &mut state, retry).await {
+                    warn!("Initial PowerOn refresh failed after retries (continuing): {}", e);
                 } else {
                     initial_status_read = true;
                 }
@@ -562,23 +551,14 @@ async fn process_command(
                 CommandResult::PowerUpdated(on) => {
                     ctx.state.control.enabled = Some(on);
                     if on {
-                        time::sleep(Duration::from_secs(3)).await;
+                        if let Err(e) = refresh_after_power_on(ctx.rig, ctx.state, ctx.retry).await
+                        {
+                            error!("Failed to refresh after PowerOn: {}", e);
+                            return Err(RigError::communication(format!("CAT error: {}", e)));
+                        }
                         let now = Instant::now();
                         *ctx.poll_pause_until = Some(now + Duration::from_secs(3));
                         *ctx.last_power_on = Some(now);
-                        // Refresh state after power on
-                        if let Err(e) =
-                            refresh_state_with_retry(ctx.rig, ctx.state, ctx.retry).await
-                        {
-                            if is_invalid_bcd_error(e.as_ref()) {
-                                warn!("Transient CAT decode after PowerOn (ignored): {:?}", e);
-                                *ctx.poll_pause_until =
-                                    Some(Instant::now() + Duration::from_millis(1500));
-                            } else {
-                                error!("Failed to refresh after PowerOn: {:?}", e);
-                                return Err(RigError::communication(format!("CAT error: {}", e)));
-                            }
-                        }
                     } else {
                         ctx.state.status.tx_en = false;
                     }
@@ -714,6 +694,43 @@ async fn refresh_state_from_cat(rig: &mut Box<dyn RigCat>, state: &mut RigState)
 
     state.status.lock = Some(state.control.lock.unwrap_or(false));
     Ok(())
+}
+
+async fn refresh_after_power_on(
+    rig: &mut Box<dyn RigCat>,
+    state: &mut RigState,
+    retry: &ExponentialBackoff,
+) -> DynResult<()> {
+    let mut last_err = String::new();
+    for attempt in 1..=3 {
+        if attempt == 1 {
+            time::sleep(Duration::from_secs(3)).await;
+        } else {
+            warn!(
+                "PowerOn refresh attempt {} failed; issuing additional PowerOn pulse",
+                attempt - 1
+            );
+            if let Err(e) = rig.power_on().await {
+                warn!("PowerOn retry {} failed: {:?}", attempt, e);
+            }
+            time::sleep(Duration::from_millis(1300)).await;
+        }
+        match refresh_state_with_retry(rig, state, retry).await {
+            Ok(()) => return Ok(()),
+            Err(e) => {
+                last_err = e.to_string();
+                if is_invalid_bcd_error(e.as_ref()) {
+                    warn!(
+                        "Transient CAT decode after PowerOn attempt {}: {:?}",
+                        attempt, e
+                    );
+                } else {
+                    warn!("PowerOn refresh attempt {} failed: {:?}", attempt, e);
+                }
+            }
+        }
+    }
+    Err(format!("refresh after PowerOn failed after retries: {}", last_err).into())
 }
 
 /// Apply initial mode/frequency after a successful CAT status read.

@@ -7,11 +7,13 @@
   <link rel="icon" type="image/png" sizes="any" href="/favicon.ico?v=5" />
   <link rel="shortcut icon" href="/favicon.ico?v=5" />
   <link rel="apple-touch-icon" sizes="180x180" href="/favicon.png?v=5" />
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fontsource/dseg14-classic/400.css" />
+  <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
+  <link rel="preconnect" href="https://unpkg.com" crossorigin />
+  <link rel="preload" as="style" href="https://cdn.jsdelivr.net/npm/@fontsource/dseg14-classic/400.css" onload="this.onload=null;this.rel='stylesheet'" />
+  <noscript><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fontsource/dseg14-classic/400.css" /></noscript>
   <link rel="stylesheet" href="/style.css" />
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script src="/leaflet-ais-tracksymbol.js"></script>
+  <link rel="preload" as="style" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" onload="this.onload=null;this.rel='stylesheet'" />
+  <noscript><link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" /></noscript>
 </head>
 <body>
   <div class="card" id="card">
@@ -638,5 +640,7 @@
   <script src="/wspr.js"></script>
   <script src="/cw.js"></script>
   <script src="/bookmarks.js"></script>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="/leaflet-ais-tracksymbol.js"></script>
 </body>
 </html>
