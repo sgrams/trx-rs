@@ -1011,7 +1011,6 @@ function drawOverviewWaterfall(W, H, pal) {
   const palKey = overviewWfPaletteKey(pal, viewKey);
   const rowStride = iW * 4;
   const expectedSize = iW * iH * 4;
-  const steadyState = rows.length >= maxVisible;
   const newPushes = overviewWaterfallPushCount - overviewWfTexPushCount;
   const sizeChanged = overviewWfTexWidth !== iW || overviewWfTexHeight !== iH;
   const palChanged = overviewWfTexPalKey !== palKey;
@@ -1046,7 +1045,7 @@ function drawOverviewWaterfall(W, H, pal) {
     }
     overviewWfTexPushCount = overviewWaterfallPushCount;
     overviewWfTexPalKey = palKey;
-  } else if (steadyState && newPushes > 0) {
+  } else if (newPushes > 0) {
     const newCount = Math.min(newPushes, iH);
     if (newCount >= iH) {
       for (let y = 0; y < iH; y++) renderRow(y, rows[y]);
@@ -6715,6 +6714,10 @@ function createBookmarkChip(bm, colorMap, options = {}) {
   span.className = "spectrum-bookmark-chip";
   if (options.sideStack) {
     span.classList.add("spectrum-bookmark-chip-side");
+  } else {
+    // Keep main in-band bookmark chips pinned at the very top of the spectrum strip.
+    span.style.top = "2px";
+    span.style.transform = "translateX(-50%)";
   }
   span.title = buildBookmarkTooltipText(bm) || (bm.name + " \u2014 " + freqStr + (bm.comment ? "\n" + bm.comment : ""));
   span.dataset.bmId = bm.id;
