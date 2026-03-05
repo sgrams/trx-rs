@@ -310,10 +310,12 @@ mod tests {
                 fir_taps: 64,
                 cw_center_hz: 700,
                 sdr_gain_db: Some(12.0),
+                sdr_squelch_enabled: None,
+                sdr_squelch_threshold_db: None,
                 wfm_deemphasis_us: 75,
                 wfm_stereo: true,
                 wfm_stereo_detected: false,
-                wfm_denoise: true,
+                wfm_denoise: trx_core::WfmDenoiseLevel::Auto,
             }),
             ..minimal_snapshot()
         })
@@ -350,10 +352,12 @@ mod tests {
                 fir_taps: 128,
                 cw_center_hz: 700,
                 sdr_gain_db: Some(18.0),
+                sdr_squelch_enabled: None,
+                sdr_squelch_threshold_db: None,
                 wfm_deemphasis_us: 50,
                 wfm_stereo: true,
                 wfm_stereo_detected: true,
-                wfm_denoise: true,
+                wfm_denoise: trx_core::WfmDenoiseLevel::Auto,
             }),
             ..minimal_snapshot()
         };

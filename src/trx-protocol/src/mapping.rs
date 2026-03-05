@@ -49,6 +49,13 @@ pub fn client_command_to_rig(cmd: ClientCommand) -> RigCommand {
         ClientCommand::SetBandwidth { bandwidth_hz } => RigCommand::SetBandwidth(bandwidth_hz),
         ClientCommand::SetFirTaps { taps } => RigCommand::SetFirTaps(taps),
         ClientCommand::SetSdrGain { gain_db } => RigCommand::SetSdrGain(gain_db),
+        ClientCommand::SetSdrSquelch {
+            enabled,
+            threshold_db,
+        } => RigCommand::SetSdrSquelch {
+            enabled,
+            threshold_db,
+        },
         ClientCommand::SetWfmDeemphasis { deemphasis_us } => {
             RigCommand::SetWfmDeemphasis(deemphasis_us)
         }
@@ -96,6 +103,13 @@ pub fn rig_command_to_client(cmd: RigCommand) -> ClientCommand {
         RigCommand::SetBandwidth(bandwidth_hz) => ClientCommand::SetBandwidth { bandwidth_hz },
         RigCommand::SetFirTaps(taps) => ClientCommand::SetFirTaps { taps },
         RigCommand::SetSdrGain(gain_db) => ClientCommand::SetSdrGain { gain_db },
+        RigCommand::SetSdrSquelch {
+            enabled,
+            threshold_db,
+        } => ClientCommand::SetSdrSquelch {
+            enabled,
+            threshold_db,
+        },
         RigCommand::SetWfmDeemphasis(deemphasis_us) => {
             ClientCommand::SetWfmDeemphasis { deemphasis_us }
         }
