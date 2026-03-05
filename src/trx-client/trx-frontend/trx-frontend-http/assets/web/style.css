@@ -1634,6 +1634,9 @@ small { color: var(--text-muted); }
 .ft8-freq { color: var(--accent-green); min-width: 4.6rem; text-align: right; }
 .ft8-msg { flex: 1; }
 .ft8-locator { color: var(--accent-green); background: rgba(0, 209, 127, 0.12); border: 1px solid rgba(0, 209, 127, 0.25); border-radius: 4px; padding: 0 0.2rem; margin: 0 0.1rem; font-weight: 600; }
+.ft8-locator[data-locator-grid] { cursor: pointer; user-select: none; }
+.ft8-locator[data-locator-grid]:hover { filter: brightness(1.12); }
+.ft8-locator[data-locator-grid]:focus-visible { outline: 2px solid color-mix(in srgb, var(--accent-green) 66%, transparent); outline-offset: 1px; }
 .map-locator-filters {
   display: flex;
   flex-direction: column;

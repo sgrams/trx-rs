@@ -31,6 +31,7 @@ setInterval(updateWsprPeriodTimer, 500);
 function renderWsprRow(msg) {
   const row = document.createElement("div");
   row.className = "ft8-row";
+  row.dataset.decoder = "wspr";
   const snr = Number.isFinite(msg.snr_db) ? msg.snr_db.toFixed(1) : "--";
   const dt = Number.isFinite(msg.dt_s) ? msg.dt_s.toFixed(2) : "--";
   const baseHz = Number.isFinite(window.ft8BaseHz) ? window.ft8BaseHz : null;
@@ -38,7 +39,7 @@ function renderWsprRow(msg) {
   const freq = Number.isFinite(rfHz) ? rfHz.toFixed(0) : "--";
   const message = (msg.message || "").toString();
   row.dataset.message = message.toUpperCase();
-  row.innerHTML = `<span class="ft8-time">${fmtWsprTime(msg.ts_ms)}</span><span class="ft8-snr">${snr}</span><span class="ft8-dt">${dt}</span><span class="ft8-freq">${freq}</span><span class="ft8-msg">${escapeWsprHtml(message)}</span>`;
+  row.innerHTML = `<span class="ft8-time">${fmtWsprTime(msg.ts_ms)}</span><span class="ft8-snr">${snr}</span><span class="ft8-dt">${dt}</span><span class="ft8-freq">${freq}</span><span class="ft8-msg">${renderWsprMessage(message)}</span>`;
   applyWsprFilterToRow(row);
   return row;
 }
@@ -80,6 +81,30 @@ function escapeWsprHtml(input) {
     .replaceAll("\"", "&quot;");
 }
 
+function renderWsprMessage(message) {
+  let out = "";
+  let i = 0;
+  while (i < message.length) {
+    const ch = message[i];
+    if (isAlphaNum(ch)) {
+      let j = i + 1;
+      while (j < message.length && isAlphaNum(message[j])) j++;
+      const token = message.slice(i, j);
+      const grid = token.toUpperCase();
+      if (isMaidenheadGridToken(grid)) {
+        out += `<span class="ft8-locator" data-locator-grid="${grid}" role="button" tabindex="0" aria-label="Show locator ${grid} on map">${grid}</span>`;
+      } else {
+        out += escapeWsprHtml(token);
+      }
+      i = j;
+    } else {
+      out += escapeWsprHtml(ch);
+      i += 1;
+    }
+  }
+  return out;
+}
+
 function extractAllGrids(message) {
   const out = [];
   const seen = new Set();
@@ -116,6 +141,21 @@ function isMaidenheadGridToken(token) {
   return /^[A-R]{2}\d{2}(?:[A-X]{2})?$/.test(normalized) && !isFtxFarewellToken(normalized);
 }
 
+function isAlphaNum(ch) {
+  return /[A-Za-z0-9]/.test(ch);
+}
+
+function activateWsprHistoryLocator(targetEl) {
+  const locatorEl = targetEl?.closest?.(".ft8-locator[data-locator-grid]");
+  if (!locatorEl) return false;
+  const grid = String(locatorEl.dataset.locatorGrid || "").toUpperCase();
+  if (!grid) return false;
+  if (typeof window.navigateToMapLocator === "function") {
+    window.navigateToMapLocator(grid, "wspr");
+  }
+  return true;
+}
+
 function applyWsprFilterToRow(row) {
   if (!wsprFilterText) {
     row.style.display = "";
@@ -142,6 +182,20 @@ if (wsprFilterInput) {
   wsprFilterInput.addEventListener("input", () => {
     wsprFilterText = wsprFilterInput.value.trim().toUpperCase();
     renderWsprHistory();
+  });
+}
+
+if (wsprMessagesEl) {
+  wsprMessagesEl.addEventListener("click", (event) => {
+    if (!activateWsprHistoryLocator(event.target)) return;
+    event.preventDefault();
+    event.stopPropagation();
+  });
+  wsprMessagesEl.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    if (!activateWsprHistoryLocator(event.target)) return;
+    event.preventDefault();
+    event.stopPropagation();
   });
 }
 

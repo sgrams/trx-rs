@@ -179,7 +179,12 @@ fn now_unix_seconds() -> u32 {
 }
 
 fn offset_to_abs(base_freq_hz: u64, offset_hz: f32) -> u64 {
-    let freq = base_freq_hz as f64 + offset_hz as f64;
+    // Accept both legacy decoder offsets (~kHz audio tones) and already-absolute RF Hz.
+    let raw = offset_hz as f64;
+    if raw.is_finite() && raw >= 100_000.0 {
+        return raw.round() as u64;
+    }
+    let freq = base_freq_hz as f64 + raw;
     if freq.is_finite() && freq > 0.0 {
         freq.round() as u64
     } else {
@@ -453,5 +458,11 @@ mod tests {
     fn maidenhead_is_six_chars() {
         let grid = maidenhead_from_lat_lon(52.2297, 21.0122);
         assert_eq!(grid.len(), 6);
+    }
+
+    #[test]
+    fn offset_to_abs_accepts_offset_and_absolute() {
+        assert_eq!(offset_to_abs(14_074_000, 1_237.0), 14_075_237);
+        assert_eq!(offset_to_abs(14_074_000, 14_075_237.0), 14_075_237);
     }
 }

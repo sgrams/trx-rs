@@ -43,6 +43,7 @@ function renderFt8Row(msg) {
   row.className = "ft8-row";
   const rawMessage = (msg.message || "").toString();
   row.dataset.message = rawMessage.toUpperCase();
+  row.dataset.decoder = "ft8";
   row.dataset.storedFreqHz = Number.isFinite(msg.freq_hz) ? String(msg.freq_hz) : "";
   const snr = Number.isFinite(msg.snr_db) ? msg.snr_db.toFixed(1) : "--";
   const dt = Number.isFinite(msg.dt_s) ? msg.dt_s.toFixed(2) : "--";
@@ -131,7 +132,7 @@ function renderFt8Message(message) {
       const token = message.slice(i, j);
       const grid = token.toUpperCase();
       if (isMaidenheadGridToken(grid)) {
-        out += `<span class="ft8-locator">${grid}</span>`;
+        out += `<span class="ft8-locator" data-locator-grid="${grid}" role="button" tabindex="0" aria-label="Show locator ${grid} on map">${grid}</span>`;
       } else {
         out += escapeHtml(token);
       }
@@ -200,6 +201,17 @@ function isAlphaNum(ch) {
   return /[A-Za-z0-9]/.test(ch);
 }
 
+function activateFt8HistoryLocator(targetEl) {
+  const locatorEl = targetEl?.closest?.(".ft8-locator[data-locator-grid]");
+  if (!locatorEl) return false;
+  const grid = String(locatorEl.dataset.locatorGrid || "").toUpperCase();
+  if (!grid) return false;
+  if (typeof window.navigateToMapLocator === "function") {
+    window.navigateToMapLocator(grid, "ft8");
+  }
+  return true;
+}
+
 function applyFt8FilterToRow(row) {
   if (!ft8FilterText) {
     row.style.display = "";
@@ -248,6 +260,20 @@ if (ft8FilterInput) {
   });
 }
 
+if (ft8MessagesEl) {
+  ft8MessagesEl.addEventListener("click", (event) => {
+    if (!activateFt8HistoryLocator(event.target)) return;
+    event.preventDefault();
+    event.stopPropagation();
+  });
+  ft8MessagesEl.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    if (!activateFt8HistoryLocator(event.target)) return;
+    event.preventDefault();
+    event.stopPropagation();
+  });
+}
+
 if (ft8PauseBtn) {
   ft8PauseBtn.addEventListener("click", () => {
     ft8Paused = !ft8Paused;
@@ -279,10 +305,7 @@ window.onServerFt8 = function(msg) {
   const raw = (msg.message || "").toString();
   const grids = extractAllGrids(raw);
   const station = extractLikelyCallsign(raw);
-  const baseHz = Number.isFinite(window.ft8BaseHz) ? Number(window.ft8BaseHz) : null;
-  const rfHz = Number.isFinite(msg.freq_hz) && Number.isFinite(baseHz)
-    ? (baseHz + Number(msg.freq_hz))
-    : (Number.isFinite(msg.freq_hz) ? Number(msg.freq_hz) : null);
+  const rfHz = normalizeFt8DisplayFreqHz(msg.freq_hz);
   if (grids.length > 0 && window.ft8MapAddLocator) {
     window.ft8MapAddLocator(raw, grids, "ft8", station, {
       ...msg,
@@ -294,7 +317,7 @@ window.onServerFt8 = function(msg) {
     ts_ms: msg.ts_ms,
     snr_db: msg.snr_db,
     dt_s: msg.dt_s,
-    freq_hz: msg.freq_hz,
+    freq_hz: Number.isFinite(rfHz) ? rfHz : msg.freq_hz,
     message: msg.message,
   });
 };

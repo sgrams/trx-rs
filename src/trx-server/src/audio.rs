@@ -1341,11 +1341,17 @@ pub async fn run_ft8_decoder(
                                         Ok(dur) => dur.as_millis() as i64,
                                         Err(_) => 0,
                                     };
+                                    let base_freq_hz = state_rx.borrow().status.freq.hz as f64;
+                                    let abs_freq_hz = base_freq_hz + res.freq_hz as f64;
                                     let msg = Ft8Message {
                                         ts_ms,
                                         snr_db: res.snr_db,
                                         dt_s: res.dt_s,
-                                        freq_hz: res.freq_hz,
+                                        freq_hz: if abs_freq_hz.is_finite() && abs_freq_hz > 0.0 {
+                                            abs_freq_hz as f32
+                                        } else {
+                                            res.freq_hz
+                                        },
                                         message: res.text,
                                     };
                                     histories.record_ft8_message(msg.clone());

@@ -4417,6 +4417,60 @@ window.navigateToAprsMap = function(lat, lon) {
   }
 };
 
+window.navigateToMapLocator = function(grid, preferredType = null) {
+  const normalizedGrid = String(grid || "").trim().toUpperCase();
+  if (!/^[A-R]{2}\d{2}(?:[A-X]{2})?$/.test(normalizedGrid)) return false;
+
+  document.querySelectorAll(".tab-bar .tab").forEach((t) => t.classList.remove("active"));
+  const mapTabBtn = document.querySelector(".tab-bar .tab[data-tab='map']");
+  if (mapTabBtn) mapTabBtn.classList.add("active");
+  document.querySelectorAll(".tab-panel").forEach((p) => (p.style.display = "none"));
+  const mapPanel = document.getElementById("tab-map");
+  if (mapPanel) mapPanel.style.display = "";
+
+  initAprsMap();
+  sizeAprsMapToViewport();
+  if (!aprsMap) return false;
+
+  const pref = preferredType === "wspr" ? "wspr" : (preferredType === "ft8" ? "ft8" : null);
+  const keys = pref
+    ? [`${pref}:${normalizedGrid}`, `ft8:${normalizedGrid}`, `wspr:${normalizedGrid}`, `bookmark:${normalizedGrid}`]
+    : [`ft8:${normalizedGrid}`, `wspr:${normalizedGrid}`, `bookmark:${normalizedGrid}`];
+  let entry = null;
+  for (const key of keys) {
+    entry = locatorMarkers.get(key);
+    if (entry?.marker) break;
+  }
+  if (!entry?.marker) return false;
+
+  if (pref && Object.prototype.hasOwnProperty.call(mapFilter, pref) && !mapFilter[pref]) {
+    mapFilter[pref] = true;
+    rebuildMapLocatorFilters();
+    applyMapFilter();
+  }
+
+  const marker = entry.marker;
+  if (!aprsMap.hasLayer(marker)) {
+    marker.addTo(aprsMap);
+    sendLocatorOverlayToBack(marker);
+  }
+  const center = locatorMarkerCenter(marker);
+  const focusMarker = () => {
+    if (!aprsMap || !marker) return;
+    aprsMap.invalidateSize();
+    if (center) {
+      const targetZoom = Math.max(aprsMap.getZoom() || 0, 7);
+      aprsMap.setView([center.lat, center.lon], targetZoom);
+      setMapRadioPathTo(center.lat, center.lon, "locator-radio-path");
+    }
+    setSelectedLocatorMarker(marker);
+    if (typeof marker.openPopup === "function") marker.openPopup();
+  };
+  focusMarker();
+  setTimeout(focusMarker, 60);
+  return true;
+};
+
 function haversineKm(lat1, lon1, lat2, lon2) {
   const R = 6371;
   const dLat = (lat2 - lat1) * Math.PI / 180;
