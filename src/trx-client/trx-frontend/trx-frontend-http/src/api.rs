@@ -1008,6 +1008,7 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
         .service(logo)
         .service(style_css)
         .service(app_js)
+        .service(webgl_renderer_js)
         .service(leaflet_ais_tracksymbol_js)
         .service(ais_js)
         .service(vdes_js)
@@ -1065,6 +1066,16 @@ async fn app_js() -> impl Responder {
             "application/javascript; charset=utf-8",
         ))
         .body(status::APP_JS)
+}
+
+#[get("/webgl-renderer.js")]
+async fn webgl_renderer_js() -> impl Responder {
+    HttpResponse::Ok()
+        .insert_header((
+            header::CONTENT_TYPE,
+            "application/javascript; charset=utf-8",
+        ))
+        .body(status::WEBGL_RENDERER_JS)
 }
 
 #[get("/leaflet-ais-tracksymbol.js")]

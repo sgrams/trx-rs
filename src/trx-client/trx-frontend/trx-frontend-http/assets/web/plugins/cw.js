@@ -7,6 +7,9 @@ const cwWpmInput = document.getElementById("cw-wpm");
 const cwToneInput = document.getElementById("cw-tone");
 const cwSignalIndicator = document.getElementById("cw-signal-indicator");
 const cwToneCanvas = document.getElementById("cw-tone-waterfall");
+const cwToneGl = typeof createTrxWebGlRenderer === "function"
+  ? createTrxWebGlRenderer(cwToneCanvas, { alpha: true })
+  : null;
 const cwTonePickerEl = document.querySelector(".cw-tone-picker");
 const cwToneRangeEl = document.getElementById("cw-tone-range");
 const CW_MAX_LINES = 200;
@@ -88,7 +91,7 @@ function toneClampForRange(tone, range) {
 }
 
 function ensureCwToneCanvasResolution() {
-  if (!cwToneCanvas) return false;
+  if (!cwToneCanvas || !cwToneGl || !cwToneGl.ready) return false;
   const rect = cwToneCanvas.getBoundingClientRect();
   const cssWidth = Math.round(rect.width);
   const cssHeight = Math.round(rect.height);
@@ -96,26 +99,16 @@ function ensureCwToneCanvasResolution() {
     return false;
   }
   const dpr = window.devicePixelRatio || 1;
-  const nextWidth = Math.round(cssWidth * dpr);
-  const nextHeight = Math.round(cssHeight * dpr);
-  if (cwToneCanvas.width !== nextWidth || cwToneCanvas.height !== nextHeight) {
-    cwToneCanvas.width = nextWidth;
-    cwToneCanvas.height = nextHeight;
-    return true;
-  }
-  return false;
+  return cwToneGl.ensureSize(cssWidth, cssHeight, dpr);
 }
 
 function drawCwTonePicker() {
-  if (!cwToneCanvas) return;
+  if (!cwToneCanvas || !cwToneGl || !cwToneGl.ready) return;
   ensureCwToneCanvasResolution();
   if (cwToneCanvas.width < 8 || cwToneCanvas.height < 8) return;
-  const ctx = cwToneCanvas.getContext("2d");
-  if (!ctx) return;
-
   const width = cwToneCanvas.width;
   const height = cwToneCanvas.height;
-  ctx.clearRect(0, 0, width, height);
+  cwToneGl.clear([0, 0, 0, 0]);
 
   const range = currentCwToneRange();
   if (!window.lastSpectrumData || !Array.isArray(window.lastSpectrumData.bins) || !window.lastSpectrumData.bins.length || !range) {
@@ -127,8 +120,7 @@ function drawCwTonePicker() {
         cwToneRangeEl.textContent = "Waiting for spectrum";
       }
     }
-    ctx.fillStyle = "rgba(130, 150, 165, 0.22)";
-    ctx.fillRect(0, 0, width, height);
+    cwToneGl.fillRect(0, 0, width, height, [130 / 255, 150 / 255, 165 / 255, 0.22]);
     return;
   }
 
@@ -178,77 +170,48 @@ function drawCwTonePicker() {
 
   const rootStyle = getComputedStyle(document.documentElement);
   const accent = (rootStyle.getPropertyValue("--accent-green") || "").trim() || "#00d17f";
-  const axisColor = "rgba(230, 235, 245, 0.15)";
-  const textColor = "rgba(230, 235, 245, 0.58)";
+  const parseColor = typeof window.trxParseCssColor === "function"
+    ? window.trxParseCssColor
+    : null;
+  const accentRgba = parseColor ? parseColor(accent) : [0, 0.82, 0.5, 1];
+  const axisColor = [230 / 255, 235 / 255, 245 / 255, 0.15];
 
-  ctx.fillStyle = "rgba(7, 12, 18, 0.94)";
-  ctx.fillRect(0, 0, width, height);
+  cwToneGl.fillRect(0, 0, width, height, [7 / 255, 12 / 255, 18 / 255, 0.94]);
 
   const hGridCount = 4;
-  ctx.strokeStyle = axisColor;
-  ctx.lineWidth = 1;
+  const gridSegments = [];
   for (let i = 1; i <= hGridCount; i += 1) {
-    const y = Math.round((i / (hGridCount + 1)) * (height - 1)) + 0.5;
-    ctx.beginPath();
-    ctx.moveTo(0, y);
-    ctx.lineTo(width, y);
-    ctx.stroke();
+    const y = Math.round((i / (hGridCount + 1)) * (height - 1));
+    gridSegments.push(0, y, width, y);
   }
+  cwToneGl.drawSegments(gridSegments, axisColor, 1);
 
   const toneStep = range.toneSpanHz <= 500 ? 50 : range.toneSpanHz <= 1000 ? 100 : 200;
   const firstTick = Math.ceil(range.toneMinHz / toneStep) * toneStep;
-  ctx.font = `${Math.max(10, Math.round(height * 0.18))}px ui-monospace, SFMono-Regular, Menlo, monospace`;
-  ctx.fillStyle = textColor;
+  const tickSegments = [];
   for (let tone = firstTick; tone <= range.toneMaxHz; tone += toneStep) {
     const frac = (tone - range.toneMinHz) / range.toneSpanHz;
-    const x = Math.max(0, Math.min(width - 1, Math.round(frac * (width - 1)))) + 0.5;
-    ctx.beginPath();
-    ctx.moveTo(x, 0);
-    ctx.lineTo(x, height);
-    ctx.stroke();
-    if (tone % (toneStep * 2) === 0) {
-      const label = `${Math.round(tone)}`;
-      const textWidth = ctx.measureText(label).width;
-      ctx.fillText(label, Math.max(1, Math.min(width - textWidth - 1, x + 2)), height - 3);
-    }
+    const x = Math.max(0, Math.min(width - 1, Math.round(frac * (width - 1))));
+    tickSegments.push(x, 0, x, height);
   }
+  cwToneGl.drawSegments(tickSegments, axisColor, 1);
 
-  ctx.beginPath();
-  ctx.moveTo(0, height - 0.5);
+  const linePoints = [];
   for (let x = 0; x < width; x += 1) {
-    ctx.lineTo(x + 0.5, yForDb(smoothed[x]) + 0.5);
+    linePoints.push(x, yForDb(smoothed[x]));
   }
-  ctx.lineTo(width - 0.5, height - 0.5);
-  ctx.closePath();
-  ctx.save();
-  ctx.globalAlpha = 0.24;
-  ctx.fillStyle = accent;
-  ctx.fill();
-  ctx.restore();
-
-  ctx.beginPath();
-  for (let x = 0; x < width; x += 1) {
-    const y = yForDb(smoothed[x]) + 0.5;
-    if (x === 0) ctx.moveTo(0.5, y);
-    else ctx.lineTo(x + 0.5, y);
-  }
-  ctx.lineWidth = 1.8;
-  ctx.strokeStyle = accent;
-  ctx.stroke();
+  cwToneGl.drawFilledArea(linePoints, height, [accentRgba[0], accentRgba[1], accentRgba[2], 0.24]);
+  cwToneGl.drawPolyline(linePoints, accentRgba, Math.max(1.2, (window.devicePixelRatio || 1) * 1.2));
 
   const currentTone = toneClampForRange(cwToneInput ? cwToneInput.value : 700, range);
   const markerFrac = (currentTone - range.toneMinHz) / range.toneSpanHz;
   const markerX = Math.max(0, Math.min(width - 1, Math.round(markerFrac * (width - 1))));
   const markerY = yForDb(smoothed[Math.max(0, Math.min(width - 1, markerX))]);
-  ctx.fillStyle = "rgba(255, 255, 255, 0.9)";
-  ctx.fillRect(markerX, 0, 1.5, height);
-  ctx.beginPath();
-  ctx.arc(markerX, markerY, Math.max(2, Math.round(height * 0.055)), 0, Math.PI * 2);
-  ctx.fill();
+  cwToneGl.drawSegments([markerX, 0, markerX, height], [1, 1, 1, 0.9], 1.5);
+  cwToneGl.drawPoints([markerX, markerY], Math.max(2, Math.round(height * 0.055)), [1, 1, 1, 0.9]);
 
   if (cwAutoInput?.checked) {
-    ctx.fillStyle = "rgba(0, 0, 0, 0.22)";
-    ctx.fillRect(0, 0, width, height);
+    cwToneGl.fillRect(0, 0, width, height, [0, 0, 0, 0.22]);
   }
 }
 

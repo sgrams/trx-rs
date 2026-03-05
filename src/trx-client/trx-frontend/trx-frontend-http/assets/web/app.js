@@ -329,6 +329,12 @@ const loadingTitle = document.getElementById("loading-title");
 const loadingSub = document.getElementById("loading-sub");
 const overviewCanvas = document.getElementById("overview-canvas");
 const signalOverlayCanvas = document.getElementById("signal-overlay-canvas");
+const overviewGl = typeof createTrxWebGlRenderer === "function"
+  ? createTrxWebGlRenderer(overviewCanvas, { alpha: true })
+  : null;
+const signalOverlayGl = typeof createTrxWebGlRenderer === "function"
+  ? createTrxWebGlRenderer(signalOverlayCanvas, { alpha: true })
+  : null;
 const signalVisualBlockEl = document.querySelector(".signal-visual-block");
 const signalSplitControlEl = document.getElementById("signal-split-control");
 const signalSplitSliderEl = document.getElementById("signal-split-slider");
@@ -759,14 +765,19 @@ let overviewWaterfallRows = [];
 let overviewWaterfallPushCount = 0;   // monotonically increments on every push
 const HEADER_SIG_WINDOW_MS = 10_000;
 
-// Offscreen waterfall cache — reused across frames to avoid full redraws
-let _wfOC = null;           // OffscreenCanvas
-let _wfOCPalKey = "";       // palette signature when offscreen was last built
-let _wfOCPushCount = 0;     // overviewWaterfallPushCount when offscreen was last updated
+function cssColorToRgba(color, alphaMul = 1) {
+  const parser = typeof window.trxParseCssColor === "function" ? window.trxParseCssColor : null;
+  const parsed = parser ? parser(color) : [0, 0, 0, 1];
+  return [
+    parsed[0],
+    parsed[1],
+    parsed[2],
+    Math.max(0, Math.min(1, parsed[3] * alphaMul)),
+  ];
+}
 
-function _wfResetOffscreen() { _wfOC = null; _wfOCPushCount = 0; _wfOCPalKey = ""; }
-function _wfPalKey(pal) {
-  return `${pal.waterfallHue}|${pal.waterfallSat}|${pal.waterfallLight}|${pal.waterfallAlpha}`;
+function rgbaWithAlpha(color, alphaMul = 1) {
+  return cssColorToRgba(color, alphaMul);
 }
 
 function resizeHeaderSignalCanvas() {
@@ -776,17 +787,13 @@ function resizeHeaderSignalCanvas() {
 }
 
 function ensureOverviewCanvasBackingStore() {
-  if (!overviewCanvas) return false;
+  if (!overviewCanvas || !overviewGl || !overviewGl.ready) return false;
   const cssW = Math.floor(overviewCanvas.clientWidth);
   const cssH = Math.floor(overviewCanvas.clientHeight);
   if (cssW <= 0 || cssH <= 0) return false;
   const dpr = window.devicePixelRatio || 1;
-  const nextW = Math.floor(cssW * dpr);
-  const nextH = Math.floor(cssH * dpr);
-  if (overviewCanvas.width !== nextW || overviewCanvas.height !== nextH) {
-    overviewCanvas.width = nextW;
-    overviewCanvas.height = nextH;
-    _wfResetOffscreen();
+  const resized = overviewGl.ensureSize(cssW, cssH, dpr);
+  if (resized) {
     trimOverviewWaterfallRows();
   }
   return true;
@@ -809,7 +816,7 @@ function signalOverlayHeight() {
 }
 
 function drawSignalOverlay() {
-  if (!signalOverlayCanvas || !signalVisualBlockEl) return;
+  if (!signalOverlayCanvas || !signalVisualBlockEl || !signalOverlayGl || !signalOverlayGl.ready) return;
   if (!lastSpectrumData) {
     signalOverlayCanvas.style.height = "0";
     signalOverlayCanvas.width = 0;
@@ -826,22 +833,19 @@ function drawSignalOverlay() {
   }
 
   const dpr = window.devicePixelRatio || 1;
-  const nextW = Math.floor(cssW * dpr);
-  const nextH = Math.floor(cssH * dpr);
-  if (signalOverlayCanvas.width !== nextW || signalOverlayCanvas.height !== nextH) {
-    signalOverlayCanvas.width = nextW;
-    signalOverlayCanvas.height = nextH;
-  }
-
-  const ctx = signalOverlayCanvas.getContext("2d");
-  if (!ctx) return;
-
-  ctx.save();
-  ctx.scale(dpr, dpr);
-  ctx.clearRect(0, 0, cssW, cssH);
+  signalOverlayGl.ensureSize(cssW, cssH, dpr);
+  const W = signalOverlayCanvas.width;
+  const H = signalOverlayCanvas.height;
+  if (W <= 0 || H <= 0) return;
+  signalOverlayGl.clear([0, 0, 0, 0]);
 
   const range = spectrumVisibleRange(lastSpectrumData);
-  const hzToX = (hz) => ((hz - range.visLoHz) / range.visSpanHz) * cssW;
+  const hzToX = (hz) => ((hz - range.visLoHz) / range.visSpanHz) * W;
+  const bwSoft = cssColorToRgba("rgba(240,173,78,0.05)");
+  const bwMid = cssColorToRgba("rgba(240,173,78,0.19)");
+  const bwEdge = cssColorToRgba("rgba(240,173,78,0.30)");
+  const bwStroke = cssColorToRgba("rgba(240,173,78,0.70)");
+  const bwHard = cssColorToRgba("rgba(240,173,78,0.38)");
 
   if (lastFreqHz != null && currentBandwidthHz > 0) {
     for (const spec of visibleBandwidthSpecs(lastFreqHz)) {
@@ -850,71 +854,51 @@ function drawSignalOverlay() {
       const xR = hzToX(span.hiHz);
       const stripW = xR - xL;
       if (stripW <= 1) continue;
-      const grd = ctx.createLinearGradient(xL, 0, xR, 0);
       if (span.side < 0) {
-        grd.addColorStop(0, "rgba(240,173,78,0.05)");
-        grd.addColorStop(0.2, "rgba(240,173,78,0.14)");
-        grd.addColorStop(0.7, "rgba(240,173,78,0.19)");
-        grd.addColorStop(1, "rgba(240,173,78,0.19)");
+        signalOverlayGl.fillGradientRect(xL, 0, stripW, H, bwSoft, bwMid, bwMid, bwSoft);
       } else if (span.side > 0) {
-        grd.addColorStop(0, "rgba(240,173,78,0.19)");
-        grd.addColorStop(0.3, "rgba(240,173,78,0.19)");
-        grd.addColorStop(0.8, "rgba(240,173,78,0.14)");
-        grd.addColorStop(1, "rgba(240,173,78,0.05)");
+        signalOverlayGl.fillGradientRect(xL, 0, stripW, H, bwMid, bwSoft, bwSoft, bwMid);
       } else {
-        grd.addColorStop(0, "rgba(240,173,78,0.05)");
-        grd.addColorStop(0.2, "rgba(240,173,78,0.14)");
-        grd.addColorStop(0.5, "rgba(240,173,78,0.19)");
-        grd.addColorStop(0.8, "rgba(240,173,78,0.14)");
-        grd.addColorStop(1, "rgba(240,173,78,0.05)");
-      }
-      ctx.fillStyle = grd;
-      ctx.fillRect(xL, 0, stripW, cssH);
-
-      const edgeW = 5;
-      const edgeFill = "rgba(240,173,78,0.30)";
-      if (span.side <= 0) {
-        ctx.fillStyle = edgeFill;
-        ctx.fillRect(xL, 0, edgeW, cssH);
-      }
-      if (span.side >= 0) {
-        ctx.fillStyle = edgeFill;
-        ctx.fillRect(xR - edgeW, 0, edgeW, cssH);
+        const half = stripW / 2;
+        signalOverlayGl.fillGradientRect(xL, 0, half, H, bwSoft, bwMid, bwMid, bwSoft);
+        signalOverlayGl.fillGradientRect(xL + half, 0, half, H, bwMid, bwSoft, bwSoft, bwMid);
       }
 
-      ctx.strokeStyle = "rgba(240,173,78,0.70)";
-      ctx.lineWidth = 1.5;
+      const edgeW = Math.max(1, Math.round(5 * dpr));
       if (span.side <= 0) {
-        ctx.beginPath(); ctx.moveTo(xL, 0); ctx.lineTo(xL, cssH); ctx.stroke();
+        signalOverlayGl.fillRect(xL, 0, edgeW, H, bwEdge);
       }
       if (span.side >= 0) {
-        ctx.beginPath(); ctx.moveTo(xR, 0); ctx.lineTo(xR, cssH); ctx.stroke();
+        signalOverlayGl.fillRect(xR - edgeW, 0, edgeW, H, bwEdge);
+      }
+
+      if (span.side <= 0) {
+        signalOverlayGl.drawSegments([xL, 0, xL, H], bwStroke, Math.max(1, dpr * 1.5));
+      }
+      if (span.side >= 0) {
+        signalOverlayGl.drawSegments([xR, 0, xR, H], bwStroke, Math.max(1, dpr * 1.5));
       }
       if (span.side !== 0) {
-        ctx.strokeStyle = "rgba(240,173,78,0.38)";
-        ctx.lineWidth = 1;
         const hardX = span.side < 0 ? xR : xL;
-        ctx.beginPath(); ctx.moveTo(hardX, 0); ctx.lineTo(hardX, cssH); ctx.stroke();
+        signalOverlayGl.drawSegments([hardX, 0, hardX, H], bwHard, Math.max(1, dpr));
       }
     }
   }
 
   if (lastFreqHz != null) {
     const xf = hzToX(lastFreqHz);
-    if (xf >= 0 && xf <= cssW) {
-      ctx.save();
-      ctx.setLineDash([4, 4]);
-      ctx.strokeStyle = "#ff1744";
-      ctx.lineWidth = 1;
-      ctx.beginPath();
-      ctx.moveTo(xf, 0);
-      ctx.lineTo(xf, cssH);
-      ctx.stroke();
-      ctx.restore();
+    if (xf >= 0 && xf <= W) {
+      signalOverlayGl.drawDashedVerticalLine(
+        xf,
+        0,
+        H,
+        Math.max(2, Math.round(4 * dpr)),
+        Math.max(2, Math.round(4 * dpr)),
+        cssColorToRgba("#ff1744"),
+        Math.max(1, dpr),
+      );
     }
   }
-
-  ctx.restore();
 }
 
 function scheduleOverviewDraw() {
@@ -977,138 +961,93 @@ function startHeaderSignalSampling() {
 
 function drawHeaderSignalGraph() {
   if (!ensureOverviewCanvasBackingStore()) return;
-  const ctx = overviewCanvas.getContext("2d");
-  if (!ctx) return;
+  if (!overviewGl || !overviewGl.ready) return;
   const pal = canvasPalette();
-  const dpr = window.devicePixelRatio || 1;
-  const w = overviewCanvas.width / dpr;
-  const h = overviewCanvas.height / dpr;
-  if (w <= 0 || h <= 0) return;
+  const W = overviewCanvas.width;
+  const H = overviewCanvas.height;
+  if (W <= 0 || H <= 0) return;
 
-  ctx.save();
-  ctx.scale(dpr, dpr);
-  ctx.clearRect(0, 0, w, h);
+  overviewGl.clear(cssColorToRgba(pal.bg));
   if (lastSpectrumData && overviewWaterfallRows.length > 0) {
-    drawOverviewWaterfall(ctx, w, h, pal);
+    drawOverviewWaterfall(W, H, pal);
   } else {
-    drawOverviewSignalHistory(ctx, w, h, pal);
+    drawOverviewSignalHistory(W, H, pal);
   }
-  ctx.restore();
   positionRdsPsOverlay();
   drawSignalOverlay();
 }
 
-function _wfDrawRows(oct, rows, startRowIdx, endRowIdx, iW, iH, pal) {
-  // Draw rows[startRowIdx..endRowIdx) into oct, positioned at the canvas bottom.
-  // rowH is computed relative to the total row count (all of `rows`).
-  const total = rows.length;
-  const rowH = iH / total;
-  const columnStep = Math.max(1, Math.ceil(iW / 320));
-  for (let ri = startRowIdx; ri < endRowIdx; ri++) {
-    const bins = rows[ri];
-    if (!Array.isArray(bins) || bins.length === 0) continue;
-    const { startIdx, endIdx } = overviewVisibleBinWindow(lastSpectrumData, bins.length);
-    const spanBins = Math.max(1, endIdx - startIdx);
-    const y = iH - (total - ri) * rowH;
-    for (let x = 0; x < iW; x += columnStep) {
-      const frac = x / Math.max(1, iW - 1);
-      const binIdx = Math.min(endIdx, startIdx + Math.floor(frac * spanBins));
-      oct.fillStyle = waterfallColor(bins[binIdx], pal);
-      oct.fillRect(x, y, columnStep + 0.75, rowH + 1);
-    }
-  }
-}
-
-function drawOverviewWaterfall(ctx, w, h, pal) {
-  const maxVisible = Math.max(1, Math.floor(h));
+function drawOverviewWaterfall(W, H, pal) {
+  if (!overviewGl || !overviewGl.ready) return;
+  const maxVisible = Math.max(1, Math.floor(H));
   const rows = overviewWaterfallRows.slice(-maxVisible);
   if (rows.length === 0) return;
 
-  const iW = Math.ceil(w);
-  const iH = Math.ceil(h);
-  const palKey = _wfPalKey(pal);
-  const steadyState = rows.length >= maxVisible;
-  // How many rows were pushed since the offscreen was last updated
-  const newPushes = overviewWaterfallPushCount - _wfOCPushCount;
+  const iW = Math.max(1, Math.ceil(W));
+  const iH = Math.max(1, Math.ceil(H));
+  const rgba = new Uint8Array(iW * iH * 4);
+  const minDb = Number.isFinite(spectrumFloor) ? spectrumFloor : -115;
+  const maxDb = minDb + Math.max(20, Number.isFinite(spectrumRange) ? spectrumRange : 90);
 
-  // Detect conditions that require a full redraw
-  const sizeChanged = !_wfOC || _wfOC.width !== iW || _wfOC.height !== iH;
-  const palChanged  = _wfOCPalKey !== palKey;
-  const needsFull   = sizeChanged || palChanged || _wfOCPushCount === 0;
-
-  if (sizeChanged || !_wfOC) {
-    _wfOC = new OffscreenCanvas(iW, iH);
-    _wfOCPushCount = 0;
-  }
-  const oct = _wfOC.getContext("2d");
-
-  if (needsFull) {
-    oct.clearRect(0, 0, iW, iH);
-    _wfDrawRows(oct, rows, 0, rows.length, iW, iH, pal);
-    _wfOCPushCount = overviewWaterfallPushCount;
-    _wfOCPalKey    = palKey;
-  } else if (steadyState && newPushes > 0) {
-    // Steady state: scroll up and paint only the new rows at the bottom.
-    // newPushes new rows are at the tail of `rows`; each replaces one old row.
-    const newCount = Math.min(newPushes, rows.length);
-    const rowH     = iH / rows.length;
-    const scrollPx = Math.round(newCount * rowH);
-    if (scrollPx > 0 && scrollPx < iH) {
-      const img = oct.getImageData(0, scrollPx, iW, iH - scrollPx);
-      oct.putImageData(img, 0, 0);
-      oct.clearRect(0, iH - scrollPx, iW, scrollPx);
+  for (let y = 0; y < iH; y++) {
+    const rowFrac = y / Math.max(1, iH - 1);
+    const rowIdx = Math.max(0, Math.min(rows.length - 1, Math.floor(rowFrac * rows.length)));
+    const bins = rows[rowIdx];
+    if (!Array.isArray(bins) || bins.length === 0) continue;
+    const { startIdx, endIdx } = overviewVisibleBinWindow(lastSpectrumData, bins.length);
+    const spanBins = Math.max(1, endIdx - startIdx);
+    for (let x = 0; x < iW; x++) {
+      const frac = x / Math.max(1, iW - 1);
+      const binIdx = Math.min(endIdx, startIdx + Math.floor(frac * spanBins));
+      const c = waterfallColorRgba(bins[binIdx], pal, minDb, maxDb);
+      const p = (y * iW + x) * 4;
+      rgba[p + 0] = Math.round(c[0] * 255);
+      rgba[p + 1] = Math.round(c[1] * 255);
+      rgba[p + 2] = Math.round(c[2] * 255);
+      rgba[p + 3] = Math.round(c[3] * 255);
     }
-    _wfDrawRows(oct, rows, rows.length - newCount, rows.length, iW, iH, pal);
-    _wfOCPushCount = overviewWaterfallPushCount;
   }
 
-  ctx.drawImage(_wfOC, 0, 0, w, h);
+  overviewGl.uploadRgbaTexture("overview-waterfall", iW, iH, rgba, "linear");
+  overviewGl.drawTexture("overview-waterfall", 0, 0, W, H, 1, true);
 }
 
-function drawOverviewSignalHistory(ctx, w, h, pal) {
+function drawOverviewSignalHistory(W, H, pal) {
+  if (!overviewGl || !overviewGl.ready) return;
   const now = Date.now();
   const samples = overviewSignalSamples.filter((sample) => now - sample.t <= HEADER_SIG_WINDOW_MS);
   if (samples.length === 0) return;
 
   const maxVal = 20;
   const windowStart = now - HEADER_SIG_WINDOW_MS;
-  const toX = (t) => ((t - windowStart) / HEADER_SIG_WINDOW_MS) * w;
-  const toY = (v) => h - (Math.max(0, Math.min(maxVal, v)) / maxVal) * (h - 3) - 1.5;
+  const toX = (t) => ((t - windowStart) / HEADER_SIG_WINDOW_MS) * W;
+  const toY = (v) => H - (Math.max(0, Math.min(maxVal, v)) / maxVal) * (H - 3) - 1.5;
 
   const gridMarkers = [
-    { val: 0, label: "S0" },
-    { val: 9, label: "S9" },
-    { val: 18, label: "S9+" },
+    { val: 0 },
+    { val: 9 },
+    { val: 18 },
   ];
-  ctx.strokeStyle = pal.waveformGrid;
-  ctx.lineWidth = 1;
-  ctx.font = "11px sans-serif";
-  ctx.fillStyle = pal.waveformLabel;
-  ctx.textAlign = "right";
-  ctx.textBaseline = "middle";
+  const gridSegments = [];
   for (const marker of gridMarkers) {
     const y = toY(marker.val);
-    ctx.beginPath();
-    ctx.moveTo(0, y);
-    ctx.lineTo(w, y);
-    ctx.stroke();
-    ctx.fillText(marker.label, w - 6, Math.max(8, Math.min(h - 8, y + 6)));
+    gridSegments.push(0, y, W, y);
   }
+  overviewGl.drawSegments(gridSegments, cssColorToRgba(pal.waveformGrid), 1);
 
-  ctx.beginPath();
+  const linePoints = [];
   samples.forEach((sample, idx) => {
     const x = toX(sample.t);
     const y = toY(sample.v);
-    if (idx === 0) ctx.moveTo(x, y);
-    else ctx.lineTo(x, y);
+    if (idx === 0 || x >= linePoints[linePoints.length - 2]) {
+      linePoints.push(x, y);
+    }
   });
-  ctx.strokeStyle = pal.waveformLine;
-  ctx.lineWidth = 1.6;
-  ctx.stroke();
+  overviewGl.drawPolyline(linePoints, cssColorToRgba(pal.waveformLine), 1.6);
 
   const holdMs = Math.max(0, Number.isFinite(overviewPeakHoldMs) ? overviewPeakHoldMs : 0);
   if (holdMs > 0) {
-    ctx.beginPath();
+    const holdPoints = [];
     for (let i = 0; i < samples.length; i++) {
       let peak = samples[i].v;
       for (let j = i; j >= 0; j--) {
@@ -1117,26 +1056,28 @@ function drawOverviewSignalHistory(ctx, w, h, pal) {
       }
       const x = toX(samples[i].t);
       const y = toY(peak);
-      if (i === 0) ctx.moveTo(x, y);
-      else ctx.lineTo(x, y);
+      if (i === 0 || x >= holdPoints[holdPoints.length - 2]) {
+        holdPoints.push(x, y);
+      }
     }
-    ctx.strokeStyle = pal.waveformPeak;
-    ctx.lineWidth = 1;
-    ctx.stroke();
+    overviewGl.drawPolyline(holdPoints, cssColorToRgba(pal.waveformPeak), 1);
   }
 }
 
-function waterfallColor(db, pal) {
-  const minDb = Number.isFinite(spectrumFloor) ? spectrumFloor : -115;
-  const maxDb = minDb + Math.max(20, Number.isFinite(spectrumRange) ? spectrumRange : 90);
-  const safeDb = Number.isFinite(db) ? db : minDb;
-  const clamped = Math.max(minDb, Math.min(maxDb, safeDb));
-  const span = Math.max(1, maxDb - minDb);
-  const t = (clamped - minDb) / span;
+function waterfallColorRgba(db, pal, minDb, maxDb) {
+  const lo = Number.isFinite(minDb) ? minDb : (Number.isFinite(spectrumFloor) ? spectrumFloor : -115);
+  const hi = Number.isFinite(maxDb) ? maxDb : (lo + Math.max(20, Number.isFinite(spectrumRange) ? spectrumRange : 90));
+  const safeDb = Number.isFinite(db) ? db : lo;
+  const clamped = Math.max(lo, Math.min(hi, safeDb));
+  const span = Math.max(1, hi - lo);
+  const t = (clamped - lo) / span;
   const hue = pal.waterfallHue[0] + t * (pal.waterfallHue[1] - pal.waterfallHue[0]);
   const light = pal.waterfallLight[0] + t * (pal.waterfallLight[1] - pal.waterfallLight[0]);
   const alpha = pal.waterfallAlpha[0] + t * (pal.waterfallAlpha[1] - pal.waterfallAlpha[0]);
-  return `hsla(${hue}, ${pal.waterfallSat}%, ${light}%, ${alpha})`;
+  if (typeof window.trxHslToRgba === "function") {
+    return window.trxHslToRgba(hue, pal.waterfallSat, light, alpha);
+  }
+  return cssColorToRgba(`hsla(${hue}, ${pal.waterfallSat}%, ${light}%, ${alpha})`);
 }
 
 function formatFreq(hz) {
@@ -5873,6 +5814,10 @@ window.addEventListener("beforeunload", () => {
 
 // ── Spectrum display ─────────────────────────────────────────────────────────
 const spectrumCanvas  = document.getElementById("spectrum-canvas");
+const spectrumGl = typeof createTrxWebGlRenderer === "function"
+  ? createTrxWebGlRenderer(spectrumCanvas, { alpha: true })
+  : null;
+const spectrumDbAxis = document.getElementById("spectrum-db-axis");
 const spectrumFreqAxis = document.getElementById("spectrum-freq-axis");
 const spectrumTooltip = document.getElementById("spectrum-tooltip");
 const spectrumCenterLeftBtn = document.getElementById("spectrum-center-left-btn");
@@ -5881,6 +5826,7 @@ let spectrumSource = null;
 let spectrumReconnectTimer = null;
 let spectrumDrawPending = false;
 let spectrumAxisKey = "";
+let spectrumDbAxisKey = "";
 let lastSpectrumRenderData = null;
 let spectrumPeakHoldFrames = [];
 let pendingSpectrumFrameWaiters = [];
@@ -6198,7 +6144,6 @@ function startSpectrumStreaming() {
       clearSpectrumPeakHoldFrames();
       overviewWaterfallRows = [];
       overviewWaterfallPushCount = 0;
-      _wfResetOffscreen();
       scheduleOverviewDraw();
       clearSpectrumCanvas();
       updateRdsPsOverlay(null);
@@ -6247,7 +6192,6 @@ function stopSpectrumStreaming() {
   clearSpectrumPeakHoldFrames();
   overviewWaterfallRows = [];
   overviewWaterfallPushCount = 0;
-  _wfResetOffscreen();
   scheduleOverviewDraw();
   updateRdsPsOverlay(null);
   clearSpectrumCanvas();
@@ -6255,10 +6199,15 @@ function stopSpectrumStreaming() {
 
 // ── Rendering ────────────────────────────────────────────────────────────────
 function clearSpectrumCanvas() {
-  if (!spectrumCanvas) return;
-  const ctx = spectrumCanvas.getContext("2d");
-  ctx.fillStyle = spectrumBgColor();
-  ctx.fillRect(0, 0, spectrumCanvas.width, spectrumCanvas.height);
+  if (!spectrumCanvas || !spectrumGl || !spectrumGl.ready) return;
+  const cssW = spectrumCanvas.clientWidth || 1;
+  const cssH = spectrumCanvas.clientHeight || 1;
+  spectrumGl.ensureSize(cssW, cssH, window.devicePixelRatio || 1);
+  spectrumGl.clear(cssColorToRgba(spectrumBgColor()));
+  if (spectrumDbAxis) {
+    spectrumDbAxis.innerHTML = "";
+    spectrumDbAxisKey = "";
+  }
 }
 
 function formatOverlayPs(ps) {
@@ -6550,167 +6499,73 @@ function scheduleSpectrumDraw() {
 }
 
 function drawSpectrum(data) {
-  if (!spectrumCanvas) return;
+  if (!spectrumCanvas || !spectrumGl || !spectrumGl.ready) return;
 
-  // HiDPI sizing
-  const dpr  = window.devicePixelRatio || 1;
-  const cssW = spectrumCanvas.clientWidth  || 640;
+  const dpr = window.devicePixelRatio || 1;
+  const cssW = spectrumCanvas.clientWidth || 640;
   const cssH = spectrumCanvas.clientHeight || 160;
-  const W = Math.round(cssW * dpr);
-  const H = Math.round(cssH * dpr);
-  if (spectrumCanvas.width !== W || spectrumCanvas.height !== H) {
-    spectrumCanvas.width  = W;
-    spectrumCanvas.height = H;
-  }
+  spectrumGl.ensureSize(cssW, cssH, dpr);
+  const W = spectrumCanvas.width;
+  const H = spectrumCanvas.height;
 
-  const ctx   = spectrumCanvas.getContext("2d");
-  const pal   = canvasPalette();
+  const pal = canvasPalette();
   const range = spectrumVisibleRange(data);
-  const bins  = data.bins;
+  const bins = data.bins;
   const peakHoldBins = buildSpectrumPeakHoldBins(bins);
-  const n     = bins.length;
+  const n = bins.length;
 
-  // Background
-  ctx.fillStyle = pal.bg;
-  ctx.fillRect(0, 0, W, H);
-
+  spectrumGl.clear(cssColorToRgba(pal.bg));
   if (!n) return;
 
-  const DB_MIN  = spectrumFloor;
-  const DB_MAX  = spectrumFloor + spectrumRange;
+  const DB_MIN = spectrumFloor;
+  const DB_MAX = spectrumFloor + spectrumRange;
   const dbRange = DB_MAX - DB_MIN;
   const fullSpanHz = data.sample_rate;
-  const loHz       = data.center_hz - fullSpanHz / 2;
+  const loHz = data.center_hz - fullSpanHz / 2;
 
-  // Horizontal dB grid lines
-  ctx.strokeStyle = pal.spectrumGrid;
-  ctx.lineWidth = 1;
   const gridStep = spectrumRange > 100 ? 20 : 10;
+  const gridSegments = [];
   for (let db = Math.ceil(DB_MIN / gridStep) * gridStep; db <= DB_MAX; db += gridStep) {
     const y = Math.round(H * (1 - (db - DB_MIN) / dbRange));
-    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke();
+    gridSegments.push(0, y, W, y);
   }
+  spectrumGl.drawSegments(gridSegments, cssColorToRgba(pal.spectrumGrid), 1);
+  updateSpectrumDbAxis(DB_MIN, DB_MAX, gridStep, H, dpr);
 
-  // Y-axis dB labels (left side)
-  ctx.save();
-  ctx.font = `${Math.round(9 * dpr)}px monospace`;
-  ctx.fillStyle = pal.spectrumLabel;
-  ctx.textAlign = "left";
-  for (let db = Math.ceil(DB_MIN / gridStep) * gridStep; db <= DB_MAX; db += gridStep) {
-    const y = Math.round(H * (1 - (db - DB_MIN) / dbRange));
-    if (y > 8 * dpr && y < H - 2 * dpr) {
-      ctx.fillText(`${db}`, 4 * dpr, y - 2 * dpr);
-    }
-  }
-  ctx.restore();
-
-  // Coordinate helpers
   function hzToX(hz) {
     return ((hz - range.visLoHz) / range.visSpanHz) * W;
   }
   function binX(i) {
     return hzToX(loHz + (i / (n - 1)) * fullSpanHz);
   }
-  function binY(i) {
-    const db = Math.max(DB_MIN, Math.min(DB_MAX, bins[i]));
+  function binYFromBins(srcBins, i) {
+    const db = Math.max(DB_MIN, Math.min(DB_MAX, srcBins[i]));
     return H * (1 - (db - DB_MIN) / dbRange);
   }
 
-  // ── BW strip (drawn before spectrum so traces appear on top) ──────────────
-  if (lastFreqHz != null && currentBandwidthHz > 0) {
-    if (_bwDragEdge) {
-      // Bottom bookmark tab centered on each visible channel, shown while resizing BW
-      const bwText = formatBwLabel(currentBandwidthHz);
-      for (const spec of visibleBandwidthSpecs(lastFreqHz)) {
-        const xMid = hzToX(spec.centerHz);
-        ctx.save();
-        ctx.font = `bold ${Math.round(10 * dpr)}px sans-serif`;
-        const tw = ctx.measureText(bwText).width;
-        const PAD  = 6 * dpr;
-        const TAB_H = 16 * dpr;
-        const TAB_OFFSET = 4 * dpr;
-        const tabX = Math.max(0, Math.min(W - tw - PAD * 2, xMid - (tw + PAD * 2) / 2));
-        const tabBottom = H - TAB_OFFSET;
-        const tabY = tabBottom - TAB_H;
-        const r = 3 * dpr;
-        // Rounded-bottom tab shape (flat top)
-        ctx.fillStyle = "rgba(240,173,78,0.85)";
-        ctx.beginPath();
-        ctx.moveTo(tabX, tabY);
-        ctx.lineTo(tabX + tw + PAD * 2, tabY);
-        ctx.lineTo(tabX + tw + PAD * 2, tabBottom - r);
-        ctx.arcTo(tabX + tw + PAD * 2, tabBottom, tabX + tw + PAD * 2 - r, tabBottom, r);
-        ctx.lineTo(tabX + r, tabBottom);
-        ctx.arcTo(tabX, tabBottom, tabX, tabBottom - r, r);
-        ctx.lineTo(tabX, tabY);
-        ctx.closePath();
-        ctx.fill();
-        // Tab text
-        ctx.fillStyle = spectrumBgColor();
-        ctx.textAlign = "left";
-        ctx.fillText(bwText, tabX + PAD, tabBottom - 4 * dpr);
-        ctx.restore();
-      }
-    }
-  }
-
-  // ── Spectrum fill ─────────────────────────────────────────────────────────
-  ctx.save();
-  ctx.beginPath();
-  ctx.moveTo(binX(0), H);
-  for (let i = 0; i < n; i++) ctx.lineTo(binX(i), binY(i));
-  ctx.lineTo(binX(n - 1), H);
-  ctx.closePath();
-  ctx.fillStyle = pal.spectrumFill;
-  ctx.fill();
-  ctx.restore();
-
-  // ── Peak-hold shadow ───────────────────────────────────────────────────────
-  if (Array.isArray(peakHoldBins) && peakHoldBins.length === n) {
-    ctx.save();
-    ctx.beginPath();
-    ctx.strokeStyle = pal.waveformPeak;
-    ctx.globalAlpha = 0.7;
-    ctx.lineWidth = Math.max(1, dpr * 0.9);
-    for (let i = 0; i < n; i++) {
-      const x = binX(i);
-      const db = Math.max(DB_MIN, Math.min(DB_MAX, peakHoldBins[i]));
-      const y = H * (1 - (db - DB_MIN) / dbRange);
-      i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
-    }
-    ctx.stroke();
-    ctx.restore();
-  }
-
-  // ── Spectrum line ─────────────────────────────────────────────────────────
-  ctx.save();
-  ctx.beginPath();
-  ctx.strokeStyle = pal.spectrumLine;
-  ctx.lineWidth   = Math.max(1, dpr);
+  const fillPoints = [];
   for (let i = 0; i < n; i++) {
-    const x = binX(i), y = binY(i);
-    i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+    fillPoints.push(binX(i), binYFromBins(bins, i));
   }
-  ctx.stroke();
-  ctx.restore();
+  spectrumGl.drawFilledArea(fillPoints, H, cssColorToRgba(pal.spectrumFill));
 
-  // ── Peak markers for easier snap-tune targeting ──────────────────────────
+  if (Array.isArray(peakHoldBins) && peakHoldBins.length === n) {
+    const peakPoints = [];
+    for (let i = 0; i < n; i++) {
+      peakPoints.push(binX(i), binYFromBins(peakHoldBins, i));
+    }
+    spectrumGl.drawPolyline(peakPoints, rgbaWithAlpha(pal.waveformPeak, 0.7), Math.max(1, dpr * 0.9));
+  }
+
+  spectrumGl.drawPolyline(fillPoints, cssColorToRgba(pal.spectrumLine), Math.max(1, dpr));
+
   const markerPeaks = visibleSpectrumPeakIndices(data);
   if (markerPeaks.length > 0) {
-    ctx.save();
-    ctx.fillStyle = pal.waveformPeak;
-    ctx.strokeStyle = pal.bg;
-    ctx.lineWidth = Math.max(1, dpr * 0.75);
-    const radius = Math.max(2, dpr * 1.6);
+    const markerPoints = [];
     for (const idx of markerPeaks) {
-      const x = binX(idx);
-      const y = binY(idx);
-      ctx.beginPath();
-      ctx.arc(x, y - radius * 0.35, radius, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.stroke();
+      markerPoints.push(binX(idx), binYFromBins(bins, idx));
     }
-    ctx.restore();
+    spectrumGl.drawPoints(markerPoints, Math.max(2, dpr * 1.6), cssColorToRgba(pal.waveformPeak));
   }
 
   updateSpectrumFreqAxis(range);
@@ -6957,6 +6812,34 @@ function updateSpectrumFreqAxis(range) {
     } else {
       span.style.left = (frac * 100).toFixed(2) + "%";
     }
+  }
+}
+
+function updateSpectrumDbAxis(dbMin, dbMax, gridStep, heightPx, dpr) {
+  if (!spectrumDbAxis) return;
+  const key = [
+    Math.round(dbMin),
+    Math.round(dbMax),
+    Math.round(gridStep),
+    Math.round(heightPx),
+    Math.round((dpr || 1) * 100),
+    currentTheme(),
+    currentStyle(),
+  ].join(":");
+  if (key === spectrumDbAxisKey) return;
+  spectrumDbAxisKey = key;
+  spectrumDbAxis.innerHTML = "";
+
+  const spanDb = Math.max(1, dbMax - dbMin);
+  const cssHeight = heightPx / Math.max(1, dpr || 1);
+  for (let db = Math.ceil(dbMin / gridStep) * gridStep; db <= dbMax; db += gridStep) {
+    const yPx = Math.round(heightPx * (1 - (db - dbMin) / spanDb));
+    const yCss = yPx / Math.max(1, dpr || 1);
+    if (yCss <= 7 || yCss >= cssHeight - 4) continue;
+    const span = document.createElement("span");
+    span.textContent = `${db}`;
+    span.style.top = `${yCss}px`;
+    spectrumDbAxis.appendChild(span);
   }
 }
 
