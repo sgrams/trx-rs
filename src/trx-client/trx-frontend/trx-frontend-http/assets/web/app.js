@@ -284,10 +284,12 @@ function applyCapabilities(caps) {
   if (spectrumPanel) {
     if (caps.filter_controls) {
       spectrumPanel.style.display = "";
+      setSignalSplitControlVisible(true);
       if (centerFreqField) centerFreqField.style.display = "";
       startSpectrumStreaming();
     } else {
       spectrumPanel.style.display = "none";
+      setSignalSplitControlVisible(false);
       if (centerFreqField) centerFreqField.style.display = "none";
       stopSpectrumStreaming();
     }
@@ -325,6 +327,9 @@ const loadingSub = document.getElementById("loading-sub");
 const overviewCanvas = document.getElementById("overview-canvas");
 const signalOverlayCanvas = document.getElementById("signal-overlay-canvas");
 const signalVisualBlockEl = document.querySelector(".signal-visual-block");
+const signalSplitControlEl = document.getElementById("signal-split-control");
+const signalSplitSliderEl = document.getElementById("signal-split-slider");
+const signalSplitValueEl = document.getElementById("signal-split-value");
 const overviewPeakHoldEl = document.getElementById("overview-peak-hold");
 const themeToggleBtn = document.getElementById("theme-toggle");
 const headerRigSwitchSelect = document.getElementById("header-rig-switch-select");
@@ -1932,10 +1937,17 @@ let spectrumCoverageMarginHz = 50_000;
 let spectrumUsableSpanRatio = 0.92;
 const DEFAULT_OVERVIEW_PLOT_HEIGHT_PX = 160;
 const DEFAULT_SPECTRUM_PLOT_HEIGHT_PX = 160;
+const MIN_OVERVIEW_PLOT_HEIGHT_PX = 90;
 const MIN_SPECTRUM_PLOT_HEIGHT_PX = 130;
+const DEFAULT_SIGNAL_SPLIT_PERCENT = 50;
+const MIN_SIGNAL_SPLIT_PERCENT = 20;
+const MAX_SIGNAL_SPLIT_PERCENT = 80;
 let spectrumLayoutPending = false;
-let spectrumManualPlotHeightPx = null;
+let spectrumManualTotalPlotHeightPx = null;
 let spectrumResizeState = null;
+let signalSplitPercent = clampSignalSplitPercent(
+  Number(loadSetting("signalSplitPercent", DEFAULT_SIGNAL_SPLIT_PERCENT)),
+);
 
 function updateFooterBuildInfo() {
   const serverEl = document.getElementById("footer-server-build");
@@ -1954,6 +1966,31 @@ function scheduleSpectrumLayout() {
   });
 }
 
+function clampSignalSplitPercent(value) {
+  const numeric = Number.isFinite(value) ? value : DEFAULT_SIGNAL_SPLIT_PERCENT;
+  return Math.max(
+    MIN_SIGNAL_SPLIT_PERCENT,
+    Math.min(MAX_SIGNAL_SPLIT_PERCENT, Math.round(numeric)),
+  );
+}
+
+function updateSignalSplitControlText() {
+  if (!signalSplitValueEl) return;
+  signalSplitValueEl.textContent = `${signalSplitPercent}/${100 - signalSplitPercent}`;
+}
+
+function setSignalSplitControlVisible(visible) {
+  if (!signalSplitControlEl) return;
+  signalSplitControlEl.style.display = visible ? "flex" : "none";
+}
+
+function currentOverviewHeightPx(overviewCanvasEl) {
+  return Math.max(
+    MIN_OVERVIEW_PLOT_HEIGHT_PX,
+    Math.round(overviewCanvasEl?.clientHeight || DEFAULT_OVERVIEW_PLOT_HEIGHT_PX),
+  );
+}
+
 function currentSpectrumHeightPx(spectrumCanvasEl) {
   return Math.max(
     MIN_SPECTRUM_PLOT_HEIGHT_PX,
@@ -1961,18 +1998,21 @@ function currentSpectrumHeightPx(spectrumCanvasEl) {
   );
 }
 
-function spectrumHeightBoundsPx(tabMainEl, contentEl, spectrumCanvasEl) {
+function spectrumHeightBoundsPx(tabMainEl, contentEl, overviewCanvasEl, spectrumCanvasEl) {
+  const currentOverviewHeight = currentOverviewHeightPx(overviewCanvasEl);
   const currentSpectrumHeight = currentSpectrumHeightPx(spectrumCanvasEl);
+  const currentTotalHeight = currentOverviewHeight + currentSpectrumHeight;
   const tabBottom = tabMainEl.getBoundingClientRect().bottom;
   const contentBottom = contentEl.getBoundingClientRect().bottom;
   const slackPx = Math.floor(tabBottom - contentBottom);
-  const maxHeight = Math.max(
-    MIN_SPECTRUM_PLOT_HEIGHT_PX,
-    currentSpectrumHeight + slackPx - 2,
+  const minTotalHeight = MIN_OVERVIEW_PLOT_HEIGHT_PX + MIN_SPECTRUM_PLOT_HEIGHT_PX;
+  const maxAutoTotalHeight = Math.max(
+    minTotalHeight,
+    currentTotalHeight + slackPx - 2,
   );
   return {
-    min: MIN_SPECTRUM_PLOT_HEIGHT_PX,
-    max: maxHeight,
+    minTotal: minTotalHeight,
+    autoMaxTotal: maxAutoTotalHeight,
   };
 }
 
@@ -1988,16 +2028,11 @@ function updateSpectrumAutoHeight() {
   const mainVisible = getComputedStyle(tabMainEl).display !== "none";
   const contentVisible = getComputedStyle(contentEl).display !== "none";
   const spectrumVisible = getComputedStyle(spectrumPanelEl).display !== "none";
-  const currentOverviewHeight = Math.max(
-    DEFAULT_OVERVIEW_PLOT_HEIGHT_PX,
-    Math.round(overviewCanvasEl.clientHeight || DEFAULT_OVERVIEW_PLOT_HEIGHT_PX),
-  );
-  const currentSpectrumHeight = Math.max(
-    DEFAULT_SPECTRUM_PLOT_HEIGHT_PX,
-    Math.round(spectrumCanvasEl.clientHeight || DEFAULT_SPECTRUM_PLOT_HEIGHT_PX),
-  );
+  const currentOverviewHeight = currentOverviewHeightPx(overviewCanvasEl);
+  const currentSpectrumHeight = currentSpectrumHeightPx(spectrumCanvasEl);
 
   if (!mainVisible || !contentVisible || !spectrumVisible) {
+    setSignalSplitControlVisible(false);
     root.style.setProperty("--overview-plot-height", `${DEFAULT_OVERVIEW_PLOT_HEIGHT_PX}px`);
     root.style.setProperty("--spectrum-plot-height", `${DEFAULT_SPECTRUM_PLOT_HEIGHT_PX}px`);
     if (
@@ -2011,19 +2046,29 @@ function updateSpectrumAutoHeight() {
     return;
   }
 
-  const bounds = spectrumHeightBoundsPx(tabMainEl, contentEl, spectrumCanvasEl);
-  const nextSpectrumHeight = spectrumManualPlotHeightPx == null
-    ? bounds.max
-    : Math.max(bounds.min, Math.round(spectrumManualPlotHeightPx));
-  if (spectrumManualPlotHeightPx != null) {
-    spectrumManualPlotHeightPx = nextSpectrumHeight;
+  setSignalSplitControlVisible(true);
+  const bounds = spectrumHeightBoundsPx(tabMainEl, contentEl, overviewCanvasEl, spectrumCanvasEl);
+  const nextTotalHeight = spectrumManualTotalPlotHeightPx == null
+    ? bounds.autoMaxTotal
+    : Math.max(bounds.minTotal, Math.round(spectrumManualTotalPlotHeightPx));
+  if (spectrumManualTotalPlotHeightPx != null) {
+    spectrumManualTotalPlotHeightPx = nextTotalHeight;
   }
+  const requestedOverviewHeight = Math.round((nextTotalHeight * signalSplitPercent) / 100);
+  const nextOverviewHeight = Math.max(
+    MIN_OVERVIEW_PLOT_HEIGHT_PX,
+    Math.min(nextTotalHeight - MIN_SPECTRUM_PLOT_HEIGHT_PX, requestedOverviewHeight),
+  );
+  const nextSpectrumHeight = Math.max(
+    MIN_SPECTRUM_PLOT_HEIGHT_PX,
+    nextTotalHeight - nextOverviewHeight,
+  );
   if (
-    Math.abs(DEFAULT_OVERVIEW_PLOT_HEIGHT_PX - currentOverviewHeight) < 2
+    Math.abs(nextOverviewHeight - currentOverviewHeight) < 2
     && Math.abs(nextSpectrumHeight - currentSpectrumHeight) < 2
   ) return;
 
-  root.style.setProperty("--overview-plot-height", `${DEFAULT_OVERVIEW_PLOT_HEIGHT_PX}px`);
+  root.style.setProperty("--overview-plot-height", `${nextOverviewHeight}px`);
   root.style.setProperty("--spectrum-plot-height", `${nextSpectrumHeight}px`);
   if (lastSpectrumData) {
     scheduleSpectrumDraw();
@@ -2034,16 +2079,20 @@ function updateSpectrumAutoHeight() {
 function beginSpectrumResize(clientY) {
   const tabMainEl = document.getElementById("tab-main");
   const contentEl = document.getElementById("content");
+  const overviewCanvasEl = document.getElementById("overview-canvas");
   const spectrumCanvasEl = document.getElementById("spectrum-canvas");
   const spectrumPanelEl = document.getElementById("spectrum-panel");
-  if (!tabMainEl || !contentEl || !spectrumCanvasEl || !spectrumPanelEl) return false;
+  if (!tabMainEl || !contentEl || !overviewCanvasEl || !spectrumCanvasEl || !spectrumPanelEl) return false;
   if (getComputedStyle(spectrumPanelEl).display === "none") return false;
-  const bounds = spectrumHeightBoundsPx(tabMainEl, contentEl, spectrumCanvasEl);
-  const startHeight = Math.max(bounds.min, currentSpectrumHeightPx(spectrumCanvasEl));
+  const bounds = spectrumHeightBoundsPx(tabMainEl, contentEl, overviewCanvasEl, spectrumCanvasEl);
+  const startTotalHeight = Math.max(
+    bounds.minTotal,
+    currentOverviewHeightPx(overviewCanvasEl) + currentSpectrumHeightPx(spectrumCanvasEl),
+  );
   spectrumResizeState = {
     startY: clientY,
-    startHeight,
-    minHeight: bounds.min,
+    startTotalHeight,
+    minTotalHeight: bounds.minTotal,
   };
   document.body.classList.add("spectrum-resizing");
   return true;
@@ -2052,9 +2101,9 @@ function beginSpectrumResize(clientY) {
 function updateSpectrumResize(clientY) {
   if (!spectrumResizeState) return;
   const deltaY = clientY - spectrumResizeState.startY;
-  spectrumManualPlotHeightPx = Math.max(
-    spectrumResizeState.minHeight,
-    Math.round(spectrumResizeState.startHeight + deltaY),
+  spectrumManualTotalPlotHeightPx = Math.max(
+    spectrumResizeState.minTotalHeight,
+    Math.round(spectrumResizeState.startTotalHeight + deltaY),
   );
   updateSpectrumAutoHeight();
 }
@@ -2088,10 +2137,22 @@ if (spectrumSizeGrip) {
   spectrumSizeGrip.addEventListener("pointerup", finishResize);
   spectrumSizeGrip.addEventListener("pointercancel", finishResize);
   spectrumSizeGrip.addEventListener("dblclick", () => {
-    spectrumManualPlotHeightPx = null;
+    spectrumManualTotalPlotHeightPx = null;
     scheduleSpectrumLayout();
   });
 }
+
+if (signalSplitSliderEl) {
+  signalSplitSliderEl.value = String(signalSplitPercent);
+  signalSplitSliderEl.addEventListener("input", () => {
+    signalSplitPercent = clampSignalSplitPercent(Number(signalSplitSliderEl.value));
+    signalSplitSliderEl.value = String(signalSplitPercent);
+    updateSignalSplitControlText();
+    saveSetting("signalSplitPercent", signalSplitPercent);
+    scheduleSpectrumLayout();
+  });
+}
+updateSignalSplitControlText();
 
 function updateTitle() {
   const titleEl = document.getElementById("rig-title");
