@@ -373,9 +373,20 @@
       if (!Array.isArray(points) || points.length < 2) return;
       const radius = Math.max(1, Number(size) || 1);
       const rgba = normalizeColor(color);
+      const verts = [];
       for (let i = 0; i < points.length; i += 2) {
-        this.fillRect(points[i] - radius, points[i + 1] - radius, radius * 2, radius * 2, rgba);
+        const x = points[i] - radius;
+        const y = points[i + 1] - radius;
+        const w = radius * 2;
+        const h = radius * 2;
+        pushColoredVertex(verts, x, y, rgba);
+        pushColoredVertex(verts, x + w, y, rgba);
+        pushColoredVertex(verts, x + w, y + h, rgba);
+        pushColoredVertex(verts, x, y, rgba);
+        pushColoredVertex(verts, x + w, y + h, rgba);
+        pushColoredVertex(verts, x, y + h, rgba);
       }
+      this._drawColorGeometry(verts, this.gl.TRIANGLES);
     }
 
     drawDashedVerticalLine(x, y0, y1, dashLen, gapLen, color, width = 1) {
@@ -383,10 +394,12 @@
       const gap = Math.max(1, Number(gapLen) || 1);
       const top = Math.min(y0, y1);
       const bottom = Math.max(y0, y1);
+      const segments = [];
       for (let y = top; y < bottom; y += dash + gap) {
         const segEnd = Math.min(bottom, y + dash);
-        this.drawSegments([x, y, x, segEnd], color, width);
+        segments.push(x, y, x, segEnd);
       }
+      this.drawSegments(segments, color, width);
     }
 
     uploadRgbaTexture(name, width, height, data, filter = "linear") {

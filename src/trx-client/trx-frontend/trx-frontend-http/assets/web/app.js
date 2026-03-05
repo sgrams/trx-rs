@@ -764,6 +764,12 @@ let overviewSignalTimer = null;
 let overviewWaterfallRows = [];
 let overviewWaterfallPushCount = 0;   // monotonically increments on every push
 const HEADER_SIG_WINDOW_MS = 10_000;
+const OVERVIEW_WF_TEX_MAX_W = 512;
+let overviewWfTexData = null;
+let overviewWfTexWidth = 0;
+let overviewWfTexHeight = 0;
+let overviewWfTexPushCount = 0;
+let overviewWfTexPalKey = "";
 
 function cssColorToRgba(color, alphaMul = 1) {
   const parser = typeof window.trxParseCssColor === "function" ? window.trxParseCssColor : null;
@@ -780,6 +786,18 @@ function rgbaWithAlpha(color, alphaMul = 1) {
   return cssColorToRgba(color, alphaMul);
 }
 
+function overviewWfResetTextureCache() {
+  overviewWfTexData = null;
+  overviewWfTexWidth = 0;
+  overviewWfTexHeight = 0;
+  overviewWfTexPushCount = 0;
+  overviewWfTexPalKey = "";
+}
+
+function overviewWfPaletteKey(pal, viewKey = "") {
+  return `${pal.waterfallHue}|${pal.waterfallSat}|${pal.waterfallLight}|${pal.waterfallAlpha}|${spectrumFloor}|${spectrumRange}|${viewKey}`;
+}
+
 function resizeHeaderSignalCanvas() {
   if (!ensureOverviewCanvasBackingStore()) return;
   positionRdsPsOverlay();
@@ -794,6 +812,7 @@ function ensureOverviewCanvasBackingStore() {
   const dpr = window.devicePixelRatio || 1;
   const resized = overviewGl.ensureSize(cssW, cssH, dpr);
   if (resized) {
+    overviewWfResetTextureCache();
     trimOverviewWaterfallRows();
   }
   return true;
@@ -983,32 +1002,67 @@ function drawOverviewWaterfall(W, H, pal) {
   const rows = overviewWaterfallRows.slice(-maxVisible);
   if (rows.length === 0) return;
 
-  const iW = Math.max(1, Math.ceil(W));
-  const iH = Math.max(1, Math.ceil(H));
-  const rgba = new Uint8Array(iW * iH * 4);
+  const iW = Math.max(96, Math.min(OVERVIEW_WF_TEX_MAX_W, Math.ceil(W / 2)));
+  const iH = Math.max(1, rows.length);
   const minDb = Number.isFinite(spectrumFloor) ? spectrumFloor : -115;
   const maxDb = minDb + Math.max(20, Number.isFinite(spectrumRange) ? spectrumRange : 90);
+  const view = lastSpectrumData ? spectrumVisibleRange(lastSpectrumData) : null;
+  const viewKey = view ? `${Math.round(view.visLoHz)}:${Math.round(view.visHiHz)}` : "na";
+  const palKey = overviewWfPaletteKey(pal, viewKey);
+  const rowStride = iW * 4;
+  const expectedSize = iW * iH * 4;
+  const steadyState = rows.length >= maxVisible;
+  const newPushes = overviewWaterfallPushCount - overviewWfTexPushCount;
+  const sizeChanged = overviewWfTexWidth !== iW || overviewWfTexHeight !== iH;
+  const palChanged = overviewWfTexPalKey !== palKey;
+  const needsFull = !overviewWfTexData || sizeChanged || palChanged || overviewWfTexPushCount === 0;
 
-  for (let y = 0; y < iH; y++) {
-    const rowFrac = y / Math.max(1, iH - 1);
-    const rowIdx = Math.max(0, Math.min(rows.length - 1, Math.floor(rowFrac * rows.length)));
-    const bins = rows[rowIdx];
-    if (!Array.isArray(bins) || bins.length === 0) continue;
-    const { startIdx, endIdx } = overviewVisibleBinWindow(lastSpectrumData, bins.length);
+  if (!overviewWfTexData || overviewWfTexData.length !== expectedSize) {
+    overviewWfTexData = new Uint8Array(expectedSize);
+  }
+  overviewWfTexWidth = iW;
+  overviewWfTexHeight = iH;
+
+  function renderRow(dstY, srcBins) {
+    if (!Array.isArray(srcBins) || srcBins.length === 0) return;
+    const { startIdx, endIdx } = overviewVisibleBinWindow(lastSpectrumData, srcBins.length);
     const spanBins = Math.max(1, endIdx - startIdx);
+    const rowBase = dstY * rowStride;
     for (let x = 0; x < iW; x++) {
       const frac = x / Math.max(1, iW - 1);
       const binIdx = Math.min(endIdx, startIdx + Math.floor(frac * spanBins));
-      const c = waterfallColorRgba(bins[binIdx], pal, minDb, maxDb);
-      const p = (y * iW + x) * 4;
-      rgba[p + 0] = Math.round(c[0] * 255);
-      rgba[p + 1] = Math.round(c[1] * 255);
-      rgba[p + 2] = Math.round(c[2] * 255);
-      rgba[p + 3] = Math.round(c[3] * 255);
+      const c = waterfallColorRgba(srcBins[binIdx], pal, minDb, maxDb);
+      const p = rowBase + x * 4;
+      overviewWfTexData[p + 0] = Math.round(c[0] * 255);
+      overviewWfTexData[p + 1] = Math.round(c[1] * 255);
+      overviewWfTexData[p + 2] = Math.round(c[2] * 255);
+      overviewWfTexData[p + 3] = Math.round(c[3] * 255);
     }
   }
 
-  overviewGl.uploadRgbaTexture("overview-waterfall", iW, iH, rgba, "linear");
+  if (needsFull) {
+    for (let y = 0; y < iH; y++) {
+      renderRow(y, rows[y]);
+    }
+    overviewWfTexPushCount = overviewWaterfallPushCount;
+    overviewWfTexPalKey = palKey;
+  } else if (steadyState && newPushes > 0) {
+    const newCount = Math.min(newPushes, iH);
+    if (newCount >= iH) {
+      for (let y = 0; y < iH; y++) renderRow(y, rows[y]);
+    } else {
+      const shiftBytes = newCount * rowStride;
+      overviewWfTexData.copyWithin(0, shiftBytes);
+      const startRow = iH - newCount;
+      for (let y = startRow; y < iH; y++) {
+        renderRow(y, rows[y]);
+      }
+    }
+    overviewWfTexPushCount = overviewWaterfallPushCount;
+    overviewWfTexPalKey = palKey;
+  }
+
+  overviewGl.uploadRgbaTexture("overview-waterfall", iW, iH, overviewWfTexData, "linear");
   overviewGl.drawTexture("overview-waterfall", 0, 0, W, H, 1, true);
 }
 
@@ -6144,6 +6198,7 @@ function startSpectrumStreaming() {
       clearSpectrumPeakHoldFrames();
       overviewWaterfallRows = [];
       overviewWaterfallPushCount = 0;
+      overviewWfResetTextureCache();
       scheduleOverviewDraw();
       clearSpectrumCanvas();
       updateRdsPsOverlay(null);
@@ -6192,6 +6247,7 @@ function stopSpectrumStreaming() {
   clearSpectrumPeakHoldFrames();
   overviewWaterfallRows = [];
   overviewWaterfallPushCount = 0;
+  overviewWfResetTextureCache();
   scheduleOverviewDraw();
   updateRdsPsOverlay(null);
   clearSpectrumCanvas();

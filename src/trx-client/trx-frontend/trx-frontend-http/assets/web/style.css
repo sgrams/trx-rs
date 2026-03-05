@@ -2299,7 +2299,7 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   top: 0;
   left: 0;
   right: 0;
-  z-index: 6;
+  z-index: 8;
   height: 0;
   overflow: hidden;
   font-size: 0.68rem;
@@ -2311,8 +2311,8 @@ button:focus-visible, input:focus-visible, select:focus-visible {
 }
 .spectrum-bookmark-chip {
   position: absolute;
-  transform: translate(-50%, -50%);
-  top: 50%;
+  transform: translateX(-50%);
+  top: 2px;
   white-space: nowrap;
   cursor: pointer;
   font-weight: 600;
