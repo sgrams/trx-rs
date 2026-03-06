@@ -153,7 +153,7 @@ pub struct CwDecoder {
 
 impl CwDecoder {
     pub fn new(sample_rate: u32) -> Self {
-        let window_ms = 50;
+        let window_ms = 10;
         let window_size = (sample_rate as usize * window_ms) / 1000;
         let default_tone = 700u32;
         let k = (default_tone as f32 * window_size as f32 / sample_rate as f32).round();
@@ -347,15 +347,15 @@ impl CwDecoder {
                     // Word gap
                     if !self.current_symbol.is_empty() {
                         let ch = morse_lookup(&self.current_symbol).unwrap_or('?');
-                        self.emit_text(&ch.to_string());
+                        self.emit_event(&ch.to_string());
                         self.current_symbol.clear();
                     }
-                    self.emit_text(" ");
+                    self.emit_event(" ");
                 } else if off_duration > u * 2.0 {
                     // Character gap
                     if !self.current_symbol.is_empty() {
                         let ch = morse_lookup(&self.current_symbol).unwrap_or('?');
-                        self.emit_text(&ch.to_string());
+                        self.emit_event(&ch.to_string());
                         self.current_symbol.clear();
                     }
                 }
@@ -367,7 +367,7 @@ impl CwDecoder {
             self.tone_on = false;
             let on_duration = now - self.tone_on_at;
             let u = self.unit_ms();
-            if on_duration > u * 2.0 {
+            if on_duration > u * 1.5 {
                 self.current_symbol.push('-');
             } else {
                 self.current_symbol.push('.');
@@ -378,7 +378,7 @@ impl CwDecoder {
                 // Collect for auto WPM
                 self.on_durations.push(on_duration);
                 if self.on_durations.len() > 30 {
-                    self.on_durations.remove(0);
+                    self.on_durations.drain(..self.on_durations.len() - 30);
                 }
                 self.auto_detect_wpm();
             }
@@ -391,7 +391,7 @@ impl CwDecoder {
             let silence = now - self.tone_off_at;
             if silence > self.unit_ms() * 5.0 {
                 let ch = morse_lookup(&self.current_symbol).unwrap_or('?');
-                self.emit_text(&ch.to_string());
+                self.emit_event(&ch.to_string());
                 self.current_symbol.clear();
             }
         }
@@ -404,10 +404,6 @@ impl CwDecoder {
             tone_hz: self.tone_freq,
             signal_on: self.tone_on,
         });
-    }
-
-    fn emit_text(&mut self, text: &str) {
-        self.emit_event(text);
     }
 
     pub fn process_samples(&mut self, samples: &[f32]) -> Vec<CwEvent> {
