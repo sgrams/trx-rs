@@ -21,6 +21,11 @@ let cwLastAppendTime = 0;
 let cwTonePickerRaf = null;
 let cwPaused = false;
 let cwBufferedWhilePaused = 0;
+// Tracks a user-initiated auto toggle that is in-flight (POST not yet
+// acknowledged).  While set, server-state updates must not override the
+// checkbox so that a concurrent SSE event carrying the *old* cw_auto value
+// does not immediately undo the user's choice.
+let cwAutoLocalOverride = null;
 
 function applyCwAutoUi(enabled) {
   if (cwAutoInput) cwAutoInput.checked = enabled;
@@ -37,6 +42,13 @@ function applyCwAutoUi(enabled) {
   }
 }
 window.applyCwAutoUi = applyCwAutoUi;
+
+// Called by app.js render() when a server-state snapshot arrives.  Ignores
+// the update while cwAutoLocalOverride is set (user change still in-flight).
+window.applyCwAutoUiFromServer = function(enabled) {
+  if (cwAutoLocalOverride !== null) return;
+  applyCwAutoUi(enabled);
+};
 
 function clampCwWpm(wpm) {
   const numeric = Number(wpm);
@@ -232,12 +244,15 @@ async function setCwTone(tone, { syncInput = true } = {}) {
 if (cwAutoInput) {
   cwAutoInput.addEventListener("change", async () => {
     const enabled = cwAutoInput.checked;
+    cwAutoLocalOverride = enabled;
     applyCwAutoUi(enabled);
     try {
       await postPath(`/set_cw_auto?enabled=${enabled ? "true" : "false"}`);
       drawCwTonePicker();
     } catch (e) {
       console.error("CW auto toggle failed", e);
+    } finally {
+      cwAutoLocalOverride = null;
     }
   });
 }

@@ -2479,28 +2479,24 @@ function render(update) {
   const cwAutoEl = document.getElementById("cw-auto");
   const cwWpmEl = document.getElementById("cw-wpm");
   const cwToneEl = document.getElementById("cw-tone");
-  if (cwAutoEl && typeof update.cw_auto === "boolean") {
-    cwAutoEl.checked = update.cw_auto;
-  }
   if (cwWpmEl && typeof update.cw_wpm === "number") {
     cwWpmEl.value = update.cw_wpm;
   }
   if (cwToneEl && typeof update.cw_tone_hz === "number") {
     cwToneEl.value = update.cw_tone_hz;
   }
-  if ((cwWpmEl || cwToneEl) && typeof update.cw_auto === "boolean") {
-    const disabled = update.cw_auto;
-    if (typeof window.applyCwAutoUi === "function") {
-      window.applyCwAutoUi(disabled);
+  if (typeof update.cw_auto === "boolean") {
+    if (typeof window.applyCwAutoUiFromServer === "function") {
+      // cw.js is loaded: use the guarded path that respects in-flight user
+      // changes, preventing a concurrent SSE poll from re-enabling auto just
+      // after the user disabled it.
+      window.applyCwAutoUiFromServer(update.cw_auto);
+    } else if (typeof window.applyCwAutoUi === "function") {
+      window.applyCwAutoUi(update.cw_auto);
     } else {
-      if (cwWpmEl) {
-        cwWpmEl.disabled = disabled;
-        cwWpmEl.readOnly = disabled;
-      }
-      if (cwToneEl) {
-        cwToneEl.disabled = disabled;
-        cwToneEl.readOnly = disabled;
-      }
+      if (cwAutoEl) cwAutoEl.checked = update.cw_auto;
+      if (cwWpmEl) { cwWpmEl.disabled = update.cw_auto; cwWpmEl.readOnly = update.cw_auto; }
+      if (cwToneEl) { cwToneEl.disabled = update.cw_auto; cwToneEl.readOnly = update.cw_auto; }
     }
   }
   let activeFreqColor = "var(--accent-green)";
