@@ -328,6 +328,15 @@ async fn async_init() -> DynResult<AppState> {
 
     let frontend_runtime_ctx = Arc::new(frontend_runtime);
 
+    // Start decode history collector before audio client starts replay.
+    // Frontend tasks are spawned asynchronously, so starting the collector
+    // here avoids missing the initial server-side history burst.
+    if cfg.frontends.audio.enabled {
+        trx_frontend_http::server::audio::start_decode_history_collector(
+            frontend_runtime_ctx.clone(),
+        );
+    }
+
     // Spawn frontends with runtime context
     for frontend in &frontends {
         let frontend_state_rx = state_rx.clone();
