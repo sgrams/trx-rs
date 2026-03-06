@@ -27,6 +27,14 @@ use trx_frontend::FrontendRuntimeContext;
 
 const HISTORY_RETENTION: Duration = Duration::from_secs(24 * 60 * 60);
 
+fn current_timestamp_ms() -> i64 {
+    let millis = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis();
+    i64::try_from(millis).unwrap_or(i64::MAX)
+}
+
 fn prune_aprs_history(history: &mut VecDeque<(Instant, AprsPacket)>) {
     while let Some((ts, _)) = history.front() {
         if ts.elapsed() <= HISTORY_RETENTION {
@@ -54,7 +62,10 @@ fn prune_vdes_history(history: &mut VecDeque<(Instant, VdesMessage)>) {
     }
 }
 
-fn record_ais(context: &FrontendRuntimeContext, msg: AisMessage) {
+fn record_ais(context: &FrontendRuntimeContext, mut msg: AisMessage) {
+    if msg.ts_ms.is_none() {
+        msg.ts_ms = Some(current_timestamp_ms());
+    }
     let mut history = context
         .ais_history
         .lock()
@@ -63,7 +74,10 @@ fn record_ais(context: &FrontendRuntimeContext, msg: AisMessage) {
     prune_ais_history(&mut history);
 }
 
-fn record_vdes(context: &FrontendRuntimeContext, msg: VdesMessage) {
+fn record_vdes(context: &FrontendRuntimeContext, mut msg: VdesMessage) {
+    if msg.ts_ms.is_none() {
+        msg.ts_ms = Some(current_timestamp_ms());
+    }
     let mut history = context
         .vdes_history
         .lock()
@@ -99,7 +113,10 @@ fn prune_wspr_history(history: &mut VecDeque<(Instant, WsprMessage)>) {
     }
 }
 
-fn record_aprs(context: &FrontendRuntimeContext, pkt: AprsPacket) {
+fn record_aprs(context: &FrontendRuntimeContext, mut pkt: AprsPacket) {
+    if pkt.ts_ms.is_none() {
+        pkt.ts_ms = Some(current_timestamp_ms());
+    }
     let mut history = context
         .aprs_history
         .lock()
@@ -141,14 +158,7 @@ pub fn snapshot_aprs_history(context: &FrontendRuntimeContext) -> Vec<AprsPacket
         .lock()
         .expect("aprs history mutex poisoned");
     prune_aprs_history(&mut history);
-    history
-        .iter()
-        .map(|(ts, pkt)| {
-            let mut pkt = pkt.clone();
-            pkt.ts_ms = Some(timestamp_ms_for_elapsed(ts.elapsed()));
-            pkt
-        })
-        .collect()
+    history.iter().map(|(_, pkt)| pkt.clone()).collect()
 }
 
 pub fn snapshot_ais_history(context: &FrontendRuntimeContext) -> Vec<AisMessage> {
@@ -157,14 +167,7 @@ pub fn snapshot_ais_history(context: &FrontendRuntimeContext) -> Vec<AisMessage>
         .lock()
         .expect("ais history mutex poisoned");
     prune_ais_history(&mut history);
-    history
-        .iter()
-        .map(|(ts, msg)| {
-            let mut msg = msg.clone();
-            msg.ts_ms = Some(timestamp_ms_for_elapsed(ts.elapsed()));
-            msg
-        })
-        .collect()
+    history.iter().map(|(_, msg)| msg.clone()).collect()
 }
 
 pub fn snapshot_vdes_history(context: &FrontendRuntimeContext) -> Vec<VdesMessage> {
@@ -173,14 +176,7 @@ pub fn snapshot_vdes_history(context: &FrontendRuntimeContext) -> Vec<VdesMessag
         .lock()
         .expect("vdes history mutex poisoned");
     prune_vdes_history(&mut history);
-    history
-        .iter()
-        .map(|(ts, msg)| {
-            let mut msg = msg.clone();
-            msg.ts_ms = Some(timestamp_ms_for_elapsed(ts.elapsed()));
-            msg
-        })
-        .collect()
+    history.iter().map(|(_, msg)| msg.clone()).collect()
 }
 
 pub fn snapshot_cw_history(context: &FrontendRuntimeContext) -> Vec<CwEvent> {
@@ -232,15 +228,6 @@ pub fn clear_vdes_history(context: &FrontendRuntimeContext) {
         .lock()
         .expect("vdes history mutex poisoned");
     history.clear();
-}
-
-fn timestamp_ms_for_elapsed(elapsed: Duration) -> i64 {
-    let wall_clock = SystemTime::now().checked_sub(elapsed).unwrap_or(UNIX_EPOCH);
-    let millis = wall_clock
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis();
-    i64::try_from(millis).unwrap_or(i64::MAX)
 }
 
 pub fn clear_cw_history(context: &FrontendRuntimeContext) {
