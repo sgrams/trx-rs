@@ -665,7 +665,8 @@ small { color: var(--text-muted); }
 #aprs-bar-overlay,
 #ais-bar-overlay,
 #vdes-bar-overlay,
-#ft8-bar-overlay {
+#ft8-bar-overlay,
+#cw-bar-overlay {
   display: none;
   position: absolute;
   top: 50%;
