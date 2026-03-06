@@ -27,6 +27,9 @@ use trx_core::{DynResult, RigError, RigResult};
 use crate::audio::DecoderHistories;
 use crate::error::is_invalid_bcd_error;
 
+const POLL_REFRESH_TIMEOUT: Duration = Duration::from_secs(8);
+const COMMAND_EXEC_TIMEOUT: Duration = Duration::from_secs(10);
+
 /// Configuration for the rig task.
 pub struct RigTaskConfig {
     pub registry: Arc<RegistrationContext>,
@@ -271,8 +274,13 @@ pub async fn run_rig_task(
 
                 // Poll rig state
                 let old_state = state.clone();
-                match refresh_state_with_retry(&mut rig, &mut state, retry).await {
-                    Ok(()) => {
+                match time::timeout(
+                    POLL_REFRESH_TIMEOUT,
+                    refresh_state_with_retry(&mut rig, &mut state, retry),
+                )
+                .await
+                {
+                    Ok(Ok(())) => {
                         let old_machine_state = machine.state().clone();
                         sync_machine_state(&mut machine, &state);
                         let new_machine_state = machine.state().clone();
@@ -285,7 +293,7 @@ pub async fn run_rig_task(
                         );
                         let _ = state_tx.send(state.clone());
                     }
-                    Err(e) => {
+                    Ok(Err(e)) => {
                         error!("CAT polling error: {:?}", e);
                         // Grace period after power on
                         if let Some(last_on) = last_power_on {
@@ -294,6 +302,12 @@ pub async fn run_rig_task(
                                 continue;
                             }
                         }
+                    }
+                    Err(_) => {
+                        error!(
+                            "CAT polling timed out after {:?}",
+                            POLL_REFRESH_TIMEOUT
+                        );
                     }
                 }
             },
@@ -324,7 +338,22 @@ pub async fn run_rig_task(
                         retry,
                         histories: &histories,
                     };
-                    let result = process_command(cmd, &mut cmd_ctx).await;
+                    let result =
+                        match time::timeout(COMMAND_EXEC_TIMEOUT, process_command(cmd, &mut cmd_ctx))
+                            .await
+                        {
+                            Ok(result) => result,
+                            Err(_) => {
+                                error!(
+                                    "Rig command {} timed out after {:?}",
+                                    cmd_label, COMMAND_EXEC_TIMEOUT
+                                );
+                                Err(RigError::communication(format!(
+                                    "command timed out after {:?}",
+                                    COMMAND_EXEC_TIMEOUT
+                                )))
+                            }
+                        };
 
                     let _ = respond_to.send(result);
 
