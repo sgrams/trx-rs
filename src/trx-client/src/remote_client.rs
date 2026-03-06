@@ -24,6 +24,7 @@ const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
 const IO_TIMEOUT: Duration = Duration::from_secs(15);
 const SPECTRUM_IO_TIMEOUT: Duration = Duration::from_millis(300);
 const MAX_JSON_LINE_BYTES: usize = 16 * 1024;
+const MAX_CONSECUTIVE_POLL_FAILURES: u32 = 3;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RemoteEndpoint {
@@ -112,6 +113,7 @@ async fn handle_connection(
     let mut reader = BufReader::new(reader);
     let mut poll_interval = time::interval(config.poll_interval);
     let mut last_poll = Instant::now();
+    let mut poll_failure_streak: u32 = 0;
     let mut spectrum_interval = time::interval(SPECTRUM_POLL_INTERVAL);
     let mut last_spectrum_poll = Instant::now()
         .checked_sub(SPECTRUM_POLL_INTERVAL)
@@ -140,7 +142,26 @@ async fn handle_connection(
                 if let Err(e) =
                     refresh_remote_snapshot(config, &mut writer, &mut reader, state_tx).await
                 {
-                    warn!("Remote poll failed: {}", e);
+                    poll_failure_streak = poll_failure_streak.saturating_add(1);
+                    warn!(
+                        "Remote poll failed (streak={}): {}",
+                        poll_failure_streak, e
+                    );
+
+                    let timeout_or_disconnect =
+                        e.message.contains("timed out")
+                            || e.message.contains("connection closed");
+                    if timeout_or_disconnect {
+                        return Err(e);
+                    }
+                    if poll_failure_streak >= MAX_CONSECUTIVE_POLL_FAILURES {
+                        return Err(RigError::communication(format!(
+                            "remote poll failed {} consecutive times: {}",
+                            poll_failure_streak, e
+                        )));
+                    }
+                } else {
+                    poll_failure_streak = 0;
                 }
             }
             _ = spectrum_interval.tick() => {
