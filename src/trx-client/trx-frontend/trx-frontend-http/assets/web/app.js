@@ -4233,11 +4233,8 @@ function initAprsMap() {
       selectedAprsTrackCall = null;
     }
     if (selectedAisTrackMmsi) {
-      const prevEntry = aisMarkers.get(String(selectedAisTrackMmsi));
-      if (prevEntry && prevEntry.track && aprsMap && aprsMap.hasLayer(prevEntry.track)) {
-        prevEntry.track.removeFrom(aprsMap);
-      }
       selectedAisTrackMmsi = null;
+      syncSelectedAisTrackVisibility();
     }
 
     if (marker === aprsMapReceiverMarker) {
@@ -4268,10 +4265,8 @@ function initAprsMap() {
       if (!entry || !entry.msg) return;
       e.popup.setContent(buildAisPopupHtml(entry.msg));
       ensureAisTrack(String(marker._aisMmsi), entry);
-      if (entry.track && aprsMap && mapFilter.ais && !aprsMap.hasLayer(entry.track)) {
-        entry.track.addTo(aprsMap);
-      }
       selectedAisTrackMmsi = String(marker._aisMmsi);
+      syncSelectedAisTrackVisibility();
       setMapRadioPathTo(ll.lat, ll.lng, "aprs-radio-path");
       return;
     }
@@ -4305,11 +4300,8 @@ function initAprsMap() {
       selectedAprsTrackCall = null;
     }
     if (selectedAisTrackMmsi) {
-      const entry = aisMarkers.get(String(selectedAisTrackMmsi));
-      if (entry && entry.track && aprsMap && aprsMap.hasLayer(entry.track)) {
-        entry.track.removeFrom(aprsMap);
-      }
       selectedAisTrackMmsi = null;
+      syncSelectedAisTrackVisibility();
     }
   });
 
@@ -4860,6 +4852,23 @@ function ensureAisTrack(mmsi, entry) {
   entry.track = track;
 }
 
+function syncSelectedAisTrackVisibility() {
+  if (!aprsMap) return;
+  const selectedKey = selectedAisTrackMmsi ? String(selectedAisTrackMmsi) : null;
+  aisMarkers.forEach((entry, key) => {
+    const track = entry?.track;
+    if (!track) return;
+    const shouldShow = !!selectedKey && selectedKey === String(key) && !!mapFilter.ais;
+    const onMap = aprsMap.hasLayer(track);
+    if (shouldShow && !onMap) {
+      track.addTo(aprsMap);
+    }
+    if (!shouldShow && onMap) {
+      track.removeFrom(aprsMap);
+    }
+  });
+}
+
 function aisMarkerOptionsFromMessage(msg) {
   return {
     heading: msg?.heading_deg,
@@ -5020,6 +5029,7 @@ function applyMapFilter() {
     }
     if (!visible && onMap) marker.removeFrom(aprsMap);
   });
+  syncSelectedAisTrackVisibility();
 }
 
 function escapeMapHtml(input) {
