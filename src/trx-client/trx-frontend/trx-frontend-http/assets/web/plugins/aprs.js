@@ -440,6 +440,7 @@ window.onServerAprs = function(pkt) {
     info_bytes: pkt.info_bytes,
     type: pkt.packet_type,
     crcOk: pkt.crc_ok,
+    ts_ms: pkt.ts_ms,
     lat: pkt.lat,
     lon: pkt.lon,
     symbolTable: pkt.symbol_table,
