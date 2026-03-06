@@ -69,7 +69,9 @@ function updateCwBar() {
   const isCw = mode === "CW" || mode === "CWR";
   const cutoffMs = Date.now() - CW_BAR_WINDOW_MS;
   const recent = cwBarHistory.filter((l) => l.tsMs >= cutoffMs);
-  if (!isCw || recent.length === 0) {
+  // Prepend the in-progress line so characters appear immediately
+  const liveLines = cwBarCurrentLine && cwBarCurrentLine.text ? [cwBarCurrentLine, ...recent] : recent;
+  if (!isCw || liveLines.length === 0) {
     cwBarOverlay.style.display = "none";
     return;
   }
@@ -82,7 +84,7 @@ function updateCwBar() {
         ' aria-label="Clear CW overlay">Clear</span></span>' +
       '<span class="aprs-bar-window">Last 15 minutes</span>' +
     '</div>';
-  for (const line of recent.slice(0, 8)) {
+  for (const line of liveLines.slice(0, 8)) {
     const ts = line.ts ? `<span class="aprs-bar-time">${line.ts}</span>` : "";
     const meta = [
       line.wpm ? `${line.wpm} WPM` : null,
