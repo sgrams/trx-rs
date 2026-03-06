@@ -12,15 +12,20 @@ const cwToneGl = typeof createTrxWebGlRenderer === "function"
   : null;
 const cwTonePickerEl = document.querySelector(".cw-tone-picker");
 const cwToneRangeEl = document.getElementById("cw-tone-range");
+const cwBarOverlay = document.getElementById("cw-bar-overlay");
 const CW_MAX_LINES = 200;
 const CW_TONE_MIN_HZ = 100;
 const CW_TONE_MAX_HZ = 10_000;
 const CW_WPM_MIN = 5;
 const CW_WPM_MAX = 40;
+const CW_BAR_WINDOW_MS = 15 * 60 * 1000;
+const CW_BAR_LINE_GAP_MS = 5000;
 let cwLastAppendTime = 0;
 let cwTonePickerRaf = null;
 let cwPaused = false;
 let cwBufferedWhilePaused = 0;
+let cwBarHistory = [];     // [{tsMs, ts, text, wpm, tone_hz}]
+let cwBarCurrentLine = null; // accumulates chars until gap/newline
 // Tracks a user-initiated auto toggle that is in-flight (POST not yet
 // acknowledged).  While set, server-state updates must not override the
 // checkbox so that a concurrent SSE event carrying the *old* cw_auto value
@@ -48,6 +53,52 @@ window.applyCwAutoUi = applyCwAutoUi;
 window.applyCwAutoUiFromServer = function(enabled) {
   if (cwAutoLocalOverride !== null) return;
   applyCwAutoUi(enabled);
+};
+
+function cwBarFlushCurrentLine() {
+  if (cwBarCurrentLine && cwBarCurrentLine.text.trim()) {
+    cwBarHistory.unshift(cwBarCurrentLine);
+    if (cwBarHistory.length > 50) cwBarHistory.length = 50;
+  }
+  cwBarCurrentLine = null;
+}
+
+function updateCwBar() {
+  if (!cwBarOverlay) return;
+  const mode = (document.getElementById("mode")?.value || "").toUpperCase();
+  const isCw = mode === "CW" || mode === "CWR";
+  const cutoffMs = Date.now() - CW_BAR_WINDOW_MS;
+  const recent = cwBarHistory.filter((l) => l.tsMs >= cutoffMs);
+  if (!isCw || recent.length === 0) {
+    cwBarOverlay.style.display = "none";
+    return;
+  }
+  let html =
+    '<div class="aprs-bar-header">' +
+      '<span class="aprs-bar-title"><span class="aprs-bar-title-word">CW</span><span class="aprs-bar-title-word">Live</span></span>' +
+      '<span class="aprs-bar-clear-wrap"><span class="aprs-bar-clear" role="button" tabindex="0"' +
+        ' onclick="window.clearCwBar()"' +
+        ' onkeydown="if(event.key===\'Enter\'||event.key===\' \'){event.preventDefault();window.clearCwBar();}"' +
+        ' aria-label="Clear CW overlay">Clear</span></span>' +
+      '<span class="aprs-bar-window">Last 15 minutes</span>' +
+    '</div>';
+  for (const line of recent.slice(0, 8)) {
+    const ts = line.ts ? `<span class="aprs-bar-time">${line.ts}</span>` : "";
+    const meta = [
+      line.wpm ? `${line.wpm} WPM` : null,
+      line.tone_hz ? `${line.tone_hz} Hz` : null,
+    ].filter(Boolean).join(" · ");
+    html += `<div class="aprs-bar-frame">` +
+      `<div class="aprs-bar-frame-main">${ts}${escapeMapHtml(line.text)}` +
+      (meta ? ` <span class="aprs-bar-time">${escapeMapHtml(meta)}</span>` : "") +
+      `</div></div>`;
+  }
+  cwBarOverlay.innerHTML = html;
+  cwBarOverlay.style.display = "flex";
+}
+window.updateCwBar = updateCwBar;
+window.clearCwBar = function() {
+  document.getElementById("cw-clear-btn")?.click();
 };
 
 function clampCwWpm(wpm) {
@@ -291,7 +342,10 @@ window.resetCwHistoryView = function() {
   if (cwOutputEl) cwOutputEl.innerHTML = "";
   cwLastAppendTime = 0;
   cwBufferedWhilePaused = 0;
+  cwBarHistory = [];
+  cwBarCurrentLine = null;
   updateCwPauseUi();
+  updateCwBar();
   drawCwTonePicker();
 };
 
@@ -330,6 +384,24 @@ window.onServerCw = function(evt) {
       cwOutputEl.removeChild(cwOutputEl.firstChild);
     }
     cwOutputEl.scrollTop = cwOutputEl.scrollHeight;
+  }
+  // Bar history accumulation (regardless of pause state)
+  if (evt.text) {
+    const now = Date.now();
+    if (evt.text === "\n") {
+      cwBarFlushCurrentLine();
+    } else {
+      if (!cwBarCurrentLine || now - cwBarCurrentLine.lastMs > CW_BAR_LINE_GAP_MS) {
+        cwBarFlushCurrentLine();
+        const ts = new Date(now).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+        cwBarCurrentLine = { tsMs: now, ts, text: "", wpm: null, tone_hz: null, lastMs: now };
+      }
+      cwBarCurrentLine.text += evt.text;
+      cwBarCurrentLine.lastMs = now;
+      if (Number.isFinite(Number(evt.wpm))) cwBarCurrentLine.wpm = clampCwWpm(evt.wpm);
+      if (Number.isFinite(Number(evt.tone_hz))) cwBarCurrentLine.tone_hz = Math.round(Number(evt.tone_hz));
+    }
+    updateCwBar();
   }
   if (cwSignalIndicator) {
     cwSignalIndicator.className = evt.signal_on ? "cw-signal-on" : "cw-signal-off";
@@ -371,5 +443,6 @@ window.addEventListener("resize", () => {
 });
 applyCwAutoUi(!!cwAutoInput?.checked);
 updateCwPauseUi();
+updateCwBar();
 ensureCwToneCanvasResolution();
 drawCwTonePicker();
