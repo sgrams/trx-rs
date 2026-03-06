@@ -5992,7 +5992,13 @@ function connectDecode() {
     }
   };
 }
-connectDecode();
+if (document.readyState === "complete") {
+  connectDecode();
+} else {
+  window.addEventListener("load", () => {
+    connectDecode();
+  }, { once: true });
+}
 
 // Release PTT on page unload to prevent stuck transmit
 window.addEventListener("beforeunload", () => {
