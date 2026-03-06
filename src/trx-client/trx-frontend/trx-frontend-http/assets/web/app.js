@@ -3428,6 +3428,7 @@ const APRS_TRACK_MAX_POINTS = 64;
 const AIS_TRACK_MAX_POINTS = 64;
 const aisMarkers = new Map();
 const vdesMarkers = new Map();
+let selectedAprsTrackCall = null;
 let selectedAisTrackMmsi = null;
 const HAM_BANDS = [
   { label: "2200m", meters: 2200 },
@@ -4060,6 +4061,7 @@ function syncAprsReceiverMarker() {
 
 window.clearMapMarkersByType = function(type) {
   if (type === "aprs") {
+    selectedAprsTrackCall = null;
     stationMarkers.forEach((entry) => {
       if (entry && entry.marker) {
         if (aprsMap && aprsMap.hasLayer(entry.marker)) entry.marker.removeFrom(aprsMap);
@@ -4223,6 +4225,13 @@ function initAprsMap() {
     const marker = e.popup._source;
     clearMapRadioPath();
     setSelectedLocatorMarker(null);
+    if (selectedAprsTrackCall) {
+      const prevEntry = stationMarkers.get(String(selectedAprsTrackCall));
+      if (prevEntry && prevEntry.track && aprsMap && aprsMap.hasLayer(prevEntry.track)) {
+        prevEntry.track.removeFrom(aprsMap);
+      }
+      selectedAprsTrackCall = null;
+    }
     if (selectedAisTrackMmsi) {
       const prevEntry = aisMarkers.get(String(selectedAisTrackMmsi));
       if (prevEntry && prevEntry.track && aprsMap && aprsMap.hasLayer(prevEntry.track)) {
@@ -4244,6 +4253,11 @@ function initAprsMap() {
       const entry = stationMarkers.get(marker._aprsCall);
       if (!entry) return;
       e.popup.setContent(buildAprsPopupHtml(marker._aprsCall, ll.lat, ll.lng, entry.info || "", entry.pkt));
+      ensureAprsTrack(String(marker._aprsCall), entry);
+      if (entry.track && aprsMap && mapFilter.aprs && !aprsMap.hasLayer(entry.track)) {
+        entry.track.addTo(aprsMap);
+      }
+      selectedAprsTrackCall = String(marker._aprsCall);
       setMapRadioPathTo(ll.lat, ll.lng, "aprs-radio-path");
       return;
     }
@@ -4283,6 +4297,13 @@ function initAprsMap() {
   aprsMap.on("popupclose", function() {
     clearMapRadioPath();
     setSelectedLocatorMarker(null);
+    if (selectedAprsTrackCall) {
+      const entry = stationMarkers.get(String(selectedAprsTrackCall));
+      if (entry && entry.track && aprsMap && aprsMap.hasLayer(entry.track)) {
+        entry.track.removeFrom(aprsMap);
+      }
+      selectedAprsTrackCall = null;
+    }
     if (selectedAisTrackMmsi) {
       const entry = aisMarkers.get(String(selectedAisTrackMmsi));
       if (entry && entry.track && aprsMap && aprsMap.hasLayer(entry.track)) {
@@ -4340,6 +4361,13 @@ function initAprsMap() {
       if (!key) return;
       if (kind === "source" && Object.prototype.hasOwnProperty.call(mapFilter, key)) {
         mapFilter[key] = !mapFilter[key];
+        if (!mapFilter.aprs && selectedAprsTrackCall) {
+          const entry = stationMarkers.get(String(selectedAprsTrackCall));
+          if (entry && entry.track && aprsMap && aprsMap.hasLayer(entry.track)) {
+            entry.track.removeFrom(aprsMap);
+          }
+          selectedAprsTrackCall = null;
+        }
         if (!mapFilter.ais && selectedAisTrackMmsi) {
           const entry = aisMarkers.get(String(selectedAisTrackMmsi));
           if (entry && entry.track && aprsMap && aprsMap.hasLayer(entry.track)) {
@@ -4750,10 +4778,6 @@ function ensureAprsTrack(call, entry) {
   track.__trxType = "aprs";
   track._aprsCall = call;
   entry.track = track;
-  mapMarkers.add(track);
-  if (mapFilter.aprs) {
-    track.addTo(aprsMap);
-  }
 }
 
 function _aprsAddMarkerToMap(call, entry) {
