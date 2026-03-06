@@ -173,7 +173,10 @@ impl DecoderHistories {
         }
     }
 
-    pub fn record_ais_message(&self, msg: AisMessage) {
+    pub fn record_ais_message(&self, mut msg: AisMessage) {
+        if msg.ts_ms.is_none() {
+            msg.ts_ms = Some(current_timestamp_ms());
+        }
         let mut h = self.ais.lock().expect("ais history mutex poisoned");
         h.push_back((Instant::now(), msg));
         Self::prune_ais(&mut h);
@@ -198,7 +201,10 @@ impl DecoderHistories {
         }
     }
 
-    pub fn record_vdes_message(&self, msg: VdesMessage) {
+    pub fn record_vdes_message(&self, mut msg: VdesMessage) {
+        if msg.ts_ms.is_none() {
+            msg.ts_ms = Some(current_timestamp_ms());
+        }
         let mut h = self.vdes.lock().expect("vdes history mutex poisoned");
         h.push_back((Instant::now(), msg));
         Self::prune_vdes(&mut h);
@@ -223,9 +229,12 @@ impl DecoderHistories {
         }
     }
 
-    pub fn record_aprs_packet(&self, pkt: AprsPacket) {
+    pub fn record_aprs_packet(&self, mut pkt: AprsPacket) {
         if !pkt.crc_ok {
             return;
+        }
+        if pkt.ts_ms.is_none() {
+            pkt.ts_ms = Some(current_timestamp_ms());
         }
         let mut h = self.aprs.lock().expect("aprs history mutex poisoned");
         h.push_back((Instant::now(), pkt));
@@ -946,7 +955,10 @@ pub async fn run_ais_decoder(
                 match recv {
                     Ok(frame) => {
                         was_active = true;
-                        for msg in decoder_a.process_samples(&downmix_if_needed(frame, channels), "A") {
+                        for mut msg in decoder_a.process_samples(&downmix_if_needed(frame, channels), "A") {
+                            if msg.ts_ms.is_none() {
+                                msg.ts_ms = Some(current_timestamp_ms());
+                            }
                             histories.record_ais_message(msg.clone());
                             let _ = decode_tx.send(DecodedMessage::Ais(msg));
                         }
@@ -961,7 +973,10 @@ pub async fn run_ais_decoder(
                 match recv {
                     Ok(frame) => {
                         was_active = true;
-                        for msg in decoder_b.process_samples(&downmix_if_needed(frame, channels), "B") {
+                        for mut msg in decoder_b.process_samples(&downmix_if_needed(frame, channels), "B") {
+                            if msg.ts_ms.is_none() {
+                                msg.ts_ms = Some(current_timestamp_ms());
+                            }
                             histories.record_ais_message(msg.clone());
                             let _ = decode_tx.send(DecodedMessage::Ais(msg));
                         }
@@ -1030,7 +1045,10 @@ pub async fn run_vdes_decoder(
                 match recv {
                     Ok(block) => {
                         was_active = true;
-                        for msg in decoder.process_samples(&block, "Main") {
+                        for mut msg in decoder.process_samples(&block, "Main") {
+                            if msg.ts_ms.is_none() {
+                                msg.ts_ms = Some(current_timestamp_ms());
+                            }
                             histories.record_vdes_message(msg.clone());
                             let _ = decode_tx.send(DecodedMessage::Vdes(msg));
                         }
