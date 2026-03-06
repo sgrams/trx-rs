@@ -29,7 +29,7 @@ pub struct AudioStreamInfo {
 }
 
 /// Write a length-prefixed audio message.
-pub async fn write_audio_msg<W: AsyncWrite + Unpin>(
+pub async fn write_audio_msg_buffered<W: AsyncWrite + Unpin>(
     writer: &mut W,
     msg_type: u8,
     payload: &[u8],
@@ -38,6 +38,16 @@ pub async fn write_audio_msg<W: AsyncWrite + Unpin>(
     writer.write_u8(msg_type).await?;
     writer.write_u32(len).await?;
     writer.write_all(payload).await?;
+    Ok(())
+}
+
+/// Write a length-prefixed audio message and flush the writer.
+pub async fn write_audio_msg<W: AsyncWrite + Unpin>(
+    writer: &mut W,
+    msg_type: u8,
+    payload: &[u8],
+) -> std::io::Result<()> {
+    write_audio_msg_buffered(writer, msg_type, payload).await?;
     writer.flush().await?;
     Ok(())
 }
