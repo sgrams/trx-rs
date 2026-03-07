@@ -182,23 +182,35 @@ impl IqSource for RealIqSource {
     fn handle_read_error(&mut self, err: &str, streak: u32) -> Result<bool, String> {
         let err_lc = err.to_ascii_lowercase();
         let is_overrun = err_lc.contains("overflow") || err_lc.contains("overrun");
-        if !is_overrun {
+
+        if is_overrun {
+            // Overflow is often transient; avoid immediate stream restart churn.
+            // Only restart after several consecutive overflow failures.
+            if streak < 3 {
+                return Ok(true);
+            }
+            tracing::warn!(
+                "SoapySDR RX overflow persists (streak={}); restarting RX stream",
+                streak
+            );
+        } else if streak >= 10 {
+            // Non-overflow errors at a high streak (e.g. reads on a
+            // deactivated stream after a failed activate) — attempt a
+            // full restart to recover.
+            tracing::warn!(
+                "SoapySDR RX persistent error (streak={}): {}; restarting RX stream",
+                streak,
+                err
+            );
+        } else {
             return Ok(false);
         }
-        // Overflow is often transient; avoid immediate stream restart churn.
-        // Only restart after several consecutive read failures.
-        if streak < 3 {
-            return Ok(true);
-        }
-        tracing::warn!(
-            "SoapySDR RX overflow persists (streak={}); restarting RX stream",
-            streak
-        );
+
         let _ = self.stream.deactivate(None);
-        std::thread::sleep(std::time::Duration::from_millis(25));
+        std::thread::sleep(std::time::Duration::from_millis(50));
         self.stream
             .activate(None)
-            .map_err(|e| format!("Failed to reactivate RX stream after overflow: {}", e))?;
+            .map_err(|e| format!("Failed to reactivate RX stream: {}", e))?;
         Ok(true)
     }
 }

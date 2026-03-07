@@ -246,6 +246,7 @@ fn iq_read_loop(
                 read_error_streak = read_error_streak.saturating_add(1);
                 let err_lc = e.to_ascii_lowercase();
                 let is_overflow = err_lc.contains("overflow") || err_lc.contains("overrun");
+                let restarted = read_error_streak >= 3;
                 let recovered = match source.handle_read_error(&e, read_error_streak) {
                     Ok(result) => result,
                     Err(recovery_err) => {
@@ -256,6 +257,12 @@ fn iq_read_loop(
                         false
                     }
                 };
+                // After a stream restart, reset the streak so we don't
+                // immediately trigger another restart on the first transient
+                // failure during hardware stabilisation.
+                if restarted && recovered {
+                    read_error_streak = 1;
+                }
                 if is_overflow {
                     let now = Instant::now();
                     if overflow_log_window_start
