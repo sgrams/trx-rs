@@ -1009,28 +1009,88 @@ fn burst_rms(samples: &[Complex<f32>]) -> f32 {
     power.sqrt()
 }
 
+/// Demodulate π/4-QPSK burst samples into a dibit stream.
+///
+/// The function:
+/// 1. Uses linear interpolation to resample the IQ stream to exactly one
+///    sample per symbol epoch (fractional-delay matched to the nominal symbol
+///    rate), which gives cleaner decision points than a free-running phase
+///    counter at the typical ~1.25 samples-per-symbol IQ rate.
+/// 2. Estimates the average carrier-frequency offset (CFO) for the burst via
+///    the 4th-power method and removes it before differential decoding.
+///    This corrects constant-frequency offsets of up to ±symbol_rate/8.
+///
+/// # Limitations
+/// Closed-loop symbol timing recovery (Gardner / Mueller–Müller) would need
+/// ≥2 samples/symbol and so cannot be applied at the current IQ tap rate.
+/// The open-loop linear interpolation used here is the best approximation
+/// achievable within the existing decimation architecture.
 fn slice_pi4_qpsk_symbols(samples: &[Complex<f32>], sample_rate: f32) -> Vec<u8> {
-    if samples.len() < 2 {
+    if samples.len() < 4 {
         return Vec::new();
     }
 
-    let mut phase_clock = 0.0_f32;
-    let mut prev = samples[0];
-    let mut symbols =
-        Vec::with_capacity(((samples.len() as f32) * VDES_SYMBOL_RATE / sample_rate) as usize + 4);
+    let sps = sample_rate / VDES_SYMBOL_RATE;
 
-    for &sample in &samples[1..] {
-        phase_clock += VDES_SYMBOL_RATE;
-        let diff = sample * prev.conj();
-        prev = sample;
-
-        while phase_clock >= sample_rate {
-            phase_clock -= sample_rate;
-            symbols.push(quantize_pi4_qpsk(diff));
+    // --- Pass 1: resample to one IQ sample per symbol epoch ---
+    let sym_count = ((samples.len() as f32 - 1.0) / sps) as usize;
+    let mut sym_iq: Vec<Complex<f32>> = Vec::with_capacity(sym_count + 4);
+    let n = samples.len();
+    let mut epoch = 0.0f64;
+    loop {
+        let i0 = epoch.floor() as usize;
+        if i0 + 1 >= n {
+            break;
         }
+        let frac = (epoch - i0 as f64) as f32;
+        sym_iq.push(samples[i0] * (1.0 - frac) + samples[i0 + 1] * frac);
+        epoch += sps as f64;
+    }
+
+    if sym_iq.len() < 2 {
+        return Vec::new();
+    }
+
+    // --- Pass 2: estimate CFO using the 4th-power method ---
+    // For π/4-QPSK differential symbols {±π/4, ±3π/4}, diff^4 collapses all
+    // constellation points to the same angle, leaving only 4*CFO_per_symbol.
+    let cfo_inc = estimate_differential_cfo(&sym_iq);
+
+    // --- Pass 3: apply CFO correction and differential decode ---
+    let mut symbols: Vec<u8> = Vec::with_capacity(sym_iq.len());
+    let mut prev: Option<Complex<f32>> = None;
+    for (idx, &s) in sym_iq.iter().enumerate() {
+        let angle = -(idx as f32) * cfo_inc;
+        let correction = Complex::new(angle.cos(), angle.sin());
+        let corrected = s * correction;
+        if let Some(p) = prev {
+            symbols.push(quantize_pi4_qpsk(corrected * p.conj()));
+        }
+        prev = Some(corrected);
     }
 
     symbols
+}
+
+/// Estimate the per-symbol carrier-frequency offset from a sequence of
+/// symbol-rate IQ samples using the 4th-power method.
+///
+/// Returns the phase increment (radians per symbol) to subtract from the
+/// received phase.
+fn estimate_differential_cfo(sym_iq: &[Complex<f32>]) -> f32 {
+    let mut sum = Complex::new(0.0f32, 0.0f32);
+    for w in sym_iq.windows(2) {
+        let diff = w[1] * w[0].conj();
+        // diff^4 removes π/4-QPSK modulation phase (multiples of π/2)
+        let d2 = diff * diff;
+        let d4 = d2 * d2;
+        sum += d4;
+    }
+    if sum.norm_sqr() < 1.0e-12 {
+        return 0.0;
+    }
+    // Unwrap: angle(sum)/4 = average CFO per symbol period
+    sum.im.atan2(sum.re) / 4.0
 }
 
 fn quantize_pi4_qpsk(sample: Complex<f32>) -> u8 {
