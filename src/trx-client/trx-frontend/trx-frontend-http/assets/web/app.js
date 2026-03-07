@@ -10,6 +10,18 @@ function loadSetting(key, fallback) {
   } catch(e) { return fallback; }
 }
 
+// --- Per-tab identity ---
+// A UUID stored in sessionStorage so each browser tab has a stable, isolated
+// identity across page refreshes.  sessionStorage is never shared across tabs,
+// so rig selections made in one tab do not affect others.
+let tabId = sessionStorage.getItem("trx_tab_id");
+if (!tabId) {
+  tabId = (typeof crypto !== "undefined" && crypto.randomUUID)
+    ? crypto.randomUUID()
+    : Math.random().toString(36).slice(2) + Date.now().toString(36);
+  sessionStorage.setItem("trx_tab_id", tabId);
+}
+
 // --- Authentication ---
 let authRole = null;  // null (not authenticated), "rx" (read-only), or "control" (full access)
 let authEnabled = true;
@@ -2677,7 +2689,7 @@ function connect() {
     clearInterval(esHeartbeat);
   }
   pollFreshSnapshot();
-  es = new EventSource("/events");
+  es = new EventSource("/events?tab_id=" + encodeURIComponent(tabId));
   lastEventAt = Date.now();
   es.onopen = () => {
     pollFreshSnapshot();
@@ -2775,7 +2787,7 @@ async function switchRigFromSelect(selectEl) {
   selectEl.disabled = true;
   showHint("Switching rig…");
   try {
-    await postPath(`/select_rig?rig_id=${encodeURIComponent(selectEl.value)}`);
+    await postPath(`/select_rig?rig_id=${encodeURIComponent(selectEl.value)}&tab_id=${encodeURIComponent(tabId)}`);
     refreshRigList();
     showHint("Rig switch requested", 1500);
   } catch (err) {
@@ -6008,7 +6020,7 @@ function connectDecode() {
   if (window.resetWsprHistoryView) window.resetWsprHistoryView();
   const historyBuffer = [];
   let historyDone = false;
-  decodeSource = new EventSource("/decode");
+  decodeSource = new EventSource("/decode?tab_id=" + encodeURIComponent(tabId));
   decodeSource.onopen = () => {
     decodeConnected = true;
     updateDecodeStatus("Connected, listening for packets");
