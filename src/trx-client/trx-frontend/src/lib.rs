@@ -7,7 +7,6 @@ use std::net::SocketAddr;
 use std::sync::atomic::{AtomicBool, AtomicUsize};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
-
 use bytes::Bytes;
 use tokio::sync::{broadcast, mpsc, watch};
 use tokio::task::JoinHandle;
@@ -18,6 +17,21 @@ use trx_core::decode::{
 };
 use trx_core::rig::state::{RigSnapshot, SpectrumData};
 use trx_core::{DynResult, RigRequest, RigState};
+
+/// Per browser-tab session state tracked server-side.
+///
+/// Each browser tab generates a UUID stored in `sessionStorage` and passes it
+/// with every API request and SSE subscription.  The server maps the UUID to
+/// the rig the tab has selected, enabling independent rig views across tabs.
+#[derive(Debug)]
+pub struct TabSession {
+    /// The rig ID this tab is currently viewing.
+    pub rig_id: String,
+    /// When the session was first created.
+    pub created_at: Instant,
+    /// Updated on every SSE connect or `select_rig` call from this tab.
+    pub last_seen: Instant,
+}
 
 #[derive(Clone, Debug)]
 pub struct RemoteRigEntry {
@@ -194,6 +208,14 @@ pub struct FrontendRuntimeContext {
     pub ais_vessel_url_base: Option<String>,
     /// Latest spectrum frame from the active SDR rig; None for non-SDR backends.
     pub spectrum: Arc<Mutex<SharedSpectrum>>,
+    /// Per browser-tab session state: `tab_id` → [`TabSession`].
+    pub tab_sessions: Arc<Mutex<HashMap<String, TabSession>>>,
+    /// Per-rig state watch channels keyed by `rig_id`.
+    ///
+    /// Populated by the remote client as `GetRigs` responses arrive.  Each
+    /// browser tab that has selected a specific rig subscribes to the
+    /// corresponding sender's receiver for isolated SSE state updates.
+    pub rig_state_map: Arc<Mutex<HashMap<String, watch::Sender<RigState>>>>,
 }
 
 impl FrontendRuntimeContext {
@@ -232,6 +254,8 @@ impl FrontendRuntimeContext {
             owner_website_name: None,
             ais_vessel_url_base: None,
             spectrum: Arc::new(Mutex::new(SharedSpectrum::default())),
+            tab_sessions: Arc::new(Mutex::new(HashMap::new())),
+            rig_state_map: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 }
