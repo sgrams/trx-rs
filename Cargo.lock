@@ -2461,6 +2461,7 @@ dependencies = [
  "cpal",
  "dirs",
  "opus",
+ "pickledb",
  "serde",
  "serde_json",
  "tokio",

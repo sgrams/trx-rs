@@ -5,6 +5,7 @@
 mod audio_bridge;
 mod audio_client;
 mod config;
+mod history_store;
 mod remote_client;
 
 use std::collections::HashMap;
@@ -123,6 +124,17 @@ async fn async_init() -> DynResult<AppState> {
     // This replaces reliance on global mutable state by threading context through spawn_frontend.
     let mut frontend_reg_ctx = FrontendRegistrationContext::new();
     let mut frontend_runtime = FrontendRuntimeContext::new();
+
+    // Load persisted decode history before frontends start.
+    let db = {
+        let db = history_store::open_db();
+        history_store::load_all(&db, &mut frontend_runtime);
+        tracing::info!(
+            "Loaded decode history from {}",
+            history_store::db_path().display()
+        );
+        std::sync::Arc::new(std::sync::Mutex::new(db))
+    };
 
     register_http_frontend(&mut frontend_reg_ctx);
     register_http_json_frontend(&mut frontend_reg_ctx);
@@ -336,6 +348,9 @@ async fn async_init() -> DynResult<AppState> {
             frontend_runtime_ctx.clone(),
         );
     }
+
+    // Flush in-memory history to disk every 60 seconds.
+    history_store::spawn_flush_task(db.clone(), frontend_runtime_ctx.clone());
 
     // Spawn frontends with runtime context
     for frontend in &frontends {
