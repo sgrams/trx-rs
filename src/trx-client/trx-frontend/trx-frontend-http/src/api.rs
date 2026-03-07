@@ -4,6 +4,7 @@
 
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::time::Instant;
 
 use actix_web::{delete, get, post, put, web, HttpRequest, HttpResponse, Responder};
 use actix_web::{http::header, Error};
@@ -17,7 +18,7 @@ use trx_core::radio::freq::Freq;
 use trx_core::rig::state::WfmDenoiseLevel;
 use trx_core::rig::{RigAccessMethod, RigCapabilities, RigInfo};
 use trx_core::{RigCommand, RigRequest, RigSnapshot, RigState};
-use trx_frontend::{FrontendRuntimeContext, RemoteRigEntry};
+use trx_frontend::{FrontendRuntimeContext, RemoteRigEntry, TabSession};
 use trx_protocol::{parse_mode, ClientResponse};
 
 use crate::server::status;
@@ -196,13 +197,79 @@ fn spectrum_usable_span_ratio_from_context(context: &FrontendRuntimeContext) -> 
     context.http_spectrum_usable_span_ratio
 }
 
+/// Optional `?tab_id=<uuid>` query parameter used by per-tab API requests.
+#[derive(serde::Deserialize, Default)]
+pub struct TabQuery {
+    pub tab_id: Option<String>,
+}
+
+/// Resolve the `watch::Receiver<RigState>` for a given tab.
+///
+/// If the tab has an assigned rig and that rig's sender is in `rig_state_map`,
+/// returns a fresh subscriber.  Falls back to the process-level default
+/// receiver if the tab is unknown or the rig has no dedicated channel yet.
+fn resolve_tab_state_rx(
+    tab_id: &str,
+    context: &FrontendRuntimeContext,
+    fallback: &watch::Receiver<RigState>,
+) -> watch::Receiver<RigState> {
+    let rig_id = context
+        .tab_sessions
+        .lock()
+        .ok()
+        .and_then(|sessions| sessions.get(tab_id).map(|s| s.rig_id.clone()));
+    let Some(rig_id) = rig_id else {
+        return fallback.clone();
+    };
+    context
+        .rig_state_map
+        .lock()
+        .ok()
+        .and_then(|map| map.get(&rig_id).map(|tx| tx.subscribe()))
+        .unwrap_or_else(|| fallback.clone())
+}
+
+/// Create or update the session entry for `tab_id`, setting its rig to `rig_id`.
+fn upsert_tab_session(context: &FrontendRuntimeContext, tab_id: &str, rig_id: &str) {
+    let now = Instant::now();
+    if let Ok(mut sessions) = context.tab_sessions.lock() {
+        sessions
+            .entry(tab_id.to_string())
+            .and_modify(|s| {
+                s.rig_id = rig_id.to_string();
+                s.last_seen = now;
+            })
+            .or_insert_with(|| TabSession {
+                rig_id: rig_id.to_string(),
+                created_at: now,
+                last_seen: now,
+            });
+    }
+}
+
+/// Update `last_seen` for an existing tab session without changing its rig.
+fn touch_tab_session(context: &FrontendRuntimeContext, tab_id: &str) {
+    let now = Instant::now();
+    if let Ok(mut sessions) = context.tab_sessions.lock() {
+        if let Some(s) = sessions.get_mut(tab_id) {
+            s.last_seen = now;
+        }
+    }
+}
+
 #[get("/events")]
 pub async fn events(
     state: web::Data<watch::Receiver<RigState>>,
     clients: web::Data<Arc<AtomicUsize>>,
     context: web::Data<Arc<FrontendRuntimeContext>>,
+    query: web::Query<TabQuery>,
 ) -> Result<HttpResponse, Error> {
-    let rx = state.get_ref().clone();
+    let rx = if let Some(ref tab_id) = query.tab_id {
+        touch_tab_session(context.get_ref(), tab_id);
+        resolve_tab_state_rx(tab_id, context.get_ref(), state.get_ref())
+    } else {
+        state.get_ref().clone()
+    };
     let initial = wait_for_view(rx.clone()).await?;
 
     let counter = clients.get_ref().clone();
@@ -952,6 +1019,9 @@ pub async fn list_rigs(
 #[derive(serde::Deserialize)]
 pub struct SelectRigQuery {
     pub rig_id: String,
+    /// When provided, only updates this tab's session; does not change the
+    /// global active rig seen by tabs without a `tab_id`.
+    pub tab_id: Option<String>,
 }
 
 #[post("/select_rig")]
@@ -978,11 +1048,39 @@ pub async fn select_rig(
         )));
     }
 
-    if let Ok(mut active) = context.remote_active_rig_id.lock() {
-        *active = Some(rig_id.to_string());
+    if let Some(ref tab_id) = query.tab_id {
+        // Tab-scoped selection: only updates this tab's session.
+        // Other tabs (with or without a tab_id) are not affected.
+        upsert_tab_session(context.get_ref(), tab_id, rig_id);
+    } else {
+        // Legacy path: update the process-level active rig, which is what
+        // tabs without a tab_id observe via the global SSE watch channel.
+        if let Ok(mut active) = context.remote_active_rig_id.lock() {
+            *active = Some(rig_id.to_string());
+        }
     }
 
     Ok(HttpResponse::Ok().json(build_rig_list_payload(context.get_ref().as_ref())))
+}
+
+/// Return the rig currently assigned to a browser tab.
+///
+/// `GET /tab/{tab_id}/rig`
+///
+/// Response: `{ "rig_id": "<id>" }` or `{ "rig_id": null }` if the tab has
+/// no recorded session yet.
+#[get("/tab/{tab_id}/rig")]
+pub async fn get_tab_rig(
+    path: web::Path<String>,
+    context: web::Data<Arc<FrontendRuntimeContext>>,
+) -> Result<HttpResponse, Error> {
+    let tab_id = path.into_inner();
+    let rig_id = context
+        .tab_sessions
+        .lock()
+        .ok()
+        .and_then(|sessions| sessions.get(&tab_id).map(|s| s.rig_id.clone()));
+    Ok(HttpResponse::Ok().json(serde_json::json!({ "rig_id": rig_id })))
 }
 
 pub fn configure(cfg: &mut web::ServiceConfig) {
@@ -1022,6 +1120,7 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
         .service(clear_ft8_decode)
         .service(clear_wspr_decode)
         .service(select_rig)
+        .service(get_tab_rig)
         // Bookmark CRUD
         .service(list_bookmarks)
         .service(create_bookmark)
