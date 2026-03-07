@@ -282,10 +282,6 @@ impl DecoderHistories {
         h.iter().map(|(_, evt)| evt.clone()).collect()
     }
 
-    pub fn clear_cw_history(&self) {
-        self.cw.lock().expect("cw history mutex poisoned").clear();
-    }
-
     // --- FT8 ---
 
     fn prune_ft8(history: &mut VecDeque<(Instant, Ft8Message)>) {
