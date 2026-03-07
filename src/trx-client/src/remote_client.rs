@@ -2,6 +2,7 @@
 //
 // SPDX-License-Identifier: BSD-2-Clause
 
+use std::collections::HashMap;
 use std::time::Duration;
 use std::{sync::Arc, sync::Mutex};
 
@@ -52,6 +53,11 @@ pub struct RemoteClientConfig {
     pub poll_interval: Duration,
     /// Shared buffer updated by spectrum polling; None when backend has no spectrum.
     pub spectrum: Arc<Mutex<SharedSpectrum>>,
+    /// Per-rig state watch senders, keyed by rig_id.
+    ///
+    /// Updated on every successful `GetRigs` response so that per-tab SSE
+    /// streams can subscribe to a specific rig's watch channel.
+    pub rig_state_map: Arc<Mutex<HashMap<String, watch::Sender<RigState>>>>,
 }
 
 pub async fn run_remote_client(
@@ -328,6 +334,7 @@ async fn refresh_remote_snapshot(
 ) -> RigResult<()> {
     let rigs = send_get_rigs(config, writer, reader).await?;
     cache_remote_rigs(config, &rigs);
+    update_rig_state_map(config, &rigs);
     if rigs.is_empty() {
         return Err(RigError::communication("GetRigs returned no rigs"));
     }
@@ -385,6 +392,24 @@ async fn send_get_rigs(
     Err(RigError::communication(
         resp.error.unwrap_or_else(|| "remote error".into()),
     ))
+}
+
+/// Populate (or update) the per-rig `watch::Sender<RigState>` map from a
+/// fresh `GetRigs` response.  New rigs get a new channel; existing entries are
+/// updated in-place so all live subscribers receive the new state.
+fn update_rig_state_map(config: &RemoteClientConfig, rigs: &[RigEntry]) {
+    let Ok(mut map) = config.rig_state_map.lock() else {
+        return;
+    };
+    for entry in rigs {
+        let state = RigState::from_snapshot(entry.state.clone());
+        if let Some(tx) = map.get(&entry.rig_id) {
+            let _ = tx.send(state);
+        } else {
+            let (tx, _) = watch::channel(state);
+            map.insert(entry.rig_id.clone(), tx);
+        }
+    }
 }
 
 fn cache_remote_rigs(config: &RemoteClientConfig, rigs: &[RigEntry]) {
@@ -563,6 +588,7 @@ fn parse_port(port_str: &str) -> Result<u16, String> {
 #[cfg(test)]
 mod tests {
     use super::{parse_remote_url, RemoteClientConfig, RemoteEndpoint, SharedSpectrum};
+    use std::collections::HashMap;
     use std::sync::{Arc, Mutex};
     use std::time::Duration;
 
@@ -741,6 +767,7 @@ mod tests {
                 known_rigs: Arc::new(Mutex::new(Vec::new())),
                 poll_interval: Duration::from_millis(100),
                 spectrum: Arc::new(Mutex::new(SharedSpectrum::default())),
+                rig_state_map: Arc::new(Mutex::new(HashMap::new())),
             },
             req_rx,
             state_tx,
@@ -777,6 +804,7 @@ mod tests {
             known_rigs: Arc::new(Mutex::new(Vec::new())),
             poll_interval: Duration::from_millis(500),
             spectrum: Arc::new(Mutex::new(SharedSpectrum::default())),
+            rig_state_map: Arc::new(Mutex::new(HashMap::new())),
         };
         let envelope = super::build_envelope(&config, trx_protocol::ClientCommand::GetState, None);
         assert_eq!(envelope.token.as_deref(), Some("secret"));
