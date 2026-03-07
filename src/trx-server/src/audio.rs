@@ -1041,7 +1041,7 @@ pub async fn run_ais_decoder(
     }
 }
 
-/// Run the VDES decoder task. Only processes PCM when rig mode is VDES or MARINE.
+/// Run the VDES decoder task. Only processes IQ when rig mode is VDES or MARINE.
 pub async fn run_vdes_decoder(
     sample_rate: u32,
     mut iq_rx: broadcast::Receiver<Vec<Complex<f32>>>,

@@ -355,7 +355,14 @@ fn build_sdr_rig_from_instance(rig_cfg: &RigInstanceConfig) -> SdrRigBuildResult
         sdr_rig.subscribe_pcm_channel(ais_channel_base_idx),
         sdr_rig.subscribe_pcm_channel(ais_channel_base_idx + 1),
     );
-    let vdes_iq = sdr_rig.subscribe_iq_channel(0);
+    // Subscribe to the first channel configured as VDES or MARINE so that the
+    // IQ tap in ChannelDsp actually fires.  Fall back to channel 0 when no
+    // explicit VDES channel has been configured.
+    let vdes_channel_idx = channels
+        .iter()
+        .position(|(_, mode, _, _)| matches!(mode, trx_core::rig::state::RigMode::VDES | trx_core::rig::state::RigMode::MARINE))
+        .unwrap_or(0);
+    let vdes_iq = sdr_rig.subscribe_iq_channel(vdes_channel_idx);
     Ok((
         Box::new(sdr_rig) as Box<dyn trx_core::rig::RigCat>,
         pcm_rx,
@@ -643,8 +650,14 @@ fn spawn_rig_audio_stack(
             let vdes_decode_tx = decode_tx.clone();
             let vdes_shutdown_rx = shutdown_rx.clone();
             let vdes_histories = histories.clone();
-            let vdes_sr =
-                (rig_cfg.sdr.sample_rate / (rig_cfg.sdr.sample_rate / 96_000).max(1)).max(1);
+            // Mirror channel.rs pipeline_rates: target = audio_sr.max(96_000),
+            // decim = sdr_sr / target, actual IQ rate = sdr_sr / decim.
+            let vdes_sr = {
+                let sdr_sr = rig_cfg.sdr.sample_rate;
+                let target = rig_cfg.audio.sample_rate.max(96_000);
+                let decim = (sdr_sr / target.max(1)).max(1);
+                (sdr_sr / decim).max(1)
+            };
             handles.push(tokio::spawn(async move {
                 tokio::select! {
                     _ = audio::run_vdes_decoder(vdes_sr, vdes_iq_rx, vdes_state_rx, vdes_decode_tx, vdes_histories) => {}
