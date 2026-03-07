@@ -437,6 +437,7 @@ async fn process_command(
             return snapshot_from(ctx.state);
         }
         RigCommand::ResetCwDecoder => {
+            ctx.histories.clear_cw_history();
             ctx.state.cw_decode_reset_seq += 1;
             let _ = ctx.state_tx.send(ctx.state.clone());
             return snapshot_from(ctx.state);
