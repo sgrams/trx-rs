@@ -1017,5 +1017,7 @@ async fn main() -> DynResult<()> {
     for handle in task_handles {
         let _ = handle.await;
     }
-    Ok(())
+    // Force exit so that native threads stuck in blocking hardware I/O
+    // (e.g. SoapySDR/USB transfers in D-state) cannot prevent shutdown.
+    std::process::exit(0);
 }

@@ -183,11 +183,15 @@ async fn handle_connection(
                             guard.replace(snapshot.spectrum);
                         }
                     }
-                    Err(_) => {
-                        // Backend may not support spectrum; clear buffer silently.
+                    Err(e) => {
+                        // A spectrum poll failure desynchronises the TCP stream
+                        // (the in-flight response is still in the buffer).
+                        // Propagate the error so the caller reconnects and
+                        // restores protocol sync.
                         if let Ok(mut guard) = config.spectrum.lock() {
                             guard.replace(None);
                         }
+                        return Err(e);
                     }
                 }
             }
