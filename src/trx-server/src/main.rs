@@ -6,6 +6,7 @@ mod aprsfi;
 mod audio;
 mod config;
 mod error;
+mod history_store;
 mod listener;
 mod pskreporter;
 mod rig_handle;
@@ -652,7 +653,7 @@ fn spawn_rig_audio_stack(
             }));
         }
 
-        // Spawn CW decoder task (no histories needed — CW has no persistent history)
+        // Spawn CW decoder task
         let cw_pcm_rx = pcm_tx.subscribe();
         let cw_state_rx = state_rx.clone();
         let cw_decode_tx = decode_tx.clone();
@@ -660,9 +661,10 @@ fn spawn_rig_audio_stack(
         let cw_ch = rig_cfg.audio.channels;
         let cw_shutdown_rx = shutdown_rx.clone();
         let cw_logs = decoder_logs.clone();
+        let cw_histories = histories.clone();
         handles.push(tokio::spawn(async move {
             tokio::select! {
-                _ = audio::run_cw_decoder(cw_sr, cw_ch as u16, cw_pcm_rx, cw_state_rx, cw_decode_tx, cw_logs) => {}
+                _ = audio::run_cw_decoder(cw_sr, cw_ch as u16, cw_pcm_rx, cw_state_rx, cw_decode_tx, cw_logs, cw_histories) => {}
                 _ = wait_for_shutdown(cw_shutdown_rx) => {}
             }
         }));
@@ -842,6 +844,14 @@ async fn main() -> DynResult<()> {
     let mut task_handles: Vec<JoinHandle<()>> = Vec::new();
     let (shutdown_tx, shutdown_rx) = watch::channel(false);
 
+    // Open persistent history DB once; each rig uses rig_id-prefixed keys.
+    let history_db = {
+        let db = history_store::open_db();
+        info!("Decode history DB: {}", history_store::db_path().display());
+        Arc::new(std::sync::Mutex::new(db))
+    };
+    let mut rig_histories_for_flush: Vec<(String, Arc<audio::DecoderHistories>)> = Vec::new();
+
     // The first rig id is the default for backward-compat clients that omit rig_id.
     let default_rig_id = resolved_rigs
         .first()
@@ -899,6 +909,10 @@ async fn main() -> DynResult<()> {
         ) = (None, None, None, None);
 
         let histories = DecoderHistories::new();
+        if let Ok(db_guard) = history_db.lock() {
+            history_store::load_all(&db_guard, &rig_cfg.id, &histories);
+        }
+        rig_histories_for_flush.push((rig_cfg.id.clone(), histories.clone()));
 
         let (rig_tx, rig_rx) = mpsc::channel::<RigRequest>(RIG_TASK_CHANNEL_BUFFER);
         let mut initial_state = RigState::new_with_metadata(
@@ -973,6 +987,9 @@ async fn main() -> DynResult<()> {
             },
         );
     }
+
+    // Spawn periodic flush of decode history to disk (every 60 s).
+    history_store::spawn_flush_task(history_db, rig_histories_for_flush);
 
     // Start JSON TCP listener.
     if cfg.listen.enabled {

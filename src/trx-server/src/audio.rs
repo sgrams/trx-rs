@@ -26,7 +26,7 @@ use trx_core::audio::{
     AUDIO_MSG_WSPR_DECODE,
 };
 use trx_core::decode::{
-    AisMessage, AprsPacket, DecodedMessage, Ft8Message, VdesMessage, WsprMessage,
+    AisMessage, AprsPacket, CwEvent, DecodedMessage, Ft8Message, VdesMessage, WsprMessage,
 };
 use trx_core::rig::state::{RigMode, RigState};
 use trx_cw::CwDecoder;
@@ -40,6 +40,7 @@ use trx_decode_log::DecoderLoggers;
 const APRS_HISTORY_RETENTION: Duration = Duration::from_secs(24 * 60 * 60);
 const AIS_HISTORY_RETENTION: Duration = Duration::from_secs(24 * 60 * 60);
 const VDES_HISTORY_RETENTION: Duration = Duration::from_secs(24 * 60 * 60);
+const CW_HISTORY_RETENTION: Duration = Duration::from_secs(24 * 60 * 60);
 const FT8_HISTORY_RETENTION: Duration = Duration::from_secs(24 * 60 * 60);
 const WSPR_HISTORY_RETENTION: Duration = Duration::from_secs(24 * 60 * 60);
 const FT8_SAMPLE_RATE: u32 = 12_000;
@@ -142,11 +143,12 @@ fn classify_stream_error(err: &str) -> &'static str {
 /// instance can maintain its own independent history.  Pass an
 /// `Arc<DecoderHistories>` into every decoder task and into the audio listener.
 pub struct DecoderHistories {
-    ais: Mutex<VecDeque<(Instant, AisMessage)>>,
-    vdes: Mutex<VecDeque<(Instant, VdesMessage)>>,
-    aprs: Mutex<VecDeque<(Instant, AprsPacket)>>,
-    ft8: Mutex<VecDeque<(Instant, Ft8Message)>>,
-    wspr: Mutex<VecDeque<(Instant, WsprMessage)>>,
+    pub ais: Mutex<VecDeque<(Instant, AisMessage)>>,
+    pub vdes: Mutex<VecDeque<(Instant, VdesMessage)>>,
+    pub aprs: Mutex<VecDeque<(Instant, AprsPacket)>>,
+    pub cw: Mutex<VecDeque<(Instant, CwEvent)>>,
+    pub ft8: Mutex<VecDeque<(Instant, Ft8Message)>>,
+    pub wspr: Mutex<VecDeque<(Instant, WsprMessage)>>,
 }
 
 impl DecoderHistories {
@@ -155,6 +157,7 @@ impl DecoderHistories {
             ais: Mutex::new(VecDeque::new()),
             vdes: Mutex::new(VecDeque::new()),
             aprs: Mutex::new(VecDeque::new()),
+            cw: Mutex::new(VecDeque::new()),
             ft8: Mutex::new(VecDeque::new()),
             wspr: Mutex::new(VecDeque::new()),
         })
@@ -252,6 +255,35 @@ impl DecoderHistories {
             .lock()
             .expect("aprs history mutex poisoned")
             .clear();
+    }
+
+    // --- CW ---
+
+    fn prune_cw(history: &mut VecDeque<(Instant, CwEvent)>) {
+        let cutoff = Instant::now() - CW_HISTORY_RETENTION;
+        while let Some((ts, _)) = history.front() {
+            if *ts < cutoff {
+                history.pop_front();
+            } else {
+                break;
+            }
+        }
+    }
+
+    pub fn record_cw_event(&self, evt: CwEvent) {
+        let mut h = self.cw.lock().expect("cw history mutex poisoned");
+        h.push_back((Instant::now(), evt));
+        Self::prune_cw(&mut h);
+    }
+
+    pub fn snapshot_cw_history(&self) -> Vec<CwEvent> {
+        let mut h = self.cw.lock().expect("cw history mutex poisoned");
+        Self::prune_cw(&mut h);
+        h.iter().map(|(_, evt)| evt.clone()).collect()
+    }
+
+    pub fn clear_cw_history(&self) {
+        self.cw.lock().expect("cw history mutex poisoned").clear();
     }
 
     // --- FT8 ---
@@ -1087,6 +1119,7 @@ pub async fn run_cw_decoder(
     mut state_rx: watch::Receiver<RigState>,
     decode_tx: broadcast::Sender<DecodedMessage>,
     decode_logs: Option<Arc<DecoderLoggers>>,
+    histories: Arc<DecoderHistories>,
 ) {
     info!("CW decoder started ({}Hz, {} ch)", sample_rate, channels);
     let mut decoder = CwDecoder::new(sample_rate);
@@ -1183,6 +1216,7 @@ pub async fn run_cw_decoder(
                             if let Some(logger) = decode_logs.as_ref() {
                                 logger.log_cw(&evt);
                             }
+                            histories.record_cw_event(evt.clone());
                             let _ = decode_tx.send(DecodedMessage::Cw(evt));
                         }
                     }
@@ -1703,6 +1737,21 @@ async fn handle_audio_client(
     for msg in history {
         let msg = DecodedMessage::Wspr(msg);
         let msg_type = AUDIO_MSG_WSPR_DECODE;
+        if let Ok(json) = serde_json::to_vec(&msg) {
+            write_audio_msg_buffered(&mut writer, msg_type, &json).await?;
+            replayed_history_count += 1;
+            pending_history_flush += 1;
+            if pending_history_flush >= HISTORY_REPLAY_FLUSH_INTERVAL {
+                writer.flush().await?;
+                pending_history_flush = 0;
+            }
+        }
+    }
+    // Send CW history to newly connected client.
+    let history = histories.snapshot_cw_history();
+    for evt in history {
+        let msg = DecodedMessage::Cw(evt);
+        let msg_type = AUDIO_MSG_CW_DECODE;
         if let Ok(json) = serde_json::to_vec(&msg) {
             write_audio_msg_buffered(&mut writer, msg_type, &json).await?;
             replayed_history_count += 1;

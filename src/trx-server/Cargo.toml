@@ -21,6 +21,7 @@ toml = { workspace = true }
 tracing = { workspace = true }
 clap = { workspace = true, features = ["derive"] }
 dirs = "6"
+pickledb = "0.5"
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
 bytes = "1"
 cpal = "0.15"
