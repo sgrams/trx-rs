@@ -5982,6 +5982,22 @@ function updateDecodeStatus(text) {
   setModeBoundDecodeStatus(cw, ["CW", "CWR"], "Select CW mode to decode", cwText);
   if (ft8 && ft8.textContent !== "Receiving") ft8.textContent = text;
 }
+function dispatchDecodeMessage(msg) {
+  if (msg.type === "ais" && window.onServerAis) window.onServerAis(msg);
+  if (msg.type === "vdes" && window.onServerVdes) window.onServerVdes(msg);
+  if (msg.type === "aprs" && window.onServerAprs) window.onServerAprs(msg);
+  if (msg.type === "cw" && window.onServerCw) window.onServerCw(msg);
+  if (msg.type === "ft8" && window.onServerFt8) window.onServerFt8(msg);
+  if (msg.type === "wspr" && window.onServerWspr) window.onServerWspr(msg);
+}
+
+function drainDecodeHistory(buffer, index) {
+  const CHUNK = 30;
+  const end = Math.min(index + CHUNK, buffer.length);
+  for (let i = index; i < end; i++) dispatchDecodeMessage(buffer[i]);
+  if (end < buffer.length) setTimeout(() => drainDecodeHistory(buffer, end), 0);
+}
+
 function connectDecode() {
   if (decodeSource) { decodeSource.close(); }
   if (window.resetAisHistoryView) window.resetAisHistoryView();
@@ -5990,20 +6006,25 @@ function connectDecode() {
   if (window.resetCwHistoryView) window.resetCwHistoryView();
   if (window.resetFt8HistoryView) window.resetFt8HistoryView();
   if (window.resetWsprHistoryView) window.resetWsprHistoryView();
+  const historyBuffer = [];
+  let historyDone = false;
   decodeSource = new EventSource("/decode");
   decodeSource.onopen = () => {
     decodeConnected = true;
     updateDecodeStatus("Connected, listening for packets");
   };
+  decodeSource.addEventListener("history_done", () => {
+    historyDone = true;
+    drainDecodeHistory(historyBuffer, 0);
+  });
   decodeSource.onmessage = (evt) => {
     try {
       const msg = JSON.parse(evt.data);
-      if (msg.type === "ais" && window.onServerAis) window.onServerAis(msg);
-      if (msg.type === "vdes" && window.onServerVdes) window.onServerVdes(msg);
-      if (msg.type === "aprs" && window.onServerAprs) window.onServerAprs(msg);
-      if (msg.type === "cw" && window.onServerCw) window.onServerCw(msg);
-      if (msg.type === "ft8" && window.onServerFt8) window.onServerFt8(msg);
-      if (msg.type === "wspr" && window.onServerWspr) window.onServerWspr(msg);
+      if (!historyDone) {
+        historyBuffer.push(msg);
+      } else {
+        dispatchDecodeMessage(msg);
+      }
     } catch (e) {
       // ignore parse errors
     }

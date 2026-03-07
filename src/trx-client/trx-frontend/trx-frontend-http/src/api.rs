@@ -307,6 +307,9 @@ pub async fn decode_events(
             .map(|json| Ok::<Bytes, Error>(Bytes::from(format!("data: {json}\n\n"))))
     }));
 
+    let history_done =
+        once(async { Ok::<Bytes, Error>(Bytes::from("event: history_done\ndata: {}\n\n")) });
+
     let decode_stream = futures_util::stream::unfold(decode_rx, |mut rx| async move {
         loop {
             match rx.recv().await {
@@ -327,7 +330,7 @@ pub async fn decode_events(
     let pings = IntervalStream::new(time::interval(Duration::from_secs(15)))
         .map(|_| Ok::<Bytes, Error>(Bytes::from(": ping\n\n")));
 
-    let stream = history_stream.chain(select(pings, decode_stream));
+    let stream = history_stream.chain(history_done).chain(select(pings, decode_stream));
 
     Ok(HttpResponse::Ok()
         .insert_header((header::CONTENT_TYPE, "text/event-stream"))
