@@ -40,6 +40,14 @@ const BURST_TRIGGER_FLOOR: f32 = 1.0e-10;
 const BURST_SUSTAIN_NOISE_MULT: f32 = 1.15;
 const BURST_SUSTAIN_FLOOR: f32 = 1.0e-11;
 
+/// Warmup period: number of samples to observe before burst detection starts.
+/// This allows the noise-floor EMA (α = 0.005, τ ≈ 200 samples) to converge
+/// to the actual SDR noise level.  Without warmup the initial floor of 1e-12
+/// is far below any real ADC noise, so the very first sample always triggers a
+/// burst whose sustain threshold is also near 1e-12 — meaning quiet_run never
+/// reaches quiet_limit and the burst never terminates.
+const NOISE_FLOOR_WARMUP_SECS: f32 = 0.05; // 50 ms ≈ 10 EMA time-constants
+
 #[derive(Debug, Clone)]
 pub struct VdesDecoder {
     sample_rate: f32,
@@ -47,16 +55,20 @@ pub struct VdesDecoder {
     in_burst: bool,
     quiet_run: u32,
     burst_samples: Vec<Complex<f32>>,
+    /// Remaining warmup samples.  Burst detection is suppressed while > 0.
+    warmup_remaining: usize,
 }
 
 impl VdesDecoder {
     pub fn new(sample_rate: u32) -> Self {
+        let sr = sample_rate.max(1) as f32;
         Self {
-            sample_rate: sample_rate.max(1) as f32,
+            sample_rate: sr,
             noise_floor: 1.0e-12,
             in_burst: false,
             quiet_run: 0,
             burst_samples: Vec::new(),
+            warmup_remaining: (sr * NOISE_FLOOR_WARMUP_SECS) as usize,
         }
     }
 
@@ -65,6 +77,7 @@ impl VdesDecoder {
         self.in_burst = false;
         self.quiet_run = 0;
         self.burst_samples.clear();
+        self.warmup_remaining = (self.sample_rate * NOISE_FLOOR_WARMUP_SECS) as usize;
     }
 
     pub fn process_samples(&mut self, samples: &[Complex<f32>], channel: &str) -> Vec<VdesMessage> {
@@ -72,6 +85,24 @@ impl VdesDecoder {
         let min_burst_samples =
             ((self.sample_rate * (MIN_BURST_MS / 1000.0)).round() as usize).max(16);
         let quiet_limit = ((self.sample_rate * (BURST_END_MS / 1000.0)).round() as u32).max(4);
+
+        // Warmup phase: feed samples into the noise-floor EMA only.
+        if self.warmup_remaining > 0 {
+            let n = self.warmup_remaining.min(samples.len());
+            for &sample in &samples[..n] {
+                let power = sample.norm_sqr();
+                self.noise_floor = 0.995 * self.noise_floor + 0.005 * power;
+            }
+            self.warmup_remaining -= n;
+            if n == samples.len() {
+                return out;
+            }
+            // Process any remaining samples after warmup completes.
+            return out
+                .into_iter()
+                .chain(self.process_samples(&samples[n..], channel))
+                .collect();
+        }
 
         for &sample in samples {
             let power = sample.norm_sqr();
