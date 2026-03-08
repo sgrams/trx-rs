@@ -327,6 +327,10 @@ function addHfAprsPacket(pkt) {
   renderHfAprsHistory();
 }
 
+document.getElementById("hf-aprs-decode-toggle-btn")?.addEventListener("click", async () => {
+  try { await postPath("/toggle_hf_aprs_decode"); } catch (e) { console.error("HF APRS toggle failed", e); }
+});
+
 document.getElementById("hf-aprs-clear-btn")?.addEventListener("click", async () => {
   try {
     await postPath("/clear_hf_aprs_decode");

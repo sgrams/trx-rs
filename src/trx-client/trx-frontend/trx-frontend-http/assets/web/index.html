@@ -336,6 +336,7 @@
               <div class="bm-decoder-checks">
                 <label class="bm-decoder-check"><input type="checkbox" id="bm-dec-ft8" value="ft8" /> FT8</label>
                 <label class="bm-decoder-check"><input type="checkbox" id="bm-dec-wspr" value="wspr" /> WSPR</label>
+                <label class="bm-decoder-check"><input type="checkbox" id="bm-dec-hf-aprs" value="hf-aprs" /> HF APRS</label>
               </div>
             </div>
             <label class="bm-label bm-label-wide">Comment
@@ -533,6 +534,7 @@
       </div>
       <div id="subtab-hf-aprs" class="sub-tab-panel" style="display:none;">
         <div class="ft8-controls aprs-controls">
+          <button id="hf-aprs-decode-toggle-btn" type="button">Enable HF APRS</button>
           <button id="hf-aprs-pause-btn" type="button">Pause</button>
           <button id="hf-aprs-clear-btn" type="button">Clear</button>
           <input id="hf-aprs-filter" class="ft8-filter" type="text" placeholder="Filter (e.g. SP2, beacon)" />

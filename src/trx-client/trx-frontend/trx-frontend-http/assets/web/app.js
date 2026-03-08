@@ -222,6 +222,7 @@ function applyAuthRestrictions() {
       "vdes-clear-btn",
       "ft8-decode-toggle-btn",
       "wspr-decode-toggle-btn",
+      "hf-aprs-decode-toggle-btn",
       "cw-auto",
       "aprs-clear-btn",
       "ft8-clear-btn",
@@ -2475,6 +2476,13 @@ function render(update) {
     wsprToggleBtn.textContent = wsprOn ? "Disable WSPR" : "Enable WSPR";
     wsprToggleBtn.style.borderColor = wsprOn ? "#00d17f" : "";
     wsprToggleBtn.style.color = wsprOn ? "#00d17f" : "";
+  }
+  const hfAprsToggleBtn = document.getElementById("hf-aprs-decode-toggle-btn");
+  if (hfAprsToggleBtn) {
+    const hfAprsOn = !!update.hf_aprs_decode_enabled;
+    hfAprsToggleBtn.textContent = hfAprsOn ? "Disable HF APRS" : "Enable HF APRS";
+    hfAprsToggleBtn.style.borderColor = hfAprsOn ? "#00d17f" : "";
+    hfAprsToggleBtn.style.color = hfAprsOn ? "#00d17f" : "";
   }
   const cwAutoEl = document.getElementById("cw-auto");
   const cwWpmEl = document.getElementById("cw-wpm");

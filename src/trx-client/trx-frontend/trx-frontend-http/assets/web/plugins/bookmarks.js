@@ -150,6 +150,7 @@ function bmReadDecoders() {
   const decoders = [];
   if (document.getElementById("bm-dec-ft8").checked) decoders.push("ft8");
   if (document.getElementById("bm-dec-wspr").checked) decoders.push("wspr");
+  if (document.getElementById("bm-dec-hf-aprs").checked) decoders.push("hf-aprs");
   return decoders;
 }
 
@@ -158,6 +159,7 @@ function bmWriteDecoders(decoders) {
   const list = decoders || [];
   document.getElementById("bm-dec-ft8").checked = list.includes("ft8");
   document.getElementById("bm-dec-wspr").checked = list.includes("wspr");
+  document.getElementById("bm-dec-hf-aprs").checked = list.includes("hf-aprs");
 }
 
 function bmOpenForm(bm) {
@@ -305,6 +307,10 @@ async function bmApply(bm) {
         const wantWspr = bm.decoders.includes("wspr");
         if (wantWspr !== !!st.wspr_decode_enabled) {
           await postPath("/toggle_wspr_decode");
+        }
+        const wantHfAprs = bm.decoders.includes("hf-aprs");
+        if (wantHfAprs !== !!st.hf_aprs_decode_enabled) {
+          await postPath("/toggle_hf_aprs_decode");
         }
       }
     }
