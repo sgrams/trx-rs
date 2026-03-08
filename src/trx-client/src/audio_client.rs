@@ -19,8 +19,8 @@ use trx_frontend::RemoteRigEntry;
 
 use trx_core::audio::{
     read_audio_msg, write_audio_msg, AudioStreamInfo, AUDIO_MSG_AIS_DECODE, AUDIO_MSG_APRS_DECODE,
-    AUDIO_MSG_CW_DECODE, AUDIO_MSG_FT8_DECODE, AUDIO_MSG_RX_FRAME, AUDIO_MSG_STREAM_INFO,
-    AUDIO_MSG_TX_FRAME, AUDIO_MSG_VDES_DECODE, AUDIO_MSG_WSPR_DECODE,
+    AUDIO_MSG_CW_DECODE, AUDIO_MSG_FT8_DECODE, AUDIO_MSG_HF_APRS_DECODE, AUDIO_MSG_RX_FRAME,
+    AUDIO_MSG_STREAM_INFO, AUDIO_MSG_TX_FRAME, AUDIO_MSG_VDES_DECODE, AUDIO_MSG_WSPR_DECODE,
 };
 use trx_core::decode::DecodedMessage;
 
@@ -151,6 +151,7 @@ async fn handle_audio_connection(
                     AUDIO_MSG_VDES_DECODE
                     | AUDIO_MSG_AIS_DECODE
                     | AUDIO_MSG_APRS_DECODE
+                    | AUDIO_MSG_HF_APRS_DECODE
                     | AUDIO_MSG_CW_DECODE
                     | AUDIO_MSG_FT8_DECODE
                     | AUDIO_MSG_WSPR_DECODE,

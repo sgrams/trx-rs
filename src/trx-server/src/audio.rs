@@ -22,8 +22,8 @@ use trx_aprs::AprsDecoder;
 use trx_core::audio::{
     read_audio_msg, write_audio_msg, AudioStreamInfo,
     AUDIO_MSG_AIS_DECODE, AUDIO_MSG_APRS_DECODE, AUDIO_MSG_CW_DECODE, AUDIO_MSG_FT8_DECODE,
-    AUDIO_MSG_RX_FRAME, AUDIO_MSG_STREAM_INFO, AUDIO_MSG_TX_FRAME, AUDIO_MSG_VDES_DECODE,
-    AUDIO_MSG_WSPR_DECODE,
+    AUDIO_MSG_HF_APRS_DECODE, AUDIO_MSG_RX_FRAME, AUDIO_MSG_STREAM_INFO, AUDIO_MSG_TX_FRAME,
+    AUDIO_MSG_VDES_DECODE, AUDIO_MSG_WSPR_DECODE,
 };
 use trx_core::decode::{
     AisMessage, AprsPacket, CwEvent, DecodedMessage, Ft8Message, VdesMessage, WsprMessage,
@@ -1847,6 +1847,7 @@ async fn handle_audio_client(
         push_history!(histories.snapshot_ais_history(), DecodedMessage::Ais, AUDIO_MSG_AIS_DECODE);
         push_history!(histories.snapshot_vdes_history(), DecodedMessage::Vdes, AUDIO_MSG_VDES_DECODE);
         push_history!(histories.snapshot_aprs_history(), DecodedMessage::Aprs, AUDIO_MSG_APRS_DECODE);
+        push_history!(histories.snapshot_hf_aprs_history(), DecodedMessage::HfAprs, AUDIO_MSG_HF_APRS_DECODE);
         push_history!(histories.snapshot_ft8_history(), DecodedMessage::Ft8, AUDIO_MSG_FT8_DECODE);
         push_history!(histories.snapshot_wspr_history(), DecodedMessage::Wspr, AUDIO_MSG_WSPR_DECODE);
         push_history!(histories.snapshot_cw_history(), DecodedMessage::Cw, AUDIO_MSG_CW_DECODE);
@@ -1895,6 +1896,7 @@ async fn handle_audio_client(
                                 DecodedMessage::Ais(_) => AUDIO_MSG_AIS_DECODE,
                                 DecodedMessage::Vdes(_) => AUDIO_MSG_VDES_DECODE,
                                 DecodedMessage::Aprs(_) => AUDIO_MSG_APRS_DECODE,
+                                DecodedMessage::HfAprs(_) => AUDIO_MSG_HF_APRS_DECODE,
                                 DecodedMessage::Cw(_) => AUDIO_MSG_CW_DECODE,
                                 DecodedMessage::Ft8(_) => AUDIO_MSG_FT8_DECODE,
                                 DecodedMessage::Wspr(_) => AUDIO_MSG_WSPR_DECODE,
