@@ -203,7 +203,7 @@ pub async fn run_aprsfi_uplink(
 
                 recv = decode_rx.recv() => {
                     match recv {
-                        Ok(DecodedMessage::Aprs(pkt)) => {
+                        Ok(DecodedMessage::Aprs(pkt)) | Ok(DecodedMessage::HfAprs(pkt)) => {
                             stats_received += 1;
                             if !pkt.crc_ok {
                                 stats_skipped += 1;

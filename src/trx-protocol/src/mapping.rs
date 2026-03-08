@@ -34,6 +34,9 @@ pub fn client_command_to_rig(cmd: ClientCommand) -> RigCommand {
         ClientCommand::SetAprsDecodeEnabled { enabled } => {
             RigCommand::SetAprsDecodeEnabled(enabled)
         }
+        ClientCommand::SetHfAprsDecodeEnabled { enabled } => {
+            RigCommand::SetHfAprsDecodeEnabled(enabled)
+        }
         ClientCommand::SetCwDecodeEnabled { enabled } => RigCommand::SetCwDecodeEnabled(enabled),
         ClientCommand::SetCwAuto { enabled } => RigCommand::SetCwAuto(enabled),
         ClientCommand::SetCwWpm { wpm } => RigCommand::SetCwWpm(wpm),
@@ -43,6 +46,7 @@ pub fn client_command_to_rig(cmd: ClientCommand) -> RigCommand {
             RigCommand::SetWsprDecodeEnabled(enabled)
         }
         ClientCommand::ResetAprsDecoder => RigCommand::ResetAprsDecoder,
+        ClientCommand::ResetHfAprsDecoder => RigCommand::ResetHfAprsDecoder,
         ClientCommand::ResetCwDecoder => RigCommand::ResetCwDecoder,
         ClientCommand::ResetFt8Decoder => RigCommand::ResetFt8Decoder,
         ClientCommand::ResetWsprDecoder => RigCommand::ResetWsprDecoder,
@@ -88,6 +92,9 @@ pub fn rig_command_to_client(cmd: RigCommand) -> ClientCommand {
         RigCommand::SetAprsDecodeEnabled(enabled) => {
             ClientCommand::SetAprsDecodeEnabled { enabled }
         }
+        RigCommand::SetHfAprsDecodeEnabled(enabled) => {
+            ClientCommand::SetHfAprsDecodeEnabled { enabled }
+        }
         RigCommand::SetCwDecodeEnabled(enabled) => ClientCommand::SetCwDecodeEnabled { enabled },
         RigCommand::SetCwAuto(enabled) => ClientCommand::SetCwAuto { enabled },
         RigCommand::SetCwWpm(wpm) => ClientCommand::SetCwWpm { wpm },
@@ -97,6 +104,7 @@ pub fn rig_command_to_client(cmd: RigCommand) -> ClientCommand {
             ClientCommand::SetWsprDecodeEnabled { enabled }
         }
         RigCommand::ResetAprsDecoder => ClientCommand::ResetAprsDecoder,
+        RigCommand::ResetHfAprsDecoder => ClientCommand::ResetHfAprsDecoder,
         RigCommand::ResetCwDecoder => ClientCommand::ResetCwDecoder,
         RigCommand::ResetFt8Decoder => ClientCommand::ResetFt8Decoder,
         RigCommand::ResetWsprDecoder => ClientCommand::ResetWsprDecoder,

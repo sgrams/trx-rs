@@ -38,6 +38,7 @@ use crate::config::AudioConfig;
 use trx_decode_log::DecoderLoggers;
 
 const APRS_HISTORY_RETENTION: Duration = Duration::from_secs(24 * 60 * 60);
+const HF_APRS_HISTORY_RETENTION: Duration = Duration::from_secs(24 * 60 * 60);
 const AIS_HISTORY_RETENTION: Duration = Duration::from_secs(24 * 60 * 60);
 const VDES_HISTORY_RETENTION: Duration = Duration::from_secs(24 * 60 * 60);
 const CW_HISTORY_RETENTION: Duration = Duration::from_secs(24 * 60 * 60);
@@ -145,6 +146,7 @@ pub struct DecoderHistories {
     pub ais: Mutex<VecDeque<(Instant, AisMessage)>>,
     pub vdes: Mutex<VecDeque<(Instant, VdesMessage)>>,
     pub aprs: Mutex<VecDeque<(Instant, AprsPacket)>>,
+    pub hf_aprs: Mutex<VecDeque<(Instant, AprsPacket)>>,
     pub cw: Mutex<VecDeque<(Instant, CwEvent)>>,
     pub ft8: Mutex<VecDeque<(Instant, Ft8Message)>>,
     pub wspr: Mutex<VecDeque<(Instant, WsprMessage)>>,
@@ -156,6 +158,7 @@ impl DecoderHistories {
             ais: Mutex::new(VecDeque::new()),
             vdes: Mutex::new(VecDeque::new()),
             aprs: Mutex::new(VecDeque::new()),
+            hf_aprs: Mutex::new(VecDeque::new()),
             cw: Mutex::new(VecDeque::new()),
             ft8: Mutex::new(VecDeque::new()),
             wspr: Mutex::new(VecDeque::new()),
@@ -256,6 +259,44 @@ impl DecoderHistories {
             .clear();
     }
 
+    // --- HF APRS ---
+
+    fn prune_hf_aprs(history: &mut VecDeque<(Instant, AprsPacket)>) {
+        let cutoff = Instant::now() - HF_APRS_HISTORY_RETENTION;
+        while let Some((ts, _)) = history.front() {
+            if *ts < cutoff {
+                history.pop_front();
+            } else {
+                break;
+            }
+        }
+    }
+
+    pub fn record_hf_aprs_packet(&self, mut pkt: AprsPacket) {
+        if !pkt.crc_ok {
+            return;
+        }
+        if pkt.ts_ms.is_none() {
+            pkt.ts_ms = Some(current_timestamp_ms());
+        }
+        let mut h = self.hf_aprs.lock().expect("hf_aprs history mutex poisoned");
+        h.push_back((Instant::now(), pkt));
+        Self::prune_hf_aprs(&mut h);
+    }
+
+    pub fn snapshot_hf_aprs_history(&self) -> Vec<AprsPacket> {
+        let mut h = self.hf_aprs.lock().expect("hf_aprs history mutex poisoned");
+        Self::prune_hf_aprs(&mut h);
+        h.iter().map(|(_, pkt)| pkt.clone()).collect()
+    }
+
+    pub fn clear_hf_aprs_history(&self) {
+        self.hf_aprs
+            .lock()
+            .expect("hf_aprs history mutex poisoned")
+            .clear();
+    }
+
     // --- CW ---
 
     fn prune_cw(history: &mut VecDeque<(Instant, CwEvent)>) {
@@ -352,10 +393,11 @@ impl DecoderHistories {
         let ais = self.ais.lock().map(|h| h.len()).unwrap_or(0);
         let vdes = self.vdes.lock().map(|h| h.len()).unwrap_or(0);
         let aprs = self.aprs.lock().map(|h| h.len()).unwrap_or(0);
+        let hf_aprs = self.hf_aprs.lock().map(|h| h.len()).unwrap_or(0);
         let cw = self.cw.lock().map(|h| h.len()).unwrap_or(0);
         let ft8 = self.ft8.lock().map(|h| h.len()).unwrap_or(0);
         let wspr = self.wspr.lock().map(|h| h.len()).unwrap_or(0);
-        ais + vdes + aprs + cw + ft8 + wspr
+        ais + vdes + aprs + hf_aprs + cw + ft8 + wspr
     }
 }
 
@@ -929,6 +971,101 @@ pub async fn run_aprs_decoder(
                             last_reset_seq = state.aprs_decode_reset_seq;
                             decoder.reset();
                             info!("APRS decoder reset (seq={})", last_reset_seq);
+                        }
+                        if !active && was_active {
+                            decoder.reset();
+                            was_active = false;
+                        }
+                        if active {
+                            pcm_rx = pcm_rx.resubscribe();
+                        }
+                    }
+                    Err(_) => break,
+                }
+            }
+        }
+    }
+}
+
+pub async fn run_hf_aprs_decoder(
+    sample_rate: u32,
+    channels: u16,
+    mut pcm_rx: broadcast::Receiver<Vec<f32>>,
+    mut state_rx: watch::Receiver<RigState>,
+    decode_tx: broadcast::Sender<DecodedMessage>,
+    decode_logs: Option<Arc<DecoderLoggers>>,
+    histories: Arc<DecoderHistories>,
+) {
+    info!("HF APRS decoder started ({}Hz, {} ch)", sample_rate, channels);
+    let mut decoder = AprsDecoder::new_hf(sample_rate);
+    let mut was_active = false;
+    let mut last_reset_seq: u64 = 0;
+    let mut active = matches!(state_rx.borrow().status.mode, RigMode::DIG);
+
+    loop {
+        if !active {
+            match state_rx.changed().await {
+                Ok(()) => {
+                    let state = state_rx.borrow();
+                    active = matches!(state.status.mode, RigMode::DIG);
+                    if active {
+                        pcm_rx = pcm_rx.resubscribe();
+                    }
+                    if state.hf_aprs_decode_reset_seq != last_reset_seq {
+                        last_reset_seq = state.hf_aprs_decode_reset_seq;
+                        decoder.reset();
+                        info!("HF APRS decoder reset (seq={})", last_reset_seq);
+                    }
+                }
+                Err(_) => break,
+            }
+            continue;
+        }
+
+        tokio::select! {
+            recv = pcm_rx.recv() => {
+                match recv {
+                    Ok(frame) => {
+                        let state = state_rx.borrow();
+                        if state.hf_aprs_decode_reset_seq != last_reset_seq {
+                            last_reset_seq = state.hf_aprs_decode_reset_seq;
+                            decoder.reset();
+                            info!("HF APRS decoder reset (seq={})", last_reset_seq);
+                        }
+
+                        let mut mono = downmix_if_needed(frame, channels);
+                        apply_decode_audio_gate(&mut mono);
+
+                        was_active = true;
+                        for mut pkt in decoder.process_samples(&mono) {
+                            if let Some(logger) = decode_logs.as_ref() {
+                                logger.log_aprs(&pkt);
+                            }
+                            if !pkt.crc_ok {
+                                continue;
+                            }
+                            if pkt.ts_ms.is_none() {
+                                pkt.ts_ms = Some(current_timestamp_ms());
+                            }
+                            histories.record_hf_aprs_packet(pkt.clone());
+                            let _ = decode_tx.send(DecodedMessage::HfAprs(pkt));
+                        }
+                    }
+                    Err(broadcast::error::RecvError::Lagged(n)) => {
+                        warn!("HF APRS decoder: dropped {} PCM frames", n);
+                    }
+                    Err(broadcast::error::RecvError::Closed) => break,
+                }
+            }
+            changed = state_rx.changed() => {
+                match changed {
+                    Ok(()) => {
+                        let state = state_rx.borrow();
+                        active = matches!(state.status.mode, RigMode::DIG);
+                        if state.hf_aprs_decode_reset_seq != last_reset_seq {
+                            last_reset_seq = state.hf_aprs_decode_reset_seq;
+                            decoder.reset();
+                            info!("HF APRS decoder reset (seq={})", last_reset_seq);
                         }
                         if !active && was_active {
                             decoder.reset();

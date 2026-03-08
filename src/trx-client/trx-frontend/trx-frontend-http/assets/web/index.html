@@ -85,6 +85,7 @@
         <div id="vdes-bar-overlay" aria-live="polite" aria-label="Recent VDES bursts"></div>
         <div id="ft8-bar-overlay" aria-live="polite" aria-label="Recent FT8 decodes"></div>
         <div id="aprs-bar-overlay" aria-live="polite" aria-label="Recent APRS frames"></div>
+        <div id="hf-aprs-bar-overlay" aria-live="polite" aria-label="Recent HF APRS frames"></div>
         <div id="cw-bar-overlay" aria-live="polite" aria-label="Recent CW decodes"></div>
       </div>
       <div id="spectrum-panel" style="display:none;">
@@ -373,6 +374,7 @@
         <button class="sub-tab" data-subtab="ais">AIS</button>
         <button class="sub-tab" data-subtab="vdes">VDES</button>
         <button class="sub-tab" data-subtab="aprs">APRS</button>
+        <button class="sub-tab" data-subtab="hf-aprs">HF APRS</button>
         <button class="sub-tab" data-subtab="cw">CW</button>
         <button class="sub-tab" data-subtab="ft8">FT8</button>
         <button class="sub-tab" data-subtab="wspr">WSPR</button>
@@ -529,6 +531,42 @@
         </div>
         <div id="aprs-packets"></div>
       </div>
+      <div id="subtab-hf-aprs" class="sub-tab-panel" style="display:none;">
+        <div class="ft8-controls aprs-controls">
+          <button id="hf-aprs-pause-btn" type="button">Pause</button>
+          <button id="hf-aprs-clear-btn" type="button">Clear</button>
+          <input id="hf-aprs-filter" class="ft8-filter" type="text" placeholder="Filter (e.g. SP2, beacon)" />
+          <small id="hf-aprs-status" style="color:var(--text-muted);">Waiting for server decode</small>
+        </div>
+        <div class="aprs-summary">
+          <div class="aprs-summary-card">
+            <span class="aprs-summary-label">Frames</span>
+            <span id="hf-aprs-total-count" class="aprs-summary-value">0 total</span>
+          </div>
+          <div class="aprs-summary-card">
+            <span class="aprs-summary-label">Visible</span>
+            <span id="hf-aprs-visible-count" class="aprs-summary-value">0 shown</span>
+          </div>
+          <div class="aprs-summary-card">
+            <span class="aprs-summary-label">Latest</span>
+            <span id="hf-aprs-latest-seen" class="aprs-summary-value">No packets yet</span>
+          </div>
+        </div>
+        <div class="aprs-filter-row">
+          <button id="hf-aprs-type-all" class="aprs-chip active" type="button">All</button>
+          <button id="hf-aprs-type-position" class="aprs-chip" type="button">Pos</button>
+          <button id="hf-aprs-type-message" class="aprs-chip" type="button">Msg</button>
+          <button id="hf-aprs-type-weather" class="aprs-chip" type="button">Wx</button>
+          <button id="hf-aprs-type-telemetry" class="aprs-chip" type="button">Tlm</button>
+          <button id="hf-aprs-type-other" class="aprs-chip" type="button">Other</button>
+        </div>
+        <div class="aprs-filter-row">
+          <button id="hf-aprs-only-pos-btn" class="aprs-chip" type="button">Pos Only</button>
+          <button id="hf-aprs-hide-crc-btn" class="aprs-chip" type="button">No CRC</button>
+          <button id="hf-aprs-collapse-dup-btn" class="aprs-chip" type="button">Dupes</button>
+        </div>
+        <div id="hf-aprs-packets"></div>
+      </div>
       <div id="subtab-ft8" class="sub-tab-panel" style="display:none;">
         <div class="ft8-controls">
           <button id="ft8-decode-toggle-btn" type="button">Enable FT8</button>
@@ -640,6 +678,7 @@
   <script src="/ais.js"></script>
   <script src="/vdes.js"></script>
   <script src="/aprs.js"></script>
+  <script src="/hf-aprs.js"></script>
   <script src="/ft8.js"></script>
   <script src="/wspr.js"></script>
   <script src="/cw.js"></script>

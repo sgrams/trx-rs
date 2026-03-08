@@ -630,6 +630,22 @@ fn spawn_rig_audio_stack(
             }
         }));
 
+        // Spawn HF APRS decoder task
+        let hf_aprs_pcm_rx = pcm_tx.subscribe();
+        let hf_aprs_state_rx = state_rx.clone();
+        let hf_aprs_decode_tx = decode_tx.clone();
+        let hf_aprs_sr = rig_cfg.audio.sample_rate;
+        let hf_aprs_ch = rig_cfg.audio.channels;
+        let hf_aprs_shutdown_rx = shutdown_rx.clone();
+        let hf_aprs_logs = decoder_logs.clone();
+        let hf_aprs_histories = histories.clone();
+        handles.push(tokio::spawn(async move {
+            tokio::select! {
+                _ = audio::run_hf_aprs_decoder(hf_aprs_sr, hf_aprs_ch as u16, hf_aprs_pcm_rx, hf_aprs_state_rx, hf_aprs_decode_tx, hf_aprs_logs, hf_aprs_histories) => {}
+                _ = wait_for_shutdown(hf_aprs_shutdown_rx) => {}
+            }
+        }));
+
         if let Some((ais_a_pcm_rx, ais_b_pcm_rx)) = sdr_ais_pcm_rx {
             let ais_state_rx = state_rx.clone();
             let ais_decode_tx = decode_tx.clone();

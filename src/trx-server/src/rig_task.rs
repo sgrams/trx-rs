@@ -436,6 +436,17 @@ async fn process_command(
             let _ = ctx.state_tx.send(ctx.state.clone());
             return snapshot_from(ctx.state);
         }
+        RigCommand::SetHfAprsDecodeEnabled(en) => {
+            ctx.state.hf_aprs_decode_enabled = en;
+            let _ = ctx.state_tx.send(ctx.state.clone());
+            return snapshot_from(ctx.state);
+        }
+        RigCommand::ResetHfAprsDecoder => {
+            ctx.histories.clear_hf_aprs_history();
+            ctx.state.hf_aprs_decode_reset_seq += 1;
+            let _ = ctx.state_tx.send(ctx.state.clone());
+            return snapshot_from(ctx.state);
+        }
         RigCommand::ResetCwDecoder => {
             ctx.histories.clear_cw_history();
             ctx.state.cw_decode_reset_seq += 1;

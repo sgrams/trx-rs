@@ -44,6 +44,15 @@ fn prune_aprs_history(history: &mut VecDeque<(Instant, AprsPacket)>) {
     }
 }
 
+fn prune_hf_aprs_history(history: &mut VecDeque<(Instant, AprsPacket)>) {
+    while let Some((ts, _)) = history.front() {
+        if ts.elapsed() <= HISTORY_RETENTION {
+            break;
+        }
+        history.pop_front();
+    }
+}
+
 fn prune_ais_history(history: &mut VecDeque<(Instant, AisMessage)>) {
     while let Some((ts, _)) = history.front() {
         if ts.elapsed() <= HISTORY_RETENTION {
@@ -125,6 +134,18 @@ fn record_aprs(context: &FrontendRuntimeContext, mut pkt: AprsPacket) {
     prune_aprs_history(&mut history);
 }
 
+fn record_hf_aprs(context: &FrontendRuntimeContext, mut pkt: AprsPacket) {
+    if pkt.ts_ms.is_none() {
+        pkt.ts_ms = Some(current_timestamp_ms());
+    }
+    let mut history = context
+        .hf_aprs_history
+        .lock()
+        .expect("hf_aprs history mutex poisoned");
+    history.push_back((Instant::now(), pkt));
+    prune_hf_aprs_history(&mut history);
+}
+
 fn record_cw(context: &FrontendRuntimeContext, event: CwEvent) {
     let mut history = context
         .cw_history
@@ -158,6 +179,15 @@ pub fn snapshot_aprs_history(context: &FrontendRuntimeContext) -> Vec<AprsPacket
         .lock()
         .expect("aprs history mutex poisoned");
     prune_aprs_history(&mut history);
+    history.iter().map(|(_, pkt)| pkt.clone()).collect()
+}
+
+pub fn snapshot_hf_aprs_history(context: &FrontendRuntimeContext) -> Vec<AprsPacket> {
+    let mut history = context
+        .hf_aprs_history
+        .lock()
+        .expect("hf_aprs history mutex poisoned");
+    prune_hf_aprs_history(&mut history);
     history.iter().map(|(_, pkt)| pkt.clone()).collect()
 }
 
@@ -211,6 +241,14 @@ pub fn clear_aprs_history(context: &FrontendRuntimeContext) {
         .aprs_history
         .lock()
         .expect("aprs history mutex poisoned");
+    history.clear();
+}
+
+pub fn clear_hf_aprs_history(context: &FrontendRuntimeContext) {
+    let mut history = context
+        .hf_aprs_history
+        .lock()
+        .expect("hf_aprs history mutex poisoned");
     history.clear();
 }
 
@@ -280,6 +318,7 @@ pub fn start_decode_history_collector(context: Arc<FrontendRuntimeContext>) {
                     DecodedMessage::Ais(msg) => record_ais(&context, msg),
                     DecodedMessage::Vdes(msg) => record_vdes(&context, msg),
                     DecodedMessage::Aprs(pkt) => record_aprs(&context, pkt),
+                    DecodedMessage::HfAprs(pkt) => record_hf_aprs(&context, pkt),
                     DecodedMessage::Cw(evt) => record_cw(&context, evt),
                     DecodedMessage::Ft8(msg) => record_ft8(&context, msg),
                     DecodedMessage::Wspr(msg) => record_wspr(&context, msg),

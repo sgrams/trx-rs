@@ -16,6 +16,8 @@ pub enum DecodedMessage {
     Vdes(VdesMessage),
     #[serde(rename = "aprs")]
     Aprs(AprsPacket),
+    #[serde(rename = "hf_aprs")]
+    HfAprs(AprsPacket),
     #[serde(rename = "cw")]
     Cw(CwEvent),
     #[serde(rename = "ft8")]

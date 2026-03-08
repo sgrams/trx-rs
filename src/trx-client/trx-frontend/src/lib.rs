@@ -144,6 +144,8 @@ pub struct FrontendRuntimeContext {
     pub vdes_history: Arc<Mutex<VecDeque<(Instant, VdesMessage)>>>,
     /// APRS decode history (timestamp, packet)
     pub aprs_history: Arc<Mutex<VecDeque<(Instant, AprsPacket)>>>,
+    /// HF APRS decode history (timestamp, packet)
+    pub hf_aprs_history: Arc<Mutex<VecDeque<(Instant, AprsPacket)>>>,
     /// CW decode history (timestamp, event)
     pub cw_history: Arc<Mutex<VecDeque<(Instant, CwEvent)>>>,
     /// FT8 decode history (timestamp, message)
@@ -207,6 +209,7 @@ impl FrontendRuntimeContext {
             ais_history: Arc::new(Mutex::new(VecDeque::new())),
             vdes_history: Arc::new(Mutex::new(VecDeque::new())),
             aprs_history: Arc::new(Mutex::new(VecDeque::new())),
+            hf_aprs_history: Arc::new(Mutex::new(VecDeque::new())),
             cw_history: Arc::new(Mutex::new(VecDeque::new())),
             ft8_history: Arc::new(Mutex::new(VecDeque::new())),
             wspr_history: Arc::new(Mutex::new(VecDeque::new())),

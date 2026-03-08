@@ -44,9 +44,6 @@ fn crc16ccitt(bytes: &[u8]) -> u16 {
 // Correlation demodulator (one instance)
 // ---------------------------------------------------------------------------
 
-const BAUD: f32 = 1200.0;
-const MARK: f32 = 1200.0;
-const SPACE: f32 = 2200.0;
 const TWO_PI: f32 = std::f32::consts::TAU;
 const PLL_GAIN: f32 = 0.4;
 
@@ -98,9 +95,9 @@ struct RawFrame {
 }
 
 impl Demodulator {
-    fn new(sample_rate: u32, window_factor: f32) -> Self {
+    fn new(sample_rate: u32, baud: f32, mark_hz: f32, space_hz: f32, window_factor: f32) -> Self {
         let sr = sample_rate as f32;
-        let samples_per_bit = sr / BAUD;
+        let samples_per_bit = sr / baud;
         let corr_len = (samples_per_bit * window_factor).round().max(2.0) as usize;
         let energy_window = (sr * 0.05).round() as usize;
 
@@ -111,8 +108,8 @@ impl Demodulator {
             energy_window,
             mark_phase: 0.0,
             space_phase: 0.0,
-            mark_phase_inc: TWO_PI * MARK / sr,
-            space_phase_inc: TWO_PI * SPACE / sr,
+            mark_phase_inc: TWO_PI * mark_hz / sr,
+            space_phase_inc: TWO_PI * space_hz / sr,
             corr_len,
             mark_i_buf: vec![0.0; corr_len],
             mark_q_buf: vec![0.0; corr_len],
@@ -541,11 +538,22 @@ pub struct AprsDecoder {
 }
 
 impl AprsDecoder {
+    /// VHF APRS: Bell 202, 1200 baud, mark=1200 Hz, space=2200 Hz.
     pub fn new(sample_rate: u32) -> Self {
         Self {
             demodulators: vec![
-                Demodulator::new(sample_rate, 1.0),
-                Demodulator::new(sample_rate, 0.5),
+                Demodulator::new(sample_rate, 1200.0, 1200.0, 2200.0, 1.0),
+                Demodulator::new(sample_rate, 1200.0, 1200.0, 2200.0, 0.5),
+            ],
+        }
+    }
+
+    /// HF APRS: 300 baud, mark=1600 Hz, space=1800 Hz (200 Hz shift).
+    pub fn new_hf(sample_rate: u32) -> Self {
+        Self {
+            demodulators: vec![
+                Demodulator::new(sample_rate, 300.0, 1600.0, 1800.0, 1.0),
+                Demodulator::new(sample_rate, 300.0, 1600.0, 1800.0, 0.5),
             ],
         }
     }

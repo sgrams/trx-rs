@@ -5986,6 +5986,7 @@ function dispatchDecodeMessage(msg) {
   if (msg.type === "ais" && window.onServerAis) window.onServerAis(msg);
   if (msg.type === "vdes" && window.onServerVdes) window.onServerVdes(msg);
   if (msg.type === "aprs" && window.onServerAprs) window.onServerAprs(msg);
+  if (msg.type === "hf_aprs" && window.onServerHfAprs) window.onServerHfAprs(msg);
   if (msg.type === "cw" && window.onServerCw) window.onServerCw(msg);
   if (msg.type === "ft8" && window.onServerFt8) window.onServerFt8(msg);
   if (msg.type === "wspr" && window.onServerWspr) window.onServerWspr(msg);

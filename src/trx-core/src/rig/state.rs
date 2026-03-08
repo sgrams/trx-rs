@@ -31,6 +31,8 @@ pub struct RigState {
     #[serde(default)]
     pub aprs_decode_enabled: bool,
     #[serde(default)]
+    pub hf_aprs_decode_enabled: bool,
+    #[serde(default)]
     pub cw_decode_enabled: bool,
     #[serde(default)]
     pub ft8_decode_enabled: bool,
@@ -52,6 +54,8 @@ pub struct RigState {
     pub spectrum: Option<SpectrumData>,
     #[serde(default, skip_serializing)]
     pub aprs_decode_reset_seq: u64,
+    #[serde(default, skip_serializing)]
+    pub hf_aprs_decode_reset_seq: u64,
     #[serde(default, skip_serializing)]
     pub cw_decode_reset_seq: u64,
     #[serde(default, skip_serializing)]
@@ -132,6 +136,7 @@ impl RigState {
             server_longitude: None,
             pskreporter_status: None,
             aprs_decode_enabled: false,
+            hf_aprs_decode_enabled: false,
             cw_decode_enabled: true,
             ft8_decode_enabled: false,
             wspr_decode_enabled: false,
@@ -141,6 +146,7 @@ impl RigState {
             filter: None,
             spectrum: None,
             aprs_decode_reset_seq: 0,
+            hf_aprs_decode_reset_seq: 0,
             cw_decode_reset_seq: 0,
             ft8_decode_reset_seq: 0,
             wspr_decode_reset_seq: 0,
@@ -193,6 +199,7 @@ impl RigState {
             server_longitude: snapshot.server_longitude,
             pskreporter_status: snapshot.pskreporter_status,
             aprs_decode_enabled: snapshot.aprs_decode_enabled,
+            hf_aprs_decode_enabled: snapshot.hf_aprs_decode_enabled,
             cw_decode_enabled: snapshot.cw_decode_enabled,
             cw_auto: snapshot.cw_auto,
             cw_wpm: snapshot.cw_wpm,
@@ -202,6 +209,7 @@ impl RigState {
             filter: snapshot.filter,
             spectrum: None, // spectrum flows through /api/spectrum, not persistent state
             aprs_decode_reset_seq: 0,
+            hf_aprs_decode_reset_seq: 0,
             cw_decode_reset_seq: 0,
             ft8_decode_reset_seq: 0,
             wspr_decode_reset_seq: 0,
@@ -232,6 +240,7 @@ impl RigState {
             server_longitude: self.server_longitude,
             pskreporter_status: self.pskreporter_status.clone(),
             aprs_decode_enabled: self.aprs_decode_enabled,
+            hf_aprs_decode_enabled: self.hf_aprs_decode_enabled,
             cw_decode_enabled: self.cw_decode_enabled,
             cw_auto: self.cw_auto,
             cw_wpm: self.cw_wpm,
@@ -383,6 +392,8 @@ pub struct RigSnapshot {
     pub pskreporter_status: Option<String>,
     #[serde(default)]
     pub aprs_decode_enabled: bool,
+    #[serde(default)]
+    pub hf_aprs_decode_enabled: bool,
     #[serde(default)]
     pub cw_decode_enabled: bool,
     #[serde(default)]

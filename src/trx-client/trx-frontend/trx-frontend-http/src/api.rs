@@ -284,6 +284,11 @@ pub async fn decode_events(
                 .map(trx_core::decode::DecodedMessage::Aprs),
         );
         out.extend(
+            crate::server::audio::snapshot_hf_aprs_history(context.get_ref())
+                .into_iter()
+                .map(trx_core::decode::DecodedMessage::HfAprs),
+        );
+        out.extend(
             crate::server::audio::snapshot_cw_history(context.get_ref())
                 .into_iter()
                 .map(trx_core::decode::DecodedMessage::Cw),
@@ -638,6 +643,15 @@ pub async fn toggle_aprs_decode(
     send_command(&rig_tx, RigCommand::SetAprsDecodeEnabled(!enabled)).await
 }
 
+#[post("/toggle_hf_aprs_decode")]
+pub async fn toggle_hf_aprs_decode(
+    state: web::Data<watch::Receiver<RigState>>,
+    rig_tx: web::Data<mpsc::Sender<RigRequest>>,
+) -> Result<HttpResponse, Error> {
+    let enabled = state.get_ref().borrow().hf_aprs_decode_enabled;
+    send_command(&rig_tx, RigCommand::SetHfAprsDecodeEnabled(!enabled)).await
+}
+
 #[post("/toggle_cw_decode")]
 pub async fn toggle_cw_decode(
     state: web::Data<watch::Receiver<RigState>>,
@@ -729,6 +743,15 @@ pub async fn clear_aprs_decode(
 ) -> Result<HttpResponse, Error> {
     crate::server::audio::clear_aprs_history(context.get_ref());
     send_command(&rig_tx, RigCommand::ResetAprsDecoder).await
+}
+
+#[post("/clear_hf_aprs_decode")]
+pub async fn clear_hf_aprs_decode(
+    context: web::Data<Arc<FrontendRuntimeContext>>,
+    rig_tx: web::Data<mpsc::Sender<RigRequest>>,
+) -> Result<HttpResponse, Error> {
+    crate::server::audio::clear_hf_aprs_history(context.get_ref());
+    send_command(&rig_tx, RigCommand::ResetHfAprsDecoder).await
 }
 
 #[post("/clear_ais_decode")]
@@ -1009,6 +1032,7 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
         .service(set_wfm_stereo)
         .service(set_wfm_denoise)
         .service(toggle_aprs_decode)
+        .service(toggle_hf_aprs_decode)
         .service(toggle_cw_decode)
         .service(set_cw_auto)
         .service(set_cw_wpm)
@@ -1018,6 +1042,7 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
         .service(clear_ais_decode)
         .service(clear_vdes_decode)
         .service(clear_aprs_decode)
+        .service(clear_hf_aprs_decode)
         .service(clear_cw_decode)
         .service(clear_ft8_decode)
         .service(clear_wspr_decode)
@@ -1038,6 +1063,7 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
         .service(ais_js)
         .service(vdes_js)
         .service(aprs_js)
+        .service(hf_aprs_js)
         .service(ft8_js)
         .service(wspr_js)
         .service(cw_js)
@@ -1121,6 +1147,16 @@ async fn aprs_js() -> impl Responder {
             "application/javascript; charset=utf-8",
         ))
         .body(status::APRS_JS)
+}
+
+#[get("/hf-aprs.js")]
+async fn hf_aprs_js() -> impl Responder {
+    HttpResponse::Ok()
+        .insert_header((
+            header::CONTENT_TYPE,
+            "application/javascript; charset=utf-8",
+        ))
+        .body(status::HF_APRS_JS)
 }
 
 #[get("/ais.js")]
@@ -1256,6 +1292,7 @@ async fn wait_for_view(mut rx: watch::Receiver<RigState>) -> Result<RigSnapshot,
         server_longitude: state.server_longitude,
         pskreporter_status: state.pskreporter_status,
         aprs_decode_enabled: state.aprs_decode_enabled,
+        hf_aprs_decode_enabled: state.hf_aprs_decode_enabled,
         cw_decode_enabled: state.cw_decode_enabled,
         cw_auto: state.cw_auto,
         cw_wpm: state.cw_wpm,
