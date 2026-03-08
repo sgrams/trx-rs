@@ -184,6 +184,11 @@
         null;
       this.ready = !!this.gl;
       this.textures = new Map();
+      // Reusable scratch buffers — avoids per-draw-call Float32Array allocation
+      // and lets us use bufferSubData instead of bufferData (no GPU realloc).
+      this._colorScratch = new Float32Array(4096 * 6); // grows as needed
+      this._colorGpuSize = 0;                          // current GPU buffer size (floats)
+      this._texScratch = new Float32Array(6 * 4);      // fixed: 6 verts × (xy+uv)
       if (!this.ready) return;
 
       const gl = this.gl;
@@ -233,6 +238,9 @@
 
       this.colorProgram = createProgram(gl, colorVertexSrc, colorFragmentSrc);
       this.colorBuffer = gl.createBuffer();
+      gl.bindBuffer(gl.ARRAY_BUFFER, this.colorBuffer);
+      gl.bufferData(gl.ARRAY_BUFFER, this._colorScratch, gl.DYNAMIC_DRAW);
+      this._colorGpuSize = this._colorScratch.length;
       this.colorLoc = {
         pos: gl.getAttribLocation(this.colorProgram, "a_pos"),
         color: gl.getAttribLocation(this.colorProgram, "a_color"),
@@ -241,6 +249,8 @@
 
       this.textureProgram = createProgram(gl, textureVertexSrc, textureFragmentSrc);
       this.textureBuffer = gl.createBuffer();
+      gl.bindBuffer(gl.ARRAY_BUFFER, this.textureBuffer);
+      gl.bufferData(gl.ARRAY_BUFFER, this._texScratch, gl.DYNAMIC_DRAW);
       this.textureLoc = {
         pos: gl.getAttribLocation(this.textureProgram, "a_pos"),
         uv: gl.getAttribLocation(this.textureProgram, "a_uv"),
@@ -282,17 +292,37 @@
     _drawColorGeometry(vertices, mode) {
       if (!this.ready || !vertices || vertices.length === 0) return;
       const gl = this.gl;
-      const program = this.colorProgram;
-      gl.useProgram(program);
+      const count = vertices.length;
+
+      // Grow scratch buffer if needed (doubles each time to amortise copies).
+      if (count > this._colorScratch.length) {
+        let newLen = this._colorScratch.length;
+        while (newLen < count) newLen *= 2;
+        this._colorScratch = new Float32Array(newLen);
+      }
+
+      // Copy into scratch (set() is a fast typed memcpy; avoids new allocation).
+      this._colorScratch.set(vertices);
+      const view = this._colorScratch.subarray(0, count);
+
+      gl.useProgram(this.colorProgram);
       gl.bindBuffer(gl.ARRAY_BUFFER, this.colorBuffer);
-      const arr = vertices instanceof Float32Array ? vertices : new Float32Array(vertices);
-      gl.bufferData(gl.ARRAY_BUFFER, arr, gl.STREAM_DRAW);
+
+      // Only reallocate the GPU buffer when it is too small; otherwise use
+      // bufferSubData which avoids a GPU reallocation (Safari is sensitive to this).
+      if (count > this._colorGpuSize) {
+        gl.bufferData(gl.ARRAY_BUFFER, this._colorScratch, gl.DYNAMIC_DRAW);
+        this._colorGpuSize = this._colorScratch.length;
+      } else {
+        gl.bufferSubData(gl.ARRAY_BUFFER, 0, view);
+      }
+
       gl.enableVertexAttribArray(this.colorLoc.pos);
       gl.vertexAttribPointer(this.colorLoc.pos, 2, gl.FLOAT, false, 24, 0);
       gl.enableVertexAttribArray(this.colorLoc.color);
       gl.vertexAttribPointer(this.colorLoc.color, 4, gl.FLOAT, false, 24, 8);
       gl.uniform2f(this.colorLoc.resolution, this.canvas.width, this.canvas.height);
-      gl.drawArrays(mode, 0, arr.length / 6);
+      gl.drawArrays(mode, 0, count / 6);
     }
 
     fillRect(x, y, w, h, color) {
@@ -453,26 +483,26 @@
       const entry = this.textures.get(name);
       if (!entry) return;
       const gl = this.gl;
-      const v = flipY
-        ? [
-          x, y, 0, 1,
-          x + w, y, 1, 1,
-          x + w, y + h, 1, 0,
-          x, y, 0, 1,
-          x + w, y + h, 1, 0,
-          x, y + h, 0, 0,
-        ]
-        : [
-          x, y, 0, 0,
-          x + w, y, 1, 0,
-          x + w, y + h, 1, 1,
-          x, y, 0, 0,
-          x + w, y + h, 1, 1,
-          x, y + h, 0, 1,
-        ];
+      const s = this._texScratch;
+      const x2 = x + w, y2 = y + h;
+      if (flipY) {
+        s[0]=x;  s[1]=y;  s[2]=0; s[3]=1;
+        s[4]=x2; s[5]=y;  s[6]=1; s[7]=1;
+        s[8]=x2; s[9]=y2; s[10]=1;s[11]=0;
+        s[12]=x; s[13]=y; s[14]=0;s[15]=1;
+        s[16]=x2;s[17]=y2;s[18]=1;s[19]=0;
+        s[20]=x; s[21]=y2;s[22]=0;s[23]=0;
+      } else {
+        s[0]=x;  s[1]=y;  s[2]=0; s[3]=0;
+        s[4]=x2; s[5]=y;  s[6]=1; s[7]=0;
+        s[8]=x2; s[9]=y2; s[10]=1;s[11]=1;
+        s[12]=x; s[13]=y; s[14]=0;s[15]=0;
+        s[16]=x2;s[17]=y2;s[18]=1;s[19]=1;
+        s[20]=x; s[21]=y2;s[22]=0;s[23]=1;
+      }
       gl.useProgram(this.textureProgram);
       gl.bindBuffer(gl.ARRAY_BUFFER, this.textureBuffer);
-      gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(v), gl.STREAM_DRAW);
+      gl.bufferSubData(gl.ARRAY_BUFFER, 0, s);
       gl.enableVertexAttribArray(this.textureLoc.pos);
       gl.vertexAttribPointer(this.textureLoc.pos, 2, gl.FLOAT, false, 16, 0);
       gl.enableVertexAttribArray(this.textureLoc.uv);
