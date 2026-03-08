@@ -343,9 +343,6 @@ window.resetAprsHistoryView = function() {
 };
 
 function addAprsPacket(pkt) {
-  const tag = pkt.crcOk ? "[APRS]" : "[APRS-CRC-FAIL]";
-  console.log(tag, `${pkt.srcCall}>${pkt.destCall}${pkt.path ? "," + pkt.path : ""}: ${pkt.info}`, pkt);
-
   const tsMs = Number.isFinite(pkt.ts_ms) ? Number(pkt.ts_ms) : Date.now();
   pkt._tsMs = tsMs;
   pkt._ts = new Date(tsMs).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
