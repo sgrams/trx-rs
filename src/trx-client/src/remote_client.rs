@@ -22,7 +22,7 @@ use trx_protocol::{ClientCommand, ClientEnvelope, ClientResponse};
 const DEFAULT_REMOTE_PORT: u16 = 4530;
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
 const IO_TIMEOUT: Duration = Duration::from_secs(15);
-const SPECTRUM_IO_TIMEOUT: Duration = Duration::from_millis(300);
+const SPECTRUM_IO_TIMEOUT: Duration = Duration::from_millis(1000);
 const MAX_JSON_LINE_BYTES: usize = 16 * 1024;
 const MAX_CONSECUTIVE_POLL_FAILURES: u32 = 3;
 
@@ -71,6 +71,9 @@ pub async fn run_remote_client(
         info!("Remote client: connecting to {}", config.addr);
         match time::timeout(CONNECT_TIMEOUT, TcpStream::connect(&config.addr)).await {
             Ok(Ok(stream)) => {
+                // Reset backoff on successful TCP connect: server is reachable, so the
+                // next disconnect should retry quickly rather than waiting up to 10 s.
+                reconnect_delay = Duration::from_secs(1);
                 if let Err(e) =
                     handle_connection(&config, stream, &mut rx, &state_tx, &mut shutdown_rx).await
                 {

@@ -2705,6 +2705,9 @@ function connect() {
       console.error("Bad event data", e);
     }
   };
+  es.addEventListener("ping", () => {
+    lastEventAt = Date.now();
+  });
   es.onerror = () => {
     // Check if this is an auth error by looking at readyState
     if (es.readyState === EventSource.CLOSED) {
