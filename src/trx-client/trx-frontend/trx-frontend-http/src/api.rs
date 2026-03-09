@@ -30,6 +30,41 @@ const LOGO_BYTES: &[u8] =
     include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/assets/trx-logo.png"));
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(15);
 
+/// Base64-encode `data` using the standard alphabet (no line wrapping).
+fn base64_encode(data: &[u8]) -> String {
+    const T: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = Vec::with_capacity((data.len() + 2) / 3 * 4);
+    for chunk in data.chunks(3) {
+        let b0 = chunk[0] as u32;
+        let b1 = chunk.get(1).copied().unwrap_or(0) as u32;
+        let b2 = chunk.get(2).copied().unwrap_or(0) as u32;
+        let n = (b0 << 16) | (b1 << 8) | b2;
+        out.push(T[((n >> 18) & 63) as usize]);
+        out.push(T[((n >> 12) & 63) as usize]);
+        out.push(if chunk.len() > 1 { T[((n >> 6) & 63) as usize] } else { b'=' });
+        out.push(if chunk.len() > 2 { T[(n & 63) as usize] } else { b'=' });
+    }
+    // SAFETY: output contains only ASCII base64 characters.
+    unsafe { String::from_utf8_unchecked(out) }
+}
+
+/// Encode spectrum bins as a compact base64 string of i8 values (1 dB/step).
+///
+/// Wire format for the `b` SSE event:
+///   `{center_hz},{sample_rate},{base64_i8_bins}`
+///
+/// RDS is intentionally excluded — it changes rarely and is sent via the
+/// `/events` state stream instead.
+fn encode_spectrum_frame(frame: &trx_core::rig::state::SpectrumData) -> String {
+    let bytes: Vec<u8> = frame
+        .bins
+        .iter()
+        .map(|&v| v.round().clamp(-128.0, 127.0) as i8 as u8)
+        .collect();
+    let b64 = base64_encode(&bytes);
+    format!("{},{},{b64}", frame.center_hz, frame.sample_rate)
+}
+
 struct FrontendMeta {
     http_clients: usize,
     rigctl_clients: usize,
@@ -383,39 +418,56 @@ impl<I> futures_util::Stream for DropStream<I> {
 }
 
 /// SSE stream for spectrum data.
-/// Emits JSON `SpectrumData` payloads when the latest frame changes.
-/// Emits `null` when spectrum data becomes unavailable.
+///
+/// Emits compact binary frames as named SSE event `b`:
+///   `event: b\ndata: {center_hz},{sample_rate},{base64_i8_bins}[|{rds_json}]\n\n`
+/// Bins are quantized to i8 (1 dB/step, −128…+127 dBFS) for ~5× bandwidth
+/// reduction versus full-precision JSON.
+///
+/// Emits an unnamed `data: null` event when spectrum data becomes unavailable.
 #[get("/spectrum")]
 pub async fn spectrum(
     context: web::Data<Arc<FrontendRuntimeContext>>,
 ) -> Result<HttpResponse, Error> {
     let context_updates = context.get_ref().clone();
     let mut last_revision: Option<u64> = None;
+    let mut last_rds_json: Option<String> = None;
     let updates =
         IntervalStream::new(time::interval(Duration::from_millis(40))).filter_map(move |_| {
             let context = context_updates.clone();
             std::future::ready({
                 let next = context.spectrum.lock().ok().map(|g| g.snapshot());
 
-                let payload = match next {
+                let sse_chunk: Option<String> = match next {
                     Some((revision, _frame)) if last_revision == Some(revision) => None,
                     Some((revision, Some(frame))) => {
                         last_revision = Some(revision);
-                        serde_json::to_string(&frame).ok()
+                        let mut chunk =
+                            format!("event: b\ndata: {}\n\n", encode_spectrum_frame(&frame));
+                        // Append an `rds` event only when the RDS payload changes.
+                        let rds_json = frame
+                            .rds
+                            .as_ref()
+                            .and_then(|r| serde_json::to_string(r).ok());
+                        if rds_json != last_rds_json {
+                            let data = rds_json.as_deref().unwrap_or("null");
+                            chunk.push_str(&format!("event: rds\ndata: {data}\n\n"));
+                            last_rds_json = rds_json;
+                        }
+                        Some(chunk)
                     }
                     Some((revision, None)) => {
                         last_revision = Some(revision);
-                        Some("null".to_string())
+                        Some("data: null\n\n".to_string())
                     }
                     None if last_revision.is_some() => {
-                        // Lock poisoning is transient; retry instead of breaking stream semantics.
                         last_revision = None;
-                        Some("null".to_string())
+                        Some("data: null\n\n".to_string())
                     }
                     None => None,
                 };
 
-                payload.map(|json| Ok::<Bytes, Error>(Bytes::from(format!("data: {json}\n\n"))))
+                sse_chunk.map(|s| Ok::<Bytes, Error>(Bytes::from(s)))
             })
         });
 

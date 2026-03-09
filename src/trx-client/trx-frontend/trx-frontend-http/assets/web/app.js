@@ -6396,6 +6396,7 @@ function scheduleSpectrumReconnect() {
 function startSpectrumStreaming() {
   if (spectrumSource !== null) return;
   spectrumSource = new EventSource("/spectrum");
+  // Unnamed event = reset signal.
   spectrumSource.onmessage = (evt) => {
     if (evt.data === "null") {
       rejectPendingSpectrumFrameWaiters(new Error("Spectrum stream reset"));
@@ -6408,25 +6409,45 @@ function startSpectrumStreaming() {
       scheduleOverviewDraw();
       clearSpectrumCanvas();
       updateRdsPsOverlay(null);
-      return;
     }
+  };
+  // Named "b" event = compact binary frame: "{center_hz},{sample_rate},{base64_i8_bins}"
+  // Bins are i8 (1 dB/step), base64-encoded for ~5× size reduction vs JSON f32 array.
+  // Named "b" event = compact binary frame: "{center_hz},{sample_rate},{base64_i8_bins}"
+  // Bins are i8 (1 dB/step), base64-encoded for ~5× size reduction vs JSON f32 array.
+  spectrumSource.addEventListener("b", (evt) => {
     try {
-      lastSpectrumData = JSON.parse(evt.data);
+      const commaA = evt.data.indexOf(",");
+      const commaB = evt.data.indexOf(",", commaA + 1);
+      const centerHz = Number(evt.data.slice(0, commaA));
+      const sampleRate = Number(evt.data.slice(commaA + 1, commaB));
+      const b64 = evt.data.slice(commaB + 1);
+      const raw = atob(b64);
+      const bins = new Array(raw.length);
+      for (let i = 0; i < raw.length; i++) bins[i] = (raw.charCodeAt(i) << 24 >> 24);
+      // Preserve any RDS data from the last rds event.
+      const rds = lastSpectrumData?.rds;
+      lastSpectrumData = { bins, center_hz: centerHz, sample_rate: sampleRate, rds };
       window.lastSpectrumData = lastSpectrumData;
       lastSpectrumRenderData = buildSpectrumRenderData(lastSpectrumData);
       settlePendingSpectrumFrameWaiters(lastSpectrumData);
       pushSpectrumPeakHoldFrame(lastSpectrumRenderData);
       pushOverviewWaterfallFrame(lastSpectrumData);
       refreshCenterFreqDisplay();
-      if (window.refreshCwTonePicker) {
-        window.refreshCwTonePicker();
-      }
+      if (window.refreshCwTonePicker) window.refreshCwTonePicker();
       scheduleSpectrumDraw();
-      if (lastModeName === "WFM") {
-        updateRdsPsOverlay(lastSpectrumData.rds);
-      }
+      if (lastModeName === "WFM") updateRdsPsOverlay(lastSpectrumData.rds);
     } catch (_) {}
-  };
+  });
+  // Named "rds" event = RDS metadata changed (emitted only when it changes).
+  spectrumSource.addEventListener("rds", (evt) => {
+    try {
+      const rds = evt.data === "null" ? undefined : JSON.parse(evt.data);
+      if (lastSpectrumData) lastSpectrumData.rds = rds;
+      if (lastModeName === "WFM") updateRdsPsOverlay(rds ?? null);
+      updateDocumentTitle(rds ?? null);
+    } catch (_) {}
+  });
   spectrumSource.onerror = () => {
     rejectPendingSpectrumFrameWaiters(new Error("Spectrum stream disconnected"));
     if (spectrumSource) {
