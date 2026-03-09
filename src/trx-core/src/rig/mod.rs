@@ -21,14 +21,14 @@ pub mod response;
 pub mod state;
 
 /// How this backend communicates with the rig.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub enum RigAccessMethod {
     Serial { path: String, baud: u32 },
     Tcp { addr: String },
 }
 
 /// Static info describing a rig backend.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct RigInfo {
     pub manufacturer: String,
     pub model: String,
@@ -37,7 +37,7 @@ pub struct RigInfo {
     pub access: RigAccessMethod,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct RigCapabilities {
     #[serde(default = "default_min_freq_step_hz")]
     pub min_freq_step_hz: u64,
@@ -233,7 +233,7 @@ pub trait RigCat: Rig + Send {
 }
 
 /// Snapshot of a rig's status that every backend can expose.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct RigStatus {
     pub freq: Freq,
     pub mode: RigMode,
@@ -249,21 +249,21 @@ pub trait RigStatusProvider {
     fn status(&self) -> RigStatus;
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct RigVfo {
     pub entries: Vec<RigVfoEntry>,
     /// Index into `entries` for the active VFO, if known.
     pub active: Option<usize>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct RigVfoEntry {
     pub name: String,
     pub freq: Freq,
     pub mode: Option<RigMode>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct RigTxStatus {
     pub power: Option<u8>,
     pub limit: Option<u8>,
@@ -271,13 +271,13 @@ pub struct RigTxStatus {
     pub alc: Option<u8>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct RigRxStatus {
     pub sig: Option<i32>,
 }
 
 /// Configurable control settings that can be pushed to the rig.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, PartialEq)]
 pub struct RigControl {
     pub enabled: Option<bool>,
     pub lock: Option<bool>,

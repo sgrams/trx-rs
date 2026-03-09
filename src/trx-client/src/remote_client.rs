@@ -353,7 +353,16 @@ async fn refresh_remote_snapshot(
         set_selected_rig_id(config, Some(target.rig_id.clone()));
     }
 
-    let _ = state_tx.send(RigState::from_snapshot(target.state.clone()));
+    let new_state = RigState::from_snapshot(target.state.clone());
+    // Only wake SSE subscribers when something actually changed.
+    state_tx.send_if_modified(|old| {
+        if *old == new_state {
+            false
+        } else {
+            *old = new_state;
+            true
+        }
+    });
     Ok(())
 }
 
@@ -400,6 +409,19 @@ async fn send_get_rigs(
 
 fn cache_remote_rigs(config: &RemoteClientConfig, rigs: &[RigEntry]) {
     if let Ok(mut guard) = config.known_rigs.lock() {
+        // Skip the Vec rebuild when the rig list is structurally unchanged.
+        // We compare the fields surfaced in the UI rig picker; full state
+        // changes are propagated via the watch channel, not this cache.
+        let unchanged = guard.len() == rigs.len()
+            && guard.iter().zip(rigs.iter()).all(|(cached, new)| {
+                cached.rig_id == new.rig_id
+                    && cached.display_name == new.display_name
+                    && cached.state.initialized == new.state.initialized
+                    && cached.audio_port == new.audio_port
+            });
+        if unchanged {
+            return;
+        }
         *guard = rigs
             .iter()
             .map(|entry| RemoteRigEntry {

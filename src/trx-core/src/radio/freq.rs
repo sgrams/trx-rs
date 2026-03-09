@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 const SPEED_OF_LIGHT_M_PER_S: f64 = 299_792_458.0;
 
 /// Supported band range in Hz.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Band {
     pub low_hz: u64,
     pub high_hz: u64,
@@ -23,7 +23,7 @@ impl Band {
 }
 
 /// Frequency wrapper (Hz).
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Freq {
     pub hz: u64,
 }

@@ -8,7 +8,7 @@ use crate::radio::freq::Freq;
 use crate::rig::{RigControl, RigInfo, RigRxStatus, RigStatus, RigStatusProvider, RigTxStatus};
 
 /// Simple transceiver state representation held by the rig task.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, PartialEq)]
 pub struct RigState {
     #[serde(skip_deserializing)]
     pub rig_info: Option<RigInfo>,
@@ -280,7 +280,7 @@ impl RigState {
 }
 
 /// Current filter/DSP state for backends that support runtime filter adjustment.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct RigFilterState {
     pub bandwidth_hz: u32,
     pub fir_taps: u32,
@@ -324,7 +324,7 @@ fn default_wfm_denoise_level() -> WfmDenoiseLevel {
 }
 
 /// Spectrum data from SDR backends (FFT magnitude over the full capture bandwidth).
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct SpectrumData {
     /// FFT magnitude bins in dBFS, FFT-shifted so DC (centre frequency) is at index N/2.
     pub bins: Vec<f32>,
@@ -338,7 +338,7 @@ pub struct SpectrumData {
 }
 
 /// Live RDS metadata decoded from a WFM broadcast.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 pub struct RdsData {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pi: Option<u16>,
@@ -371,7 +371,7 @@ pub struct RdsData {
 }
 
 /// Read-only projection of state shared with clients.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct RigSnapshot {
     pub info: RigInfo,
     pub status: RigStatus,

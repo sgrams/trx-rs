@@ -424,16 +424,13 @@ pub async fn spectrum(
                 let next = context.spectrum.lock().ok().map(|g| g.snapshot());
 
                 let sse_chunk: Option<String> = match next {
-                    Some((revision, _frame)) if last_revision == Some(revision) => None,
-                    Some((revision, Some(frame))) => {
+                    Some((revision, _frame, _rds)) if last_revision == Some(revision) => None,
+                    Some((revision, Some(frame), rds_json)) => {
                         last_revision = Some(revision);
                         let mut chunk =
                             format!("event: b\ndata: {}\n\n", encode_spectrum_frame(&frame));
-                        // Append an `rds` event only when the RDS payload changes.
-                        let rds_json = frame
-                            .rds
-                            .as_ref()
-                            .and_then(|r| serde_json::to_string(r).ok());
+                        // rds_json is pre-serialised at ingestion; append an
+                        // `rds` event only when the payload changed for this client.
                         if rds_json != last_rds_json {
                             let data = rds_json.as_deref().unwrap_or("null");
                             chunk.push_str(&format!("event: rds\ndata: {data}\n\n"));
@@ -441,7 +438,7 @@ pub async fn spectrum(
                         }
                         Some(chunk)
                     }
-                    Some((revision, None)) => {
+                    Some((revision, None, _)) => {
                         last_revision = Some(revision);
                         Some("data: null\n\n".to_string())
                     }

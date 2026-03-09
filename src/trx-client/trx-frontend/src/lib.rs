@@ -44,16 +44,25 @@ pub struct SharedSpectrum {
     // Arc so that each SSE client gets a cheap pointer clone instead of
     // copying the entire bin vector (~8 KB for 2048 f32 bins).
     frame: Option<Arc<SpectrumData>>,
+    // RDS JSON serialised once at ingestion; avoids per-client serde work
+    // on every 40 ms tick for a field that changes at most once per second.
+    rds_json: Option<String>,
 }
 
 impl SharedSpectrum {
     pub fn replace(&mut self, frame: Option<SpectrumData>) {
         self.revision = self.revision.wrapping_add(1);
+        self.rds_json = frame
+            .as_ref()
+            .and_then(|f| f.rds.as_ref())
+            .and_then(|r| serde_json::to_string(r).ok());
         self.frame = frame.map(Arc::new);
     }
 
-    pub fn snapshot(&self) -> (u64, Option<Arc<SpectrumData>>) {
-        (self.revision, self.frame.clone())
+    /// Returns `(revision, frame, rds_json)`.
+    /// `rds_json` is pre-serialised; `None` means no RDS data.
+    pub fn snapshot(&self) -> (u64, Option<Arc<SpectrumData>>, Option<String>) {
+        (self.revision, self.frame.clone(), self.rds_json.clone())
     }
 }
 
