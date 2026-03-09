@@ -98,58 +98,41 @@ pub async fn status_api(
         .body(json))
 }
 
-/// Inject `"clients": N` into a JSON object string.
+/// Append frontend meta fields to an already-serialised JSON object string.
+///
+/// Avoids a full parse→modify→reserialise cycle (two serde round-trips per
+/// event) by working directly at the string level: strip the closing `}`,
+/// serialize only the extra fields once, and re-close the object.
 fn inject_frontend_meta(json: &str, meta: FrontendMeta) -> String {
-    let mut value: serde_json::Value = match serde_json::from_str(json) {
-        Ok(v) => v,
-        Err(_) => return json.to_string(),
-    };
-
-    let Some(map) = value.as_object_mut() else {
+    let trimmed = json.trim_end();
+    let Some(base) = trimmed.strip_suffix('}') else {
         return json.to_string();
     };
-    map.insert("clients".to_string(), serde_json::json!(meta.http_clients));
-    map.insert(
-        "rigctl_clients".to_string(),
-        serde_json::json!(meta.rigctl_clients),
-    );
-    if let Some(addr) = meta.rigctl_addr {
-        map.insert("rigctl_addr".to_string(), serde_json::json!(addr));
-    }
-    if let Some(rig_id) = meta.active_rig_id {
-        map.insert("active_rig_id".to_string(), serde_json::json!(rig_id));
-    }
-    map.insert("rig_ids".to_string(), serde_json::json!(meta.rig_ids));
-    if let Some(owner) = meta.owner_callsign {
-        map.insert("owner_callsign".to_string(), serde_json::json!(owner));
-    }
-    if let Some(url) = meta.owner_website_url {
-        map.insert("owner_website_url".to_string(), serde_json::json!(url));
-    }
-    if let Some(name) = meta.owner_website_name {
-        map.insert("owner_website_name".to_string(), serde_json::json!(name));
-    }
-    if let Some(url) = meta.ais_vessel_url_base {
-        map.insert("ais_vessel_url_base".to_string(), serde_json::json!(url));
-    }
-    map.insert(
-        "show_sdr_gain_control".to_string(),
-        serde_json::json!(meta.show_sdr_gain_control),
-    );
-    map.insert(
-        "initial_map_zoom".to_string(),
-        serde_json::json!(meta.initial_map_zoom),
-    );
-    map.insert(
-        "spectrum_coverage_margin_hz".to_string(),
-        serde_json::json!(meta.spectrum_coverage_margin_hz),
-    );
-    map.insert(
-        "spectrum_usable_span_ratio".to_string(),
-        serde_json::json!(meta.spectrum_usable_span_ratio),
-    );
 
-    serde_json::to_string(&value).unwrap_or_else(|_| json.to_string())
+    // Build only the extra key-value pairs as a JSON fragment.
+    let mut extra = serde_json::Map::new();
+    extra.insert("clients".into(), serde_json::json!(meta.http_clients));
+    extra.insert("rigctl_clients".into(), serde_json::json!(meta.rigctl_clients));
+    if let Some(v) = meta.rigctl_addr { extra.insert("rigctl_addr".into(), serde_json::json!(v)); }
+    if let Some(v) = meta.active_rig_id { extra.insert("active_rig_id".into(), serde_json::json!(v)); }
+    extra.insert("rig_ids".into(), serde_json::json!(meta.rig_ids));
+    if let Some(v) = meta.owner_callsign { extra.insert("owner_callsign".into(), serde_json::json!(v)); }
+    if let Some(v) = meta.owner_website_url { extra.insert("owner_website_url".into(), serde_json::json!(v)); }
+    if let Some(v) = meta.owner_website_name { extra.insert("owner_website_name".into(), serde_json::json!(v)); }
+    if let Some(v) = meta.ais_vessel_url_base { extra.insert("ais_vessel_url_base".into(), serde_json::json!(v)); }
+    extra.insert("show_sdr_gain_control".into(), serde_json::json!(meta.show_sdr_gain_control));
+    extra.insert("initial_map_zoom".into(), serde_json::json!(meta.initial_map_zoom));
+    extra.insert("spectrum_coverage_margin_hz".into(), serde_json::json!(meta.spectrum_coverage_margin_hz));
+    extra.insert("spectrum_usable_span_ratio".into(), serde_json::json!(meta.spectrum_usable_span_ratio));
+
+    // Serialize the extra map, strip its outer braces, and splice in.
+    let extra_json = match serde_json::to_string(&extra) {
+        Ok(s) => s,
+        Err(_) => return json.to_string(),
+    };
+    // extra_json = {"k":v,...}  →  strip { and }
+    let inner = &extra_json[1..extra_json.len() - 1];
+    format!("{base},{inner}}}")
 }
 
 fn frontend_meta_from_context(
