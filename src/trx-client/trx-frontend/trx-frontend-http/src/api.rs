@@ -256,8 +256,10 @@ pub async fn events(
         }
     });
 
+    // Send a named "ping" event so the JS heartbeat can observe it (SSE
+    // comments like ": ping" are not exposed by EventSource.onmessage).
     let pings = IntervalStream::new(time::interval(Duration::from_secs(5)))
-        .map(|_| Ok::<Bytes, Error>(Bytes::from(": ping\n\n")));
+        .map(|_| Ok::<Bytes, Error>(Bytes::from("event: ping\ndata: \n\n")));
 
     // Wrap stream to decrement counter on drop.
     let counter_drop = counter.clone();

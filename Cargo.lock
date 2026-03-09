@@ -2460,6 +2460,7 @@ dependencies = [
  "clap",
  "cpal",
  "dirs",
+ "flate2",
  "opus",
  "serde",
  "serde_json",
@@ -2479,6 +2480,7 @@ dependencies = [
 name = "trx-core"
 version = "0.1.0"
 dependencies = [
+ "flate2",
  "serde",
  "serde_json",
  "tokio",
@@ -2591,6 +2593,7 @@ dependencies = [
  "clap",
  "cpal",
  "dirs",
+ "flate2",
  "num-complex",
  "opus",
  "pickledb",
