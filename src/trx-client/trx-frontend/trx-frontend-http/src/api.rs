@@ -33,7 +33,7 @@ const REQUEST_TIMEOUT: Duration = Duration::from_secs(15);
 /// Base64-encode `data` using the standard alphabet (no line wrapping).
 fn base64_encode(data: &[u8]) -> String {
     const T: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    let mut out = Vec::with_capacity((data.len() + 2) / 3 * 4);
+    let mut out = Vec::with_capacity(data.len().div_ceil(3) * 4);
     for chunk in data.chunks(3) {
         let b0 = chunk[0] as u32;
         let b1 = chunk.get(1).copied().unwrap_or(0) as u32;
