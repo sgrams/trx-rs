@@ -414,44 +414,31 @@ impl<I> futures_util::Stream for DropStream<I> {
 pub async fn spectrum(
     context: web::Data<Arc<FrontendRuntimeContext>>,
 ) -> Result<HttpResponse, Error> {
-    let context_updates = context.get_ref().clone();
-    let mut last_revision: Option<u64> = None;
+    // Subscribe to the watch channel: each client gets its own receiver and is
+    // woken exactly when new spectrum data is pushed (no 40 ms polling needed).
+    let rx = context.spectrum.subscribe();
     let mut last_rds_json: Option<String> = None;
-    let updates =
-        IntervalStream::new(time::interval(Duration::from_millis(40))).filter_map(move |_| {
-            let context = context_updates.clone();
-            std::future::ready({
-                let next = context.spectrum.lock().ok().map(|g| g.snapshot());
-
-                let sse_chunk: Option<String> = match next {
-                    Some((revision, _frame, _rds)) if last_revision == Some(revision) => None,
-                    Some((revision, Some(frame), rds_json)) => {
-                        last_revision = Some(revision);
-                        let mut chunk =
-                            format!("event: b\ndata: {}\n\n", encode_spectrum_frame(&frame));
-                        // rds_json is pre-serialised at ingestion; append an
-                        // `rds` event only when the payload changed for this client.
-                        if rds_json != last_rds_json {
-                            let data = rds_json.as_deref().unwrap_or("null");
-                            chunk.push_str(&format!("event: rds\ndata: {data}\n\n"));
-                            last_rds_json = rds_json;
-                        }
-                        Some(chunk)
-                    }
-                    Some((revision, None, _)) => {
-                        last_revision = Some(revision);
-                        Some("data: null\n\n".to_string())
-                    }
-                    None if last_revision.is_some() => {
-                        last_revision = None;
-                        Some("data: null\n\n".to_string())
-                    }
-                    None => None,
-                };
-
-                sse_chunk.map(|s| Ok::<Bytes, Error>(Bytes::from(s)))
-            })
-        });
+    let mut last_had_frame = false;
+    let updates = WatchStream::new(rx).filter_map(move |snapshot| {
+        let sse_chunk: Option<String> = if let Some(ref frame) = snapshot.frame {
+            last_had_frame = true;
+            let mut chunk = format!("event: b\ndata: {}\n\n", encode_spectrum_frame(frame));
+            // rds_json is pre-serialised at ingestion; append an `rds` event
+            // only when the payload changes for this particular client.
+            if snapshot.rds_json != last_rds_json {
+                let data = snapshot.rds_json.as_deref().unwrap_or("null");
+                chunk.push_str(&format!("event: rds\ndata: {data}\n\n"));
+                last_rds_json = snapshot.rds_json;
+            }
+            Some(chunk)
+        } else if last_had_frame {
+            last_had_frame = false;
+            Some("data: null\n\n".to_string())
+        } else {
+            None
+        };
+        std::future::ready(sse_chunk.map(|s| Ok::<Bytes, Error>(Bytes::from(s))))
+    });
 
     let pings = IntervalStream::new(time::interval(Duration::from_secs(15)))
         .map(|_| Ok::<Bytes, Error>(Bytes::from(": ping\n\n")));
