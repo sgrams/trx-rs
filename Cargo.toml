@@ -29,6 +29,7 @@ members = [
 resolver = "2"
 
 [workspace.dependencies]
+flate2 = "1"
 tokio = "1"
 tokio-serial = "5"
 serde = "1"

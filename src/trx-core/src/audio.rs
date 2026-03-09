@@ -18,9 +18,15 @@ pub const AUDIO_MSG_WSPR_DECODE: u8 = 0x06;
 pub const AUDIO_MSG_AIS_DECODE: u8 = 0x07;
 pub const AUDIO_MSG_VDES_DECODE: u8 = 0x08;
 pub const AUDIO_MSG_HF_APRS_DECODE: u8 = 0x09;
+/// Compressed history blob: payload is a gzip-compressed sequence of normal
+/// framed messages (each: `[1 byte type][4 bytes BE length][payload]`).
+pub const AUDIO_MSG_HISTORY_COMPRESSED: u8 = 0x0a;
 
-/// Maximum payload size (1 MB) to reject bogus frames early.
+/// Maximum payload size for normal messages (1 MB).
 const MAX_PAYLOAD_SIZE: u32 = 1_048_576;
+/// Maximum payload size for the compressed history blob (16 MB).
+/// A compressed 24-hour history on a busy channel can reach several MB.
+const MAX_HISTORY_PAYLOAD_SIZE: u32 = 16_777_216;
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct AudioStreamInfo {
@@ -59,10 +65,15 @@ pub async fn read_audio_msg<R: AsyncRead + Unpin>(
 ) -> std::io::Result<(u8, Vec<u8>)> {
     let msg_type = reader.read_u8().await?;
     let len = reader.read_u32().await?;
-    if len > MAX_PAYLOAD_SIZE {
+    let limit = if msg_type == AUDIO_MSG_HISTORY_COMPRESSED {
+        MAX_HISTORY_PAYLOAD_SIZE
+    } else {
+        MAX_PAYLOAD_SIZE
+    };
+    if len > limit {
         return Err(std::io::Error::new(
             std::io::ErrorKind::InvalidData,
-            format!("audio frame too large: {} bytes", len),
+            format!("audio frame too large: {} bytes (type={:#04x})", len, msg_type),
         ));
     }
     let mut payload = vec![0u8; len as usize];

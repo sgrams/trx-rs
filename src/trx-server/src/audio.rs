@@ -11,7 +11,10 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use bytes::Bytes;
+use flate2::write::GzEncoder;
+use flate2::Compression;
 use num_complex::Complex;
+use std::io::Write as _;
 use tokio::io::AsyncWriteExt;
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{broadcast, mpsc, watch};
@@ -22,8 +25,8 @@ use trx_aprs::AprsDecoder;
 use trx_core::audio::{
     read_audio_msg, write_audio_msg, AudioStreamInfo,
     AUDIO_MSG_AIS_DECODE, AUDIO_MSG_APRS_DECODE, AUDIO_MSG_CW_DECODE, AUDIO_MSG_FT8_DECODE,
-    AUDIO_MSG_HF_APRS_DECODE, AUDIO_MSG_RX_FRAME, AUDIO_MSG_STREAM_INFO, AUDIO_MSG_TX_FRAME,
-    AUDIO_MSG_VDES_DECODE, AUDIO_MSG_WSPR_DECODE,
+    AUDIO_MSG_HF_APRS_DECODE, AUDIO_MSG_HISTORY_COMPRESSED, AUDIO_MSG_RX_FRAME,
+    AUDIO_MSG_STREAM_INFO, AUDIO_MSG_TX_FRAME, AUDIO_MSG_VDES_DECODE, AUDIO_MSG_WSPR_DECODE,
 };
 use trx_core::decode::{
     AisMessage, AprsPacket, CwEvent, DecodedMessage, Ft8Message, VdesMessage, WsprMessage,
@@ -1856,15 +1859,27 @@ async fn handle_audio_client(
     };
     let (blob, replayed_history_count) = history_blob;
     if !blob.is_empty() {
-        writer.write_all(&blob).await?;
-        writer.flush().await?;
-    }
-    if replayed_history_count > 0 {
+        // Gzip-compress the blob before sending. JSON history compresses very
+        // well (~10-20x) so this dramatically reduces both transfer size and
+        // the time the client spends waiting for data.
+        let compressed = {
+            let mut enc = GzEncoder::new(
+                Vec::with_capacity(blob.len() / 8),
+                Compression::fast(),
+            );
+            enc.write_all(&blob)
+                .and_then(|_| enc.finish())
+                .unwrap_or(blob.clone())
+        };
+        write_audio_msg(&mut writer, AUDIO_MSG_HISTORY_COMPRESSED, &compressed).await?;
         info!(
-            "Audio client {} replayed {} history messages in {:?}",
+            "Audio client {} replayed {} history messages in {:?} ({} → {} bytes, {:.1}x)",
             peer,
             replayed_history_count,
-            history_replay_started_at.elapsed()
+            history_replay_started_at.elapsed(),
+            blob.len(),
+            compressed.len(),
+            blob.len() as f64 / compressed.len().max(1) as f64,
         );
     }
 

@@ -10,6 +10,8 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use bytes::Bytes;
+use flate2::read::GzDecoder;
+use std::io::Read as _;
 use tokio::io::BufReader;
 use tokio::net::TcpStream;
 use tokio::sync::{broadcast, mpsc, watch};
@@ -19,8 +21,9 @@ use trx_frontend::RemoteRigEntry;
 
 use trx_core::audio::{
     read_audio_msg, write_audio_msg, AudioStreamInfo, AUDIO_MSG_AIS_DECODE, AUDIO_MSG_APRS_DECODE,
-    AUDIO_MSG_CW_DECODE, AUDIO_MSG_FT8_DECODE, AUDIO_MSG_HF_APRS_DECODE, AUDIO_MSG_RX_FRAME,
-    AUDIO_MSG_STREAM_INFO, AUDIO_MSG_TX_FRAME, AUDIO_MSG_VDES_DECODE, AUDIO_MSG_WSPR_DECODE,
+    AUDIO_MSG_CW_DECODE, AUDIO_MSG_FT8_DECODE, AUDIO_MSG_HF_APRS_DECODE,
+    AUDIO_MSG_HISTORY_COMPRESSED, AUDIO_MSG_RX_FRAME, AUDIO_MSG_STREAM_INFO, AUDIO_MSG_TX_FRAME,
+    AUDIO_MSG_VDES_DECODE, AUDIO_MSG_WSPR_DECODE,
 };
 use trx_core::decode::DecodedMessage;
 
@@ -146,6 +149,34 @@ async fn handle_audio_connection(
             match read_audio_msg(&mut reader).await {
                 Ok((AUDIO_MSG_RX_FRAME, payload)) => {
                     let _ = rx_tx.send(Bytes::from(payload));
+                }
+                Ok((AUDIO_MSG_HISTORY_COMPRESSED, payload)) => {
+                    // Decompress gzip blob, then iterate the embedded framed messages.
+                    let mut decompressed = Vec::new();
+                    if GzDecoder::new(payload.as_slice())
+                        .read_to_end(&mut decompressed)
+                        .is_ok()
+                    {
+                        let mut pos = 0;
+                        while pos + 5 <= decompressed.len() {
+                            let _msg_type = decompressed[pos];
+                            let len = u32::from_be_bytes([
+                                decompressed[pos + 1],
+                                decompressed[pos + 2],
+                                decompressed[pos + 3],
+                                decompressed[pos + 4],
+                            ]) as usize;
+                            pos += 5;
+                            if pos + len > decompressed.len() {
+                                break;
+                            }
+                            let json = &decompressed[pos..pos + len];
+                            if let Ok(msg) = serde_json::from_slice::<DecodedMessage>(json) {
+                                let _ = decode_tx.send(msg);
+                            }
+                            pos += len;
+                        }
+                    }
                 }
                 Ok((
                     AUDIO_MSG_VDES_DECODE
