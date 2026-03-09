@@ -44,14 +44,15 @@ impl RemoteEndpoint {
 
 const SPECTRUM_POLL_INTERVAL: Duration = Duration::from_millis(40);
 
+#[derive(Clone)]
 pub struct RemoteClientConfig {
     pub addr: String,
     pub token: Option<String>,
     pub selected_rig_id: Arc<Mutex<Option<String>>>,
     pub known_rigs: Arc<Mutex<Vec<RemoteRigEntry>>>,
     pub poll_interval: Duration,
-    /// Shared buffer updated by spectrum polling; None when backend has no spectrum.
-    pub spectrum: Arc<Mutex<SharedSpectrum>>,
+    /// Spectrum watch sender; spectrum task publishes here, SSE clients subscribe.
+    pub spectrum: Arc<watch::Sender<SharedSpectrum>>,
 }
 
 pub async fn run_remote_client(
@@ -60,11 +61,19 @@ pub async fn run_remote_client(
     state_tx: watch::Sender<RigState>,
     mut shutdown_rx: watch::Receiver<bool>,
 ) -> RigResult<()> {
+    // Spectrum polling runs on its own dedicated TCP connection so it never
+    // blocks state polls or user commands on the main connection.
+    let spectrum_task = tokio::spawn(run_spectrum_connection(
+        config.clone(),
+        shutdown_rx.clone(),
+    ));
+
     let mut reconnect_delay = Duration::from_secs(1);
 
     loop {
         if *shutdown_rx.borrow() {
             info!("Remote client shutting down");
+            spectrum_task.abort();
             return Ok(());
         }
 
@@ -99,14 +108,98 @@ pub async fn run_remote_client(
                 match changed {
                     Ok(()) if *shutdown_rx.borrow() => {
                         info!("Remote client shutting down");
+                        spectrum_task.abort();
                         return Ok(());
                     }
                     Ok(()) => {}
-                    Err(_) => return Ok(()),
+                    Err(_) => {
+                        spectrum_task.abort();
+                        return Ok(());
+                    }
                 }
             }
         }
         reconnect_delay = (reconnect_delay * 2).min(Duration::from_secs(10));
+    }
+}
+
+/// Spectrum polling runs on a dedicated TCP connection so it never blocks
+/// state polls or user commands on the main connection.  Reconnects
+/// independently with a short fixed delay.
+async fn run_spectrum_connection(
+    config: RemoteClientConfig,
+    mut shutdown_rx: watch::Receiver<bool>,
+) {
+    loop {
+        if *shutdown_rx.borrow() {
+            break;
+        }
+
+        match time::timeout(CONNECT_TIMEOUT, TcpStream::connect(&config.addr)).await {
+            Ok(Ok(stream)) => {
+                if let Err(e) = stream.set_nodelay(true) {
+                    warn!("Spectrum TCP_NODELAY failed: {}", e);
+                }
+                if let Err(e) =
+                    handle_spectrum_connection(&config, stream, &mut shutdown_rx).await
+                {
+                    warn!("Spectrum connection dropped: {}", e);
+                }
+                // Mark spectrum unavailable while reconnecting.
+                config.spectrum.send_modify(|s| s.set(None));
+            }
+            Ok(Err(e)) => warn!("Spectrum connect failed: {}", e),
+            Err(_) => warn!("Spectrum connect timed out"),
+        }
+
+        tokio::select! {
+            _ = time::sleep(Duration::from_secs(1)) => {}
+            changed = shutdown_rx.changed() => {
+                if matches!(changed, Ok(()) | Err(_)) && *shutdown_rx.borrow() {
+                    break;
+                }
+            }
+        }
+    }
+}
+
+async fn handle_spectrum_connection(
+    config: &RemoteClientConfig,
+    stream: TcpStream,
+    shutdown_rx: &mut watch::Receiver<bool>,
+) -> RigResult<()> {
+    let (reader, mut writer) = stream.into_split();
+    let mut reader = BufReader::new(reader);
+    let mut interval = time::interval(SPECTRUM_POLL_INTERVAL);
+
+    loop {
+        tokio::select! {
+            changed = shutdown_rx.changed() => {
+                match changed {
+                    Ok(()) if *shutdown_rx.borrow() => return Ok(()),
+                    Ok(()) => {}
+                    Err(_) => return Ok(()),
+                }
+            }
+            _ = interval.tick() => {
+                if !should_poll_spectrum(config) {
+                    config.spectrum.send_modify(|s| s.set(None));
+                    continue;
+                }
+                match send_command_no_state_update(
+                    config, &mut writer, &mut reader,
+                    ClientCommand::GetSpectrum,
+                ).await {
+                    Ok(snapshot) => config.spectrum.send_modify(|s| s.set(snapshot.spectrum)),
+                    Err(e) => {
+                        // A spectrum timeout desynchronises the TCP framing;
+                        // return so the caller reconnects and restores sync.
+                        config.spectrum.send_modify(|s| s.set(None));
+                        return Err(e);
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -122,10 +215,6 @@ async fn handle_connection(
     let mut poll_interval = time::interval(config.poll_interval);
     let mut last_poll = Instant::now();
     let mut poll_failure_streak: u32 = 0;
-    let mut spectrum_interval = time::interval(SPECTRUM_POLL_INTERVAL);
-    let mut last_spectrum_poll = Instant::now()
-        .checked_sub(SPECTRUM_POLL_INTERVAL)
-        .unwrap_or_else(Instant::now);
 
     // Prime rig list/state immediately after connect so frontends can render
     // rig selectors without waiting for the first poll interval.
@@ -170,37 +259,6 @@ async fn handle_connection(
                     }
                 } else {
                     poll_failure_streak = 0;
-                }
-            }
-            _ = spectrum_interval.tick() => {
-                if last_spectrum_poll.elapsed() < SPECTRUM_POLL_INTERVAL {
-                    continue;
-                }
-                last_spectrum_poll = Instant::now();
-                if !should_poll_spectrum(config) {
-                    if let Ok(mut guard) = config.spectrum.lock() {
-                        guard.replace(None);
-                    }
-                    continue;
-                }
-                match send_command_no_state_update(config, &mut writer, &mut reader,
-                    ClientCommand::GetSpectrum).await
-                {
-                    Ok(snapshot) => {
-                        if let Ok(mut guard) = config.spectrum.lock() {
-                            guard.replace(snapshot.spectrum);
-                        }
-                    }
-                    Err(e) => {
-                        // A spectrum poll failure desynchronises the TCP stream
-                        // (the in-flight response is still in the buffer).
-                        // Propagate the error so the caller reconnects and
-                        // restores protocol sync.
-                        if let Ok(mut guard) = config.spectrum.lock() {
-                            guard.replace(None);
-                        }
-                        return Err(e);
-                    }
                 }
             }
             req = rx.recv() => {

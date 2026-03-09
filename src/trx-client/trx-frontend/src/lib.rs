@@ -38,31 +38,28 @@ pub trait FrontendSpawner {
     ) -> JoinHandle<()>;
 }
 
-#[derive(Debug, Default)]
+/// Spectrum snapshot shared between the spectrum polling task and SSE clients.
+///
+/// Stored in a `watch::channel`; each SSE client subscribes and is woken
+/// exactly when new data arrives (no 40 ms polling loop needed on the reader
+/// side).  `Arc<SpectrumData>` makes clone O(1) regardless of bin count.
+#[derive(Debug, Default, Clone)]
 pub struct SharedSpectrum {
-    revision: u64,
-    // Arc so that each SSE client gets a cheap pointer clone instead of
-    // copying the entire bin vector (~8 KB for 2048 f32 bins).
-    frame: Option<Arc<SpectrumData>>,
-    // RDS JSON serialised once at ingestion; avoids per-client serde work
-    // on every 40 ms tick for a field that changes at most once per second.
-    rds_json: Option<String>,
+    /// Latest spectrum frame; `None` when the active backend has no spectrum.
+    pub frame: Option<Arc<SpectrumData>>,
+    /// RDS JSON pre-serialised at ingestion so SSE clients don't repeat the
+    /// work on every tick.
+    pub rds_json: Option<String>,
 }
 
 impl SharedSpectrum {
-    pub fn replace(&mut self, frame: Option<SpectrumData>) {
-        self.revision = self.revision.wrapping_add(1);
+    /// Replace the stored frame, pre-serialising RDS in one pass.
+    pub fn set(&mut self, frame: Option<SpectrumData>) {
         self.rds_json = frame
             .as_ref()
             .and_then(|f| f.rds.as_ref())
             .and_then(|r| serde_json::to_string(r).ok());
         self.frame = frame.map(Arc::new);
-    }
-
-    /// Returns `(revision, frame, rds_json)`.
-    /// `rds_json` is pre-serialised; `None` means no RDS data.
-    pub fn snapshot(&self) -> (u64, Option<Arc<SpectrumData>>, Option<String>) {
-        (self.revision, self.frame.clone(), self.rds_json.clone())
     }
 }
 
@@ -205,8 +202,8 @@ pub struct FrontendRuntimeContext {
     pub owner_website_name: Option<String>,
     /// Optional base URL used to link AIS vessel names as `<base><mmsi>`.
     pub ais_vessel_url_base: Option<String>,
-    /// Latest spectrum frame from the active SDR rig; None for non-SDR backends.
-    pub spectrum: Arc<Mutex<SharedSpectrum>>,
+    /// Spectrum sender; SSE clients subscribe via `spectrum.subscribe()`.
+    pub spectrum: Arc<watch::Sender<SharedSpectrum>>,
 }
 
 impl FrontendRuntimeContext {
@@ -245,7 +242,10 @@ impl FrontendRuntimeContext {
             owner_website_url: None,
             owner_website_name: None,
             ais_vessel_url_base: None,
-            spectrum: Arc::new(Mutex::new(SharedSpectrum::default())),
+            spectrum: {
+                let (tx, _rx) = watch::channel(SharedSpectrum::default());
+                Arc::new(tx)
+            },
         }
     }
 }
