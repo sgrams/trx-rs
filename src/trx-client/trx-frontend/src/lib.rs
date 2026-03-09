@@ -41,16 +41,18 @@ pub trait FrontendSpawner {
 #[derive(Debug, Default)]
 pub struct SharedSpectrum {
     revision: u64,
-    frame: Option<SpectrumData>,
+    // Arc so that each SSE client gets a cheap pointer clone instead of
+    // copying the entire bin vector (~8 KB for 2048 f32 bins).
+    frame: Option<Arc<SpectrumData>>,
 }
 
 impl SharedSpectrum {
     pub fn replace(&mut self, frame: Option<SpectrumData>) {
         self.revision = self.revision.wrapping_add(1);
-        self.frame = frame;
+        self.frame = frame.map(Arc::new);
     }
 
-    pub fn snapshot(&self) -> (u64, Option<SpectrumData>) {
+    pub fn snapshot(&self) -> (u64, Option<Arc<SpectrumData>>) {
         (self.revision, self.frame.clone())
     }
 }
