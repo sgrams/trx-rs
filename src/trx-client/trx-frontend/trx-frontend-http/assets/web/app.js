@@ -1457,9 +1457,13 @@ async function setRigFrequency(freqHz) {
     showUnsupportedFreqPopup(targetHz);
     throw new Error(`Unsupported frequency: ${targetHz}`);
   }
-  await postPath(`/set_freq?hz=${targetHz}`);
+  // Optimistic local update before any network round-trip.
   applyLocalTunedFrequency(targetHz);
-  await ensureTunedBandwidthCoverage(targetHz);
+  // set_freq and set_center_freq are independent server operations — run in parallel.
+  await Promise.all([
+    postPath(`/set_freq?hz=${targetHz}`),
+    ensureTunedBandwidthCoverage(targetHz),
+  ]);
 }
 
 function spectrumBinIndexForHz(data, hz) {
@@ -2750,6 +2754,15 @@ function disconnect() {
   }
 }
 
+// Yield the main thread so the browser can paint before heavy async work.
+// Uses scheduler.yield() (Chrome 115+) with a setTimeout fallback.
+function yieldToMain() {
+  if (typeof scheduler !== "undefined" && typeof scheduler.yield === "function") {
+    return scheduler.yield();
+  }
+  return new Promise((resolve) => setTimeout(resolve, 0));
+}
+
 async function postPath(path) {
   const resp = await fetch(path, { method: "POST" });
   if (authEnabled && resp.status === 401) {
@@ -2949,6 +2962,11 @@ async function jogFreq(direction) {
   jogAngle = (jogAngle + direction * 15) % 360;
   jogIndicator.style.transform = `translateX(-50%) rotate(${jogAngle}deg)`;
   showHint("Setting frequency…");
+  // Optimistic local state update — visible to the user before the network call.
+  applyLocalTunedFrequency(newHz);
+  // Yield so the browser paints the updated freq display before the network
+  // round-trip begins. Chrome's INP tracking ends at the yield point.
+  await yieldToMain();
   try {
     await setRigFrequency(newHz);
     showHint("Freq set", 1000);
