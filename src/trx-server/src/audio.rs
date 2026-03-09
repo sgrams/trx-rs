@@ -15,7 +15,6 @@ use flate2::write::GzEncoder;
 use flate2::Compression;
 use num_complex::Complex;
 use std::io::Write as _;
-use tokio::io::AsyncWriteExt;
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{broadcast, mpsc, watch};
 use tracing::{error, info, warn};
