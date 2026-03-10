@@ -42,13 +42,8 @@
     if (!sel) return;
     // Populate from global rig list exposed by app.js
     const rigs = (typeof getAvailableRigIds === "function") ? getAvailableRigIds() : [];
+    if (!rigs.length) return; // wait until rig list arrives
     sel.innerHTML = "";
-    if (!rigs.length) {
-      const opt = document.createElement("option");
-      opt.textContent = "No rigs available";
-      sel.appendChild(opt);
-      return;
-    }
     rigs.forEach(function (id) {
       const opt = document.createElement("option");
       opt.value = id;
@@ -56,6 +51,13 @@
       if (id === currentRigId) opt.selected = true;
       sel.appendChild(opt);
     });
+    // If currentRigId was unset, pick the first available rig and load its config.
+    if (!currentRigId || !rigs.includes(currentRigId)) {
+      currentRigId = rigs[0];
+      sel.value = currentRigId;
+      loadScheduler();
+      pollStatus();
+    }
   }
 
   // -------------------------------------------------------------------------

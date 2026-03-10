@@ -745,6 +745,7 @@ function applyRigList(activeRigId, rigIds, displayNames) {
   const disableSwitch = lastRigIds.length === 0 || !authRole || authRole === "rx";
   populateRigPicker(headerRigSwitchSelect, lastRigIds, activeRigId, disableSwitch);
   updateRigSubtitle(activeRigId);
+  if (typeof reloadSchedulerRigSelect === "function") reloadSchedulerRigSelect();
 }
 
 async function refreshRigList() {
