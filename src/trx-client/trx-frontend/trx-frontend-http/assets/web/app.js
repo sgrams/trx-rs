@@ -6054,26 +6054,16 @@ function connectDecode() {
   if (window.resetCwHistoryView) window.resetCwHistoryView();
   if (window.resetFt8HistoryView) window.resetFt8HistoryView();
   if (window.resetWsprHistoryView) window.resetWsprHistoryView();
-  // Live messages arrive after the history event; gate on this flag so
-  // onmessage does not dispatch before drainDecodeHistory has started.
-  let historyReceived = false;
+
+  // Open the live SSE stream first so real-time messages are never blocked by
+  // history replay. History is fetched separately via a plain HTTP request and
+  // drained in the background using the existing chunked helper.
   decodeSource = new EventSource("/decode");
   decodeSource.onopen = () => {
     decodeConnected = true;
     updateDecodeStatus("Connected, listening for packets");
   };
-  // The server sends the entire history as one named "history" event (JSON
-  // array). A single JSON.parse + chunked drain is far cheaper than N
-  // individual EventSource callbacks each blocking the main thread.
-  decodeSource.addEventListener("history", (evt) => {
-    try {
-      const msgs = JSON.parse(evt.data);
-      if (Array.isArray(msgs)) drainDecodeHistory(msgs, 0);
-    } catch (e) { /* ignore parse errors */ }
-    historyReceived = true;
-  });
   decodeSource.onmessage = (evt) => {
-    if (!historyReceived) return; // skip anything before history event
     try {
       dispatchDecodeMessage(JSON.parse(evt.data));
     } catch (e) { /* ignore parse errors */ }
@@ -6091,6 +6081,14 @@ function connectDecode() {
       setTimeout(connectDecode, 5000);
     }
   };
+
+  // Fetch history in parallel — does not block the live SSE stream.
+  fetch("/decode/history").then((resp) => {
+    if (!resp.ok) return;
+    return resp.json();
+  }).then((msgs) => {
+    if (Array.isArray(msgs)) drainDecodeHistory(msgs, 0);
+  }).catch(() => { /* history unavailable, ignore */ });
 }
 if (document.readyState === "complete") {
   connectDecode();

@@ -276,6 +276,63 @@ pub async fn events(
         .streaming(stream))
 }
 
+/// Build the combined decode history vector from all per-decoder ring-buffers.
+fn collect_decode_history(context: &FrontendRuntimeContext) -> Vec<trx_core::decode::DecodedMessage> {
+    let mut out = Vec::new();
+    out.extend(
+        crate::server::audio::snapshot_ais_history(context)
+            .into_iter()
+            .map(trx_core::decode::DecodedMessage::Ais),
+    );
+    out.extend(
+        crate::server::audio::snapshot_vdes_history(context)
+            .into_iter()
+            .map(trx_core::decode::DecodedMessage::Vdes),
+    );
+    out.extend(
+        crate::server::audio::snapshot_aprs_history(context)
+            .into_iter()
+            .map(trx_core::decode::DecodedMessage::Aprs),
+    );
+    out.extend(
+        crate::server::audio::snapshot_hf_aprs_history(context)
+            .into_iter()
+            .map(trx_core::decode::DecodedMessage::HfAprs),
+    );
+    out.extend(
+        crate::server::audio::snapshot_cw_history(context)
+            .into_iter()
+            .map(trx_core::decode::DecodedMessage::Cw),
+    );
+    out.extend(
+        crate::server::audio::snapshot_ft8_history(context)
+            .into_iter()
+            .map(trx_core::decode::DecodedMessage::Ft8),
+    );
+    out.extend(
+        crate::server::audio::snapshot_wspr_history(context)
+            .into_iter()
+            .map(trx_core::decode::DecodedMessage::Wspr),
+    );
+    out
+}
+
+/// `GET /decode/history` — returns the full decode history as a JSON array.
+///
+/// Separated from the live `/decode` SSE stream so that history replay does
+/// not block real-time messages: the client fetches this endpoint in parallel
+/// with opening the SSE connection and drains it in the background.
+#[get("/decode/history")]
+pub async fn decode_history(
+    context: web::Data<Arc<FrontendRuntimeContext>>,
+) -> impl Responder {
+    if context.decode_rx.is_none() {
+        return HttpResponse::NotFound().body("decode not enabled");
+    }
+    let history = collect_decode_history(context.get_ref());
+    HttpResponse::Ok().json(history)
+}
+
 #[get("/decode")]
 pub async fn decode_events(
     context: web::Data<Arc<FrontendRuntimeContext>>,
@@ -285,56 +342,6 @@ pub async fn decode_events(
         return Ok(HttpResponse::NotFound().body("decode not enabled"));
     };
     tracing::info!("/decode SSE client connected");
-
-    let history = {
-        let mut out = Vec::new();
-        out.extend(
-            crate::server::audio::snapshot_ais_history(context.get_ref())
-                .into_iter()
-                .map(trx_core::decode::DecodedMessage::Ais),
-        );
-        out.extend(
-            crate::server::audio::snapshot_vdes_history(context.get_ref())
-                .into_iter()
-                .map(trx_core::decode::DecodedMessage::Vdes),
-        );
-        out.extend(
-            crate::server::audio::snapshot_aprs_history(context.get_ref())
-                .into_iter()
-                .map(trx_core::decode::DecodedMessage::Aprs),
-        );
-        out.extend(
-            crate::server::audio::snapshot_hf_aprs_history(context.get_ref())
-                .into_iter()
-                .map(trx_core::decode::DecodedMessage::HfAprs),
-        );
-        out.extend(
-            crate::server::audio::snapshot_cw_history(context.get_ref())
-                .into_iter()
-                .map(trx_core::decode::DecodedMessage::Cw),
-        );
-        out.extend(
-            crate::server::audio::snapshot_ft8_history(context.get_ref())
-                .into_iter()
-                .map(trx_core::decode::DecodedMessage::Ft8),
-        );
-        out.extend(
-            crate::server::audio::snapshot_wspr_history(context.get_ref())
-                .into_iter()
-                .map(trx_core::decode::DecodedMessage::Wspr),
-        );
-        out
-    };
-
-    // Send the entire history as a single named "history" event (JSON array).
-    // Sending N individual events causes N EventSource callbacks in the browser,
-    // each blocking the main thread — for large histories this interrupts audio
-    // and spectrum rendering for tens of seconds.
-    let history_event = {
-        let json = serde_json::to_string(&history).unwrap_or_else(|_| "[]".to_string());
-        Bytes::from(format!("event: history\ndata: {json}\n\n"))
-    };
-    let history_stream = once(async move { Ok::<Bytes, Error>(history_event) });
 
     let decode_stream = futures_util::stream::unfold(decode_rx, |mut rx| async move {
         loop {
@@ -356,7 +363,7 @@ pub async fn decode_events(
     let pings = IntervalStream::new(time::interval(Duration::from_secs(15)))
         .map(|_| Ok::<Bytes, Error>(Bytes::from(": ping\n\n")));
 
-    let stream = history_stream.chain(select(pings, decode_stream));
+    let stream = select(pings, decode_stream);
 
     Ok(HttpResponse::Ok()
         .insert_header((header::CONTENT_TYPE, "text/event-stream"))
@@ -1035,6 +1042,7 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
         .service(status_api)
         .service(list_rigs)
         .service(events)
+        .service(decode_history)
         .service(decode_events)
         .service(spectrum)
         .service(toggle_power)
