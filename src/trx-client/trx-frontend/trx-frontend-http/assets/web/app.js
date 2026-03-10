@@ -664,6 +664,7 @@ if (themeToggleBtn) {
     setTheme(currentTheme() === "dark" ? "light" : "dark");
     updateMapBaseLayerForTheme(currentTheme());
     syncLocatorMarkerStyles();
+    refreshAisMarkerColors();
     scheduleOverviewDraw();
     if (typeof scheduleSpectrumDraw === "function" && lastSpectrumData) scheduleSpectrumDraw();
   });
@@ -674,6 +675,7 @@ if (headerStylePickSelect) {
     setStyle(headerStylePickSelect.value);
     updateMapBaseLayerForTheme(currentTheme());
     syncLocatorMarkerStyles();
+    refreshAisMarkerColors();
   });
 }
 
@@ -4981,7 +4983,7 @@ function ensureAisTrack(mmsi, entry) {
     return;
   }
   const track = L.polyline(entry.trackPoints, {
-    color: "#ff7559",
+    color: getAisAccentColor(),
     weight: 2,
     opacity: 0.68,
     lineCap: "round",
@@ -5011,13 +5013,18 @@ function syncSelectedAisTrackVisibility() {
   });
 }
 
+function getAisAccentColor() {
+  return getComputedStyle(document.documentElement).getPropertyValue("--accent-red").trim() || "#ff7559";
+}
+
 function aisMarkerOptionsFromMessage(msg) {
+  const color = getAisAccentColor();
   return {
     heading: msg?.heading_deg,
     course: msg?.cog_deg,
     speed: msg?.sog_knots,
-    color: "#ff7559",
-    outline: "#6b2118",
+    color,
+    outline: "#00000055",
     size: 22,
   };
 }
@@ -5026,10 +5033,11 @@ function createAisMarker(lat, lon, msg) {
   if (typeof L !== "undefined" && typeof L.trxAisTrackSymbol === "function") {
     return L.trxAisTrackSymbol([lat, lon], aisMarkerOptionsFromMessage(msg));
   }
+  const color = getAisAccentColor();
   return L.circleMarker([lat, lon], {
     radius: 6,
-    color: "#e2553d",
-    fillColor: "#ff7559",
+    color,
+    fillColor: color,
     fillOpacity: 0.82,
   });
 }
@@ -5041,15 +5049,31 @@ function updateAisMarker(marker, msg, popupHtml) {
     marker.setAisState(aisMarkerOptionsFromMessage(msg));
   }
   if (typeof marker.setStyle === "function" && typeof marker.setAisState !== "function") {
-    const hasHeading = Number.isFinite(msg?.heading_deg) || Number.isFinite(msg?.cog_deg);
+    const color = getAisAccentColor();
     marker.setStyle({
-      radius: hasHeading ? 6.5 : 6,
-      color: hasHeading ? "#c8412f" : "#e2553d",
-      fillColor: hasHeading ? "#ff6f4d" : "#ff7559",
+      radius: 6,
+      color,
+      fillColor: color,
       fillOpacity: 0.84,
     });
   }
   marker.setPopupContent(popupHtml);
+}
+
+function refreshAisMarkerColors() {
+  const color = getAisAccentColor();
+  aisMarkers.forEach((entry) => {
+    if (entry.marker) {
+      if (typeof entry.marker.setAisState === "function") {
+        entry.marker.setAisState(aisMarkerOptionsFromMessage(entry.msg || {}));
+      } else if (typeof entry.marker.setStyle === "function") {
+        entry.marker.setStyle({ color, fillColor: color });
+      }
+    }
+    if (entry.track && typeof entry.track.setStyle === "function") {
+      entry.track.setStyle({ color });
+    }
+  });
 }
 
 window.aisMapAddVessel = function(msg) {
@@ -6154,9 +6178,20 @@ function connectDecode() {
   if (window.resetFt8HistoryView) window.resetFt8HistoryView();
   if (window.resetWsprHistoryView) window.resetWsprHistoryView();
 
-  // Open the live SSE stream first so real-time messages are never blocked by
-  // history replay. History is fetched separately via a plain HTTP request and
-  // drained in the background using the existing chunked helper.
+  // Buffer live messages until history fetch settles so history always appears
+  // before any live updates, regardless of network ordering.
+  let historySettled = false;
+  const liveBuffer = [];
+  function flushLiveBuffer() {
+    historySettled = true;
+    for (const msg of liveBuffer) {
+      try { dispatchDecodeMessage(msg); } catch (_) {}
+    }
+    liveBuffer.length = 0;
+  }
+  // Safety valve: if the history fetch hangs, unblock after 8 s.
+  const historyTimeout = setTimeout(() => { if (!historySettled) flushLiveBuffer(); }, 8000);
+
   decodeSource = new EventSource("/decode");
   decodeSource.onopen = () => {
     decodeConnected = true;
@@ -6164,7 +6199,9 @@ function connectDecode() {
   };
   decodeSource.onmessage = (evt) => {
     try {
-      dispatchDecodeMessage(JSON.parse(evt.data));
+      const msg = JSON.parse(evt.data);
+      if (historySettled) dispatchDecodeMessage(msg);
+      else liveBuffer.push(msg);
     } catch (e) { /* ignore parse errors */ }
   };
   decodeSource.onerror = () => {
@@ -6181,13 +6218,15 @@ function connectDecode() {
     }
   };
 
-  // Fetch history in parallel — does not block the live SSE stream.
+  // Fetch history in parallel; drain it first, then flush buffered live msgs.
   fetch("/decode/history").then((resp) => {
-    if (!resp.ok) return;
+    if (!resp.ok) return null;
     return resp.json();
   }).then((msgs) => {
+    clearTimeout(historyTimeout);
     if (Array.isArray(msgs)) drainDecodeHistory(msgs, 0);
-  }).catch(() => { /* history unavailable, ignore */ });
+    flushLiveBuffer();
+  }).catch(() => { clearTimeout(historyTimeout); flushLiveBuffer(); });
 }
 if (document.readyState === "complete") {
   connectDecode();
