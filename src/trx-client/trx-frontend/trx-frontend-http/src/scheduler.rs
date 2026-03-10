@@ -278,7 +278,10 @@ fn grayline_bookmark_id(gl: &GraylineConfig, now_min: f64) -> Option<String> {
 fn entry_is_active(entry: &ScheduleEntry, now_min: f64) -> bool {
     let start = entry.start_min as f64;
     let end = entry.end_min as f64;
-    if start <= end {
+    if start == end {
+        // Equal start and end means all-day (24 h window).
+        true
+    } else if start < end {
         now_min >= start && now_min < end
     } else {
         // Spans midnight.

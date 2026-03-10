@@ -278,9 +278,10 @@
     entries.forEach(function (entry, idx) {
       const tr = document.createElement("tr");
       const il = entry.interleave_min ? String(entry.interleave_min) + " min" : "—";
+      const allDay = entry.start_min === entry.end_min;
       tr.innerHTML =
-        '<td>' + minToHHMM(entry.start_min) + '</td>' +
-        '<td>' + minToHHMM(entry.end_min) + '</td>' +
+        '<td>' + (allDay ? "All day" : minToHHMM(entry.start_min)) + '</td>' +
+        '<td>' + (allDay ? "—" : minToHHMM(entry.end_min)) + '</td>' +
         '<td>' + bmName(entry.bookmark_id) + '</td>' +
         '<td>' + escHtml(entry.label || "") + '</td>' +
         '<td>' + il + '</td>' +
