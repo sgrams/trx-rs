@@ -92,6 +92,8 @@
         if ("heading" in next) this.options.heading = next.heading;
         if ("course" in next) this.options.course = next.course;
         if ("speed" in next) this.options.speed = next.speed;
+        if ("color" in next) this.options.color = next.color;
+        if ("outline" in next) this.options.outline = next.outline;
       }
       this._refreshIcon();
       return this;
