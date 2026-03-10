@@ -6162,11 +6162,15 @@ function dispatchDecodeMessage(msg) {
   if (msg.type === "wspr" && window.onServerWspr) window.onServerWspr(msg);
 }
 
-function drainDecodeHistory(buffer, index) {
+function drainDecodeHistory(buffer, index, onDone) {
   const CHUNK = 30;
   const end = Math.min(index + CHUNK, buffer.length);
   for (let i = index; i < end; i++) dispatchDecodeMessage(buffer[i]);
-  if (end < buffer.length) setTimeout(() => drainDecodeHistory(buffer, end), 0);
+  if (end < buffer.length) {
+    setTimeout(() => drainDecodeHistory(buffer, end, onDone), 0);
+  } else if (typeof onDone === "function") {
+    onDone();
+  }
 }
 
 function connectDecode() {
@@ -6224,8 +6228,11 @@ function connectDecode() {
     return resp.json();
   }).then((msgs) => {
     clearTimeout(historyTimeout);
-    if (Array.isArray(msgs)) drainDecodeHistory(msgs, 0);
-    flushLiveBuffer();
+    if (Array.isArray(msgs) && msgs.length > 0) {
+      drainDecodeHistory(msgs, 0, flushLiveBuffer);
+    } else {
+      flushLiveBuffer();
+    }
   }).catch(() => { clearTimeout(historyTimeout); flushLiveBuffer(); });
 }
 if (document.readyState === "complete") {
