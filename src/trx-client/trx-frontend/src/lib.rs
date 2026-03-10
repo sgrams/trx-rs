@@ -162,6 +162,8 @@ pub struct FrontendRuntimeContext {
     pub wspr_history: Arc<Mutex<VecDeque<(Instant, WsprMessage)>>>,
     /// Authentication tokens for HTTP-JSON frontend
     pub auth_tokens: HashSet<String>,
+    /// Active HTTP SSE clients (incremented on /events connect, decremented on disconnect).
+    pub sse_clients: Arc<AtomicUsize>,
     /// Active rigctl TCP clients.
     pub rigctl_clients: Arc<AtomicUsize>,
     /// rigctl listen endpoint, if enabled.
@@ -222,6 +224,7 @@ impl FrontendRuntimeContext {
             ft8_history: Arc::new(Mutex::new(VecDeque::new())),
             wspr_history: Arc::new(Mutex::new(VecDeque::new())),
             auth_tokens: HashSet::new(),
+            sse_clients: Arc::new(AtomicUsize::new(0)),
             rigctl_clients: Arc::new(AtomicUsize::new(0)),
             rigctl_listen_addr: Arc::new(Mutex::new(None)),
             decode_collector_started: AtomicBool::new(false),

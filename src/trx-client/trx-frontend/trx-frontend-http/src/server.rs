@@ -10,12 +10,14 @@ pub mod audio;
 pub mod auth;
 #[path = "bookmarks.rs"]
 pub mod bookmarks;
+#[path = "scheduler.rs"]
+pub mod scheduler;
 #[path = "status.rs"]
 pub mod status;
 
+use std::collections::HashMap;
 use std::net::SocketAddr;
-use std::sync::atomic::AtomicUsize;
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 use std::time::Duration;
 
 use actix_web::dev::Server;
@@ -33,6 +35,7 @@ use trx_core::RigState;
 use trx_frontend::{FrontendRuntimeContext, FrontendSpawner};
 
 use auth::{AuthConfig, AuthState, SameSite};
+use scheduler::{SchedulerStatusMap, SchedulerStore};
 
 /// HTTP frontend implementation.
 pub struct HttpFrontend;
@@ -61,7 +64,22 @@ async fn serve(
     context: Arc<FrontendRuntimeContext>,
 ) -> Result<(), actix_web::Error> {
     audio::start_decode_history_collector(context.clone());
-    let server = build_server(addr, state_rx, rig_tx, callsign, context)?;
+
+    let scheduler_path = SchedulerStore::default_path();
+    let scheduler_store = Arc::new(SchedulerStore::open(&scheduler_path));
+    let bookmark_path = bookmarks::BookmarkStore::default_path();
+    let bookmark_store_for_scheduler = Arc::new(bookmarks::BookmarkStore::open(&bookmark_path));
+    let scheduler_status: SchedulerStatusMap = Arc::new(RwLock::new(HashMap::new()));
+
+    scheduler::spawn_scheduler_task(
+        context.clone(),
+        rig_tx.clone(),
+        scheduler_store.clone(),
+        bookmark_store_for_scheduler,
+        scheduler_status.clone(),
+    );
+
+    let server = build_server(addr, state_rx, rig_tx, callsign, context, scheduler_store, scheduler_status)?;
     let handle = server.handle();
     tokio::spawn(async move {
         let _ = signal::ctrl_c().await;
@@ -79,13 +97,20 @@ fn build_server(
     rig_tx: mpsc::Sender<RigRequest>,
     _callsign: Option<String>,
     context: Arc<FrontendRuntimeContext>,
+    scheduler_store: Arc<SchedulerStore>,
+    scheduler_status: SchedulerStatusMap,
 ) -> Result<Server, actix_web::Error> {
     let state_data = web::Data::new(state_rx);
     let rig_tx = web::Data::new(rig_tx);
-    let clients = web::Data::new(Arc::new(AtomicUsize::new(0)));
+    // Share the same AtomicUsize that lives in FrontendRuntimeContext so the
+    // scheduler task can observe the connected-client count.
+    let clients = web::Data::new(context.sse_clients.clone());
 
     let bookmark_path = bookmarks::BookmarkStore::default_path();
     let bookmark_store = web::Data::new(Arc::new(bookmarks::BookmarkStore::open(&bookmark_path)));
+
+    let scheduler_store = web::Data::new(scheduler_store);
+    let scheduler_status = web::Data::new(scheduler_status);
 
     // Extract auth config values before moving context
     let same_site = match context.http_auth_cookie_same_site.as_str() {
@@ -126,6 +151,8 @@ fn build_server(
             .app_data(context_data.clone())
             .app_data(auth_state.clone())
             .app_data(bookmark_store.clone())
+            .app_data(scheduler_store.clone())
+            .app_data(scheduler_status.clone())
             .wrap(Compress::default())
             .wrap(
                 DefaultHeaders::new()

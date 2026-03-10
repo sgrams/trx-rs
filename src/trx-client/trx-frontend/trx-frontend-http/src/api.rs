@@ -1082,6 +1082,11 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
         .service(create_bookmark)
         .service(update_bookmark)
         .service(delete_bookmark)
+        // Scheduler
+        .service(crate::server::scheduler::get_scheduler)
+        .service(crate::server::scheduler::put_scheduler)
+        .service(crate::server::scheduler::delete_scheduler)
+        .service(crate::server::scheduler::get_scheduler_status)
         .service(crate::server::audio::audio_ws)
         .service(favicon)
         .service(favicon_png)
@@ -1098,6 +1103,7 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
         .service(wspr_js)
         .service(cw_js)
         .service(bookmarks_js)
+        .service(scheduler_js)
         // Auth endpoints
         .service(crate::server::auth::login)
         .service(crate::server::auth::logout)
@@ -1247,6 +1253,16 @@ async fn bookmarks_js() -> impl Responder {
             "application/javascript; charset=utf-8",
         ))
         .body(status::BOOKMARKS_JS)
+}
+
+#[get("/scheduler.js")]
+async fn scheduler_js() -> impl Responder {
+    HttpResponse::Ok()
+        .insert_header((
+            header::CONTENT_TYPE,
+            "application/javascript; charset=utf-8",
+        ))
+        .body(status::SCHEDULER_JS)
 }
 
 async fn send_command(

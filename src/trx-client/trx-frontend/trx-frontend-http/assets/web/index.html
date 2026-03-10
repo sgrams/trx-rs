@@ -46,6 +46,10 @@
             <svg class="tab-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 2a4 4 0 0 1 4 4c0 3-4 8-4 8S4 9 4 6a4 4 0 0 1 4-4z"/><circle cx="8" cy="6" r="1.2" fill="currentColor" stroke="none"/></svg>
             <span class="tab-label">Map</span>
           </button>
+          <button class="tab" data-tab="scheduler">
+            <svg class="tab-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="8" r="6"/><path d="M8 5v3l2 2"/></svg>
+            <span class="tab-label">Scheduler</span>
+          </button>
           <button class="tab" data-tab="about">
             <svg class="tab-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><circle cx="8" cy="8" r="6"/><path d="M8 7v5"/><circle cx="8" cy="5" r="0.5" fill="currentColor" stroke="none"/></svg>
             <span class="tab-label">About</span>
@@ -663,6 +667,91 @@
         <div id="aprs-map"></div>
       </div>
     </div>
+    <div id="tab-scheduler" class="tab-panel" style="display:none;">
+      <div id="scheduler-panel" class="sch-panel">
+        <div class="sch-toast" id="scheduler-toast" style="display:none;"></div>
+        <div class="sch-row">
+          <label class="sch-label">Rig
+            <select id="scheduler-rig-select" class="status-input sch-rig-select" aria-label="Select rig"></select>
+          </label>
+          <label class="sch-label">Mode
+            <select id="scheduler-mode-select" class="status-input" aria-label="Scheduler mode">
+              <option value="disabled">Disabled</option>
+              <option value="grayline">Grayline</option>
+              <option value="time_span">Time Span</option>
+            </select>
+          </label>
+        </div>
+
+        <!-- Grayline section -->
+        <div id="scheduler-grayline-section" class="sch-section" style="display:none;">
+          <div class="sch-section-title">Grayline Settings</div>
+          <div class="sch-row">
+            <label class="sch-label">Latitude (°)
+              <input type="number" id="scheduler-gl-lat" class="status-input" step="0.001" placeholder="e.g. 54.352" />
+            </label>
+            <label class="sch-label">Longitude (°)
+              <input type="number" id="scheduler-gl-lon" class="status-input" step="0.001" placeholder="e.g. 18.646" />
+            </label>
+            <label class="sch-label">Transition window (min)
+              <input type="number" id="scheduler-gl-window" class="status-input" min="5" max="120" value="20" />
+            </label>
+          </div>
+          <div class="sch-row">
+            <label class="sch-label">Dawn bookmark
+              <select id="scheduler-gl-dawn" class="status-input" aria-label="Dawn bookmark"></select>
+            </label>
+            <label class="sch-label">Day bookmark
+              <select id="scheduler-gl-day" class="status-input" aria-label="Day bookmark"></select>
+            </label>
+            <label class="sch-label">Dusk bookmark
+              <select id="scheduler-gl-dusk" class="status-input" aria-label="Dusk bookmark"></select>
+            </label>
+            <label class="sch-label">Night bookmark
+              <select id="scheduler-gl-night" class="status-input" aria-label="Night bookmark"></select>
+            </label>
+          </div>
+        </div>
+
+        <!-- Time Span section -->
+        <div id="scheduler-timespan-section" class="sch-section" style="display:none;">
+          <div class="sch-section-title">Time Span Entries (UTC)</div>
+          <table class="sch-ts-table">
+            <thead>
+              <tr><th>Start</th><th>End</th><th>Bookmark</th><th>Label</th><th></th></tr>
+            </thead>
+            <tbody id="scheduler-ts-tbody"></tbody>
+          </table>
+          <div class="sch-row sch-add-row">
+            <label class="sch-label">Start (UTC)
+              <input type="time" id="scheduler-ts-start" class="status-input" />
+            </label>
+            <label class="sch-label">End (UTC)
+              <input type="time" id="scheduler-ts-end" class="status-input" />
+            </label>
+            <label class="sch-label">Bookmark
+              <select id="scheduler-ts-bookmark" class="status-input" aria-label="Entry bookmark"></select>
+            </label>
+            <label class="sch-label">Label (optional)
+              <input type="text" id="scheduler-ts-label" class="status-input" placeholder="e.g. 40m FT8" />
+            </label>
+            <button id="scheduler-ts-add-btn" class="sch-write" type="button">+ Add</button>
+          </div>
+        </div>
+
+        <!-- Actions -->
+        <div class="sch-actions">
+          <button id="scheduler-save-btn" class="sch-write sch-save-btn" type="button" style="display:none;">Save</button>
+          <button id="scheduler-reset-btn" class="sch-write sch-reset-btn" type="button" style="display:none;">Reset to Disabled</button>
+        </div>
+
+        <!-- Status -->
+        <div class="sch-section">
+          <div class="sch-section-title">Last Activity</div>
+          <div id="scheduler-status-card" class="sch-status-card">No activity yet.</div>
+        </div>
+      </div>
+    </div>
     <div id="tab-about" class="tab-panel" style="display:none;">
       <div id="auth-badge" style="display:none; margin-bottom: 1rem; padding: 0.5rem; background: var(--bg-secondary); border-radius: 0.25rem; color: var(--text-muted); font-size: 0.85rem;">Authenticated as: <strong id="auth-role-badge">--</strong></div>
       <table class="about-table">
@@ -701,6 +790,7 @@
   <script src="/wspr.js"></script>
   <script src="/cw.js"></script>
   <script src="/bookmarks.js"></script>
+  <script src="/scheduler.js"></script>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="/leaflet-ais-tracksymbol.js"></script>
 </body>

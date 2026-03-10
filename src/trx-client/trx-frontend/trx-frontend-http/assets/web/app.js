@@ -3347,7 +3347,7 @@ if (spectrumBwSweetBtn) {
 }
 
 // --- Tab navigation ---
-const TAB_ORDER = ["main", "bookmarks", "decoders", "map", "about"];
+const TAB_ORDER = ["main", "bookmarks", "decoders", "map", "scheduler", "about"];
 
 function navigateToTab(name) {
   if (authEnabled && !authRole && name !== "main") return;
@@ -3415,6 +3415,10 @@ document.querySelector(".tab-bar").addEventListener("click", (e) => {
 window.addEventListener("resize", () => { scheduleSpectrumLayout(); });
 
 // --- Auth startup sequence ---
+function getAvailableRigIds() {
+  return lastRigIds || [];
+}
+
 async function initializeApp() {
   showAuthGate(false);
   const authStatus = await checkAuthStatus();
@@ -3426,6 +3430,7 @@ async function initializeApp() {
     updateAuthUI();
     connect();
     connectDecode();
+    initSchedulerUI();
     resizeHeaderSignalCanvas();
     startHeaderSignalSampling();
     return;
@@ -3439,6 +3444,7 @@ async function initializeApp() {
     applyAuthRestrictions();
     connect();
     connectDecode();
+    initSchedulerUI();
     resizeHeaderSignalCanvas();
     startHeaderSignalSampling();
   } else {
@@ -3446,6 +3452,13 @@ async function initializeApp() {
     // Guest button is shown if guest mode is available (role granted without auth)
     const allowGuest = authStatus.role === "rx";
     showAuthGate(allowGuest);
+  }
+}
+
+function initSchedulerUI() {
+  if (typeof initScheduler === "function") {
+    initScheduler(lastActiveRigId, authRole);
+    wireSchedulerEvents();
   }
 }
 
@@ -3466,6 +3479,7 @@ document.getElementById("auth-form").addEventListener("submit", async (e) => {
     applyAuthRestrictions();
     connect();
     connectDecode();
+    initSchedulerUI();
     resizeHeaderSignalCanvas();
     startHeaderSignalSampling();
   } catch (err) {
@@ -3488,6 +3502,7 @@ if (guestBtn) {
     applyAuthRestrictions();
     connect();
     connectDecode();
+    initSchedulerUI();
     resizeHeaderSignalCanvas();
     startHeaderSignalSampling();
   });
