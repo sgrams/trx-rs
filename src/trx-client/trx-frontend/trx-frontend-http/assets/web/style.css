@@ -3401,18 +3401,6 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   color: var(--text-muted);
   font-weight: 600;
 }
-.sch-remove-btn {
-  padding: 0.2rem 0.6rem;
-  background: var(--btn-bg);
-  color: var(--text);
-  border: 1px solid var(--border-light);
-  border-radius: 0.3rem;
-  cursor: pointer;
-  font-size: 0.8rem;
-}
-.sch-remove-btn:hover {
-  background: var(--btn-bg-hover, var(--btn-bg));
-}
 .sch-add-row {
   align-items: flex-end;
 }
@@ -3421,29 +3409,12 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   gap: 0.75rem;
   margin-bottom: 1.5rem;
 }
+/* Save is a primary action — accent background, inherits all other button rules. */
 .sch-save-btn {
   background: var(--accent-green);
   color: #fff;
-  border: none;
-  border-radius: 0.4rem;
-  padding: 0.5rem 1.25rem;
+  border-color: var(--accent-green);
   font-weight: 700;
-  cursor: pointer;
-  font-size: 0.95rem;
-}
-.sch-save-btn:disabled {
-  opacity: 0.5;
-  cursor: default;
-}
-.sch-reset-btn {
-  background: var(--btn-bg);
-  color: var(--text);
-  border: 1px solid var(--border-light);
-  border-radius: 0.4rem;
-  padding: 0.5rem 1.25rem;
-  font-weight: 600;
-  cursor: pointer;
-  font-size: 0.95rem;
 }
 .sch-status-card {
   font-size: 0.9rem;
