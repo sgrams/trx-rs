@@ -7,6 +7,7 @@ pub mod decode;
 pub mod math;
 pub mod radio;
 pub mod rig;
+pub mod vchan;
 
 pub type DynResult<T> = Result<T, Box<dyn std::error::Error + Send + Sync>>;
 

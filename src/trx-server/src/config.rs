@@ -345,6 +345,14 @@ pub struct SdrConfig {
     pub squelch: SdrSquelchConfig,
     /// Virtual receiver channels (at least one required when SDR backend is active).
     pub channels: Vec<SdrChannelConfig>,
+    /// Maximum number of simultaneous virtual channels (including the primary).
+    /// Default: 4.
+    #[serde(default = "default_max_virtual_channels")]
+    pub max_virtual_channels: usize,
+}
+
+fn default_max_virtual_channels() -> usize {
+    4
 }
 
 impl Default for SdrConfig {
@@ -357,6 +365,7 @@ impl Default for SdrConfig {
             gain: SdrGainConfig::default(),
             squelch: SdrSquelchConfig::default(),
             channels: Vec::new(),
+            max_virtual_channels: default_max_virtual_channels(),
         }
     }
 }

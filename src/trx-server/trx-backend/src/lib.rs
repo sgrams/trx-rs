@@ -8,6 +8,9 @@ use trx_core::rig::RigCat;
 use trx_core::DynResult;
 
 mod dummy;
+pub mod vchan;
+
+pub use vchan::{SharedVChanManager, VChanError, VChannelInfo, VirtualChannelManager};
 
 #[cfg(feature = "ft450d")]
 use trx_backend_ft450d::Ft450d;

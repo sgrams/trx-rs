@@ -15,6 +15,7 @@ mod channel;
 mod filter;
 mod spectrum;
 
+use std::sync::atomic::AtomicI64;
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::{Duration, Instant};
 
@@ -98,6 +99,9 @@ pub struct SdrPipeline {
     /// Write `Some(gain_db)` here to adjust the hardware RX gain.
     /// The IQ read loop picks it up on the next iteration.
     pub gain_cmd: Arc<std::sync::Mutex<Option<f64>>>,
+    /// Current hardware center frequency in Hz, kept in sync by `SoapySdrRig`.
+    /// Read by `SdrVirtualChannelManager` to validate and compute IF offsets.
+    pub shared_center_hz: Arc<AtomicI64>,
     // Parameters cached here so `add_virtual_channel` can construct new
     // `ChannelDsp` instances without needing to be passed them again.
     audio_sample_rate: u32,
@@ -192,6 +196,7 @@ impl SdrPipeline {
             sdr_sample_rate,
             retune_cmd,
             gain_cmd,
+            shared_center_hz: Arc::new(AtomicI64::new(0)),
             audio_sample_rate,
             audio_channels: output_channels,
             frame_duration_ms,

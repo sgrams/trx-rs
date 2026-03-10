@@ -21,4 +21,6 @@ trx-backend-soapysdr = { path = "./trx-backend-soapysdr", optional = true }
 tokio = { workspace = true, features = ["full"] }
 tokio-serial = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+uuid = { workspace = true }
 tracing = { workspace = true }

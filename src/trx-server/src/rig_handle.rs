@@ -6,6 +6,7 @@
 
 use tokio::sync::{mpsc, watch};
 
+use trx_core::vchan::SharedVChanManager;
 use trx_core::rig::request::RigRequest;
 use trx_core::rig::state::RigState;
 
@@ -24,4 +25,6 @@ pub struct RigHandle {
     pub state_rx: watch::Receiver<RigState>,
     /// Per-rig audio listener TCP port.
     pub audio_port: u16,
+    /// Virtual channel manager; `Some` only for SDR rigs.
+    pub vchan_manager: Option<SharedVChanManager>,
 }

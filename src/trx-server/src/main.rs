@@ -285,6 +285,7 @@ type SdrRigBuildResult = DynResult<(
         tokio::sync::broadcast::Receiver<Vec<f32>>,
     ),
     tokio::sync::broadcast::Receiver<Vec<num_complex::Complex<f32>>>,
+    trx_core::vchan::SharedVChanManager,
 )>;
 
 type OptionalSdrRig = Option<Box<dyn trx_core::rig::RigCat>>;
@@ -348,6 +349,7 @@ fn build_sdr_rig_from_instance(rig_cfg: &RigInstanceConfig) -> SdrRigBuildResult
         rig_cfg.sdr.squelch.threshold_db,
         rig_cfg.sdr.squelch.hysteresis_db,
         rig_cfg.sdr.squelch.tail_ms,
+        rig_cfg.sdr.max_virtual_channels,
     )?;
 
     let pcm_rx = sdr_rig.subscribe_pcm();
@@ -363,11 +365,14 @@ fn build_sdr_rig_from_instance(rig_cfg: &RigInstanceConfig) -> SdrRigBuildResult
         .position(|(_, mode, _, _)| matches!(mode, trx_core::rig::state::RigMode::VDES | trx_core::rig::state::RigMode::MARINE))
         .unwrap_or(0);
     let vdes_iq = sdr_rig.subscribe_iq_channel(vdes_channel_idx);
+    // Extract the virtual channel manager before the rig is consumed by Box.
+    let vchan_manager: trx_core::vchan::SharedVChanManager = sdr_rig.channel_manager();
     Ok((
         Box::new(sdr_rig) as Box<dyn trx_core::rig::RigCat>,
         pcm_rx,
         ais_pcm,
         vdes_iq,
+        vchan_manager,
     ))
 }
 
@@ -917,13 +922,17 @@ async fn main() -> DynResult<()> {
 
         // Build SDR rig when applicable.
         #[cfg(feature = "soapysdr")]
+        let mut sdr_vchan_manager: Option<trx_core::vchan::SharedVChanManager> = None;
+        #[cfg(feature = "soapysdr")]
         let (sdr_prebuilt_rig, sdr_pcm_rx, sdr_ais_pcm_rx, sdr_vdes_iq_rx): (
             OptionalSdrRig,
             OptionalSdrPcmRx,
             OptionalSdrAisPcmRx,
             OptionalSdrVdesIqRx,
         ) = if rig_cfg.rig.access.access_type.as_deref() == Some("sdr") {
-            let (rig, pcm_rx, ais_pcm_rx, vdes_iq_rx) = build_sdr_rig_from_instance(rig_cfg)?;
+            let (rig, pcm_rx, ais_pcm_rx, vdes_iq_rx, vchan_mgr) =
+                build_sdr_rig_from_instance(rig_cfg)?;
+            sdr_vchan_manager = Some(vchan_mgr);
             (Some(rig), Some(pcm_rx), Some(ais_pcm_rx), Some(vdes_iq_rx))
         } else {
             (None, None, None, None)
@@ -1005,6 +1014,11 @@ async fn main() -> DynResult<()> {
         );
         task_handles.extend(audio_handles);
 
+        #[cfg(feature = "soapysdr")]
+        let vchan_manager_for_handle = sdr_vchan_manager;
+        #[cfg(not(feature = "soapysdr"))]
+        let vchan_manager_for_handle: Option<trx_core::vchan::SharedVChanManager> = None;
+
         rig_handles.insert(
             rig_cfg.id.clone(),
             RigHandle {
@@ -1013,6 +1027,7 @@ async fn main() -> DynResult<()> {
                 rig_tx,
                 state_rx,
                 audio_port: rig_cfg.audio.port,
+                vchan_manager: vchan_manager_for_handle,
             },
         );
     }
