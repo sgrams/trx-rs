@@ -3425,6 +3425,7 @@ async function initializeApp() {
     hideAuthGate();
     updateAuthUI();
     connect();
+    connectDecode();
     resizeHeaderSignalCanvas();
     startHeaderSignalSampling();
     return;
@@ -3437,6 +3438,7 @@ async function initializeApp() {
     updateAuthUI();
     applyAuthRestrictions();
     connect();
+    connectDecode();
     resizeHeaderSignalCanvas();
     startHeaderSignalSampling();
   } else {
@@ -3463,6 +3465,7 @@ document.getElementById("auth-form").addEventListener("submit", async (e) => {
     updateAuthUI();
     applyAuthRestrictions();
     connect();
+    connectDecode();
     resizeHeaderSignalCanvas();
     startHeaderSignalSampling();
   } catch (err) {
@@ -3484,6 +3487,7 @@ if (guestBtn) {
     updateAuthUI();
     applyAuthRestrictions();
     connect();
+    connectDecode();
     resizeHeaderSignalCanvas();
     startHeaderSignalSampling();
   });
@@ -6235,13 +6239,8 @@ function connectDecode() {
     }
   }).catch(() => { clearTimeout(historyTimeout); flushLiveBuffer(); });
 }
-if (document.readyState === "complete") {
-  connectDecode();
-} else {
-  window.addEventListener("load", () => {
-    connectDecode();
-  }, { once: true });
-}
+// connectDecode() is called from initializeApp() after auth succeeds,
+// and from login/guest handlers — no standalone window.load call needed.
 
 // Release PTT on page unload to prevent stuck transmit
 window.addEventListener("beforeunload", () => {

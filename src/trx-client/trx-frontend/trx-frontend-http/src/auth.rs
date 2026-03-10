@@ -423,6 +423,7 @@ impl RouteAccess {
             || path == "/rigs"
             || path == "/events"
             || path == "/decode"
+            || path == "/decode/history"
             || path == "/spectrum"
             || path == "/audio"
             || path == "/bookmarks"
@@ -430,6 +431,7 @@ impl RouteAccess {
             || path.starts_with("/rigs?")
             || path.starts_with("/events?")
             || path.starts_with("/decode?")
+            || path.starts_with("/decode/history?")
             || path.starts_with("/spectrum?")
             || path.starts_with("/audio?")
             || path.starts_with("/bookmarks?")
