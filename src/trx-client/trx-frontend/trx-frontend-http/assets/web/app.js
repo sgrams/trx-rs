@@ -6036,28 +6036,29 @@ function connectDecode() {
   if (window.resetCwHistoryView) window.resetCwHistoryView();
   if (window.resetFt8HistoryView) window.resetFt8HistoryView();
   if (window.resetWsprHistoryView) window.resetWsprHistoryView();
-  const historyBuffer = [];
-  let historyDone = false;
+  // Live messages arrive after the history event; gate on this flag so
+  // onmessage does not dispatch before drainDecodeHistory has started.
+  let historyReceived = false;
   decodeSource = new EventSource("/decode");
   decodeSource.onopen = () => {
     decodeConnected = true;
     updateDecodeStatus("Connected, listening for packets");
   };
-  decodeSource.addEventListener("history_done", () => {
-    historyDone = true;
-    drainDecodeHistory(historyBuffer, 0);
+  // The server sends the entire history as one named "history" event (JSON
+  // array). A single JSON.parse + chunked drain is far cheaper than N
+  // individual EventSource callbacks each blocking the main thread.
+  decodeSource.addEventListener("history", (evt) => {
+    try {
+      const msgs = JSON.parse(evt.data);
+      if (Array.isArray(msgs)) drainDecodeHistory(msgs, 0);
+    } catch (e) { /* ignore parse errors */ }
+    historyReceived = true;
   });
   decodeSource.onmessage = (evt) => {
+    if (!historyReceived) return; // skip anything before history event
     try {
-      const msg = JSON.parse(evt.data);
-      if (!historyDone) {
-        historyBuffer.push(msg);
-      } else {
-        dispatchDecodeMessage(msg);
-      }
-    } catch (e) {
-      // ignore parse errors
-    }
+      dispatchDecodeMessage(JSON.parse(evt.data));
+    } catch (e) { /* ignore parse errors */ }
   };
   decodeSource.onerror = () => {
     // readyState CLOSED (2) = server rejected (404/error), CONNECTING (0) = temporary drop
