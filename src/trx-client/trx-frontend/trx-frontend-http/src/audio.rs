@@ -9,7 +9,7 @@
 //! - Subsequent binary messages: raw Opus packets (RX)
 //! - Browser sends binary messages: raw Opus packets (TX)
 
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -26,6 +26,11 @@ use trx_core::decode::{
 use trx_frontend::FrontendRuntimeContext;
 
 const HISTORY_RETENTION: Duration = Duration::from_secs(24 * 60 * 60);
+/// Maximum number of raw AIS messages kept in the ring buffer.
+/// AIS vessels can transmit every 2 s, so without a cap the buffer grows
+/// unboundedly. 10 000 entries covers ~100 active vessels at 2-second intervals
+/// for ~3 minutes — enough for a realistic snapshot while bounding memory use.
+const AIS_HISTORY_MAX: usize = 10_000;
 
 fn current_timestamp_ms() -> i64 {
     let millis = SystemTime::now()
@@ -81,6 +86,9 @@ fn record_ais(context: &FrontendRuntimeContext, mut msg: AisMessage) {
         .expect("ais history mutex poisoned");
     history.push_back((Instant::now(), msg));
     prune_ais_history(&mut history);
+    if history.len() > AIS_HISTORY_MAX {
+        history.pop_front();
+    }
 }
 
 fn record_vdes(context: &FrontendRuntimeContext, mut msg: VdesMessage) {
@@ -191,13 +199,28 @@ pub fn snapshot_hf_aprs_history(context: &FrontendRuntimeContext) -> Vec<AprsPac
     history.iter().map(|(_, pkt)| pkt.clone()).collect()
 }
 
+/// Return the latest message per MMSI seen within the retention window.
+///
+/// AIS vessels transmit every 2–30 s; returning every individual message would
+/// produce a response too large to be useful. One entry per vessel matches
+/// what the map shows (current position/state) and keeps the response compact.
+/// The returned vec is sorted ascending by `ts_ms` so the client can replay
+/// in chronological order.
 pub fn snapshot_ais_history(context: &FrontendRuntimeContext) -> Vec<AisMessage> {
     let mut history = context
         .ais_history
         .lock()
         .expect("ais history mutex poisoned");
     prune_ais_history(&mut history);
-    history.iter().map(|(_, msg)| msg.clone()).collect()
+    // Iterate oldest-first; later entries overwrite earlier ones so the
+    // HashMap always holds the newest message per MMSI.
+    let mut latest: HashMap<u32, AisMessage> = HashMap::new();
+    for (_, msg) in history.iter() {
+        latest.insert(msg.mmsi, msg.clone());
+    }
+    let mut out: Vec<AisMessage> = latest.into_values().collect();
+    out.sort_by_key(|m| m.ts_ms.unwrap_or(0));
+    out
 }
 
 pub fn snapshot_vdes_history(context: &FrontendRuntimeContext) -> Vec<VdesMessage> {
