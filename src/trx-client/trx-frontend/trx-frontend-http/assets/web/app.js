@@ -3340,21 +3340,71 @@ if (spectrumBwSweetBtn) {
 }
 
 // --- Tab navigation ---
-document.querySelector(".tab-bar").addEventListener("click", (e) => {
-  const btn = e.target.closest(".tab[data-tab]");
+const TAB_ORDER = ["main", "bookmarks", "decoders", "map", "about"];
+
+function navigateToTab(name) {
+  if (authEnabled && !authRole && name !== "main") return;
+  const btn = document.querySelector(`.tab-bar .tab[data-tab="${name}"]`);
   if (!btn) return;
-  if (authEnabled && !authRole && btn.dataset.tab !== "main") return;
   document.querySelectorAll(".tab-bar .tab").forEach((t) => t.classList.remove("active"));
   btn.classList.add("active");
   document.querySelectorAll(".tab-panel").forEach((p) => p.style.display = "none");
-  document.getElementById(`tab-${btn.dataset.tab}`).style.display = "";
+  document.getElementById(`tab-${name}`).style.display = "";
   scheduleSpectrumLayout();
-  if (btn.dataset.tab === "map") {
+  if (name === "map") {
     initAprsMap();
     sizeAprsMapToViewport();
     if (aprsMap) setTimeout(() => aprsMap.invalidateSize(), 50);
   }
+}
+
+document.querySelector(".tab-bar").addEventListener("click", (e) => {
+  const btn = e.target.closest(".tab[data-tab]");
+  if (!btn) return;
+  navigateToTab(btn.dataset.tab);
 });
+
+// Swipe left/right on the main content area to switch tabs (mobile).
+(function () {
+  let tx = 0, ty = 0;
+  const THRESHOLD = 60;          // px horizontal movement required
+  const ANGLE_LIMIT = 1.6;       // |dx/dy| ratio — suppress on near-vertical drags
+
+  // Elements where horizontal drag has its own meaning; exclude from swipe.
+  const NO_SWIPE_SELECTORS = [
+    "#jog-wheel", "#spectrum-canvas", "#overview-canvas",
+    "#aprs-map", ".controls-tray-scroll", ".sub-tab-bar",
+    "input[type=range]", "select", "input[type=text]",
+    "input[type=number]", "input[type=search]",
+  ];
+
+  function isExcluded(el) {
+    return NO_SWIPE_SELECTORS.some((sel) => el.closest(sel));
+  }
+
+  document.addEventListener("touchstart", (e) => {
+    if (e.touches.length !== 1) return;
+    if (isExcluded(e.target)) return;
+    tx = e.touches[0].clientX;
+    ty = e.touches[0].clientY;
+  }, { passive: true });
+
+  document.addEventListener("touchend", (e) => {
+    if (e.changedTouches.length !== 1 || tx === 0) return;
+    const dx = e.changedTouches[0].clientX - tx;
+    const dy = e.changedTouches[0].clientY - ty;
+    tx = 0;
+    if (Math.abs(dx) < THRESHOLD) return;
+    if (Math.abs(dy) > 0 && Math.abs(dx) / Math.abs(dy) < ANGLE_LIMIT) return;
+    const activeBtn = document.querySelector(".tab-bar .tab.active");
+    if (!activeBtn) return;
+    const cur = TAB_ORDER.indexOf(activeBtn.dataset.tab);
+    if (cur === -1) return;
+    const next = dx < 0 ? cur + 1 : cur - 1;
+    if (next >= 0 && next < TAB_ORDER.length) navigateToTab(TAB_ORDER[next]);
+  }, { passive: true });
+})();
+
 window.addEventListener("resize", () => { scheduleSpectrumLayout(); });
 
 // --- Auth startup sequence ---

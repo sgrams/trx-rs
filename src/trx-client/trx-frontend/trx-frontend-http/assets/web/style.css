@@ -1021,6 +1021,14 @@ small { color: var(--text-muted); }
 }
 .tab.active { border-bottom-color: var(--accent-green); color: var(--accent-green); font-weight: 600; }
 .tab:hover:not(.active) { color: var(--text); }
+/* Tab icons — hidden on desktop, shown on mobile bottom nav */
+.tab-icon {
+  display: none;
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+}
+.tab-label { display: block; }
 .about-table { width: 100%; border-collapse: collapse; }
 .about-table td { padding: 0.5rem 0.6rem; border-bottom: 1px solid var(--border); }
 .about-table tr:last-child td { border-bottom: none; }
@@ -1825,8 +1833,8 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   button { min-height: 2.8rem; font-size: 0.95rem; }
   input.status-input, select.status-input { font-size: 1.1rem; }
   :root { --header-waterfall-overlap: 0rem; }
-  .controls-tray-scroll { overflow-x: visible; }
-  .controls-tray { width: 100%; padding-left: 0.85rem; padding-right: 0.85rem; }
+  .controls-tray-scroll { overflow-x: auto; }
+  .controls-tray { width: 100%; min-width: 0; padding-left: 0.85rem; padding-right: 0.85rem; }
   .freq-inline { gap: 0.5rem; flex-wrap: wrap; }
   .header-text { width: auto; min-width: 0; flex: 0 1 auto; }
   .header-main {
@@ -1901,8 +1909,11 @@ button:focus-visible, input:focus-visible, select:focus-visible {
     max-width: 100%;
   }
   .tab-bar .header-logo {
-    height: 2.15rem;
+    height: 1.9rem;
   }
+  /* Collapse verbose subtitles — the About tab has this info */
+  .tab-bar .subtitle { display: none; }
+  .tab-bar .title { font-size: 0.92rem; }
   .tab-bar-nav {
     position: fixed;
     left: calc(0.6rem + env(safe-area-inset-left));
@@ -1910,9 +1921,9 @@ button:focus-visible, input:focus-visible, select:focus-visible {
     bottom: calc(0.55rem + env(safe-area-inset-bottom));
     z-index: 30;
     display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: 0.35rem;
-    padding: 0.42rem;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 0.25rem;
+    padding: 0.38rem;
     border: 1px solid color-mix(in srgb, var(--border-light) 82%, transparent);
     border-radius: 1rem;
     background: color-mix(in srgb, var(--card-bg) 90%, transparent);
@@ -1924,18 +1935,22 @@ button:focus-visible, input:focus-visible, select:focus-visible {
     overflow: visible;
   }
   .tab {
-    min-height: 3.1rem;
-    padding: 0.45rem 0.25rem;
+    min-height: 3.2rem;
+    padding: 0.35rem 0.1rem 0.3rem;
     border: 1px solid transparent;
     border-bottom: none;
     border-radius: 0.75rem;
     white-space: nowrap;
     text-align: center;
-    font-size: 0.82rem;
+    font-size: 0.65rem;
     font-weight: 700;
-    line-height: 1.05;
+    line-height: 1.1;
     background: transparent;
     color: var(--text-muted);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.2rem;
   }
   .tab.active {
     border-color: color-mix(in srgb, var(--accent-green) 50%, var(--border-light));
@@ -1943,6 +1958,10 @@ button:focus-visible, input:focus-visible, select:focus-visible {
     color: var(--text);
     box-shadow: inset 0 1px 0 color-mix(in srgb, #ffffff 8%, transparent);
   }
+  .tab-icon { display: block; }
+  /* Shorten long tab labels to keep bottom nav compact */
+  .tab[data-tab="bookmarks"] .tab-label { font-size: 0.6rem; }
+  .tab[data-tab="decoders"] .tab-label  { font-size: 0.6rem; }
   .top-bar-actions {
     width: 100%;
     justify-content: flex-start;
@@ -2166,6 +2185,52 @@ button:focus-visible, input:focus-visible, select:focus-visible {
     align-items: flex-start;
     gap: 0.55rem;
   }
+
+  /* ── Bookmark card layout ──────────────────────────────────────────── */
+  #bm-table-wrap { overflow-x: hidden; }
+  .bm-table,
+  .bm-table tbody { display: block; }
+  .bm-table thead { display: none; }
+  .bm-table tr {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.22rem 0.5rem;
+    border: 1px solid color-mix(in srgb, var(--border-light) 72%, transparent);
+    border-radius: 0.7rem;
+    padding: 0.6rem 0.7rem;
+    margin-bottom: 0.45rem;
+    background: color-mix(in srgb, var(--btn-bg) 35%, transparent);
+  }
+  .bm-table tr:hover td { background: transparent; }
+  .bm-table td {
+    display: flex;
+    flex-direction: column;
+    gap: 0.05rem;
+    border-bottom: none;
+    padding: 0.08rem 0;
+    font-size: 0.82rem;
+    word-break: break-word;
+  }
+  .bm-table td::before {
+    font-size: 0.62rem;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+  }
+  .bm-col-name { grid-column: 1 / -1; font-weight: 600; font-size: 0.9rem; }
+  .bm-col-name::before  { content: "Bookmark"; }
+  .bm-col-freq::before  { content: "Frequency"; }
+  .bm-col-mode::before  { content: "Mode"; }
+  .bm-col-bw::before    { content: "Bandwidth"; }
+  .bm-col-loc::before   { content: "Locator"; }
+  .bm-col-cat::before   { content: "Category"; }
+  .bm-col-dec::before   { content: "Decoders"; }
+  .bm-col-cmt { grid-column: 1 / -1; }
+  .bm-col-cmt::before   { content: "Comment"; }
+  .bm-col-act { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 0.4rem; padding-top: 0.25rem; }
+  .bm-col-act::before   { display: none; }
+  .bm-col-act button    { flex: 1 1 auto; min-height: 2.4rem; font-size: 0.8rem; }
 }
 
 
@@ -2543,28 +2608,34 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   #freq { font-size: clamp(1.3rem, 6vw, 2rem); }
 
   /* Wider volume sliders for touch */
-  .vol-slider { width: 100%; }
+  .vol-slider { width: 100%; flex: 1 1 auto; }
   .vol-label {
+    flex-direction: row;
+    align-items: center;
+    gap: 0.5rem;
     width: 100%;
-    align-items: stretch;
+    justify-content: space-between;
   }
-  .vol-slider::-webkit-slider-thumb { width: 20px; height: 20px; }
-  .vol-slider::-moz-range-thumb     { width: 20px; height: 20px; }
+  .vol-pct { min-width: 2.4rem; text-align: right; }
+  .vol-slider::-webkit-slider-thumb { width: 22px; height: 22px; }
+  .vol-slider::-moz-range-thumb     { width: 22px; height: 22px; }
 
   #audio-row .inline {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 0.6rem;
+    gap: 0.55rem;
     align-items: stretch;
   }
   #rx-audio-btn,
   #tx-audio-btn,
   #audio-level,
-  #audio-status {
+  #audio-status,
+  #sdr-squelch-wrap {
     grid-column: 1 / -1;
   }
   #audio-level {
     min-width: 0;
+    height: 14px;
   }
 
   /* Spectrum control inputs and buttons: meet minimum tap-target size */
