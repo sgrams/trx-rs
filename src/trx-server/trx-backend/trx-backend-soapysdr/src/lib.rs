@@ -310,12 +310,12 @@ impl SoapySdrRig {
         let Some((ais_a_idx, ais_b_idx)) = self.ais_channel_indices else {
             return;
         };
-
-        if let Some(dsp_arc) = self.pipeline.channel_dsps.get(ais_a_idx) {
+        let dsps = self.pipeline.channel_dsps.read().unwrap();
+        if let Some(dsp_arc) = dsps.get(ais_a_idx) {
             let if_hz = (self.freq.hz as i64 - self.center_hz) as f64;
             dsp_arc.lock().unwrap().set_channel_if_hz(if_hz);
         }
-        if let Some(dsp_arc) = self.pipeline.channel_dsps.get(ais_b_idx) {
+        if let Some(dsp_arc) = dsps.get(ais_b_idx) {
             let if_hz = (self.freq.hz as i64 + AIS_CHANNEL_SPACING_HZ - self.center_hz) as f64;
             dsp_arc.lock().unwrap().set_channel_if_hz(if_hz);
         }
@@ -325,9 +325,9 @@ impl SoapySdrRig {
         let Some((ais_a_idx, ais_b_idx)) = self.ais_channel_indices else {
             return;
         };
-
+        let dsps = self.pipeline.channel_dsps.read().unwrap();
         for idx in [ais_a_idx, ais_b_idx] {
-            if let Some(dsp_arc) = self.pipeline.channel_dsps.get(idx) {
+            if let Some(dsp_arc) = dsps.get(idx) {
                 dsp_arc
                     .lock()
                     .unwrap()
@@ -341,10 +341,95 @@ impl SoapySdrRig {
             return;
         };
         let enabled = matches!(self.mode, RigMode::AIS | RigMode::MARINE);
+        let dsps = self.pipeline.channel_dsps.read().unwrap();
         for idx in [ais_a_idx, ais_b_idx] {
-            if let Some(dsp_arc) = self.pipeline.channel_dsps.get(idx) {
+            if let Some(dsp_arc) = dsps.get(idx) {
                 dsp_arc.lock().unwrap().set_processing_enabled(enabled);
             }
+        }
+    }
+
+    /// Current hardware center frequency (Hz).
+    pub fn center_hz(&self) -> i64 {
+        self.center_hz
+    }
+
+    /// Half of the SDR capture bandwidth (Hz).  A virtual channel's dial
+    /// frequency must stay within `center_hz ± half_span_hz`.
+    pub fn half_span_hz(&self) -> i64 {
+        i64::from(self.pipeline.sdr_sample_rate) / 2
+    }
+
+    /// Allocate a new virtual DSP channel within the current SDR capture
+    /// bandwidth.  Returns `None` if `freq_hz` is outside the capture span.
+    ///
+    /// The returned senders can be subscribed to for PCM audio frames.  The
+    /// `pipeline_slot` index identifies the slot for future
+    /// `virtual_channel_set_freq`, `virtual_channel_set_mode`, and
+    /// `virtual_channel_remove` calls.
+    pub fn virtual_channel_add(
+        &self,
+        freq_hz: u64,
+        mode: &RigMode,
+        bandwidth_hz: u32,
+        fir_taps: usize,
+    ) -> Option<(
+        tokio::sync::broadcast::Sender<Vec<f32>>,
+        tokio::sync::broadcast::Sender<Vec<num_complex::Complex<f32>>>,
+        usize,
+    )> {
+        let channel_if_hz = freq_hz as i64 - self.center_hz;
+        if channel_if_hz.unsigned_abs() as i64 > self.half_span_hz() {
+            return None;
+        }
+        let (pcm_tx, iq_tx) =
+            self.pipeline
+                .add_virtual_channel(channel_if_hz as f64, mode, bandwidth_hz, fir_taps);
+        let slot = self
+            .pipeline
+            .channel_dsps
+            .read()
+            .unwrap()
+            .len()
+            .saturating_sub(1);
+        Some((pcm_tx, iq_tx, slot))
+    }
+
+    /// Remove a virtual channel at the given pipeline slot index.
+    /// Returns `false` if the slot is out of range.
+    pub fn virtual_channel_remove(&self, pipeline_slot: usize) -> bool {
+        self.pipeline.remove_virtual_channel(pipeline_slot)
+    }
+
+    /// Update the dial frequency of a virtual channel.
+    /// Returns `false` if the slot is out of range or the freq is outside
+    /// the current capture bandwidth.
+    pub fn virtual_channel_set_freq(&self, pipeline_slot: usize, freq_hz: u64) -> bool {
+        let channel_if_hz = freq_hz as i64 - self.center_hz;
+        if channel_if_hz.unsigned_abs() as i64 > self.half_span_hz() {
+            return false;
+        }
+        let dsps = self.pipeline.channel_dsps.read().unwrap();
+        if let Some(dsp_arc) = dsps.get(pipeline_slot) {
+            dsp_arc
+                .lock()
+                .unwrap()
+                .set_channel_if_hz(channel_if_hz as f64);
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Update the demodulation mode of a virtual channel.
+    /// Returns `false` if the slot is out of range.
+    pub fn virtual_channel_set_mode(&self, pipeline_slot: usize, mode: &RigMode) -> bool {
+        let dsps = self.pipeline.channel_dsps.read().unwrap();
+        if let Some(dsp_arc) = dsps.get(pipeline_slot) {
+            dsp_arc.lock().unwrap().set_mode(mode);
+            true
+        } else {
+            false
         }
     }
 
@@ -352,6 +437,7 @@ impl SoapySdrRig {
         &self,
         channel_idx: usize,
     ) -> tokio::sync::broadcast::Receiver<Vec<num_complex::Complex<f32>>> {
+        // iq_senders covers fixed channels only (primary + AIS).
         if let Some(sender) = self.pipeline.iq_senders.get(channel_idx) {
             sender.subscribe()
         } else {
@@ -437,12 +523,15 @@ impl RigCat for SoapySdrRig {
                 }
             }
 
-            if let Some(dsp_arc) = self.pipeline.channel_dsps.get(self.primary_channel_idx) {
-                let channel_if_hz = (self.freq.hz as i64 - self.center_hz) as f64;
-                let mut dsp = dsp_arc.lock().unwrap();
-                dsp.set_channel_if_hz(channel_if_hz);
-                if freq_changed {
-                    dsp.reset_wfm_state();
+            {
+                let dsps = self.pipeline.channel_dsps.read().unwrap();
+                if let Some(dsp_arc) = dsps.get(self.primary_channel_idx) {
+                    let channel_if_hz = (self.freq.hz as i64 - self.center_hz) as f64;
+                    let mut dsp = dsp_arc.lock().unwrap();
+                    dsp.set_channel_if_hz(channel_if_hz);
+                    if freq_changed {
+                        dsp.reset_wfm_state();
+                    }
                 }
             }
             self.update_ais_channel_offsets();
@@ -460,9 +549,12 @@ impl RigCat for SoapySdrRig {
             if let Ok(mut cmd) = self.retune_cmd.lock() {
                 *cmd = Some(self.center_hz as f64);
             }
-            if let Some(dsp_arc) = self.pipeline.channel_dsps.get(self.primary_channel_idx) {
-                let channel_if_hz = (self.freq.hz as i64 - self.center_hz) as f64;
-                dsp_arc.lock().unwrap().set_channel_if_hz(channel_if_hz);
+            {
+                let dsps = self.pipeline.channel_dsps.read().unwrap();
+                if let Some(dsp_arc) = dsps.get(self.primary_channel_idx) {
+                    let channel_if_hz = (self.freq.hz as i64 - self.center_hz) as f64;
+                    dsp_arc.lock().unwrap().set_channel_if_hz(channel_if_hz);
+                }
             }
             self.update_ais_channel_offsets();
             Ok(())
@@ -478,10 +570,13 @@ impl RigCat for SoapySdrRig {
             self.mode = mode.clone();
             self.bandwidth_hz = Self::default_bandwidth_for_mode(&mode);
             // Update the primary channel's demodulator in the live pipeline.
-            if let Some(dsp_arc) = self.pipeline.channel_dsps.get(self.primary_channel_idx) {
-                let mut dsp = dsp_arc.lock().unwrap();
-                dsp.set_mode(&mode);
-                dsp.set_filter(self.bandwidth_hz, self.fir_taps as usize);
+            {
+                let dsps = self.pipeline.channel_dsps.read().unwrap();
+                if let Some(dsp_arc) = dsps.get(self.primary_channel_idx) {
+                    let mut dsp = dsp_arc.lock().unwrap();
+                    dsp.set_mode(&mode);
+                    dsp.set_filter(self.bandwidth_hz, self.fir_taps as usize);
+                }
             }
             self.apply_ais_channel_activity();
             self.apply_ais_channel_filters();
@@ -501,8 +596,11 @@ impl RigCat for SoapySdrRig {
                 }
             };
             self.wfm_deemphasis_us = deemphasis_us;
-            if let Some(dsp_arc) = self.pipeline.channel_dsps.get(self.primary_channel_idx) {
-                dsp_arc.lock().unwrap().set_wfm_deemphasis(deemphasis_us);
+            {
+                let dsps = self.pipeline.channel_dsps.read().unwrap();
+                if let Some(dsp_arc) = dsps.get(self.primary_channel_idx) {
+                    dsp_arc.lock().unwrap().set_wfm_deemphasis(deemphasis_us);
+                }
             }
             Ok(())
         })
@@ -545,11 +643,14 @@ impl RigCat for SoapySdrRig {
             }
             self.squelch_enabled = enabled;
             self.squelch_threshold_db = threshold_db as f32;
-            if let Some(dsp_arc) = self.pipeline.channel_dsps.get(self.primary_channel_idx) {
-                dsp_arc
-                    .lock()
-                    .unwrap()
-                    .set_squelch(enabled, self.squelch_threshold_db);
+            {
+                let dsps = self.pipeline.channel_dsps.read().unwrap();
+                if let Some(dsp_arc) = dsps.get(self.primary_channel_idx) {
+                    dsp_arc
+                        .lock()
+                        .unwrap()
+                        .set_squelch(enabled, self.squelch_threshold_db);
+                }
             }
             Ok(())
         })
@@ -654,11 +755,14 @@ impl RigCat for SoapySdrRig {
         Box::pin(async move {
             tracing::debug!("SoapySdrRig: set_bandwidth -> {} Hz", bandwidth_hz);
             self.bandwidth_hz = bandwidth_hz;
-            if let Some(dsp_arc) = self.pipeline.channel_dsps.get(self.primary_channel_idx) {
-                dsp_arc
-                    .lock()
-                    .unwrap()
-                    .set_filter(bandwidth_hz, self.fir_taps as usize);
+            {
+                let dsps = self.pipeline.channel_dsps.read().unwrap();
+                if let Some(dsp_arc) = dsps.get(self.primary_channel_idx) {
+                    dsp_arc
+                        .lock()
+                        .unwrap()
+                        .set_filter(bandwidth_hz, self.fir_taps as usize);
+                }
             }
             self.apply_ais_channel_filters();
             Ok(())
@@ -672,11 +776,14 @@ impl RigCat for SoapySdrRig {
         Box::pin(async move {
             tracing::debug!("SoapySdrRig: set_fir_taps -> {}", taps);
             self.fir_taps = taps;
-            if let Some(dsp_arc) = self.pipeline.channel_dsps.get(self.primary_channel_idx) {
-                dsp_arc
-                    .lock()
-                    .unwrap()
-                    .set_filter(self.bandwidth_hz, taps as usize);
+            {
+                let dsps = self.pipeline.channel_dsps.read().unwrap();
+                if let Some(dsp_arc) = dsps.get(self.primary_channel_idx) {
+                    dsp_arc
+                        .lock()
+                        .unwrap()
+                        .set_filter(self.bandwidth_hz, taps as usize);
+                }
             }
             self.apply_ais_channel_filters();
             Ok(())
@@ -689,8 +796,11 @@ impl RigCat for SoapySdrRig {
     ) -> Pin<Box<dyn std::future::Future<Output = DynResult<()>> + Send + 'a>> {
         Box::pin(async move {
             self.wfm_stereo = enabled;
-            if let Some(dsp_arc) = self.pipeline.channel_dsps.get(self.primary_channel_idx) {
-                dsp_arc.lock().unwrap().set_wfm_stereo(enabled);
+            {
+                let dsps = self.pipeline.channel_dsps.read().unwrap();
+                if let Some(dsp_arc) = dsps.get(self.primary_channel_idx) {
+                    dsp_arc.lock().unwrap().set_wfm_stereo(enabled);
+                }
             }
             Ok(())
         })
@@ -702,8 +812,11 @@ impl RigCat for SoapySdrRig {
     ) -> Pin<Box<dyn std::future::Future<Output = DynResult<()>> + Send + 'a>> {
         Box::pin(async move {
             self.wfm_denoise = level;
-            if let Some(dsp_arc) = self.pipeline.channel_dsps.get(self.primary_channel_idx) {
-                dsp_arc.lock().unwrap().set_wfm_denoise(level);
+            {
+                let dsps = self.pipeline.channel_dsps.read().unwrap();
+                if let Some(dsp_arc) = dsps.get(self.primary_channel_idx) {
+                    dsp_arc.lock().unwrap().set_wfm_denoise(level);
+                }
             }
             Ok(())
         })
@@ -713,6 +826,8 @@ impl RigCat for SoapySdrRig {
         let wfm_stereo_detected = self
             .pipeline
             .channel_dsps
+            .read()
+            .unwrap()
             .get(self.primary_channel_idx)
             .and_then(|dsp| dsp.lock().ok().map(|d| d.wfm_stereo_detected()))
             .unwrap_or(false);
@@ -739,6 +854,8 @@ impl RigCat for SoapySdrRig {
         let rds = self
             .pipeline
             .channel_dsps
+            .read()
+            .unwrap()
             .get(self.primary_channel_idx)
             .and_then(|dsp| dsp.lock().ok().and_then(|d| d.rds_data()));
         Some(SpectrumData {

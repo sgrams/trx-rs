@@ -15,7 +15,7 @@ mod channel;
 mod filter;
 mod spectrum;
 
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, RwLock};
 use std::time::{Duration, Instant};
 
 use num_complex::Complex;
@@ -84,7 +84,10 @@ impl IqSource for MockIqSource {
 pub struct SdrPipeline {
     pub pcm_senders: Vec<broadcast::Sender<Vec<f32>>>,
     pub iq_senders: Vec<broadcast::Sender<Vec<Complex<f32>>>>,
-    pub channel_dsps: Vec<Arc<Mutex<ChannelDsp>>>,
+    /// All DSP channel slots, including fixed (primary, AIS) and dynamic
+    /// (user virtual) channels.  Shared with the IQ read thread via RwLock.
+    /// Virtual channels are appended beyond the fixed slots.
+    pub channel_dsps: Arc<RwLock<Vec<Arc<Mutex<ChannelDsp>>>>>,
     /// Latest FFT magnitude bins (dBFS, FFT-shifted), updated ~10 Hz.
     pub spectrum_buf: Arc<Mutex<Option<Vec<f32>>>>,
     /// SDR capture sample rate, needed by `SoapySdrRig::get_spectrum`.
@@ -95,6 +98,13 @@ pub struct SdrPipeline {
     /// Write `Some(gain_db)` here to adjust the hardware RX gain.
     /// The IQ read loop picks it up on the next iteration.
     pub gain_cmd: Arc<std::sync::Mutex<Option<f64>>>,
+    // Parameters cached here so `add_virtual_channel` can construct new
+    // `ChannelDsp` instances without needing to be passed them again.
+    audio_sample_rate: u32,
+    audio_channels: usize,
+    frame_duration_ms: u16,
+    wfm_deemphasis_us: u32,
+    wfm_stereo: bool,
 }
 
 impl SdrPipeline {
@@ -117,7 +127,7 @@ impl SdrPipeline {
 
         let mut pcm_senders = Vec::with_capacity(channels.len());
         let mut iq_senders = Vec::with_capacity(channels.len());
-        let mut channel_dsps: Vec<Arc<Mutex<ChannelDsp>>> = Vec::with_capacity(channels.len());
+        let mut channel_dsps_vec: Vec<Arc<Mutex<ChannelDsp>>> = Vec::with_capacity(channels.len());
 
         for (channel_idx, &(channel_if_hz, ref mode, audio_bandwidth_hz, fir_taps)) in
             channels.iter().enumerate()
@@ -146,10 +156,12 @@ impl SdrPipeline {
             );
             pcm_senders.push(pcm_tx);
             iq_senders.push(iq_tx);
-            channel_dsps.push(Arc::new(Mutex::new(dsp)));
+            channel_dsps_vec.push(Arc::new(Mutex::new(dsp)));
         }
 
-        let thread_dsps: Vec<Arc<Mutex<ChannelDsp>>> = channel_dsps.clone();
+        let channel_dsps: Arc<RwLock<Vec<Arc<Mutex<ChannelDsp>>>>> =
+            Arc::new(RwLock::new(channel_dsps_vec));
+        let thread_dsps = channel_dsps.clone();
         let spectrum_buf: Arc<Mutex<Option<Vec<f32>>>> = Arc::new(Mutex::new(None));
         let thread_spectrum_buf = spectrum_buf.clone();
         let retune_cmd: Arc<std::sync::Mutex<Option<f64>>> = Arc::new(std::sync::Mutex::new(None));
@@ -180,7 +192,66 @@ impl SdrPipeline {
             sdr_sample_rate,
             retune_cmd,
             gain_cmd,
+            audio_sample_rate,
+            audio_channels: output_channels,
+            frame_duration_ms,
+            wfm_deemphasis_us,
+            wfm_stereo,
         }
+    }
+
+    /// Allocate a new virtual DSP channel.
+    ///
+    /// Returns the PCM and IQ broadcast senders so the caller can subscribe to
+    /// audio frames and raw decimated IQ respectively.  The channel is appended
+    /// beyond all fixed slots and is immediately visible to the IQ read thread.
+    pub fn add_virtual_channel(
+        &self,
+        channel_if_hz: f64,
+        mode: &RigMode,
+        bandwidth_hz: u32,
+        fir_taps: usize,
+    ) -> (broadcast::Sender<Vec<f32>>, broadcast::Sender<Vec<Complex<f32>>>) {
+        const PCM_BROADCAST_CAPACITY: usize = 32;
+        const IQ_BROADCAST_CAPACITY: usize = 64;
+        let (pcm_tx, _) = broadcast::channel::<Vec<f32>>(PCM_BROADCAST_CAPACITY);
+        let (iq_tx, _) = broadcast::channel::<Vec<Complex<f32>>>(IQ_BROADCAST_CAPACITY);
+        let dsp = ChannelDsp::new(
+            channel_if_hz,
+            mode,
+            self.sdr_sample_rate,
+            self.audio_sample_rate,
+            self.audio_channels,
+            self.frame_duration_ms,
+            bandwidth_hz,
+            self.wfm_deemphasis_us,
+            self.wfm_stereo,
+            fir_taps.max(1),
+            VirtualSquelchConfig::default(),
+            pcm_tx.clone(),
+            iq_tx.clone(),
+        );
+        self.channel_dsps
+            .write()
+            .expect("channel_dsps RwLock poisoned")
+            .push(Arc::new(Mutex::new(dsp)));
+        (pcm_tx, iq_tx)
+    }
+
+    /// Remove a DSP channel slot by its index in the full `channel_dsps` list.
+    ///
+    /// Returns `false` when the index is out of range.  Callers are responsible
+    /// for not removing fixed slots (primary, AIS).
+    pub fn remove_virtual_channel(&self, idx: usize) -> bool {
+        let mut dsps = self
+            .channel_dsps
+            .write()
+            .expect("channel_dsps RwLock poisoned");
+        if idx >= dsps.len() {
+            return false;
+        }
+        dsps.remove(idx);
+        true
     }
 }
 
@@ -193,7 +264,7 @@ pub const IQ_BLOCK_SIZE: usize = 4096;
 fn iq_read_loop(
     mut source: Box<dyn IqSource>,
     sdr_sample_rate: u32,
-    channel_dsps: Vec<Arc<Mutex<ChannelDsp>>>,
+    channel_dsps: Arc<RwLock<Vec<Arc<Mutex<ChannelDsp>>>>>,
     iq_tx: broadcast::Sender<Vec<Complex<f32>>>,
     spectrum_buf: Arc<Mutex<Option<Vec<f32>>>>,
     retune_cmd: Arc<std::sync::Mutex<Option<f64>>>,
@@ -326,11 +397,18 @@ fn iq_read_loop(
             let _ = iq_tx.send(samples.to_vec());
         }
 
-        for dsp_arc in &channel_dsps {
-            match dsp_arc.lock() {
-                Ok(mut dsp) => dsp.process_block(samples),
-                Err(e) => {
-                    tracing::error!("channel DSP mutex poisoned: {}", e);
+        // Hold a read lock only for the duration of this block's DSP pass.
+        // Write lock (add/remove channel) waits at most one block (~2 ms).
+        {
+            let dsps = channel_dsps
+                .read()
+                .expect("channel_dsps RwLock poisoned");
+            for dsp_arc in dsps.iter() {
+                match dsp_arc.lock() {
+                    Ok(mut dsp) => dsp.process_block(samples),
+                    Err(e) => {
+                        tracing::error!("channel DSP mutex poisoned: {}", e);
+                    }
                 }
             }
         }
@@ -425,7 +503,7 @@ mod tests {
             &[(200_000.0, RigMode::USB, 3000, 64)],
         );
         assert_eq!(pipeline.pcm_senders.len(), 1);
-        assert_eq!(pipeline.channel_dsps.len(), 1);
+        assert_eq!(pipeline.channel_dsps.read().unwrap().len(), 1);
     }
 
     #[test]
@@ -442,6 +520,6 @@ mod tests {
             &[],
         );
         assert_eq!(pipeline.pcm_senders.len(), 0);
-        assert_eq!(pipeline.channel_dsps.len(), 0);
+        assert_eq!(pipeline.channel_dsps.read().unwrap().len(), 0);
     }
 }
