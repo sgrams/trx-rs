@@ -1174,16 +1174,31 @@ small { color: var(--text-muted); }
   color: var(--text-heading);
 }
 #map-stage:fullscreen,
-#map-stage:-webkit-full-screen {
+#map-stage:-webkit-full-screen,
+#map-stage.map-fake-fullscreen {
   background: var(--bg);
   width: 100%;
   height: 100%;
   padding: 0;
   box-sizing: border-box;
 }
+/* CSS-based fake fullscreen for browsers that block the Fullscreen API
+   (notably mobile Safari, which only allows fullscreen for <video>). */
+#map-stage.map-fake-fullscreen {
+  position: fixed;
+  inset: 0;
+  z-index: 9000;
+  height: 100dvh;
+}
+body.map-fake-fullscreen-active {
+  overflow: hidden;
+  touch-action: none;
+}
 #map-stage:fullscreen #aprs-map,
-#map-stage:-webkit-full-screen #aprs-map {
+#map-stage:-webkit-full-screen #aprs-map,
+#map-stage.map-fake-fullscreen #aprs-map {
   border-radius: 0;
+  height: 100% !important;
 }
 .aprs-controls { display: flex; gap: 0.6rem; align-items: center; margin-bottom: 0.75rem; }
 .aprs-controls > button.active,

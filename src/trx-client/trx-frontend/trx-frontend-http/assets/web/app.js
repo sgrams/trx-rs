@@ -4272,7 +4272,23 @@ function mapStageEl() {
 function mapIsFullscreen() {
   const stage = mapStageEl();
   if (!stage) return false;
-  return document.fullscreenElement === stage || document.webkitFullscreenElement === stage;
+  return document.fullscreenElement === stage
+    || document.webkitFullscreenElement === stage
+    || stage.classList.contains("map-fake-fullscreen");
+}
+
+function mapExitFakeFullscreen() {
+  const stage = mapStageEl();
+  if (!stage) return;
+  stage.classList.remove("map-fake-fullscreen");
+  document.body.classList.remove("map-fake-fullscreen-active");
+}
+
+function mapEnterFakeFullscreen() {
+  const stage = mapStageEl();
+  if (!stage) return;
+  stage.classList.add("map-fake-fullscreen");
+  document.body.classList.add("map-fake-fullscreen-active");
 }
 
 function updateMapFullscreenButton() {
@@ -4285,24 +4301,46 @@ async function toggleMapFullscreen() {
   const stage = mapStageEl();
   if (!stage) return;
   try {
-    if (mapIsFullscreen()) {
-      if (document.exitFullscreen) {
-        await document.exitFullscreen();
-      } else if (document.webkitExitFullscreen) {
-        await document.webkitExitFullscreen();
+    const isNative = document.fullscreenElement === stage || document.webkitFullscreenElement === stage;
+    const isFake   = stage.classList.contains("map-fake-fullscreen");
+    if (isNative) {
+      if (document.exitFullscreen) await document.exitFullscreen();
+      else if (document.webkitExitFullscreen) await document.webkitExitFullscreen();
+    } else if (isFake) {
+      mapExitFakeFullscreen();
+    } else {
+      // Try native fullscreen; fall back to CSS fake fullscreen when the
+      // API is unavailable or blocked (e.g. mobile Safari).
+      const nativeFn = stage.requestFullscreen || stage.webkitRequestFullscreen;
+      if (nativeFn) {
+        try {
+          await nativeFn.call(stage);
+        } catch (_) {
+          mapEnterFakeFullscreen();
+        }
+      } else {
+        mapEnterFakeFullscreen();
       }
-    } else if (stage.requestFullscreen) {
-      await stage.requestFullscreen();
-    } else if (stage.webkitRequestFullscreen) {
-      await stage.webkitRequestFullscreen();
     }
   } catch (err) {
     console.error("Map fullscreen toggle failed", err);
   } finally {
     updateMapFullscreenButton();
-    sizeAprsMapToViewport();
+    requestAnimationFrame(() => sizeAprsMapToViewport());
   }
 }
+
+// Allow Escape to exit CSS fake fullscreen (native fullscreen handles its own Escape).
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") {
+    const stage = mapStageEl();
+    if (stage && stage.classList.contains("map-fake-fullscreen")) {
+      mapExitFakeFullscreen();
+      updateMapFullscreenButton();
+      requestAnimationFrame(() => sizeAprsMapToViewport());
+    }
+  }
+});
 
 function initAprsMap() {
   const mapEl = document.getElementById("aprs-map");
@@ -4506,7 +4544,13 @@ function sizeAprsMapToViewport() {
   if (!mapEl) return;
   const stage = mapStageEl();
   if (mapIsFullscreen() && stage) {
-    const stageHeight = stage.clientHeight || stage.getBoundingClientRect().height;
+    // For CSS fake fullscreen use window.innerHeight directly — clientHeight
+    // may not yet reflect the fixed layout when called synchronously after
+    // adding the class.
+    const isFake = stage.classList.contains("map-fake-fullscreen");
+    const stageHeight = isFake
+      ? window.innerHeight
+      : (stage.clientHeight || stage.getBoundingClientRect().height);
     const target = Math.max(260, Math.floor(stageHeight));
     mapEl.style.height = `${target}px`;
     if (aprsMap) aprsMap.invalidateSize();
