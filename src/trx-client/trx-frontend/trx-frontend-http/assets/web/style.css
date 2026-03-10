@@ -62,7 +62,7 @@
 }
 
 body {
-  font-family: sans-serif;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   margin: 0;
   min-height: 100vh;
   min-height: 100dvh;
@@ -371,7 +371,9 @@ input.status-input, select.status-input { width: 100%; padding: 0.45rem 0.5rem; 
   align-items: center;
   margin-top: 0.4rem;
 }
-button { padding: 0.5rem 0.9rem; border-radius: 6px; border: 1px solid var(--btn-border); background: var(--btn-bg); color: var(--text); cursor: pointer; height: var(--control-height); }
+button { padding: 0.5rem 0.9rem; border-radius: 6px; border: 1px solid var(--btn-border); background: var(--btn-bg); color: var(--text); cursor: pointer; height: var(--control-height); transition: background 100ms ease, border-color 100ms ease, color 100ms ease, box-shadow 100ms ease; }
+button:hover:not(:disabled) { background: color-mix(in srgb, var(--btn-bg) 75%, var(--accent-green)); border-color: color-mix(in srgb, var(--btn-border) 60%, var(--accent-green)); box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent-green) 18%, transparent); }
+button:active:not(:disabled) { background: color-mix(in srgb, var(--btn-bg) 55%, var(--accent-green)); border-color: var(--accent-green); box-shadow: none; transform: translateY(1px); }
 button:disabled { opacity: 0.6; cursor: not-allowed; }
 .hint { color: var(--text-muted); font-size: 0.85rem; }
 .inline { display: flex; gap: 0.5rem; align-items: center; }
@@ -1801,6 +1803,13 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   outline-offset: 2px;
 }
 
+/* ── Scrollbars ───────────────────────────────────────────────────────── */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: color-mix(in srgb, var(--border-light) 70%, transparent); border-radius: 999px; }
+::-webkit-scrollbar-thumb:hover { background: color-mix(in srgb, var(--accent-green) 55%, var(--border-light)); }
+* { scrollbar-width: thin; scrollbar-color: color-mix(in srgb, var(--border-light) 70%, transparent) transparent; }
+
 @media (max-width: 900px) {
   .card { width: 100%; padding-left: 0.9rem; padding-right: 0.9rem; }
 }
@@ -3173,4 +3182,72 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   --filter-border: #c85b47;
   --wavelength-fg: #9d5547;
   --spectrum-bg: #ffede5;
+}
+
+/* ── Phosphor style ───────────────────────────────────────────────────── */
+/* Classic green-phosphor CRT terminal aesthetic */
+[data-style="phosphor"] {
+  --bg: #030a03;
+  --card-bg: #060e06;
+  --input-bg: #030a03;
+  --border: #0f2e0f;
+  --border-light: #1a4a1a;
+  --text: #a8e6a8;
+  --text-muted: #5a9a5a;
+  --text-heading: #c8f0c8;
+  --btn-bg: #0a1e0a;
+  --btn-border: #1e4a1e;
+  --accent-green: #39ff14;
+  --accent-yellow: #b8f060;
+  --accent-red: #ff4444;
+  --jog-hi: #0e2a0e;
+  --jog-lo: #081808;
+  --jog-shadow: rgba(0,0,0,0.65);
+  --jog-inset: rgba(57,255,20,0.07);
+  --audio-level-bg: #060e06;
+  --audio-level-border: #1a4a1a;
+  --audio-level-fill-start: #39ff14;
+  --audio-level-fill-end: #b8f060;
+  --filter-bg: #0a1e0a;
+  --filter-fg: #a8e6a8;
+  --filter-border: #1e4a1e;
+  --wavelength-fg: #4a8a4a;
+  --spectrum-bg: #010501;
+}
+[data-style="phosphor"] #freq {
+  color: #39ff14;
+  text-shadow: 0 0 8px rgba(57,255,20,0.55), 0 0 20px rgba(57,255,20,0.2);
+}
+[data-style="phosphor"] .signal-bar-fill,
+[data-style="phosphor"] .meter-fill {
+  background: linear-gradient(90deg, #39ff14, #b8f060);
+  box-shadow: 0 0 6px rgba(57,255,20,0.45);
+}
+[data-style="phosphor"][data-theme="light"] {
+  --bg: #e8f5e8;
+  --card-bg: #f0faf0;
+  --input-bg: #dff0df;
+  --border: #b0d8b0;
+  --border-light: #80c080;
+  --text: #0a2a0a;
+  --text-muted: #2a6a2a;
+  --text-heading: #062006;
+  --btn-bg: #d0ebd0;
+  --btn-border: #4a8a4a;
+  --accent-green: #1a7a1a;
+  --accent-yellow: #4a8a00;
+  --accent-red: #cc2222;
+  --jog-hi: #d0ebd0;
+  --jog-lo: #bcdabc;
+  --jog-shadow: rgba(10,42,10,0.15);
+  --jog-inset: rgba(255,255,255,0.72);
+  --audio-level-bg: #d8edd8;
+  --audio-level-border: #80c080;
+  --audio-level-fill-start: #1a7a1a;
+  --audio-level-fill-end: #4a8a00;
+  --filter-bg: #d0ebd0;
+  --filter-fg: #0a2a0a;
+  --filter-border: #4a8a4a;
+  --wavelength-fg: #3a7a3a;
+  --spectrum-bg: #e0f0e0;
 }
