@@ -716,6 +716,12 @@
         <!-- Time Span section -->
         <div id="scheduler-timespan-section" class="sch-section" style="display:none;">
           <div class="sch-section-title">Time Span Entries (UTC)</div>
+          <div class="sch-row" style="margin-bottom:0.75rem;">
+            <label class="sch-label">Interleave time (min)
+              <input type="number" id="scheduler-ts-interleave" class="status-input" min="1" max="60" placeholder="off" style="width:7rem;" />
+            </label>
+            <small style="color:var(--text-muted);align-self:flex-end;padding-bottom:0.35rem;">When multiple entries overlap, spend this many minutes at each before cycling. Leave blank to disable.</small>
+          </div>
           <table class="sch-ts-table">
             <thead>
               <tr><th>Start</th><th>End</th><th>Bookmark</th><th>Label</th><th></th></tr>

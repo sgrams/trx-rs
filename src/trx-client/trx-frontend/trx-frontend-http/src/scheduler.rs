@@ -78,6 +78,11 @@ pub struct SchedulerConfig {
     pub grayline: Option<GraylineConfig>,
     #[serde(default)]
     pub entries: Vec<ScheduleEntry>,
+    /// When multiple entries are active simultaneously, cycle through them,
+    /// spending this many minutes at each before advancing to the next.
+    /// `None` (or 0) disables interleaving — the first matching entry wins.
+    #[serde(default)]
+    pub interleave_min: Option<u32>,
 }
 
 // ============================================================================
@@ -265,21 +270,41 @@ fn grayline_bookmark_id(gl: &GraylineConfig, now_min: f64) -> Option<String> {
     }
 }
 
-fn timespan_bookmark_id(entries: &[ScheduleEntry], now_min: f64) -> Option<String> {
-    for entry in entries {
-        let start = entry.start_min as f64;
-        let end = entry.end_min as f64;
-        let in_window = if start <= end {
-            now_min >= start && now_min < end
-        } else {
-            // Spans midnight.
-            now_min >= start || now_min < end
-        };
-        if in_window {
-            return Some(entry.bookmark_id.clone());
+fn entry_is_active(entry: &ScheduleEntry, now_min: f64) -> bool {
+    let start = entry.start_min as f64;
+    let end = entry.end_min as f64;
+    if start <= end {
+        now_min >= start && now_min < end
+    } else {
+        // Spans midnight.
+        now_min >= start || now_min < end
+    }
+}
+
+fn timespan_bookmark_id(
+    entries: &[ScheduleEntry],
+    now_min: f64,
+    interleave_min: Option<u32>,
+) -> Option<String> {
+    let active: Vec<&ScheduleEntry> = entries
+        .iter()
+        .filter(|e| entry_is_active(e, now_min))
+        .collect();
+
+    if active.is_empty() {
+        return None;
+    }
+
+    // With interleaving and more than one active entry, pick by time slot.
+    if active.len() > 1 {
+        if let Some(step) = interleave_min.filter(|&s| s > 0) {
+            let slot = (now_min as u64 / step as u64) as usize % active.len();
+            return Some(active[slot].bookmark_id.clone());
         }
     }
-    None
+
+    // Default: first matching entry wins.
+    Some(active[0].bookmark_id.clone())
 }
 
 /// Current UTC time as minutes since midnight.
@@ -346,7 +371,7 @@ pub fn spawn_scheduler_task(
                         .as_ref()
                         .and_then(|gl| grayline_bookmark_id(gl, now_min)),
                     SchedulerMode::TimeSpan => {
-                        timespan_bookmark_id(&config.entries, now_min)
+                        timespan_bookmark_id(&config.entries, now_min, config.interleave_min)
                     }
                 };
 
@@ -459,6 +484,7 @@ pub async fn get_scheduler(
         mode: SchedulerMode::Disabled,
         grayline: None,
         entries: vec![],
+        interleave_min: None,
     });
     HttpResponse::Ok().json(config)
 }

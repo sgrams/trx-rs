@@ -195,6 +195,13 @@
       renderBookmarkSelect("scheduler-gl-night", null);
     }
 
+    // Interleave input
+    const ilEl = document.getElementById("scheduler-ts-interleave");
+    if (ilEl) {
+      const il = currentConfig && currentConfig.interleave_min;
+      ilEl.value = il ? il : "";
+    }
+
     // TimeSpan entries
     renderTimespanEntries();
 
@@ -374,6 +381,8 @@
     } else if (mode === "time_span") {
       config.entries =
         currentConfig && currentConfig.entries ? currentConfig.entries : [];
+      const ilVal = parseInt(document.getElementById("scheduler-ts-interleave").value, 10);
+      config.interleave_min = isNaN(ilVal) || ilVal <= 0 ? null : ilVal;
     }
 
     const btn = document.getElementById("scheduler-save-btn");
