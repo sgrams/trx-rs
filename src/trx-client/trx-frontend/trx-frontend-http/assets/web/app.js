@@ -4567,10 +4567,10 @@ function sizeAprsMapToViewport() {
     if (fr.top > mapRect.top + 50) bottom = fr.top;
   }
   const available = Math.max(0, Math.floor(bottom - mapRect.top - 8));
-  const widthDriven = width > 0 ? Math.floor(width / 1.9) : available;
+  const widthDriven = width > 0 ? Math.floor(width / 1.55) : available;
   const viewportCap = mapIsFullscreen()
     ? Math.floor(window.innerHeight * 0.9)
-    : Math.floor(window.innerHeight * 0.6);
+    : Math.floor(window.innerHeight * 0.75);
   const minHeight = Math.min(260, available);
   const target = Math.max(minHeight, Math.min(available, viewportCap, widthDriven));
   mapEl.style.height = `${target}px`;
