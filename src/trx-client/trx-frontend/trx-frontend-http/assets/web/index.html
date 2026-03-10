@@ -724,7 +724,7 @@
           </div>
           <table class="sch-ts-table">
             <thead>
-              <tr><th>Start</th><th>End</th><th>Bookmark</th><th>Label</th><th></th></tr>
+              <tr><th>Start</th><th>End</th><th>Bookmark</th><th>Label</th><th>Interleave (min)</th><th></th></tr>
             </thead>
             <tbody id="scheduler-ts-tbody"></tbody>
           </table>
@@ -740,6 +740,9 @@
             </label>
             <label class="sch-label">Label (optional)
               <input type="text" id="scheduler-ts-label" class="status-input" placeholder="e.g. 40m FT8" />
+            </label>
+            <label class="sch-label">Interleave (min, optional)
+              <input type="number" id="scheduler-ts-entry-interleave" class="status-input" min="1" max="60" placeholder="default" style="width:6rem;" />
             </label>
             <button id="scheduler-ts-add-btn" class="sch-write" type="button">+ Add</button>
           </div>

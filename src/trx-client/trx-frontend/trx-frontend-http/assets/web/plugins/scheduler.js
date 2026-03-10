@@ -277,11 +277,13 @@
         : [];
     entries.forEach(function (entry, idx) {
       const tr = document.createElement("tr");
+      const il = entry.interleave_min ? String(entry.interleave_min) + " min" : "—";
       tr.innerHTML =
         '<td>' + minToHHMM(entry.start_min) + '</td>' +
         '<td>' + minToHHMM(entry.end_min) + '</td>' +
         '<td>' + bmName(entry.bookmark_id) + '</td>' +
         '<td>' + escHtml(entry.label || "") + '</td>' +
+        '<td>' + il + '</td>' +
         '<td><button class="sch-write sch-remove-btn" data-idx="' + idx + '" type="button">Remove</button></td>';
       tbody.appendChild(tr);
     });
@@ -330,12 +332,15 @@
     const endEl = document.getElementById("scheduler-ts-end");
     const bmEl = document.getElementById("scheduler-ts-bookmark");
     const labelEl = document.getElementById("scheduler-ts-label");
+    const ilEl = document.getElementById("scheduler-ts-entry-interleave");
     if (!startEl || !endEl || !bmEl) return;
 
     const startMin = hhmmToMin(startEl.value);
     const endMin = hhmmToMin(endEl.value);
     const bmId = bmEl.value;
     const label = labelEl ? labelEl.value.trim() : "";
+    const ilVal = ilEl ? parseInt(ilEl.value, 10) : NaN;
+    const entryInterleave = !isNaN(ilVal) && ilVal > 0 ? ilVal : null;
 
     if (!bmId) {
       alert("Please select a bookmark.");
@@ -354,12 +359,14 @@
       end_min: endMin,
       bookmark_id: bmId,
       label: label || null,
+      interleave_min: entryInterleave,
     });
 
     startEl.value = "";
     endEl.value = "";
-    bmEl.value = "";  // reset select to first option
+    bmEl.value = "";
     if (labelEl) labelEl.value = "";
+    if (ilEl) ilEl.value = "";
 
     renderTimespanEntries();
   }

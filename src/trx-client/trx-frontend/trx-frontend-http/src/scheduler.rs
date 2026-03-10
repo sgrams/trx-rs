@@ -68,6 +68,11 @@ pub struct ScheduleEntry {
     pub bookmark_id: String,
     #[serde(default)]
     pub label: Option<String>,
+    /// Per-entry interleave duration in minutes.  Overrides the config-level
+    /// `interleave_min` when set.  Allows each entry to occupy a differently
+    /// sized slice of the interleave cycle.
+    #[serde(default)]
+    pub interleave_min: Option<u32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -284,7 +289,7 @@ fn entry_is_active(entry: &ScheduleEntry, now_min: f64) -> bool {
 fn timespan_bookmark_id(
     entries: &[ScheduleEntry],
     now_min: f64,
-    interleave_min: Option<u32>,
+    default_interleave: Option<u32>,
 ) -> Option<String> {
     let active: Vec<&ScheduleEntry> = entries
         .iter()
@@ -295,11 +300,24 @@ fn timespan_bookmark_id(
         return None;
     }
 
-    // With interleaving and more than one active entry, pick by time slot.
+    // With interleaving and more than one active entry, use a weighted cycle.
+    // Each entry's effective duration is its own interleave_min, falling back
+    // to the config-level default.  The cycle length is the sum of all durations.
     if active.len() > 1 {
-        if let Some(step) = interleave_min.filter(|&s| s > 0) {
-            let slot = (now_min as u64 / step as u64) as usize % active.len();
-            return Some(active[slot].bookmark_id.clone());
+        let durations: Vec<u32> = active
+            .iter()
+            .map(|e| e.interleave_min.or(default_interleave).unwrap_or(0))
+            .collect();
+        let cycle: u32 = durations.iter().sum();
+        if cycle > 0 {
+            let pos = (now_min as u64) % (cycle as u64);
+            let mut cum = 0u64;
+            for (entry, &dur) in active.iter().zip(durations.iter()) {
+                cum += dur as u64;
+                if pos < cum {
+                    return Some(entry.bookmark_id.clone());
+                }
+            }
         }
     }
 
