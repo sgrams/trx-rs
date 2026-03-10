@@ -2306,6 +2306,7 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   box-shadow: 0 8px 18px rgba(0,0,0,0.18);
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
+  transition: none;
 }
 .spectrum-edge-shift::before {
   content: "";
@@ -2326,7 +2327,7 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   border-color: var(--accent-yellow);
 }
 .spectrum-edge-shift:active {
-  transform: translateY(-50%) scale(0.97);
+  transform: translateY(-50%);
 }
 .spectrum-edge-shift-left {
   left: -2.05rem;
