@@ -1762,14 +1762,19 @@ function tunedFrequencyForCenterCoverage(centerHz, freqHz = lastFreqHz, bandwidt
   return alignFreqToRigStep(Math.round(clampedHz));
 }
 
+// Optimistic center freq: updated immediately on each arrow click so that
+// rapid clicks accumulate rather than all starting from the same stale frame.
+let spectrumCenterPendingHz = null;
+
 async function shiftSpectrumCenter(direction) {
   if (!lastSpectrumData || !Number.isFinite(direction) || direction === 0) return;
   const sampleRate = effectiveSpectrumCoverageSpanHz(lastSpectrumData.sample_rate);
-  const currentCenterHz = Number(lastSpectrumData.center_hz);
+  const currentCenterHz = spectrumCenterPendingHz ?? Number(lastSpectrumData.center_hz);
   if (!Number.isFinite(sampleRate) || sampleRate <= 0 || !Number.isFinite(currentCenterHz)) return;
 
   const stepHz = Math.max(50_000, Math.round(sampleRate * 0.35));
   const nextCenterHz = alignFreqToRigStep(Math.round(currentCenterHz + direction * stepHz));
+  spectrumCenterPendingHz = nextCenterHz;
   showHint("Shifting spectrum…", 900);
   await postPath(`/set_center_freq?hz=${nextCenterHz}`);
   if (centerFreqEl && !centerFreqDirty) {
@@ -6517,6 +6522,10 @@ function startSpectrumStreaming() {
       const rds = lastSpectrumData?.rds;
       lastSpectrumData = { bins, center_hz: centerHz, sample_rate: sampleRate, rds };
       window.lastSpectrumData = lastSpectrumData;
+      // Server confirmed a new center — clear optimistic pending value.
+      if (spectrumCenterPendingHz !== null && Math.abs(centerHz - spectrumCenterPendingHz) < 1000) {
+        spectrumCenterPendingHz = null;
+      }
       lastSpectrumRenderData = buildSpectrumRenderData(lastSpectrumData);
       settlePendingSpectrumFrameWaiters(lastSpectrumData);
       pushSpectrumPeakHoldFrame(lastSpectrumRenderData);
