@@ -214,7 +214,7 @@ fn sunrise_sunset_today(lat_deg: f64, lon_deg: f64) -> Option<(f64, f64)> {
         / (lat_rad.cos() * decl.cos())
         - lat_rad.tan() * decl.tan();
 
-    if cos_ha < -1.0 || cos_ha > 1.0 {
+    if !(-1.0..=1.0).contains(&cos_ha) {
         return None; // Polar day or polar night.
     }
 
