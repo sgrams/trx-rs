@@ -117,6 +117,7 @@
       .then(function ([config, bms]) {
         currentConfig = config;
         bookmarkList = Array.isArray(bms) ? bms : [];
+        populateTsBookmarkSelect();
         renderScheduler();
       })
       .catch(function (e) {
@@ -181,13 +182,27 @@
     // Grayline inputs
     if (mode === "grayline" && currentConfig && currentConfig.grayline) {
       const gl = currentConfig.grayline;
-      setInputValue("scheduler-gl-lat", gl.lat != null ? gl.lat : "");
-      setInputValue("scheduler-gl-lon", gl.lon != null ? gl.lon : "");
+      // Prefer saved value; fall back to server coordinates from app.js globals.
+      const lat = gl.lat != null ? gl.lat : (typeof serverLat !== "undefined" ? serverLat : "");
+      const lon = gl.lon != null ? gl.lon : (typeof serverLon !== "undefined" ? serverLon : "");
+      setInputValue("scheduler-gl-lat", lat != null ? lat : "");
+      setInputValue("scheduler-gl-lon", lon != null ? lon : "");
       setInputValue("scheduler-gl-window", gl.transition_window_min != null ? gl.transition_window_min : 20);
       renderBookmarkSelect("scheduler-gl-dawn", gl.dawn_bookmark_id);
       renderBookmarkSelect("scheduler-gl-day", gl.day_bookmark_id);
       renderBookmarkSelect("scheduler-gl-dusk", gl.dusk_bookmark_id);
       renderBookmarkSelect("scheduler-gl-night", gl.night_bookmark_id);
+    } else if (mode === "grayline") {
+      // No saved grayline config yet — pre-fill coords from server if available.
+      const lat = typeof serverLat !== "undefined" ? serverLat : "";
+      const lon = typeof serverLon !== "undefined" ? serverLon : "";
+      setInputValue("scheduler-gl-lat", lat != null ? lat : "");
+      setInputValue("scheduler-gl-lon", lon != null ? lon : "");
+      setInputValue("scheduler-gl-window", 20);
+      renderBookmarkSelect("scheduler-gl-dawn", null);
+      renderBookmarkSelect("scheduler-gl-day", null);
+      renderBookmarkSelect("scheduler-gl-dusk", null);
+      renderBookmarkSelect("scheduler-gl-night", null);
     } else {
       renderBookmarkSelect("scheduler-gl-dawn", null);
       renderBookmarkSelect("scheduler-gl-day", null);
@@ -343,6 +358,7 @@
 
     startEl.value = "";
     endEl.value = "";
+    bmEl.value = "";  // reset select to first option
     if (labelEl) labelEl.value = "";
 
     renderTimespanEntries();
@@ -473,17 +489,21 @@
     const addBtn = document.getElementById("scheduler-ts-add-btn");
     if (addBtn) addBtn.addEventListener("click", addEntry);
 
-    // Populate add-entry bookmark selector
-    const tsBookmarkEl = document.getElementById("scheduler-ts-bookmark");
-    if (tsBookmarkEl) {
-      tsBookmarkEl.innerHTML = '<option value="">— select bookmark —</option>';
-      bookmarkList.forEach(function (bm) {
-        const opt = document.createElement("option");
-        opt.value = bm.id;
-        opt.textContent = bm.name + " (" + formatFreq(bm.freq_hz) + " " + bm.mode + ")";
-        tsBookmarkEl.appendChild(opt);
-      });
-    }
+  }
+
+  function populateTsBookmarkSelect() {
+    const sel = document.getElementById("scheduler-ts-bookmark");
+    if (!sel) return;
+    const prev = sel.value;
+    sel.innerHTML = '<option value="">— select bookmark —</option>';
+    bookmarkList.forEach(function (bm) {
+      const opt = document.createElement("option");
+      opt.value = bm.id;
+      opt.textContent = bm.name + " (" + formatFreq(bm.freq_hz) + " " + bm.mode + ")";
+      sel.appendChild(opt);
+    });
+    // Restore previous selection if still valid.
+    if (prev) sel.value = prev;
   }
 
   // -------------------------------------------------------------------------
