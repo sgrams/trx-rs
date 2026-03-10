@@ -5014,7 +5014,7 @@ function syncSelectedAisTrackVisibility() {
 }
 
 function getAisAccentColor() {
-  return getComputedStyle(document.documentElement).getPropertyValue("--ais-accent").trim() || "#00aacc";
+  return getComputedStyle(document.documentElement).getPropertyValue("--accent-green").trim() || "#c24b1a";
 }
 
 function aisMarkerOptionsFromMessage(msg) {
