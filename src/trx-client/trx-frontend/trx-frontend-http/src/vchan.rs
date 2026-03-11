@@ -36,6 +36,8 @@ pub struct ClientChannel {
     pub index: usize,
     pub freq_hz: u64,
     pub mode: String,
+    /// Audio filter bandwidth in Hz (0 = mode default).
+    pub bandwidth_hz: u32,
     /// True for channel 0 — cannot be deleted.
     pub permanent: bool,
     /// Number of SSE sessions currently subscribed to this channel.
@@ -72,6 +74,8 @@ struct InternalChannel {
     id: Uuid,
     freq_hz: u64,
     mode: String,
+    /// Audio filter bandwidth in Hz (0 = mode default).
+    bandwidth_hz: u32,
     permanent: bool,
     /// Session UUIDs currently subscribed to this channel.
     session_ids: Vec<Uuid>,
@@ -132,6 +136,7 @@ impl ClientChannelManager {
                 index: idx,
                 freq_hz: c.freq_hz,
                 mode: c.mode.clone(),
+                bandwidth_hz: c.bandwidth_hz,
                 permanent: c.permanent,
                 subscribers: c.session_ids.len(),
             })
@@ -153,6 +158,7 @@ impl ClientChannelManager {
                 id: Uuid::new_v4(),
                 freq_hz,
                 mode: mode.to_string(),
+                bandwidth_hz: 0,
                 permanent: true,
                 session_ids: Vec::new(),
             });
@@ -185,6 +191,7 @@ impl ClientChannelManager {
                         index: idx,
                         freq_hz: c.freq_hz,
                         mode: c.mode.clone(),
+                        bandwidth_hz: c.bandwidth_hz,
                         permanent: c.permanent,
                         subscribers: c.session_ids.len(),
                     })
@@ -218,6 +225,7 @@ impl ClientChannelManager {
             id,
             freq_hz,
             mode: mode.to_string(),
+            bandwidth_hz: 0,
             permanent: false,
             session_ids: vec![session_id],
         });
@@ -227,6 +235,7 @@ impl ClientChannelManager {
             index: idx,
             freq_hz,
             mode: mode.to_string(),
+            bandwidth_hz: 0,
             permanent: false,
             subscribers: 1,
         };
@@ -276,6 +285,7 @@ impl ClientChannelManager {
             index: idx,
             freq_hz: ch.freq_hz,
             mode: ch.mode.clone(),
+            bandwidth_hz: ch.bandwidth_hz,
             permanent: ch.permanent,
             subscribers: ch.session_ids.len(),
         };
@@ -424,6 +434,25 @@ impl ClientChannelManager {
         self.broadcast_change(rig_id, channels);
         drop(rigs);
         self.send_audio_cmd(VChanAudioCmd::SetMode { uuid: channel_id, mode: mode.to_string() });
+        Ok(())
+    }
+
+    pub fn set_channel_bandwidth(
+        &self,
+        rig_id: &str,
+        channel_id: Uuid,
+        bandwidth_hz: u32,
+    ) -> Result<(), VChanClientError> {
+        let mut rigs = self.rigs.write().unwrap();
+        let channels = rigs.get_mut(rig_id).ok_or(VChanClientError::NotFound)?;
+        let ch = channels
+            .iter_mut()
+            .find(|c| c.id == channel_id)
+            .ok_or(VChanClientError::NotFound)?;
+        ch.bandwidth_hz = bandwidth_hz;
+        self.broadcast_change(rig_id, channels);
+        drop(rigs);
+        self.send_audio_cmd(VChanAudioCmd::SetBandwidth { uuid: channel_id, bandwidth_hz });
         Ok(())
     }
 

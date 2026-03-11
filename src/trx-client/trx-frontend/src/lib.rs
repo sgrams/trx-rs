@@ -38,6 +38,8 @@ pub enum VChanAudioCmd {
     SetFreq { uuid: Uuid, freq_hz: u64 },
     /// Update the demodulation mode of an existing virtual channel.
     SetMode { uuid: Uuid, mode: String },
+    /// Update the audio filter bandwidth of an existing virtual channel.
+    SetBandwidth { uuid: Uuid, bandwidth_hz: u32 },
 }
 
 #[derive(Clone, Debug)]

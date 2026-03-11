@@ -1203,6 +1203,27 @@ pub async fn set_vchan_freq(
 }
 
 #[derive(serde::Deserialize)]
+struct SetChanBwBody {
+    bandwidth_hz: u32,
+}
+
+#[put("/channels/{rig_id}/{channel_id}/bw")]
+pub async fn set_vchan_bw(
+    path: web::Path<(String, Uuid)>,
+    body: web::Json<SetChanBwBody>,
+    vchan_mgr: web::Data<Arc<ClientChannelManager>>,
+) -> impl Responder {
+    let (rig_id, channel_id) = path.into_inner();
+    match vchan_mgr.set_channel_bandwidth(&rig_id, channel_id, body.bandwidth_hz) {
+        Ok(()) => HttpResponse::Ok().finish(),
+        Err(crate::server::vchan::VChanClientError::NotFound) => {
+            HttpResponse::NotFound().finish()
+        }
+        Err(e) => HttpResponse::BadRequest().body(e.to_string()),
+    }
+}
+
+#[derive(serde::Deserialize)]
 struct SetChanModeBody {
     mode: String,
 }
@@ -1297,6 +1318,7 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
         .service(delete_channel_route)
         .service(subscribe_channel)
         .service(set_vchan_freq)
+        .service(set_vchan_bw)
         .service(set_vchan_mode)
         // Auth endpoints
         .service(crate::server::auth::login)

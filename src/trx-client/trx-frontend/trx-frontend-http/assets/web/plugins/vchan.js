@@ -236,6 +236,29 @@ function vchanSyncModeDisplay() {
   // When on primary channel, app.js rig-state updates handle the picker.
 }
 
+// Sync the BW input to the active virtual channel's bandwidth.
+function vchanSyncBwDisplay() {
+  if (!vchanIsOnVirtual()) return;
+  const ch = vchanActiveChannel();
+  if (!ch) return;
+  const bwEl = document.getElementById("spectrum-bw-input");
+  if (!bwEl) return;
+  // bandwidth_hz == 0 means mode-default; derive it from the channel mode.
+  let bwHz = ch.bandwidth_hz || 0;
+  if (bwHz === 0 && typeof mwDefaultsForMode === "function") {
+    bwHz = mwDefaultsForMode(ch.mode)[0] || 0;
+  }
+  if (bwHz > 0) {
+    bwEl.value = (bwHz / 1000).toFixed(3).replace(/\.?0+$/, "");
+    if (typeof currentBandwidthHz !== "undefined") {
+      currentBandwidthHz = bwHz;
+      window.currentBandwidthHz = bwHz;
+    } else {
+      window.currentBandwidthHz = bwHz;
+    }
+  }
+}
+
 // Add / remove the vchan accent class from the freq and BW inputs.
 function vchanSyncAccentUI() {
   const onVirtual = vchanIsOnVirtual();
@@ -246,6 +269,7 @@ function vchanSyncAccentUI() {
   if (onVirtual) {
     vchanUpdateFreqDisplay();
     vchanSyncModeDisplay();
+    vchanSyncBwDisplay();
   } else if (typeof _origRefreshFreqDisplay === "function") {
     _origRefreshFreqDisplay();
   }
@@ -286,6 +310,23 @@ async function vchanSetChannelFreq(freqHz) {
   }
 }
 
+async function vchanSetChannelBandwidth(bwHz) {
+  if (!vchanRigId || !vchanActiveId) return;
+  try {
+    const resp = await fetch(
+      `/channels/${encodeURIComponent(vchanRigId)}/${encodeURIComponent(vchanActiveId)}/bw`,
+      {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ bandwidth_hz: Math.round(bwHz) }),
+      }
+    );
+    if (!resp.ok) console.warn("vchan: set bw failed", resp.status);
+  } catch (e) {
+    console.error("vchan: set bw error", e);
+  }
+}
+
 async function vchanSetChannelMode(mode) {
   if (!vchanRigId || !vchanActiveId) return;
   try {
@@ -309,6 +350,14 @@ async function vchanSetChannelMode(mode) {
 window.vchanInterceptMode = async function(mode) {
   if (!vchanIsOnVirtual()) return false;
   await vchanSetChannelMode(mode);
+  return true;
+};
+
+// Called by app.js bandwidth setters before sending /set_bandwidth to the
+// server.  Returns true if the change was handled by the virtual channel.
+window.vchanInterceptBandwidth = async function(bwHz) {
+  if (!vchanIsOnVirtual()) return false;
+  await vchanSetChannelBandwidth(bwHz);
   return true;
 };
 

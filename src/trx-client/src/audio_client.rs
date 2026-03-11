@@ -26,9 +26,9 @@ use trx_core::audio::{
     write_vchan_uuid_msg, AudioStreamInfo, AUDIO_MSG_AIS_DECODE, AUDIO_MSG_APRS_DECODE,
     AUDIO_MSG_CW_DECODE, AUDIO_MSG_FT8_DECODE, AUDIO_MSG_HF_APRS_DECODE,
     AUDIO_MSG_HISTORY_COMPRESSED, AUDIO_MSG_RX_FRAME, AUDIO_MSG_RX_FRAME_CH,
-    AUDIO_MSG_STREAM_INFO, AUDIO_MSG_TX_FRAME, AUDIO_MSG_VCHAN_ALLOCATED, AUDIO_MSG_VCHAN_DESTROYED,
-    AUDIO_MSG_VCHAN_FREQ, AUDIO_MSG_VCHAN_MODE, AUDIO_MSG_VCHAN_REMOVE, AUDIO_MSG_VCHAN_SUB,
-    AUDIO_MSG_VCHAN_UNSUB, AUDIO_MSG_VDES_DECODE, AUDIO_MSG_WSPR_DECODE,
+    AUDIO_MSG_STREAM_INFO, AUDIO_MSG_TX_FRAME, AUDIO_MSG_VCHAN_ALLOCATED, AUDIO_MSG_VCHAN_BW,
+    AUDIO_MSG_VCHAN_DESTROYED, AUDIO_MSG_VCHAN_FREQ, AUDIO_MSG_VCHAN_MODE, AUDIO_MSG_VCHAN_REMOVE,
+    AUDIO_MSG_VCHAN_SUB, AUDIO_MSG_VCHAN_UNSUB, AUDIO_MSG_VDES_DECODE, AUDIO_MSG_WSPR_DECODE,
 };
 use trx_core::decode::DecodedMessage;
 use trx_frontend::VChanAudioCmd;
@@ -52,8 +52,9 @@ pub async fn run_audio_client(
 ) {
     let mut reconnect_delay = Duration::from_secs(1);
     // Active virtual-channel subscriptions, keyed by UUID.
-    // Re-sent to the server on every audio TCP reconnect.
-    let mut active_subs: HashMap<Uuid, (u64, String)> = HashMap::new();
+    // Tuple: (freq_hz, mode, bandwidth_hz) — re-sent to the server on every audio TCP reconnect.
+    // bandwidth_hz == 0 means "use mode default".
+    let mut active_subs: HashMap<Uuid, (u64, String, u32)> = HashMap::new();
 
     loop {
         if *shutdown_rx.borrow() {
@@ -138,7 +139,7 @@ async fn handle_audio_connection(
     shutdown_rx: &mut watch::Receiver<bool>,
     vchan_audio: &Arc<RwLock<HashMap<Uuid, broadcast::Sender<Bytes>>>>,
     vchan_cmd_rx: &mut mpsc::Receiver<VChanAudioCmd>,
-    active_subs: &mut HashMap<Uuid, (u64, String)>,
+    active_subs: &mut HashMap<Uuid, (u64, String, u32)>,
     vchan_destroyed_tx: &Option<broadcast::Sender<Uuid>>,
 ) -> std::io::Result<()> {
     let (reader, writer) = stream.into_split();
@@ -165,7 +166,7 @@ async fn handle_audio_connection(
     // Track which UUIDs were pre-sent so we don't duplicate them when the
     // same Subscribe command arrives from the mpsc queue.
     let mut resubscribed: HashSet<Uuid> = HashSet::new();
-    for (&uuid, &(freq_hz, ref mode)) in active_subs.iter() {
+    for (&uuid, &(freq_hz, ref mode, bandwidth_hz)) in active_subs.iter() {
         let json = serde_json::json!({
             "uuid": uuid.to_string(),
             "freq_hz": freq_hz,
@@ -175,6 +176,16 @@ async fn handle_audio_connection(
             if let Err(e) = write_audio_msg(&mut writer, AUDIO_MSG_VCHAN_SUB, &payload).await {
                 warn!("Audio vchan reconnect SUB write failed: {}", e);
                 return Err(e);
+            }
+        }
+        // Re-apply non-default bandwidth after re-subscribing.
+        if bandwidth_hz > 0 {
+            let bw_json = serde_json::json!({ "uuid": uuid.to_string(), "bandwidth_hz": bandwidth_hz });
+            if let Ok(payload) = serde_json::to_vec(&bw_json) {
+                if let Err(e) = write_audio_msg(&mut writer, AUDIO_MSG_VCHAN_BW, &payload).await {
+                    warn!("Audio vchan reconnect BW write failed: {}", e);
+                    return Err(e);
+                }
             }
         }
         resubscribed.insert(uuid);
@@ -306,7 +317,7 @@ async fn handle_audio_connection(
             cmd = vchan_cmd_rx.recv() => {
                 match cmd {
                     Some(VChanAudioCmd::Subscribe { uuid, freq_hz, mode }) => {
-                        active_subs.insert(uuid, (freq_hz, mode.clone()));
+                        active_subs.insert(uuid, (freq_hz, mode.clone(), 0));
                         // Skip if already re-sent during reconnect initialization.
                         if resubscribed.remove(&uuid) {
                             // Already sent above; don't duplicate.
@@ -355,6 +366,19 @@ async fn handle_audio_connection(
                         if let Ok(payload) = serde_json::to_vec(&json) {
                             if let Err(e) = write_audio_msg(&mut writer, AUDIO_MSG_VCHAN_MODE, &payload).await {
                                 warn!("Audio vchan MODE write failed: {}", e);
+                                break;
+                            }
+                        }
+                    }
+                    Some(VChanAudioCmd::SetBandwidth { uuid, bandwidth_hz }) => {
+                        // Persist for reconnect.
+                        if let Some(entry) = active_subs.get_mut(&uuid) {
+                            entry.2 = bandwidth_hz;
+                        }
+                        let json = serde_json::json!({ "uuid": uuid.to_string(), "bandwidth_hz": bandwidth_hz });
+                        if let Ok(payload) = serde_json::to_vec(&json) {
+                            if let Err(e) = write_audio_msg(&mut writer, AUDIO_MSG_VCHAN_BW, &payload).await {
+                                warn!("Audio vchan BW write failed: {}", e);
                                 break;
                             }
                         }

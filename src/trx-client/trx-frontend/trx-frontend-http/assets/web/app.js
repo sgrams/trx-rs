@@ -3278,6 +3278,7 @@ async function applyBandwidthFromInput() {
   syncBandwidthInput(clamped);
   if (lastSpectrumData) scheduleSpectrumDraw();
   try {
+    if (typeof vchanInterceptBandwidth === "function" && await vchanInterceptBandwidth(clamped)) return;
     await postPath(`/set_bandwidth?hz=${clamped}`);
     if (Number.isFinite(lastFreqHz)) {
       await ensureTunedBandwidthCoverage(lastFreqHz);
@@ -3352,6 +3353,7 @@ async function applyAutoBandwidth() {
   syncBandwidthInput(estimated);
   if (lastSpectrumData) scheduleSpectrumDraw();
   try {
+    if (typeof vchanInterceptBandwidth === "function" && await vchanInterceptBandwidth(estimated)) return;
     await postPath(`/set_bandwidth?hz=${estimated}`);
     if (Number.isFinite(lastFreqHz)) {
       await ensureTunedBandwidthCoverage(lastFreqHz);
@@ -7774,9 +7776,12 @@ if (spectrumCanvas || overviewCanvas) {
   window.addEventListener("mouseup", async () => {
     if (_bwDragEdge) {
       try {
-        await postPath(`/set_bandwidth?hz=${Math.round(currentBandwidthHz)}`);
-        if (Number.isFinite(lastFreqHz)) {
-          await ensureTunedBandwidthCoverage(lastFreqHz, currentBandwidthHz);
+        const bwHz = Math.round(currentBandwidthHz);
+        if (!(typeof vchanInterceptBandwidth === "function" && await vchanInterceptBandwidth(bwHz))) {
+          await postPath(`/set_bandwidth?hz=${bwHz}`);
+          if (Number.isFinite(lastFreqHz)) {
+            await ensureTunedBandwidthCoverage(lastFreqHz, currentBandwidthHz);
+          }
         }
       } catch (_) {}
       _bwDragEdge = null;

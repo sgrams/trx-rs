@@ -286,9 +286,16 @@ async function bmApply(bm) {
       modeEl.value = String(bm.mode || "").toUpperCase();
     }
     if (bm.bandwidth_hz) {
-      await postPath("/set_bandwidth?hz=" + bm.bandwidth_hz);
+      const bwHandledByVchan = typeof vchanInterceptBandwidth === "function"
+        && await vchanInterceptBandwidth(bm.bandwidth_hz);
+      if (!bwHandledByVchan) {
+        await postPath("/set_bandwidth?hz=" + bm.bandwidth_hz);
+      }
       if (typeof currentBandwidthHz !== "undefined") {
         currentBandwidthHz = bm.bandwidth_hz;
+      }
+      if (typeof window !== "undefined") {
+        window.currentBandwidthHz = bm.bandwidth_hz;
       }
       if (typeof syncBandwidthInput === "function") {
         syncBandwidthInput(bm.bandwidth_hz);
