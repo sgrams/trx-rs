@@ -2598,6 +2598,7 @@ dependencies = [
  "trx-core",
  "trx-frontend",
  "trx-protocol",
+ "uuid",
 ]
 
 [[package]]

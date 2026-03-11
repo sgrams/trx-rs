@@ -303,6 +303,7 @@ function applyCapabilities(caps) {
     sdrSquelchSupported = false;
   }
   updateSdrSquelchControlVisibility();
+  if (typeof vchanApplyCapabilities === "function") vchanApplyCapabilities(caps);
 }
 
 const freqEl = document.getElementById("freq");
@@ -2737,6 +2738,12 @@ function connect() {
   };
   es.addEventListener("ping", () => {
     lastEventAt = Date.now();
+  });
+  es.addEventListener("session", evt => {
+    if (typeof vchanHandleSession === "function") vchanHandleSession(evt.data);
+  });
+  es.addEventListener("channels", evt => {
+    if (typeof vchanHandleChannels === "function") vchanHandleChannels(evt.data);
   });
   es.onerror = () => {
     // Check if this is an auth error by looking at readyState

@@ -1,0 +1,374 @@
+// SPDX-FileCopyrightText: 2025 Stanislaw Grams <stanislawgrams@gmail.com>
+//
+// SPDX-License-Identifier: BSD-2-Clause
+
+//! Client-side virtual channel registry.
+//!
+//! Each rig has a list of virtual channels tracked entirely within the HTTP
+//! frontend process.  Channel 0 is permanent and mirrors the rig's current
+//! dial frequency.  Additional channels are allocated by a tab (identified by
+//! its SSE session UUID) and freed when that session disconnects or the tab
+//! explicitly deletes them.
+//!
+//! Actual DSP on the server is unaffected by this registry in Phase 1; the
+//! registry is the source of truth for metadata (freq/mode per channel) and
+//! drives `SetFreq`/`SetMode` commands to the server when a tab selects or
+//! tunes a channel.
+
+use std::collections::HashMap;
+use std::sync::RwLock;
+
+use serde::{Deserialize, Serialize};
+use tokio::sync::broadcast;
+use uuid::Uuid;
+
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
+
+/// HTTP-visible snapshot of one channel.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ClientChannel {
+    pub id: Uuid,
+    /// Position in the ordered list (0 = primary).
+    pub index: usize,
+    pub freq_hz: u64,
+    pub mode: String,
+    /// True for channel 0 — cannot be deleted.
+    pub permanent: bool,
+    /// Number of SSE sessions currently subscribed to this channel.
+    pub subscribers: usize,
+}
+
+#[derive(Debug, Clone)]
+pub enum VChanClientError {
+    /// Channel cap would be exceeded.
+    CapReached { max: usize },
+    /// Channel UUID not found.
+    NotFound,
+    /// Tried to delete the permanent primary channel.
+    Permanent,
+}
+
+impl std::fmt::Display for VChanClientError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            VChanClientError::CapReached { max } => {
+                write!(f, "channel cap reached (max {})", max)
+            }
+            VChanClientError::NotFound => write!(f, "channel not found"),
+            VChanClientError::Permanent => write!(f, "cannot remove the primary channel"),
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Internal record
+// ---------------------------------------------------------------------------
+
+struct InternalChannel {
+    id: Uuid,
+    freq_hz: u64,
+    mode: String,
+    permanent: bool,
+    /// Session UUIDs currently subscribed to this channel.
+    session_ids: Vec<Uuid>,
+}
+
+// ---------------------------------------------------------------------------
+// ClientChannelManager
+// ---------------------------------------------------------------------------
+
+/// Per-rig channel registry shared across all actix handlers.
+pub struct ClientChannelManager {
+    /// rig_id → ordered channel list.
+    rigs: RwLock<HashMap<String, Vec<InternalChannel>>>,
+    /// session_id → (rig_id, channel_id).
+    sessions: RwLock<HashMap<Uuid, (String, Uuid)>>,
+    /// Broadcast used to push updated channel lists to SSE streams.
+    /// Payload: JSON string (serialised `Vec<ClientChannel>`), prefixed by
+    /// `"<rig_id>:"` so subscribers can filter by rig.
+    pub change_tx: broadcast::Sender<String>,
+    pub max_channels: usize,
+}
+
+impl ClientChannelManager {
+    pub fn new(max_channels: usize) -> Self {
+        let (change_tx, _) = broadcast::channel(64);
+        Self {
+            rigs: RwLock::new(HashMap::new()),
+            sessions: RwLock::new(HashMap::new()),
+            change_tx,
+            max_channels: max_channels.max(1),
+        }
+    }
+
+    // -- helpers --------------------------------------------------------
+
+    fn broadcast_change(&self, rig_id: &str, channels: &[InternalChannel]) {
+        let list: Vec<ClientChannel> = channels
+            .iter()
+            .enumerate()
+            .map(|(idx, c)| ClientChannel {
+                id: c.id,
+                index: idx,
+                freq_hz: c.freq_hz,
+                mode: c.mode.clone(),
+                permanent: c.permanent,
+                subscribers: c.session_ids.len(),
+            })
+            .collect();
+        if let Ok(json) = serde_json::to_string(&list) {
+            let _ = self.change_tx.send(format!("{}:{}", rig_id, json));
+        }
+    }
+
+    // -- public API -------------------------------------------------------
+
+    /// Ensure channel 0 exists for `rig_id`.  Call this when the SSE stream
+    /// first delivers rig state so the primary channel reflects the current freq.
+    pub fn init_rig(&self, rig_id: &str, freq_hz: u64, mode: &str) {
+        let mut rigs = self.rigs.write().unwrap();
+        let channels = rigs.entry(rig_id.to_string()).or_default();
+        if channels.is_empty() {
+            channels.push(InternalChannel {
+                id: Uuid::new_v4(),
+                freq_hz,
+                mode: mode.to_string(),
+                permanent: true,
+                session_ids: Vec::new(),
+            });
+        }
+    }
+
+    /// Update channel 0's freq/mode when the server pushes a new rig state.
+    pub fn update_primary(&self, rig_id: &str, freq_hz: u64, mode: &str) {
+        let mut rigs = self.rigs.write().unwrap();
+        if let Some(channels) = rigs.get_mut(rig_id) {
+            if let Some(ch) = channels.first_mut() {
+                if ch.freq_hz != freq_hz || ch.mode != mode {
+                    ch.freq_hz = freq_hz;
+                    ch.mode = mode.to_string();
+                    self.broadcast_change(rig_id, channels);
+                }
+            }
+        }
+    }
+
+    /// List all channels for a rig (returns empty vec if rig unknown).
+    pub fn channels(&self, rig_id: &str) -> Vec<ClientChannel> {
+        let rigs = self.rigs.read().unwrap();
+        rigs.get(rig_id)
+            .map(|chs| {
+                chs.iter()
+                    .enumerate()
+                    .map(|(idx, c)| ClientChannel {
+                        id: c.id,
+                        index: idx,
+                        freq_hz: c.freq_hz,
+                        mode: c.mode.clone(),
+                        permanent: c.permanent,
+                        subscribers: c.session_ids.len(),
+                    })
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    /// Allocate a new virtual channel for `session_id`.
+    /// If `session_id` already owns a channel on this rig, it is released first.
+    /// Returns the new `ClientChannel` snapshot.
+    pub fn allocate(
+        &self,
+        session_id: Uuid,
+        rig_id: &str,
+        freq_hz: u64,
+        mode: &str,
+    ) -> Result<ClientChannel, VChanClientError> {
+        // Release any existing channel owned by this session on this rig.
+        self.release_session_on_rig(session_id, rig_id);
+
+        let mut rigs = self.rigs.write().unwrap();
+        let channels = rigs.entry(rig_id.to_string()).or_default();
+
+        if channels.len() >= self.max_channels {
+            return Err(VChanClientError::CapReached {
+                max: self.max_channels,
+            });
+        }
+
+        let id = Uuid::new_v4();
+        let idx = channels.len();
+        channels.push(InternalChannel {
+            id,
+            freq_hz,
+            mode: mode.to_string(),
+            permanent: false,
+            session_ids: vec![session_id],
+        });
+
+        let snapshot = ClientChannel {
+            id,
+            index: idx,
+            freq_hz,
+            mode: mode.to_string(),
+            permanent: false,
+            subscribers: 1,
+        };
+
+        self.broadcast_change(rig_id, channels);
+
+        // Update session → channel mapping.
+        drop(rigs);
+        self.sessions
+            .write()
+            .unwrap()
+            .insert(session_id, (rig_id.to_string(), id));
+
+        Ok(snapshot)
+    }
+
+    /// Subscribe an SSE session to a channel (by channel UUID).
+    /// Idempotent.  Returns `None` if channel not found.
+    pub fn subscribe_session(
+        &self,
+        session_id: Uuid,
+        rig_id: &str,
+        channel_id: Uuid,
+    ) -> Option<ClientChannel> {
+        // Release previous subscription on this rig.
+        self.release_session_on_rig(session_id, rig_id);
+
+        let mut rigs = self.rigs.write().unwrap();
+        let channels = rigs.get_mut(rig_id)?;
+        let (idx, ch) = channels
+            .iter_mut()
+            .enumerate()
+            .find(|(_, c)| c.id == channel_id)?;
+
+        if !ch.session_ids.contains(&session_id) {
+            ch.session_ids.push(session_id);
+        }
+        let snapshot = ClientChannel {
+            id: ch.id,
+            index: idx,
+            freq_hz: ch.freq_hz,
+            mode: ch.mode.clone(),
+            permanent: ch.permanent,
+            subscribers: ch.session_ids.len(),
+        };
+
+        self.broadcast_change(rig_id, channels);
+
+        drop(rigs);
+        self.sessions
+            .write()
+            .unwrap()
+            .insert(session_id, (rig_id.to_string(), channel_id));
+
+        Some(snapshot)
+    }
+
+    /// Release all channel subscriptions for `session_id` across all rigs.
+    /// Auto-removes non-permanent channels that reach 0 subscribers.
+    pub fn release_session(&self, session_id: Uuid) {
+        let mapping = {
+            let mut sessions = self.sessions.write().unwrap();
+            sessions.remove(&session_id)
+        };
+        if let Some((rig_id, _)) = mapping {
+            self.release_session_on_rig(session_id, &rig_id);
+        }
+    }
+
+    fn release_session_on_rig(&self, session_id: Uuid, rig_id: &str) {
+        let mut rigs = self.rigs.write().unwrap();
+        let Some(channels) = rigs.get_mut(rig_id) else {
+            return;
+        };
+        let mut changed = false;
+        for ch in channels.iter_mut() {
+            if let Some(pos) = ch.session_ids.iter().position(|&s| s == session_id) {
+                ch.session_ids.remove(pos);
+                changed = true;
+            }
+        }
+        // Remove non-permanent channels with no subscribers.
+        let before = channels.len();
+        channels.retain(|c| c.permanent || !c.session_ids.is_empty());
+        if channels.len() != before {
+            changed = true;
+        }
+        if changed {
+            self.broadcast_change(rig_id, channels);
+        }
+    }
+
+    /// Explicitly delete a channel by UUID (any session may do this).
+    pub fn delete_channel(
+        &self,
+        rig_id: &str,
+        channel_id: Uuid,
+    ) -> Result<(), VChanClientError> {
+        let mut rigs = self.rigs.write().unwrap();
+        let channels = rigs.get_mut(rig_id).ok_or(VChanClientError::NotFound)?;
+        let pos = channels
+            .iter()
+            .position(|c| c.id == channel_id)
+            .ok_or(VChanClientError::NotFound)?;
+        if channels[pos].permanent {
+            return Err(VChanClientError::Permanent);
+        }
+        // Collect evicted sessions to clean up the session map.
+        let evicted: Vec<Uuid> = channels[pos].session_ids.clone();
+        channels.remove(pos);
+        self.broadcast_change(rig_id, channels);
+        drop(rigs);
+
+        let mut sessions = self.sessions.write().unwrap();
+        for sid in evicted {
+            sessions.remove(&sid);
+        }
+        Ok(())
+    }
+
+    /// Update freq/mode metadata for a channel.
+    pub fn set_channel_freq(
+        &self,
+        rig_id: &str,
+        channel_id: Uuid,
+        freq_hz: u64,
+    ) -> Result<(), VChanClientError> {
+        let mut rigs = self.rigs.write().unwrap();
+        let channels = rigs.get_mut(rig_id).ok_or(VChanClientError::NotFound)?;
+        let ch = channels
+            .iter_mut()
+            .find(|c| c.id == channel_id)
+            .ok_or(VChanClientError::NotFound)?;
+        ch.freq_hz = freq_hz;
+        self.broadcast_change(rig_id, channels);
+        Ok(())
+    }
+
+    pub fn set_channel_mode(
+        &self,
+        rig_id: &str,
+        channel_id: Uuid,
+        mode: &str,
+    ) -> Result<(), VChanClientError> {
+        let mut rigs = self.rigs.write().unwrap();
+        let channels = rigs.get_mut(rig_id).ok_or(VChanClientError::NotFound)?;
+        let ch = channels
+            .iter_mut()
+            .find(|c| c.id == channel_id)
+            .ok_or(VChanClientError::NotFound)?;
+        ch.mode = mode.to_string();
+        self.broadcast_change(rig_id, channels);
+        Ok(())
+    }
+
+    /// Return the channel a session is currently subscribed to.
+    pub fn session_channel(&self, session_id: Uuid) -> Option<(String, Uuid)> {
+        self.sessions.read().unwrap().get(&session_id).cloned()
+    }
+}

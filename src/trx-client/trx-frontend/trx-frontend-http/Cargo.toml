@@ -25,3 +25,4 @@ rand = "0.8"
 hex = "0.4"
 pickledb = "0.5"
 dirs = "6"
+uuid = { workspace = true }

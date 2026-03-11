@@ -14,6 +14,8 @@ pub mod bookmarks;
 pub mod scheduler;
 #[path = "status.rs"]
 pub mod status;
+#[path = "vchan.rs"]
+pub mod vchan;
 
 use std::collections::HashMap;
 use std::net::SocketAddr;
@@ -36,6 +38,7 @@ use trx_frontend::{FrontendRuntimeContext, FrontendSpawner};
 
 use auth::{AuthConfig, AuthState, SameSite};
 use scheduler::{SchedulerStatusMap, SchedulerStore};
+use vchan::ClientChannelManager;
 
 /// HTTP frontend implementation.
 pub struct HttpFrontend;
@@ -79,7 +82,8 @@ async fn serve(
         scheduler_status.clone(),
     );
 
-    let server = build_server(addr, state_rx, rig_tx, callsign, context, scheduler_store, scheduler_status)?;
+    let vchan_mgr = Arc::new(ClientChannelManager::new(4));
+    let server = build_server(addr, state_rx, rig_tx, callsign, context, scheduler_store, scheduler_status, vchan_mgr)?;
     let handle = server.handle();
     tokio::spawn(async move {
         let _ = signal::ctrl_c().await;
@@ -99,6 +103,7 @@ fn build_server(
     context: Arc<FrontendRuntimeContext>,
     scheduler_store: Arc<SchedulerStore>,
     scheduler_status: SchedulerStatusMap,
+    vchan_mgr: Arc<ClientChannelManager>,
 ) -> Result<Server, actix_web::Error> {
     let state_data = web::Data::new(state_rx);
     let rig_tx = web::Data::new(rig_tx);
@@ -111,6 +116,7 @@ fn build_server(
 
     let scheduler_store = web::Data::new(scheduler_store);
     let scheduler_status = web::Data::new(scheduler_status);
+    let vchan_mgr = web::Data::new(vchan_mgr);
 
     // Extract auth config values before moving context
     let same_site = match context.http_auth_cookie_same_site.as_str() {
@@ -153,6 +159,7 @@ fn build_server(
             .app_data(bookmark_store.clone())
             .app_data(scheduler_store.clone())
             .app_data(scheduler_status.clone())
+            .app_data(vchan_mgr.clone())
             .wrap(Compress::default())
             .wrap(
                 DefaultHeaders::new()

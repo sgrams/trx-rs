@@ -8,10 +8,13 @@ use std::sync::Arc;
 use actix_web::{delete, get, post, put, web, HttpRequest, HttpResponse, Responder};
 use actix_web::{http::header, Error};
 use bytes::Bytes;
-use futures_util::stream::{once, select, StreamExt};
+use futures_util::stream::{select, StreamExt};
 use tokio::sync::{broadcast, mpsc, oneshot, watch};
 use tokio::time::{self, Duration};
 use tokio_stream::wrappers::{IntervalStream, WatchStream};
+use uuid::Uuid;
+
+use crate::server::vchan::ClientChannelManager;
 
 use trx_core::radio::freq::Freq;
 use trx_core::rig::state::WfmDenoiseLevel;
@@ -219,6 +222,7 @@ pub async fn events(
     state: web::Data<watch::Receiver<RigState>>,
     clients: web::Data<Arc<AtomicUsize>>,
     context: web::Data<Arc<FrontendRuntimeContext>>,
+    vchan_mgr: web::Data<Arc<ClientChannelManager>>,
 ) -> Result<HttpResponse, Error> {
     let rx = state.get_ref().clone();
     let initial = wait_for_view(rx.clone()).await?;
@@ -226,22 +230,66 @@ pub async fn events(
     let counter = clients.get_ref().clone();
     let count = counter.fetch_add(1, Ordering::Relaxed) + 1;
 
+    // Assign a stable UUID to this SSE session for channel binding.
+    let session_id = Uuid::new_v4();
+
+    // Seed the primary channel for the currently-selected rig (no-op if
+    // already initialised or if no rig is selected yet).
+    let active_rig_id = context
+        .remote_active_rig_id
+        .lock()
+        .ok()
+        .and_then(|g| g.clone());
+    if let Some(ref rid) = active_rig_id {
+        vchan_mgr.init_rig(
+            rid,
+            initial.status.freq.hz,
+            &format!("{:?}", initial.status.mode),
+        );
+    }
+
+    // Build the prefix burst: rig state → session UUID → initial channels.
     let initial_json =
         serde_json::to_string(&initial).map_err(actix_web::error::ErrorInternalServerError)?;
     let initial_json = inject_frontend_meta(
         &initial_json,
         frontend_meta_from_context(count, context.get_ref().as_ref()),
     );
-    let initial_stream =
-        once(async move { Ok::<Bytes, Error>(Bytes::from(format!("data: {initial_json}\n\n"))) });
 
+    let mut prefix: Vec<Result<Bytes, Error>> = Vec::new();
+    prefix.push(Ok(Bytes::from(format!("data: {initial_json}\n\n"))));
+    prefix.push(Ok(Bytes::from(format!(
+        "event: session\ndata: {{\"session_id\":\"{session_id}\"}}\n\n"
+    ))));
+    if let Some(ref rid) = active_rig_id {
+        let chans = vchan_mgr.channels(rid);
+        if let Ok(json) = serde_json::to_string(&chans) {
+            prefix.push(Ok(Bytes::from(format!(
+                "event: channels\ndata: {{\"rig_id\":\"{rid}\",\"channels\":{json}}}\n\n"
+            ))));
+        }
+    }
+    let prefix_stream = futures_util::stream::iter(prefix);
+
+    // Live rig-state updates; side-effect: keep primary channel metadata in sync.
     let counter_updates = counter.clone();
     let context_updates = context.get_ref().clone();
+    let vchan_updates = vchan_mgr.get_ref().clone();
     let updates = WatchStream::new(rx).filter_map(move |state| {
         let counter = counter_updates.clone();
         let context = context_updates.clone();
+        let vchan = vchan_updates.clone();
         async move {
             state.snapshot().and_then(|v| {
+                if let Ok(Some(rig_id)) =
+                    context.remote_active_rig_id.lock().map(|g| g.clone())
+                {
+                    vchan.update_primary(
+                        &rig_id,
+                        v.status.freq.hz,
+                        &format!("{:?}", v.status.mode),
+                    );
+                }
                 serde_json::to_string(&v).ok().map(|json| {
                     let json = inject_frontend_meta(
                         &json,
@@ -256,16 +304,43 @@ pub async fn events(
         }
     });
 
-    // Send a named "ping" event so the JS heartbeat can observe it (SSE
-    // comments like ": ping" are not exposed by EventSource.onmessage).
+    // Channel-list change events from the virtual channel manager.
+    let vchan_change_rx = vchan_mgr.change_tx.subscribe();
+    let chan_updates = futures_util::stream::unfold(vchan_change_rx, |mut rx| async move {
+        loop {
+            match rx.recv().await {
+                Ok(msg) => {
+                    if let Some(colon) = msg.find(':') {
+                        let rig_id = &msg[..colon];
+                        let channels_json = &msg[colon + 1..];
+                        let payload = format!(
+                            "{{\"rig_id\":\"{rig_id}\",\"channels\":{channels_json}}}"
+                        );
+                        return Some((
+                            Ok::<Bytes, Error>(Bytes::from(format!(
+                                "event: channels\ndata: {payload}\n\n"
+                            ))),
+                            rx,
+                        ));
+                    }
+                }
+                Err(broadcast::error::RecvError::Lagged(_)) => continue,
+                Err(broadcast::error::RecvError::Closed) => return None,
+            }
+        }
+    });
+
+    // Send a named "ping" event so the JS heartbeat can observe it.
     let pings = IntervalStream::new(time::interval(Duration::from_secs(5)))
         .map(|_| Ok::<Bytes, Error>(Bytes::from("event: ping\ndata: \n\n")));
 
-    // Wrap stream to decrement counter on drop.
+    let vchan_drop = vchan_mgr.get_ref().clone();
     let counter_drop = counter.clone();
-    let stream = initial_stream.chain(select(pings, updates));
+    let live = select(select(pings, updates), chan_updates);
+    let stream = prefix_stream.chain(live);
     let stream = DropStream::new(Box::pin(stream), move || {
         counter_drop.fetch_sub(1, Ordering::Relaxed);
+        vchan_drop.release_session(session_id);
     });
 
     Ok(HttpResponse::Ok()
@@ -1037,6 +1112,117 @@ pub async fn select_rig(
     Ok(HttpResponse::Ok().json(build_rig_list_payload(context.get_ref().as_ref())))
 }
 
+// ---------------------------------------------------------------------------
+// Virtual channel CRUD
+// ---------------------------------------------------------------------------
+
+#[get("/channels/{rig_id}")]
+pub async fn list_channels(
+    path: web::Path<String>,
+    vchan_mgr: web::Data<Arc<ClientChannelManager>>,
+) -> impl Responder {
+    let rig_id = path.into_inner();
+    HttpResponse::Ok().json(vchan_mgr.channels(&rig_id))
+}
+
+#[derive(serde::Deserialize)]
+struct AllocateChannelBody {
+    session_id: Uuid,
+    freq_hz: u64,
+    mode: String,
+}
+
+#[post("/channels/{rig_id}")]
+pub async fn allocate_channel(
+    path: web::Path<String>,
+    body: web::Json<AllocateChannelBody>,
+    vchan_mgr: web::Data<Arc<ClientChannelManager>>,
+) -> impl Responder {
+    let rig_id = path.into_inner();
+    match vchan_mgr.allocate(body.session_id, &rig_id, body.freq_hz, &body.mode) {
+        Ok(ch) => HttpResponse::Ok().json(ch),
+        Err(e) => HttpResponse::BadRequest().body(e.to_string()),
+    }
+}
+
+#[delete("/channels/{rig_id}/{channel_id}")]
+pub async fn delete_channel_route(
+    path: web::Path<(String, Uuid)>,
+    vchan_mgr: web::Data<Arc<ClientChannelManager>>,
+) -> impl Responder {
+    let (rig_id, channel_id) = path.into_inner();
+    match vchan_mgr.delete_channel(&rig_id, channel_id) {
+        Ok(()) => HttpResponse::Ok().finish(),
+        Err(crate::server::vchan::VChanClientError::NotFound) => {
+            HttpResponse::NotFound().finish()
+        }
+        Err(crate::server::vchan::VChanClientError::Permanent) => {
+            HttpResponse::BadRequest().body("cannot remove the primary channel")
+        }
+        Err(e) => HttpResponse::BadRequest().body(e.to_string()),
+    }
+}
+
+#[derive(serde::Deserialize)]
+struct SubscribeBody {
+    session_id: Uuid,
+}
+
+#[post("/channels/{rig_id}/{channel_id}/subscribe")]
+pub async fn subscribe_channel(
+    path: web::Path<(String, Uuid)>,
+    body: web::Json<SubscribeBody>,
+    vchan_mgr: web::Data<Arc<ClientChannelManager>>,
+) -> impl Responder {
+    let (rig_id, channel_id) = path.into_inner();
+    match vchan_mgr.subscribe_session(body.session_id, &rig_id, channel_id) {
+        Some(ch) => HttpResponse::Ok().json(ch),
+        None => HttpResponse::NotFound().finish(),
+    }
+}
+
+#[derive(serde::Deserialize)]
+struct SetChanFreqBody {
+    freq_hz: u64,
+}
+
+#[put("/channels/{rig_id}/{channel_id}/freq")]
+pub async fn set_vchan_freq(
+    path: web::Path<(String, Uuid)>,
+    body: web::Json<SetChanFreqBody>,
+    vchan_mgr: web::Data<Arc<ClientChannelManager>>,
+) -> impl Responder {
+    let (rig_id, channel_id) = path.into_inner();
+    match vchan_mgr.set_channel_freq(&rig_id, channel_id, body.freq_hz) {
+        Ok(()) => HttpResponse::Ok().finish(),
+        Err(crate::server::vchan::VChanClientError::NotFound) => {
+            HttpResponse::NotFound().finish()
+        }
+        Err(e) => HttpResponse::BadRequest().body(e.to_string()),
+    }
+}
+
+#[derive(serde::Deserialize)]
+struct SetChanModeBody {
+    mode: String,
+}
+
+#[put("/channels/{rig_id}/{channel_id}/mode")]
+pub async fn set_vchan_mode(
+    path: web::Path<(String, Uuid)>,
+    body: web::Json<SetChanModeBody>,
+    vchan_mgr: web::Data<Arc<ClientChannelManager>>,
+) -> impl Responder {
+    let (rig_id, channel_id) = path.into_inner();
+    match vchan_mgr.set_channel_mode(&rig_id, channel_id, &body.mode) {
+        Ok(()) => HttpResponse::Ok().finish(),
+        Err(crate::server::vchan::VChanClientError::NotFound) => {
+            HttpResponse::NotFound().finish()
+        }
+        Err(e) => HttpResponse::BadRequest().body(e.to_string()),
+    }
+}
+
 pub fn configure(cfg: &mut web::ServiceConfig) {
     cfg.service(index)
         .service(status_api)
@@ -1104,6 +1290,14 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
         .service(cw_js)
         .service(bookmarks_js)
         .service(scheduler_js)
+        .service(vchan_js)
+        // Virtual channels
+        .service(list_channels)
+        .service(allocate_channel)
+        .service(delete_channel_route)
+        .service(subscribe_channel)
+        .service(set_vchan_freq)
+        .service(set_vchan_mode)
         // Auth endpoints
         .service(crate::server::auth::login)
         .service(crate::server::auth::logout)
@@ -1263,6 +1457,16 @@ async fn scheduler_js() -> impl Responder {
             "application/javascript; charset=utf-8",
         ))
         .body(status::SCHEDULER_JS)
+}
+
+#[get("/vchan.js")]
+async fn vchan_js() -> impl Responder {
+    HttpResponse::Ok()
+        .insert_header((
+            header::CONTENT_TYPE,
+            "application/javascript; charset=utf-8",
+        ))
+        .body(status::VCHAN_JS)
 }
 
 async fn send_command(
