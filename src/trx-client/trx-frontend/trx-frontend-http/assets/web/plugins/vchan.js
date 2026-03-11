@@ -158,6 +158,7 @@ async function vchanSubscribe(channelId) {
     }
     vchanActiveId = channelId;
     vchanRender();
+    vchanSyncModeDisplay();
   } catch (e) {
     console.error("vchan: subscribe error", e);
   }
@@ -198,6 +199,18 @@ function vchanUpdateFreqDisplay() {
   }
 }
 
+// Sync the mode picker to the active virtual channel's mode.
+// Called whenever the active channel changes or the channel list is refreshed.
+function vchanSyncModeDisplay() {
+  const modeEl = document.getElementById("mode");
+  if (!modeEl) return;
+  if (vchanIsOnVirtual()) {
+    const ch = vchanActiveChannel();
+    if (ch && ch.mode) modeEl.value = ch.mode.toUpperCase();
+  }
+  // When on primary channel, app.js rig-state updates handle the picker.
+}
+
 // Add / remove the vchan accent class from the freq and BW inputs.
 function vchanSyncAccentUI() {
   const onVirtual = vchanIsOnVirtual();
@@ -207,6 +220,7 @@ function vchanSyncAccentUI() {
   if (bwEl)   bwEl.classList.toggle("vchan-ch-active", onVirtual);
   if (onVirtual) {
     vchanUpdateFreqDisplay();
+    vchanSyncModeDisplay();
   } else if (typeof _origRefreshFreqDisplay === "function") {
     _origRefreshFreqDisplay();
   }

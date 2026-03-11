@@ -2445,7 +2445,12 @@ function render(update) {
   if (update.status && update.status.mode) {
     const mode = normalizeMode(update.status.mode);
     const modeUpper = mode ? mode.toUpperCase() : "";
-    modeEl.value = modeUpper;
+    // When subscribed to a virtual channel the mode picker must reflect
+    // that channel's mode, not the primary rig mode.  Skip the update here;
+    // vchan.js will apply the correct mode via vchanSyncModeDisplay().
+    if (typeof vchanIsOnVirtual !== "function" || !vchanIsOnVirtual()) {
+      modeEl.value = modeUpper;
+    }
     if (modeUpper === "WFM" && lastModeName !== "WFM") {
       setJogDivisor(10);
       resetRdsDisplay();
