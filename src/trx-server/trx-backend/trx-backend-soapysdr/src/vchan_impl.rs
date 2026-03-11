@@ -29,7 +29,9 @@ use tokio::sync::broadcast;
 use trx_core::rig::state::RigMode;
 use uuid::Uuid;
 
-use crate::dsp::{SdrPipeline, VirtualSquelchConfig};
+use crate::dsp::SdrPipeline;
+#[cfg(test)]
+use crate::dsp::VirtualSquelchConfig;
 use trx_core::vchan::{VChanError, VChannelInfo, VirtualChannelManager};
 
 // ---------------------------------------------------------------------------
@@ -80,6 +82,7 @@ pub struct SdrVirtualChannelManager {
     center_hz: Arc<AtomicI64>,
     /// Pipeline slots 0..fixed_slot_count are reserved (primary + AIS).
     /// Virtual channels occupy slots fixed_slot_count and above.
+    #[allow(dead_code)]
     fixed_slot_count: usize,
     /// Maximum total channels including the primary (enforced on `add_channel`).
     max_total: usize,
