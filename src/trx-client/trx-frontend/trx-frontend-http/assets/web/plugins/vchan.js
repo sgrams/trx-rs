@@ -90,6 +90,8 @@ function vchanRender() {
   addBtn.title = "Allocate new virtual channel at current frequency";
   addBtn.addEventListener("click", vchanAllocate);
   picker.appendChild(addBtn);
+
+  vchanSyncAccentUI();
 }
 
 async function vchanAllocate() {
@@ -170,7 +172,7 @@ function vchanApplyCapabilities(caps) {
 }
 
 // ---------------------------------------------------------------------------
-// Freq / mode interception
+// Freq / mode interception + UI accent
 // ---------------------------------------------------------------------------
 
 // Returns true when the active channel is a non-primary (virtual) channel.
@@ -178,6 +180,40 @@ function vchanIsOnVirtual() {
   if (!vchanActiveId || vchanChannels.length === 0) return false;
   return vchanActiveId !== vchanChannels[0].id;
 }
+
+function vchanActiveChannel() {
+  return vchanChannels.find(c => c.id === vchanActiveId) || null;
+}
+
+// Update the main freq input to show the virtual channel's frequency.
+function vchanUpdateFreqDisplay() {
+  const ch = vchanActiveChannel();
+  if (!ch) return;
+  const el = document.getElementById("freq");
+  if (!el) return;
+  if (typeof formatFreqForStep === "function" && typeof jogUnit !== "undefined") {
+    el.value = formatFreqForStep(ch.freq_hz, jogUnit);
+  } else {
+    el.value = (ch.freq_hz / 1e6).toFixed(6).replace(/\.?0+$/, "");
+  }
+}
+
+// Add / remove the vchan accent class from the freq and BW inputs.
+function vchanSyncAccentUI() {
+  const onVirtual = vchanIsOnVirtual();
+  const freqEl = document.getElementById("freq");
+  const bwEl   = document.getElementById("spectrum-bw-input");
+  if (freqEl) freqEl.classList.toggle("vchan-ch-active", onVirtual);
+  if (bwEl)   bwEl.classList.toggle("vchan-ch-active", onVirtual);
+  if (onVirtual) {
+    vchanUpdateFreqDisplay();
+  } else if (typeof _origRefreshFreqDisplay === "function") {
+    _origRefreshFreqDisplay();
+  }
+}
+
+// Saved reference to the original refreshFreqDisplay from app.js.
+let _origRefreshFreqDisplay = null;
 
 async function vchanSetChannelFreq(freqHz) {
   if (!vchanRigId || !vchanActiveId) return;
@@ -233,5 +269,19 @@ window.vchanInterceptMode = async function(mode) {
       return;
     }
     if (typeof _orig === "function") return _orig(freqHz);
+  };
+})();
+
+// Wrap refreshFreqDisplay so the main freq field stays in sync with the
+// active virtual channel's frequency (SSE rig-state updates would otherwise
+// constantly overwrite it with channel 0's freq).
+(function() {
+  _origRefreshFreqDisplay = window.refreshFreqDisplay;
+  window.refreshFreqDisplay = function() {
+    if (vchanIsOnVirtual()) {
+      vchanUpdateFreqDisplay();
+      return;
+    }
+    if (typeof _origRefreshFreqDisplay === "function") _origRefreshFreqDisplay();
   };
 })();

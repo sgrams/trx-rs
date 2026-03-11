@@ -279,10 +279,17 @@
       const tr = document.createElement("tr");
       const il = entry.interleave_min ? String(entry.interleave_min) + " min" : "—";
       const allDay = entry.start_min === entry.end_min;
+      const centerCell = entry.center_hz ? formatFreq(entry.center_hz) : "—";
+      const extraIds = Array.isArray(entry.bookmark_ids) ? entry.bookmark_ids : [];
+      const extraCell = extraIds.length
+        ? extraIds.map(function (id) { return escHtml(bmName(id)); }).join(", ")
+        : "—";
       tr.innerHTML =
         '<td>' + (allDay ? "All day" : minToHHMM(entry.start_min)) + '</td>' +
         '<td>' + (allDay ? "—" : minToHHMM(entry.end_min)) + '</td>' +
+        '<td>' + centerCell + '</td>' +
         '<td>' + bmName(entry.bookmark_id) + '</td>' +
+        '<td>' + extraCell + '</td>' +
         '<td>' + escHtml(entry.label || "") + '</td>' +
         '<td>' + il + '</td>' +
         '<td><button class="sch-write sch-remove-btn" data-idx="' + idx + '" type="button">Remove</button></td>';
@@ -334,6 +341,7 @@
     const bmEl = document.getElementById("scheduler-ts-bookmark");
     const labelEl = document.getElementById("scheduler-ts-label");
     const ilEl = document.getElementById("scheduler-ts-entry-interleave");
+    const centerHzEl = document.getElementById("scheduler-ts-center-hz");
     if (!startEl || !endEl || !bmEl) return;
 
     const startMin = hhmmToMin(startEl.value);
@@ -342,9 +350,12 @@
     const label = labelEl ? labelEl.value.trim() : "";
     const ilVal = ilEl ? parseInt(ilEl.value, 10) : NaN;
     const entryInterleave = !isNaN(ilVal) && ilVal > 0 ? ilVal : null;
+    const centerHzRaw = centerHzEl ? parseInt(centerHzEl.value, 10) : NaN;
+    const centerHz = !isNaN(centerHzRaw) && centerHzRaw > 0 ? centerHzRaw : null;
+    const extraBmIds = pendingExtraBmIds.slice();
 
     if (!bmId) {
-      alert("Please select a bookmark.");
+      alert("Please select a primary bookmark.");
       return;
     }
 
@@ -361,6 +372,8 @@
       bookmark_id: bmId,
       label: label || null,
       interleave_min: entryInterleave,
+      center_hz: centerHz,
+      bookmark_ids: extraBmIds,
     });
 
     startEl.value = "";
@@ -368,6 +381,9 @@
     bmEl.value = "";
     if (labelEl) labelEl.value = "";
     if (ilEl) ilEl.value = "";
+    if (centerHzEl) centerHzEl.value = "";
+    pendingExtraBmIds = [];
+    renderExtraBmList();
 
     renderTimespanEntries();
   }
@@ -497,21 +513,64 @@
     const addBtn = document.getElementById("scheduler-ts-add-btn");
     if (addBtn) addBtn.addEventListener("click", addEntry);
 
+    wireExtraBmAdd();
   }
 
   function populateTsBookmarkSelect() {
     const sel = document.getElementById("scheduler-ts-bookmark");
-    if (!sel) return;
-    const prev = sel.value;
-    sel.innerHTML = '<option value="">— select bookmark —</option>';
-    bookmarkList.forEach(function (bm) {
-      const opt = document.createElement("option");
-      opt.value = bm.id;
-      opt.textContent = bm.name + " (" + formatFreq(bm.freq_hz) + " " + bm.mode + ")";
-      sel.appendChild(opt);
+    const extraSel = document.getElementById("scheduler-ts-extra-bm-pick");
+    [sel, extraSel].forEach(function (el) {
+      if (!el) return;
+      const prev = el.value;
+      el.innerHTML = '<option value="">— select bookmark —</option>';
+      bookmarkList.forEach(function (bm) {
+        const opt = document.createElement("option");
+        opt.value = bm.id;
+        opt.textContent = bm.name + " (" + formatFreq(bm.freq_hz) + " " + bm.mode + ")";
+        el.appendChild(opt);
+      });
+      if (prev) el.value = prev;
     });
-    // Restore previous selection if still valid.
-    if (prev) sel.value = prev;
+  }
+
+  // Pending extra bookmark IDs for the entry being composed in the add form.
+  let pendingExtraBmIds = [];
+
+  function renderExtraBmList() {
+    const container = document.getElementById("scheduler-ts-extra-bm-list");
+    if (!container) return;
+    container.innerHTML = "";
+    pendingExtraBmIds.forEach(function (id, idx) {
+      const bm = bookmarkList.find(function (b) { return b.id === id; });
+      const tag = document.createElement("span");
+      tag.className = "sch-extra-bm-tag";
+      tag.textContent = bm ? bm.name : id;
+      const rm = document.createElement("span");
+      rm.className = "sch-extra-bm-rm";
+      rm.textContent = "×";
+      rm.title = "Remove";
+      rm.addEventListener("click", function () {
+        pendingExtraBmIds.splice(idx, 1);
+        renderExtraBmList();
+      });
+      tag.appendChild(rm);
+      container.appendChild(tag);
+    });
+  }
+
+  function wireExtraBmAdd() {
+    const addBtn = document.getElementById("scheduler-ts-extra-bm-add");
+    if (!addBtn || addBtn._wired) return;
+    addBtn._wired = true;
+    addBtn.addEventListener("click", function () {
+      const pick = document.getElementById("scheduler-ts-extra-bm-pick");
+      if (!pick || !pick.value) return;
+      if (!pendingExtraBmIds.includes(pick.value)) {
+        pendingExtraBmIds.push(pick.value);
+        renderExtraBmList();
+      }
+      pick.value = "";
+    });
   }
 
   // -------------------------------------------------------------------------

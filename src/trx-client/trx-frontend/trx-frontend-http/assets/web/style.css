@@ -12,6 +12,7 @@
   --accent-green: #c24b1a;
   --accent-yellow: #f0ad4e;
   --accent-red: #e55353;
+  --vchan-color: #38bdf8;
   --control-height: 2.6rem;
   --jog-hi: #243a5b;
   --jog-lo: #14233a;
@@ -388,7 +389,13 @@ input.status-input, select.status-input { width: 100%; padding: 0.45rem 0.5rem; 
   background: var(--btn-bg);
   color: var(--text);
   font-weight: 600;
-  border-color: var(--btn-border, var(--border-light));
+  border-color: var(--vchan-color);
+  box-shadow: inset 3px 0 0 var(--vchan-color);
+}
+/* Applied to #freq and #spectrum-bw-input when on a virtual channel */
+.vchan-ch-active {
+  border-color: var(--vchan-color) !important;
+  box-shadow: 0 0 0 1px var(--vchan-color);
 }
 .vchan-del {
   opacity: 0.5;
@@ -3457,6 +3464,30 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   font-size: 0.9rem;
   color: var(--text-muted);
 }
+.sch-extra-bm-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  min-height: 1.6rem;
+}
+.sch-extra-bm-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  background: var(--btn-bg);
+  border: 1px solid var(--border-light);
+  border-radius: 4px;
+  padding: 0.1rem 0.4rem;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+.sch-extra-bm-rm {
+  cursor: pointer;
+  opacity: 0.6;
+  font-size: 1rem;
+  line-height: 1;
+}
+.sch-extra-bm-rm:hover { opacity: 1; }
 @media (max-width: 600px) {
   .sch-row {
     flex-direction: column;

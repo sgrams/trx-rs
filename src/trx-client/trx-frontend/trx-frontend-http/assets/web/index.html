@@ -728,7 +728,7 @@
           </div>
           <table class="sch-ts-table">
             <thead>
-              <tr><th>Start</th><th>End</th><th>Bookmark</th><th>Label</th><th>Interleave (min)</th><th></th></tr>
+              <tr><th>Start</th><th>End</th><th>Center freq</th><th>Primary bookmark</th><th>Extra channels</th><th>Label</th><th>Interleave (min)</th><th></th></tr>
             </thead>
             <tbody id="scheduler-ts-tbody"></tbody>
           </table>
@@ -739,8 +739,18 @@
             <label class="sch-label">End (UTC)
               <input type="time" id="scheduler-ts-end" class="status-input" title="Set both to 00:00 for all-day" />
             </label>
-            <label class="sch-label">Bookmark
+            <label class="sch-label" id="scheduler-ts-center-hz-wrap" title="SDR only — sets center frequency before tuning">Center freq (Hz, SDR)
+              <input type="number" id="scheduler-ts-center-hz" class="status-input" min="0" placeholder="optional" style="width:9rem;" />
+            </label>
+            <label class="sch-label">Primary bookmark
               <select id="scheduler-ts-bookmark" class="status-input" aria-label="Entry bookmark"></select>
+            </label>
+            <label class="sch-label">Extra channels (virtual)
+              <div id="scheduler-ts-extra-bm-list" class="sch-extra-bm-list"></div>
+              <div style="display:flex;gap:0.4rem;margin-top:0.3rem;">
+                <select id="scheduler-ts-extra-bm-pick" class="status-input" aria-label="Extra bookmark"></select>
+                <button id="scheduler-ts-extra-bm-add" type="button" class="sch-write" style="padding:0 0.7rem;">+</button>
+              </div>
             </label>
             <label class="sch-label">Label (optional)
               <input type="text" id="scheduler-ts-label" class="status-input" placeholder="e.g. 40m FT8" />

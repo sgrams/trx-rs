@@ -65,6 +65,8 @@ pub struct ScheduleEntry {
     /// End of window as minutes-since-midnight UTC.  May be < start_min
     /// to represent a window that spans midnight.
     pub end_min: u32,
+    /// Primary bookmark (channel 0).  Must not be empty for single-channel
+    /// entries; may be empty when `bookmark_ids` provides all channels.
     pub bookmark_id: String,
     #[serde(default)]
     pub label: Option<String>,
@@ -73,6 +75,15 @@ pub struct ScheduleEntry {
     /// sized slice of the interleave cycle.
     #[serde(default)]
     pub interleave_min: Option<u32>,
+    /// SDR center frequency in Hz.  When set the scheduler issues
+    /// `SetCenterFreq` before applying `SetFreq`/`SetMode`.
+    #[serde(default)]
+    pub center_hz: Option<u64>,
+    /// Additional bookmarks to monitor as virtual channels alongside the
+    /// primary.  The background task records these in the status so the
+    /// frontend can allocate the corresponding virtual channels on connect.
+    #[serde(default)]
+    pub bookmark_ids: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -348,6 +359,12 @@ pub struct SchedulerStatus {
     pub last_bookmark_id: Option<String>,
     pub last_bookmark_name: Option<String>,
     pub last_applied_utc: Option<i64>,
+    /// Center frequency applied with the last slot (SDR only).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_center_hz: Option<u64>,
+    /// Additional bookmark IDs active alongside the primary (virtual channels).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub last_bookmark_ids: Vec<String>,
 }
 
 /// Shared mutable state for scheduler status (one entry per rig).
@@ -411,10 +428,33 @@ pub fn spawn_scheduler_task(
                     continue;
                 };
 
+                // Resolve the matching entry to pick up center_hz / bookmark_ids.
+                let active_entry = config.entries.iter().find(|e| e.bookmark_id == bm_id);
+                let center_hz = active_entry.and_then(|e| e.center_hz);
+                let extra_bm_ids: Vec<String> = active_entry
+                    .map(|e| e.bookmark_ids.clone())
+                    .unwrap_or_default();
+
                 info!(
                     "scheduler: rig '{}' → bookmark '{}' ({} Hz {})",
                     config.rig_id, bm.name, bm.freq_hz, bm.mode
                 );
+
+                // Apply SetCenterFreq first if this is a multi-channel SDR slot.
+                if let Some(chz) = center_hz {
+                    if let Err(e) = scheduler_send(
+                        &rig_tx,
+                        RigCommand::SetCenterFreq(Freq { hz: chz }),
+                        config.rig_id.clone(),
+                    )
+                    .await
+                    {
+                        warn!(
+                            "scheduler: SetCenterFreq failed for '{}': {:?}",
+                            config.rig_id, e
+                        );
+                    }
+                }
 
                 // Apply SetFreq.
                 if let Err(e) = scheduler_send(
@@ -447,7 +487,8 @@ pub fn spawn_scheduler_task(
 
                 last_applied.insert(config.rig_id.clone(), bm_id.clone());
 
-                // Update status map.
+                // Update status map (includes center_hz + extra bookmark_ids
+                // so the JS frontend can set up virtual channels on connect).
                 let now_ts = std::time::SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)
                     .unwrap_or_default()
@@ -461,6 +502,8 @@ pub fn spawn_scheduler_task(
                             last_bookmark_id: Some(bm_id),
                             last_bookmark_name: Some(bm.name),
                             last_applied_utc: Some(now_ts),
+                            last_center_hz: center_hz,
+                            last_bookmark_ids: extra_bm_ids,
                         },
                     );
                 }
