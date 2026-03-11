@@ -295,6 +295,20 @@ impl VirtualChannelManager for SdrVirtualChannelManager {
         Ok(())
     }
 
+    fn set_channel_bandwidth(&self, id: Uuid, bandwidth_hz: u32) -> Result<(), VChanError> {
+        let channels = self.channels.read().unwrap();
+        let ch = channels
+            .iter()
+            .find(|c| c.id == id)
+            .ok_or(VChanError::NotFound)?;
+
+        let dsps = self.pipeline.channel_dsps.read().unwrap();
+        if let Some(dsp_arc) = dsps.get(ch.pipeline_slot) {
+            dsp_arc.lock().unwrap().set_filter(bandwidth_hz, DEFAULT_FIR_TAPS);
+        }
+        Ok(())
+    }
+
     fn subscribe_pcm(&self, id: Uuid) -> Option<broadcast::Receiver<Vec<f32>>> {
         let channels = self.channels.read().unwrap();
         channels

@@ -27,7 +27,8 @@ use trx_core::audio::{
     AUDIO_MSG_AIS_DECODE, AUDIO_MSG_APRS_DECODE, AUDIO_MSG_CW_DECODE, AUDIO_MSG_FT8_DECODE,
     AUDIO_MSG_HF_APRS_DECODE, AUDIO_MSG_HISTORY_COMPRESSED, AUDIO_MSG_RX_FRAME,
     AUDIO_MSG_STREAM_INFO, AUDIO_MSG_TX_FRAME, AUDIO_MSG_VCHAN_ALLOCATED,
-    AUDIO_MSG_VCHAN_DESTROYED, AUDIO_MSG_VCHAN_FREQ, AUDIO_MSG_VCHAN_MODE, AUDIO_MSG_VCHAN_REMOVE,
+    AUDIO_MSG_VCHAN_BW, AUDIO_MSG_VCHAN_DESTROYED, AUDIO_MSG_VCHAN_FREQ, AUDIO_MSG_VCHAN_MODE,
+    AUDIO_MSG_VCHAN_REMOVE,
     AUDIO_MSG_VCHAN_SUB, AUDIO_MSG_VCHAN_UNSUB, AUDIO_MSG_VDES_DECODE, AUDIO_MSG_WSPR_DECODE,
 };
 use trx_core::vchan::SharedVChanManager;
@@ -2178,6 +2179,20 @@ async fn handle_audio_client(
                             );
                             if let Err(e) = mgr.set_channel_mode(uuid, &mode) {
                                 warn!("Audio vchan MODE: {}", e);
+                            }
+                        }
+                    }
+                }
+            }
+            Ok((AUDIO_MSG_VCHAN_BW, payload)) => {
+                if let Some(ref mgr) = vchan_manager {
+                    if let Ok(v) = serde_json::from_slice::<serde_json::Value>(&payload) {
+                        if let (Some(uuid), Some(bandwidth_hz)) = (
+                            v["uuid"].as_str().and_then(|s| s.parse::<Uuid>().ok()),
+                            v["bandwidth_hz"].as_u64().map(|b| b as u32),
+                        ) {
+                            if let Err(e) = mgr.set_channel_bandwidth(uuid, bandwidth_hz) {
+                                warn!("Audio vchan BW: {}", e);
                             }
                         }
                     }
