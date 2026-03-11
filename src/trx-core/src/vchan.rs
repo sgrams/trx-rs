@@ -95,6 +95,9 @@ pub trait VirtualChannelManager: Send + Sync {
     /// Update the demodulation mode of an existing channel.
     fn set_channel_mode(&self, id: Uuid, mode: &RigMode) -> Result<(), VChanError>;
 
+    /// Update the audio filter bandwidth of an existing channel.
+    fn set_channel_bandwidth(&self, id: Uuid, bandwidth_hz: u32) -> Result<(), VChanError>;
+
     /// Subscribe to decoded PCM audio from a channel.
     /// Returns `None` if the channel UUID does not exist.
     fn subscribe_pcm(&self, id: Uuid) -> Option<broadcast::Receiver<Vec<f32>>>;
