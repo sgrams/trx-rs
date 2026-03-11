@@ -924,8 +924,12 @@ function drawSignalOverlay() {
     }
   }
 
-  if (lastFreqHz != null && currentBandwidthHz > 0) {
-    for (const spec of visibleBandwidthSpecs(lastFreqHz)) {
+  const _bwCenterHz = (typeof vchanIsOnVirtual === "function" && vchanIsOnVirtual() &&
+    typeof vchanActiveChannel === "function")
+    ? (vchanActiveChannel()?.freq_hz ?? lastFreqHz)
+    : lastFreqHz;
+  if (_bwCenterHz != null && currentBandwidthHz > 0) {
+    for (const spec of visibleBandwidthSpecs(_bwCenterHz)) {
       const span = displaySpanForBandwidthSpec(spec);
       const xL = hzToX(span.loHz);
       const xR = hzToX(span.hiHz);
