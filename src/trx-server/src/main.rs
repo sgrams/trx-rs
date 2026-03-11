@@ -246,7 +246,7 @@ fn default_audio_bandwidth_for_mode(mode: &trx_core::rig::state::RigMode) -> u32
         RigMode::FM => 12_500,
         RigMode::WFM => 180_000,
         RigMode::AIS => 25_000,
-        RigMode::VDES | RigMode::MARINE => 100_000,
+        RigMode::VDES => 100_000,
         RigMode::Other(_) => 3_000,
     }
 }
@@ -269,7 +269,6 @@ fn parse_rig_mode(
         "FM" => RigMode::FM,
         "AIS" => RigMode::AIS,
         "VDES" => RigMode::VDES,
-        "MARINE" => RigMode::MARINE,
         "DIG" => RigMode::DIG,
         "PKT" => RigMode::PKT,
         _ => initial_mode.clone(),
@@ -362,7 +361,7 @@ fn build_sdr_rig_from_instance(rig_cfg: &RigInstanceConfig) -> SdrRigBuildResult
     // explicit VDES channel has been configured.
     let vdes_channel_idx = channels
         .iter()
-        .position(|(_, mode, _, _)| matches!(mode, trx_core::rig::state::RigMode::VDES | trx_core::rig::state::RigMode::MARINE))
+        .position(|(_, mode, _, _)| matches!(mode, trx_core::rig::state::RigMode::VDES))
         .unwrap_or(0);
     let vdes_iq = sdr_rig.subscribe_iq_channel(vdes_channel_idx);
     // Extract the virtual channel manager before the rig is consumed by Box.

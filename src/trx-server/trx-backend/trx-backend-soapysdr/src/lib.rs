@@ -68,7 +68,7 @@ impl SoapySdrRig {
         match mode {
             RigMode::LSB | RigMode::USB | RigMode::DIG => 3_000,
             RigMode::PKT | RigMode::AIS => 25_000,
-            RigMode::VDES | RigMode::MARINE => 100_000,
+            RigMode::VDES => 100_000,
             RigMode::CW | RigMode::CWR => 500,
             RigMode::AM => 9_000,
             RigMode::FM => 12_500,
@@ -229,7 +229,6 @@ impl SoapySdrRig {
                     RigMode::FM,
                     RigMode::AIS,
                     RigMode::VDES,
-                    RigMode::MARINE,
                     RigMode::DIG,
                     RigMode::PKT,
                 ],
@@ -367,7 +366,7 @@ impl SoapySdrRig {
         let Some((ais_a_idx, ais_b_idx)) = self.ais_channel_indices else {
             return;
         };
-        let enabled = matches!(self.mode, RigMode::AIS | RigMode::MARINE);
+        let enabled = matches!(self.mode, RigMode::AIS);
         let dsps = self.pipeline.channel_dsps.read().unwrap();
         for idx in [ais_a_idx, ais_b_idx] {
             if let Some(dsp_arc) = dsps.get(idx) {

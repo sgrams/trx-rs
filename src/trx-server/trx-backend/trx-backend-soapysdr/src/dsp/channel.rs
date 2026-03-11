@@ -127,7 +127,7 @@ fn default_bandwidth_for_mode(mode: &RigMode) -> u32 {
         RigMode::FM => 12_500,
         RigMode::WFM => 180_000,
         RigMode::AIS => 25_000,
-        RigMode::VDES | RigMode::MARINE => 100_000,
+        RigMode::VDES => 100_000,
         RigMode::Other(_) => 3_000,
     }
 }
@@ -199,7 +199,7 @@ impl ChannelDsp {
 
         let target_rate = match mode {
             RigMode::WFM => audio_bandwidth_hz.max(audio_sample_rate.saturating_mul(4)),
-            RigMode::VDES | RigMode::MARINE => audio_sample_rate.max(96_000),
+            RigMode::VDES => audio_sample_rate.max(96_000),
             _ => audio_sample_rate.max(1),
         };
         let decim_factor = (sdr_sample_rate / target_rate.max(1)).max(1) as usize;
@@ -466,7 +466,7 @@ impl ChannelDsp {
             self.scratch_decimated
                 .reserve(capacity - self.scratch_decimated.capacity());
         }
-        if matches!(self.mode, RigMode::VDES | RigMode::MARINE) && self.iq_tx.receiver_count() > 0 {
+        if matches!(self.mode, RigMode::VDES) && self.iq_tx.receiver_count() > 0 {
             self.scratch_iq_tap.clear();
             if self.scratch_iq_tap.capacity() < capacity {
                 self.scratch_iq_tap

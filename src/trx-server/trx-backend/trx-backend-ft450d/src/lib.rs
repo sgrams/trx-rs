@@ -513,7 +513,7 @@ fn encode_mode(mode: &RigMode) -> DynResult<char> {
         RigMode::USB => Ok('2'),
         RigMode::CW => Ok('3'),
         RigMode::FM => Ok('4'),
-        RigMode::AIS | RigMode::VDES | RigMode::MARINE => Ok('4'),
+        RigMode::AIS | RigMode::VDES => Ok('4'),
         RigMode::AM => Ok('5'),
         RigMode::DIG => Ok('6'),
         RigMode::CWR => Ok('7'),

@@ -1329,20 +1329,9 @@ function isVdesMode(mode = modeEl ? modeEl.value : "") {
   return String(mode || "").toUpperCase() === "VDES";
 }
 
-function isMarineMode(mode = modeEl ? modeEl.value : "") {
-  return String(mode || "").toUpperCase() === "MARINE";
-}
-
 function visibleBandwidthSpecs(freqHz = lastFreqHz, mode = modeEl ? modeEl.value : "") {
   if (!Number.isFinite(freqHz)) return [];
   const modeUpper = String(mode || "").toUpperCase();
-  if (modeUpper === "MARINE") {
-    return [
-      { centerHz: freqHz - 137_500, widthHz: 100_000 },
-      { centerHz: freqHz, widthHz: 12_500 },
-      { centerHz: freqHz + 50_000, widthHz: 12_500 },
-    ];
-  }
   if (modeUpper === "AIS") {
     return [
       { centerHz: freqHz, widthHz: currentBandwidthHz },
@@ -2478,14 +2467,14 @@ function render(update) {
   const wsprStatus = document.getElementById("wspr-status");
   setModeBoundDecodeStatus(
     aisStatus,
-    ["AIS", "MARINE"],
+    ["AIS"],
     "Select AIS mode to decode",
     "Connected, listening for packets",
   );
   if (window.updateAisBar) window.updateAisBar();
   setModeBoundDecodeStatus(
     vdesStatus,
-    ["VDES", "MARINE"],
+    ["VDES"],
     "Select VDES mode to decode",
     "Connected, listening for bursts",
   );
@@ -3224,7 +3213,6 @@ const MODE_BW_DEFAULTS = {
   FM:     [12_500, 2_500, 25_000, 500],
   AIS:    [25_000, 12_500, 50_000, 500],
   VDES:   [100_000, 25_000, 200_000, 1_000],
-  MARINE: [100_000, 12_500, 100_000, 500],
   WFM:    [180_000, 50_000,300_000,5_000],
   DIG:    [3_000,  300,   6_000,  100],
   PKT:    [25_000, 300,  50_000,  500],
@@ -6212,9 +6200,9 @@ function updateDecodeStatus(text) {
   const aprs = document.getElementById("aprs-status");
   const cw = document.getElementById("cw-status");
   const ft8 = document.getElementById("ft8-status");
-  setModeBoundDecodeStatus(ais, ["AIS", "MARINE"], "Select AIS mode to decode", text);
+  setModeBoundDecodeStatus(ais, ["AIS"], "Select AIS mode to decode", text);
   const vdesText = text === "Connected, listening for packets" ? "Connected, listening for bursts" : text;
-  setModeBoundDecodeStatus(vdes, ["VDES", "MARINE"], "Select VDES mode to decode", vdesText);
+  setModeBoundDecodeStatus(vdes, ["VDES"], "Select VDES mode to decode", vdesText);
   setModeBoundDecodeStatus(aprs, ["PKT"], "Select PKT mode to decode", text);
   const cwText = text === "Connected, listening for packets" ? "Connected, listening for CW" : text;
   setModeBoundDecodeStatus(cw, ["CW", "CWR"], "Select CW mode to decode", cwText);
@@ -7670,7 +7658,7 @@ if (overviewCanvas) {
 // ── BW strip edge hit-test (CSS pixels) ──────────────────────────────────────
 function getBwEdgeHit(cssX, cssW, range) {
   if (!lastFreqHz || !currentBandwidthHz || !lastSpectrumData) return null;
-  if (isMarineMode()) return null;
+
   const HIT = 8;
   let bestEdge = null;
   let bestDist = Number.POSITIVE_INFINITY;

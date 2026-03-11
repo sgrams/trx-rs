@@ -76,7 +76,6 @@ pub enum RigMode {
     FM,
     AIS,
     VDES,
-    MARINE,
     DIG,
     PKT,
     Other(String),

@@ -1102,7 +1102,7 @@ fn downmix_if_needed(frame: Vec<f32>, channels: u16) -> Vec<f32> {
     mono
 }
 
-/// Run the AIS decoder task. Only processes PCM when rig mode is AIS or MARINE.
+/// Run the AIS decoder task. Only processes PCM when rig mode is AIS.
 pub async fn run_ais_decoder(
     sample_rate: u32,
     channels: u16,
@@ -1118,7 +1118,7 @@ pub async fn run_ais_decoder(
     let mut was_active = false;
     let mut active = matches!(
         state_rx.borrow().status.mode,
-        RigMode::AIS | RigMode::MARINE
+        RigMode::AIS
     );
 
     loop {
@@ -1126,7 +1126,7 @@ pub async fn run_ais_decoder(
             match state_rx.changed().await {
                 Ok(()) => {
                     let state = state_rx.borrow();
-                    active = matches!(state.status.mode, RigMode::AIS | RigMode::MARINE);
+                    active = matches!(state.status.mode, RigMode::AIS);
                     if active {
                         pcm_a_rx = pcm_a_rx.resubscribe();
                         pcm_b_rx = pcm_b_rx.resubscribe();
@@ -1178,7 +1178,7 @@ pub async fn run_ais_decoder(
                 match changed {
                     Ok(()) => {
                         let state = state_rx.borrow();
-                        active = matches!(state.status.mode, RigMode::AIS | RigMode::MARINE);
+                        active = matches!(state.status.mode, RigMode::AIS);
                         if !active && was_active {
                             decoder_a.reset();
                             decoder_b.reset();
@@ -1196,7 +1196,7 @@ pub async fn run_ais_decoder(
     }
 }
 
-/// Run the VDES decoder task. Only processes IQ when rig mode is VDES or MARINE.
+/// Run the VDES decoder task. Only processes IQ when rig mode is VDES.
 pub async fn run_vdes_decoder(
     sample_rate: u32,
     mut iq_rx: broadcast::Receiver<Vec<Complex<f32>>>,
@@ -1209,7 +1209,7 @@ pub async fn run_vdes_decoder(
     let mut was_active = false;
     let mut active = matches!(
         state_rx.borrow().status.mode,
-        RigMode::VDES | RigMode::MARINE
+        RigMode::VDES
     );
 
     loop {
@@ -1217,7 +1217,7 @@ pub async fn run_vdes_decoder(
             match state_rx.changed().await {
                 Ok(()) => {
                     let state = state_rx.borrow();
-                    active = matches!(state.status.mode, RigMode::VDES | RigMode::MARINE);
+                    active = matches!(state.status.mode, RigMode::VDES);
                     if active {
                         iq_rx = iq_rx.resubscribe();
                     }
@@ -1250,7 +1250,7 @@ pub async fn run_vdes_decoder(
                 match changed {
                     Ok(()) => {
                         let state = state_rx.borrow();
-                        active = matches!(state.status.mode, RigMode::VDES | RigMode::MARINE);
+                        active = matches!(state.status.mode, RigMode::VDES);
                         if !active && was_active {
                             decoder.reset();
                             was_active = false;
