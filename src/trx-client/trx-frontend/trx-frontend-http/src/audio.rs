@@ -380,16 +380,24 @@ pub async fn audio_ws(
     }
 
     // If a channel_id is specified, subscribe to the per-channel broadcaster.
-    // Otherwise fall back to the primary RX broadcast.
+    // The entry is created asynchronously when AUDIO_MSG_VCHAN_ALLOCATED arrives
+    // from the server, which may lag the HTTP allocation by up to ~100 ms.
+    // Poll for up to 2 s so a tight JS timer doesn't race and get a 404.
     let rx_sub: broadcast::Receiver<Bytes> = if let Some(ch_id) = query.channel_id {
-        match context.vchan_audio.read() {
-            Ok(map) => match map.get(&ch_id) {
-                Some(tx) => tx.subscribe(),
-                None => {
-                    return Ok(HttpResponse::NotFound().body("channel not found"));
+        let deadline = Instant::now() + Duration::from_secs(2);
+        loop {
+            match context.vchan_audio.read() {
+                Ok(map) => {
+                    if let Some(tx) = map.get(&ch_id) {
+                        break tx.subscribe();
+                    }
                 }
-            },
-            Err(_) => return Ok(HttpResponse::InternalServerError().finish()),
+                Err(_) => return Ok(HttpResponse::InternalServerError().finish()),
+            }
+            if Instant::now() >= deadline {
+                return Ok(HttpResponse::NotFound().body("channel not found"));
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
         }
     } else {
         let Some(rx) = context.audio_rx.as_ref() else {

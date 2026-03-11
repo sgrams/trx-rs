@@ -318,6 +318,12 @@ impl ClientChannelManager {
                 changed = true;
             }
         }
+        // Collect IDs of non-permanent channels about to be evicted (0 subscribers).
+        let to_remove: Vec<Uuid> = channels
+            .iter()
+            .filter(|c| !c.permanent && c.session_ids.is_empty())
+            .map(|c| c.id)
+            .collect();
         // Remove non-permanent channels with no subscribers.
         let before = channels.len();
         channels.retain(|c| c.permanent || !c.session_ids.is_empty());
@@ -326,6 +332,12 @@ impl ClientChannelManager {
         }
         if changed {
             self.broadcast_change(rig_id, channels);
+        }
+        drop(rigs);
+        // Notify the audio-client task so it can tear down the server-side
+        // DSP pipeline and Opus encoder for each evicted channel.
+        for id in to_remove {
+            self.send_audio_cmd(VChanAudioCmd::Remove(id));
         }
     }
 

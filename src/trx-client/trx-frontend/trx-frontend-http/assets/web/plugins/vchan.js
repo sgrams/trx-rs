@@ -170,19 +170,23 @@ async function vchanSubscribe(channelId) {
 // Reconnect the audio WebSocket to the appropriate endpoint:
 // - virtual channel: /audio?channel_id=<uuid>
 // - primary channel: /audio (no param)
-// Only reconnects if RX audio is currently active.
+// Always updates _audioChannelOverride so that starting audio later
+// connects to the correct channel. Only reconnects if RX audio is active.
 function vchanReconnectAudio() {
-  if (typeof rxActive === "undefined" || !rxActive) return;
-  // Set the channel override so startRxAudio picks up the right URL.
+  // Always update the override so startRxAudio picks up the right URL,
+  // even when audio isn't currently running.
   const ch = vchanIsOnVirtual() ? vchanActiveChannel() : null;
   if (typeof _audioChannelOverride !== "undefined") {
     _audioChannelOverride = ch ? ch.id : null;
   }
+  if (typeof rxActive === "undefined" || !rxActive) return;
   if (typeof stopRxAudio === "function") stopRxAudio();
-  // Small delay so the server has time to set up the per-channel encoder.
+  // Delay so the server has time to set up the per-channel encoder.
+  // The server-side audio_ws handler also polls for up to 2 s, so this
+  // just needs to be long enough for the WS upgrade to reach the server.
   setTimeout(() => {
     if (typeof startRxAudio === "function") startRxAudio();
-  }, 200);
+  }, 300);
 }
 
 // Called by app.js from applyCapabilities().
