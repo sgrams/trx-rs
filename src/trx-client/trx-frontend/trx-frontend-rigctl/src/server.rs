@@ -656,6 +656,7 @@ mod tests {
             server_longitude: None,
             pskreporter_status: None,
             aprs_decode_enabled: false,
+            hf_aprs_decode_enabled: false,
             cw_decode_enabled: false,
             ft8_decode_enabled: false,
             wspr_decode_enabled: false,

@@ -766,6 +766,7 @@ mod tests {
             server_longitude: None,
             pskreporter_status: Some("Disabled".to_string()),
             aprs_decode_enabled: false,
+            hf_aprs_decode_enabled: false,
             cw_decode_enabled: false,
             ft8_decode_enabled: false,
             wspr_decode_enabled: false,
@@ -823,6 +824,7 @@ mod tests {
         let (_req_tx, req_rx) = mpsc::channel(8);
         let (state_tx, mut state_rx) = watch::channel(RigState::new_uninitialized());
         let (shutdown_tx, shutdown_rx) = watch::channel(false);
+        let (spectrum_tx, _spectrum_rx) = watch::channel(SharedSpectrum::default());
 
         let client = tokio::spawn(super::run_remote_client(
             RemoteClientConfig {
@@ -831,7 +833,7 @@ mod tests {
                 selected_rig_id: Arc::new(Mutex::new(None)),
                 known_rigs: Arc::new(Mutex::new(Vec::new())),
                 poll_interval: Duration::from_millis(100),
-                spectrum: Arc::new(Mutex::new(SharedSpectrum::default())),
+                spectrum: Arc::new(spectrum_tx),
             },
             req_rx,
             state_tx,
@@ -861,13 +863,14 @@ mod tests {
 
     #[test]
     fn build_envelope_includes_rig_id() {
+        let (spectrum_tx, _spectrum_rx) = watch::channel(SharedSpectrum::default());
         let config = RemoteClientConfig {
             addr: "127.0.0.1:4530".to_string(),
             token: Some("secret".to_string()),
             selected_rig_id: Arc::new(Mutex::new(Some("sdr".to_string()))),
             known_rigs: Arc::new(Mutex::new(Vec::new())),
             poll_interval: Duration::from_millis(500),
-            spectrum: Arc::new(Mutex::new(SharedSpectrum::default())),
+            spectrum: Arc::new(spectrum_tx),
         };
         let envelope = super::build_envelope(&config, trx_protocol::ClientCommand::GetState, None);
         assert_eq!(envelope.token.as_deref(), Some("secret"));
