@@ -122,6 +122,7 @@ async fn serve(
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 fn build_server(
     addr: SocketAddr,
     state_rx: watch::Receiver<RigState>,

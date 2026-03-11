@@ -1021,11 +1021,6 @@ async fn main() -> DynResult<()> {
         );
         task_handles.extend(audio_handles);
 
-        #[cfg(feature = "soapysdr")]
-        let vchan_manager_for_handle = sdr_vchan_manager;
-        #[cfg(not(feature = "soapysdr"))]
-        let vchan_manager_for_handle: Option<trx_core::vchan::SharedVChanManager> = None;
-
         rig_handles.insert(
             rig_cfg.id.clone(),
             RigHandle {
@@ -1034,7 +1029,6 @@ async fn main() -> DynResult<()> {
                 rig_tx,
                 state_rx,
                 audio_port: rig_cfg.audio.port,
-                vchan_manager: vchan_manager_for_handle,
             },
         );
     }

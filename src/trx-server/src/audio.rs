@@ -1774,6 +1774,7 @@ enum VChanCmd {
 }
 
 /// Run the audio TCP listener, accepting client connections.
+#[allow(clippy::too_many_arguments)]
 pub async fn run_audio_listener(
     addr: SocketAddr,
     rx_audio: broadcast::Sender<Bytes>,

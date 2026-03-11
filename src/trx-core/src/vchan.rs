@@ -7,7 +7,7 @@
 //! A *virtual channel* is an independent DSP slice within the capture bandwidth
 //! of an SDR rig.  Each has its own frequency offset, demodulation mode, and
 //! PCM audio broadcast.  Traditional (non-SDR) rigs do not support virtual
-//! channels; their `RigHandle::vchan_manager` field will be `None`.
+//! channels; virtual channel operations are not available for traditional rigs.
 
 use std::sync::Arc;
 

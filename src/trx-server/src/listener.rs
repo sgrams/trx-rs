@@ -466,7 +466,6 @@ mod tests {
             rig_tx,
             state_rx,
             audio_port: 4531,
-            vchan_manager: None,
         };
         let mut map = HashMap::new();
         map.insert("default".to_string(), handle);
