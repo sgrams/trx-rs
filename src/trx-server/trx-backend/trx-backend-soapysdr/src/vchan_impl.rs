@@ -87,6 +87,8 @@ pub struct SdrVirtualChannelManager {
     /// Maximum total channels including the primary (enforced on `add_channel`).
     max_total: usize,
     channels: RwLock<Vec<ManagedChannel>>,
+    /// Fires whenever a channel is destroyed (e.g. went out of SDR bandwidth).
+    destroyed_tx: broadcast::Sender<Uuid>,
 }
 
 impl SdrVirtualChannelManager {
@@ -124,13 +126,20 @@ impl SdrVirtualChannelManager {
             permanent: true,
         };
 
+        let (destroyed_tx, _) = broadcast::channel::<Uuid>(16);
+
         Self {
             center_hz: pipeline.shared_center_hz.clone(),
             pipeline,
             fixed_slot_count,
             max_total: max_total.max(1),
             channels: RwLock::new(vec![primary]),
+            destroyed_tx,
         }
+    }
+
+    pub fn destroyed_sender(&self) -> broadcast::Sender<Uuid> {
+        self.destroyed_tx.clone()
     }
 
     fn half_span_hz(&self) -> i64 {
@@ -141,16 +150,28 @@ impl SdrVirtualChannelManager {
     /// Recomputes the IF offset for every virtual channel.
     pub fn update_center_hz(&self, new_center_hz: i64) {
         self.center_hz.store(new_center_hz, Ordering::Relaxed);
-        let channels = self.channels.read().unwrap();
-        let dsps = self.pipeline.channel_dsps.read().unwrap();
-        for ch in channels.iter().filter(|c| !c.permanent) {
-            let new_if_hz = ch.freq_hz as i64 - new_center_hz;
-            if let Some(dsp_arc) = dsps.get(ch.pipeline_slot) {
-                dsp_arc
-                    .lock()
-                    .unwrap()
-                    .set_channel_if_hz(new_if_hz as f64);
+        let half_span = self.half_span_hz();
+
+        // Single pass under read lock: update in-band IF offsets and collect OOB IDs.
+        let oob_ids: Vec<Uuid> = {
+            let channels = self.channels.read().unwrap();
+            let dsps = self.pipeline.channel_dsps.read().unwrap();
+            let mut oob = Vec::new();
+            for ch in channels.iter().filter(|c| !c.permanent) {
+                let new_if_hz = ch.freq_hz as i64 - new_center_hz;
+                if new_if_hz.unsigned_abs() as i64 > half_span {
+                    oob.push(ch.id);
+                } else if let Some(dsp_arc) = dsps.get(ch.pipeline_slot) {
+                    dsp_arc.lock().unwrap().set_channel_if_hz(new_if_hz as f64);
+                }
             }
+            oob
+        }; // read locks released here
+
+        // Destroy OOB channels and notify subscribers.
+        for id in oob_ids {
+            let _ = self.remove_channel(id); // acquires write lock internally
+            let _ = self.destroyed_tx.send(id);
         }
     }
 
@@ -299,6 +320,10 @@ impl VirtualChannelManager for SdrVirtualChannelManager {
 
     fn max_channels(&self) -> usize {
         self.max_total
+    }
+
+    fn subscribe_destroyed(&self) -> broadcast::Receiver<Uuid> {
+        self.destroyed_tx.subscribe()
     }
 
     fn ensure_channel_pcm(

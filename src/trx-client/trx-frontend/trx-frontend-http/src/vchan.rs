@@ -203,9 +203,6 @@ impl ClientChannelManager {
         freq_hz: u64,
         mode: &str,
     ) -> Result<ClientChannel, VChanClientError> {
-        // Release any existing channel owned by this session on this rig.
-        self.release_session_on_rig(session_id, rig_id);
-
         let mut rigs = self.rigs.write().unwrap();
         let channels = rigs.entry(rig_id.to_string()).or_default();
 
@@ -318,26 +315,8 @@ impl ClientChannelManager {
                 changed = true;
             }
         }
-        // Collect IDs of non-permanent channels about to be evicted (0 subscribers).
-        let to_remove: Vec<Uuid> = channels
-            .iter()
-            .filter(|c| !c.permanent && c.session_ids.is_empty())
-            .map(|c| c.id)
-            .collect();
-        // Remove non-permanent channels with no subscribers.
-        let before = channels.len();
-        channels.retain(|c| c.permanent || !c.session_ids.is_empty());
-        if channels.len() != before {
-            changed = true;
-        }
         if changed {
             self.broadcast_change(rig_id, channels);
-        }
-        drop(rigs);
-        // Notify the audio-client task so it can tear down the server-side
-        // DSP pipeline and Opus encoder for each evicted channel.
-        for id in to_remove {
-            self.send_audio_cmd(VChanAudioCmd::Remove(id));
         }
     }
 
@@ -371,6 +350,42 @@ impl ClientChannelManager {
         self.send_audio_cmd(VChanAudioCmd::Remove(channel_id));
 
         Ok(())
+    }
+
+    /// Remove a channel by UUID across all rigs (called when the server destroys
+    /// it due to out-of-band center-frequency change).  Does NOT send a
+    /// `VChanAudioCmd::Remove` since the server-side channel is already gone.
+    pub fn remove_by_uuid(&self, channel_id: Uuid) {
+        let evicted_sessions: Vec<Uuid>;
+        let rig_id_opt: Option<String>;
+        {
+            let mut rigs = self.rigs.write().unwrap();
+            let mut found = false;
+            let mut evicted = Vec::new();
+            let mut found_rig = None;
+            for (rig_id, channels) in rigs.iter_mut() {
+                if let Some(pos) = channels.iter().position(|c| c.id == channel_id) {
+                    evicted = channels[pos].session_ids.clone();
+                    channels.remove(pos);
+                    self.broadcast_change(rig_id, channels);
+                    found_rig = Some(rig_id.clone());
+                    found = true;
+                    break;
+                }
+            }
+            evicted_sessions = evicted;
+            rig_id_opt = found_rig;
+            let _ = found; // suppress warning
+        }
+        // Clean up session → channel mapping for sessions that were subscribed.
+        if rig_id_opt.is_some() {
+            let mut sessions = self.sessions.write().unwrap();
+            for sid in evicted_sessions {
+                if matches!(sessions.get(&sid), Some((_, ch)) if *ch == channel_id) {
+                    sessions.remove(&sid);
+                }
+            }
+        }
     }
 
     /// Update freq/mode metadata for a channel.

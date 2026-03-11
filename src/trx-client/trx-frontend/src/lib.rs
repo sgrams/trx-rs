@@ -236,6 +236,10 @@ pub struct FrontendRuntimeContext {
     /// forwards `VCHAN_SUB` / `VCHAN_UNSUB` frames over the audio TCP connection.
     /// `None` when no audio connection is active.
     pub vchan_audio_cmd: Arc<Mutex<Option<mpsc::Sender<VChanAudioCmd>>>>,
+    /// Broadcast sender that fires whenever the server destroys a virtual
+    /// channel (e.g. out-of-bandwidth after center-frequency retune).
+    /// The HTTP frontend subscribes to clean up `ClientChannelManager`.
+    pub vchan_destroyed: Option<broadcast::Sender<Uuid>>,
 }
 
 impl FrontendRuntimeContext {
@@ -281,6 +285,7 @@ impl FrontendRuntimeContext {
             },
             vchan_audio: Arc::new(RwLock::new(HashMap::new())),
             vchan_audio_cmd: Arc::new(Mutex::new(None)),
+            vchan_destroyed: None,
         }
     }
 }

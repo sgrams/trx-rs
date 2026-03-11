@@ -117,6 +117,18 @@ pub trait VirtualChannelManager: Send + Sync {
 
     /// Maximum number of channels (including the primary channel).
     fn max_channels(&self) -> usize;
+
+    /// Subscribe to server-side channel destruction events.
+    ///
+    /// Returns a `broadcast::Receiver<Uuid>` that fires whenever the manager
+    /// destroys a channel (e.g. because it went out of the SDR capture
+    /// bandwidth).  The default implementation returns an immediately-closed
+    /// receiver so non-SDR backends do not need to override this.
+    fn subscribe_destroyed(&self) -> broadcast::Receiver<Uuid> {
+        // Drop the sender immediately; the receiver will resolve to
+        // `Err(RecvError::Closed)` on first poll, signalling "no events".
+        broadcast::channel::<Uuid>(1).1
+    }
 }
 
 /// Convenience alias used in `RigHandle`.

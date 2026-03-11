@@ -27,7 +27,7 @@ use trx_core::audio::{
     AUDIO_MSG_AIS_DECODE, AUDIO_MSG_APRS_DECODE, AUDIO_MSG_CW_DECODE, AUDIO_MSG_FT8_DECODE,
     AUDIO_MSG_HF_APRS_DECODE, AUDIO_MSG_HISTORY_COMPRESSED, AUDIO_MSG_RX_FRAME,
     AUDIO_MSG_STREAM_INFO, AUDIO_MSG_TX_FRAME, AUDIO_MSG_VCHAN_ALLOCATED,
-    AUDIO_MSG_VCHAN_FREQ, AUDIO_MSG_VCHAN_MODE, AUDIO_MSG_VCHAN_REMOVE,
+    AUDIO_MSG_VCHAN_DESTROYED, AUDIO_MSG_VCHAN_FREQ, AUDIO_MSG_VCHAN_MODE, AUDIO_MSG_VCHAN_REMOVE,
     AUDIO_MSG_VCHAN_SUB, AUDIO_MSG_VCHAN_UNSUB, AUDIO_MSG_VDES_DECODE, AUDIO_MSG_WSPR_DECODE,
 };
 use trx_core::vchan::SharedVChanManager;
@@ -1823,6 +1823,23 @@ pub async fn run_audio_listener(
     Ok(())
 }
 
+/// Returns the next destroyed-channel UUID, or `pending()` when the receiver
+/// has been closed or is not present.  Disables itself on close so the
+/// enclosing `select!` never busy-loops on a dead channel.
+async fn recv_destroyed(rx: &mut Option<broadcast::Receiver<Uuid>>) -> Option<Uuid> {
+    match rx {
+        None => std::future::pending::<Option<Uuid>>().await,
+        Some(r) => match r.recv().await {
+            Ok(uuid) => Some(uuid),
+            Err(broadcast::error::RecvError::Lagged(_)) => None,
+            Err(broadcast::error::RecvError::Closed) => {
+                *rx = None;
+                std::future::pending::<Option<Uuid>>().await
+            }
+        },
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 async fn handle_audio_client(
     socket: TcpStream,
@@ -1920,6 +1937,10 @@ async fn handle_audio_client(
 
     let opus_sample_rate = stream_info.sample_rate;
     let opus_channels    = stream_info.channels;
+
+    // Subscribe to server-side channel destruction events (SDR rigs only).
+    let mut destroyed_rx: Option<broadcast::Receiver<Uuid>> =
+        vchan_manager.as_ref().map(|m| m.subscribe_destroyed());
 
     let rx_handle = tokio::spawn(async move {
         // UUID → JoinHandle of per-channel Opus encoder task.
@@ -2044,6 +2065,25 @@ async fn handle_audio_client(
                             if let Some(h) = vchan_tasks.remove(&uuid) {
                                 h.abort();
                             }
+                        }
+                    }
+                }
+                uuid = recv_destroyed(&mut destroyed_rx) => {
+                    if let Some(uuid) = uuid {
+                        // Stop encoding for this channel.
+                        if let Some(h) = vchan_tasks.remove(&uuid) {
+                            h.abort();
+                        }
+                        // Notify the client.
+                        if let Err(e) = write_vchan_uuid_msg(
+                            &mut writer_for_rx,
+                            AUDIO_MSG_VCHAN_DESTROYED,
+                            uuid,
+                        )
+                        .await
+                        {
+                            warn!("Audio vchan destroyed write to {} failed: {}", peer, e);
+                            break;
                         }
                     }
                 }

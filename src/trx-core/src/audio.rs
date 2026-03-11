@@ -56,6 +56,9 @@ pub const AUDIO_MSG_VCHAN_MODE: u8 = 0x10;
 /// Client → server: remove a virtual channel (stops encoding and destroys the DSP pipeline).
 /// Payload: 16-byte UUID of the virtual channel on the server.
 pub const AUDIO_MSG_VCHAN_REMOVE: u8 = 0x11;
+/// Server → client: a virtual channel was destroyed server-side (e.g. went out of bandwidth).
+/// Payload: 16-byte UUID of the destroyed channel.
+pub const AUDIO_MSG_VCHAN_DESTROYED: u8 = 0x12;
 
 /// Maximum payload size for normal messages (1 MB).
 const MAX_PAYLOAD_SIZE: u32 = 1_048_576;

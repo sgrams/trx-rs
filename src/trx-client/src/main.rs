@@ -303,6 +303,9 @@ async fn async_init() -> DynResult<AppState> {
         let (vchan_cmd_tx, vchan_cmd_rx) = mpsc::channel::<trx_frontend::VChanAudioCmd>(64);
         *frontend_runtime.vchan_audio_cmd.lock().unwrap() = Some(vchan_cmd_tx);
 
+        let (vchan_destroyed_tx, _) = broadcast::channel::<uuid::Uuid>(64);
+        frontend_runtime.vchan_destroyed = Some(vchan_destroyed_tx.clone());
+
         info!(
             "Audio enabled: default port {}, decode channel set",
             cfg.frontends.audio.server_port
@@ -324,6 +327,7 @@ async fn async_init() -> DynResult<AppState> {
             audio_shutdown_rx,
             vchan_audio_map,
             vchan_cmd_rx,
+            Some(vchan_destroyed_tx),
         )));
 
         if cfg.frontends.audio.bridge.enabled {

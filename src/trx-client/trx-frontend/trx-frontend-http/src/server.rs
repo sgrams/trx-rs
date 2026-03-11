@@ -28,7 +28,7 @@ use actix_web::{
     web, App, HttpServer,
 };
 use tokio::signal;
-use tokio::sync::{mpsc, watch};
+use tokio::sync::{broadcast, mpsc, watch};
 use tokio::task::JoinHandle;
 use tracing::{error, info};
 
@@ -90,6 +90,24 @@ async fn serve(
         if let Some(tx) = guard.as_ref() {
             vchan_mgr.set_audio_cmd(tx.clone());
         }
+    }
+
+    // Spawn a task that removes channels destroyed server-side (OOB) from the
+    // client-side registry so the SSE channel list stays in sync.
+    if let Some(ref destroyed_tx) = context.vchan_destroyed {
+        let mut destroyed_rx = destroyed_tx.subscribe();
+        let mgr_for_destroyed = vchan_mgr.clone();
+        tokio::spawn(async move {
+            loop {
+                match destroyed_rx.recv().await {
+                    Ok(uuid) => {
+                        mgr_for_destroyed.remove_by_uuid(uuid);
+                    }
+                    Err(broadcast::error::RecvError::Lagged(_)) => continue,
+                    Err(broadcast::error::RecvError::Closed) => break,
+                }
+            }
+        });
     }
 
     let server = build_server(addr, state_rx, rig_tx, callsign, context, scheduler_store, scheduler_status, vchan_mgr)?;
