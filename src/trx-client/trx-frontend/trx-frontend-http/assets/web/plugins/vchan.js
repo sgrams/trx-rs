@@ -217,6 +217,21 @@ let _origRefreshFreqDisplay = null;
 
 async function vchanSetChannelFreq(freqHz) {
   if (!vchanRigId || !vchanActiveId) return;
+  // Validate against current SDR capture window.
+  if (typeof lastSpectrumData !== "undefined" && lastSpectrumData &&
+      lastSpectrumData.sample_rate > 0) {
+    const halfSpan = Number(lastSpectrumData.sample_rate) / 2;
+    const center   = Number(lastSpectrumData.center_hz);
+    if (Math.abs(freqHz - center) > halfSpan) {
+      if (typeof showHint === "function") {
+        showHint(
+          `Out of SDR bandwidth (center ${(center / 1e6).toFixed(3)} MHz ±${(halfSpan / 1e3).toFixed(0)} kHz)`,
+          3000
+        );
+      }
+      return;
+    }
+  }
   try {
     const resp = await fetch(
       `/channels/${encodeURIComponent(vchanRigId)}/${encodeURIComponent(vchanActiveId)}/freq`,

@@ -962,6 +962,28 @@ function drawSignalOverlay() {
     }
   }
 
+  // Virtual channel markers (sky-blue dashed lines, active one is solid).
+  if (typeof vchanChannels !== "undefined" && Array.isArray(vchanChannels)) {
+    vchanChannels.forEach(ch => {
+      if (!Number.isFinite(ch.freq_hz) || ch.freq_hz <= 0) return;
+      const xc = hzToX(ch.freq_hz);
+      if (xc < 0 || xc > W) return;
+      const isActive = ch.id === vchanActiveId;
+      const color = cssColorToRgba("#38bdf8");
+      if (isActive) {
+        signalOverlayGl.drawSegments([xc, 0, xc, H], color, Math.max(1.5, dpr * 1.5));
+      } else {
+        signalOverlayGl.drawDashedVerticalLine(
+          xc, 0, H,
+          Math.max(2, Math.round(4 * dpr)),
+          Math.max(3, Math.round(6 * dpr)),
+          color,
+          Math.max(1, dpr),
+        );
+      }
+    });
+  }
+
   if (lastFreqHz != null) {
     const xf = hzToX(lastFreqHz);
     if (xf >= 0 && xf <= W) {
