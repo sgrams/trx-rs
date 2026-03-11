@@ -168,3 +168,70 @@ function vchanApplyCapabilities(caps) {
   if (!row) return;
   row.style.display = (caps && caps.filter_controls) ? "" : "none";
 }
+
+// ---------------------------------------------------------------------------
+// Freq / mode interception
+// ---------------------------------------------------------------------------
+
+// Returns true when the active channel is a non-primary (virtual) channel.
+function vchanIsOnVirtual() {
+  if (!vchanActiveId || vchanChannels.length === 0) return false;
+  return vchanActiveId !== vchanChannels[0].id;
+}
+
+async function vchanSetChannelFreq(freqHz) {
+  if (!vchanRigId || !vchanActiveId) return;
+  try {
+    const resp = await fetch(
+      `/channels/${encodeURIComponent(vchanRigId)}/${encodeURIComponent(vchanActiveId)}/freq`,
+      {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ freq_hz: Math.round(freqHz) }),
+      }
+    );
+    if (!resp.ok) console.warn("vchan: set freq failed", resp.status);
+  } catch (e) {
+    console.error("vchan: set freq error", e);
+  }
+}
+
+async function vchanSetChannelMode(mode) {
+  if (!vchanRigId || !vchanActiveId) return;
+  try {
+    const resp = await fetch(
+      `/channels/${encodeURIComponent(vchanRigId)}/${encodeURIComponent(vchanActiveId)}/mode`,
+      {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mode }),
+      }
+    );
+    if (!resp.ok) console.warn("vchan: set mode failed", resp.status);
+  } catch (e) {
+    console.error("vchan: set mode error", e);
+  }
+}
+
+// Called by app.js (applyModeFromPicker) and bookmarks.js (bmApply) before
+// sending /set_mode to the server.  Returns true if the change was handled
+// by the virtual channel (caller should skip the server request).
+window.vchanInterceptMode = async function(mode) {
+  if (!vchanIsOnVirtual()) return false;
+  await vchanSetChannelMode(mode);
+  return true;
+};
+
+// Wrap setRigFrequency (defined in app.js, loaded before this file) so that
+// frequency changes are redirected to the active virtual channel instead of
+// the server when on a non-primary channel.
+(function() {
+  const _orig = window.setRigFrequency;
+  window.setRigFrequency = async function(freqHz) {
+    if (vchanIsOnVirtual()) {
+      await vchanSetChannelFreq(freqHz);
+      return;
+    }
+    if (typeof _orig === "function") return _orig(freqHz);
+  };
+})();

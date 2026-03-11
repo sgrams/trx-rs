@@ -3119,6 +3119,10 @@ async function applyModeFromPicker() {
   modeEl.disabled = true;
   showHint("Setting mode…");
   try {
+    if (typeof vchanInterceptMode === "function" && await vchanInterceptMode(mode)) {
+      showHint("Channel mode set", 1500);
+      return;
+    }
     await postPath(`/set_mode?mode=${encodeURIComponent(mode)}`);
     showHint("Mode set", 1500);
     if (mode.toUpperCase() === "WFM") {

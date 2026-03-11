@@ -277,7 +277,11 @@ async function bmDelete(id) {
 
 async function bmApply(bm) {
   try {
-    await postPath("/set_mode?mode=" + encodeURIComponent(bm.mode));
+    const onVirtual = typeof vchanInterceptMode === "function"
+      && await vchanInterceptMode(bm.mode);
+    if (!onVirtual) {
+      await postPath("/set_mode?mode=" + encodeURIComponent(bm.mode));
+    }
     if (typeof modeEl !== "undefined" && modeEl) {
       modeEl.value = String(bm.mode || "").toUpperCase();
     }
@@ -290,12 +294,14 @@ async function bmApply(bm) {
         syncBandwidthInput(bm.bandwidth_hz);
       }
     }
+    // setRigFrequency is wrapped by vchan.js to redirect to the channel API
+    // when on a virtual channel, so this call works correctly in both cases.
     if (typeof setRigFrequency === "function") {
       await setRigFrequency(bm.freq_hz);
     } else {
       await postPath("/set_freq?hz=" + bm.freq_hz);
     }
-    // Toggle decoders when in DIG mode
+    // Toggle decoders when in DIG mode.
     if (bm.mode === "DIG" && Array.isArray(bm.decoders)) {
       const statusResp = await fetch("/status");
       if (statusResp.ok) {
