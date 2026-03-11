@@ -73,15 +73,20 @@ pub struct SharedSpectrum {
     /// RDS JSON pre-serialised at ingestion so SSE clients don't repeat the
     /// work on every tick.
     pub rds_json: Option<String>,
+    /// Virtual-channel RDS JSON pre-serialised at ingestion.
+    pub vchan_rds_json: Option<String>,
 }
 
 impl SharedSpectrum {
     /// Replace the stored frame, pre-serialising RDS in one pass.
-    pub fn set(&mut self, frame: Option<SpectrumData>) {
+    pub fn set(&mut self, frame: Option<SpectrumData>, vchan_rds: Option<Vec<trx_core::rig::state::VchanRdsEntry>>) {
         self.rds_json = frame
             .as_ref()
             .and_then(|f| f.rds.as_ref())
             .and_then(|r| serde_json::to_string(r).ok());
+        self.vchan_rds_json = vchan_rds
+            .as_ref()
+            .and_then(|list| serde_json::to_string(list).ok());
         self.frame = frame.map(Arc::new);
     }
 }

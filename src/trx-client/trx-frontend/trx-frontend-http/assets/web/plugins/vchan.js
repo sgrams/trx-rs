@@ -43,6 +43,7 @@ function vchanHandleChannels(data) {
       vchanReconnectAudio();
     }
     vchanRender();
+    if (typeof renderRdsOverlays === "function") renderRdsOverlays();
   } catch (e) {
     console.warn("vchan: bad channels event", e);
   }
@@ -234,6 +235,25 @@ function vchanSyncModeDisplay() {
     if (ch && ch.mode) modeEl.value = ch.mode.toUpperCase();
   }
   // When on primary channel, app.js rig-state updates handle the picker.
+  const modeUpper = (modeEl.value || "").toUpperCase();
+  if (typeof lastModeName !== "undefined") {
+    if (modeUpper === "WFM" && lastModeName !== "WFM") {
+      if (typeof setJogDivisor === "function") setJogDivisor(10);
+      if (typeof resetRdsDisplay === "function") resetRdsDisplay();
+    } else if (modeUpper !== "WFM" && lastModeName === "WFM") {
+      if (typeof resetRdsDisplay === "function") resetRdsDisplay();
+    }
+    lastModeName = modeUpper;
+  }
+  if (typeof updateWfmControls === "function") updateWfmControls();
+  if (typeof updateSdrSquelchControlVisibility === "function") {
+    updateSdrSquelchControlVisibility();
+  }
+  if (typeof refreshRdsUi === "function") {
+    refreshRdsUi();
+  } else if (typeof positionRdsPsOverlay === "function") {
+    positionRdsPsOverlay();
+  }
 }
 
 // Sync the BW input to the active virtual channel's bandwidth.

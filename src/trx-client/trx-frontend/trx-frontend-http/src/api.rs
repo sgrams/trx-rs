@@ -501,6 +501,7 @@ pub async fn spectrum(
     // woken exactly when new spectrum data is pushed (no 40 ms polling needed).
     let rx = context.spectrum.subscribe();
     let mut last_rds_json: Option<String> = None;
+    let mut last_vchan_rds_json: Option<String> = None;
     let mut last_had_frame = false;
     let updates = WatchStream::new(rx).filter_map(move |snapshot| {
         let sse_chunk: Option<String> = if let Some(ref frame) = snapshot.frame {
@@ -512,6 +513,11 @@ pub async fn spectrum(
                 let data = snapshot.rds_json.as_deref().unwrap_or("null");
                 chunk.push_str(&format!("event: rds\ndata: {data}\n\n"));
                 last_rds_json = snapshot.rds_json;
+            }
+            if snapshot.vchan_rds_json != last_vchan_rds_json {
+                let data = snapshot.vchan_rds_json.as_deref().unwrap_or("null");
+                chunk.push_str(&format!("event: rds_vchan\ndata: {data}\n\n"));
+                last_vchan_rds_json = snapshot.vchan_rds_json;
             }
             Some(chunk)
         } else if last_had_frame {
@@ -1573,6 +1579,7 @@ async fn wait_for_view(mut rx: watch::Receiver<RigState>) -> Result<RigSnapshot,
         wspr_decode_enabled: state.wspr_decode_enabled,
         filter: state.filter.clone(),
         spectrum: None,
+        vchan_rds: None,
     })
 }
 

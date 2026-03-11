@@ -13,7 +13,7 @@ use std::sync::{Arc, Mutex};
 
 use trx_core::radio::freq::{Band, Freq};
 use trx_core::rig::response::RigError;
-use trx_core::rig::state::{RigFilterState, SpectrumData, WfmDenoiseLevel};
+use trx_core::rig::state::{RigFilterState, SpectrumData, VchanRdsEntry, WfmDenoiseLevel};
 use trx_core::rig::{
     AudioSource, Rig, RigAccessMethod, RigCapabilities, RigCat, RigInfo, RigStatusFuture,
 };
@@ -818,6 +818,10 @@ impl RigCat for SoapySdrRig {
             sample_rate: self.pipeline.sdr_sample_rate,
             rds,
         })
+    }
+
+    fn get_vchan_rds(&self) -> Option<Vec<VchanRdsEntry>> {
+        Some(self.channel_manager.rds_snapshots())
     }
 
     /// Override: this backend provides demodulated PCM audio.

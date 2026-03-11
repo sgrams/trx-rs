@@ -26,7 +26,7 @@ use std::sync::{Arc, RwLock};
 
 use num_complex::Complex;
 use tokio::sync::broadcast;
-use trx_core::rig::state::RigMode;
+use trx_core::rig::state::{RigMode, VchanRdsEntry};
 use uuid::Uuid;
 
 use crate::dsp::SdrPipeline;
@@ -183,6 +183,22 @@ impl SdrVirtualChannelManager {
             ch.freq_hz = freq_hz;
             ch.mode = mode.clone();
         }
+    }
+
+    /// Snapshot RDS data for each WFM virtual channel (including primary).
+    pub fn rds_snapshots(&self) -> Vec<VchanRdsEntry> {
+        let channels = self.channels.read().unwrap();
+        let dsps = self.pipeline.channel_dsps.read().unwrap();
+        channels
+            .iter()
+            .filter(|ch| matches!(ch.mode, RigMode::WFM))
+            .map(|ch| {
+                let rds = dsps
+                    .get(ch.pipeline_slot)
+                    .and_then(|dsp| dsp.lock().ok().and_then(|d| d.rds_data()));
+                VchanRdsEntry { id: ch.id, rds }
+            })
+            .collect()
     }
 }
 

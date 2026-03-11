@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: BSD-2-Clause
 
 use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 
 use crate::radio::freq::Freq;
 use crate::rig::{RigControl, RigInfo, RigRxStatus, RigStatus, RigStatusProvider, RigTxStatus};
@@ -52,6 +53,10 @@ pub struct RigState {
     /// Skipped in serde (not part of persistent state); flows into RigSnapshot on demand.
     #[serde(skip)]
     pub spectrum: Option<SpectrumData>,
+    /// Latest virtual-channel RDS data from SDR backends.
+    /// Skipped in serde (not part of persistent state); flows into RigSnapshot on demand.
+    #[serde(skip)]
+    pub vchan_rds: Option<Vec<VchanRdsEntry>>,
     #[serde(default, skip_serializing)]
     pub aprs_decode_reset_seq: u64,
     #[serde(default, skip_serializing)]
@@ -144,6 +149,7 @@ impl RigState {
             cw_tone_hz: 700,
             filter: None,
             spectrum: None,
+            vchan_rds: None,
             aprs_decode_reset_seq: 0,
             hf_aprs_decode_reset_seq: 0,
             cw_decode_reset_seq: 0,
@@ -207,6 +213,7 @@ impl RigState {
             wspr_decode_enabled: snapshot.wspr_decode_enabled,
             filter: snapshot.filter,
             spectrum: None, // spectrum flows through /api/spectrum, not persistent state
+            vchan_rds: None, // vchan RDS flows through /api/spectrum, not persistent state
             aprs_decode_reset_seq: 0,
             hf_aprs_decode_reset_seq: 0,
             cw_decode_reset_seq: 0,
@@ -248,6 +255,7 @@ impl RigState {
             wspr_decode_enabled: self.wspr_decode_enabled,
             filter: self.filter.clone(),
             spectrum: self.spectrum.clone(),
+            vchan_rds: self.vchan_rds.clone(),
         })
     }
 
@@ -369,6 +377,16 @@ pub struct RdsData {
     pub alternative_frequencies_hz: Option<Vec<u32>>,
 }
 
+/// RDS metadata snapshot for a virtual channel.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct VchanRdsEntry {
+    /// Virtual channel UUID.
+    pub id: Uuid,
+    /// Latest RDS data, if decoded.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rds: Option<RdsData>,
+}
+
 /// Read-only projection of state shared with clients.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct RigSnapshot {
@@ -409,4 +427,7 @@ pub struct RigSnapshot {
     pub filter: Option<RigFilterState>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub spectrum: Option<SpectrumData>,
+    /// Per-virtual-channel RDS snapshots, when available.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub vchan_rds: Option<Vec<VchanRdsEntry>>,
 }

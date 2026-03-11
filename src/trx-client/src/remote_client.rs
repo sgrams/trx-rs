@@ -146,7 +146,7 @@ async fn run_spectrum_connection(
                     warn!("Spectrum connection dropped: {}", e);
                 }
                 // Mark spectrum unavailable while reconnecting.
-                config.spectrum.send_modify(|s| s.set(None));
+                config.spectrum.send_modify(|s| s.set(None, None));
             }
             Ok(Err(e)) => warn!("Spectrum connect failed: {}", e),
             Err(_) => warn!("Spectrum connect timed out"),
@@ -183,18 +183,20 @@ async fn handle_spectrum_connection(
             }
             _ = interval.tick() => {
                 if !should_poll_spectrum(config) {
-                    config.spectrum.send_modify(|s| s.set(None));
+                    config.spectrum.send_modify(|s| s.set(None, None));
                     continue;
                 }
                 match send_command_no_state_update(
                     config, &mut writer, &mut reader,
                     ClientCommand::GetSpectrum,
                 ).await {
-                    Ok(snapshot) => config.spectrum.send_modify(|s| s.set(snapshot.spectrum)),
+                    Ok(snapshot) => config
+                        .spectrum
+                        .send_modify(|s| s.set(snapshot.spectrum, snapshot.vchan_rds)),
                     Err(e) => {
                         // A spectrum timeout desynchronises the TCP framing;
                         // return so the caller reconnects and restores sync.
-                        config.spectrum.send_modify(|s| s.set(None));
+                        config.spectrum.send_modify(|s| s.set(None, None));
                         return Err(e);
                     }
                 }
@@ -775,6 +777,7 @@ mod tests {
             cw_tone_hz: 700,
             filter: None,
             spectrum: None,
+            vchan_rds: None,
         }
     }
 

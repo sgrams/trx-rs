@@ -413,6 +413,7 @@ mod tests {
             cw_tone_hz: 700,
             filter: None,
             spectrum: None,
+            vchan_rds: None,
         }
     }
 

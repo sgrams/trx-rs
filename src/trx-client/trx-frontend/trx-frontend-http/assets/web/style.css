@@ -620,10 +620,13 @@ small { color: var(--text-muted); }
 #rds-ps-overlay {
   display: none;
   position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
+  inset: 0;
   z-index: 5;
+  pointer-events: none;
+}
+.rds-ps-overlay-item {
+  position: absolute;
+  transform: translate(-50%, -50%);
   pointer-events: auto;
   cursor: pointer;
   color: var(--text-heading);

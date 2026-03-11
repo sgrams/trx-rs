@@ -230,6 +230,11 @@ pub trait RigCat: Rig + Send {
     fn get_spectrum(&self) -> Option<state::SpectrumData> {
         None
     }
+
+    /// Return the latest per-virtual-channel RDS data if supported.
+    fn get_vchan_rds(&self) -> Option<Vec<state::VchanRdsEntry>> {
+        None
+    }
 }
 
 /// Snapshot of a rig's status that every backend can expose.

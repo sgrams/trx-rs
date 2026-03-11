@@ -351,6 +351,9 @@ const headerRigSwitchSelect = document.getElementById("header-rig-switch-select"
 const headerStylePickSelect = document.getElementById("header-style-pick-select");
 const rdsPsOverlay = document.getElementById("rds-ps-overlay");
 let overviewPeakHoldMs = Number(loadSetting("overviewPeakHoldMs", 2000));
+let primaryRds = null;
+let vchanRdsById = new Map();
+let rdsOverlayEntries = [];
 
 function syncTopBarAccess() {
   const loggedOut = authEnabled && !authRole;
@@ -1260,23 +1263,151 @@ function refreshFreqDisplay() {
   refreshWavelengthDisplay(lastFreqHz);
 }
 
-function positionRdsPsOverlay() {
-  if (!rdsPsOverlay || !lastSpectrumData || lastFreqHz == null || !overviewCanvas) return;
+function activeRdsChannelId() {
+  if (typeof vchanActiveId !== "undefined" && vchanActiveId) return vchanActiveId;
+  return null;
+}
+
+function activeChannelRds() {
+  if (!activeChannelIsWfm()) return null;
+  const activeId = activeRdsChannelId();
+  if (activeId) {
+    const rds = vchanRdsById.get(activeId);
+    if (rds) return rds;
+    if (typeof vchanChannels !== "undefined" && Array.isArray(vchanChannels) && vchanChannels.length > 0) {
+      if (vchanChannels[0].id === activeId) return primaryRds;
+    }
+  }
+  return primaryRds;
+}
+
+function activeChannelIsWfm() {
+  if (typeof vchanChannels !== "undefined" && Array.isArray(vchanChannels) && vchanChannels.length > 0) {
+    const activeId = activeRdsChannelId();
+    const active = vchanChannels.find((ch) => ch.id === activeId) || vchanChannels[0];
+    return String(active?.mode || "").toUpperCase() === "WFM";
+  }
+  return lastModeName === "WFM";
+}
+
+function activeChannelFreqHz() {
+  if (typeof vchanActiveChannel === "function") {
+    const ch = vchanActiveChannel();
+    if (Number.isFinite(ch?.freq_hz)) return ch.freq_hz;
+  }
+  return lastFreqHz;
+}
+
+function buildRdsOverlayHtml(rds) {
+  const ps = rds?.program_service;
+  const hasPs = !!(ps && ps.length > 0);
+  const hasPi = rds?.pi != null;
+  if (!hasPs && !hasPi) return "";
+  const mainText = hasPs ? formatOverlayPs(ps) : formatOverlayPi(rds?.pi);
+  const mainClass = hasPs ? "rds-ps-main" : "rds-ps-fallback";
+  const metaText = hasPs
+    ? `${formatOverlayPi(rds?.pi)} · ${formatOverlayPty(rds?.pty, rds?.pty_name)}`
+    : (rds?.pty_name ?? (rds?.pty != null ? String(rds.pty) : ""));
+  const trafficFlags =
+    `<span class="rds-ps-flags">` +
+    `${overlayTrafficFlagHtml("TP", rds?.traffic_program)}` +
+    `${overlayTrafficFlagHtml("TA", rds?.traffic_announcement)}` +
+    `</span>`;
+  return (
+    `<span class="${mainClass}">${hasPs ? formatPsHtml(ps) : escapeMapHtml(mainText)}</span>` +
+    `<span class="rds-ps-meta">` +
+    `<span class="rds-ps-meta-text">${escapeMapHtml(metaText)}</span>` +
+    `${trafficFlags}` +
+    `</span>`
+  );
+}
+
+function collectRdsOverlayEntries() {
+  const entries = [];
+  if (typeof vchanChannels !== "undefined" && Array.isArray(vchanChannels) && vchanChannels.length > 0) {
+    for (const ch of vchanChannels) {
+      if (String(ch?.mode || "").toUpperCase() !== "WFM") continue;
+      if (!Number.isFinite(ch?.freq_hz)) continue;
+      const rds = vchanRdsById.get(ch.id) || (vchanChannels[0].id === ch.id ? primaryRds : null);
+      if (!rds) continue;
+      entries.push({ id: ch.id, freq_hz: ch.freq_hz, rds });
+    }
+  } else if (lastModeName === "WFM" && primaryRds && Number.isFinite(lastFreqHz)) {
+    entries.push({ id: "primary", freq_hz: lastFreqHz, rds: primaryRds });
+  }
+  return entries;
+}
+
+function renderRdsOverlays() {
+  if (!rdsPsOverlay) return;
+  if (!lastSpectrumData || !overviewCanvas) {
+    rdsOverlayEntries = [];
+    rdsPsOverlay.style.display = "none";
+    return;
+  }
+  const entries = collectRdsOverlayEntries();
+  rdsOverlayEntries = [];
+  rdsPsOverlay.innerHTML = "";
+  if (entries.length === 0) {
+    rdsPsOverlay.style.display = "none";
+    return;
+  }
+  entries.forEach((entry, idx) => {
+    const html = buildRdsOverlayHtml(entry.rds);
+    if (!html) return;
+    const el = document.createElement("div");
+    el.className = "rds-ps-overlay-item";
+    el.dataset.freqHz = String(entry.freq_hz);
+    el.dataset.stackIdx = String(idx);
+    el.innerHTML = html;
+    el.addEventListener("click", (evt) => {
+      evt.stopPropagation();
+      copyRdsPsToClipboard(entry.rds, entry.freq_hz);
+    });
+    rdsPsOverlay.appendChild(el);
+    rdsOverlayEntries.push({ ...entry, el, stackIdx: idx });
+  });
+  if (rdsOverlayEntries.length === 0) {
+    rdsPsOverlay.style.display = "none";
+    return;
+  }
+  rdsPsOverlay.style.display = "block";
+  positionRdsOverlays();
+}
+
+window.renderRdsOverlays = renderRdsOverlays;
+
+function positionRdsOverlays() {
+  if (!rdsPsOverlay || !lastSpectrumData || !overviewCanvas || rdsOverlayEntries.length === 0) return;
   const width = overviewCanvas.clientWidth || overviewCanvas.width || 0;
-  if (width <= 0) {
-    return;
-  }
+  if (width <= 0) return;
   const range = spectrumVisibleRange(lastSpectrumData);
-  if (!Number.isFinite(range.visLoHz) || !Number.isFinite(range.visSpanHz) || range.visSpanHz <= 0) {
-    return;
-  }
-  const rel = (lastFreqHz - range.visLoHz) / range.visSpanHz;
-  const clamped = Math.max(0.06, Math.min(0.94, rel));
-  rdsPsOverlay.style.left = `${clamped * width}px`;
+  if (!Number.isFinite(range.visLoHz) || !Number.isFinite(range.visSpanHz) || range.visSpanHz <= 0) return;
+  const count = rdsOverlayEntries.length;
+  const mid = (count - 1) / 2;
+  const stackStepPx = 26;
+  rdsOverlayEntries.forEach((entry, idx) => {
+    const el = entry.el;
+    if (!el) return;
+    if (!Number.isFinite(entry.freq_hz)) {
+      el.style.display = "none";
+      return;
+    }
+    el.style.display = "";
+    const rel = (entry.freq_hz - range.visLoHz) / range.visSpanHz;
+    const clamped = Math.max(0.06, Math.min(0.94, rel));
+    const offsetPx = Math.round((idx - mid) * stackStepPx);
+    el.style.left = `${clamped * width}px`;
+    el.style.top = `calc(50% + ${offsetPx}px)`;
+  });
+}
+
+function positionRdsPsOverlay() {
+  positionRdsOverlays();
 }
 
 function resetRdsDisplay() {
-  updateRdsPsOverlay(null);
+  updateRdsPsOverlay(primaryRds);
 }
 
 function resetWfmStereoIndicator() {
@@ -1290,12 +1421,13 @@ function applyLocalTunedFrequency(hz, forceDisplay = false) {
   if (!Number.isFinite(hz)) return;
   const freqChanged = lastFreqHz !== hz;
   if (freqChanged) {
+    primaryRds = null;
     resetRdsDisplay();
     resetWfmStereoIndicator();
   }
   lastFreqHz = hz;
   window.lastFreqHz = lastFreqHz;
-  updateDocumentTitle(lastSpectrumData?.rds ?? null);
+  updateDocumentTitle(activeChannelRds());
   refreshWavelengthDisplay(lastFreqHz);
   if (forceDisplay) {
     freqDirty = false;
@@ -2243,7 +2375,7 @@ function updateTitle() {
       titleEl.textContent = serverVersion ? `trx-rs v${serverVersion}` : "trx-rs";
     }
   }
-  updateDocumentTitle(lastSpectrumData?.rds ?? null);
+  updateDocumentTitle(activeChannelRds());
 }
 
 function displayLabelFromUrl(url) {
@@ -2434,29 +2566,30 @@ function render(update) {
   if (update.status && update.status.mode) {
     const mode = normalizeMode(update.status.mode);
     const modeUpper = mode ? mode.toUpperCase() : "";
+    const onVirtual = typeof vchanIsOnVirtual === "function" && vchanIsOnVirtual();
     // When subscribed to a virtual channel the mode picker must reflect
     // that channel's mode, not the primary rig mode.  Skip the update here;
     // vchan.js will apply the correct mode via vchanSyncModeDisplay().
-    if (typeof vchanIsOnVirtual !== "function" || !vchanIsOnVirtual()) {
+    if (!onVirtual) {
       modeEl.value = modeUpper;
+      if (modeUpper === "WFM" && lastModeName !== "WFM") {
+        setJogDivisor(10);
+        resetRdsDisplay();
+      } else if (modeUpper !== "WFM" && lastModeName === "WFM") {
+        resetRdsDisplay();
+      }
+      lastModeName = modeUpper;
+      // When filter panel is active (SDR backend), update the BW slider range
+      // to match the new mode — but only if the server hasn't already sent a
+      // filter state that overrides it.
+      // When SDR backend is active (spectrum visible), apply BW default for new
+      // mode — but only if the server hasn't already pushed a filter_state.
+      if (lastSpectrumData && !update.filter) {
+        applyBwDefaultForMode(mode, false);
+      }
     }
-    if (modeUpper === "WFM" && lastModeName !== "WFM") {
-      setJogDivisor(10);
-      resetRdsDisplay();
-    } else if (modeUpper !== "WFM" && lastModeName === "WFM") {
-      resetRdsDisplay();
-    }
-    lastModeName = modeUpper;
     updateWfmControls();
     updateSdrSquelchControlVisibility();
-    // When filter panel is active (SDR backend), update the BW slider range
-    // to match the new mode — but only if the server hasn't already sent a
-    // filter state that overrides it.
-    // When SDR backend is active (spectrum visible), apply BW default for new
-    // mode — but only if the server hasn't already pushed a filter_state.
-    if (lastSpectrumData && !update.filter) {
-      applyBwDefaultForMode(mode, false);
-    }
   }
   const modeUpper = update.status && update.status.mode ? normalizeMode(update.status.mode).toUpperCase() : "";
   const aisStatus = document.getElementById("ais-status");
@@ -6658,6 +6791,7 @@ function startSpectrumStreaming() {
       const centerHz = Number(evt.data.slice(0, commaA));
       const sampleRate = Number(evt.data.slice(commaA + 1, commaB));
       const b64 = evt.data.slice(commaB + 1);
+      const hadSpectrum = !!lastSpectrumData;
       const raw = atob(b64);
       const bins = new Array(raw.length);
       for (let i = 0; i < raw.length; i++) bins[i] = (raw.charCodeAt(i) << 24 >> 24);
@@ -6676,7 +6810,11 @@ function startSpectrumStreaming() {
       refreshCenterFreqDisplay();
       if (window.refreshCwTonePicker) window.refreshCwTonePicker();
       scheduleSpectrumDraw();
-      if (lastModeName === "WFM") updateRdsPsOverlay(lastSpectrumData.rds);
+      if (!hadSpectrum) {
+        updateRdsPsOverlay(lastSpectrumData.rds);
+      } else {
+        positionRdsPsOverlay();
+      }
     } catch (_) {}
   });
   // Named "rds" event = RDS metadata changed (emitted only when it changes).
@@ -6684,8 +6822,20 @@ function startSpectrumStreaming() {
     try {
       const rds = evt.data === "null" ? undefined : JSON.parse(evt.data);
       if (lastSpectrumData) lastSpectrumData.rds = rds;
-      if (lastModeName === "WFM") updateRdsPsOverlay(rds ?? null);
-      updateDocumentTitle(rds ?? null);
+      updateRdsPsOverlay(rds ?? null);
+    } catch (_) {}
+  });
+  spectrumSource.addEventListener("rds_vchan", (evt) => {
+    try {
+      const payload = evt.data === "null" ? [] : JSON.parse(evt.data);
+      const next = new Map();
+      if (Array.isArray(payload)) {
+        payload.forEach((entry) => {
+          if (entry && entry.id) next.set(entry.id, entry.rds ?? null);
+        });
+      }
+      vchanRdsById = next;
+      updateRdsPsOverlay(primaryRds);
     } catch (_) {}
   });
   spectrumSource.onerror = () => {
@@ -6790,9 +6940,10 @@ function formatMinuteTimestamp(date = new Date()) {
 }
 
 function buildRdsRawPayload(rds) {
+  const freqHz = activeChannelFreqHz();
   return {
     time: formatMinuteTimestamp(),
-    freq_hz: Number.isFinite(lastFreqHz) ? Math.round(lastFreqHz) : null,
+    freq_hz: Number.isFinite(freqHz) ? Math.round(freqHz) : null,
     ...rds,
   };
 }
@@ -6841,14 +6992,15 @@ function renderRdsAlternativeFrequencies(list) {
   if (!afEl.childElementCount) afEl.textContent = "--";
 }
 
-async function copyRdsPsToClipboard() {
-  const rds = lastSpectrumData?.rds;
+async function copyRdsPsToClipboard(rdsOverride = null, freqOverrideHz = null) {
+  const rds = rdsOverride || activeChannelRds();
   const ps = rds?.program_service;
   if (!rds || !ps || ps.length === 0) {
     showHint("No RDS PS", 1200);
     return;
   }
-  const freqMhz = Number.isFinite(lastFreqHz) ? (Math.round((lastFreqHz / 100_000)) / 10).toFixed(1) : "--.-";
+  const freqHz = Number.isFinite(freqOverrideHz) ? freqOverrideHz : activeChannelFreqHz();
+  const freqMhz = Number.isFinite(freqHz) ? (Math.round((freqHz / 100_000)) / 10).toFixed(1) : "--.-";
   const piHex = rds.pi != null
     ? `0x${rds.pi.toString(16).toUpperCase().padStart(4, "0")}`
     : "--";
@@ -6877,9 +7029,6 @@ async function copyRdsRawToClipboard() {
   }
 }
 
-if (rdsPsOverlay) {
-  rdsPsOverlay.addEventListener("click", () => { copyRdsPsToClipboard(); });
-}
 const rdsPsValueEl = document.getElementById("rds-ps");
 if (rdsPsValueEl) {
   rdsPsValueEl.addEventListener("click", () => { copyRdsPsToClipboard(); });
@@ -6900,38 +7049,10 @@ if (rdsAfListEl) {
 }
 
 function updateRdsPsOverlay(rds) {
-  updateDocumentTitle(rds);
-  // Overview strip overlay
-  if (rdsPsOverlay) {
-    const ps = rds?.program_service;
-    const hasPs = !!(ps && ps.length > 0);
-    const hasPi = rds?.pi != null;
-    if (hasPs || hasPi) {
-      const mainText = hasPs
-        ? formatOverlayPs(ps)
-        : formatOverlayPi(rds?.pi);
-      const mainClass = hasPs ? "rds-ps-main" : "rds-ps-fallback";
-      const metaText = hasPs
-        ? `${formatOverlayPi(rds?.pi)} · ${formatOverlayPty(rds?.pty, rds?.pty_name)}`
-        : (rds?.pty_name ?? (rds?.pty != null ? String(rds.pty) : ""));
-      const trafficFlags =
-        `<span class="rds-ps-flags">` +
-        `${overlayTrafficFlagHtml("TP", rds?.traffic_program)}` +
-        `${overlayTrafficFlagHtml("TA", rds?.traffic_announcement)}` +
-        `</span>`;
-      rdsPsOverlay.innerHTML =
-        `<span class="${mainClass}">${hasPs ? formatPsHtml(ps) : escapeMapHtml(mainText)}</span>` +
-        `<span class="rds-ps-meta">` +
-        `<span class="rds-ps-meta-text">${escapeMapHtml(metaText)}</span>` +
-        `${trafficFlags}` +
-        `</span>`;
-      positionRdsPsOverlay();
-      rdsPsOverlay.style.display = "flex";
-    } else {
-      rdsPsOverlay.innerHTML = "";
-      rdsPsOverlay.style.display = "none";
-    }
-  }
+  primaryRds = rds || null;
+  const activeRds = activeChannelRds();
+  updateDocumentTitle(activeRds);
+  renderRdsOverlays();
 
   // RDS debug panel
   const statusEl   = document.getElementById("rds-status");
@@ -6956,7 +7077,7 @@ function updateRdsPsOverlay(rds) {
   // Always show the current mode, frame counter, and a sanitised spectrum snapshot
   if (modeEl) modeEl.textContent = document.getElementById("mode")?.value || "--";
 
-  if (!rds) {
+  if (!activeRds) {
     statusEl.textContent = "No signal";
     statusEl.className = "rds-value rds-no-signal";
     piEl.textContent = "--";
@@ -6975,9 +7096,10 @@ function updateRdsPsOverlay(rds) {
     if (rtEl) rtEl.textContent = "--";
     if (rawEl && lastSpectrumData) {
       const { bins: _b, ...rest } = lastSpectrumData;
+      const freqHz = activeChannelFreqHz();
       rawEl.textContent = JSON.stringify({
         time: formatMinuteTimestamp(),
-        freq_hz: Number.isFinite(lastFreqHz) ? Math.round(lastFreqHz) : null,
+        freq_hz: Number.isFinite(freqHz) ? Math.round(freqHz) : null,
         ...rest,
       }, null, 2);
     }
@@ -6986,28 +7108,30 @@ function updateRdsPsOverlay(rds) {
 
   statusEl.textContent = "Decoding";
   statusEl.className = "rds-value rds-decoding";
-  piEl.textContent = rds.pi != null ? `0x${rds.pi.toString(16).toUpperCase().padStart(4, "0")}` : "--";
+  piEl.textContent = activeRds.pi != null ? `0x${activeRds.pi.toString(16).toUpperCase().padStart(4, "0")}` : "--";
   if (psEl) {
-    if (rds.program_service) {
-      psEl.innerHTML = formatPsHtml(rds.program_service);
+    if (activeRds.program_service) {
+      psEl.innerHTML = formatPsHtml(activeRds.program_service);
     } else {
       psEl.textContent = "--";
     }
   }
-  ptyEl.textContent = rds.pty_name ?? (rds.pty != null ? String(rds.pty) : "--");
-  ptyNameEl.textContent = rds.pty != null ? String(rds.pty) : "--";
-  if (ptynEl) ptynEl.textContent = rds.program_type_name_long ?? "--";
-  if (tpEl) tpEl.textContent = formatRdsFlag(rds.traffic_program);
-  if (taEl) taEl.textContent = formatRdsFlag(rds.traffic_announcement);
-  if (musicEl) musicEl.textContent = formatRdsAudio(rds.music);
-  if (stereoEl) stereoEl.textContent = formatRdsFlag(rds.stereo);
-  if (compEl) compEl.textContent = formatRdsFlag(rds.compressed);
-  if (headEl) headEl.textContent = formatRdsFlag(rds.artificial_head);
-  if (dynPtyEl) dynPtyEl.textContent = formatRdsFlag(rds.dynamic_pty);
-  renderRdsAlternativeFrequencies(rds.alternative_frequencies_hz);
-  if (rtEl) rtEl.textContent = rds.radio_text ?? "--";
-  rawEl.textContent = JSON.stringify(buildRdsRawPayload(rds), null, 2);
+  ptyEl.textContent = activeRds.pty_name ?? (activeRds.pty != null ? String(activeRds.pty) : "--");
+  ptyNameEl.textContent = activeRds.pty != null ? String(activeRds.pty) : "--";
+  if (ptynEl) ptynEl.textContent = activeRds.program_type_name_long ?? "--";
+  if (tpEl) tpEl.textContent = formatRdsFlag(activeRds.traffic_program);
+  if (taEl) taEl.textContent = formatRdsFlag(activeRds.traffic_announcement);
+  if (musicEl) musicEl.textContent = formatRdsAudio(activeRds.music);
+  if (stereoEl) stereoEl.textContent = formatRdsFlag(activeRds.stereo);
+  if (compEl) compEl.textContent = formatRdsFlag(activeRds.compressed);
+  if (headEl) headEl.textContent = formatRdsFlag(activeRds.artificial_head);
+  if (dynPtyEl) dynPtyEl.textContent = formatRdsFlag(activeRds.dynamic_pty);
+  renderRdsAlternativeFrequencies(activeRds.alternative_frequencies_hz);
+  if (rtEl) rtEl.textContent = activeRds.radio_text ?? "--";
+  rawEl.textContent = JSON.stringify(buildRdsRawPayload(activeRds), null, 2);
 }
+
+window.refreshRdsUi = () => updateRdsPsOverlay(primaryRds);
 
 function scheduleSpectrumDraw() {
   if (spectrumDrawPending) return;
