@@ -300,6 +300,62 @@ impl VirtualChannelManager for SdrVirtualChannelManager {
     fn max_channels(&self) -> usize {
         self.max_total
     }
+
+    fn ensure_channel_pcm(
+        &self,
+        id: Uuid,
+        freq_hz: u64,
+        mode: &RigMode,
+    ) -> Result<broadcast::Receiver<Vec<f32>>, VChanError> {
+        // Fast path: channel already exists.
+        {
+            let channels = self.channels.read().unwrap();
+            if let Some(ch) = channels.iter().find(|c| c.id == id) {
+                return Ok(ch.pcm_tx.subscribe());
+            }
+        }
+
+        // Slow path: create a new channel with the client-supplied UUID.
+        let half_span = self.half_span_hz();
+        let center = self.center_hz.load(Ordering::Relaxed);
+        let if_hz = freq_hz as i64 - center;
+        if if_hz.unsigned_abs() as i64 > half_span {
+            return Err(VChanError::OutOfBandwidth {
+                half_span_hz: half_span,
+            });
+        }
+
+        let mut channels = self.channels.write().unwrap();
+        if channels.len() >= self.max_total {
+            return Err(VChanError::CapReached { max: self.max_total });
+        }
+
+        let bandwidth_hz = default_bandwidth_hz(mode);
+        let (pcm_tx, iq_tx) =
+            self.pipeline
+                .add_virtual_channel(if_hz as f64, mode, bandwidth_hz, DEFAULT_FIR_TAPS);
+
+        let pipeline_slot = self
+            .pipeline
+            .channel_dsps
+            .read()
+            .unwrap()
+            .len()
+            .saturating_sub(1);
+
+        let pcm_rx = pcm_tx.subscribe();
+        channels.push(ManagedChannel {
+            id,
+            freq_hz,
+            mode: mode.clone(),
+            pcm_tx,
+            iq_tx,
+            pipeline_slot,
+            permanent: false,
+        });
+
+        Ok(pcm_rx)
+    }
 }
 
 // ---------------------------------------------------------------------------

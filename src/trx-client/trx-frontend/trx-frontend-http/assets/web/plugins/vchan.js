@@ -36,10 +36,11 @@ function vchanHandleChannels(data) {
     const d = JSON.parse(data);
     vchanRigId = d.rig_id || null;
     vchanChannels = d.channels || [];
-    // If the active channel was evicted, fall back to channel 0.
+    // If the active channel was evicted, fall back to channel 0 and reconnect audio.
     const ids = new Set(vchanChannels.map(c => c.id));
     if (vchanActiveId && !ids.has(vchanActiveId)) {
       vchanActiveId = vchanChannels.length > 0 ? vchanChannels[0].id : null;
+      vchanReconnectAudio();
     }
     vchanRender();
   } catch (e) {
@@ -120,6 +121,7 @@ async function vchanAllocate() {
     // The SSE `channels` event will trigger vchanRender(); optimistically
     // mark active so the picker feels responsive even before the event arrives.
     vchanRender();
+    vchanReconnectAudio();
   } catch (e) {
     console.error("vchan: allocate error", e);
   }
@@ -159,9 +161,28 @@ async function vchanSubscribe(channelId) {
     vchanActiveId = channelId;
     vchanRender();
     vchanSyncModeDisplay();
+    vchanReconnectAudio();
   } catch (e) {
     console.error("vchan: subscribe error", e);
   }
+}
+
+// Reconnect the audio WebSocket to the appropriate endpoint:
+// - virtual channel: /audio?channel_id=<uuid>
+// - primary channel: /audio (no param)
+// Only reconnects if RX audio is currently active.
+function vchanReconnectAudio() {
+  if (typeof rxActive === "undefined" || !rxActive) return;
+  // Set the channel override so startRxAudio picks up the right URL.
+  const ch = vchanIsOnVirtual() ? vchanActiveChannel() : null;
+  if (typeof _audioChannelOverride !== "undefined") {
+    _audioChannelOverride = ch ? ch.id : null;
+  }
+  if (typeof stopRxAudio === "function") stopRxAudio();
+  // Small delay so the server has time to set up the per-channel encoder.
+  setTimeout(() => {
+    if (typeof startRxAudio === "function") startRxAudio();
+  }, 200);
 }
 
 // Called by app.js from applyCapabilities().

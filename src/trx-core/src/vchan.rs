@@ -99,6 +99,19 @@ pub trait VirtualChannelManager: Send + Sync {
     /// Returns `None` if the channel UUID does not exist.
     fn subscribe_pcm(&self, id: Uuid) -> Option<broadcast::Receiver<Vec<f32>>>;
 
+    /// Return a PCM receiver for an existing channel, or create a new channel
+    /// with the given `id`, `freq_hz`, and `mode` and subscribe to it.
+    ///
+    /// Used by the audio-TCP server path where the client provides a stable UUID
+    /// (generated on the client side) so that both sides use the same identifier
+    /// without a separate round-trip to allocate a server UUID.
+    fn ensure_channel_pcm(
+        &self,
+        id: Uuid,
+        freq_hz: u64,
+        mode: &RigMode,
+    ) -> Result<broadcast::Receiver<Vec<f32>>, VChanError>;
+
     /// Return a snapshot of all channels in display order.
     fn channels(&self) -> Vec<VChannelInfo>;
 

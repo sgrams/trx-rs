@@ -6,7 +6,7 @@
 //! RX/TX Opus frames via broadcast/mpsc channels.
 
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, RwLock};
 use std::time::Duration;
 
 use bytes::Bytes;
@@ -19,13 +19,19 @@ use tokio::time;
 use tracing::{info, warn};
 use trx_frontend::RemoteRigEntry;
 
+use uuid::Uuid;
+
 use trx_core::audio::{
-    read_audio_msg, write_audio_msg, AudioStreamInfo, AUDIO_MSG_AIS_DECODE, AUDIO_MSG_APRS_DECODE,
+    parse_vchan_audio_frame, parse_vchan_uuid_msg, read_audio_msg, write_audio_msg,
+    write_vchan_uuid_msg, AudioStreamInfo, AUDIO_MSG_AIS_DECODE, AUDIO_MSG_APRS_DECODE,
     AUDIO_MSG_CW_DECODE, AUDIO_MSG_FT8_DECODE, AUDIO_MSG_HF_APRS_DECODE,
-    AUDIO_MSG_HISTORY_COMPRESSED, AUDIO_MSG_RX_FRAME, AUDIO_MSG_STREAM_INFO, AUDIO_MSG_TX_FRAME,
+    AUDIO_MSG_HISTORY_COMPRESSED, AUDIO_MSG_RX_FRAME, AUDIO_MSG_RX_FRAME_CH,
+    AUDIO_MSG_STREAM_INFO, AUDIO_MSG_TX_FRAME, AUDIO_MSG_VCHAN_ALLOCATED, AUDIO_MSG_VCHAN_FREQ,
+    AUDIO_MSG_VCHAN_MODE, AUDIO_MSG_VCHAN_REMOVE, AUDIO_MSG_VCHAN_SUB, AUDIO_MSG_VCHAN_UNSUB,
     AUDIO_MSG_VDES_DECODE, AUDIO_MSG_WSPR_DECODE,
 };
 use trx_core::decode::DecodedMessage;
+use trx_frontend::VChanAudioCmd;
 
 /// Run the audio client with auto-reconnect.
 #[allow(clippy::too_many_arguments)]
@@ -40,6 +46,8 @@ pub async fn run_audio_client(
     stream_info_tx: watch::Sender<Option<AudioStreamInfo>>,
     decode_tx: broadcast::Sender<DecodedMessage>,
     mut shutdown_rx: watch::Receiver<bool>,
+    vchan_audio: Arc<RwLock<HashMap<Uuid, broadcast::Sender<Bytes>>>>,
+    mut vchan_cmd_rx: mpsc::Receiver<VChanAudioCmd>,
 ) {
     let mut reconnect_delay = Duration::from_secs(1);
 
@@ -77,6 +85,8 @@ pub async fn run_audio_client(
                     &stream_info_tx,
                     &decode_tx,
                     &mut shutdown_rx,
+                    &vchan_audio,
+                    &mut vchan_cmd_rx,
                 )
                 .await
                 {
@@ -120,6 +130,8 @@ async fn handle_audio_connection(
     stream_info_tx: &watch::Sender<Option<AudioStreamInfo>>,
     decode_tx: &broadcast::Sender<DecodedMessage>,
     shutdown_rx: &mut watch::Receiver<bool>,
+    vchan_audio: &Arc<RwLock<HashMap<Uuid, broadcast::Sender<Bytes>>>>,
+    vchan_cmd_rx: &mut mpsc::Receiver<VChanAudioCmd>,
 ) -> std::io::Result<()> {
     let (reader, writer) = stream.into_split();
     let mut reader = BufReader::new(reader);
@@ -144,11 +156,33 @@ async fn handle_audio_connection(
     // Spawn RX read task
     let rx_tx = rx_tx.clone();
     let decode_tx = decode_tx.clone();
+    let vchan_audio_rx: Arc<RwLock<HashMap<Uuid, broadcast::Sender<Bytes>>>> = Arc::clone(vchan_audio);
     let mut rx_handle = tokio::spawn(async move {
         loop {
             match read_audio_msg(&mut reader).await {
                 Ok((AUDIO_MSG_RX_FRAME, payload)) => {
                     let _ = rx_tx.send(Bytes::from(payload));
+                }
+                Ok((AUDIO_MSG_RX_FRAME_CH, payload)) => {
+                    // Route per-channel Opus frame to the correct broadcaster.
+                    if let Ok((uuid, opus)) = parse_vchan_audio_frame(&payload) {
+                        let pkt = Bytes::copy_from_slice(opus);
+                        if let Ok(map) = vchan_audio_rx.read() {
+                            if let Some(tx) = map.get(&uuid) {
+                                let _ = tx.send(pkt);
+                            }
+                        }
+                    }
+                }
+                Ok((AUDIO_MSG_VCHAN_ALLOCATED, payload)) => {
+                    // Server confirmed a virtual channel is ready; ensure a
+                    // broadcaster entry exists in the shared map.
+                    if let Ok(uuid) = parse_vchan_uuid_msg(&payload) {
+                        if let Ok(mut map) = vchan_audio_rx.write() {
+                            map.entry(uuid)
+                                .or_insert_with(|| broadcast::channel::<Bytes>(64).0);
+                        }
+                    }
                 }
                 Ok((AUDIO_MSG_HISTORY_COMPRESSED, payload)) => {
                     // Decompress gzip blob, then iterate the embedded framed messages.
@@ -193,14 +227,14 @@ async fn handle_audio_connection(
                     }
                 }
                 Ok((msg_type, _)) => {
-                    warn!("Audio client: unexpected message type {}", msg_type);
+                    warn!("Audio client: unexpected message type {:#04x}", msg_type);
                 }
                 Err(_) => break,
             }
         }
     });
 
-    // Forward TX frames to server
+    // Forward TX frames and VChanAudioCmds to server.
     let mut rig_check = time::interval(Duration::from_millis(500));
     loop {
         tokio::select! {
@@ -226,6 +260,58 @@ async fn handle_audio_connection(
                         }
                     }
                     None => break,
+                }
+            }
+            cmd = vchan_cmd_rx.recv() => {
+                match cmd {
+                    Some(VChanAudioCmd::Subscribe { uuid, freq_hz, mode }) => {
+                        let json = serde_json::json!({
+                            "uuid": uuid.to_string(),
+                            "freq_hz": freq_hz,
+                            "mode": mode,
+                        });
+                        if let Ok(payload) = serde_json::to_vec(&json) {
+                            if let Err(e) = write_audio_msg(&mut writer, AUDIO_MSG_VCHAN_SUB, &payload).await {
+                                warn!("Audio vchan SUB write failed: {}", e);
+                                break;
+                            }
+                        }
+                    }
+                    Some(VChanAudioCmd::Unsubscribe(uuid)) => {
+                        if let Err(e) = write_vchan_uuid_msg(&mut writer, AUDIO_MSG_VCHAN_UNSUB, uuid).await {
+                            warn!("Audio vchan UNSUB write failed: {}", e);
+                            break;
+                        }
+                    }
+                    Some(VChanAudioCmd::Remove(uuid)) => {
+                        if let Err(e) = write_vchan_uuid_msg(&mut writer, AUDIO_MSG_VCHAN_REMOVE, uuid).await {
+                            warn!("Audio vchan REMOVE write failed: {}", e);
+                            break;
+                        }
+                        // Clean up local broadcaster.
+                        if let Ok(mut map) = vchan_audio.write() {
+                            map.remove(&uuid);
+                        }
+                    }
+                    Some(VChanAudioCmd::SetFreq { uuid, freq_hz }) => {
+                        let json = serde_json::json!({ "uuid": uuid.to_string(), "freq_hz": freq_hz });
+                        if let Ok(payload) = serde_json::to_vec(&json) {
+                            if let Err(e) = write_audio_msg(&mut writer, AUDIO_MSG_VCHAN_FREQ, &payload).await {
+                                warn!("Audio vchan FREQ write failed: {}", e);
+                                break;
+                            }
+                        }
+                    }
+                    Some(VChanAudioCmd::SetMode { uuid, mode }) => {
+                        let json = serde_json::json!({ "uuid": uuid.to_string(), "mode": mode });
+                        if let Ok(payload) = serde_json::to_vec(&json) {
+                            if let Err(e) = write_audio_msg(&mut writer, AUDIO_MSG_VCHAN_MODE, &payload).await {
+                                warn!("Audio vchan MODE write failed: {}", e);
+                                break;
+                            }
+                        }
+                    }
+                    None => {}
                 }
             }
             _ = &mut rx_handle => {

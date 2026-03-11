@@ -83,6 +83,15 @@ async fn serve(
     );
 
     let vchan_mgr = Arc::new(ClientChannelManager::new(4));
+
+    // Wire the audio-command sender so allocate/delete/freq/mode operations on
+    // virtual channels are forwarded to the audio-client task.
+    if let Ok(guard) = context.vchan_audio_cmd.lock() {
+        if let Some(tx) = guard.as_ref() {
+            vchan_mgr.set_audio_cmd(tx.clone());
+        }
+    }
+
     let server = build_server(addr, state_rx, rig_tx, callsign, context, scheduler_store, scheduler_status, vchan_mgr)?;
     let handle = server.handle();
     tokio::spawn(async move {

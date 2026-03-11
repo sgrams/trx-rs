@@ -2535,6 +2535,7 @@ dependencies = [
  "trx-frontend-http-json",
  "trx-frontend-rigctl",
  "trx-protocol",
+ "uuid",
 ]
 
 [[package]]
@@ -2576,6 +2577,7 @@ dependencies = [
  "serde_json",
  "tokio",
  "trx-core",
+ "uuid",
 ]
 
 [[package]]
@@ -2678,6 +2680,7 @@ dependencies = [
  "trx-protocol",
  "trx-vdes",
  "trx-wspr",
+ "uuid",
 ]
 
 [[package]]

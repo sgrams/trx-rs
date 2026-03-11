@@ -22,11 +22,16 @@ use tracing::{error, info, warn};
 use trx_ais::AisDecoder;
 use trx_aprs::AprsDecoder;
 use trx_core::audio::{
-    read_audio_msg, write_audio_msg, AudioStreamInfo,
+    parse_vchan_uuid_msg, read_audio_msg, write_audio_msg, write_vchan_audio_frame,
+    write_vchan_uuid_msg, AudioStreamInfo,
     AUDIO_MSG_AIS_DECODE, AUDIO_MSG_APRS_DECODE, AUDIO_MSG_CW_DECODE, AUDIO_MSG_FT8_DECODE,
     AUDIO_MSG_HF_APRS_DECODE, AUDIO_MSG_HISTORY_COMPRESSED, AUDIO_MSG_RX_FRAME,
-    AUDIO_MSG_STREAM_INFO, AUDIO_MSG_TX_FRAME, AUDIO_MSG_VDES_DECODE, AUDIO_MSG_WSPR_DECODE,
+    AUDIO_MSG_STREAM_INFO, AUDIO_MSG_TX_FRAME, AUDIO_MSG_VCHAN_ALLOCATED,
+    AUDIO_MSG_VCHAN_FREQ, AUDIO_MSG_VCHAN_MODE, AUDIO_MSG_VCHAN_REMOVE,
+    AUDIO_MSG_VCHAN_SUB, AUDIO_MSG_VCHAN_UNSUB, AUDIO_MSG_VDES_DECODE, AUDIO_MSG_WSPR_DECODE,
 };
+use trx_core::vchan::SharedVChanManager;
+use uuid::Uuid;
 use trx_core::decode::{
     AisMessage, AprsPacket, CwEvent, DecodedMessage, Ft8Message, VdesMessage, WsprMessage,
 };
@@ -1752,6 +1757,22 @@ pub async fn run_wspr_decoder(
     }
 }
 
+// ---------------------------------------------------------------------------
+// Virtual-channel audio support
+// ---------------------------------------------------------------------------
+
+/// Commands sent from the reader loop to the RX writer task to subscribe or
+/// unsubscribe a virtual channel's Opus audio stream.
+enum VChanCmd {
+    /// Start encoding the given channel's PCM and forwarding it to the client.
+    Subscribe {
+        uuid: Uuid,
+        pcm_rx: tokio::sync::broadcast::Receiver<Vec<f32>>,
+    },
+    /// Stop forwarding audio for the given channel.
+    Unsubscribe(Uuid),
+}
+
 /// Run the audio TCP listener, accepting client connections.
 pub async fn run_audio_listener(
     addr: SocketAddr,
@@ -1761,6 +1782,7 @@ pub async fn run_audio_listener(
     decode_tx: broadcast::Sender<DecodedMessage>,
     mut shutdown_rx: watch::Receiver<bool>,
     histories: Arc<DecoderHistories>,
+    vchan_manager: Option<SharedVChanManager>,
 ) -> std::io::Result<()> {
     let listener = TcpListener::bind(addr).await?;
     info!("Audio listener on {}", addr);
@@ -1777,9 +1799,10 @@ pub async fn run_audio_listener(
                 let decode_tx = decode_tx.clone();
                 let client_shutdown_rx = shutdown_rx.clone();
                 let client_histories = histories.clone();
+                let client_vchan_mgr = vchan_manager.clone();
 
                 tokio::spawn(async move {
-                    if let Err(e) = handle_audio_client(socket, peer, rx_audio, tx_audio, info, decode_tx, client_shutdown_rx, client_histories).await {
+                    if let Err(e) = handle_audio_client(socket, peer, rx_audio, tx_audio, info, decode_tx, client_shutdown_rx, client_histories, client_vchan_mgr).await {
                         warn!("Audio client {} error: {:?}", peer, e);
                     }
                     info!("Audio client {} disconnected", peer);
@@ -1810,6 +1833,7 @@ async fn handle_audio_client(
     decode_tx: broadcast::Sender<DecodedMessage>,
     mut shutdown_rx: watch::Receiver<bool>,
     histories: Arc<DecoderHistories>,
+    vchan_manager: Option<SharedVChanManager>,
 ) -> std::io::Result<()> {
     let (reader, writer) = socket.into_split();
     let mut reader = tokio::io::BufReader::new(reader);
@@ -1882,11 +1906,26 @@ async fn handle_audio_client(
         );
     }
 
-    // Spawn RX + decode forwarding task (shares the writer)
+    // Spawn RX + decode forwarding task (shares the writer).
+    // vchan audio frames are fed into this task via vchan_frame_rx so all
+    // writes share one BufWriter and stay ordered.
     let mut rx_sub = rx_audio.subscribe();
     let mut decode_sub = decode_tx.subscribe();
     let mut writer_for_rx = writer;
+
+    // (uuid, opus_bytes) produced by per-channel encoder tasks.
+    let (vchan_frame_tx, mut vchan_frame_rx) = mpsc::channel::<(Uuid, Bytes)>(256);
+    // Commands from the reader loop: Subscribe / Unsubscribe.
+    let (vchan_cmd_tx, mut vchan_cmd_rx) = mpsc::channel::<VChanCmd>(32);
+
+    let opus_sample_rate = stream_info.sample_rate;
+    let opus_channels    = stream_info.channels;
+
     let rx_handle = tokio::spawn(async move {
+        // UUID → JoinHandle of per-channel Opus encoder task.
+        let mut vchan_tasks: std::collections::HashMap<Uuid, tokio::task::JoinHandle<()>> =
+            std::collections::HashMap::new();
+
         loop {
             tokio::select! {
                 result = rx_sub.recv() => {
@@ -1928,11 +1967,96 @@ async fn handle_audio_client(
                         Err(broadcast::error::RecvError::Closed) => break,
                     }
                 }
+                // Virtual-channel audio frame produced by a per-channel encoder task.
+                Some((uuid, opus)) = vchan_frame_rx.recv() => {
+                    if let Err(e) = write_vchan_audio_frame(&mut writer_for_rx, uuid, opus.as_ref()).await {
+                        warn!("Audio vchan RX_FRAME_CH write to {} failed: {}", peer, e);
+                        break;
+                    }
+                }
+                // Commands from reader loop: subscribe / unsubscribe.
+                Some(cmd) = vchan_cmd_rx.recv() => {
+                    match cmd {
+                        VChanCmd::Subscribe { uuid, pcm_rx } => {
+                            // Spin up an async Opus encoder task for this virtual channel.
+                            let frame_tx = vchan_frame_tx.clone();
+                            let sr       = opus_sample_rate;
+                            let ch_count = opus_channels;
+                            let mut pcm_rx = pcm_rx;
+                            let handle = tokio::spawn(async move {
+                                let opus_ch = match ch_count {
+                                    1 => opus::Channels::Mono,
+                                    2 => opus::Channels::Stereo,
+                                    _ => return,
+                                };
+                                let mut encoder = match opus::Encoder::new(
+                                    sr,
+                                    opus_ch,
+                                    opus::Application::Audio,
+                                ) {
+                                    Ok(e) => e,
+                                    Err(e) => {
+                                        warn!("vchan Opus encoder init failed: {}", e);
+                                        return;
+                                    }
+                                };
+                                let _ = encoder.set_bitrate(opus::Bitrate::Bits(32_000));
+                                let _ = encoder.set_complexity(5);
+                                let mut buf = vec![0u8; 4096];
+                                loop {
+                                    match pcm_rx.recv().await {
+                                        Ok(frame) => {
+                                            match encoder.encode_float(&frame, &mut buf) {
+                                                Ok(len) => {
+                                                    let pkt = Bytes::copy_from_slice(&buf[..len]);
+                                                    if frame_tx.send((uuid, pkt)).await.is_err() {
+                                                        break;
+                                                    }
+                                                }
+                                                Err(e) => {
+                                                    warn!("vchan Opus encode error: {}", e);
+                                                }
+                                            }
+                                        }
+                                        Err(broadcast::error::RecvError::Lagged(n)) => {
+                                            warn!("vchan encoder: dropped {} PCM frames", n);
+                                        }
+                                        Err(broadcast::error::RecvError::Closed) => break,
+                                    }
+                                }
+                            });
+
+                            vchan_tasks.insert(uuid, handle);
+
+                            // Acknowledge to the client.
+                            if let Err(e) = write_vchan_uuid_msg(
+                                &mut writer_for_rx,
+                                AUDIO_MSG_VCHAN_ALLOCATED,
+                                uuid,
+                            )
+                            .await
+                            {
+                                warn!("Audio vchan allocated write to {} failed: {}", peer, e);
+                                break;
+                            }
+                        }
+                        VChanCmd::Unsubscribe(uuid) => {
+                            if let Some(h) = vchan_tasks.remove(&uuid) {
+                                h.abort();
+                            }
+                        }
+                    }
+                }
             }
+        }
+
+        // Abort all per-channel encoder tasks on disconnect.
+        for (_, h) in vchan_tasks {
+            h.abort();
         }
     });
 
-    // Read TX frames from client
+    // Read TX frames (and virtual-channel sub/unsub commands) from client.
     loop {
         let msg = tokio::select! {
             msg = read_audio_msg(&mut reader) => msg,
@@ -1954,8 +2078,87 @@ async fn handle_audio_client(
             Ok((AUDIO_MSG_TX_FRAME, payload)) => {
                 let _ = tx_audio.send(Bytes::from(payload)).await;
             }
+            Ok((AUDIO_MSG_VCHAN_SUB, payload)) => {
+                if let Some(ref mgr) = vchan_manager {
+                    // Payload: JSON { "uuid": "...", "freq_hz": N, "mode": "..." }
+                    match serde_json::from_slice::<serde_json::Value>(&payload) {
+                        Ok(v) => {
+                            let uuid = v["uuid"]
+                                .as_str()
+                                .and_then(|s| s.parse::<Uuid>().ok());
+                            let freq_hz = v["freq_hz"].as_u64();
+                            let mode_str = v["mode"].as_str().unwrap_or("USB");
+                            let mode = trx_protocol::codec::parse_mode(mode_str);
+                            if let (Some(uuid), Some(freq_hz)) = (uuid, freq_hz) {
+                                match mgr.ensure_channel_pcm(uuid, freq_hz, &mode) {
+                                    Ok(pcm_rx) => {
+                                        let _ = vchan_cmd_tx
+                                            .send(VChanCmd::Subscribe { uuid, pcm_rx })
+                                            .await;
+                                    }
+                                    Err(e) => warn!("Audio vchan SUB: {}", e),
+                                }
+                            } else {
+                                warn!("Audio vchan SUB: missing uuid or freq_hz in payload");
+                            }
+                        }
+                        Err(e) => warn!("Audio vchan SUB: bad JSON payload: {}", e),
+                    }
+                }
+            }
+            Ok((AUDIO_MSG_VCHAN_UNSUB, payload)) => {
+                match parse_vchan_uuid_msg(&payload) {
+                    Ok(uuid) => {
+                        let _ = vchan_cmd_tx.send(VChanCmd::Unsubscribe(uuid)).await;
+                    }
+                    Err(e) => warn!("Audio vchan UNSUB: bad payload: {}", e),
+                }
+            }
+            Ok((AUDIO_MSG_VCHAN_FREQ, payload)) => {
+                if let Some(ref mgr) = vchan_manager {
+                    if let Ok(v) = serde_json::from_slice::<serde_json::Value>(&payload) {
+                        if let (Some(uuid), Some(freq_hz)) = (
+                            v["uuid"].as_str().and_then(|s| s.parse::<Uuid>().ok()),
+                            v["freq_hz"].as_u64(),
+                        ) {
+                            if let Err(e) = mgr.set_channel_freq(uuid, freq_hz) {
+                                warn!("Audio vchan FREQ: {}", e);
+                            }
+                        }
+                    }
+                }
+            }
+            Ok((AUDIO_MSG_VCHAN_MODE, payload)) => {
+                if let Some(ref mgr) = vchan_manager {
+                    if let Ok(v) = serde_json::from_slice::<serde_json::Value>(&payload) {
+                        if let Some(uuid) = v["uuid"].as_str().and_then(|s| s.parse::<Uuid>().ok()) {
+                            let mode = trx_protocol::codec::parse_mode(
+                                v["mode"].as_str().unwrap_or("USB"),
+                            );
+                            if let Err(e) = mgr.set_channel_mode(uuid, &mode) {
+                                warn!("Audio vchan MODE: {}", e);
+                            }
+                        }
+                    }
+                }
+            }
+            Ok((AUDIO_MSG_VCHAN_REMOVE, payload)) => {
+                match parse_vchan_uuid_msg(&payload) {
+                    Ok(uuid) => {
+                        // Unsubscribe first.
+                        let _ = vchan_cmd_tx.send(VChanCmd::Unsubscribe(uuid)).await;
+                        // Then remove from the DSP pipeline.
+                        if let Some(ref mgr) = vchan_manager {
+                            if let Err(e) = mgr.remove_channel(uuid) {
+                                warn!("Audio vchan REMOVE: {}", e);
+                            }
+                        }
+                    }
+                    Err(e) => warn!("Audio vchan REMOVE: bad payload: {}", e),
+                }
+            }
             Ok((msg_type, _)) => {
-                warn!("Audio: unexpected message type {} from {}", msg_type, peer);
+                warn!("Audio: unexpected message type {:#04x} from {}", msg_type, peer);
             }
             Err(_) => break,
         }

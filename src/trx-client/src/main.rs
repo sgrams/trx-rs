@@ -299,6 +299,10 @@ async fn async_init() -> DynResult<AppState> {
         frontend_runtime.audio_info = Some(stream_info_rx);
         frontend_runtime.decode_rx = Some(decode_tx.clone());
 
+        // Virtual-channel audio: shared broadcaster map + command channel.
+        let (vchan_cmd_tx, vchan_cmd_rx) = mpsc::channel::<trx_frontend::VChanAudioCmd>(64);
+        *frontend_runtime.vchan_audio_cmd.lock().unwrap() = Some(vchan_cmd_tx);
+
         info!(
             "Audio enabled: default port {}, decode channel set",
             cfg.frontends.audio.server_port
@@ -306,6 +310,7 @@ async fn async_init() -> DynResult<AppState> {
 
         let audio_rig_ports: HashMap<String, u16> = cfg.frontends.audio.rig_ports.clone();
         let audio_shutdown_rx = shutdown_rx.clone();
+        let vchan_audio_map = frontend_runtime.vchan_audio.clone();
         pending_audio_client = Some(tokio::spawn(audio_client::run_audio_client(
             remote_host,
             cfg.frontends.audio.server_port,
@@ -317,6 +322,8 @@ async fn async_init() -> DynResult<AppState> {
             stream_info_tx,
             decode_tx,
             audio_shutdown_rx,
+            vchan_audio_map,
+            vchan_cmd_rx,
         )));
 
         if cfg.frontends.audio.bridge.enabled {

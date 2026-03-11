@@ -5879,6 +5879,9 @@ function extractAudioFrameChannels(frame) {
   return out;
 }
 
+// Optional channel_id injected by vchan.js when connecting to a virtual channel.
+let _audioChannelOverride = null;
+
 function startRxAudio() {
   if (rxActive) { stopRxAudio(); return; }
   if (!hasWebCodecs) {
@@ -5886,7 +5889,10 @@ function startRxAudio() {
     return;
   }
   const proto = location.protocol === "https:" ? "wss:" : "ws:";
-  audioWs = new WebSocket(`${proto}//${location.host}/audio`);
+  const audioPath = _audioChannelOverride
+    ? `/audio?channel_id=${encodeURIComponent(_audioChannelOverride)}`
+    : "/audio";
+  audioWs = new WebSocket(`${proto}//${location.host}${audioPath}`);
   audioWs.binaryType = "arraybuffer";
   audioStatus.textContent = "Connecting…";
 

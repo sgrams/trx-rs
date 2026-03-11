@@ -22,6 +22,8 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::broadcast;
 use uuid::Uuid;
 
+use trx_frontend::VChanAudioCmd;
+
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
@@ -90,6 +92,8 @@ pub struct ClientChannelManager {
     /// `"<rig_id>:"` so subscribers can filter by rig.
     pub change_tx: broadcast::Sender<String>,
     pub max_channels: usize,
+    /// Optional sender to the audio-client task for virtual-channel audio commands.
+    pub audio_cmd: std::sync::Mutex<Option<tokio::sync::mpsc::Sender<VChanAudioCmd>>>,
 }
 
 impl ClientChannelManager {
@@ -100,6 +104,20 @@ impl ClientChannelManager {
             sessions: RwLock::new(HashMap::new()),
             change_tx,
             max_channels: max_channels.max(1),
+            audio_cmd: std::sync::Mutex::new(None),
+        }
+    }
+
+    /// Wire the audio-command sender so the manager can dispatch
+    /// `VChanAudioCmd` messages when channels are allocated/deleted/changed.
+    pub fn set_audio_cmd(&self, tx: tokio::sync::mpsc::Sender<VChanAudioCmd>) {
+        *self.audio_cmd.lock().unwrap() = Some(tx);
+    }
+
+    /// Fire-and-forget: send a `VChanAudioCmd` to the audio-client task.
+    fn send_audio_cmd(&self, cmd: VChanAudioCmd) {
+        if let Some(tx) = self.audio_cmd.lock().unwrap().as_ref() {
+            let _ = tx.try_send(cmd);
         }
     }
 
@@ -225,6 +243,13 @@ impl ClientChannelManager {
             .unwrap()
             .insert(session_id, (rig_id.to_string(), id));
 
+        // Request server-side DSP channel + audio subscription.
+        self.send_audio_cmd(VChanAudioCmd::Subscribe {
+            uuid: id,
+            freq_hz,
+            mode: mode.to_string(),
+        });
+
         Ok(snapshot)
     }
 
@@ -329,6 +354,10 @@ impl ClientChannelManager {
         for sid in evicted {
             sessions.remove(&sid);
         }
+
+        // Remove server-side DSP channel and stop audio encoding.
+        self.send_audio_cmd(VChanAudioCmd::Remove(channel_id));
+
         Ok(())
     }
 
@@ -347,6 +376,8 @@ impl ClientChannelManager {
             .ok_or(VChanClientError::NotFound)?;
         ch.freq_hz = freq_hz;
         self.broadcast_change(rig_id, channels);
+        drop(rigs);
+        self.send_audio_cmd(VChanAudioCmd::SetFreq { uuid: channel_id, freq_hz });
         Ok(())
     }
 
@@ -364,6 +395,8 @@ impl ClientChannelManager {
             .ok_or(VChanClientError::NotFound)?;
         ch.mode = mode.to_string();
         self.broadcast_change(rig_id, channels);
+        drop(rigs);
+        self.send_audio_cmd(VChanAudioCmd::SetMode { uuid: channel_id, mode: mode.to_string() });
         Ok(())
     }
 

@@ -9,6 +9,7 @@ edition = "2021"
 
 [dependencies]
 bytes = "1"
+uuid = { workspace = true }
 serde_json = { workspace = true }
 trx-core = { path = "../../trx-core" }
 tokio = { workspace = true, features = ["sync"] }

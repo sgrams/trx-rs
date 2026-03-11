@@ -6,6 +6,8 @@
 //!
 //! Wire format: `[1 byte type][4 bytes BE length N][N bytes payload]`
 
+use uuid::Uuid;
+
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 
 pub const AUDIO_MSG_STREAM_INFO: u8 = 0x00;
@@ -21,6 +23,39 @@ pub const AUDIO_MSG_HF_APRS_DECODE: u8 = 0x09;
 /// Compressed history blob: payload is a gzip-compressed sequence of normal
 /// framed messages (each: `[1 byte type][4 bytes BE length][payload]`).
 pub const AUDIO_MSG_HISTORY_COMPRESSED: u8 = 0x0a;
+
+// ---------------------------------------------------------------------------
+// Virtual-channel audio multiplexing (server → client)
+// ---------------------------------------------------------------------------
+
+/// Per-virtual-channel Opus frame: `[16 B UUID][opus_len B Opus]`.
+/// Sent by the server for each virtual channel the client has subscribed to.
+pub const AUDIO_MSG_RX_FRAME_CH: u8 = 0x0b;
+/// Server → client: virtual channel audio subscription acknowledged.
+/// Payload: 16-byte UUID of the newly activated channel slot.
+pub const AUDIO_MSG_VCHAN_ALLOCATED: u8 = 0x0c;
+
+// ---------------------------------------------------------------------------
+// Virtual-channel audio multiplexing (client → server)
+// ---------------------------------------------------------------------------
+
+/// Client → server: create-or-subscribe to a virtual channel's audio.
+/// Payload: JSON `{"uuid":"<uuid>","freq_hz":<u64>,"mode":"<mode>"}`.
+/// If a channel with the given UUID already exists the server just subscribes;
+/// otherwise it creates a new DSP pipeline at the given frequency/mode first.
+pub const AUDIO_MSG_VCHAN_SUB: u8 = 0x0d;
+/// Client → server: unsubscribe from a virtual channel's audio.
+/// Payload: 16-byte UUID of the virtual channel on the server.
+pub const AUDIO_MSG_VCHAN_UNSUB: u8 = 0x0e;
+/// Client → server: update the dial frequency of a virtual channel.
+/// Payload: JSON `{"uuid":"<uuid>","freq_hz":<u64>}`.
+pub const AUDIO_MSG_VCHAN_FREQ: u8 = 0x0f;
+/// Client → server: update the demodulation mode of a virtual channel.
+/// Payload: JSON `{"uuid":"<uuid>","mode":"<mode>"}`.
+pub const AUDIO_MSG_VCHAN_MODE: u8 = 0x10;
+/// Client → server: remove a virtual channel (stops encoding and destroys the DSP pipeline).
+/// Payload: 16-byte UUID of the virtual channel on the server.
+pub const AUDIO_MSG_VCHAN_REMOVE: u8 = 0x11;
 
 /// Maximum payload size for normal messages (1 MB).
 const MAX_PAYLOAD_SIZE: u32 = 1_048_576;
@@ -79,4 +114,55 @@ pub async fn read_audio_msg<R: AsyncRead + Unpin>(
     let mut payload = vec![0u8; len as usize];
     reader.read_exact(&mut payload).await?;
     Ok((msg_type, payload))
+}
+
+// ---------------------------------------------------------------------------
+// Virtual-channel frame helpers
+// ---------------------------------------------------------------------------
+
+/// Write a virtual-channel control frame (16-byte UUID payload only).
+/// Used for `AUDIO_MSG_VCHAN_SUB`, `AUDIO_MSG_VCHAN_UNSUB`, and
+/// `AUDIO_MSG_VCHAN_ALLOCATED`.
+pub async fn write_vchan_uuid_msg<W: AsyncWrite + Unpin>(
+    writer: &mut W,
+    msg_type: u8,
+    uuid: Uuid,
+) -> std::io::Result<()> {
+    write_audio_msg(writer, msg_type, uuid.as_bytes()).await
+}
+
+/// Write an `AUDIO_MSG_RX_FRAME_CH` frame: 16-byte UUID followed by Opus payload.
+pub async fn write_vchan_audio_frame<W: AsyncWrite + Unpin>(
+    writer: &mut W,
+    uuid: Uuid,
+    opus: &[u8],
+) -> std::io::Result<()> {
+    let mut payload = Vec::with_capacity(16 + opus.len());
+    payload.extend_from_slice(uuid.as_bytes());
+    payload.extend_from_slice(opus);
+    write_audio_msg(writer, AUDIO_MSG_RX_FRAME_CH, &payload).await
+}
+
+/// Parse a virtual-channel audio frame payload (`AUDIO_MSG_RX_FRAME_CH`).
+/// Returns `(uuid, opus_bytes)` or an error if the payload is too short.
+pub fn parse_vchan_audio_frame(payload: &[u8]) -> std::io::Result<(Uuid, &[u8])> {
+    if payload.len() < 16 {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "vchan audio frame payload too short",
+        ));
+    }
+    let uuid = Uuid::from_bytes(payload[..16].try_into().unwrap());
+    Ok((uuid, &payload[16..]))
+}
+
+/// Parse a 16-byte UUID control frame (SUB / UNSUB / ALLOCATED).
+pub fn parse_vchan_uuid_msg(payload: &[u8]) -> std::io::Result<Uuid> {
+    if payload.len() < 16 {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "vchan uuid frame payload too short",
+        ));
+    }
+    Ok(Uuid::from_bytes(payload[..16].try_into().unwrap()))
 }

@@ -450,6 +450,7 @@ fn spawn_rig_audio_stack(
     sdr_pcm_rx: OptionalSdrPcmRx,
     sdr_ais_pcm_rx: OptionalSdrAisPcmRx,
     sdr_vdes_iq_rx: OptionalSdrVdesIqRx,
+    vchan_manager: Option<trx_core::vchan::SharedVChanManager>,
 ) -> Vec<JoinHandle<()>> {
     let mut handles: Vec<JoinHandle<()>> = Vec::new();
 
@@ -752,6 +753,7 @@ fn spawn_rig_audio_stack(
             decode_tx,
             audio_shutdown_rx,
             audio_histories,
+            vchan_manager,
         )
         .await
         {
@@ -999,6 +1001,11 @@ async fn main() -> DynResult<()> {
         // Spawn audio stack.
         // listen_override priority: --listen CLI flag > global [audio].listen > per-rig default.
         let audio_listen_override = cli.listen.or(Some(cfg.audio.listen));
+        #[cfg(feature = "soapysdr")]
+        let audio_vchan_manager = sdr_vchan_manager.clone();
+        #[cfg(not(feature = "soapysdr"))]
+        let audio_vchan_manager: Option<trx_core::vchan::SharedVChanManager> = None;
+
         let audio_handles = spawn_rig_audio_stack(
             rig_cfg,
             state_rx.clone(),
@@ -1011,6 +1018,7 @@ async fn main() -> DynResult<()> {
             sdr_pcm_rx,
             sdr_ais_pcm_rx,
             sdr_vdes_iq_rx,
+            audio_vchan_manager,
         );
         task_handles.extend(audio_handles);
 

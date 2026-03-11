@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: BSD-2-Clause
 
 use std::collections::{HashMap, HashSet, VecDeque};
+use std::sync::RwLock;
 use std::net::SocketAddr;
 use std::sync::atomic::{AtomicBool, AtomicUsize};
 use std::sync::{Arc, Mutex};
@@ -12,12 +13,32 @@ use bytes::Bytes;
 use tokio::sync::{broadcast, mpsc, watch};
 use tokio::task::JoinHandle;
 
+use uuid::Uuid;
+
 use trx_core::audio::AudioStreamInfo;
 use trx_core::decode::{
     AisMessage, AprsPacket, CwEvent, DecodedMessage, Ft8Message, VdesMessage, WsprMessage,
 };
 use trx_core::rig::state::{RigSnapshot, SpectrumData};
 use trx_core::{DynResult, RigRequest, RigState};
+
+/// Command sent by the HTTP frontend to the audio-client task to manage a
+/// virtual channel's audio stream over the server's audio TCP connection.
+#[derive(Debug)]
+pub enum VChanAudioCmd {
+    /// Create the server-side DSP channel (if it does not exist) and subscribe
+    /// to its Opus audio stream.  `freq_hz` and `mode` are used if the server
+    /// needs to create the channel.
+    Subscribe { uuid: Uuid, freq_hz: u64, mode: String },
+    /// Unsubscribe from audio (encoder task is stopped) but keep the DSP channel.
+    Unsubscribe(Uuid),
+    /// Unsubscribe and destroy the DSP channel.
+    Remove(Uuid),
+    /// Update the dial frequency of an existing virtual channel.
+    SetFreq { uuid: Uuid, freq_hz: u64 },
+    /// Update the demodulation mode of an existing virtual channel.
+    SetMode { uuid: Uuid, mode: String },
+}
 
 #[derive(Clone, Debug)]
 pub struct RemoteRigEntry {
@@ -206,6 +227,15 @@ pub struct FrontendRuntimeContext {
     pub ais_vessel_url_base: Option<String>,
     /// Spectrum sender; SSE clients subscribe via `spectrum.subscribe()`.
     pub spectrum: Arc<watch::Sender<SharedSpectrum>>,
+    /// Per-virtual-channel Opus audio senders.
+    /// Key: server-side virtual channel UUID.
+    /// Value: `broadcast::Sender<Bytes>` that receives per-channel Opus packets
+    /// forwarded by the audio-client task from `AUDIO_MSG_RX_FRAME_CH` frames.
+    pub vchan_audio: Arc<RwLock<HashMap<Uuid, broadcast::Sender<Bytes>>>>,
+    /// Channel to send `VChanAudioCmd` to the audio-client task, which in turn
+    /// forwards `VCHAN_SUB` / `VCHAN_UNSUB` frames over the audio TCP connection.
+    /// `None` when no audio connection is active.
+    pub vchan_audio_cmd: Arc<Mutex<Option<mpsc::Sender<VChanAudioCmd>>>>,
 }
 
 impl FrontendRuntimeContext {
@@ -249,6 +279,8 @@ impl FrontendRuntimeContext {
                 let (tx, _rx) = watch::channel(SharedSpectrum::default());
                 Arc::new(tx)
             },
+            vchan_audio: Arc::new(RwLock::new(HashMap::new())),
+            vchan_audio_cmd: Arc::new(Mutex::new(None)),
         }
     }
 }

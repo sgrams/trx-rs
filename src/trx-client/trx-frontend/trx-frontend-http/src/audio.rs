@@ -17,8 +17,10 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use actix_web::{get, web, Error, HttpRequest, HttpResponse};
 use actix_ws::Message;
 use bytes::Bytes;
+use serde::Deserialize;
 use tokio::sync::broadcast;
 use tracing::warn;
+use uuid::Uuid;
 
 use trx_core::decode::{
     AisMessage, AprsPacket, CwEvent, DecodedMessage, Ft8Message, VdesMessage, WsprMessage,
@@ -353,15 +355,18 @@ pub fn start_decode_history_collector(context: Arc<FrontendRuntimeContext>) {
     });
 }
 
+#[derive(Deserialize)]
+pub struct AudioQuery {
+    pub channel_id: Option<Uuid>,
+}
+
 #[get("/audio")]
 pub async fn audio_ws(
     req: HttpRequest,
     body: web::Payload,
+    query: web::Query<AudioQuery>,
     context: web::Data<Arc<FrontendRuntimeContext>>,
 ) -> Result<HttpResponse, Error> {
-    let Some(rx) = context.audio_rx.as_ref() else {
-        return Ok(HttpResponse::NotFound().body("audio not enabled"));
-    };
     let Some(tx_sender) = context.audio_tx.as_ref().cloned() else {
         return Ok(HttpResponse::NotFound().body("audio not enabled"));
     };
@@ -374,7 +379,25 @@ pub async fn audio_ws(
         return Ok(HttpResponse::NoContent().finish());
     }
 
-    let mut rx_sub = rx.subscribe();
+    // If a channel_id is specified, subscribe to the per-channel broadcaster.
+    // Otherwise fall back to the primary RX broadcast.
+    let rx_sub: broadcast::Receiver<Bytes> = if let Some(ch_id) = query.channel_id {
+        match context.vchan_audio.read() {
+            Ok(map) => match map.get(&ch_id) {
+                Some(tx) => tx.subscribe(),
+                None => {
+                    return Ok(HttpResponse::NotFound().body("channel not found"));
+                }
+            },
+            Err(_) => return Ok(HttpResponse::InternalServerError().finish()),
+        }
+    } else {
+        let Some(rx) = context.audio_rx.as_ref() else {
+            return Ok(HttpResponse::NotFound().body("audio not enabled"));
+        };
+        rx.subscribe()
+    };
+    let mut rx_sub = rx_sub;
 
     let (response, mut session, mut msg_stream) = actix_ws::handle(&req, body)?;
 
