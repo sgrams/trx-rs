@@ -18,7 +18,7 @@ use trx_frontend::{FrontendRuntimeContext, SharedSpectrum, VChanAudioCmd};
 use uuid::Uuid;
 
 use crate::server::bookmarks::{Bookmark, BookmarkStore};
-use crate::server::scheduler::SchedulerStatusMap;
+use crate::server::scheduler::{SchedulerStatusMap, SharedSchedulerControlManager};
 use crate::server::vchan::{ClientChannel, ClientChannelManager};
 
 const SUPPORTED_DECODER_KINDS: &[&str] = &["aprs", "ais", "ft8", "wspr", "hf-aprs"];
@@ -124,6 +124,7 @@ pub struct BackgroundDecodeManager {
     bookmarks: Arc<BookmarkStore>,
     context: Arc<FrontendRuntimeContext>,
     scheduler_status: SchedulerStatusMap,
+    scheduler_control: SharedSchedulerControlManager,
     vchan_mgr: Arc<ClientChannelManager>,
     status: Arc<RwLock<HashMap<String, BackgroundDecodeStatus>>>,
     notify_tx: broadcast::Sender<()>,
@@ -135,6 +136,7 @@ impl BackgroundDecodeManager {
         bookmarks: Arc<BookmarkStore>,
         context: Arc<FrontendRuntimeContext>,
         scheduler_status: SchedulerStatusMap,
+        scheduler_control: SharedSchedulerControlManager,
         vchan_mgr: Arc<ClientChannelManager>,
     ) -> Arc<Self> {
         let (notify_tx, _) = broadcast::channel(16);
@@ -143,6 +145,7 @@ impl BackgroundDecodeManager {
             bookmarks,
             context,
             scheduler_status,
+            scheduler_control,
             vchan_mgr,
             status: Arc::new(RwLock::new(HashMap::new())),
             notify_tx,
@@ -314,10 +317,11 @@ impl BackgroundDecodeManager {
         let config = self.get_config(&rig_id);
         let selected = dedup_ids(&config.bookmark_ids);
         let users_connected = self.context.sse_clients.load(Ordering::Relaxed) > 0;
-        let scheduled_bookmark_ids = if users_connected {
-            Vec::new()
-        } else {
+        let scheduler_has_control = self.scheduler_control.scheduler_allowed() && users_connected;
+        let scheduled_bookmark_ids = if scheduler_has_control || !users_connected {
             self.scheduler_bookmark_ids(&rig_id)
+        } else {
+            Vec::new()
         };
         let selected_bookmarks: HashMap<String, Bookmark> = self
             .bookmarks
@@ -369,6 +373,12 @@ impl BackgroundDecodeManager {
 
             if !users_connected {
                 status.state = "waiting_for_user".to_string();
+                statuses.push(status);
+                continue;
+            }
+
+            if scheduler_has_control {
+                status.state = "scheduler_has_control".to_string();
                 statuses.push(status);
                 continue;
             }

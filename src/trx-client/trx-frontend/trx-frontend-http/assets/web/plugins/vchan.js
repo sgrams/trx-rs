@@ -11,6 +11,8 @@ let vchanSessionId = null;
 let vchanRigId = null;
 let vchanChannels = [];
 let vchanActiveId = null;
+let schedulerReleaseState = null;
+let schedulerReleasePollTimer = null;
 
 function vchanFmtFreq(hz) {
   if (!Number.isFinite(hz) || hz <= 0) return "--";
@@ -20,11 +22,101 @@ function vchanFmtFreq(hz) {
   return hz + "\u202fHz";
 }
 
+function schedulerReleaseSummaryText(state) {
+  if (!state) return "Scheduler is controlling the rig.";
+  const connected = Number(state.connected_sessions) || 0;
+  const released = Number(state.released_sessions) || 0;
+  if (connected === 0) return "Scheduler can control the rig.";
+  if (state.all_released) {
+    return connected === 1
+      ? "Scheduler is controlling the rig."
+      : `Scheduler is controlling the rig for all ${connected} users.`;
+  }
+  if (!state.current_session_released) {
+    const othersReleased = Math.max(released, 0);
+    return othersReleased > 0
+      ? `You are holding control. ${othersReleased} other user${othersReleased === 1 ? "" : "s"} already released it.`
+      : "You are holding control. Release it to return control to the scheduler.";
+  }
+  const blocking = Math.max(connected - released, 0);
+  return blocking > 0
+    ? `Scheduler is waiting for ${blocking} user${blocking === 1 ? "" : "s"} to stop manual tuning.`
+    : "Scheduler can control the rig.";
+}
+
+function vchanRenderSchedulerRelease() {
+  const btn = document.getElementById("scheduler-release-btn");
+  const status = document.getElementById("scheduler-release-status");
+  if (!btn || !status) return;
+  const currentReleased = !!(schedulerReleaseState && schedulerReleaseState.current_session_released);
+  btn.disabled = !vchanSessionId || currentReleased;
+  btn.classList.toggle("active", !currentReleased);
+  btn.textContent = "Release to Scheduler";
+  status.textContent = schedulerReleaseSummaryText(schedulerReleaseState);
+}
+
+async function vchanPollSchedulerRelease() {
+  if (!vchanSessionId) {
+    schedulerReleaseState = null;
+    vchanRenderSchedulerRelease();
+    return;
+  }
+  try {
+    const resp = await fetch(`/scheduler-control?session_id=${encodeURIComponent(vchanSessionId)}`);
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    schedulerReleaseState = await resp.json();
+    vchanRenderSchedulerRelease();
+  } catch (e) {
+    console.error("scheduler release status failed", e);
+  }
+}
+
+function vchanStartSchedulerReleasePolling() {
+  if (schedulerReleasePollTimer) {
+    clearInterval(schedulerReleasePollTimer);
+  }
+  schedulerReleasePollTimer = setInterval(vchanPollSchedulerRelease, 10000);
+}
+
+async function vchanToggleSchedulerRelease() {
+  if (!vchanSessionId) return;
+  try {
+    const resp = await fetch("/scheduler-control", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ session_id: vchanSessionId, released: true }),
+    });
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    schedulerReleaseState = await resp.json();
+    vchanRenderSchedulerRelease();
+  } catch (e) {
+    console.error("scheduler release toggle failed", e);
+  }
+}
+
+async function vchanTakeSchedulerControl() {
+  if (!vchanSessionId) return;
+  if (schedulerReleaseState && !schedulerReleaseState.current_session_released) return;
+  try {
+    const resp = await fetch("/scheduler-control", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ session_id: vchanSessionId, released: false }),
+    });
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    schedulerReleaseState = await resp.json();
+    vchanRenderSchedulerRelease();
+  } catch (e) {
+    console.error("scheduler control takeover failed", e);
+  }
+}
+
 // Called by app.js when the SSE `session` event arrives.
 function vchanHandleSession(data) {
   try {
     const d = JSON.parse(data);
     vchanSessionId = d.session_id || null;
+    vchanPollSchedulerRelease();
   } catch (e) {
     console.warn("vchan: bad session event", e);
   }
@@ -43,6 +135,7 @@ function vchanHandleChannels(data) {
       vchanReconnectAudio();
     }
     vchanRender();
+    vchanRenderSchedulerRelease();
     if (typeof renderRdsOverlays === "function") renderRdsOverlays();
   } catch (e) {
     console.warn("vchan: bad channels event", e);
@@ -94,6 +187,7 @@ function vchanRender() {
   picker.appendChild(addBtn);
 
   vchanSyncAccentUI();
+  vchanRenderSchedulerRelease();
 }
 
 async function vchanAllocate() {
@@ -196,6 +290,7 @@ function vchanApplyCapabilities(caps) {
   const row = document.getElementById("vchan-row");
   if (!row) return;
   row.style.display = (caps && caps.filter_controls) ? "" : "none";
+  vchanRenderSchedulerRelease();
 }
 
 // ---------------------------------------------------------------------------
@@ -391,8 +486,20 @@ window.vchanInterceptBandwidth = async function(bwHz) {
       await vchanSetChannelFreq(freqHz);
       return;
     }
+    await vchanTakeSchedulerControl();
     if (typeof _orig === "function") return _orig(freqHz);
   };
+})();
+
+(function initSchedulerReleaseControl() {
+  const btn = document.getElementById("scheduler-release-btn");
+  if (btn) {
+    btn.addEventListener("click", () => {
+      vchanToggleSchedulerRelease();
+    });
+  }
+  vchanStartSchedulerReleasePolling();
+  vchanRenderSchedulerRelease();
 })();
 
 // Wrap refreshFreqDisplay so the main freq field stays in sync with the

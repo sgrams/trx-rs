@@ -437,6 +437,7 @@ impl RouteAccess {
             || path.starts_with("/bookmarks?")
             || path.starts_with("/bookmarks/")
             || path.starts_with("/scheduler/")
+            || path.starts_with("/scheduler-control")
             || path.starts_with("/channels/")
         {
             return Self::Read;

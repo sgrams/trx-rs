@@ -4,9 +4,10 @@
 
 //! Background Decoding Scheduler.
 //!
-//! When no SSE clients are connected the scheduler periodically inspects the
-//! current UTC time, selects the matching bookmark from the per-rig config,
-//! and issues `SetFreq` + `SetMode` commands to retune the rig automatically.
+//! When no SSE clients are connected, or when every connected user explicitly
+//! releases control, the scheduler periodically inspects the current UTC time,
+//! selects the matching bookmark from the per-rig config, and issues rig
+//! commands to retune and activate the scheduled decoder set automatically.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -19,6 +20,7 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::{mpsc, oneshot};
 use tokio::time;
 use tracing::{info, warn};
+use uuid::Uuid;
 
 use trx_core::radio::freq::Freq;
 use trx_core::rig::command::RigCommand;
@@ -370,27 +372,94 @@ pub struct SchedulerStatus {
 /// Shared mutable state for scheduler status (one entry per rig).
 pub type SchedulerStatusMap = Arc<RwLock<HashMap<String, SchedulerStatus>>>;
 
+#[derive(Debug, Clone, Serialize, Default)]
+pub struct SchedulerControlSummary {
+    pub connected_sessions: usize,
+    pub released_sessions: usize,
+    pub all_released: bool,
+    pub current_session_released: bool,
+}
+
+#[derive(Default)]
+pub struct SchedulerControlManager {
+    sessions: RwLock<HashMap<Uuid, bool>>,
+}
+
+impl SchedulerControlManager {
+    pub fn register_session(&self, session_id: Uuid) {
+        if let Ok(mut sessions) = self.sessions.write() {
+            sessions.insert(session_id, true);
+        }
+    }
+
+    pub fn unregister_session(&self, session_id: Uuid) {
+        if let Ok(mut sessions) = self.sessions.write() {
+            sessions.remove(&session_id);
+        }
+    }
+
+    pub fn set_released(&self, session_id: Uuid, released: bool) -> SchedulerControlSummary {
+        if let Ok(mut sessions) = self.sessions.write() {
+            sessions.insert(session_id, released);
+        }
+        self.summary(Some(session_id))
+    }
+
+    pub fn summary(&self, session_id: Option<Uuid>) -> SchedulerControlSummary {
+        let Ok(sessions) = self.sessions.read() else {
+            return SchedulerControlSummary::default();
+        };
+        let connected_sessions = sessions.len();
+        let released_sessions = sessions.values().filter(|released| **released).count();
+        let all_released = connected_sessions > 0 && released_sessions == connected_sessions;
+        let current_session_released = session_id
+            .and_then(|id| sessions.get(&id).copied())
+            .unwrap_or(false);
+        SchedulerControlSummary {
+            connected_sessions,
+            released_sessions,
+            all_released,
+            current_session_released,
+        }
+    }
+
+    pub fn scheduler_allowed(&self) -> bool {
+        let summary = self.summary(None);
+        summary.connected_sessions == 0 || summary.all_released
+    }
+
+    pub fn has_active_user_control(&self) -> bool {
+        let summary = self.summary(None);
+        summary.connected_sessions > 0 && !summary.all_released
+    }
+}
+
+pub type SharedSchedulerControlManager = Arc<SchedulerControlManager>;
+
 pub fn spawn_scheduler_task(
-    context: Arc<FrontendRuntimeContext>,
+    _context: Arc<FrontendRuntimeContext>,
     rig_tx: mpsc::Sender<RigRequest>,
     store: Arc<SchedulerStore>,
     bookmarks: Arc<BookmarkStore>,
     status_map: SchedulerStatusMap,
+    control: SharedSchedulerControlManager,
 ) {
     tokio::spawn(async move {
         let mut interval = time::interval(Duration::from_secs(30));
         // Track last applied bookmark per rig to avoid redundant retunes.
         let mut last_applied: HashMap<String, String> = HashMap::new();
+        let mut last_control_allowed = false;
 
         loop {
             interval.tick().await;
 
-            // Skip if any user is currently connected.
-            if context
-                .sse_clients
-                .load(std::sync::atomic::Ordering::Relaxed)
-                > 0
-            {
+            // Skip while at least one connected user is still holding control.
+            let scheduler_allowed = control.scheduler_allowed();
+            if scheduler_allowed && !last_control_allowed {
+                last_applied.clear();
+            }
+            last_control_allowed = scheduler_allowed;
+            if !scheduler_allowed {
                 continue;
             }
 
@@ -434,6 +503,10 @@ pub fn spawn_scheduler_task(
                 let extra_bm_ids: Vec<String> = active_entry
                     .map(|e| e.bookmark_ids.clone())
                     .unwrap_or_default();
+                let extra_bookmarks: Vec<_> = extra_bm_ids
+                    .iter()
+                    .filter_map(|id| bookmarks.get(id))
+                    .collect();
 
                 info!(
                     "scheduler: rig '{}' → bookmark '{}' ({} Hz {})",
@@ -485,6 +558,14 @@ pub fn spawn_scheduler_task(
                     }
                 }
 
+                apply_scheduler_decoders(
+                    &rig_tx,
+                    &config.rig_id,
+                    &bm,
+                    &extra_bookmarks,
+                )
+                .await;
+
                 last_applied.insert(config.rig_id.clone(), bm_id.clone());
 
                 // Update status map (includes center_hz + extra bookmark_ids
@@ -510,6 +591,48 @@ pub fn spawn_scheduler_task(
             }
         }
     });
+}
+
+async fn apply_scheduler_decoders(
+    rig_tx: &mpsc::Sender<RigRequest>,
+    rig_id: &str,
+    bookmark: &crate::server::bookmarks::Bookmark,
+    extra_bookmarks: &[crate::server::bookmarks::Bookmark],
+) {
+    let mut want_aprs = bookmark.mode.trim().eq_ignore_ascii_case("PKT");
+    let mut want_hf_aprs = false;
+    let mut want_ft8 = false;
+    let mut want_wspr = false;
+
+    let mut update_from = |bm: &crate::server::bookmarks::Bookmark| {
+        for decoder in bm.decoders.iter().map(|item| item.trim().to_ascii_lowercase()) {
+            match decoder.as_str() {
+                "aprs" => want_aprs = true,
+                "hf-aprs" => want_hf_aprs = true,
+                "ft8" => want_ft8 = true,
+                "wspr" => want_wspr = true,
+                _ => {}
+            }
+        }
+    };
+
+    update_from(bookmark);
+    for bm in extra_bookmarks {
+        update_from(bm);
+    }
+
+    let desired = [
+        ("APRS", RigCommand::SetAprsDecodeEnabled(want_aprs)),
+        ("HF APRS", RigCommand::SetHfAprsDecodeEnabled(want_hf_aprs)),
+        ("FT8", RigCommand::SetFt8DecodeEnabled(want_ft8)),
+        ("WSPR", RigCommand::SetWsprDecodeEnabled(want_wspr)),
+    ];
+
+    for (label, cmd) in desired {
+        if let Err(e) = scheduler_send(rig_tx, cmd, rig_id.to_string()).await {
+            warn!("scheduler: Set{label}DecodeEnabled failed for '{}': {:?}", rig_id, e);
+        }
+    }
 }
 
 /// Send a single RigCommand from the scheduler context (fire-and-forget style).
@@ -591,4 +714,31 @@ pub async fn get_scheduler_status(
     let map = status_map.read().unwrap_or_else(|e| e.into_inner());
     let status = map.get(&rig_id).cloned().unwrap_or_default();
     HttpResponse::Ok().json(status)
+}
+
+#[derive(Deserialize)]
+pub struct SchedulerControlQuery {
+    pub session_id: Option<Uuid>,
+}
+
+#[derive(Deserialize)]
+pub struct SchedulerControlUpdate {
+    pub session_id: Uuid,
+    pub released: bool,
+}
+
+#[get("/scheduler-control")]
+pub async fn get_scheduler_control(
+    query: web::Query<SchedulerControlQuery>,
+    control: web::Data<SharedSchedulerControlManager>,
+) -> impl Responder {
+    HttpResponse::Ok().json(control.summary(query.session_id))
+}
+
+#[put("/scheduler-control")]
+pub async fn put_scheduler_control(
+    body: web::Json<SchedulerControlUpdate>,
+    control: web::Data<SharedSchedulerControlManager>,
+) -> impl Responder {
+    HttpResponse::Ok().json(control.set_released(body.session_id, body.released))
 }

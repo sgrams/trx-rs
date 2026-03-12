@@ -308,6 +308,7 @@
       case "no_supported_decoders": return "Unsupported";
       case "disabled": return "Disabled";
       case "handled_by_scheduler": return "Scheduler";
+      case "scheduler_has_control": return "Scheduler";
       case "handled_by_virtual_channel": return "VChan";
       default: return "Inactive";
     }

@@ -40,7 +40,7 @@ use trx_frontend::{FrontendRuntimeContext, FrontendSpawner};
 
 use auth::{AuthConfig, AuthState, SameSite};
 use background_decode::{BackgroundDecodeManager, BackgroundDecodeStore};
-use scheduler::{SchedulerStatusMap, SchedulerStore};
+use scheduler::{SchedulerControlManager, SchedulerStatusMap, SchedulerStore};
 use vchan::ClientChannelManager;
 
 /// HTTP frontend implementation.
@@ -76,6 +76,7 @@ async fn serve(
     let bookmark_path = bookmarks::BookmarkStore::default_path();
     let bookmark_store = Arc::new(bookmarks::BookmarkStore::open(&bookmark_path));
     let scheduler_status: SchedulerStatusMap = Arc::new(RwLock::new(HashMap::new()));
+    let scheduler_control = Arc::new(SchedulerControlManager::default());
 
     scheduler::spawn_scheduler_task(
         context.clone(),
@@ -83,6 +84,7 @@ async fn serve(
         scheduler_store.clone(),
         bookmark_store.clone(),
         scheduler_status.clone(),
+        scheduler_control.clone(),
     );
 
     let background_decode_path = BackgroundDecodeStore::default_path();
@@ -94,6 +96,7 @@ async fn serve(
         bookmark_store.clone(),
         context.clone(),
         scheduler_status.clone(),
+        scheduler_control.clone(),
         vchan_mgr.clone(),
     );
     background_decode_mgr.spawn();
@@ -133,6 +136,7 @@ async fn serve(
         bookmark_store,
         scheduler_store,
         scheduler_status,
+        scheduler_control,
         vchan_mgr,
         background_decode_mgr,
     )?;
@@ -157,6 +161,7 @@ fn build_server(
     bookmark_store: Arc<bookmarks::BookmarkStore>,
     scheduler_store: Arc<SchedulerStore>,
     scheduler_status: SchedulerStatusMap,
+    scheduler_control: Arc<SchedulerControlManager>,
     vchan_mgr: Arc<ClientChannelManager>,
     background_decode_mgr: Arc<BackgroundDecodeManager>,
 ) -> Result<Server, actix_web::Error> {
@@ -170,6 +175,7 @@ fn build_server(
 
     let scheduler_store = web::Data::new(scheduler_store);
     let scheduler_status = web::Data::new(scheduler_status);
+    let scheduler_control = web::Data::new(scheduler_control);
     let vchan_mgr = web::Data::new(vchan_mgr);
     let background_decode_mgr = web::Data::new(background_decode_mgr);
 
@@ -214,6 +220,7 @@ fn build_server(
             .app_data(bookmark_store.clone())
             .app_data(scheduler_store.clone())
             .app_data(scheduler_status.clone())
+            .app_data(scheduler_control.clone())
             .app_data(vchan_mgr.clone())
             .app_data(background_decode_mgr.clone())
             .wrap(Compress::default())

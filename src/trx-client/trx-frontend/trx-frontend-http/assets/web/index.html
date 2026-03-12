@@ -261,7 +261,13 @@
             </div>
             <div class="full-row label-below-row" id="vchan-row" style="display:none;">
               <div class="label"><span>Channels</span></div>
-              <div class="vchan-picker" id="vchan-picker"></div>
+              <div class="vchan-row-controls">
+                <div class="vchan-picker" id="vchan-picker"></div>
+                <div class="scheduler-release-wrap">
+                  <button id="scheduler-release-btn" type="button">Release to Scheduler</button>
+                  <div id="scheduler-release-status" class="scheduler-release-status">Scheduler is controlling the rig.</div>
+                </div>
+              </div>
             </div>
             <div class="full-row label-below-row">
               <div class="label"><span>Signal</span></div>

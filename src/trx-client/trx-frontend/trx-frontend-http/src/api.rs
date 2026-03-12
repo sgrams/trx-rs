@@ -223,6 +223,7 @@ pub async fn events(
     clients: web::Data<Arc<AtomicUsize>>,
     context: web::Data<Arc<FrontendRuntimeContext>>,
     vchan_mgr: web::Data<Arc<ClientChannelManager>>,
+    scheduler_control: web::Data<crate::server::scheduler::SharedSchedulerControlManager>,
 ) -> Result<HttpResponse, Error> {
     let rx = state.get_ref().clone();
     let initial = wait_for_view(rx.clone()).await?;
@@ -232,6 +233,7 @@ pub async fn events(
 
     // Assign a stable UUID to this SSE session for channel binding.
     let session_id = Uuid::new_v4();
+    scheduler_control.register_session(session_id);
 
     // Seed the primary channel for the currently-selected rig (no-op if
     // already initialised or if no rig is selected yet).
@@ -336,11 +338,13 @@ pub async fn events(
 
     let vchan_drop = vchan_mgr.get_ref().clone();
     let counter_drop = counter.clone();
+    let scheduler_control_drop = scheduler_control.get_ref().clone();
     let live = select(select(pings, updates), chan_updates);
     let stream = prefix_stream.chain(live);
     let stream = DropStream::new(Box::pin(stream), move || {
         counter_drop.fetch_sub(1, Ordering::Relaxed);
         vchan_drop.release_session(session_id);
+        scheduler_control_drop.unregister_session(session_id);
     });
 
     Ok(HttpResponse::Ok()
@@ -1318,6 +1322,8 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
         .service(crate::server::scheduler::put_scheduler)
         .service(crate::server::scheduler::delete_scheduler)
         .service(crate::server::scheduler::get_scheduler_status)
+        .service(crate::server::scheduler::get_scheduler_control)
+        .service(crate::server::scheduler::put_scheduler_control)
         .service(crate::server::background_decode::get_background_decode)
         .service(crate::server::background_decode::put_background_decode)
         .service(crate::server::background_decode::delete_background_decode)
