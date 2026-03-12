@@ -22,7 +22,7 @@ use trx_protocol::{ClientCommand, ClientEnvelope, ClientResponse};
 const DEFAULT_REMOTE_PORT: u16 = 4530;
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
 const IO_TIMEOUT: Duration = Duration::from_secs(15);
-const SPECTRUM_IO_TIMEOUT: Duration = Duration::from_millis(1000);
+const SPECTRUM_IO_TIMEOUT: Duration = Duration::from_secs(3);
 const MAX_JSON_LINE_BYTES: usize = 16 * 1024;
 const MAX_CONSECUTIVE_POLL_FAILURES: u32 = 3;
 
@@ -42,7 +42,10 @@ impl RemoteEndpoint {
     }
 }
 
-const SPECTRUM_POLL_INTERVAL: Duration = Duration::from_millis(40);
+// Remote spectrum snapshots do not need to outpace the SDR-side producer.
+// Polling at ~10 Hz avoids stacking unnecessary in-flight requests on slower
+// links while still matching the typical backend update cadence.
+const SPECTRUM_POLL_INTERVAL: Duration = Duration::from_millis(100);
 
 #[derive(Clone)]
 pub struct RemoteClientConfig {
@@ -505,6 +508,9 @@ fn set_selected_rig_id(config: &RemoteClientConfig, value: Option<String>) {
 }
 
 fn should_poll_spectrum(config: &RemoteClientConfig) -> bool {
+    if config.spectrum.receiver_count() == 0 {
+        return false;
+    }
     let selected = selected_rig_id(config);
     let Some(selected) = selected.as_deref() else {
         return true;
