@@ -70,6 +70,9 @@ struct ManagedChannel {
     pipeline_slot: usize,
     /// True only for the primary channel; prevents removal.
     permanent: bool,
+    /// Hidden background-decode channels are omitted from the normal virtual
+    /// channel listing and do not count against the visible channel cap.
+    hidden: bool,
 }
 
 // ---------------------------------------------------------------------------
@@ -124,6 +127,7 @@ impl SdrVirtualChannelManager {
             iq_tx: primary_iq_tx,
             pipeline_slot: 0,
             permanent: true,
+            hidden: false,
         };
 
         let (destroyed_tx, _) = broadcast::channel::<Uuid>(16);
@@ -144,6 +148,61 @@ impl SdrVirtualChannelManager {
 
     fn half_span_hz(&self) -> i64 {
         i64::from(self.pipeline.sdr_sample_rate) / 2
+    }
+
+    fn visible_channel_count(channels: &[ManagedChannel]) -> usize {
+        channels.iter().filter(|ch| !ch.hidden).count()
+    }
+
+    fn create_channel(
+        &self,
+        channels: &mut Vec<ManagedChannel>,
+        id: Uuid,
+        freq_hz: u64,
+        mode: &RigMode,
+        hidden: bool,
+    ) -> Result<broadcast::Receiver<Vec<f32>>, VChanError> {
+        let half_span = self.half_span_hz();
+        let center = self.center_hz.load(Ordering::Relaxed);
+        let if_hz = freq_hz as i64 - center;
+        if if_hz.unsigned_abs() as i64 > half_span {
+            return Err(VChanError::OutOfBandwidth {
+                half_span_hz: half_span,
+            });
+        }
+
+        if !hidden && Self::visible_channel_count(channels) >= self.max_total {
+            return Err(VChanError::CapReached {
+                max: self.max_total,
+            });
+        }
+
+        let bandwidth_hz = default_bandwidth_hz(mode);
+        let (pcm_tx, iq_tx) =
+            self.pipeline
+                .add_virtual_channel(if_hz as f64, mode, bandwidth_hz, DEFAULT_FIR_TAPS);
+
+        let pipeline_slot = self
+            .pipeline
+            .channel_dsps
+            .read()
+            .unwrap()
+            .len()
+            .saturating_sub(1);
+
+        let pcm_rx = pcm_tx.subscribe();
+        channels.push(ManagedChannel {
+            id,
+            freq_hz,
+            mode: mode.clone(),
+            pcm_tx,
+            iq_tx,
+            pipeline_slot,
+            permanent: false,
+            hidden,
+        });
+
+        Ok(pcm_rx)
     }
 
     /// Called by `SoapySdrRig` whenever the hardware center frequency changes.
@@ -208,45 +267,9 @@ impl VirtualChannelManager for SdrVirtualChannelManager {
         freq_hz: u64,
         mode: &RigMode,
     ) -> Result<(Uuid, broadcast::Receiver<Vec<f32>>), VChanError> {
-        let half_span = self.half_span_hz();
-        let center = self.center_hz.load(Ordering::Relaxed);
-        let if_hz = freq_hz as i64 - center;
-        if if_hz.unsigned_abs() as i64 > half_span {
-            return Err(VChanError::OutOfBandwidth {
-                half_span_hz: half_span,
-            });
-        }
-
         let mut channels = self.channels.write().unwrap();
-        if channels.len() >= self.max_total {
-            return Err(VChanError::CapReached { max: self.max_total });
-        }
-
-        let bandwidth_hz = default_bandwidth_hz(mode);
-        let (pcm_tx, iq_tx) =
-            self.pipeline
-                .add_virtual_channel(if_hz as f64, mode, bandwidth_hz, DEFAULT_FIR_TAPS);
-
-        let pipeline_slot = self
-            .pipeline
-            .channel_dsps
-            .read()
-            .unwrap()
-            .len()
-            .saturating_sub(1);
-
         let id = Uuid::new_v4();
-        let pcm_rx = pcm_tx.subscribe();
-        channels.push(ManagedChannel {
-            id,
-            freq_hz,
-            mode: mode.clone(),
-            pcm_tx,
-            iq_tx,
-            pipeline_slot,
-            permanent: false,
-        });
-
+        let pcm_rx = self.create_channel(&mut channels, id, freq_hz, mode, false)?;
         Ok((id, pcm_rx))
     }
 
@@ -337,6 +360,7 @@ impl VirtualChannelManager for SdrVirtualChannelManager {
         let channels = self.channels.read().unwrap();
         channels
             .iter()
+            .filter(|ch| !ch.hidden)
             .enumerate()
             .map(|(idx, ch)| VChannelInfo {
                 id: ch.id,
@@ -370,46 +394,25 @@ impl VirtualChannelManager for SdrVirtualChannelManager {
             }
         }
 
-        // Slow path: create a new channel with the client-supplied UUID.
-        let half_span = self.half_span_hz();
-        let center = self.center_hz.load(Ordering::Relaxed);
-        let if_hz = freq_hz as i64 - center;
-        if if_hz.unsigned_abs() as i64 > half_span {
-            return Err(VChanError::OutOfBandwidth {
-                half_span_hz: half_span,
-            });
+        let mut channels = self.channels.write().unwrap();
+        self.create_channel(&mut channels, id, freq_hz, mode, false)
+    }
+
+    fn ensure_background_channel_pcm(
+        &self,
+        id: Uuid,
+        freq_hz: u64,
+        mode: &RigMode,
+    ) -> Result<broadcast::Receiver<Vec<f32>>, VChanError> {
+        {
+            let channels = self.channels.read().unwrap();
+            if let Some(ch) = channels.iter().find(|c| c.id == id) {
+                return Ok(ch.pcm_tx.subscribe());
+            }
         }
 
         let mut channels = self.channels.write().unwrap();
-        if channels.len() >= self.max_total {
-            return Err(VChanError::CapReached { max: self.max_total });
-        }
-
-        let bandwidth_hz = default_bandwidth_hz(mode);
-        let (pcm_tx, iq_tx) =
-            self.pipeline
-                .add_virtual_channel(if_hz as f64, mode, bandwidth_hz, DEFAULT_FIR_TAPS);
-
-        let pipeline_slot = self
-            .pipeline
-            .channel_dsps
-            .read()
-            .unwrap()
-            .len()
-            .saturating_sub(1);
-
-        let pcm_rx = pcm_tx.subscribe();
-        channels.push(ManagedChannel {
-            id,
-            freq_hz,
-            mode: mode.clone(),
-            pcm_tx,
-            iq_tx,
-            pipeline_slot,
-            permanent: false,
-        });
-
-        Ok(pcm_rx)
+        self.create_channel(&mut channels, id, freq_hz, mode, true)
     }
 }
 
@@ -488,5 +491,21 @@ mod tests {
         // center_hz = 0, half_span = 960_000 Hz — 10 MHz is way out
         let err = mgr.add_channel(10_000_000, &RigMode::USB).unwrap_err();
         assert!(matches!(err, VChanError::OutOfBandwidth { .. }));
+    }
+
+    #[test]
+    fn hidden_background_channels_are_outside_visible_cap() {
+        let p = make_pipeline();
+        let mgr = SdrVirtualChannelManager::new(p, 1, 2); // primary + 1 visible max
+        mgr.update_center_hz(14_100_000);
+
+        mgr.add_channel(14_074_000, &RigMode::USB).unwrap();
+        let hidden_id = Uuid::new_v4();
+        mgr.ensure_background_channel_pcm(hidden_id, 14_075_000, &RigMode::DIG)
+            .unwrap();
+
+        let visible = mgr.channels();
+        assert_eq!(visible.len(), 2);
+        assert!(visible.iter().all(|channel| channel.id != hidden_id));
     }
 }
