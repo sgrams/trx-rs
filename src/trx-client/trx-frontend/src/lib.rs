@@ -30,6 +30,16 @@ pub enum VChanAudioCmd {
     /// to its Opus audio stream.  `freq_hz` and `mode` are used if the server
     /// needs to create the channel.
     Subscribe { uuid: Uuid, freq_hz: u64, mode: String },
+    /// Create a hidden server-side DSP channel for background decoding.
+    /// These channels are not enumerated as user-visible virtual channels and
+    /// do not request an Opus audio stream back to the frontend.
+    SubscribeBackground {
+        uuid: Uuid,
+        freq_hz: u64,
+        mode: String,
+        bandwidth_hz: u32,
+        decoder_kinds: Vec<String>,
+    },
     /// Unsubscribe from audio (encoder task is stopped) but keep the DSP channel.
     Unsubscribe(Uuid),
     /// Unsubscribe and destroy the DSP channel.
