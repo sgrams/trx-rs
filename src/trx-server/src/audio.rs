@@ -1817,6 +1817,72 @@ async fn run_background_hf_aprs_decoder(
     }
 }
 
+async fn run_background_aprs_decoder(
+    sample_rate: u32,
+    channels: u16,
+    mut pcm_rx: broadcast::Receiver<Vec<f32>>,
+    decode_tx: broadcast::Sender<DecodedMessage>,
+) {
+    info!(
+        "Background APRS decoder started ({}Hz, {} ch)",
+        sample_rate, channels
+    );
+    let mut decoder = AprsDecoder::new(sample_rate);
+
+    loop {
+        match pcm_rx.recv().await {
+            Ok(frame) => {
+                let mut mono = downmix_if_needed(frame, channels);
+                apply_decode_audio_gate(&mut mono);
+                for mut pkt in decoder.process_samples(&mono) {
+                    if !pkt.crc_ok {
+                        continue;
+                    }
+                    if pkt.ts_ms.is_none() {
+                        pkt.ts_ms = Some(current_timestamp_ms());
+                    }
+                    let _ = decode_tx.send(DecodedMessage::Aprs(pkt));
+                }
+            }
+            Err(broadcast::error::RecvError::Lagged(n)) => {
+                warn!("Background APRS decoder: dropped {} PCM frames", n);
+            }
+            Err(broadcast::error::RecvError::Closed) => break,
+        }
+    }
+}
+
+async fn run_background_ais_decoder(
+    sample_rate: u32,
+    channels: u16,
+    mut pcm_rx: broadcast::Receiver<Vec<f32>>,
+    decode_tx: broadcast::Sender<DecodedMessage>,
+) {
+    info!(
+        "Background AIS decoder started ({}Hz, {} ch)",
+        sample_rate, channels
+    );
+    let mut decoder = AisDecoder::new(sample_rate);
+
+    loop {
+        match pcm_rx.recv().await {
+            Ok(frame) => {
+                let mono = downmix_if_needed(frame, channels);
+                for mut msg in decoder.process_samples(&mono, "A") {
+                    if msg.ts_ms.is_none() {
+                        msg.ts_ms = Some(current_timestamp_ms());
+                    }
+                    let _ = decode_tx.send(DecodedMessage::Ais(msg));
+                }
+            }
+            Err(broadcast::error::RecvError::Lagged(n)) => {
+                warn!("Background AIS decoder: dropped {} PCM frames", n);
+            }
+            Err(broadcast::error::RecvError::Closed) => break,
+        }
+    }
+}
+
 async fn run_background_ft8_decoder(
     sample_rate: u32,
     channels: u16,
@@ -2287,6 +2353,24 @@ async fn handle_audio_client(
                                     let ch_count = opus_channels as u16;
                                     let kind = kind.to_ascii_lowercase();
                                     let handle = match kind.as_str() {
+                                        "aprs" => tokio::spawn(async move {
+                                            run_background_aprs_decoder(
+                                                sr,
+                                                ch_count,
+                                                task_rx,
+                                                decode_tx,
+                                            )
+                                            .await;
+                                        }),
+                                        "ais" => tokio::spawn(async move {
+                                            run_background_ais_decoder(
+                                                sr,
+                                                ch_count,
+                                                task_rx,
+                                                decode_tx,
+                                            )
+                                            .await;
+                                        }),
                                         "ft8" => tokio::spawn(async move {
                                             run_background_ft8_decoder(
                                                 sr,
