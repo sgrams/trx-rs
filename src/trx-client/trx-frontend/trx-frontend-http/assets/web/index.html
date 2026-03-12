@@ -674,6 +674,7 @@
     <div id="tab-settings" class="tab-panel" style="display:none;">
       <div class="sub-tab-bar">
         <button class="sub-tab active" data-subtab="settings-scheduler">Scheduler</button>
+        <button class="sub-tab" data-subtab="settings-background-decode">Background Decode</button>
       </div>
       <div id="subtab-settings-scheduler" class="sub-tab-panel">
         <div id="scheduler-panel" class="sch-panel">
@@ -779,6 +780,44 @@
           </div>
         </div>
       </div>
+      <div id="subtab-settings-background-decode" class="sub-tab-panel" style="display:none;">
+        <div id="background-decode-panel" class="sch-panel">
+          <div class="sch-toast" id="background-decode-toast" style="display:none;"></div>
+          <div class="sch-section">
+            <div class="sch-section-title">Configuration</div>
+            <div class="sch-row">
+              <label class="sch-label">Rig
+                <select id="background-decode-rig-select" class="status-input sch-rig-select" aria-label="Select rig"></select>
+              </label>
+              <label class="sch-label bgd-toggle-wrap">Background decode
+                <span class="bgd-toggle-row">
+                  <input type="checkbox" id="background-decode-enabled" />
+                  <span>Enable hidden background decoder channels</span>
+                </span>
+              </label>
+            </div>
+            <div class="sch-row">
+              <label class="sch-label bgd-bookmark-pick">Bookmark
+                <div class="bgd-add-row">
+                  <select id="background-decode-bookmark-pick" class="status-input" aria-label="Background decode bookmark"></select>
+                  <button id="background-decode-bookmark-add" type="button" class="sch-write">+ Add</button>
+                </div>
+              </label>
+            </div>
+            <div id="background-decode-bookmark-list" class="bgd-bookmark-list"></div>
+          </div>
+
+          <div class="sch-actions">
+            <button id="background-decode-save-btn" class="sch-write sch-save-btn" type="button" style="display:none;">Save</button>
+            <button id="background-decode-reset-btn" class="sch-write sch-reset-btn" type="button" style="display:none;">Reset</button>
+          </div>
+
+          <div class="sch-section">
+            <div class="sch-section-title">Runtime Status</div>
+            <div id="background-decode-status-card" class="sch-status-card">No background decode bookmarks configured.</div>
+          </div>
+        </div>
+      </div>
     </div>
     <div id="tab-about" class="tab-panel" style="display:none;">
       <div id="auth-badge" style="display:none; margin-bottom: 1rem; padding: 0.5rem; background: var(--bg-secondary); border-radius: 0.25rem; color: var(--text-muted); font-size: 0.85rem;">Authenticated as: <strong id="auth-role-badge">--</strong></div>
@@ -819,6 +858,7 @@
   <script src="/cw.js"></script>
   <script src="/bookmarks.js"></script>
   <script src="/scheduler.js"></script>
+  <script src="/background-decode.js"></script>
   <script src="/vchan.js"></script>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="/leaflet-ais-tracksymbol.js"></script>

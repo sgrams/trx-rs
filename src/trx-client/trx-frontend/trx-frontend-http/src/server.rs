@@ -6,6 +6,8 @@
 mod api;
 #[path = "audio.rs"]
 pub mod audio;
+#[path = "background_decode.rs"]
+pub mod background_decode;
 #[path = "auth.rs"]
 pub mod auth;
 #[path = "bookmarks.rs"]
@@ -37,6 +39,7 @@ use trx_core::RigState;
 use trx_frontend::{FrontendRuntimeContext, FrontendSpawner};
 
 use auth::{AuthConfig, AuthState, SameSite};
+use background_decode::{BackgroundDecodeManager, BackgroundDecodeStore};
 use scheduler::{SchedulerStatusMap, SchedulerStore};
 use vchan::ClientChannelManager;
 
@@ -71,16 +74,26 @@ async fn serve(
     let scheduler_path = SchedulerStore::default_path();
     let scheduler_store = Arc::new(SchedulerStore::open(&scheduler_path));
     let bookmark_path = bookmarks::BookmarkStore::default_path();
-    let bookmark_store_for_scheduler = Arc::new(bookmarks::BookmarkStore::open(&bookmark_path));
+    let bookmark_store = Arc::new(bookmarks::BookmarkStore::open(&bookmark_path));
     let scheduler_status: SchedulerStatusMap = Arc::new(RwLock::new(HashMap::new()));
 
     scheduler::spawn_scheduler_task(
         context.clone(),
         rig_tx.clone(),
         scheduler_store.clone(),
-        bookmark_store_for_scheduler,
+        bookmark_store.clone(),
         scheduler_status.clone(),
     );
+
+    let background_decode_path = BackgroundDecodeStore::default_path();
+    let background_decode_store =
+        Arc::new(BackgroundDecodeStore::open(&background_decode_path));
+    let background_decode_mgr = BackgroundDecodeManager::new(
+        background_decode_store,
+        bookmark_store.clone(),
+        context.clone(),
+    );
+    background_decode_mgr.spawn();
 
     let vchan_mgr = Arc::new(ClientChannelManager::new(4));
 
@@ -110,7 +123,18 @@ async fn serve(
         });
     }
 
-    let server = build_server(addr, state_rx, rig_tx, callsign, context, scheduler_store, scheduler_status, vchan_mgr)?;
+    let server = build_server(
+        addr,
+        state_rx,
+        rig_tx,
+        callsign,
+        context,
+        bookmark_store,
+        scheduler_store,
+        scheduler_status,
+        vchan_mgr,
+        background_decode_mgr,
+    )?;
     let handle = server.handle();
     tokio::spawn(async move {
         let _ = signal::ctrl_c().await;
@@ -129,9 +153,11 @@ fn build_server(
     rig_tx: mpsc::Sender<RigRequest>,
     _callsign: Option<String>,
     context: Arc<FrontendRuntimeContext>,
+    bookmark_store: Arc<bookmarks::BookmarkStore>,
     scheduler_store: Arc<SchedulerStore>,
     scheduler_status: SchedulerStatusMap,
     vchan_mgr: Arc<ClientChannelManager>,
+    background_decode_mgr: Arc<BackgroundDecodeManager>,
 ) -> Result<Server, actix_web::Error> {
     let state_data = web::Data::new(state_rx);
     let rig_tx = web::Data::new(rig_tx);
@@ -139,12 +165,12 @@ fn build_server(
     // scheduler task can observe the connected-client count.
     let clients = web::Data::new(context.sse_clients.clone());
 
-    let bookmark_path = bookmarks::BookmarkStore::default_path();
-    let bookmark_store = web::Data::new(Arc::new(bookmarks::BookmarkStore::open(&bookmark_path)));
+    let bookmark_store = web::Data::new(bookmark_store);
 
     let scheduler_store = web::Data::new(scheduler_store);
     let scheduler_status = web::Data::new(scheduler_status);
     let vchan_mgr = web::Data::new(vchan_mgr);
+    let background_decode_mgr = web::Data::new(background_decode_mgr);
 
     // Extract auth config values before moving context
     let same_site = match context.http_auth_cookie_same_site.as_str() {
@@ -188,6 +214,7 @@ fn build_server(
             .app_data(scheduler_store.clone())
             .app_data(scheduler_status.clone())
             .app_data(vchan_mgr.clone())
+            .app_data(background_decode_mgr.clone())
             .wrap(Compress::default())
             .wrap(
                 DefaultHeaders::new()

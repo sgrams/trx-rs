@@ -3606,7 +3606,7 @@ async function initializeApp() {
     updateAuthUI();
     connect();
     connectDecode();
-    initSchedulerUI();
+    initSettingsUI();
     resizeHeaderSignalCanvas();
     startHeaderSignalSampling();
     return;
@@ -3620,7 +3620,7 @@ async function initializeApp() {
     applyAuthRestrictions();
     connect();
     connectDecode();
-    initSchedulerUI();
+    initSettingsUI();
     resizeHeaderSignalCanvas();
     startHeaderSignalSampling();
   } else {
@@ -3631,10 +3631,14 @@ async function initializeApp() {
   }
 }
 
-function initSchedulerUI() {
+function initSettingsUI() {
   if (typeof initScheduler === "function") {
     initScheduler(lastActiveRigId, authRole);
     wireSchedulerEvents();
+  }
+  if (typeof initBackgroundDecode === "function") {
+    initBackgroundDecode(lastActiveRigId, authRole);
+    wireBackgroundDecodeEvents();
   }
 }
 
@@ -3655,7 +3659,7 @@ document.getElementById("auth-form").addEventListener("submit", async (e) => {
     applyAuthRestrictions();
     connect();
     connectDecode();
-    initSchedulerUI();
+    initSettingsUI();
     resizeHeaderSignalCanvas();
     startHeaderSignalSampling();
   } catch (err) {
@@ -3678,7 +3682,7 @@ if (guestBtn) {
     applyAuthRestrictions();
     connect();
     connectDecode();
-    initSchedulerUI();
+    initSettingsUI();
     resizeHeaderSignalCanvas();
     startHeaderSignalSampling();
   });

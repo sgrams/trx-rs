@@ -3491,11 +3491,104 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   line-height: 1;
 }
 .sch-extra-bm-rm:hover { opacity: 1; }
+.bgd-toggle-wrap {
+  min-width: 18rem;
+}
+.bgd-toggle-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  min-height: var(--control-height);
+  color: var(--text);
+  font-weight: 500;
+}
+.bgd-add-row {
+  display: flex;
+  gap: 0.55rem;
+  align-items: center;
+}
+.bgd-bookmark-pick {
+  min-width: min(34rem, 100%);
+}
+.bgd-bookmark-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+}
+.bgd-bookmark-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.35rem 0.55rem;
+  border-radius: 999px;
+  border: 1px solid var(--border-light);
+  background: var(--btn-bg);
+  color: var(--text);
+  font-size: 0.85rem;
+}
+.bgd-bookmark-chip-meta {
+  color: var(--text-muted);
+  font-size: 0.78rem;
+}
+.bgd-bookmark-chip-remove {
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 0;
+  height: auto;
+}
+.bgd-bookmark-chip-remove:hover {
+  color: var(--text);
+}
+.bgd-status-list {
+  display: grid;
+  gap: 0.65rem;
+}
+.bgd-status-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid var(--border-light);
+  border-radius: 0.55rem;
+  background: color-mix(in srgb, var(--card-bg) 74%, transparent);
+}
+.bgd-status-name {
+  font-weight: 600;
+}
+.bgd-status-meta {
+  color: var(--text-muted);
+  font-size: 0.82rem;
+}
+.bgd-status-state {
+  align-self: center;
+  white-space: nowrap;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--accent-green);
+}
+.bgd-status-state[data-state="out_of_span"],
+.bgd-status-state[data-state="waiting_for_spectrum"],
+.bgd-status-state[data-state="inactive"] {
+  color: var(--accent-yellow);
+}
+.bgd-status-state[data-state="missing_bookmark"],
+.bgd-status-state[data-state="no_supported_decoders"] {
+  color: var(--accent-red);
+}
 @media (max-width: 600px) {
   .sch-row {
     flex-direction: column;
   }
   .sch-label {
     min-width: 100%;
+  }
+  .bgd-add-row,
+  .bgd-status-row {
+    flex-direction: column;
+    align-items: stretch;
   }
 }

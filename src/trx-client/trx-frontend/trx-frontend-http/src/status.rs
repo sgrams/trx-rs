@@ -21,6 +21,8 @@ pub const WSPR_JS: &str = include_str!("../assets/web/plugins/wspr.js");
 pub const CW_JS: &str = include_str!("../assets/web/plugins/cw.js");
 pub const BOOKMARKS_JS: &str = include_str!("../assets/web/plugins/bookmarks.js");
 pub const SCHEDULER_JS: &str = include_str!("../assets/web/plugins/scheduler.js");
+pub const BACKGROUND_DECODE_JS: &str =
+    include_str!("../assets/web/plugins/background-decode.js");
 pub const VCHAN_JS: &str = include_str!("../assets/web/plugins/vchan.js");
 
 pub fn index_html() -> String {

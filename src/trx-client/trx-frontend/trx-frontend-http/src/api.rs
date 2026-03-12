@@ -1300,6 +1300,10 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
         .service(crate::server::scheduler::put_scheduler)
         .service(crate::server::scheduler::delete_scheduler)
         .service(crate::server::scheduler::get_scheduler_status)
+        .service(crate::server::background_decode::get_background_decode)
+        .service(crate::server::background_decode::put_background_decode)
+        .service(crate::server::background_decode::delete_background_decode)
+        .service(crate::server::background_decode::get_background_decode_status)
         .service(crate::server::audio::audio_ws)
         .service(favicon)
         .service(favicon_png)
@@ -1317,6 +1321,7 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
         .service(cw_js)
         .service(bookmarks_js)
         .service(scheduler_js)
+        .service(background_decode_js)
         .service(vchan_js)
         // Virtual channels
         .service(list_channels)
@@ -1485,6 +1490,16 @@ async fn scheduler_js() -> impl Responder {
             "application/javascript; charset=utf-8",
         ))
         .body(status::SCHEDULER_JS)
+}
+
+#[get("/background-decode.js")]
+async fn background_decode_js() -> impl Responder {
+    HttpResponse::Ok()
+        .insert_header((
+            header::CONTENT_TYPE,
+            "application/javascript; charset=utf-8",
+        ))
+        .body(status::BACKGROUND_DECODE_JS)
 }
 
 #[get("/vchan.js")]
