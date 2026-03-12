@@ -371,16 +371,15 @@ input.status-input, select.status-input { width: 100%; padding: 0.45rem 0.5rem; 
   flex-wrap: wrap;
   gap: 4px;
 }
-.vchan-row-controls {
+.scheduler-control-row {
   display: flex;
   align-items: flex-start;
-  justify-content: space-between;
-  gap: 0.8rem;
+  justify-content: flex-start;
 }
 .scheduler-release-wrap {
   display: flex;
   flex-direction: column;
-  align-items: flex-end;
+  align-items: flex-start;
   gap: 0.35rem;
   min-width: 14rem;
 }
@@ -391,7 +390,7 @@ input.status-input, select.status-input { width: 100%; padding: 0.45rem 0.5rem; 
 .scheduler-release-status {
   color: var(--text-muted);
   font-size: 0.78rem;
-  text-align: right;
+  text-align: left;
 }
 .vchan-picker button {
   display: inline-flex;
@@ -3615,8 +3614,7 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   color: var(--accent-red);
 }
 @media (max-width: 600px) {
-  .vchan-row-controls {
-    flex-direction: column;
+  .scheduler-control-row {
     align-items: stretch;
   }
   .scheduler-release-wrap {
