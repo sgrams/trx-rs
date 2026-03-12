@@ -392,6 +392,44 @@ input.status-input, select.status-input { width: 100%; padding: 0.45rem 0.5rem; 
   border-color: var(--vchan-color);
   box-shadow: inset 3px 0 0 var(--vchan-color);
 }
+/* Frequency layers: absolutely-positioned channel strips stacked by frequency */
+.vchan-freq-layers {
+  position: relative;
+  margin-top: 0.5rem;
+  /* height is set dynamically by vchanRenderLayers() */
+}
+.vchan-freq-layer {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 2rem;
+  display: flex;
+  align-items: center;
+  padding: 0 0.6rem;
+  border-radius: 6px;
+  background: var(--input-bg);
+  border: 1px solid var(--border-light);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 0.82rem;
+  color: var(--text-muted);
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: border-color 0.12s, box-shadow 0.12s;
+}
+.vchan-freq-layer:hover {
+  border-color: var(--vchan-color);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+  color: var(--text);
+}
+.vchan-freq-layer.active {
+  background: var(--btn-bg);
+  color: var(--text);
+  font-weight: 600;
+  border-color: var(--vchan-color);
+  box-shadow: inset 3px 0 0 var(--vchan-color);
+}
 /* Applied to #freq and #spectrum-bw-input when on a virtual channel */
 .vchan-ch-active {
   border-color: var(--vchan-color) !important;
