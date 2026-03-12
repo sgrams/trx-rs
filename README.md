@@ -4,114 +4,185 @@
 
 # trx-rs
 
-A modular transceiver control stack with configurable backends and frontends. The rig task is driven by controller components (state machine, handlers, and policies) with configurable polling and retry behavior via the `[behavior]` section in the config file.
+`trx-rs` is a modular amateur radio control stack written in Rust.
+It splits radio hardware access from user-facing interfaces so you can run
+rig control, SDR DSP, decoding, audio streaming, and web access as separate,
+composable pieces.
 
-**Note**: This is a live project with evolving APIs. Please report issues and feature requests.
+The project is built around two primary binaries:
 
-Configuration reference: see `CONFIGURATION.md` for all server/client options and defaults.
+- `trx-server`: talks to radios and SDR backends
+- `trx-client`: connects to the server and exposes frontends such as the web UI
 
-## Configuration Files
+## Web UI Demo
 
-`trx-server` and `trx-client` read configuration from a shared `trx-rs.toml`.
+> GIF placeholder: add an animated walkthrough of the website here.
 
-- Default search order for each app:
-  current directory, then `~/.config/trx-rs`, then `/etc/trx-rs`
-- At each location, the loader checks:
-  `trx-rs.toml` and reads the `[trx-server]` or `[trx-client]` section
-- Config file name:
-  `trx-rs.toml`
-- `--config <FILE>` loads an explicit config file path and reads the matching `[trx-server]` or `[trx-client]` section from that file.
-- `--print-config` prints an example combined config block suitable for `trx-rs.toml`.
+## What It Does
 
-See `trx-rs.toml.example` for a complete combined example.
+- Controls supported radios over networked client/server boundaries
+- Exposes a browser UI, a rigctl-compatible frontend, and JSON-based control
+- Supports SDR workflows with live spectrum, waterfall, demodulation, and decode
+- Streams Opus audio between server, client, and browser
+- Runs multiple decoders including AIS, APRS, CW, FT8, RDS, VDES, and WSPR
+- Supports multi-rig deployments and SDR virtual channels
+- Loads backends and frontends via plugins
 
-## Supported backends
+## Architecture
 
-- Yaesu FT-817 (feature-gated crate `trx-backend-ft817`)
-- Planned: other rigs I own; contributions and reports are welcome.
+At a high level:
 
-## Frontends
+1. `trx-server` owns the radio hardware and DSP pipeline.
+2. `trx-client` connects to the server over TCP for control and audio.
+3. Frontends hang off `trx-client`, including the HTTP web UI.
 
-- HTTP status/control frontend (`trx-frontend-http`)
-- JSON TCP control frontend (`trx-frontend-http-json`)
-- rigctl-compatible TCP frontend (`trx-frontend-rigctl`, listens on 127.0.0.1:4532)
+This separation is intentional: it keeps hardware access local to one host while
+making control and monitoring available elsewhere on the network.
 
-## HTTP Frontend Authentication
+## Workspace Layout
 
-The HTTP frontend supports optional passphrase-based authentication with two roles:
+- `src/trx-core`: shared types, rig state, controller logic
+- `src/trx-protocol`: client/server protocol types and codecs
+- `src/trx-app`: shared app bootstrapping, config, logging, plugins
+- `src/trx-server`: server binary and backend integration
+- `src/trx-client`: client binary and remote connection handling
+- `src/trx-client/trx-frontend`: frontend abstraction
+- `src/decoders`: protocol-specific decoder crates
+- `examples/trx-plugin-example`: minimal plugin example
 
-- **rx**: Read-only access to status, events, decode history, and audio streams
-- **control**: Full access including transmit control (TX/PTT) and power toggling
+## Supported Pieces
 
-Authentication is disabled by default. When enabled, users must log in via a passphrase before accessing the web UI. Sessions are managed server-side with configurable time-to-live and cookie security settings.
+### Backends
 
-### Configuration
+- Yaesu FT-817
+- Yaesu FT-450D
+- SoapySDR-based SDR backend
 
-Enable authentication under `[trx-client.frontends.http.auth]` in `trx-rs.toml`.
+### Frontends
 
-```toml
-[trx-client.frontends.http.auth]
-enabled = true
-rx_passphrase = "read-only-secret"
-control_passphrase = "full-control-secret"
-session_ttl_min = 480          # 8 hours
-cookie_secure = false          # Set to true for HTTPS
-cookie_same_site = "Lax"
+- HTTP web frontend
+- rigctl-compatible TCP frontend
+- JSON-over-TCP frontend
+
+### Decoders
+
+- AIS
+- APRS
+- CW
+- FT8
+- RDS
+- VDES
+- WSPR
+
+## Build Requirements
+
+You will need Rust plus a few system libraries.
+
+### Common dependencies
+
+- `libopus`
+- `pkg-config` or `pkgconf`
+- `cmake`
+
+### SDR builds
+
+- `libsoapysdr`
+
+### Audio builds
+
+- Core Audio on macOS, or ALSA development packages on Linux
+
+## Configuration
+
+Both `trx-server` and `trx-client` read from a shared `trx-rs.toml`.
+
+- Default lookup order: current directory, `~/.config/trx-rs`, `/etc/trx-rs`
+- Use `--config <FILE>` to point at an explicit config file
+- Use `--print-config` to print an example combined config
+
+Start from [`trx-rs.toml.example`](trx-rs.toml.example).
+
+## Quick Start
+
+### 1. Build
+
+```bash
+cargo build
 ```
 
-### Security Considerations
+### 2. Create a config file
 
-- **Local/LAN use**: Default settings are safe for 127.0.0.1 or trusted local networks.
-- **Remote access**: For internet-exposed deployments:
-  - Deploy behind HTTPS (reverse proxy or TLS termination)
-  - Set `cookie_secure = true`
-  - Use strong passphrases (random, 16+ chars)
-  - Consider firewall rules and network segmentation
-- **Passphrase storage**: Passphrases are stored in plaintext in the config file. Protect the config file with appropriate file permissions.
-- **No rate limiting**: The current implementation does not include login rate limiting. For high-security scenarios, deploy behind a reverse proxy with rate limiting.
+```bash
+cp trx-rs.toml.example trx-rs.toml
+```
 
-### Architecture
+Adjust backend, frontend, audio, and auth settings for your environment.
 
-- **Sessions**: In-memory, expire after configured TTL (default 8 hours)
-- **Cookies**: HttpOnly, configurable Secure and SameSite attributes
-- **Route protection**: Middleware validates session on protected endpoints; public routes (static assets, login) are always accessible
-- **TX/PTT gating**: Control-only endpoints return 404 to rx-authenticated users (when `tx_access_control_enabled=true`)
+### 3. Run the server
 
-## Audio streaming
+```bash
+cargo run -p trx-server
+```
 
-Bidirectional Opus audio streaming between server, client, and browser.
+### 4. Run the client
 
-- **Server** captures audio from a configured input device (cpal), encodes to Opus, and streams over a dedicated TCP connection (default port 4533). TX audio received from clients is decoded and played back.
-- **Client** connects to the server's audio TCP port and relays Opus frames to/from the HTTP frontend via a WebSocket at `/audio`.
-- **Browser** connects to the `/audio` WebSocket, decodes Opus via WebCodecs `AudioDecoder`, and plays RX audio. TX audio is captured via `getUserMedia` and encoded with WebCodecs `AudioEncoder`.
+```bash
+cargo run -p trx-client
+```
 
-Enable with `[audio] enabled = true` in the server config and `[frontends.audio] enabled = true` in the client config.
+### 5. Open the web UI
 
-## Dependencies
+Open the configured HTTP frontend address in a browser.
 
-### System libraries
+## Web Frontend Highlights
 
-The following system libraries are required at build time:
+- Real-time spectrum and waterfall
+- Frequency, mode, and bandwidth control
+- Decoder dashboards and history
+- SDR virtual channels
+- Browser RX/TX audio
+- Optional authentication with read-only and control roles
 
-| Library | Purpose | Install |
-|---------|---------|---------|
-| **libopus** | Opus audio codec encoding/decoding | `zb install opus` (or your system package manager) |
-| **libsoapysdr** | Required for SoapySDR-based SDR backends | `zb install soapysdr` (or your system package manager) |
-| **cmake** | Required by the `audiopus_sys` build script if libopus is not found via pkg-config | `zb install cmake` |
-| **pkg-config** / **pkgconf** | Locates system libopus during build | `zb install pkgconf` |
-| **Core Audio** (macOS) / **ALSA** (Linux) | Audio device access via cpal | Provided by the OS (macOS) or `alsa-lib-dev` (Linux) |
+## Authentication
 
-## Plugin discovery
+The HTTP frontend supports optional passphrase-based authentication.
 
-`trx-server` and `trx-client` can load shared-library plugins that register backends/frontends
-via a `trx_register` entrypoint. Search paths:
+- `rx`: read-only access
+- `control`: full control access
+
+When exposing the web UI beyond a trusted LAN, run it behind HTTPS and enable
+secure cookie settings in the config.
+
+## Audio
+
+Audio is transported as Opus between server, client, and browser.
+
+- `trx-server` captures and encodes audio
+- `trx-client` relays audio to the HTTP frontend
+- Browsers connect over `/audio`
+
+## Plugins
+
+Both binaries can discover shared-library plugins through:
 
 - `./plugins`
 - `~/.config/trx-rs/plugins`
-- `TRX_PLUGIN_DIRS` (path-separated)
+- `TRX_PLUGIN_DIRS`
 
-Example plugin: `examples/trx-plugin-example`
+See [`examples/trx-plugin-example/README.md`](examples/trx-plugin-example/README.md).
+
+## Documentation
+
+- [`OVERVIEW.md`](OVERVIEW.md): architecture and design overview
+- [`CONTRIBUTING.md`](CONTRIBUTING.md): contribution and commit rules
+
+## Project Status
+
+This is an active project with evolving APIs and frontend behavior. Expect some
+rough edges and ongoing refactors.
 
 ## License
 
-This project is licensed under the BSD-2-Clause license. See `LICENSES/` for bundled third-party license files.
+Licensed under BSD-2-Clause.
+
+See [`LICENSES`](LICENSES) for bundled third-party license files.
