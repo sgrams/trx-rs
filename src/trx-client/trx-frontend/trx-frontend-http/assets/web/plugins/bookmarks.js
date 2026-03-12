@@ -1,7 +1,10 @@
 // --- Bookmarks Tab ---
 
 var bmList = [];
+let bmFilteredList = [];
 let bmEditId = null;
+let bmCurrentPage = 1;
+const BM_PAGE_SIZE = 25;
 
 function bmFmtFreq(hz) {
   if (!Number.isFinite(hz) || hz <= 0) return "--";
@@ -66,6 +69,8 @@ function bmApplyFilters() {
         (bm.comment || "").toLowerCase().includes(text)
       )
     : filtered;
+  bmFilteredList = filtered;
+  bmCurrentPage = 1;
   bmRender(filtered);
 }
 
@@ -106,18 +111,30 @@ async function bmRefreshCategoryFilter(keepValue) {
 function bmRender(list) {
   const tbody = document.getElementById("bm-tbody");
   const emptyEl = document.getElementById("bm-empty");
+  const paginatorEl = document.getElementById("bm-paginator");
+  const pageSummaryEl = document.getElementById("bm-page-summary");
+  const pageIndicatorEl = document.getElementById("bm-page-indicator");
+  const prevBtn = document.getElementById("bm-page-prev");
+  const nextBtn = document.getElementById("bm-page-next");
   if (!tbody) return;
   tbody.innerHTML = "";
 
   if (list.length === 0) {
     if (emptyEl) emptyEl.style.display = "";
+    if (paginatorEl) paginatorEl.style.display = "none";
     return;
   }
   if (emptyEl) emptyEl.style.display = "none";
 
   const canControl = bmCanControl();
+  const totalPages = Math.max(1, Math.ceil(list.length / BM_PAGE_SIZE));
+  const page = Math.min(Math.max(bmCurrentPage, 1), totalPages);
+  bmCurrentPage = page;
+  const startIndex = (page - 1) * BM_PAGE_SIZE;
+  const endIndex = Math.min(startIndex + BM_PAGE_SIZE, list.length);
+  const pageItems = list.slice(startIndex, endIndex);
 
-  list.forEach((bm) => {
+  pageItems.forEach((bm) => {
     const tr = document.createElement("tr");
     tr.dataset.bmId = bm.id;
     const bwCell = bm.bandwidth_hz ? bmFmtFreq(bm.bandwidth_hz) : "--";
@@ -143,6 +160,20 @@ function bmRender(list) {
       `</td>`;
     tbody.appendChild(tr);
   });
+
+  if (paginatorEl) paginatorEl.style.display = totalPages > 1 ? "flex" : "";
+  if (pageSummaryEl) pageSummaryEl.textContent = `Showing ${startIndex + 1}-${endIndex} of ${list.length}`;
+  if (pageIndicatorEl) pageIndicatorEl.textContent = `Page ${page} of ${totalPages}`;
+  if (prevBtn) prevBtn.disabled = page <= 1;
+  if (nextBtn) nextBtn.disabled = page >= totalPages;
+}
+
+function bmChangePage(delta) {
+  const totalPages = Math.max(1, Math.ceil(bmFilteredList.length / BM_PAGE_SIZE));
+  const nextPage = Math.min(Math.max(bmCurrentPage + delta, 1), totalPages);
+  if (nextPage === bmCurrentPage) return;
+  bmCurrentPage = nextPage;
+  bmRender(bmFilteredList);
 }
 
 // Read decoder checkboxes and return an array of selected decoder names.
@@ -368,6 +399,14 @@ async function bmApply(bm) {
   // Text search filter (client-side, no re-fetch)
   document.getElementById("bm-text-filter").addEventListener("input", () => {
     bmApplyFilters();
+  });
+
+  document.getElementById("bm-page-prev").addEventListener("click", () => {
+    bmChangePage(-1);
+  });
+
+  document.getElementById("bm-page-next").addEventListener("click", () => {
+    bmChangePage(1);
   });
 
   // Form submit

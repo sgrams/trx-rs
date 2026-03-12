@@ -3135,6 +3135,30 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   color: var(--text-muted);
   font-size: 0.9rem;
 }
+.bm-paginator {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.8rem;
+  padding: 0.9rem 0.2rem 0;
+}
+.bm-page-summary,
+.bm-page-indicator {
+  color: var(--text-muted);
+  font-size: 0.88rem;
+}
+.bm-page-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+}
+.bm-page-controls button {
+  min-width: 6.4rem;
+}
+.bm-page-controls button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
 
 /* ── Donald style ─────────────────────────────────────────────────────── */
 [data-style="golden-rain"] {
@@ -3573,6 +3597,21 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   }
   .sch-label {
     min-width: 100%;
+  }
+  .bm-paginator {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .bm-page-controls {
+    justify-content: space-between;
+  }
+  .bm-page-controls button {
+    flex: 1 1 0;
+    min-width: 0;
+  }
+  .bm-page-indicator,
+  .bm-page-summary {
+    text-align: center;
   }
   .bgd-add-row,
   .bgd-status-row {
