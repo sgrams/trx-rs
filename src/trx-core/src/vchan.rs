@@ -115,6 +115,20 @@ pub trait VirtualChannelManager: Send + Sync {
         mode: &RigMode,
     ) -> Result<broadcast::Receiver<Vec<f32>>, VChanError>;
 
+    /// Return a PCM receiver for an existing hidden background-decode channel,
+    /// or create one if it does not exist.
+    ///
+    /// Hidden background channels are not enumerated via `channels()` and do
+    /// not count against the normal virtual-channel cap.
+    fn ensure_background_channel_pcm(
+        &self,
+        id: Uuid,
+        freq_hz: u64,
+        mode: &RigMode,
+    ) -> Result<broadcast::Receiver<Vec<f32>>, VChanError> {
+        self.ensure_channel_pcm(id, freq_hz, mode)
+    }
+
     /// Return a snapshot of all channels in display order.
     fn channels(&self) -> Vec<VChannelInfo>;
 
