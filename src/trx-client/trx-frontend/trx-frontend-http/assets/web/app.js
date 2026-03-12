@@ -1352,13 +1352,12 @@ function renderRdsOverlays() {
     rdsPsOverlay.style.display = "none";
     return;
   }
-  entries.forEach((entry, idx) => {
+  entries.forEach((entry) => {
     const html = buildRdsOverlayHtml(entry.rds);
     if (!html) return;
     const el = document.createElement("div");
     el.className = "rds-ps-overlay-item";
     el.dataset.freqHz = String(entry.freq_hz);
-    el.dataset.stackIdx = String(idx);
     el.innerHTML = html;
     el.addEventListener("click", (evt) => {
       evt.stopPropagation();
@@ -1371,7 +1370,7 @@ function renderRdsOverlays() {
       if (el.dataset.defaultZ) el.style.zIndex = el.dataset.defaultZ;
     });
     rdsPsOverlay.appendChild(el);
-    rdsOverlayEntries.push({ ...entry, el, stackIdx: idx });
+    rdsOverlayEntries.push({ ...entry, el });
   });
   if (rdsOverlayEntries.length === 0) {
     rdsPsOverlay.style.display = "none";
@@ -1389,9 +1388,6 @@ function positionRdsOverlays() {
   if (width <= 0) return;
   const range = spectrumVisibleRange(lastSpectrumData);
   if (!Number.isFinite(range.visLoHz) || !Number.isFinite(range.visSpanHz) || range.visSpanHz <= 0) return;
-  const count = rdsOverlayEntries.length;
-  const mid = (count - 1) / 2;
-  const stackStepPx = 26;
   // Assign z-indices: sort by frequency ascending so higher-frequency layers
   // sit on top of lower-frequency ones in the default (non-hover) state.
   const sortedByFreq = [...rdsOverlayEntries].sort((a, b) => a.freq_hz - b.freq_hz);
@@ -1406,9 +1402,8 @@ function positionRdsOverlays() {
     el.style.display = "";
     const rel = (entry.freq_hz - range.visLoHz) / range.visSpanHz;
     const clamped = Math.max(0.06, Math.min(0.94, rel));
-    const offsetPx = Math.round((idx - mid) * stackStepPx);
     el.style.left = `${clamped * width}px`;
-    el.style.top = `calc(50% + ${offsetPx}px)`;
+    el.style.top = "50%";
     const z = String(freqZMap.get(entry.id) ?? (idx + 1));
     el.style.zIndex = z;
     el.dataset.defaultZ = z;
