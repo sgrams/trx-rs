@@ -113,23 +113,14 @@ function hideAuthGate() {
     signalVisualBlock.style.display = "";
   }
 
-  // Show Main tab by default and hide all other tabs
+  // Show the tab that matches the current route.
   document.querySelectorAll(".tab-panel").forEach(panel => {
     panel.style.display = "none";
   });
-  const mainTab = document.getElementById("tab-main");
-  if (mainTab) {
-    mainTab.style.display = "";
-  }
-
-  // Mark Main tab button as active
   document.querySelectorAll(".tab-bar .tab").forEach(btn => {
     btn.classList.remove("active");
   });
-  const mainTabBtn = document.querySelector(".tab-bar .tab[data-tab='main']");
-  if (mainTabBtn) {
-    mainTabBtn.classList.add("active");
-  }
+  navigateToTab(tabFromPath(), { updateHistory: false, replaceHistory: true });
   syncTopBarAccess();
 }
 
@@ -3525,8 +3516,39 @@ if (spectrumBwSweetBtn) {
 
 // --- Tab navigation ---
 const TAB_ORDER = ["main", "bookmarks", "decoders", "map", "settings", "about"];
+const TAB_PATHS = {
+  main: "/",
+  bookmarks: "/bookmarks",
+  decoders: "/decoders",
+  map: "/map",
+  settings: "/settings",
+  about: "/about",
+};
 
-function navigateToTab(name) {
+function normalizeTabPath(pathname) {
+  const raw = typeof pathname === "string" && pathname.length > 0 ? pathname : "/";
+  if (raw === "/") return "/";
+  return raw.replace(/\/+$/, "") || "/";
+}
+
+function tabFromPath(pathname = window.location.pathname) {
+  const normalized = normalizeTabPath(pathname);
+  for (const [tabName, tabPath] of Object.entries(TAB_PATHS)) {
+    if (normalized === tabPath) return tabName;
+  }
+  return "main";
+}
+
+function updateTabHistory(name, replaceHistory = false) {
+  const targetPath = TAB_PATHS[name] || "/";
+  if (normalizeTabPath(window.location.pathname) === targetPath) return;
+  const nextUrl = `${targetPath}${window.location.search}${window.location.hash}`;
+  const method = replaceHistory ? "replaceState" : "pushState";
+  window.history[method]({}, "", nextUrl);
+}
+
+function navigateToTab(name, options = {}) {
+  const { updateHistory = true, replaceHistory = false } = options;
   if (authEnabled && !authRole && name !== "main") return;
   const btn = document.querySelector(`.tab-bar .tab[data-tab="${name}"]`);
   if (!btn) return;
@@ -3534,6 +3556,9 @@ function navigateToTab(name) {
   btn.classList.add("active");
   document.querySelectorAll(".tab-panel").forEach((p) => p.style.display = "none");
   document.getElementById(`tab-${name}`).style.display = "";
+  if (updateHistory) {
+    updateTabHistory(name, replaceHistory);
+  }
   scheduleSpectrumLayout();
   if (name === "map") {
     initAprsMap();
@@ -3546,6 +3571,10 @@ document.querySelector(".tab-bar").addEventListener("click", (e) => {
   const btn = e.target.closest(".tab[data-tab]");
   if (!btn) return;
   navigateToTab(btn.dataset.tab);
+});
+
+window.addEventListener("popstate", () => {
+  navigateToTab(tabFromPath(), { updateHistory: false });
 });
 
 // Swipe left/right on the main content area to switch tabs (mobile).

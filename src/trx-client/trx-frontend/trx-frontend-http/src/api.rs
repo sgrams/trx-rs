@@ -938,11 +938,25 @@ fn normalize_bookmark_locator(locator: Option<String>) -> Option<String> {
     })
 }
 
+fn request_accepts_html(req: &HttpRequest) -> bool {
+    req.headers()
+        .get(header::ACCEPT)
+        .and_then(|value| value.to_str().ok())
+        .map(|value| value.to_ascii_lowercase().contains("text/html"))
+        .unwrap_or(false)
+}
+
 #[get("/bookmarks")]
 pub async fn list_bookmarks(
+    req: HttpRequest,
     store: web::Data<Arc<crate::server::bookmarks::BookmarkStore>>,
     query: web::Query<BookmarkQuery>,
 ) -> Result<HttpResponse, Error> {
+    if request_accepts_html(&req) {
+        return Ok(HttpResponse::Ok()
+            .insert_header((header::CONTENT_TYPE, "text/html; charset=utf-8"))
+            .body(status::index_html()));
+    }
     let mut list = store.list();
     if let Some(ref cat) = query.category {
         if !cat.is_empty() {
@@ -1252,6 +1266,10 @@ pub async fn set_vchan_mode(
 
 pub fn configure(cfg: &mut web::ServiceConfig) {
     cfg.service(index)
+        .service(map_index)
+        .service(decoders_index)
+        .service(settings_index)
+        .service(about_index)
         .service(status_api)
         .service(list_rigs)
         .service(events)
@@ -1339,6 +1357,34 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
 
 #[get("/")]
 async fn index() -> impl Responder {
+    HttpResponse::Ok()
+        .insert_header((header::CONTENT_TYPE, "text/html; charset=utf-8"))
+        .body(status::index_html())
+}
+
+#[get("/map")]
+async fn map_index() -> impl Responder {
+    HttpResponse::Ok()
+        .insert_header((header::CONTENT_TYPE, "text/html; charset=utf-8"))
+        .body(status::index_html())
+}
+
+#[get("/decoders")]
+async fn decoders_index() -> impl Responder {
+    HttpResponse::Ok()
+        .insert_header((header::CONTENT_TYPE, "text/html; charset=utf-8"))
+        .body(status::index_html())
+}
+
+#[get("/settings")]
+async fn settings_index() -> impl Responder {
+    HttpResponse::Ok()
+        .insert_header((header::CONTENT_TYPE, "text/html; charset=utf-8"))
+        .body(status::index_html())
+}
+
+#[get("/about")]
+async fn about_index() -> impl Responder {
     HttpResponse::Ok()
         .insert_header((header::CONTENT_TYPE, "text/html; charset=utf-8"))
         .body(status::index_html())
