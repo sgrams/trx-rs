@@ -1364,6 +1364,12 @@ function renderRdsOverlays() {
       evt.stopPropagation();
       copyRdsPsToClipboard(entry.rds, entry.freq_hz);
     });
+    el.addEventListener("mouseenter", () => {
+      el.style.zIndex = String(entries.length + 10);
+    });
+    el.addEventListener("mouseleave", () => {
+      if (el.dataset.defaultZ) el.style.zIndex = el.dataset.defaultZ;
+    });
     rdsPsOverlay.appendChild(el);
     rdsOverlayEntries.push({ ...entry, el, stackIdx: idx });
   });
@@ -1386,6 +1392,10 @@ function positionRdsOverlays() {
   const count = rdsOverlayEntries.length;
   const mid = (count - 1) / 2;
   const stackStepPx = 26;
+  // Assign z-indices: sort by frequency ascending so higher-frequency layers
+  // sit on top of lower-frequency ones in the default (non-hover) state.
+  const sortedByFreq = [...rdsOverlayEntries].sort((a, b) => a.freq_hz - b.freq_hz);
+  const freqZMap = new Map(sortedByFreq.map((e, i) => [e.id, i + 1]));
   rdsOverlayEntries.forEach((entry, idx) => {
     const el = entry.el;
     if (!el) return;
@@ -1399,6 +1409,9 @@ function positionRdsOverlays() {
     const offsetPx = Math.round((idx - mid) * stackStepPx);
     el.style.left = `${clamped * width}px`;
     el.style.top = `calc(50% + ${offsetPx}px)`;
+    const z = String(freqZMap.get(entry.id) ?? (idx + 1));
+    el.style.zIndex = z;
+    el.dataset.defaultZ = z;
   });
 }
 

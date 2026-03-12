@@ -49,50 +49,6 @@ function vchanHandleChannels(data) {
   }
 }
 
-function vchanRenderLayers() {
-  const container = document.getElementById("vchan-freq-layers");
-  if (!container) return;
-  container.innerHTML = "";
-
-  if (vchanChannels.length === 0) {
-    container.style.height = "0";
-    return;
-  }
-
-  // Sort by frequency ascending so higher-frequency channels get higher z-index.
-  const sorted = [...vchanChannels].sort((a, b) => a.freq_hz - b.freq_hz);
-
-  const LAYER_H_PX = 32;
-  const STEP_PX = 11; // vertical offset between layers so each peeks below the next
-  const totalH = LAYER_H_PX + (sorted.length - 1) * STEP_PX;
-  container.style.height = totalH + "px";
-
-  sorted.forEach((ch, i) => {
-    const layer = document.createElement("div");
-    layer.className = "vchan-freq-layer";
-    if (ch.id === vchanActiveId) layer.classList.add("active");
-
-    layer.style.top = (i * STEP_PX) + "px";
-    // Higher frequency → higher index → higher z-index (sits on top by default).
-    const defaultZ = i + 1;
-    layer.style.zIndex = defaultZ;
-
-    layer.textContent = `${ch.index}: ${vchanFmtFreq(ch.freq_hz)} ${ch.mode}`;
-    layer.title = `Ch ${ch.index}: ${vchanFmtFreq(ch.freq_hz)} ${ch.mode} · ${ch.subscribers} subscriber${ch.subscribers !== 1 ? "s" : ""}`;
-
-    // Bring hovered layer to the front; restore on leave.
-    const maxZ = sorted.length + 10;
-    layer.addEventListener("mouseenter", () => { layer.style.zIndex = maxZ; });
-    layer.addEventListener("mouseleave", () => { layer.style.zIndex = defaultZ; });
-
-    layer.addEventListener("click", () => {
-      if (ch.id !== vchanActiveId) vchanSubscribe(ch.id);
-    });
-
-    container.appendChild(layer);
-  });
-}
-
 function vchanRender() {
   const picker = document.getElementById("vchan-picker");
   if (!picker) return;
@@ -137,7 +93,6 @@ function vchanRender() {
   addBtn.addEventListener("click", vchanAllocate);
   picker.appendChild(addBtn);
 
-  vchanRenderLayers();
   vchanSyncAccentUI();
 }
 
