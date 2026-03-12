@@ -148,6 +148,8 @@ function bmRender(list) {
 // Read decoder checkboxes and return an array of selected decoder names.
 function bmReadDecoders() {
   const decoders = [];
+  if (document.getElementById("bm-dec-aprs").checked) decoders.push("aprs");
+  if (document.getElementById("bm-dec-ais").checked) decoders.push("ais");
   if (document.getElementById("bm-dec-ft8").checked) decoders.push("ft8");
   if (document.getElementById("bm-dec-wspr").checked) decoders.push("wspr");
   if (document.getElementById("bm-dec-hf-aprs").checked) decoders.push("hf-aprs");
@@ -157,6 +159,8 @@ function bmReadDecoders() {
 // Set decoder checkboxes to match the given array.
 function bmWriteDecoders(decoders) {
   const list = decoders || [];
+  document.getElementById("bm-dec-aprs").checked = list.includes("aprs");
+  document.getElementById("bm-dec-ais").checked = list.includes("ais");
   document.getElementById("bm-dec-ft8").checked = list.includes("ft8");
   document.getElementById("bm-dec-wspr").checked = list.includes("wspr");
   document.getElementById("bm-dec-hf-aprs").checked = list.includes("hf-aprs");

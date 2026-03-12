@@ -88,15 +88,15 @@ async fn serve(
     let background_decode_path = BackgroundDecodeStore::default_path();
     let background_decode_store =
         Arc::new(BackgroundDecodeStore::open(&background_decode_path));
+    let vchan_mgr = Arc::new(ClientChannelManager::new(4));
     let background_decode_mgr = BackgroundDecodeManager::new(
         background_decode_store,
         bookmark_store.clone(),
         context.clone(),
         scheduler_status.clone(),
+        vchan_mgr.clone(),
     );
     background_decode_mgr.spawn();
-
-    let vchan_mgr = Arc::new(ClientChannelManager::new(4));
 
     // Wire the audio-command sender so allocate/delete/freq/mode operations on
     // virtual channels are forwarded to the audio-client task.

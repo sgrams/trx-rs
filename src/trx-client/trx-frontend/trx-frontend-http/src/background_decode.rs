@@ -19,9 +19,11 @@ use uuid::Uuid;
 
 use crate::server::bookmarks::{Bookmark, BookmarkStore};
 use crate::server::scheduler::SchedulerStatusMap;
+use crate::server::vchan::{ClientChannel, ClientChannelManager};
 
-const SUPPORTED_DECODER_KINDS: &[&str] = &["ft8", "wspr", "hf-aprs"];
+const SUPPORTED_DECODER_KINDS: &[&str] = &["aprs", "ais", "ft8", "wspr", "hf-aprs"];
 const CHANNEL_KIND_NAME: &str = "VirtualBackgroundDecodeChannel";
+const VISIBLE_CHANNEL_KIND_NAME: &str = "VirtualChannel";
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct BackgroundDecodeConfig {
@@ -122,6 +124,7 @@ pub struct BackgroundDecodeManager {
     bookmarks: Arc<BookmarkStore>,
     context: Arc<FrontendRuntimeContext>,
     scheduler_status: SchedulerStatusMap,
+    vchan_mgr: Arc<ClientChannelManager>,
     status: Arc<RwLock<HashMap<String, BackgroundDecodeStatus>>>,
     notify_tx: broadcast::Sender<()>,
 }
@@ -132,6 +135,7 @@ impl BackgroundDecodeManager {
         bookmarks: Arc<BookmarkStore>,
         context: Arc<FrontendRuntimeContext>,
         scheduler_status: SchedulerStatusMap,
+        vchan_mgr: Arc<ClientChannelManager>,
     ) -> Arc<Self> {
         let (notify_tx, _) = broadcast::channel(16);
         Arc::new(Self {
@@ -139,6 +143,7 @@ impl BackgroundDecodeManager {
             bookmarks,
             context,
             scheduler_status,
+            vchan_mgr,
             status: Arc::new(RwLock::new(HashMap::new())),
             notify_tx,
         })
@@ -280,6 +285,13 @@ impl BackgroundDecodeManager {
             && channel.decoder_kinds == desired.decoder_kinds
     }
 
+    fn virtual_channels_cover_bookmark(&self, rig_id: &str, bookmark: &Bookmark) -> bool {
+        self.vchan_mgr
+            .channels(rig_id)
+            .into_iter()
+            .any(|channel| channel_matches_bookmark(&channel, bookmark))
+    }
+
     fn reconcile(&self, runtime: &mut BackgroundRuntimeState, spectrum: &SharedSpectrum) {
         let active_rig_id = self.active_rig_id();
 
@@ -363,6 +375,13 @@ impl BackgroundDecodeManager {
 
             if scheduled_bookmark_ids.iter().any(|id| id == &bookmark.id) {
                 status.state = "handled_by_scheduler".to_string();
+                statuses.push(status);
+                continue;
+            }
+
+            if self.virtual_channels_cover_bookmark(&rig_id, bookmark) {
+                status.state = "handled_by_virtual_channel".to_string();
+                status.channel_kind = Some(VISIBLE_CHANNEL_KIND_NAME.to_string());
                 statuses.push(status);
                 continue;
             }
@@ -504,6 +523,14 @@ fn supported_decoder_kinds(decoders: &[String]) -> Vec<String> {
         }
     }
     out
+}
+
+fn channel_matches_bookmark(channel: &ClientChannel, bookmark: &Bookmark) -> bool {
+    channel.freq_hz == bookmark.freq_hz && normalized_mode(&channel.mode) == normalized_mode(&bookmark.mode)
+}
+
+fn normalized_mode(mode: &str) -> String {
+    mode.trim().to_ascii_lowercase()
 }
 
 #[get("/background-decode/{rig_id}")]

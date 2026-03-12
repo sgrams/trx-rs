@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  const SUPPORTED_DECODERS = ["ft8", "wspr", "hf-aprs"];
+  const SUPPORTED_DECODERS = ["aprs", "ais", "ft8", "wspr", "hf-aprs"];
 
   let backgroundDecodeRole = null;
   let currentRigId = null;
@@ -303,6 +303,7 @@
       case "no_supported_decoders": return "Unsupported";
       case "disabled": return "Disabled";
       case "handled_by_scheduler": return "Scheduler";
+      case "handled_by_virtual_channel": return "VChan";
       default: return "Inactive";
     }
   }

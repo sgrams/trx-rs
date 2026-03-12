@@ -3559,7 +3559,8 @@ button:focus-visible, input:focus-visible, select:focus-visible {
 .bgd-status-state[data-state="waiting_for_spectrum"],
 .bgd-status-state[data-state="waiting_for_user"],
 .bgd-status-state[data-state="inactive"],
-.bgd-status-state[data-state="handled_by_scheduler"] {
+.bgd-status-state[data-state="handled_by_scheduler"],
+.bgd-status-state[data-state="handled_by_virtual_channel"] {
   color: var(--accent-yellow);
 }
 .bgd-status-state[data-state="missing_bookmark"],
