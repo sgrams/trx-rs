@@ -1983,7 +1983,7 @@ button:focus-visible, input:focus-visible, select:focus-visible {
     bottom: calc(0.55rem + env(safe-area-inset-bottom));
     z-index: 30;
     display: grid;
-    grid-template-columns: repeat(5, minmax(0, 1fr));
+    grid-template-columns: repeat(6, minmax(0, 1fr));
     gap: 0.25rem;
     padding: 0.38rem;
     border: 1px solid color-mix(in srgb, var(--border-light) 82%, transparent);

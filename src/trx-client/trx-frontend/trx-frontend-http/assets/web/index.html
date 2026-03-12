@@ -46,9 +46,9 @@
             <svg class="tab-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 2a4 4 0 0 1 4 4c0 3-4 8-4 8S4 9 4 6a4 4 0 0 1 4-4z"/><circle cx="8" cy="6" r="1.2" fill="currentColor" stroke="none"/></svg>
             <span class="tab-label">Map</span>
           </button>
-          <button class="tab" data-tab="scheduler">
-            <svg class="tab-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="8" r="6"/><path d="M8 5v3l2 2"/></svg>
-            <span class="tab-label">Scheduler</span>
+          <button class="tab" data-tab="settings">
+            <svg class="tab-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="8" r="2.1"/><path d="M8 1.8v1.4"/><path d="M8 12.8v1.4"/><path d="M14.2 8h-1.4"/><path d="M3.2 8H1.8"/><path d="M12.4 3.6l-1 1"/><path d="M4.6 11.4l-1 1"/><path d="M12.4 12.4l-1-1"/><path d="M4.6 4.6l-1-1"/></svg>
+            <span class="tab-label">Settings</span>
           </button>
           <button class="tab" data-tab="about">
             <svg class="tab-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><circle cx="8" cy="8" r="6"/><path d="M8 7v5"/><circle cx="8" cy="5" r="0.5" fill="currentColor" stroke="none"/></svg>
@@ -671,107 +671,112 @@
         <div id="aprs-map"></div>
       </div>
     </div>
-    <div id="tab-scheduler" class="tab-panel" style="display:none;">
-      <div id="scheduler-panel" class="sch-panel">
-        <div class="sch-toast" id="scheduler-toast" style="display:none;"></div>
-        <div class="sch-row">
-          <label class="sch-label">Rig
-            <select id="scheduler-rig-select" class="status-input sch-rig-select" aria-label="Select rig"></select>
-          </label>
-          <label class="sch-label">Mode
-            <select id="scheduler-mode-select" class="status-input" aria-label="Scheduler mode">
-              <option value="disabled">Disabled</option>
-              <option value="grayline">Grayline</option>
-              <option value="time_span">Time Span</option>
-            </select>
-          </label>
-        </div>
-
-        <!-- Grayline section -->
-        <div id="scheduler-grayline-section" class="sch-section" style="display:none;">
-          <div class="sch-section-title">Grayline Settings</div>
+    <div id="tab-settings" class="tab-panel" style="display:none;">
+      <div class="sub-tab-bar">
+        <button class="sub-tab active" data-subtab="settings-scheduler">Scheduler</button>
+      </div>
+      <div id="subtab-settings-scheduler" class="sub-tab-panel">
+        <div id="scheduler-panel" class="sch-panel">
+          <div class="sch-toast" id="scheduler-toast" style="display:none;"></div>
           <div class="sch-row">
-            <label class="sch-label">Latitude (°)
-              <input type="number" id="scheduler-gl-lat" class="status-input" step="0.001" placeholder="e.g. 54.352" />
+            <label class="sch-label">Rig
+              <select id="scheduler-rig-select" class="status-input sch-rig-select" aria-label="Select rig"></select>
             </label>
-            <label class="sch-label">Longitude (°)
-              <input type="number" id="scheduler-gl-lon" class="status-input" step="0.001" placeholder="e.g. 18.646" />
-            </label>
-            <label class="sch-label">Transition window (min)
-              <input type="number" id="scheduler-gl-window" class="status-input" min="5" max="120" value="20" />
-            </label>
-          </div>
-          <div class="sch-row">
-            <label class="sch-label">Dawn bookmark
-              <select id="scheduler-gl-dawn" class="status-input" aria-label="Dawn bookmark"></select>
-            </label>
-            <label class="sch-label">Day bookmark
-              <select id="scheduler-gl-day" class="status-input" aria-label="Day bookmark"></select>
-            </label>
-            <label class="sch-label">Dusk bookmark
-              <select id="scheduler-gl-dusk" class="status-input" aria-label="Dusk bookmark"></select>
-            </label>
-            <label class="sch-label">Night bookmark
-              <select id="scheduler-gl-night" class="status-input" aria-label="Night bookmark"></select>
+            <label class="sch-label">Mode
+              <select id="scheduler-mode-select" class="status-input" aria-label="Scheduler mode">
+                <option value="disabled">Disabled</option>
+                <option value="grayline">Grayline</option>
+                <option value="time_span">Time Span</option>
+              </select>
             </label>
           </div>
-        </div>
 
-        <!-- Time Span section -->
-        <div id="scheduler-timespan-section" class="sch-section" style="display:none;">
-          <div class="sch-section-title">Time Span Entries (UTC)</div>
-          <div class="sch-row" style="margin-bottom:0.75rem;">
-            <label class="sch-label">Interleave time (min)
-              <input type="number" id="scheduler-ts-interleave" class="status-input" min="1" max="60" placeholder="off" style="width:7rem;" />
-            </label>
-            <small style="color:var(--text-muted);align-self:flex-end;padding-bottom:0.35rem;">When multiple entries overlap, spend this many minutes at each before cycling. Leave blank to disable.</small>
+          <!-- Grayline section -->
+          <div id="scheduler-grayline-section" class="sch-section" style="display:none;">
+            <div class="sch-section-title">Grayline Settings</div>
+            <div class="sch-row">
+              <label class="sch-label">Latitude (°)
+                <input type="number" id="scheduler-gl-lat" class="status-input" step="0.001" placeholder="e.g. 54.352" />
+              </label>
+              <label class="sch-label">Longitude (°)
+                <input type="number" id="scheduler-gl-lon" class="status-input" step="0.001" placeholder="e.g. 18.646" />
+              </label>
+              <label class="sch-label">Transition window (min)
+                <input type="number" id="scheduler-gl-window" class="status-input" min="5" max="120" value="20" />
+              </label>
+            </div>
+            <div class="sch-row">
+              <label class="sch-label">Dawn bookmark
+                <select id="scheduler-gl-dawn" class="status-input" aria-label="Dawn bookmark"></select>
+              </label>
+              <label class="sch-label">Day bookmark
+                <select id="scheduler-gl-day" class="status-input" aria-label="Day bookmark"></select>
+              </label>
+              <label class="sch-label">Dusk bookmark
+                <select id="scheduler-gl-dusk" class="status-input" aria-label="Dusk bookmark"></select>
+              </label>
+              <label class="sch-label">Night bookmark
+                <select id="scheduler-gl-night" class="status-input" aria-label="Night bookmark"></select>
+              </label>
+            </div>
           </div>
-          <table class="sch-ts-table">
-            <thead>
-              <tr><th>Start</th><th>End</th><th>Center freq</th><th>Primary bookmark</th><th>Extra channels</th><th>Label</th><th>Interleave (min)</th><th></th></tr>
-            </thead>
-            <tbody id="scheduler-ts-tbody"></tbody>
-          </table>
-          <div class="sch-row sch-add-row">
-            <label class="sch-label">Start (UTC)
-              <input type="time" id="scheduler-ts-start" class="status-input" title="Set both to 00:00 for all-day" />
-            </label>
-            <label class="sch-label">End (UTC)
-              <input type="time" id="scheduler-ts-end" class="status-input" title="Set both to 00:00 for all-day" />
-            </label>
-            <label class="sch-label" id="scheduler-ts-center-hz-wrap" title="SDR only — sets center frequency before tuning">Center freq (Hz, SDR)
-              <input type="number" id="scheduler-ts-center-hz" class="status-input" min="0" placeholder="optional" style="width:9rem;" />
-            </label>
-            <label class="sch-label">Primary bookmark
-              <select id="scheduler-ts-bookmark" class="status-input" aria-label="Entry bookmark"></select>
-            </label>
-            <label class="sch-label">Extra channels (virtual)
-              <div id="scheduler-ts-extra-bm-list" class="sch-extra-bm-list"></div>
-              <div style="display:flex;gap:0.4rem;margin-top:0.3rem;">
-                <select id="scheduler-ts-extra-bm-pick" class="status-input" aria-label="Extra bookmark"></select>
-                <button id="scheduler-ts-extra-bm-add" type="button" class="sch-write" style="padding:0 0.7rem;">+</button>
-              </div>
-            </label>
-            <label class="sch-label">Label (optional)
-              <input type="text" id="scheduler-ts-label" class="status-input" placeholder="e.g. 40m FT8" />
-            </label>
-            <label class="sch-label">Interleave (min, optional)
-              <input type="number" id="scheduler-ts-entry-interleave" class="status-input" min="1" max="60" placeholder="default" style="width:6rem;" />
-            </label>
-            <button id="scheduler-ts-add-btn" class="sch-write" type="button">+ Add</button>
+
+          <!-- Time Span section -->
+          <div id="scheduler-timespan-section" class="sch-section" style="display:none;">
+            <div class="sch-section-title">Time Span Entries (UTC)</div>
+            <div class="sch-row" style="margin-bottom:0.75rem;">
+              <label class="sch-label">Interleave time (min)
+                <input type="number" id="scheduler-ts-interleave" class="status-input" min="1" max="60" placeholder="off" style="width:7rem;" />
+              </label>
+              <small style="color:var(--text-muted);align-self:flex-end;padding-bottom:0.35rem;">When multiple entries overlap, spend this many minutes at each before cycling. Leave blank to disable.</small>
+            </div>
+            <table class="sch-ts-table">
+              <thead>
+                <tr><th>Start</th><th>End</th><th>Center freq</th><th>Primary bookmark</th><th>Extra channels</th><th>Label</th><th>Interleave (min)</th><th></th></tr>
+              </thead>
+              <tbody id="scheduler-ts-tbody"></tbody>
+            </table>
+            <div class="sch-row sch-add-row">
+              <label class="sch-label">Start (UTC)
+                <input type="time" id="scheduler-ts-start" class="status-input" title="Set both to 00:00 for all-day" />
+              </label>
+              <label class="sch-label">End (UTC)
+                <input type="time" id="scheduler-ts-end" class="status-input" title="Set both to 00:00 for all-day" />
+              </label>
+              <label class="sch-label" id="scheduler-ts-center-hz-wrap" title="SDR only — sets center frequency before tuning">Center freq (Hz, SDR)
+                <input type="number" id="scheduler-ts-center-hz" class="status-input" min="0" placeholder="optional" style="width:9rem;" />
+              </label>
+              <label class="sch-label">Primary bookmark
+                <select id="scheduler-ts-bookmark" class="status-input" aria-label="Entry bookmark"></select>
+              </label>
+              <label class="sch-label">Extra channels (virtual)
+                <div id="scheduler-ts-extra-bm-list" class="sch-extra-bm-list"></div>
+                <div style="display:flex;gap:0.4rem;margin-top:0.3rem;">
+                  <select id="scheduler-ts-extra-bm-pick" class="status-input" aria-label="Extra bookmark"></select>
+                  <button id="scheduler-ts-extra-bm-add" type="button" class="sch-write" style="padding:0 0.7rem;">+</button>
+                </div>
+              </label>
+              <label class="sch-label">Label (optional)
+                <input type="text" id="scheduler-ts-label" class="status-input" placeholder="e.g. 40m FT8" />
+              </label>
+              <label class="sch-label">Interleave (min, optional)
+                <input type="number" id="scheduler-ts-entry-interleave" class="status-input" min="1" max="60" placeholder="default" style="width:6rem;" />
+              </label>
+              <button id="scheduler-ts-add-btn" class="sch-write" type="button">+ Add</button>
+            </div>
           </div>
-        </div>
 
-        <!-- Actions -->
-        <div class="sch-actions">
-          <button id="scheduler-save-btn" class="sch-write sch-save-btn" type="button" style="display:none;">Save</button>
-          <button id="scheduler-reset-btn" class="sch-write sch-reset-btn" type="button" style="display:none;">Reset to Disabled</button>
-        </div>
+          <!-- Actions -->
+          <div class="sch-actions">
+            <button id="scheduler-save-btn" class="sch-write sch-save-btn" type="button" style="display:none;">Save</button>
+            <button id="scheduler-reset-btn" class="sch-write sch-reset-btn" type="button" style="display:none;">Reset to Disabled</button>
+          </div>
 
-        <!-- Status -->
-        <div class="sch-section">
-          <div class="sch-section-title">Last Activity</div>
-          <div id="scheduler-status-card" class="sch-status-card">No activity yet.</div>
+          <!-- Status -->
+          <div class="sch-section">
+            <div class="sch-section-title">Last Activity</div>
+            <div id="scheduler-status-card" class="sch-status-card">No activity yet.</div>
+          </div>
         </div>
       </div>
     </div>

@@ -3523,7 +3523,7 @@ if (spectrumBwSweetBtn) {
 }
 
 // --- Tab navigation ---
-const TAB_ORDER = ["main", "bookmarks", "decoders", "map", "scheduler", "about"];
+const TAB_ORDER = ["main", "bookmarks", "decoders", "map", "settings", "about"];
 
 function navigateToTab(name) {
   if (authEnabled && !authRole && name !== "main") return;
@@ -5613,7 +5613,7 @@ window.ft8MapAddLocator = function(message, grids, type = "ft8", station = null,
   applyMapFilter();
 };
 
-// --- Sub-tab navigation (Decoders tab) ---
+// --- Sub-tab navigation ---
 document.querySelectorAll(".sub-tab-bar").forEach((bar) => {
   bar.addEventListener("click", (e) => {
     const btn = e.target.closest(".sub-tab[data-subtab]");
