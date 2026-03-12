@@ -927,10 +927,7 @@ function drawSignalOverlay() {
     }
   }
 
-  const _bwCenterHz = (typeof vchanIsOnVirtual === "function" && vchanIsOnVirtual() &&
-    typeof vchanActiveChannel === "function")
-    ? (vchanActiveChannel()?.freq_hz ?? lastFreqHz)
-    : lastFreqHz;
+  const _bwCenterHz = activeBandwidthCenterHz();
   if (_bwCenterHz != null && currentBandwidthHz > 0) {
     for (const spec of visibleBandwidthSpecs(_bwCenterHz)) {
       const span = displaySpanForBandwidthSpec(spec);
@@ -1296,6 +1293,11 @@ function activeChannelFreqHz() {
     if (Number.isFinite(ch?.freq_hz)) return ch.freq_hz;
   }
   return lastFreqHz;
+}
+
+function activeBandwidthCenterHz() {
+  const freqHz = activeChannelFreqHz();
+  return Number.isFinite(freqHz) ? freqHz : lastFreqHz;
 }
 
 function buildRdsOverlayHtml(rds) {
@@ -7791,12 +7793,13 @@ if (overviewCanvas) {
 
 // ── BW strip edge hit-test (CSS pixels) ──────────────────────────────────────
 function getBwEdgeHit(cssX, cssW, range) {
-  if (!lastFreqHz || !currentBandwidthHz || !lastSpectrumData) return null;
+  const bwCenterHz = activeBandwidthCenterHz();
+  if (!Number.isFinite(bwCenterHz) || !currentBandwidthHz || !lastSpectrumData) return null;
 
   const HIT = 8;
   let bestEdge = null;
   let bestDist = Number.POSITIVE_INFINITY;
-  for (const spec of visibleBandwidthSpecs(lastFreqHz)) {
+  for (const spec of visibleBandwidthSpecs(bwCenterHz)) {
     const span = displaySpanForBandwidthSpec(spec);
     const xL = ((span.loHz - range.visLoHz) / range.visSpanHz) * cssW;
     const xR = ((span.hiHz - range.visLoHz) / range.visSpanHz) * cssW;
