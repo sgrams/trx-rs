@@ -210,7 +210,7 @@ impl BackgroundDecodeManager {
                         freq_hz: bookmark.map(|item| item.freq_hz),
                         mode: bookmark.map(|item| item.mode.clone()),
                         decoder_kinds: bookmark
-                            .map(|item| supported_decoder_kinds(&item.decoders))
+                            .map(bookmark_supported_decoder_kinds)
                             .unwrap_or_default(),
                         state: "inactive".to_string(),
                         channel_kind: None,
@@ -345,7 +345,7 @@ impl BackgroundDecodeManager {
                 continue;
             };
 
-            let decoder_kinds = supported_decoder_kinds(&bookmark.decoders);
+            let decoder_kinds = bookmark_supported_decoder_kinds(bookmark);
             let mut status = BackgroundDecodeBookmarkStatus {
                 bookmark_id: bookmark.id.clone(),
                 bookmark_name: Some(bookmark.name.clone()),
@@ -523,6 +523,19 @@ fn supported_decoder_kinds(decoders: &[String]) -> Vec<String> {
         }
     }
     out
+}
+
+fn bookmark_supported_decoder_kinds(bookmark: &Bookmark) -> Vec<String> {
+    let explicit = supported_decoder_kinds(&bookmark.decoders);
+    if !explicit.is_empty() {
+        return explicit;
+    }
+
+    match bookmark.mode.trim().to_ascii_uppercase().as_str() {
+        "AIS" => vec!["ais".to_string()],
+        "PKT" => vec!["aprs".to_string()],
+        _ => Vec::new(),
+    }
 }
 
 fn channel_matches_bookmark(channel: &ClientChannel, bookmark: &Bookmark) -> bool {

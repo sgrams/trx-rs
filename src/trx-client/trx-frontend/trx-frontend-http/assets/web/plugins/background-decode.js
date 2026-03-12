@@ -111,11 +111,16 @@
 
   function bookmarkDecoderKinds(bookmark) {
     const decoders = Array.isArray(bookmark && bookmark.decoders) ? bookmark.decoders : [];
-    return decoders
+    const supported = decoders
       .map(function (item) { return String(item || "").trim().toLowerCase(); })
       .filter(function (item, index, arr) {
         return SUPPORTED_DECODERS.includes(item) && arr.indexOf(item) === index;
       });
+    if (supported.length > 0) return supported;
+    const mode = String(bookmark && bookmark.mode || "").trim().toUpperCase();
+    if (mode === "AIS") return ["ais"];
+    if (mode === "PKT") return ["aprs"];
+    return supported;
   }
 
   function renderBookmarkPick() {
