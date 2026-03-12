@@ -13,6 +13,18 @@ let vchanChannels = [];
 let vchanActiveId = null;
 let schedulerReleaseState = null;
 let schedulerReleasePollTimer = null;
+let schedulerCycleCountdownTimer = null;
+
+function schedulerNextCycleSeconds() {
+  const periodMs = 30000;
+  const remMs = periodMs - (Date.now() % periodMs);
+  const secs = Math.ceil(remMs / 1000);
+  return Math.max(1, Math.min(30, secs));
+}
+
+function schedulerCycleSummaryText() {
+  return `Next scheduler cycle in ${schedulerNextCycleSeconds()}s.`;
+}
 
 function vchanFmtFreq(hz) {
   if (!Number.isFinite(hz) || hz <= 0) return "--";
@@ -47,12 +59,14 @@ function schedulerReleaseSummaryText(state) {
 function vchanRenderSchedulerRelease() {
   const btn = document.getElementById("scheduler-release-btn");
   const status = document.getElementById("scheduler-release-status");
+  const cycleStatus = document.getElementById("scheduler-cycle-status");
   if (!btn || !status) return;
   const currentReleased = !!(schedulerReleaseState && schedulerReleaseState.current_session_released);
   btn.disabled = !vchanSessionId || currentReleased;
   btn.classList.toggle("active", !currentReleased);
   btn.textContent = "Release to Scheduler";
   status.textContent = schedulerReleaseSummaryText(schedulerReleaseState);
+  if (cycleStatus) cycleStatus.textContent = schedulerCycleSummaryText();
 }
 
 async function vchanPollSchedulerRelease() {
@@ -76,6 +90,10 @@ function vchanStartSchedulerReleasePolling() {
     clearInterval(schedulerReleasePollTimer);
   }
   schedulerReleasePollTimer = setInterval(vchanPollSchedulerRelease, 10000);
+  if (schedulerCycleCountdownTimer) {
+    clearInterval(schedulerCycleCountdownTimer);
+  }
+  schedulerCycleCountdownTimer = setInterval(vchanRenderSchedulerRelease, 1000);
 }
 
 async function vchanToggleSchedulerRelease() {
@@ -288,9 +306,9 @@ function vchanReconnectAudio() {
 // Called by app.js from applyCapabilities().
 // Shows the channel picker only for SDR rigs.
 function vchanApplyCapabilities(caps) {
-  const row = document.getElementById("vchan-row");
-  if (!row) return;
-  row.style.display = (caps && caps.filter_controls) ? "" : "none";
+  const picker = document.getElementById("vchan-picker");
+  if (!picker) return;
+  picker.style.display = (caps && caps.filter_controls) ? "" : "none";
   vchanRenderSchedulerRelease();
 }
 

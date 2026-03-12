@@ -259,18 +259,18 @@
               <div class="label"><span>VFO</span></div>
               <div class="vfo-picker" id="vfo-picker"></div>
             </div>
-            <div class="full-row label-below-row" id="scheduler-control-row">
-              <div class="label"><span>Scheduler</span></div>
-              <div class="scheduler-control-row">
-                <div class="scheduler-release-wrap">
-                  <button id="scheduler-release-btn" type="button">Release to Scheduler</button>
-                  <div id="scheduler-release-status" class="scheduler-release-status">Scheduler is controlling the rig.</div>
+            <div class="full-row label-below-row" id="vchan-row">
+              <div class="label"><span>Channels / Scheduler</span></div>
+              <div class="channel-scheduler-controls">
+                <div class="vchan-picker" id="vchan-picker"></div>
+                <div class="scheduler-control-row">
+                  <div class="scheduler-release-wrap">
+                    <button id="scheduler-release-btn" type="button">Release to Scheduler</button>
+                    <div id="scheduler-release-status" class="scheduler-release-status">Scheduler is controlling the rig.</div>
+                    <div id="scheduler-cycle-status" class="scheduler-cycle-status">Next scheduler cycle in 30s.</div>
+                  </div>
                 </div>
               </div>
-            </div>
-            <div class="full-row label-below-row" id="vchan-row" style="display:none;">
-              <div class="label"><span>Channels</span></div>
-              <div class="vchan-picker" id="vchan-picker"></div>
             </div>
             <div class="full-row label-below-row">
               <div class="label"><span>Signal</span></div>
@@ -687,8 +687,9 @@
         <div class="map-locator-filter-group">
           <span class="map-locator-filter-label">Paths</span>
           <div class="map-locator-phase-row">
+            <button type="button" id="map-p2p-paths-toggle" class="map-locator-phase-btn">TRX Paths On</button>
             <button type="button" id="map-contact-paths-toggle" class="map-locator-phase-btn">Contact Paths On</button>
-            <span class="map-locator-empty">Directed FT8 contacts with both locators known</span>
+            <span class="map-locator-empty">TRX paths on popup, directed contact paths when both locators are known</span>
           </div>
         </div>
       </div>

@@ -3746,6 +3746,7 @@ let aprsRadioPath = null;
 let selectedLocatorMarker = null;
 let selectedLocatorPulseRaf = null;
 let mapFullscreenListenerBound = false;
+let mapP2pRadioPathsEnabled = loadSetting("mapP2pRadioPathsEnabled", true) !== false;
 let mapDecodeContactPathsEnabled = loadSetting("mapDecodeContactPathsEnabled", true) !== false;
 const stationMarkers = new Map();
 const locatorMarkers = new Map();
@@ -4169,7 +4170,7 @@ function syncDecodeContactPathVisibility() {
 
 function setMapRadioPathTo(lat, lon, className = "aprs-radio-path") {
   clearMapRadioPath();
-  if (serverLat == null || serverLon == null || !Number.isFinite(lat) || !Number.isFinite(lon) || !aprsMap) {
+  if (!mapP2pRadioPathsEnabled || serverLat == null || serverLon == null || !Number.isFinite(lat) || !Number.isFinite(lon) || !aprsMap) {
     return;
   }
   aprsRadioPath = L.polyline(
@@ -4800,6 +4801,7 @@ function initAprsMap() {
   const locatorPhaseEl = document.getElementById("map-locator-phase");
   const locatorChoiceEl = document.getElementById("map-locator-choice-filter");
   const mapSearchEl = document.getElementById("map-search-filter");
+  const mapP2pPathsToggleEl = document.getElementById("map-p2p-paths-toggle");
   const mapContactPathsToggleEl = document.getElementById("map-contact-paths-toggle");
   const fullscreenBtn = document.getElementById("map-fullscreen-btn");
   if (locatorPhaseEl) {
@@ -4853,6 +4855,15 @@ function initAprsMap() {
     mapSearchEl.addEventListener("input", () => {
       mapSearchFilter = String(mapSearchEl.value || "").trim();
       applyMapFilter();
+    });
+  }
+  if (mapP2pPathsToggleEl) {
+    updateMapP2pPathsToggle();
+    mapP2pPathsToggleEl.addEventListener("click", () => {
+      mapP2pRadioPathsEnabled = !mapP2pRadioPathsEnabled;
+      saveSetting("mapP2pRadioPathsEnabled", mapP2pRadioPathsEnabled);
+      updateMapP2pPathsToggle();
+      if (!mapP2pRadioPathsEnabled) clearMapRadioPath();
     });
   }
   if (mapContactPathsToggleEl) {
@@ -5545,6 +5556,13 @@ function updateMapContactPathsToggle() {
   if (!btn) return;
   btn.textContent = mapDecodeContactPathsEnabled ? "Contact Paths On" : "Contact Paths Off";
   btn.classList.toggle("is-active", mapDecodeContactPathsEnabled);
+}
+
+function updateMapP2pPathsToggle() {
+  const btn = document.getElementById("map-p2p-paths-toggle");
+  if (!btn) return;
+  btn.textContent = mapP2pRadioPathsEnabled ? "TRX Paths On" : "TRX Paths Off";
+  btn.classList.toggle("is-active", mapP2pRadioPathsEnabled);
 }
 
 function escapeMapHtml(input) {
