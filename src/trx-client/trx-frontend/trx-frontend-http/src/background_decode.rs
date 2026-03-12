@@ -4,6 +4,7 @@
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::Ordering;
 use std::sync::{Arc, RwLock};
 use std::time::Duration;
 
@@ -17,6 +18,7 @@ use trx_frontend::{FrontendRuntimeContext, SharedSpectrum, VChanAudioCmd};
 use uuid::Uuid;
 
 use crate::server::bookmarks::{Bookmark, BookmarkStore};
+use crate::server::scheduler::SchedulerStatusMap;
 
 const SUPPORTED_DECODER_KINDS: &[&str] = &["ft8", "wspr", "hf-aprs"];
 const CHANNEL_KIND_NAME: &str = "VirtualBackgroundDecodeChannel";
@@ -119,6 +121,7 @@ pub struct BackgroundDecodeManager {
     store: Arc<BackgroundDecodeStore>,
     bookmarks: Arc<BookmarkStore>,
     context: Arc<FrontendRuntimeContext>,
+    scheduler_status: SchedulerStatusMap,
     status: Arc<RwLock<HashMap<String, BackgroundDecodeStatus>>>,
     notify_tx: broadcast::Sender<()>,
 }
@@ -128,12 +131,14 @@ impl BackgroundDecodeManager {
         store: Arc<BackgroundDecodeStore>,
         bookmarks: Arc<BookmarkStore>,
         context: Arc<FrontendRuntimeContext>,
+        scheduler_status: SchedulerStatusMap,
     ) -> Arc<Self> {
         let (notify_tx, _) = broadcast::channel(16);
         Arc::new(Self {
             store,
             bookmarks,
             context,
+            scheduler_status,
             status: Arc::new(RwLock::new(HashMap::new())),
             notify_tx,
         })
@@ -296,6 +301,12 @@ impl BackgroundDecodeManager {
 
         let config = self.get_config(&rig_id);
         let selected = dedup_ids(&config.bookmark_ids);
+        let users_connected = self.context.sse_clients.load(Ordering::Relaxed) > 0;
+        let scheduled_bookmark_ids = if users_connected {
+            Vec::new()
+        } else {
+            self.scheduler_bookmark_ids(&rig_id)
+        };
         let selected_bookmarks: HashMap<String, Bookmark> = self
             .bookmarks
             .list()
@@ -340,6 +351,18 @@ impl BackgroundDecodeManager {
             }
 
             if !config.enabled {
+                statuses.push(status);
+                continue;
+            }
+
+            if !users_connected {
+                status.state = "waiting_for_user".to_string();
+                statuses.push(status);
+                continue;
+            }
+
+            if scheduled_bookmark_ids.iter().any(|id| id == &bookmark.id) {
+                status.state = "handled_by_scheduler".to_string();
                 statuses.push(status);
                 continue;
             }
@@ -407,6 +430,28 @@ impl BackgroundDecodeManager {
                 },
             );
         }
+    }
+
+    fn scheduler_bookmark_ids(&self, rig_id: &str) -> Vec<String> {
+        let Ok(guard) = self.scheduler_status.read() else {
+            return Vec::new();
+        };
+        let Some(status) = guard.get(rig_id) else {
+            return Vec::new();
+        };
+        if !status.active {
+            return Vec::new();
+        }
+        let mut out = Vec::new();
+        if let Some(id) = status.last_bookmark_id.clone() {
+            out.push(id);
+        }
+        for id in &status.last_bookmark_ids {
+            if !out.iter().any(|existing| existing == id) {
+                out.push(id.clone());
+            }
+        }
+        out
     }
 
     async fn run(self: Arc<Self>) {

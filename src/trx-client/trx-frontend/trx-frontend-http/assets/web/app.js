@@ -750,6 +750,7 @@ function applyRigList(activeRigId, rigIds, displayNames) {
   populateRigPicker(headerRigSwitchSelect, lastRigIds, activeRigId, disableSwitch);
   updateRigSubtitle(activeRigId);
   if (typeof reloadSchedulerRigSelect === "function") reloadSchedulerRigSelect();
+  if (typeof reloadBackgroundDecodeRigSelect === "function") reloadBackgroundDecodeRigSelect();
 }
 
 async function refreshRigList() {

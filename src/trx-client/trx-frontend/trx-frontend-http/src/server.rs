@@ -92,6 +92,7 @@ async fn serve(
         background_decode_store,
         bookmark_store.clone(),
         context.clone(),
+        scheduler_status.clone(),
     );
     background_decode_mgr.spawn();
 

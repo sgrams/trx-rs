@@ -26,6 +26,7 @@
     if (!sel) return;
     const rigs = typeof getAvailableRigIds === "function" ? getAvailableRigIds() : [];
     if (!rigs.length) return;
+    const prevRigId = currentRigId;
     sel.innerHTML = "";
     rigs.forEach(function (rigId) {
       const opt = document.createElement("option");
@@ -37,6 +38,11 @@
     if (!currentRigId || !rigs.includes(currentRigId)) {
       currentRigId = rigs[0];
       sel.value = currentRigId;
+    } else {
+      sel.value = currentRigId;
+    }
+    if (currentRigId && currentRigId !== prevRigId) {
+      loadBackgroundDecode();
     }
   }
 
@@ -158,14 +164,13 @@
     ids.forEach(function (id) {
       const bookmark = bookmarkList.find(function (item) { return item.id === id; });
       const chip = document.createElement("div");
-      chip.className = "bgd-bookmark-chip";
+      chip.className = "sch-extra-bm-tag bgd-bookmark-tag";
       const decoders = bookmarkDecoderKinds(bookmark);
       chip.innerHTML =
         '<span>' + escHtml(bookmark ? bookmark.name : id) + '</span>' +
-        '<span class="bgd-bookmark-chip-meta">' + escHtml(bookmark ? (formatFreq(bookmark.freq_hz) + " " + bookmark.mode + " · " + decoders.join("/").toUpperCase()) : "Missing bookmark") + '</span>';
-      const btn = document.createElement("button");
-      btn.type = "button";
-      btn.className = "bgd-bookmark-chip-remove sch-write";
+        '<span class="bgd-bookmark-meta">' + escHtml(bookmark ? (formatFreq(bookmark.freq_hz) + " " + bookmark.mode + " · " + decoders.join("/").toUpperCase()) : "Missing bookmark") + '</span>';
+      const btn = document.createElement("span");
+      btn.className = "sch-extra-bm-rm";
       btn.textContent = "×";
       btn.addEventListener("click", function () {
         removeBookmark(id);
@@ -293,9 +298,11 @@
       case "active": return "Active";
       case "out_of_span": return "Out of span";
       case "waiting_for_spectrum": return "Waiting";
+      case "waiting_for_user": return "No user";
       case "missing_bookmark": return "Missing";
       case "no_supported_decoders": return "Unsupported";
       case "disabled": return "Disabled";
+      case "handled_by_scheduler": return "Scheduler";
       default: return "Inactive";
     }
   }
@@ -333,7 +340,8 @@
 
   function wireBackgroundDecodeEvents() {
     const rigSel = document.getElementById("background-decode-rig-select");
-    if (rigSel) {
+    if (rigSel && !rigSel._wired) {
+      rigSel._wired = true;
       rigSel.addEventListener("change", function () {
         currentRigId = rigSel.value;
         loadBackgroundDecode();
@@ -341,15 +349,25 @@
     }
 
     const addBtn = document.getElementById("background-decode-bookmark-add");
-    if (addBtn) addBtn.addEventListener("click", addBookmark);
+    if (addBtn && !addBtn._wired) {
+      addBtn._wired = true;
+      addBtn.addEventListener("click", addBookmark);
+    }
 
     const saveBtn = document.getElementById("background-decode-save-btn");
-    if (saveBtn) saveBtn.addEventListener("click", saveBackgroundDecode);
+    if (saveBtn && !saveBtn._wired) {
+      saveBtn._wired = true;
+      saveBtn.addEventListener("click", saveBackgroundDecode);
+    }
 
     const resetBtn = document.getElementById("background-decode-reset-btn");
-    if (resetBtn) resetBtn.addEventListener("click", resetBackgroundDecode);
+    if (resetBtn && !resetBtn._wired) {
+      resetBtn._wired = true;
+      resetBtn.addEventListener("click", resetBackgroundDecode);
+    }
   }
 
   window.initBackgroundDecode = initBackgroundDecode;
   window.wireBackgroundDecodeEvents = wireBackgroundDecodeEvents;
+  window.reloadBackgroundDecodeRigSelect = renderRigSelect;
 })();

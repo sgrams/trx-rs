@@ -3493,6 +3493,7 @@ button:focus-visible, input:focus-visible, select:focus-visible {
 .sch-extra-bm-rm:hover { opacity: 1; }
 .bgd-toggle-wrap {
   min-width: 18rem;
+  flex: 1 1 20rem;
 }
 .bgd-toggle-row {
   display: inline-flex;
@@ -3506,40 +3507,24 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   display: flex;
   gap: 0.55rem;
   align-items: center;
+  width: 100%;
 }
 .bgd-bookmark-pick {
-  min-width: min(34rem, 100%);
+  flex: 1 1 28rem;
+  min-width: 16rem;
+}
+.bgd-add-row .status-input {
+  flex: 1 1 auto;
 }
 .bgd-bookmark-list {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.55rem;
+  min-height: 1.8rem;
 }
-.bgd-bookmark-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.45rem;
-  padding: 0.35rem 0.55rem;
-  border-radius: 999px;
-  border: 1px solid var(--border-light);
-  background: var(--btn-bg);
-  color: var(--text);
-  font-size: 0.85rem;
+.bgd-bookmark-tag {
+  padding-right: 0.3rem;
 }
-.bgd-bookmark-chip-meta {
+.bgd-bookmark-meta {
   color: var(--text-muted);
   font-size: 0.78rem;
-}
-.bgd-bookmark-chip-remove {
-  border: none;
-  background: transparent;
-  color: var(--text-muted);
-  cursor: pointer;
-  padding: 0;
-  height: auto;
-}
-.bgd-bookmark-chip-remove:hover {
-  color: var(--text);
 }
 .bgd-status-list {
   display: grid;
@@ -3572,7 +3557,9 @@ button:focus-visible, input:focus-visible, select:focus-visible {
 }
 .bgd-status-state[data-state="out_of_span"],
 .bgd-status-state[data-state="waiting_for_spectrum"],
-.bgd-status-state[data-state="inactive"] {
+.bgd-status-state[data-state="waiting_for_user"],
+.bgd-status-state[data-state="inactive"],
+.bgd-status-state[data-state="handled_by_scheduler"] {
   color: var(--accent-yellow);
 }
 .bgd-status-state[data-state="missing_bookmark"],
@@ -3590,5 +3577,8 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   .bgd-status-row {
     flex-direction: column;
     align-items: stretch;
+  }
+  .bgd-add-row button {
+    width: 100%;
   }
 }
