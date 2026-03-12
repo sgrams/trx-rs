@@ -1690,6 +1690,34 @@ body.map-fake-fullscreen-active {
 }
 .aprs-radio-path { stroke: var(--accent-green) !important; stroke-opacity: 0.8 !important; stroke-dasharray: 10 5 !important; animation: aprs-radio-path-flow 0.7s linear infinite; }
 .locator-radio-path { stroke: var(--accent-green) !important; stroke-opacity: 0.9 !important; stroke-dasharray: 12 6 !important; animation: aprs-radio-path-flow 0.7s linear infinite; }
+.decode-contact-path {
+  stroke: color-mix(in srgb, var(--accent-green) 72%, var(--accent-yellow)) !important;
+  stroke-opacity: 0.78 !important;
+  stroke-dasharray: 9 6 !important;
+  filter: drop-shadow(0 0 3px color-mix(in srgb, var(--accent-green) 34%, transparent));
+  animation: aprs-radio-path-flow 0.85s linear infinite;
+}
+.decode-contact-distance-label {
+  background: transparent;
+  border: none;
+}
+.decode-contact-distance-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 4.25rem;
+  padding: 0.16rem 0.5rem;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--accent-green) 40%, var(--border-light));
+  background: color-mix(in srgb, var(--card-bg) 88%, transparent);
+  color: color-mix(in srgb, var(--accent-green) 72%, var(--accent-yellow));
+  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.22);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+  pointer-events: none;
+}
 .trx-locator-selected { stroke-opacity: 1 !important; stroke-width: 3.25px !important; filter: drop-shadow(0 0 6px color-mix(in srgb, var(--accent-green) 52%, transparent)); animation: trx-locator-breathe 1.6s ease-in-out infinite; }
 .trx-receiver-marker { stroke: var(--accent-green) !important; fill: var(--accent-green) !important; }
 .receiver-popup-active { font-size: 0.75em; background: rgba(194,75,26,0.15); color: var(--accent-green); border: 1px solid rgba(194,75,26,0.3); border-radius: 3px; padding: 0 0.25rem; margin-left: 0.3rem; vertical-align: middle; }

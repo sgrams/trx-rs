@@ -110,7 +110,7 @@ function updateFt8Bar() {
     const dt = Number.isFinite(msg.dt_s) ? `dt ${msg.dt_s.toFixed(2)}` : null;
     const rf = ft8BarRfText(msg);
     const detail = [snr, dt, rf].filter(Boolean).join(" · ");
-    const text = escapeHtml((msg.message || "").toString());
+    const text = ft8EscapeHtml((msg.message || "").toString());
     html += `<div class="aprs-bar-frame"><div class="aprs-bar-frame-main">${ts}<span class="aprs-bar-call">${text}</span>${detail ? ` · ${detail}` : ""}</div></div>`;
   }
   ft8BarOverlay.innerHTML = html;
@@ -126,36 +126,43 @@ function renderFt8Message(message) {
   let i = 0;
   while (i < message.length) {
     const ch = message[i];
-    if (isAlphaNum(ch)) {
+    if (ft8IsAlphaNum(ch)) {
       let j = i + 1;
-      while (j < message.length && isAlphaNum(message[j])) j++;
+      while (j < message.length && ft8IsAlphaNum(message[j])) j++;
       const token = message.slice(i, j);
       const grid = token.toUpperCase();
-      if (isMaidenheadGridToken(grid)) {
+      if (ft8IsMaidenheadGridToken(grid)) {
         out += `<span class="ft8-locator" data-locator-grid="${grid}" role="button" tabindex="0" aria-label="Show locator ${grid} on map">${grid}</span>`;
       } else {
-        out += escapeHtml(token);
+        out += ft8EscapeHtml(token);
       }
       i = j;
     } else {
-      out += escapeHtml(ch);
+      out += ft8EscapeHtml(ch);
       i += 1;
     }
   }
   return out;
 }
 
-function extractAllGrids(message) {
+function ft8TokenizeMessage(message) {
+  return String(message || "")
+    .toUpperCase()
+    .split(/[^A-Z0-9/]+/)
+    .filter(Boolean);
+}
+
+function ft8ExtractAllGrids(message) {
   const out = [];
   const seen = new Set();
   let i = 0;
   while (i < message.length) {
-    if (isAlphaNum(message[i])) {
+    if (ft8IsAlphaNum(message[i])) {
       let j = i + 1;
-      while (j < message.length && isAlphaNum(message[j])) j++;
+      while (j < message.length && ft8IsAlphaNum(message[j])) j++;
       const token = message.slice(i, j);
       const grid = token.toUpperCase();
-      if (isMaidenheadGridToken(grid) && !seen.has(grid)) {
+      if (ft8IsMaidenheadGridToken(grid) && !seen.has(grid)) {
         seen.add(grid);
         out.push(grid);
       }
@@ -167,47 +174,70 @@ function extractAllGrids(message) {
   return out;
 }
 
-function extractLikelyCallsign(message) {
-  const tokens = String(message || "")
-    .toUpperCase()
-    .split(/[^A-Z0-9/]+/)
-    .filter(Boolean);
-  if (tokens.length === 0) return null;
-  const head = tokens[0];
-  if (head === "CQ" || head === "DE" || head === "QRZ") {
-    if (isLikelyCallsignToken(tokens[1])) return tokens[1];
-    for (let i = 1; i < tokens.length; i += 1) {
-      if (isLikelyCallsignToken(tokens[i])) return tokens[i];
-    }
-    return null;
+function ft8ExtractLocatorDetails(message) {
+  const tokens = ft8TokenizeMessage(message);
+  const grids = ft8ExtractAllGrids(String(message || ""));
+  if (tokens.length === 0 || grids.length === 0) return [];
+  const firstGridIdx = tokens.findIndex((token) => ft8IsMaidenheadGridToken(token));
+  const limit = firstGridIdx >= 0 ? firstGridIdx : tokens.length;
+  const callsigns = [];
+  for (let i = 0; i < limit; i += 1) {
+    if (ft8IsLikelyCallsignToken(tokens[i])) callsigns.push(tokens[i]);
   }
-  // Directed messages are usually "<target> <source> ...".
-  if (isLikelyCallsignToken(tokens[0]) && isLikelyCallsignToken(tokens[1])) return tokens[1];
+
+  let source = null;
+  let target = null;
+  const head = tokens[0];
+  if (callsigns.length > 0) {
+    if (head === "CQ" || head === "DE" || head === "QRZ") {
+      source = callsigns[0];
+    } else if (callsigns.length >= 2) {
+      target = callsigns[0];
+      source = callsigns[1];
+    } else {
+      source = callsigns[0];
+    }
+  }
+
+  return grids.map((grid) => ({
+    grid,
+    station: source || null,
+    source: source || null,
+    target: target || null,
+  }));
+}
+
+function ft8ExtractLikelyCallsign(message) {
+  const locatorDetails = ft8ExtractLocatorDetails(message);
+  if (locatorDetails.length > 0 && locatorDetails[0].station) {
+    return locatorDetails[0].station;
+  }
+  const tokens = ft8TokenizeMessage(message);
   for (const token of tokens) {
-    if (isLikelyCallsignToken(token)) return token;
+    if (ft8IsLikelyCallsignToken(token)) return token;
   }
   return null;
 }
 
-function isLikelyCallsignToken(token) {
+function ft8IsLikelyCallsignToken(token) {
   if (!token) return false;
   if (token.length < 3 || token.length > 12) return false;
   if (token === "CQ" || token === "DE" || token === "QRZ" || token === "DX") return false;
-  if (isMaidenheadGridToken(token)) return false;
+  if (ft8IsMaidenheadGridToken(token)) return false;
   return /^[A-Z0-9/]{1,5}\d[A-Z0-9/]{1,6}$/.test(token);
 }
 
-function isFtxFarewellToken(token) {
+function ft8IsFarewellToken(token) {
   const normalized = String(token || "").trim().toUpperCase();
   return normalized === "RR73" || normalized === "73" || normalized === "RR";
 }
 
-function isMaidenheadGridToken(token) {
+function ft8IsMaidenheadGridToken(token) {
   const normalized = String(token || "").trim().toUpperCase();
-  return /^[A-R]{2}\d{2}(?:[A-X]{2})?$/.test(normalized) && !isFtxFarewellToken(normalized);
+  return /^[A-R]{2}\d{2}(?:[A-X]{2})?$/.test(normalized) && !ft8IsFarewellToken(normalized);
 }
 
-function escapeHtml(input) {
+function ft8EscapeHtml(input) {
   return input
     .replaceAll("&", "&amp;")
     .replaceAll("<", "&lt;")
@@ -215,7 +245,7 @@ function escapeHtml(input) {
     .replaceAll("\"", "&quot;");
 }
 
-function isAlphaNum(ch) {
+function ft8IsAlphaNum(ch) {
   return /[A-Za-z0-9]/.test(ch);
 }
 
@@ -321,13 +351,17 @@ document.getElementById("ft8-clear-btn").addEventListener("click", async () => {
 window.onServerFt8 = function(msg) {
   ft8Status.textContent = ft8Paused ? "Paused" : "Receiving";
   const raw = (msg.message || "").toString();
-  const grids = extractAllGrids(raw);
-  const station = extractLikelyCallsign(raw);
+  const locatorDetails = ft8ExtractLocatorDetails(raw);
+  const grids = locatorDetails.length > 0
+    ? locatorDetails.map((detail) => detail.grid)
+    : ft8ExtractAllGrids(raw);
+  const station = ft8ExtractLikelyCallsign(raw);
   const rfHz = normalizeFt8DisplayFreqHz(msg.freq_hz);
   if (grids.length > 0 && window.ft8MapAddLocator) {
     window.ft8MapAddLocator(raw, grids, "ft8", station, {
       ...msg,
       freq_hz: rfHz,
+      locator_details: locatorDetails,
     });
   }
   addFt8Message({

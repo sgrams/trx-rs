@@ -16,34 +16,16 @@
   function initBackgroundDecode(rigId, role) {
     backgroundDecodeRole = role;
     currentRigId = rigId || null;
-    renderRigSelect();
-    loadBackgroundDecode();
+    if (currentRigId) loadBackgroundDecode();
     startStatusPolling();
   }
 
-  function renderRigSelect() {
-    const sel = document.getElementById("background-decode-rig-select");
-    if (!sel) return;
-    const rigs = typeof getAvailableRigIds === "function" ? getAvailableRigIds() : [];
-    if (!rigs.length) return;
-    const prevRigId = currentRigId;
-    sel.innerHTML = "";
-    rigs.forEach(function (rigId) {
-      const opt = document.createElement("option");
-      opt.value = rigId;
-      opt.textContent = rigId;
-      if (rigId === currentRigId) opt.selected = true;
-      sel.appendChild(opt);
-    });
-    if (!currentRigId || !rigs.includes(currentRigId)) {
-      currentRigId = rigs[0];
-      sel.value = currentRigId;
-    } else {
-      sel.value = currentRigId;
-    }
-    if (currentRigId && currentRigId !== prevRigId) {
-      loadBackgroundDecode();
-    }
+  function setBackgroundDecodeRig(rigId) {
+    const nextRigId = rigId || null;
+    if (nextRigId === currentRigId) return;
+    currentRigId = nextRigId;
+    if (!currentRigId) return;
+    loadBackgroundDecode();
   }
 
   function apiGetConfig(rigId) {
@@ -346,15 +328,6 @@
   }
 
   function wireBackgroundDecodeEvents() {
-    const rigSel = document.getElementById("background-decode-rig-select");
-    if (rigSel && !rigSel._wired) {
-      rigSel._wired = true;
-      rigSel.addEventListener("change", function () {
-        currentRigId = rigSel.value;
-        loadBackgroundDecode();
-      });
-    }
-
     const addBtn = document.getElementById("background-decode-bookmark-add");
     if (addBtn && !addBtn._wired) {
       addBtn._wired = true;
@@ -376,5 +349,5 @@
 
   window.initBackgroundDecode = initBackgroundDecode;
   window.wireBackgroundDecodeEvents = wireBackgroundDecodeEvents;
-  window.reloadBackgroundDecodeRigSelect = renderRigSelect;
+  window.setBackgroundDecodeRig = setBackgroundDecodeRig;
 })();

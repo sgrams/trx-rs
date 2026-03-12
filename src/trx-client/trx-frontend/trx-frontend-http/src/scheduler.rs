@@ -635,6 +635,78 @@ async fn apply_scheduler_decoders(
     }
 }
 
+async fn apply_last_scheduler_cycle(
+    rig_tx: &mpsc::Sender<RigRequest>,
+    rig_id: &str,
+    status_map: &SchedulerStatusMap,
+    bookmarks: &BookmarkStore,
+) {
+    let status = {
+        let Ok(map) = status_map.read() else {
+            return;
+        };
+        map.get(rig_id).cloned()
+    };
+
+    let Some(status) = status else {
+        return;
+    };
+    let Some(bookmark_id) = status.last_bookmark_id else {
+        return;
+    };
+    let Some(bookmark) = bookmarks.get(&bookmark_id) else {
+        warn!(
+            "scheduler: last bookmark '{}' not found for rig '{}'",
+            bookmark_id, rig_id
+        );
+        return;
+    };
+
+    let extra_bookmarks: Vec<_> = status
+        .last_bookmark_ids
+        .iter()
+        .filter_map(|id| bookmarks.get(id))
+        .collect();
+
+    if let Some(center_hz) = status.last_center_hz {
+        if let Err(e) = scheduler_send(
+            rig_tx,
+            RigCommand::SetCenterFreq(Freq { hz: center_hz }),
+            rig_id.to_string(),
+        )
+        .await
+        {
+            warn!(
+                "scheduler: restore SetCenterFreq failed for '{}': {:?}",
+                rig_id, e
+            );
+        }
+    }
+
+    if let Err(e) = scheduler_send(
+        rig_tx,
+        RigCommand::SetFreq(Freq { hz: bookmark.freq_hz }),
+        rig_id.to_string(),
+    )
+    .await
+    {
+        warn!("scheduler: restore SetFreq failed for '{}': {:?}", rig_id, e);
+        return;
+    }
+
+    if let Err(e) = scheduler_send(
+        rig_tx,
+        RigCommand::SetMode(trx_protocol::parse_mode(&bookmark.mode)),
+        rig_id.to_string(),
+    )
+    .await
+    {
+        warn!("scheduler: restore SetMode failed for '{}': {:?}", rig_id, e);
+    }
+
+    apply_scheduler_decoders(rig_tx, rig_id, &bookmark, &extra_bookmarks).await;
+}
+
 /// Send a single RigCommand from the scheduler context (fire-and-forget style).
 async fn scheduler_send(
     rig_tx: &mpsc::Sender<RigRequest>,
@@ -725,6 +797,8 @@ pub struct SchedulerControlQuery {
 pub struct SchedulerControlUpdate {
     pub session_id: Uuid,
     pub released: bool,
+    #[serde(default)]
+    pub rig_id: Option<String>,
 }
 
 #[get("/scheduler-control")]
@@ -739,6 +813,22 @@ pub async fn get_scheduler_control(
 pub async fn put_scheduler_control(
     body: web::Json<SchedulerControlUpdate>,
     control: web::Data<SharedSchedulerControlManager>,
+    rig_tx: web::Data<mpsc::Sender<RigRequest>>,
+    status_map: web::Data<SchedulerStatusMap>,
+    bookmarks: web::Data<Arc<BookmarkStore>>,
 ) -> impl Responder {
-    HttpResponse::Ok().json(control.set_released(body.session_id, body.released))
+    let body = body.into_inner();
+    let summary = control.set_released(body.session_id, body.released);
+    if body.released && summary.all_released {
+        if let Some(rig_id) = body.rig_id.as_deref() {
+            apply_last_scheduler_cycle(
+                rig_tx.get_ref(),
+                rig_id,
+                status_map.get_ref(),
+                bookmarks.get_ref().as_ref(),
+            )
+            .await;
+        }
+    }
+    HttpResponse::Ok().json(summary)
 }

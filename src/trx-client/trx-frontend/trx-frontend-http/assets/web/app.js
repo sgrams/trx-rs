@@ -740,8 +740,8 @@ function applyRigList(activeRigId, rigIds, displayNames) {
   const disableSwitch = lastRigIds.length === 0 || !authRole || authRole === "rx";
   populateRigPicker(headerRigSwitchSelect, lastRigIds, activeRigId, disableSwitch);
   updateRigSubtitle(activeRigId);
-  if (typeof reloadSchedulerRigSelect === "function") reloadSchedulerRigSelect();
-  if (typeof reloadBackgroundDecodeRigSelect === "function") reloadBackgroundDecodeRigSelect();
+  if (typeof setSchedulerRig === "function") setSchedulerRig(lastActiveRigId);
+  if (typeof setBackgroundDecodeRig === "function") setBackgroundDecodeRig(lastActiveRigId);
 }
 
 async function refreshRigList() {
@@ -3746,8 +3746,10 @@ let aprsRadioPath = null;
 let selectedLocatorMarker = null;
 let selectedLocatorPulseRaf = null;
 let mapFullscreenListenerBound = false;
+let mapDecodeContactPathsEnabled = loadSetting("mapDecodeContactPathsEnabled", true) !== false;
 const stationMarkers = new Map();
 const locatorMarkers = new Map();
+const decodeContactPaths = new Map();
 const mapMarkers = new Set();
 const DEFAULT_MAP_SOURCE_FILTER = { ais: true, vdes: true, aprs: true, bookmark: false, ft8: true, wspr: true };
 const mapFilter = { ...DEFAULT_MAP_SOURCE_FILTER };
@@ -4068,6 +4070,103 @@ function clearMapRadioPath() {
   }
 }
 
+function clearDecodeContactPathRender(entry) {
+  if (!entry) return;
+  if (entry.line) {
+    entry.line.remove();
+    entry.line = null;
+  }
+  if (entry.labelMarker) {
+    entry.labelMarker.remove();
+    entry.labelMarker = null;
+  }
+}
+
+function clearDecodeContactPaths() {
+  for (const entry of decodeContactPaths.values()) {
+    clearDecodeContactPathRender(entry);
+  }
+  decodeContactPaths.clear();
+}
+
+function formatDecodeContactDistance(distanceKm) {
+  const text = formatDistanceKm(distanceKm);
+  return text || "--";
+}
+
+function decodeLocatorPathVisibility(grid) {
+  const normalizedGrid = String(grid || "").trim().toUpperCase();
+  if (!normalizedGrid || !aprsMap) return false;
+  for (const entry of locatorMarkers.values()) {
+    if (!entry || entry.grid !== normalizedGrid) continue;
+    if (entry.sourceType !== "ft8" && entry.sourceType !== "wspr") continue;
+    if (entry.marker && aprsMap.hasLayer(entry.marker)) return true;
+  }
+  return false;
+}
+
+function midpointLatLon(a, b) {
+  if (!a || !b) return null;
+  if (!Number.isFinite(a.lat) || !Number.isFinite(a.lon) || !Number.isFinite(b.lat) || !Number.isFinite(b.lon)) {
+    return null;
+  }
+  return {
+    lat: (a.lat + b.lat) / 2,
+    lon: (a.lon + b.lon) / 2,
+  };
+}
+
+function ensureDecodeContactPathRendered(entry) {
+  if (!entry || !aprsMap) return;
+  const linePoints = [
+    [entry.from.lat, entry.from.lon],
+    [entry.to.lat, entry.to.lon],
+  ];
+  if (!entry.line) {
+    entry.line = L.polyline(linePoints, {
+      className: "decode-contact-path",
+      weight: 2.8,
+      interactive: false,
+    }).addTo(aprsMap);
+  } else {
+    entry.line.setLatLngs(linePoints);
+    if (!aprsMap.hasLayer(entry.line)) entry.line.addTo(aprsMap);
+  }
+  const mid = midpointLatLon(entry.from, entry.to);
+  if (!mid) return;
+  const title = `${entry.source} ↔ ${entry.target} · ${entry.distanceText}`;
+  const icon = L.divIcon({
+    className: "decode-contact-distance-label",
+    html: `<span class="decode-contact-distance-pill" title="${escapeMapHtml(title)}">${escapeMapHtml(entry.distanceText)}</span>`,
+  });
+  if (!entry.labelMarker) {
+    entry.labelMarker = L.marker([mid.lat, mid.lon], {
+      icon,
+      interactive: false,
+      keyboard: false,
+      zIndexOffset: 900,
+    }).addTo(aprsMap);
+  } else {
+    entry.labelMarker.setLatLng([mid.lat, mid.lon]);
+    entry.labelMarker.setIcon(icon);
+    if (!aprsMap.hasLayer(entry.labelMarker)) entry.labelMarker.addTo(aprsMap);
+  }
+  if (typeof entry.line.bringToBack === "function") entry.line.bringToBack();
+}
+
+function syncDecodeContactPathVisibility() {
+  for (const entry of decodeContactPaths.values()) {
+    const visible = mapDecodeContactPathsEnabled
+      && decodeLocatorPathVisibility(entry.sourceGrid)
+      && decodeLocatorPathVisibility(entry.targetGrid);
+    if (!visible) {
+      clearDecodeContactPathRender(entry);
+      continue;
+    }
+    ensureDecodeContactPathRendered(entry);
+  }
+}
+
 function setMapRadioPathTo(lat, lon, className = "aprs-radio-path") {
   clearMapRadioPath();
   if (serverLat == null || serverLon == null || !Number.isFinite(lat) || !Number.isFinite(lon) || !aprsMap) {
@@ -4268,6 +4367,7 @@ function rebuildMapLocatorFilters() {
     renderMapLocatorChipRow(choiceEl, sourceItems, null, "source");
   }
   syncLocatorMarkerStyles();
+  syncDecodeContactPathVisibility();
 }
 
 function markerPassesLocatorFilters(marker) {
@@ -4447,6 +4547,7 @@ window.clearMapMarkersByType = function(type) {
       locatorMarkers.delete(key);
     }
     rebuildMapLocatorFilters();
+    rebuildDecodeContactPaths();
   }
 
   if (type === "bookmark") {
@@ -4692,12 +4793,14 @@ function initAprsMap() {
     assignLocatorMarkerMeta(entry.marker, entry.sourceType, entry.bandMeta);
     mapMarkers.add(entry.marker);
   }
+  rebuildDecodeContactPaths();
   rebuildMapLocatorFilters();
   applyMapFilter();
 
   const locatorPhaseEl = document.getElementById("map-locator-phase");
   const locatorChoiceEl = document.getElementById("map-locator-choice-filter");
   const mapSearchEl = document.getElementById("map-search-filter");
+  const mapContactPathsToggleEl = document.getElementById("map-contact-paths-toggle");
   const fullscreenBtn = document.getElementById("map-fullscreen-btn");
   if (locatorPhaseEl) {
     locatorPhaseEl.addEventListener("click", (e) => {
@@ -4750,6 +4853,15 @@ function initAprsMap() {
     mapSearchEl.addEventListener("input", () => {
       mapSearchFilter = String(mapSearchEl.value || "").trim();
       applyMapFilter();
+    });
+  }
+  if (mapContactPathsToggleEl) {
+    updateMapContactPathsToggle();
+    mapContactPathsToggleEl.addEventListener("click", () => {
+      mapDecodeContactPathsEnabled = !mapDecodeContactPathsEnabled;
+      saveSetting("mapDecodeContactPathsEnabled", mapDecodeContactPathsEnabled);
+      updateMapContactPathsToggle();
+      syncDecodeContactPathVisibility();
     });
   }
   if (fullscreenBtn) {
@@ -5425,6 +5537,14 @@ function applyMapFilter() {
     if (!visible && onMap) marker.removeFrom(aprsMap);
   });
   syncSelectedAisTrackVisibility();
+  syncDecodeContactPathVisibility();
+}
+
+function updateMapContactPathsToggle() {
+  const btn = document.getElementById("map-contact-paths-toggle");
+  if (!btn) return;
+  btn.textContent = mapDecodeContactPathsEnabled ? "Contact Paths On" : "Contact Paths Off";
+  btn.classList.toggle("is-active", mapDecodeContactPathsEnabled);
 }
 
 function escapeMapHtml(input) {
@@ -5461,9 +5581,10 @@ function buildDecodeLocatorTooltipHtml(grid, entry, type) {
   const title = type === "wspr" ? "WSPR" : "FT8";
   const rows = details
     .map((detail) => {
-      const station = escapeMapHtml(String(detail?.station || "Unknown"));
+      const station = escapeMapHtml(String(detail?.source || detail?.station || detail?.target || "Unknown"));
       const freq = formatMapPopupFreq(Number(detail?.freq_hz));
       const meta = [
+        detail?.target ? `to ${escapeMapHtml(String(detail.target))}` : null,
         Number.isFinite(detail?.snr_db) ? `${Number(detail.snr_db).toFixed(1)} dB` : null,
         Number.isFinite(detail?.dt_s) ? `dt ${Number(detail.dt_s).toFixed(2)}` : null,
         escapeMapHtml(freq),
@@ -5491,6 +5612,62 @@ function buildDecodeLocatorTooltipHtml(grid, entry, type) {
     `<div class="decode-locator-tip-subtitle">${title} · ${count} station${count === 1 ? "" : "s"}</div>` +
     rows +
   `</div>`;
+}
+
+function rebuildDecodeContactPaths() {
+  clearDecodeContactPaths();
+  const stationLocators = new Map();
+  const directedMessages = [];
+  for (const entry of locatorMarkers.values()) {
+    if (!entry || (entry.sourceType !== "ft8" && entry.sourceType !== "wspr")) continue;
+    const grid = String(entry.grid || "").trim().toUpperCase();
+    if (!grid || !(entry.stationDetails instanceof Map)) continue;
+    for (const detail of entry.stationDetails.values()) {
+      const source = String(detail?.source || detail?.station || "").trim().toUpperCase();
+      const target = String(detail?.target || "").trim().toUpperCase();
+      const tsMs = Number.isFinite(detail?.ts_ms) ? Number(detail.ts_ms) : 0;
+      if (source) {
+        const prev = stationLocators.get(source);
+        if (!prev || tsMs >= prev.tsMs) {
+          stationLocators.set(source, { grid, tsMs });
+        }
+      }
+      if (source && target && source !== target) {
+        directedMessages.push({
+          source,
+          target,
+          sourceGrid: grid,
+          tsMs,
+        });
+      }
+    }
+  }
+  for (const msg of directedMessages) {
+    const targetLocator = stationLocators.get(msg.target);
+    if (!targetLocator) continue;
+    if (msg.sourceGrid === targetLocator.grid) continue;
+    const sourceCenter = locatorToLatLon(msg.sourceGrid);
+    const targetCenter = locatorToLatLon(targetLocator.grid);
+    if (!sourceCenter || !targetCenter) continue;
+    const key = [msg.source, msg.target].sort().join("::");
+    const prev = decodeContactPaths.get(key);
+    if (prev && prev.tsMs > msg.tsMs) continue;
+    decodeContactPaths.set(key, {
+      source: msg.source,
+      target: msg.target,
+      sourceGrid: msg.sourceGrid,
+      targetGrid: targetLocator.grid,
+      from: sourceCenter,
+      to: targetCenter,
+      tsMs: msg.tsMs,
+      distanceText: formatDecodeContactDistance(
+        haversineKm(sourceCenter.lat, sourceCenter.lon, targetCenter.lat, targetCenter.lon)
+      ),
+      line: null,
+      labelMarker: null,
+    });
+  }
+  syncDecodeContactPathVisibility();
 }
 
 function buildBookmarkLocatorPopupHtml(grid, bookmarks) {
@@ -5591,23 +5768,41 @@ window.ft8MapAddLocator = function(message, grids, type = "ft8", station = null,
   const markerType = type === "wspr" ? "wspr" : "ft8";
   const unique = [...new Set(grids.map((g) => String(g).toUpperCase()))];
   const stationId = station && String(station).trim() ? String(station).trim().toUpperCase() : "";
-  const detailEntry = {
-    station: stationId || null,
-    ts_ms: Number.isFinite(details?.ts_ms) ? Number(details.ts_ms) : null,
-    snr_db: Number.isFinite(details?.snr_db) ? Number(details.snr_db) : null,
-    dt_s: Number.isFinite(details?.dt_s) ? Number(details.dt_s) : null,
-    freq_hz: Number.isFinite(details?.freq_hz) ? Number(details.freq_hz) : null,
-    message: String(details?.message || message || "").trim() || null,
-  };
-  const detailKey = stationId || `${detailEntry.message || "decode"}:${detailEntry.ts_ms || Date.now()}`;
+  const locatorDetails = new Map();
+  if (Array.isArray(details?.locator_details)) {
+    for (const locatorDetail of details.locator_details) {
+      const grid = String(locatorDetail?.grid || "").trim().toUpperCase();
+      if (!grid) continue;
+      locatorDetails.set(grid, locatorDetail);
+    }
+  }
   for (const grid of unique) {
     const bounds = maidenheadToBounds(grid);
     if (!bounds) continue;
+    const locatorDetail = locatorDetails.get(grid);
+    const sourceId = locatorDetail?.source && String(locatorDetail.source).trim()
+      ? String(locatorDetail.source).trim().toUpperCase()
+      : "";
+    const targetId = locatorDetail?.target && String(locatorDetail.target).trim()
+      ? String(locatorDetail.target).trim().toUpperCase()
+      : "";
+    const detailStationId = sourceId || stationId;
+    const detailEntry = {
+      station: detailStationId || null,
+      source: sourceId || null,
+      target: targetId || null,
+      ts_ms: Number.isFinite(details?.ts_ms) ? Number(details.ts_ms) : null,
+      snr_db: Number.isFinite(details?.snr_db) ? Number(details.snr_db) : null,
+      dt_s: Number.isFinite(details?.dt_s) ? Number(details.dt_s) : null,
+      freq_hz: Number.isFinite(details?.freq_hz) ? Number(details.freq_hz) : null,
+      message: String(details?.message || message || "").trim() || null,
+    };
+    const detailKey = detailStationId || `${targetId || "decode"}:${detailEntry.message || "decode"}:${detailEntry.ts_ms || Date.now()}`;
     const key = `${markerType}:${grid}`;
     const existing = locatorMarkers.get(key);
     if (existing) {
       existing.grid = grid;
-      if (stationId) existing.stations.add(stationId);
+      if (detailStationId) existing.stations.add(detailStationId);
       if (!(existing.stationDetails instanceof Map)) existing.stationDetails = new Map();
       existing.stationDetails.set(detailKey, { ...detailEntry });
       existing.sourceType = markerType;
@@ -5626,7 +5821,7 @@ window.ft8MapAddLocator = function(message, grids, type = "ft8", station = null,
     }
 
     const stations = new Set();
-    if (stationId) stations.add(stationId);
+    if (detailStationId) stations.add(detailStationId);
     const stationDetails = new Map();
     stationDetails.set(detailKey, { ...detailEntry });
     const bandMeta = collectBandMeta(
@@ -5643,6 +5838,7 @@ window.ft8MapAddLocator = function(message, grids, type = "ft8", station = null,
     locatorMarkers.set(key, { marker, grid, stations, stationDetails, sourceType: markerType, bandMeta });
     mapMarkers.add(marker);
   }
+  rebuildDecodeContactPaths();
   rebuildMapLocatorFilters();
   applyMapFilter();
 };

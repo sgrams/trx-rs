@@ -684,6 +684,13 @@
           <span class="map-locator-filter-label">Search</span>
           <input type="text" id="map-search-filter" class="map-search-input" placeholder="Callsign, MMSI, locator, message..." />
         </div>
+        <div class="map-locator-filter-group">
+          <span class="map-locator-filter-label">Paths</span>
+          <div class="map-locator-phase-row">
+            <button type="button" id="map-contact-paths-toggle" class="map-locator-phase-btn">Contact Paths On</button>
+            <span class="map-locator-empty">Directed FT8 contacts with both locators known</span>
+          </div>
+        </div>
       </div>
       <div id="map-stage">
         <button type="button" id="map-fullscreen-btn" class="map-fullscreen-btn">Fullscreen</button>
@@ -699,9 +706,6 @@
         <div id="scheduler-panel" class="sch-panel">
           <div class="sch-toast" id="scheduler-toast" style="display:none;"></div>
           <div class="sch-row">
-            <label class="sch-label">Rig
-              <select id="scheduler-rig-select" class="status-input sch-rig-select" aria-label="Select rig"></select>
-            </label>
             <label class="sch-label">Mode
               <select id="scheduler-mode-select" class="status-input" aria-label="Scheduler mode">
                 <option value="disabled">Disabled</option>
@@ -805,9 +809,6 @@
           <div class="sch-section">
             <div class="sch-section-title">Configuration</div>
             <div class="sch-row">
-              <label class="sch-label">Rig
-                <select id="background-decode-rig-select" class="status-input sch-rig-select" aria-label="Select rig"></select>
-              </label>
               <label class="sch-label bgd-toggle-wrap">Background decode
                 <span class="bgd-toggle-row">
                   <input type="checkbox" id="background-decode-enabled" />

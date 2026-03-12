@@ -80,11 +80,12 @@ function vchanStartSchedulerReleasePolling() {
 
 async function vchanToggleSchedulerRelease() {
   if (!vchanSessionId) return;
+  const rigId = vchanRigId || (typeof lastActiveRigId !== "undefined" ? lastActiveRigId : null);
   try {
     const resp = await fetch("/scheduler-control", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ session_id: vchanSessionId, released: true }),
+      body: JSON.stringify({ session_id: vchanSessionId, released: true, rig_id: rigId }),
     });
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
     schedulerReleaseState = await resp.json();

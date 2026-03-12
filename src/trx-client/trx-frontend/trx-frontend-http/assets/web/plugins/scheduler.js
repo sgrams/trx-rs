@@ -22,8 +22,7 @@
   function initScheduler(rigId, role) {
     schedulerRole = role;
     currentRigId = rigId || null;
-    renderSchedulerRigSelect();
-    loadScheduler();
+    if (currentRigId) loadScheduler();
     startStatusPolling();
   }
 
@@ -35,29 +34,15 @@
   }
 
   // -------------------------------------------------------------------------
-  // Rig selector (mirrors current rig from app state)
+  // Active rig (mirrors top-bar rig picker in app.js)
   // -------------------------------------------------------------------------
-  function renderSchedulerRigSelect() {
-    const sel = document.getElementById("scheduler-rig-select");
-    if (!sel) return;
-    // Populate from global rig list exposed by app.js
-    const rigs = (typeof getAvailableRigIds === "function") ? getAvailableRigIds() : [];
-    if (!rigs.length) return; // wait until rig list arrives
-    sel.innerHTML = "";
-    rigs.forEach(function (id) {
-      const opt = document.createElement("option");
-      opt.value = id;
-      opt.textContent = id;
-      if (id === currentRigId) opt.selected = true;
-      sel.appendChild(opt);
-    });
-    // If currentRigId was unset, pick the first available rig and load its config.
-    if (!currentRigId || !rigs.includes(currentRigId)) {
-      currentRigId = rigs[0];
-      sel.value = currentRigId;
-      loadScheduler();
-      pollStatus();
-    }
+  function setSchedulerRig(rigId) {
+    const nextRigId = rigId || null;
+    if (nextRigId === currentRigId) return;
+    currentRigId = nextRigId;
+    if (!currentRigId) return;
+    loadScheduler();
+    pollStatus();
   }
 
   // -------------------------------------------------------------------------
@@ -495,15 +480,6 @@
       });
     }
 
-    const rigSel = document.getElementById("scheduler-rig-select");
-    if (rigSel) {
-      rigSel.addEventListener("change", function () {
-        currentRigId = rigSel.value;
-        loadScheduler();
-        pollStatus();
-      });
-    }
-
     const saveBtn = document.getElementById("scheduler-save-btn");
     if (saveBtn) saveBtn.addEventListener("click", saveScheduler);
 
@@ -579,5 +555,5 @@
   window.initScheduler = initScheduler;
   window.destroyScheduler = destroyScheduler;
   window.wireSchedulerEvents = wireSchedulerEvents;
-  window.reloadSchedulerRigSelect = renderSchedulerRigSelect;
+  window.setSchedulerRig = setSchedulerRig;
 })();
