@@ -300,7 +300,8 @@ async fn async_init() -> DynResult<AppState> {
         frontend_runtime.decode_rx = Some(decode_tx.clone());
 
         // Virtual-channel audio: shared broadcaster map + command channel.
-        let (vchan_cmd_tx, vchan_cmd_rx) = mpsc::channel::<trx_frontend::VChanAudioCmd>(64);
+        let (vchan_cmd_tx, vchan_cmd_rx) =
+            mpsc::unbounded_channel::<trx_frontend::VChanAudioCmd>();
         *frontend_runtime.vchan_audio_cmd.lock().unwrap() = Some(vchan_cmd_tx);
 
         let (vchan_destroyed_tx, _) = broadcast::channel::<uuid::Uuid>(64);

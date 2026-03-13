@@ -238,7 +238,7 @@ impl BackgroundDecodeManager {
     fn send_audio_cmd(&self, cmd: VChanAudioCmd) {
         if let Ok(guard) = self.context.vchan_audio_cmd.lock() {
             if let Some(tx) = guard.as_ref() {
-                let _ = tx.try_send(cmd);
+                let _ = tx.send(cmd);
             }
         }
     }

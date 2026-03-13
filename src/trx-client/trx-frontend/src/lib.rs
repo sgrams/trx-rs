@@ -252,7 +252,7 @@ pub struct FrontendRuntimeContext {
     /// Channel to send `VChanAudioCmd` to the audio-client task, which in turn
     /// forwards `VCHAN_SUB` / `VCHAN_UNSUB` frames over the audio TCP connection.
     /// `None` when no audio connection is active.
-    pub vchan_audio_cmd: Arc<Mutex<Option<mpsc::Sender<VChanAudioCmd>>>>,
+    pub vchan_audio_cmd: Arc<Mutex<Option<mpsc::UnboundedSender<VChanAudioCmd>>>>,
     /// Broadcast sender that fires whenever the server destroys a virtual
     /// channel (e.g. out-of-bandwidth after center-frequency retune).
     /// The HTTP frontend subscribes to clean up `ClientChannelManager`.

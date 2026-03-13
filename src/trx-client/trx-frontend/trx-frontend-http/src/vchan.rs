@@ -97,7 +97,7 @@ pub struct ClientChannelManager {
     pub change_tx: broadcast::Sender<String>,
     pub max_channels: usize,
     /// Optional sender to the audio-client task for virtual-channel audio commands.
-    pub audio_cmd: std::sync::Mutex<Option<tokio::sync::mpsc::Sender<VChanAudioCmd>>>,
+    pub audio_cmd: std::sync::Mutex<Option<tokio::sync::mpsc::UnboundedSender<VChanAudioCmd>>>,
 }
 
 impl ClientChannelManager {
@@ -114,14 +114,14 @@ impl ClientChannelManager {
 
     /// Wire the audio-command sender so the manager can dispatch
     /// `VChanAudioCmd` messages when channels are allocated/deleted/changed.
-    pub fn set_audio_cmd(&self, tx: tokio::sync::mpsc::Sender<VChanAudioCmd>) {
+    pub fn set_audio_cmd(&self, tx: tokio::sync::mpsc::UnboundedSender<VChanAudioCmd>) {
         *self.audio_cmd.lock().unwrap() = Some(tx);
     }
 
     /// Fire-and-forget: send a `VChanAudioCmd` to the audio-client task.
     fn send_audio_cmd(&self, cmd: VChanAudioCmd) {
         if let Some(tx) = self.audio_cmd.lock().unwrap().as_ref() {
-            let _ = tx.try_send(cmd);
+            let _ = tx.send(cmd);
         }
     }
 

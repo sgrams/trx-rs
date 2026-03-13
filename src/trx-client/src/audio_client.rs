@@ -56,7 +56,7 @@ pub async fn run_audio_client(
     decode_tx: broadcast::Sender<DecodedMessage>,
     mut shutdown_rx: watch::Receiver<bool>,
     vchan_audio: Arc<RwLock<HashMap<Uuid, broadcast::Sender<Bytes>>>>,
-    mut vchan_cmd_rx: mpsc::Receiver<VChanAudioCmd>,
+    mut vchan_cmd_rx: mpsc::UnboundedReceiver<VChanAudioCmd>,
     vchan_destroyed_tx: Option<broadcast::Sender<Uuid>>,
 ) {
     let mut reconnect_delay = Duration::from_secs(1);
@@ -146,7 +146,7 @@ async fn handle_audio_connection(
     decode_tx: &broadcast::Sender<DecodedMessage>,
     shutdown_rx: &mut watch::Receiver<bool>,
     vchan_audio: &Arc<RwLock<HashMap<Uuid, broadcast::Sender<Bytes>>>>,
-    vchan_cmd_rx: &mut mpsc::Receiver<VChanAudioCmd>,
+    vchan_cmd_rx: &mut mpsc::UnboundedReceiver<VChanAudioCmd>,
     active_subs: &mut HashMap<Uuid, ActiveVChanSub>,
     vchan_destroyed_tx: &Option<broadcast::Sender<Uuid>>,
 ) -> std::io::Result<()> {
