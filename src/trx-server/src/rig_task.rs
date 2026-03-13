@@ -773,6 +773,13 @@ async fn refresh_state_with_retry(
 
 /// Read current state from the rig via CAT.
 async fn refresh_state_from_cat(rig: &mut Box<dyn RigCat>, state: &mut RigState) -> DynResult<()> {
+    let started = std::time::Instant::now();
+    info!(
+        "CAT refresh start: freq_hz={}, mode={:?}, tx_en={}",
+        state.status.freq.hz,
+        state.status.mode,
+        state.status.tx_en
+    );
     let (freq, mode, vfo) = rig.get_status().await?;
     state.filter = rig.filter_state();
     state.control.enabled = Some(true);
@@ -816,6 +823,13 @@ async fn refresh_state_from_cat(rig: &mut Box<dyn RigCat>, state: &mut RigState)
     }
 
     state.status.lock = Some(state.control.lock.unwrap_or(false));
+    info!(
+        "CAT refresh done in {:?}: freq_hz={}, mode={:?}, tx_en={}",
+        started.elapsed(),
+        state.status.freq.hz,
+        state.status.mode,
+        state.status.tx_en
+    );
     Ok(())
 }
 
