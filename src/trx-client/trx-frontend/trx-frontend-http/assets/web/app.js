@@ -5323,6 +5323,7 @@ window.aprsMapAddStation = function(call, lat, lon, info, symbolTable, symbolCod
     stationMarkers.set(call, entry);
     if (aprsMap) {
       _aprsAddMarkerToMap(call, entry);
+      rebuildMapLocatorFilters();
       applyMapFilter();
     }
   }
@@ -5462,6 +5463,7 @@ window.aisMapAddVessel = function(msg) {
     trackPoints: [nextPoint],
     msg,
   });
+  rebuildMapLocatorFilters();
   applyMapFilter();
 };
 
@@ -5496,6 +5498,7 @@ window.vdesMapAddPoint = function(msg) {
   marker._vdesKey = key;
   entry.marker = marker;
   mapMarkers.add(marker);
+  rebuildMapLocatorFilters();
   applyMapFilter();
 };
 
