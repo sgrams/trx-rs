@@ -18,8 +18,9 @@
 //! ## Center-frequency updates
 //!
 //! When the hardware retunes (changing `center_hz`), all channel IF offsets must
-//! be recomputed.  The rig calls `update_center_hz()` after every retune; this
-//! updates every `ChannelDsp` in a single write-locked pass.
+//! be recomputed. The rig calls `update_center_hz()` after every retune; this
+//! updates every `ChannelDsp` in place and pauses out-of-span channels instead
+//! of destroying them.
 
 use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::{Arc, RwLock};
@@ -90,7 +91,7 @@ pub struct SdrVirtualChannelManager {
     /// Maximum total channels including the primary (enforced on `add_channel`).
     max_total: usize,
     channels: RwLock<Vec<ManagedChannel>>,
-    /// Fires whenever a channel is destroyed (e.g. went out of SDR bandwidth).
+    /// Fires whenever a channel is explicitly destroyed.
     destroyed_tx: broadcast::Sender<Uuid>,
 }
 
@@ -206,31 +207,24 @@ impl SdrVirtualChannelManager {
     }
 
     /// Called by `SoapySdrRig` whenever the hardware center frequency changes.
-    /// Recomputes the IF offset for every virtual channel.
+    /// Recomputes the IF offset for every virtual channel and pauses any
+    /// channel that is temporarily outside the current SDR span.
     pub fn update_center_hz(&self, new_center_hz: i64) {
         self.center_hz.store(new_center_hz, Ordering::Relaxed);
         let half_span = self.half_span_hz();
 
-        // Single pass under read lock: update in-band IF offsets and collect OOB IDs.
-        let oob_ids: Vec<Uuid> = {
-            let channels = self.channels.read().unwrap();
-            let dsps = self.pipeline.channel_dsps.read().unwrap();
-            let mut oob = Vec::new();
-            for ch in channels.iter().filter(|c| !c.permanent) {
-                let new_if_hz = ch.freq_hz as i64 - new_center_hz;
-                if new_if_hz.unsigned_abs() as i64 > half_span {
-                    oob.push(ch.id);
-                } else if let Some(dsp_arc) = dsps.get(ch.pipeline_slot) {
-                    dsp_arc.lock().unwrap().set_channel_if_hz(new_if_hz as f64);
+        let channels = self.channels.read().unwrap();
+        let dsps = self.pipeline.channel_dsps.read().unwrap();
+        for ch in channels.iter().filter(|c| !c.permanent) {
+            let new_if_hz = ch.freq_hz as i64 - new_center_hz;
+            let in_span = new_if_hz.unsigned_abs() as i64 <= half_span;
+            if let Some(dsp_arc) = dsps.get(ch.pipeline_slot) {
+                let mut dsp = dsp_arc.lock().unwrap();
+                if in_span {
+                    dsp.set_channel_if_hz(new_if_hz as f64);
                 }
+                dsp.set_processing_enabled(in_span);
             }
-            oob
-        }; // read locks released here
-
-        // Destroy OOB channels and notify subscribers.
-        for id in oob_ids {
-            let _ = self.remove_channel(id); // acquires write lock internally
-            let _ = self.destroyed_tx.send(id);
         }
     }
 
@@ -507,5 +501,25 @@ mod tests {
         let visible = mgr.channels();
         assert_eq!(visible.len(), 2);
         assert!(visible.iter().all(|channel| channel.id != hidden_id));
+    }
+
+    #[test]
+    fn retune_keeps_virtual_channel_allocated() {
+        let p = make_pipeline();
+        let mgr = SdrVirtualChannelManager::new(p, 1, 4);
+        mgr.update_center_hz(14_100_000);
+        let mut destroyed_rx = mgr.subscribe_destroyed();
+
+        let (id, _) = mgr.add_channel(14_074_000, &RigMode::USB).unwrap();
+        mgr.update_center_hz(16_000_000);
+
+        assert!(mgr.channels().iter().any(|channel| channel.id == id));
+        assert!(matches!(
+            destroyed_rx.try_recv(),
+            Err(tokio::sync::broadcast::error::TryRecvError::Empty)
+        ));
+
+        mgr.update_center_hz(14_100_000);
+        assert!(mgr.channels().iter().any(|channel| channel.id == id));
     }
 }
