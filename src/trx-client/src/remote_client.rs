@@ -42,10 +42,9 @@ impl RemoteEndpoint {
     }
 }
 
-// Remote spectrum snapshots do not need to outpace the SDR-side producer.
-// Polling at ~10 Hz avoids stacking unnecessary in-flight requests on slower
-// links while still matching the typical backend update cadence.
-const SPECTRUM_POLL_INTERVAL: Duration = Duration::from_millis(100);
+// Keep remote spectrum reasonably responsive without returning to the old
+// timeout churn caused by a much tighter request cadence.
+const SPECTRUM_POLL_INTERVAL: Duration = Duration::from_millis(50);
 
 #[derive(Clone)]
 pub struct RemoteClientConfig {
