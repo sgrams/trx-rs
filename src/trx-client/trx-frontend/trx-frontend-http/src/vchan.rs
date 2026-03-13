@@ -319,14 +319,30 @@ impl ClientChannelManager {
             return;
         };
         let mut changed = false;
+        let mut removed_channel_ids = Vec::new();
         for ch in channels.iter_mut() {
             if let Some(pos) = ch.session_ids.iter().position(|&s| s == session_id) {
                 ch.session_ids.remove(pos);
                 changed = true;
             }
         }
+        let mut idx = 0;
+        while idx < channels.len() {
+            if !channels[idx].permanent && channels[idx].session_ids.is_empty() {
+                removed_channel_ids.push(channels[idx].id);
+                channels.remove(idx);
+                changed = true;
+            } else {
+                idx += 1;
+            }
+        }
         if changed {
             self.broadcast_change(rig_id, channels);
+        }
+        drop(rigs);
+
+        for channel_id in removed_channel_ids {
+            self.send_audio_cmd(VChanAudioCmd::Remove(channel_id));
         }
     }
 
@@ -459,5 +475,31 @@ impl ClientChannelManager {
     /// Return the channel a session is currently subscribed to.
     pub fn session_channel(&self, session_id: Uuid) -> Option<(String, Uuid)> {
         self.sessions.read().unwrap().get(&session_id).cloned()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn release_session_removes_last_non_permanent_channel() {
+        let mgr = ClientChannelManager::new(4);
+        let rig_id = "rig-a";
+        let session_id = Uuid::new_v4();
+
+        mgr.init_rig(rig_id, 14_074_000, "USB");
+        let channel = mgr
+            .allocate(session_id, rig_id, 14_075_000, "DIG")
+            .expect("allocate vchan");
+
+        assert_eq!(mgr.channels(rig_id).len(), 2);
+
+        mgr.release_session(session_id);
+
+        let channels = mgr.channels(rig_id);
+        assert_eq!(channels.len(), 1);
+        assert!(channels.iter().all(|ch| ch.id != channel.id));
+        assert!(mgr.session_channel(session_id).is_none());
     }
 }
