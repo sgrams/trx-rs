@@ -10,8 +10,6 @@ pub mod vchan_impl;
 use std::pin::Pin;
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex};
-use std::time::Instant;
-
 use trx_core::radio::freq::{Band, Freq};
 use trx_core::rig::response::RigError;
 use trx_core::rig::state::{RigFilterState, SpectrumData, VchanRdsEntry, WfmDenoiseLevel};
@@ -452,13 +450,6 @@ impl RigCat for SoapySdrRig {
         freq: Freq,
     ) -> Pin<Box<dyn std::future::Future<Output = DynResult<()>> + Send + 'a>> {
         Box::pin(async move {
-            let started = Instant::now();
-            tracing::info!(
-                "SoapySdrRig::set_freq start: target={} Hz, current_center={} Hz, mode={:?}",
-                freq.hz,
-                self.center_hz,
-                self.mode
-            );
             tracing::debug!("SoapySdrRig: set_freq -> {} Hz", freq.hz);
             let freq_changed = self.freq.hz != freq.hz;
             self.freq = freq;
@@ -496,12 +487,6 @@ impl RigCat for SoapySdrRig {
                 }
             }
             self.update_ais_channel_offsets();
-            tracing::info!(
-                "SoapySdrRig::set_freq done in {:?}: dial={} Hz, center={} Hz",
-                started.elapsed(),
-                self.freq.hz,
-                self.center_hz
-            );
             Ok(())
         })
     }
@@ -511,12 +496,6 @@ impl RigCat for SoapySdrRig {
         freq: Freq,
     ) -> Pin<Box<dyn std::future::Future<Output = DynResult<()>> + Send + 'a>> {
         Box::pin(async move {
-            let started = Instant::now();
-            tracing::info!(
-                "SoapySdrRig::set_center_freq start: target={} Hz, current_center={} Hz",
-                freq.hz,
-                self.center_hz
-            );
             tracing::debug!("SoapySdrRig: set_center_freq -> {} Hz", freq.hz);
             self.center_hz = freq.hz as i64;
             if let Ok(mut cmd) = self.retune_cmd.lock() {
@@ -531,11 +510,6 @@ impl RigCat for SoapySdrRig {
                 }
             }
             self.update_ais_channel_offsets();
-            tracing::info!(
-                "SoapySdrRig::set_center_freq done in {:?}: center={} Hz",
-                started.elapsed(),
-                self.center_hz
-            );
             Ok(())
         })
     }
@@ -545,12 +519,6 @@ impl RigCat for SoapySdrRig {
         mode: RigMode,
     ) -> Pin<Box<dyn std::future::Future<Output = DynResult<()>> + Send + 'a>> {
         Box::pin(async move {
-            let started = Instant::now();
-            tracing::info!(
-                "SoapySdrRig::set_mode start: target={:?}, current={:?}",
-                mode,
-                self.mode
-            );
             tracing::debug!("SoapySdrRig: set_mode -> {:?}", mode);
             self.mode = mode.clone();
             self.bandwidth_hz = Self::default_bandwidth_for_mode(&mode);
@@ -565,12 +533,6 @@ impl RigCat for SoapySdrRig {
             }
             self.apply_ais_channel_activity();
             self.apply_ais_channel_filters();
-            tracing::info!(
-                "SoapySdrRig::set_mode done in {:?}: mode={:?}, bandwidth_hz={}",
-                started.elapsed(),
-                self.mode,
-                self.bandwidth_hz
-            );
             Ok(())
         })
     }

@@ -21,6 +21,7 @@ use std::time::{Duration, Instant};
 
 use num_complex::Complex;
 use tokio::sync::broadcast;
+use tracing::warn;
 use trx_core::rig::state::RigMode;
 
 pub use self::channel::{ChannelDsp, VirtualSquelchConfig};
@@ -288,39 +289,12 @@ fn iq_read_loop(
     let mut zero_read_streak: u32 = 0;
     let mut overflow_log_window_start: Option<Instant> = None;
     let mut overflow_log_suppressed: u32 = 0;
-    let mut retune_seq: u64 = 0;
-    let mut last_applied_retune_hz: Option<f64> = None;
-
     loop {
         // Apply any pending hardware retune before the next read.
         if let Ok(mut cmd) = retune_cmd.try_lock() {
             if let Some(hz) = cmd.take() {
-                retune_seq = retune_seq.wrapping_add(1);
-                let started = Instant::now();
-                tracing::warn!(
-                    "SDR retune request #{} starting: target={:.0} Hz, last_applied={}",
-                    retune_seq,
-                    hz,
-                    last_applied_retune_hz
-                        .map(|value| format!("{value:.0} Hz"))
-                        .unwrap_or_else(|| "none".to_string())
-                );
                 if let Err(e) = source.set_center_freq(hz) {
-                    tracing::warn!(
-                        "SDR retune request #{} failed after {:?}: target={:.0} Hz: {}",
-                        retune_seq,
-                        started.elapsed(),
-                        hz,
-                        e
-                    );
-                } else {
-                    last_applied_retune_hz = Some(hz);
-                    tracing::info!(
-                        "SDR retune request #{} applied in {:?}: {:.0} Hz",
-                        retune_seq,
-                        started.elapsed(),
-                        hz
-                    );
+                    warn!("set_center_freq failed ({}): {}", hz, e);
                 }
             }
         }

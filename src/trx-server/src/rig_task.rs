@@ -29,8 +29,6 @@ use crate::error::is_invalid_bcd_error;
 
 const POLL_REFRESH_TIMEOUT: Duration = Duration::from_secs(8);
 const COMMAND_EXEC_TIMEOUT: Duration = Duration::from_secs(10);
-const RIG_TASK_HEARTBEAT_INTERVAL: Duration = Duration::from_secs(30);
-
 /// Configuration for the rig task.
 pub struct RigTaskConfig {
     pub registry: Arc<RegistrationContext>,
@@ -238,7 +236,6 @@ pub async fn run_rig_task(
     let mut current_poll_duration = polling.interval(state.status.tx_en);
     let mut poll_sleep: std::pin::Pin<Box<tokio::time::Sleep>> =
         Box::pin(tokio::time::sleep(current_poll_duration));
-    let mut heartbeat = time::interval(RIG_TASK_HEARTBEAT_INTERVAL);
     loop {
         // Update sleep duration if tx_en state changed
         let new_duration = polling.interval(state.status.tx_en);
@@ -260,7 +257,6 @@ pub async fn run_rig_task(
             }
             _ = &mut poll_sleep => {
                 poll_sleep = Box::pin(tokio::time::sleep(current_poll_duration));
-                let poll_started = Instant::now();
                 // Check if polling is paused
                 if let Some(until) = poll_pause_until {
                     if Instant::now() < until {
@@ -284,19 +280,9 @@ pub async fn run_rig_task(
                 .await
                 {
                     Ok(Ok(())) => {
-                        info!(
-                            "[{}] rig poll refresh ok in {:?}; syncing state",
-                            config.rig_id,
-                            poll_started.elapsed()
-                        );
                         let old_machine_state = machine.state().clone();
                         sync_machine_state(&mut machine, &state);
                         let new_machine_state = machine.state().clone();
-                        info!(
-                            "[{}] rig poll state sync done in {:?}; emitting changes",
-                            config.rig_id,
-                            poll_started.elapsed()
-                        );
                         emit_state_changes(
                             &emitter,
                             &old_state,
@@ -304,17 +290,7 @@ pub async fn run_rig_task(
                             &old_machine_state,
                             &new_machine_state,
                         );
-                        info!(
-                            "[{}] rig poll emit done in {:?}; publishing watch state",
-                            config.rig_id,
-                            poll_started.elapsed()
-                        );
                         let _ = state_tx.send(state.clone());
-                        info!(
-                            "[{}] rig poll publish done in {:?}",
-                            config.rig_id,
-                            poll_started.elapsed()
-                        );
                     }
                     Ok(Err(e)) => {
                         error!("CAT polling error: {:?}", e);
@@ -334,20 +310,6 @@ pub async fn run_rig_task(
                     }
                 }
             },
-            _ = heartbeat.tick() => {
-                info!(
-                    "[{}] rig_task heartbeat: initialized={}, freq_hz={}, mode={:?}, tx_en={}, poll_paused={}",
-                    config.rig_id,
-                    state.initialized,
-                    state.status.freq.hz,
-                    state.status.mode,
-                    state.status.tx_en,
-                    poll_pause_until
-                        .map(|until| Instant::now() < until)
-                        .unwrap_or(false)
-                );
-            }
-
             maybe_req = rx.recv() => {
                 let Some(first_req) = maybe_req else { break; };
 
@@ -356,12 +318,6 @@ pub async fn run_rig_task(
                 while let Ok(next) = rx.try_recv() {
                     batch.push(next);
                 }
-                info!(
-                    "[{}] rig request batch received: size={}, first_cmd={:?}",
-                    config.rig_id,
-                    batch.len(),
-                    batch.last().map(|req| &req.cmd)
-                );
 
                 // Process each request
                 while let Some(RigRequest { cmd, respond_to, .. }) = batch.pop() {
@@ -416,9 +372,6 @@ pub async fn run_rig_task(
                     let cmd_label = format!("{:?}", cmd);
                     let log_command = !matches!(&cmd, RigCommand::GetSpectrum);
                     let started = Instant::now();
-                    if log_command {
-                        info!("[{}] rig command start: {}", config.rig_id, cmd_label);
-                    }
 
                     let mut cmd_ctx = CommandExecContext {
                         rig: &mut rig,
@@ -448,15 +401,7 @@ pub async fn run_rig_task(
                             }
                         };
 
-                    let response_status = if result.is_ok() { "ok" } else { "err" };
                     let _ = respond_to.send(result);
-                    info!(
-                        "[{}] rig command response sent: {} status={} elapsed={:?}",
-                        config.rig_id,
-                        cmd_label,
-                        response_status,
-                        started.elapsed()
-                    );
 
                     if log_command {
                         let elapsed = started.elapsed();
@@ -808,13 +753,6 @@ async fn refresh_state_with_retry(
 
 /// Read current state from the rig via CAT.
 async fn refresh_state_from_cat(rig: &mut Box<dyn RigCat>, state: &mut RigState) -> DynResult<()> {
-    let started = std::time::Instant::now();
-    info!(
-        "CAT refresh start: freq_hz={}, mode={:?}, tx_en={}",
-        state.status.freq.hz,
-        state.status.mode,
-        state.status.tx_en
-    );
     let (freq, mode, vfo) = rig.get_status().await?;
     state.filter = rig.filter_state();
     state.control.enabled = Some(true);
@@ -858,13 +796,6 @@ async fn refresh_state_from_cat(rig: &mut Box<dyn RigCat>, state: &mut RigState)
     }
 
     state.status.lock = Some(state.control.lock.unwrap_or(false));
-    info!(
-        "CAT refresh done in {:?}: freq_hz={}, mode={:?}, tx_en={}",
-        started.elapsed(),
-        state.status.freq.hz,
-        state.status.mode,
-        state.status.tx_en
-    );
     Ok(())
 }
 

@@ -35,8 +35,6 @@ use crate::rig_handle::RigHandle;
 const IO_TIMEOUT: Duration = Duration::from_secs(10);
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(12);
 const MAX_JSON_LINE_BYTES: usize = 16 * 1024;
-const LISTENER_HEARTBEAT_INTERVAL: Duration = Duration::from_secs(30);
-
 /// Run the JSON TCP listener, accepting client connections.
 ///
 /// `rigs` is a shared map from rig_id → `RigHandle`.  The first entry (by
@@ -51,8 +49,6 @@ pub async fn run_listener(
 ) -> std::io::Result<()> {
     let listener = TcpListener::bind(addr).await?;
     info!("Listening on {}", addr);
-    let mut heartbeat = time::interval(LISTENER_HEARTBEAT_INTERVAL);
-
     let validator = Arc::new(SimpleTokenValidator::new(auth_tokens));
 
     loop {
@@ -70,14 +66,6 @@ pub async fn run_listener(
                         error!("Client {} error: {:?}", peer, e);
                     }
                 });
-            }
-            _ = heartbeat.tick() => {
-                info!(
-                    "Listener heartbeat: addr={}, rigs={}, default_rig_id={}",
-                    addr,
-                    rigs.len(),
-                    default_rig_id
-                );
             }
             changed = shutdown_rx.changed() => {
                 match changed {
@@ -288,18 +276,6 @@ async fn handle_client(
         };
 
         let rig_cmd = mapping::client_command_to_rig(envelope.cmd);
-        let rig_cmd_label = format!("{:?}", rig_cmd);
-        let log_request = !matches!(rig_cmd, RigCommand::GetSpectrum | RigCommand::GetSnapshot);
-        let request_started = time::Instant::now();
-        if log_request {
-            info!(
-                "Client {} request start: rig_id='{}' cmd={}",
-                addr,
-                target_rig_id,
-                rig_cmd_label
-            );
-        }
-
         // Fast path: serve GetSnapshot directly from the watch channel
         // so clients get a response even while the rig task is initializing.
         if matches!(rig_cmd, RigCommand::GetSnapshot) {
@@ -383,15 +359,6 @@ async fn handle_client(
             }
         } {
             Ok(Ok(snapshot)) => {
-                if log_request {
-                    info!(
-                        "Client {} request ok: rig_id='{}' cmd={} elapsed={:?}",
-                        addr,
-                        target_rig_id,
-                        rig_cmd_label,
-                        request_started.elapsed()
-                    );
-                }
                 let resp = ClientResponse {
                     success: true,
                     rig_id: Some(target_rig_id.clone()),
@@ -402,16 +369,6 @@ async fn handle_client(
                 send_response(&mut writer, &resp).await?;
             }
             Ok(Err(err)) => {
-                if log_request {
-                    warn!(
-                        "Client {} request rig error: rig_id='{}' cmd={} elapsed={:?}: {}",
-                        addr,
-                        target_rig_id,
-                        rig_cmd_label,
-                        request_started.elapsed(),
-                        err.message
-                    );
-                }
                 let resp = ClientResponse {
                     success: false,
                     rig_id: Some(target_rig_id.clone()),
@@ -422,16 +379,6 @@ async fn handle_client(
                 send_response(&mut writer, &resp).await?;
             }
             Err(e) => {
-                if log_request {
-                    error!(
-                        "Client {} request response channel error: rig_id='{}' cmd={} elapsed={:?}: {:?}",
-                        addr,
-                        target_rig_id,
-                        rig_cmd_label,
-                        request_started.elapsed(),
-                        e
-                    );
-                }
                 error!("Rig response oneshot recv error: {:?}", e);
                 let resp = ClientResponse {
                     success: false,
