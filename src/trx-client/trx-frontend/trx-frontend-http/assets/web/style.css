@@ -1254,6 +1254,13 @@ small { color: var(--text-muted); }
   backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);
   overflow: auto;
+  transition: opacity 140ms ease, transform 140ms ease, visibility 140ms ease;
+}
+.map-overlay-panel.is-hidden {
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(-0.25rem);
+  pointer-events: none;
 }
 .map-fullscreen-btn {
   position: absolute;
@@ -1277,6 +1284,31 @@ small { color: var(--text-muted); }
   -webkit-backdrop-filter: blur(8px);
 }
 .map-fullscreen-btn:hover {
+  border-color: color-mix(in srgb, var(--accent-green) 34%, var(--border-light));
+  color: var(--text-heading);
+}
+.map-overlay-toggle-btn {
+  position: absolute;
+  top: 3rem;
+  right: 0.7rem;
+  z-index: 410;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 1.9rem;
+  padding: 0.18rem 0.65rem;
+  border-radius: 6px;
+  border: 1px solid color-mix(in srgb, var(--border-light) 74%, transparent);
+  background: color-mix(in srgb, var(--card-bg) 82%, transparent);
+  color: var(--text);
+  font-size: 0.76rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+.map-overlay-toggle-btn:hover {
   border-color: color-mix(in srgb, var(--accent-green) 34%, var(--border-light));
   color: var(--text-heading);
 }
@@ -2282,6 +2314,10 @@ button:focus-visible, input:focus-visible, select:focus-visible {
     max-height: min(16.5rem, calc(100% - 1.1rem));
     padding: 0.6rem 0.65rem;
     border-radius: 0.7rem;
+  }
+  .map-overlay-toggle-btn {
+    top: 3rem;
+    right: 0.55rem;
   }
   .map-locator-filter-group {
     align-items: stretch;

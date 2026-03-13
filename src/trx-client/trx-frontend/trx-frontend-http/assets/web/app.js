@@ -3748,6 +3748,7 @@ let selectedLocatorPulseRaf = null;
 let mapFullscreenListenerBound = false;
 let mapP2pRadioPathsEnabled = loadSetting("mapP2pRadioPathsEnabled", true) !== false;
 let mapDecodeContactPathsEnabled = loadSetting("mapDecodeContactPathsEnabled", true) !== false;
+let mapOverlayPanelVisible = loadSetting("mapOverlayPanelVisible", true) !== false;
 const stationMarkers = new Map();
 const locatorMarkers = new Map();
 const decodeContactPaths = new Map();
@@ -4630,6 +4631,18 @@ function updateMapFullscreenButton() {
   btn.textContent = mapIsFullscreen() ? "Exit Fullscreen" : "Fullscreen";
 }
 
+function applyMapOverlayPanelVisibility() {
+  const panel = document.querySelector("#map-stage .map-overlay-panel");
+  if (!panel) return;
+  panel.classList.toggle("is-hidden", !mapOverlayPanelVisible);
+}
+
+function updateMapOverlayToggleButton() {
+  const btn = document.getElementById("map-overlay-toggle-btn");
+  if (!btn) return;
+  btn.textContent = mapOverlayPanelVisible ? "Hide Filters" : "Show Filters";
+}
+
 async function toggleMapFullscreen() {
   const stage = mapStageEl();
   if (!stage) return;
@@ -4804,6 +4817,7 @@ function initAprsMap() {
   const mapP2pPathsToggleEl = document.getElementById("map-p2p-paths-toggle");
   const mapContactPathsToggleEl = document.getElementById("map-contact-paths-toggle");
   const fullscreenBtn = document.getElementById("map-fullscreen-btn");
+  const overlayToggleBtn = document.getElementById("map-overlay-toggle-btn");
   if (locatorPhaseEl) {
     locatorPhaseEl.addEventListener("click", (e) => {
       const btn = e.target.closest(".map-locator-phase-btn[data-phase]");
@@ -4880,6 +4894,16 @@ function initAprsMap() {
       toggleMapFullscreen();
     });
     updateMapFullscreenButton();
+  }
+  applyMapOverlayPanelVisibility();
+  updateMapOverlayToggleButton();
+  if (overlayToggleBtn) {
+    overlayToggleBtn.addEventListener("click", () => {
+      mapOverlayPanelVisible = !mapOverlayPanelVisible;
+      saveSetting("mapOverlayPanelVisible", mapOverlayPanelVisible);
+      applyMapOverlayPanelVisibility();
+      updateMapOverlayToggleButton();
+    });
   }
   if (!mapFullscreenListenerBound) {
     const onFullscreenChange = () => {
