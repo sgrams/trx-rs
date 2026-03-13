@@ -486,13 +486,29 @@ impl BackgroundDecodeManager {
     async fn run(self: Arc<Self>) {
         let mut runtime = BackgroundRuntimeState::default();
         let mut notify_rx = self.notify_tx.subscribe();
-        let mut spectrum_rx = self.context.spectrum.subscribe();
+        let mut spectrum_rx: Option<tokio::sync::watch::Receiver<SharedSpectrum>> = None;
         let mut interval = time::interval(Duration::from_secs(2));
 
         loop {
-            self.reconcile(&mut runtime, &spectrum_rx.borrow().clone());
+            let users_connected = self.context.sse_clients.load(Ordering::Relaxed) > 0;
+            if users_connected && spectrum_rx.is_none() {
+                spectrum_rx = Some(self.context.spectrum.subscribe());
+            } else if !users_connected {
+                spectrum_rx = None;
+            }
+
+            let spectrum = spectrum_rx
+                .as_ref()
+                .map(|rx| rx.borrow().clone())
+                .unwrap_or_default();
+            self.reconcile(&mut runtime, &spectrum);
             tokio::select! {
-                changed = spectrum_rx.changed() => {
+                changed = async {
+                    match spectrum_rx.as_mut() {
+                        Some(rx) => rx.changed().await.map_err(|_| ()),
+                        None => std::future::pending::<Result<(), ()>>().await,
+                    }
+                } => {
                     if changed.is_err() {
                         warn!("background decode: spectrum watch closed");
                         self.clear_runtime_channels(&mut runtime);
