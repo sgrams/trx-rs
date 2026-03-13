@@ -15,6 +15,7 @@
   let currentConfig = null;
   let bookmarkList = [];          // [{id, name, freq_hz, mode}, ...]
   let statusInterval = null;
+  let interleaveTicker = null;
 
   // -------------------------------------------------------------------------
   // Init
@@ -24,12 +25,17 @@
     currentRigId = rigId || null;
     if (currentRigId) loadScheduler();
     startStatusPolling();
+    startInterleaveTicker();
   }
 
   function destroyScheduler() {
     if (statusInterval) {
       clearInterval(statusInterval);
       statusInterval = null;
+    }
+    if (interleaveTicker) {
+      clearInterval(interleaveTicker);
+      interleaveTicker = null;
     }
   }
 
@@ -40,6 +46,7 @@
     const nextRigId = rigId || null;
     if (nextRigId === currentRigId) return;
     currentRigId = nextRigId;
+    renderSchedulerInterleaveStatus();
     if (!currentRigId) return;
     loadScheduler();
     pollStatus();
@@ -104,9 +111,11 @@
         bookmarkList = Array.isArray(bms) ? bms : [];
         populateTsBookmarkSelect();
         renderScheduler();
+        renderSchedulerInterleaveStatus();
       })
       .catch(function (e) {
         console.error("scheduler load failed", e);
+        renderSchedulerInterleaveStatus();
       });
   }
 
@@ -117,6 +126,74 @@
     if (statusInterval) clearInterval(statusInterval);
     statusInterval = setInterval(pollStatus, 15000);
     pollStatus();
+  }
+
+  function startInterleaveTicker() {
+    if (interleaveTicker) clearInterval(interleaveTicker);
+    interleaveTicker = setInterval(renderSchedulerInterleaveStatus, 1000);
+    renderSchedulerInterleaveStatus();
+  }
+
+  function schedulerUtcSeconds() {
+    return Math.floor(Date.now() / 1000);
+  }
+
+  function schedulerUtcMinuteInfo() {
+    const secs = schedulerUtcSeconds();
+    const secsIntoDay = ((secs % 86400) + 86400) % 86400;
+    return {
+      minuteOfDay: Math.floor(secsIntoDay / 60),
+      secondOfMinute: secsIntoDay % 60,
+    };
+  }
+
+  function schedulerEntryIsActive(entry, nowMin) {
+    const start = Number(entry && entry.start_min);
+    const end = Number(entry && entry.end_min);
+    if (!Number.isFinite(start) || !Number.isFinite(end)) return false;
+    if (start === end) return true;
+    if (start < end) return nowMin >= start && nowMin < end;
+    return nowMin >= start || nowMin < end;
+  }
+
+  function schedulerInterleaveSummary(config) {
+    if (!config || config.mode !== "time_span") return "Interleaving: off";
+    const entries = Array.isArray(config.entries) ? config.entries : [];
+    const minuteInfo = schedulerUtcMinuteInfo();
+    const nowMin = minuteInfo.minuteOfDay;
+    const active = entries.filter(function (entry) {
+      return schedulerEntryIsActive(entry, nowMin);
+    });
+    if (active.length <= 1) return "Interleaving: off";
+    const defaultInterleave = Number(config.interleave_min);
+    const durations = active.map(function (entry) {
+      const own = Number(entry && entry.interleave_min);
+      if (Number.isFinite(own) && own > 0) return Math.floor(own);
+      if (Number.isFinite(defaultInterleave) && defaultInterleave > 0) return Math.floor(defaultInterleave);
+      return 0;
+    });
+    const cycleMin = durations.reduce(function (sum, value) { return sum + value; }, 0);
+    if (!(cycleMin > 0)) return "Interleaving: off";
+    const posMin = minuteInfo.minuteOfDay % cycleMin;
+    let cumulative = 0;
+    let currentDuration = 0;
+    for (let i = 0; i < durations.length; i += 1) {
+      cumulative += durations[i];
+      if (posMin < cumulative) {
+        currentDuration = durations[i];
+        break;
+      }
+    }
+    if (!(currentDuration > 0)) return "Interleaving: off";
+    const remainingMin = cumulative - posMin;
+    const remainingSec = Math.max(1, (remainingMin * 60) - minuteInfo.secondOfMinute);
+    return "Interleaving: next switch in " + remainingSec + "s (" + cycleMin + " min cycle)";
+  }
+
+  function renderSchedulerInterleaveStatus() {
+    const el = document.getElementById("scheduler-cycle-status");
+    if (!el) return;
+    el.textContent = schedulerInterleaveSummary(currentConfig);
   }
 
   function pollStatus() {
