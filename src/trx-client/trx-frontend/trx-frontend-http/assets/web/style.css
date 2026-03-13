@@ -1262,11 +1262,17 @@ small { color: var(--text-muted); }
   transform: translateY(-0.25rem);
   pointer-events: none;
 }
-.map-fullscreen-btn {
+.map-corner-controls {
   position: absolute;
   top: 0.7rem;
   right: 0.7rem;
   z-index: 410;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.4rem;
+}
+.map-fullscreen-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1288,10 +1294,6 @@ small { color: var(--text-muted); }
   color: var(--text-heading);
 }
 .map-overlay-toggle-btn {
-  position: absolute;
-  top: 3rem;
-  right: 0.7rem;
-  z-index: 410;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -2315,8 +2317,8 @@ button:focus-visible, input:focus-visible, select:focus-visible {
     padding: 0.6rem 0.65rem;
     border-radius: 0.7rem;
   }
-  .map-overlay-toggle-btn {
-    top: 3rem;
+  .map-corner-controls {
+    top: 0.55rem;
     right: 0.55rem;
   }
   .map-locator-filter-group {
