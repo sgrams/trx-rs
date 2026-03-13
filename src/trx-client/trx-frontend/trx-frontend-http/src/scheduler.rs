@@ -302,11 +302,11 @@ fn entry_is_active(entry: &ScheduleEntry, now_min: f64) -> bool {
     }
 }
 
-fn timespan_bookmark_id(
+fn timespan_active_entry(
     entries: &[ScheduleEntry],
     now_min: f64,
     default_interleave: Option<u32>,
-) -> Option<String> {
+) -> Option<&ScheduleEntry> {
     let active: Vec<&ScheduleEntry> = entries
         .iter()
         .filter(|e| entry_is_active(e, now_min))
@@ -331,14 +331,14 @@ fn timespan_bookmark_id(
             for (entry, &dur) in active.iter().zip(durations.iter()) {
                 cum += dur as u64;
                 if pos < cum {
-                    return Some(entry.bookmark_id.clone());
+                    return Some(*entry);
                 }
             }
         }
     }
 
     // Default: first matching entry wins.
-    Some(active[0].bookmark_id.clone())
+    Some(active[0])
 }
 
 /// Current UTC time as minutes since midnight.
@@ -371,6 +371,13 @@ pub struct SchedulerStatus {
 
 /// Shared mutable state for scheduler status (one entry per rig).
 pub type SchedulerStatusMap = Arc<RwLock<HashMap<String, SchedulerStatus>>>;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct AppliedTarget {
+    bookmark_id: String,
+    center_hz: Option<u64>,
+    extra_bookmark_ids: Vec<String>,
+}
 
 #[derive(Debug, Clone, Serialize, Default)]
 pub struct SchedulerControlSummary {
@@ -446,8 +453,9 @@ pub fn spawn_scheduler_task(
 ) {
     tokio::spawn(async move {
         let mut interval = time::interval(Duration::from_secs(30));
-        // Track last applied bookmark per rig to avoid redundant retunes.
-        let mut last_applied: HashMap<String, String> = HashMap::new();
+        // Track the full last applied target per rig to avoid redundant retunes
+        // while still honoring center-frequency or extra-channel changes.
+        let mut last_applied: HashMap<String, AppliedTarget> = HashMap::new();
         let mut last_control_allowed = false;
 
         loop {
@@ -471,21 +479,40 @@ pub fn spawn_scheduler_task(
                     continue;
                 }
 
-                let target_bm_id = match &config.mode {
+                let (bm_id, center_hz, extra_bm_ids) = match &config.mode {
                     SchedulerMode::Disabled => continue,
-                    SchedulerMode::Grayline => config
-                        .grayline
-                        .as_ref()
-                        .and_then(|gl| grayline_bookmark_id(gl, now_min)),
+                    SchedulerMode::Grayline => {
+                        let Some(bm_id) = config
+                            .grayline
+                            .as_ref()
+                            .and_then(|gl| grayline_bookmark_id(gl, now_min))
+                        else {
+                            continue;
+                        };
+                        (bm_id, None, Vec::new())
+                    }
                     SchedulerMode::TimeSpan => {
-                        timespan_bookmark_id(&config.entries, now_min, config.interleave_min)
+                        let Some(entry) =
+                            timespan_active_entry(&config.entries, now_min, config.interleave_min)
+                        else {
+                            continue;
+                        };
+                        (
+                            entry.bookmark_id.clone(),
+                            entry.center_hz,
+                            entry.bookmark_ids.clone(),
+                        )
                     }
                 };
 
-                let Some(bm_id) = target_bm_id else { continue };
+                let target = AppliedTarget {
+                    bookmark_id: bm_id.clone(),
+                    center_hz,
+                    extra_bookmark_ids: extra_bm_ids.clone(),
+                };
 
-                // Already at this bookmark — skip.
-                if last_applied.get(&config.rig_id) == Some(&bm_id) {
+                // Already at this exact scheduled target — skip.
+                if last_applied.get(&config.rig_id) == Some(&target) {
                     continue;
                 }
 
@@ -497,12 +524,6 @@ pub fn spawn_scheduler_task(
                     continue;
                 };
 
-                // Resolve the matching entry to pick up center_hz / bookmark_ids.
-                let active_entry = config.entries.iter().find(|e| e.bookmark_id == bm_id);
-                let center_hz = active_entry.and_then(|e| e.center_hz);
-                let extra_bm_ids: Vec<String> = active_entry
-                    .map(|e| e.bookmark_ids.clone())
-                    .unwrap_or_default();
                 let extra_bookmarks: Vec<_> = extra_bm_ids
                     .iter()
                     .filter_map(|id| bookmarks.get(id))
@@ -566,7 +587,7 @@ pub fn spawn_scheduler_task(
                 )
                 .await;
 
-                last_applied.insert(config.rig_id.clone(), bm_id.clone());
+                last_applied.insert(config.rig_id.clone(), target);
 
                 // Update status map (includes center_hz + extra bookmark_ids
                 // so the JS frontend can set up virtual channels on connect).
@@ -831,4 +852,53 @@ pub async fn put_scheduler_control(
         }
     }
     HttpResponse::Ok().json(summary)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{timespan_active_entry, ScheduleEntry};
+
+    fn entry(
+        id: &str,
+        start_min: u32,
+        end_min: u32,
+        bookmark_id: &str,
+        center_hz: Option<u64>,
+        interleave_min: Option<u32>,
+    ) -> ScheduleEntry {
+        ScheduleEntry {
+            id: id.to_string(),
+            start_min,
+            end_min,
+            bookmark_id: bookmark_id.to_string(),
+            label: None,
+            interleave_min,
+            center_hz,
+            bookmark_ids: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn timespan_active_entry_returns_selected_overlap_entry() {
+        let entries = vec![
+            entry("slot-a", 0, 0, "bm-shared", Some(144_500_000), Some(10)),
+            entry("slot-b", 0, 0, "bm-shared", Some(144_300_000), Some(10)),
+        ];
+
+        let active = timespan_active_entry(&entries, 15.0, None).expect("active entry");
+        assert_eq!(active.id, "slot-b");
+        assert_eq!(active.center_hz, Some(144_300_000));
+    }
+
+    #[test]
+    fn timespan_active_entry_returns_first_match_without_interleave() {
+        let entries = vec![
+            entry("slot-a", 60, 120, "bm-a", Some(14_100_000), None),
+            entry("slot-b", 60, 120, "bm-b", Some(14_200_000), None),
+        ];
+
+        let active = timespan_active_entry(&entries, 90.0, None).expect("active entry");
+        assert_eq!(active.id, "slot-a");
+        assert_eq!(active.center_hz, Some(14_100_000));
+    }
 }
