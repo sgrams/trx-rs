@@ -180,20 +180,24 @@ impl IqSource for RealIqSource {
     }
 
     fn handle_read_error(&mut self, err: &str, streak: u32) -> Result<bool, String> {
+        const OVERFLOW_RESTART_STREAK: u32 = 50;
+        const NON_OVERFLOW_RESTART_STREAK: u32 = 10;
+
         let err_lc = err.to_ascii_lowercase();
         let is_overrun = err_lc.contains("overflow") || err_lc.contains("overrun");
 
         if is_overrun {
-            // Overflow is often transient; avoid immediate stream restart churn.
-            // Only restart after several consecutive overflow failures.
-            if streak < 3 {
-                return Ok(true);
+            // Some SoapySDR drivers can wedge inside deactivate/activate after
+            // repeated overflow. Keep backing off reads, but avoid automatic
+            // stream restart on overflow so the server remains responsive.
+            if streak == OVERFLOW_RESTART_STREAK {
+                tracing::error!(
+                    "SoapySDR RX overflow persists (streak={}); skipping automatic stream restart to avoid driver wedge",
+                    streak
+                );
             }
-            tracing::warn!(
-                "SoapySDR RX overflow persists (streak={}); restarting RX stream",
-                streak
-            );
-        } else if streak >= 10 {
+            return Ok(true);
+        } else if streak >= NON_OVERFLOW_RESTART_STREAK {
             // Non-overflow errors at a high streak (e.g. reads on a
             // deactivated stream after a failed activate) — attempt a
             // full restart to recover.

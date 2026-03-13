@@ -323,6 +323,54 @@ pub async fn run_rig_task(
 
                 // Process each request
                 while let Some(RigRequest { cmd, respond_to, .. }) = batch.pop() {
+                    if matches!(cmd, RigCommand::GetSpectrum) {
+                        let mut responders = vec![respond_to];
+                        let mut idx = 0;
+                        while idx < batch.len() {
+                            if matches!(batch[idx].cmd, RigCommand::GetSpectrum) {
+                                let req = batch.swap_remove(idx);
+                                responders.push(req.respond_to);
+                            } else {
+                                idx += 1;
+                            }
+                        }
+
+                        let mut cmd_ctx = CommandExecContext {
+                            rig: &mut rig,
+                            state: &mut state,
+                            machine: &mut machine,
+                            emitter: &emitter,
+                            poll_pause_until: &mut poll_pause_until,
+                            last_power_on: &mut last_power_on,
+                            state_tx: &state_tx,
+                            retry,
+                            histories: &histories,
+                        };
+                        let result = match time::timeout(
+                            COMMAND_EXEC_TIMEOUT,
+                            process_command(RigCommand::GetSpectrum, &mut cmd_ctx),
+                        )
+                        .await
+                        {
+                            Ok(result) => result,
+                            Err(_) => {
+                                error!(
+                                    "Rig command GetSpectrum timed out after {:?}",
+                                    COMMAND_EXEC_TIMEOUT
+                                );
+                                Err(RigError::communication(format!(
+                                    "command timed out after {:?}",
+                                    COMMAND_EXEC_TIMEOUT
+                                )))
+                            }
+                        };
+
+                        for responder in responders {
+                            let _ = responder.send(result.clone());
+                        }
+                        continue;
+                    }
+
                     let cmd_label = format!("{:?}", cmd);
                     let log_command = !matches!(&cmd, RigCommand::GetSpectrum);
                     let started = Instant::now();
