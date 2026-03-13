@@ -1554,8 +1554,10 @@ pub async fn run_ft8_decoder(
 
                         while ft8_buf.len() >= decoder.block_size() {
                             let block: Vec<f32> = ft8_buf.drain(..decoder.block_size()).collect();
-                            decoder.process_block(&block);
-                            let results = decoder.decode_if_ready(100);
+                            let results = tokio::task::block_in_place(|| {
+                                decoder.process_block(&block);
+                                decoder.decode_if_ready(100)
+                            });
                             if !results.is_empty() {
                                 for res in results {
                                     let ts_ms = match std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH) {
@@ -1678,7 +1680,9 @@ pub async fn run_wspr_decoder(
                             last_slot = slot;
                         } else if slot != last_slot {
                             let base_freq = state_rx.borrow().status.freq.hz;
-                            match decoder.decode_slot(&slot_buf, Some(base_freq)) {
+                            match tokio::task::block_in_place(|| {
+                                decoder.decode_slot(&slot_buf, Some(base_freq))
+                            }) {
                                 Ok(results) => {
                                     for res in results {
                                         let ts_ms = match std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH) {
@@ -1933,8 +1937,10 @@ async fn run_background_ft8_decoder(
 
                 while ft8_buf.len() >= decoder.block_size() {
                     let block: Vec<f32> = ft8_buf.drain(..decoder.block_size()).collect();
-                    decoder.process_block(&block);
-                    let results = decoder.decode_if_ready(100);
+                    let results = tokio::task::block_in_place(|| {
+                        decoder.process_block(&block);
+                        decoder.decode_if_ready(100)
+                    });
                     for res in results {
                         let abs_freq_hz = base_freq_hz as f64 + res.freq_hz as f64;
                         let msg = Ft8Message {
@@ -1994,7 +2000,9 @@ async fn run_background_wspr_decoder(
                 if last_slot == -1 {
                     last_slot = slot;
                 } else if slot != last_slot {
-                    match decoder.decode_slot(&slot_buf, Some(base_freq_hz)) {
+                    match tokio::task::block_in_place(|| {
+                        decoder.decode_slot(&slot_buf, Some(base_freq_hz))
+                    }) {
                         Ok(results) => {
                             for res in results {
                                 let msg = WsprMessage {
