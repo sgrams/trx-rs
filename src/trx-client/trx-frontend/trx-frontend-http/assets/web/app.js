@@ -3755,7 +3755,7 @@ const decodeContactPaths = new Map();
 const mapMarkers = new Set();
 const DEFAULT_MAP_SOURCE_FILTER = { ais: true, vdes: true, aprs: true, bookmark: false, ft8: true, wspr: true };
 const mapFilter = { ...DEFAULT_MAP_SOURCE_FILTER };
-const mapLocatorFilter = { phase: "type", bands: new Set() };
+const mapLocatorFilter = { phase: "band", bands: new Set() };
 let mapSearchFilter = "";
 const APRS_TRACK_MAX_POINTS = 64;
 const AIS_TRACK_MAX_POINTS = 64;
@@ -4303,11 +4303,30 @@ function renderMapLocatorPhaseRow(container, phase) {
   }
 }
 
+function renderMapBandLegend(items) {
+  const legendEl = document.getElementById("map-band-legend");
+  if (!legendEl) return;
+  const bandItems = Array.isArray(items) ? items : [];
+  if (bandItems.length === 0) {
+    legendEl.classList.add("is-empty");
+    legendEl.innerHTML = "";
+    return;
+  }
+  legendEl.classList.remove("is-empty");
+  const rows = bandItems
+    .map((item) => {
+      const label = escapeMapHtml(item.label);
+      const color = escapeMapHtml(item.color);
+      return `<span class="map-band-legend-item"><span class="map-band-legend-swatch" style="--legend-color:${color};"></span><span class="map-band-legend-text">${label}</span></span>`;
+    })
+    .join("");
+  legendEl.innerHTML = `<div class="map-band-legend-title">Band Colors</div><div class="map-band-legend-list">${rows}</div>`;
+}
+
 function rebuildMapLocatorFilters() {
   const phaseEl = document.getElementById("map-locator-phase");
   const choiceEl = document.getElementById("map-locator-choice-filter");
   const choiceLabelEl = document.getElementById("map-locator-choice-label");
-  if (!phaseEl || !choiceEl || !choiceLabelEl) return;
 
   const availableSources = new Set();
   if (aisMarkers.size > 0) availableSources.add("ais");
@@ -4359,6 +4378,9 @@ function rebuildMapLocatorFilters() {
     }));
   const bandItems = Array.from(bandMap.values())
     .sort((a, b) => (b.sortHz - a.sortHz) || a.label.localeCompare(b.label));
+
+  renderMapBandLegend(bandItems);
+  if (!phaseEl || !choiceEl || !choiceLabelEl) return;
 
   renderMapLocatorPhaseRow(phaseEl, mapLocatorFilter.phase);
   if (mapLocatorFilter.phase === "band") {

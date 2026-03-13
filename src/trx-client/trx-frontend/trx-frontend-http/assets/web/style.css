@@ -1314,6 +1314,61 @@ small { color: var(--text-muted); }
   border-color: color-mix(in srgb, var(--accent-green) 34%, var(--border-light));
   color: var(--text-heading);
 }
+.map-band-legend {
+  position: absolute;
+  left: 0.7rem;
+  bottom: 0.7rem;
+  z-index: 410;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  width: min(14rem, calc(100% - 5.8rem));
+  max-height: min(40%, 18rem);
+  padding: 0.65rem 0.7rem;
+  border-radius: 0.8rem;
+  border: 1px solid color-mix(in srgb, var(--border-light) 74%, transparent);
+  background: color-mix(in srgb, var(--card-bg) 78%, transparent);
+  box-shadow: 0 16px 30px rgba(0, 0, 0, 0.2);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  overflow: auto;
+}
+.map-band-legend.is-empty {
+  display: none;
+}
+.map-band-legend-title {
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.map-band-legend-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(5.4rem, 1fr));
+  gap: 0.35rem 0.55rem;
+}
+.map-band-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-width: 0;
+}
+.map-band-legend-swatch {
+  flex: 0 0 auto;
+  width: 0.78rem;
+  height: 0.78rem;
+  border-radius: 999px;
+  background: var(--legend-color, var(--accent-green));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--legend-color, var(--accent-green)) 44%, rgba(255, 255, 255, 0.18));
+}
+.map-band-legend-text {
+  min-width: 0;
+  font-size: 0.76rem;
+  font-weight: 700;
+  color: var(--text);
+  white-space: nowrap;
+}
 #map-stage:fullscreen,
 #map-stage:-webkit-full-screen,
 #map-stage.map-fake-fullscreen {
@@ -2320,6 +2375,17 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   .map-corner-controls {
     top: 0.55rem;
     right: 0.55rem;
+  }
+  .map-band-legend {
+    left: 0.55rem;
+    bottom: 0.55rem;
+    width: min(12rem, calc(100% - 1.1rem));
+    max-height: min(36%, 13rem);
+    padding: 0.55rem 0.6rem;
+    border-radius: 0.7rem;
+  }
+  .map-band-legend-list {
+    grid-template-columns: repeat(auto-fit, minmax(4.8rem, 1fr));
   }
   .map-locator-filter-group {
     align-items: stretch;
