@@ -169,6 +169,7 @@ pub struct ChannelDsp {
     audio_agc: SoftAgc,
     audio_dc: Option<DcBlocker>,
     processing_enabled: bool,
+    force_mono_pcm: bool,
     squelch: VirtualSquelch,
 }
 
@@ -269,6 +270,7 @@ impl ChannelDsp {
         wfm_deemphasis_us: u32,
         wfm_stereo: bool,
         fir_taps: usize,
+        force_mono_pcm: bool,
         squelch_cfg: VirtualSquelchConfig,
         pcm_tx: broadcast::Sender<Vec<f32>>,
         iq_tx: broadcast::Sender<Vec<Complex<f32>>>,
@@ -348,12 +350,17 @@ impl ChannelDsp {
             audio_agc: agc_for_mode(mode, audio_sample_rate),
             audio_dc: dc_for_mode(mode),
             processing_enabled: true,
+            force_mono_pcm,
             squelch: VirtualSquelch::new(squelch_cfg),
         }
     }
 
     pub fn set_processing_enabled(&mut self, enabled: bool) {
         self.processing_enabled = enabled;
+    }
+
+    pub fn set_force_mono_pcm(&mut self, enabled: bool) {
+        self.force_mono_pcm = enabled;
     }
 
     pub fn set_squelch(&mut self, enabled: bool, threshold_db: f32) {
@@ -548,7 +555,7 @@ impl ChannelDsp {
                 }
                 *sample = self.audio_agc.process(*sample);
             }
-            if self.output_channels >= 2 {
+            if self.output_channels >= 2 && !self.force_mono_pcm {
                 let mut stereo = Vec::with_capacity(raw.len() * self.output_channels);
                 for sample in raw {
                     stereo.push(sample);

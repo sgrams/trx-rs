@@ -203,6 +203,13 @@ impl SdrVirtualChannelManager {
             hidden,
         });
 
+        if hidden {
+            let dsps = self.pipeline.channel_dsps.read().unwrap();
+            if let Some(dsp_arc) = dsps.get(pipeline_slot) {
+                dsp_arc.lock().unwrap().set_force_mono_pcm(true);
+            }
+        }
+
         Ok(pcm_rx)
     }
 

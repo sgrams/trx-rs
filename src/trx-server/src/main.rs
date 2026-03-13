@@ -575,6 +575,12 @@ fn spawn_rig_audio_stack(
                 loop {
                     match sdr_rx.recv().await {
                         Ok(frame) => {
+                            let has_audio_clients = rx_audio_tx_sdr.receiver_count() > 0;
+                            if !has_audio_clients {
+                                let _ = pcm_tx_clone.send(frame);
+                                continue;
+                            }
+
                             let pcm_frame = match sdr_channels {
                                 1 => frame,
                                 2 => {
