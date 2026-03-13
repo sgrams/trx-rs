@@ -29,6 +29,7 @@ use crate::error::is_invalid_bcd_error;
 
 const POLL_REFRESH_TIMEOUT: Duration = Duration::from_secs(8);
 const COMMAND_EXEC_TIMEOUT: Duration = Duration::from_secs(10);
+const RIG_TASK_HEARTBEAT_INTERVAL: Duration = Duration::from_secs(30);
 
 /// Configuration for the rig task.
 pub struct RigTaskConfig {
@@ -237,6 +238,7 @@ pub async fn run_rig_task(
     let mut current_poll_duration = polling.interval(state.status.tx_en);
     let mut poll_sleep: std::pin::Pin<Box<tokio::time::Sleep>> =
         Box::pin(tokio::time::sleep(current_poll_duration));
+    let mut heartbeat = time::interval(RIG_TASK_HEARTBEAT_INTERVAL);
     loop {
         // Update sleep duration if tx_en state changed
         let new_duration = polling.interval(state.status.tx_en);
@@ -311,6 +313,19 @@ pub async fn run_rig_task(
                     }
                 }
             },
+            _ = heartbeat.tick() => {
+                info!(
+                    "[{}] rig_task heartbeat: initialized={}, freq_hz={}, mode={:?}, tx_en={}, poll_paused={}",
+                    config.rig_id,
+                    state.initialized,
+                    state.status.freq.hz,
+                    state.status.mode,
+                    state.status.tx_en,
+                    poll_pause_until
+                        .map(|until| Instant::now() < until)
+                        .unwrap_or(false)
+                );
+            }
 
             maybe_req = rx.recv() => {
                 let Some(first_req) = maybe_req else { break; };
@@ -374,6 +389,9 @@ pub async fn run_rig_task(
                     let cmd_label = format!("{:?}", cmd);
                     let log_command = !matches!(&cmd, RigCommand::GetSpectrum);
                     let started = Instant::now();
+                    if log_command {
+                        info!("[{}] rig command start: {}", config.rig_id, cmd_label);
+                    }
 
                     let mut cmd_ctx = CommandExecContext {
                         rig: &mut rig,
