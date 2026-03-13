@@ -929,9 +929,12 @@ pub async fn run_aprs_decoder(
             recv = pcm_rx.recv() => {
                 match recv {
                     Ok(frame) => {
-                        let state = state_rx.borrow();
-                        if state.aprs_decode_reset_seq != last_reset_seq {
-                            last_reset_seq = state.aprs_decode_reset_seq;
+                        let reset_seq = {
+                            let state = state_rx.borrow();
+                            state.aprs_decode_reset_seq
+                        };
+                        if reset_seq != last_reset_seq {
+                            last_reset_seq = reset_seq;
                             decoder.reset();
                             info!("APRS decoder reset (seq={})", last_reset_seq);
                         }
@@ -1035,9 +1038,12 @@ pub async fn run_hf_aprs_decoder(
             recv = pcm_rx.recv() => {
                 match recv {
                     Ok(frame) => {
-                        let state = state_rx.borrow();
-                        if state.hf_aprs_decode_reset_seq != last_reset_seq {
-                            last_reset_seq = state.hf_aprs_decode_reset_seq;
+                        let reset_seq = {
+                            let state = state_rx.borrow();
+                            state.hf_aprs_decode_reset_seq
+                        };
+                        if reset_seq != last_reset_seq {
+                            last_reset_seq = reset_seq;
                             decoder.reset();
                             info!("HF APRS decoder reset (seq={})", last_reset_seq);
                         }
@@ -1337,23 +1343,31 @@ pub async fn run_cw_decoder(
             recv = pcm_rx.recv() => {
                 match recv {
                     Ok(frame) => {
-                        let state = state_rx.borrow();
-                        let process_enabled = state.cw_decode_enabled
-                            && matches!(state.status.mode, RigMode::CW | RigMode::CWR);
-                        if state.cw_auto != last_auto {
-                            last_auto = state.cw_auto;
+                        let (process_enabled, cw_auto, cw_wpm, cw_tone_hz, reset_seq) = {
+                            let state = state_rx.borrow();
+                            (
+                                state.cw_decode_enabled
+                                    && matches!(state.status.mode, RigMode::CW | RigMode::CWR),
+                                state.cw_auto,
+                                state.cw_wpm,
+                                state.cw_tone_hz,
+                                state.cw_decode_reset_seq,
+                            )
+                        };
+                        if cw_auto != last_auto {
+                            last_auto = cw_auto;
                             decoder.set_auto(last_auto);
                         }
-                        if state.cw_wpm != last_wpm {
-                            last_wpm = state.cw_wpm;
+                        if cw_wpm != last_wpm {
+                            last_wpm = cw_wpm;
                             decoder.set_wpm(last_wpm);
                         }
-                        if state.cw_tone_hz != last_tone {
-                            last_tone = state.cw_tone_hz;
+                        if cw_tone_hz != last_tone {
+                            last_tone = cw_tone_hz;
                             decoder.set_tone_hz(last_tone);
                         }
-                        if state.cw_decode_reset_seq != last_reset_seq {
-                            last_reset_seq = state.cw_decode_reset_seq;
+                        if reset_seq != last_reset_seq {
+                            last_reset_seq = reset_seq;
                             decoder.reset();
                             info!("CW decoder reset (seq={})", last_reset_seq);
                         }
@@ -1548,9 +1562,12 @@ pub async fn run_ft8_decoder(
                             ft8_buf.clear();
                         }
 
-                        let state = state_rx.borrow();
-                        if state.ft8_decode_reset_seq != last_reset_seq {
-                            last_reset_seq = state.ft8_decode_reset_seq;
+                        let reset_seq = {
+                            let state = state_rx.borrow();
+                            state.ft8_decode_reset_seq
+                        };
+                        if reset_seq != last_reset_seq {
+                            last_reset_seq = reset_seq;
                             decoder.reset();
                             ft8_buf.clear();
                         }
@@ -1720,9 +1737,12 @@ pub async fn run_wspr_decoder(
                             last_slot = slot;
                         }
 
-                        let state = state_rx.borrow();
-                        if state.wspr_decode_reset_seq != last_reset_seq {
-                            last_reset_seq = state.wspr_decode_reset_seq;
+                        let reset_seq = {
+                            let state = state_rx.borrow();
+                            state.wspr_decode_reset_seq
+                        };
+                        if reset_seq != last_reset_seq {
+                            last_reset_seq = reset_seq;
                             slot_buf.clear();
                             last_slot = slot;
                         }
