@@ -4303,24 +4303,28 @@ function renderMapLocatorPhaseRow(container, phase) {
   }
 }
 
-function renderMapBandLegend(items) {
+function renderMapLocatorLegend(phase, sourceItems, bandItems) {
   const legendEl = document.getElementById("map-band-legend");
   if (!legendEl) return;
-  const bandItems = Array.isArray(items) ? items : [];
-  if (bandItems.length === 0) {
+  const isSourcePhase = phase === "type";
+  const items = Array.isArray(isSourcePhase ? sourceItems : bandItems)
+    ? (isSourcePhase ? sourceItems : bandItems)
+    : [];
+  if (items.length === 0) {
     legendEl.classList.add("is-empty");
     legendEl.innerHTML = "";
     return;
   }
   legendEl.classList.remove("is-empty");
-  const rows = bandItems
+  const rows = items
     .map((item) => {
       const label = escapeMapHtml(item.label);
       const color = escapeMapHtml(item.color);
       return `<span class="map-band-legend-item"><span class="map-band-legend-swatch" style="--legend-color:${color};"></span><span class="map-band-legend-text">${label}</span></span>`;
     })
     .join("");
-  legendEl.innerHTML = `<div class="map-band-legend-title">Band Colors</div><div class="map-band-legend-list">${rows}</div>`;
+  const title = isSourcePhase ? "Source Colors" : "Band Colors";
+  legendEl.innerHTML = `<div class="map-band-legend-title">${title}</div><div class="map-band-legend-list">${rows}</div>`;
 }
 
 function rebuildMapLocatorFilters() {
@@ -4379,7 +4383,7 @@ function rebuildMapLocatorFilters() {
   const bandItems = Array.from(bandMap.values())
     .sort((a, b) => (b.sortHz - a.sortHz) || a.label.localeCompare(b.label));
 
-  renderMapBandLegend(bandItems);
+  renderMapLocatorLegend(mapLocatorFilter.phase, sourceItems, bandItems);
   if (!phaseEl || !choiceEl || !choiceLabelEl) return;
 
   renderMapLocatorPhaseRow(phaseEl, mapLocatorFilter.phase);
