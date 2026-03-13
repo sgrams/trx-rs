@@ -260,6 +260,7 @@ pub async fn run_rig_task(
             }
             _ = &mut poll_sleep => {
                 poll_sleep = Box::pin(tokio::time::sleep(current_poll_duration));
+                let poll_started = Instant::now();
                 // Check if polling is paused
                 if let Some(until) = poll_pause_until {
                     if Instant::now() < until {
@@ -283,9 +284,19 @@ pub async fn run_rig_task(
                 .await
                 {
                     Ok(Ok(())) => {
+                        info!(
+                            "[{}] rig poll refresh ok in {:?}; syncing state",
+                            config.rig_id,
+                            poll_started.elapsed()
+                        );
                         let old_machine_state = machine.state().clone();
                         sync_machine_state(&mut machine, &state);
                         let new_machine_state = machine.state().clone();
+                        info!(
+                            "[{}] rig poll state sync done in {:?}; emitting changes",
+                            config.rig_id,
+                            poll_started.elapsed()
+                        );
                         emit_state_changes(
                             &emitter,
                             &old_state,
@@ -293,7 +304,17 @@ pub async fn run_rig_task(
                             &old_machine_state,
                             &new_machine_state,
                         );
+                        info!(
+                            "[{}] rig poll emit done in {:?}; publishing watch state",
+                            config.rig_id,
+                            poll_started.elapsed()
+                        );
                         let _ = state_tx.send(state.clone());
+                        info!(
+                            "[{}] rig poll publish done in {:?}",
+                            config.rig_id,
+                            poll_started.elapsed()
+                        );
                     }
                     Ok(Err(e)) => {
                         error!("CAT polling error: {:?}", e);
@@ -335,6 +356,12 @@ pub async fn run_rig_task(
                 while let Ok(next) = rx.try_recv() {
                     batch.push(next);
                 }
+                info!(
+                    "[{}] rig request batch received: size={}, first_cmd={:?}",
+                    config.rig_id,
+                    batch.len(),
+                    batch.last().map(|req| &req.cmd)
+                );
 
                 // Process each request
                 while let Some(RigRequest { cmd, respond_to, .. }) = batch.pop() {
@@ -421,7 +448,15 @@ pub async fn run_rig_task(
                             }
                         };
 
+                    let response_status = if result.is_ok() { "ok" } else { "err" };
                     let _ = respond_to.send(result);
+                    info!(
+                        "[{}] rig command response sent: {} status={} elapsed={:?}",
+                        config.rig_id,
+                        cmd_label,
+                        response_status,
+                        started.elapsed()
+                    );
 
                     if log_command {
                         let elapsed = started.elapsed();
