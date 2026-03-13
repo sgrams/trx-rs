@@ -950,7 +950,8 @@ pub async fn run_aprs_decoder(
                         apply_decode_audio_gate(&mut mono);
 
                         was_active = true;
-                        for mut pkt in decoder.process_samples(&mono) {
+                        let packets = tokio::task::block_in_place(|| decoder.process_samples(&mono));
+                        for mut pkt in packets {
                             if let Some(logger) = decode_logs.as_ref() {
                                 logger.log_aprs(&pkt);
                             }
@@ -1045,7 +1046,8 @@ pub async fn run_hf_aprs_decoder(
                         apply_decode_audio_gate(&mut mono);
 
                         was_active = true;
-                        for mut pkt in decoder.process_samples(&mono) {
+                        let packets = tokio::task::block_in_place(|| decoder.process_samples(&mono));
+                        for mut pkt in packets {
                             if let Some(logger) = decode_logs.as_ref() {
                                 logger.log_aprs(&pkt);
                             }
@@ -1143,7 +1145,10 @@ pub async fn run_ais_decoder(
                 match recv {
                     Ok(frame) => {
                         was_active = true;
-                        for mut msg in decoder_a.process_samples(&downmix_if_needed(frame, channels), "A") {
+                        let mono = downmix_if_needed(frame, channels);
+                        let messages =
+                            tokio::task::block_in_place(|| decoder_a.process_samples(&mono, "A"));
+                        for mut msg in messages {
                             if msg.ts_ms.is_none() {
                                 msg.ts_ms = Some(current_timestamp_ms());
                             }
@@ -1161,7 +1166,10 @@ pub async fn run_ais_decoder(
                 match recv {
                     Ok(frame) => {
                         was_active = true;
-                        for mut msg in decoder_b.process_samples(&downmix_if_needed(frame, channels), "B") {
+                        let mono = downmix_if_needed(frame, channels);
+                        let messages =
+                            tokio::task::block_in_place(|| decoder_b.process_samples(&mono, "B"));
+                        for mut msg in messages {
                             if msg.ts_ms.is_none() {
                                 msg.ts_ms = Some(current_timestamp_ms());
                             }
@@ -1233,7 +1241,9 @@ pub async fn run_vdes_decoder(
                 match recv {
                     Ok(block) => {
                         was_active = true;
-                        for mut msg in decoder.process_samples(&block, "Main") {
+                        let messages =
+                            tokio::task::block_in_place(|| decoder.process_samples(&block, "Main"));
+                        for mut msg in messages {
                             if msg.ts_ms.is_none() {
                                 msg.ts_ms = Some(current_timestamp_ms());
                             }
@@ -1368,7 +1378,8 @@ pub async fn run_cw_decoder(
                             frame
                         };
                         was_active = true;
-                        for evt in decoder.process_samples(&mono) {
+                        let events = tokio::task::block_in_place(|| decoder.process_samples(&mono));
+                        for evt in events {
                             if let Some(logger) = decode_logs.as_ref() {
                                 logger.log_cw(&evt);
                             }
