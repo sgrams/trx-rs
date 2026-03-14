@@ -253,6 +253,17 @@ int ftx_find_candidates(const ftx_waterfall_t* wf, int num_candidates, ftx_candi
             time_offset_max = time_offset_min + 1;
         }
     }
+    else if (wf->protocol == FTX_PROTOCOL_FT4)
+    {
+        // Keep roughly the same +/- seconds search span used by FT8.
+        // FT4 symbols are much shorter, so it needs a wider symbol-index window.
+        time_offset_min = -34;
+        time_offset_max = wf->num_blocks - FT4_NN + 34;
+        if (time_offset_max <= time_offset_min)
+        {
+            time_offset_max = time_offset_min + 1;
+        }
+    }
 
     int heap_size = 0;
     ftx_candidate_t candidate;
