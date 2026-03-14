@@ -5,6 +5,7 @@
 
 #include <stdbool.h>
 #include <math.h>
+#include <complex.h>
 
 // #define LOG_LEVEL LOG_DEBUG
 // #include "debug.h"
@@ -30,6 +31,7 @@ static const float db_power_sum[40] = {
 /// @param[in] code_map Symbol encoding map
 /// @param[out] log174 Output of decoded log likelihoods for each of the 174 message bits
 static void ft4_extract_likelihood(const ftx_waterfall_t* wf, const ftx_candidate_t* cand, float* log174);
+static void ft2_extract_likelihood(const ftx_waterfall_t* wf, const ftx_candidate_t* cand, float* log174);
 static void ft8_extract_likelihood(const ftx_waterfall_t* wf, const ftx_candidate_t* cand, float* log174);
 
 /// Packs a string of bits each represented as a zero/non-zero byte in bit_array[],
@@ -46,8 +48,16 @@ static void heapify_up(ftx_candidate_t heap[], int heap_size);
 
 static void ftx_normalize_logl(float* log174);
 static void ft4_extract_symbol(const WF_ELEM_T* wf, float* logl);
+static void ft2_extract_logl_sequence(const float complex symbols[4][FT2_NN - FT2_NR], int start_sym, int n_syms, float* metrics);
 static void ft8_extract_symbol(const WF_ELEM_T* wf, float* logl);
 static void ft8_decode_multi_symbols(const WF_ELEM_T* wf, int num_bins, int n_syms, int bit_idx, float* log174);
+
+static inline float complex wf_elem_to_complex(const WF_ELEM_T elem)
+{
+    float mag = WF_ELEM_MAG(elem);
+    float amplitude = powf(10.0f, mag / 20.0f);
+    return amplitude * cexpf(I * elem.phase);
+}
 
 static const WF_ELEM_T* get_cand_mag(const ftx_waterfall_t* wf, const ftx_candidate_t* candidate)
 {
@@ -124,6 +134,44 @@ static int ft8_sync_score(const ftx_waterfall_t* wf, const ftx_candidate_t* cand
     return score;
 }
 
+static int ft2_sync_score(const ftx_waterfall_t* wf, const ftx_candidate_t* candidate)
+{
+    const WF_ELEM_T* mag_cand = get_cand_mag(wf, candidate);
+    float score = 0.0f;
+    int groups = 0;
+
+    for (int m = 0; m < FT2_NUM_SYNC; ++m)
+    {
+        float complex sum = 0.0f;
+        bool complete = true;
+        for (int k = 0; k < FT2_LENGTH_SYNC; ++k)
+        {
+            int block = 1 + (FT2_SYNC_OFFSET * m) + k;
+            int block_abs = candidate->time_offset + block;
+            if ((block_abs < 0) || (block_abs >= wf->num_blocks))
+            {
+                complete = false;
+                break;
+            }
+
+            const WF_ELEM_T* sym = mag_cand + (block * wf->block_stride);
+            int tone = kFT4_Costas_pattern[m][k];
+            sum += wf_elem_to_complex(sym[tone]);
+        }
+
+        if (!complete)
+            continue;
+
+        score += cabsf(sum);
+        ++groups;
+    }
+
+    if (groups == 0)
+        return 0;
+
+    return (int)lroundf((score / groups) * 8.0f);
+}
+
 static int ft4_sync_score(const ftx_waterfall_t* wf, const ftx_candidate_t* candidate)
 {
     int score = 0;
@@ -191,7 +239,7 @@ int ftx_find_candidates(const ftx_waterfall_t* wf, int num_candidates, ftx_candi
 {
     bool is_ft2 = (wf->protocol == FTX_PROTOCOL_FT2);
     int (*sync_fun)(const ftx_waterfall_t*, const ftx_candidate_t*) =
-        ftx_protocol_uses_ft4_layout(wf->protocol) ? ft4_sync_score : ft8_sync_score;
+        is_ft2 ? ft2_sync_score : (ftx_protocol_uses_ft4_layout(wf->protocol) ? ft4_sync_score : ft8_sync_score);
     int num_tones = ftx_protocol_uses_ft4_layout(wf->protocol) ? 4 : 8;
     int time_offset_min = -10;
     int time_offset_max = 20;
@@ -290,6 +338,74 @@ static void ft4_extract_likelihood(const ftx_waterfall_t* wf, const ftx_candidat
     }
 }
 
+static void ft2_extract_likelihood(const ftx_waterfall_t* wf, const ftx_candidate_t* cand, float* log174)
+{
+    const WF_ELEM_T* mag = get_cand_mag(wf, cand);
+    float complex symbols[4][FT2_NN - FT2_NR];
+    float metric1[2 * (FT2_NN - FT2_NR)] = { 0 };
+    float metric2[2 * (FT2_NN - FT2_NR)] = { 0 };
+    float metric4[2 * (FT2_NN - FT2_NR)] = { 0 };
+
+    for (int frame_sym = 0; frame_sym < (FT2_NN - FT2_NR); ++frame_sym)
+    {
+        int sym_idx = frame_sym + 1; // skip ramp-up symbol
+        int block = cand->time_offset + sym_idx;
+        if ((block < 0) || (block >= wf->num_blocks))
+        {
+            for (int tone = 0; tone < 4; ++tone)
+            {
+                symbols[tone][frame_sym] = 0.0f;
+            }
+            continue;
+        }
+
+        const WF_ELEM_T* sym = mag + (sym_idx * wf->block_stride);
+        for (int tone = 0; tone < 4; ++tone)
+        {
+            symbols[tone][frame_sym] = wf_elem_to_complex(sym[tone]);
+        }
+    }
+
+    for (int start = 0; start <= (FT2_NN - FT2_NR) - 1; start += 1)
+    {
+        ft2_extract_logl_sequence(symbols, start, 1, metric1 + (2 * start));
+    }
+    for (int start = 0; start <= (FT2_NN - FT2_NR) - 2; start += 2)
+    {
+        ft2_extract_logl_sequence(symbols, start, 2, metric2 + (2 * start));
+    }
+    for (int start = 0; start <= (FT2_NN - FT2_NR) - 4; start += 4)
+    {
+        ft2_extract_logl_sequence(symbols, start, 4, metric4 + (2 * start));
+    }
+
+    metric2[204] = metric1[204];
+    metric2[205] = metric1[205];
+    metric4[200] = metric2[200];
+    metric4[201] = metric2[201];
+    metric4[202] = metric2[202];
+    metric4[203] = metric2[203];
+    metric4[204] = metric1[204];
+    metric4[205] = metric1[205];
+
+    for (int data_sym = 0; data_sym < FT2_ND; ++data_sym)
+    {
+        int frame_sym = data_sym + ((data_sym < 29) ? 4 : ((data_sym < 58) ? 8 : 12));
+        int src_bit = 2 * frame_sym;
+        int dst_bit = 2 * data_sym;
+
+        float a0 = metric1[src_bit + 0];
+        float b0 = metric2[src_bit + 0];
+        float c0 = metric4[src_bit + 0];
+        float a1 = metric1[src_bit + 1];
+        float b1 = metric2[src_bit + 1];
+        float c1 = metric4[src_bit + 1];
+
+        log174[dst_bit + 0] = (fabsf(a0) >= fabsf(b0) && fabsf(a0) >= fabsf(c0)) ? a0 : ((fabsf(b0) >= fabsf(c0)) ? b0 : c0);
+        log174[dst_bit + 1] = (fabsf(a1) >= fabsf(b1) && fabsf(a1) >= fabsf(c1)) ? a1 : ((fabsf(b1) >= fabsf(c1)) ? b1 : c1);
+    }
+}
+
 static void ft8_extract_likelihood(const ftx_waterfall_t* wf, const ftx_candidate_t* cand, float* log174)
 {
     const WF_ELEM_T* mag = get_cand_mag(wf, cand); // Pointer to 8 magnitude bins of the first symbol
@@ -341,7 +457,11 @@ static void ftx_normalize_logl(float* log174)
 bool ftx_decode_candidate(const ftx_waterfall_t* wf, const ftx_candidate_t* cand, int max_iterations, ftx_message_t* message, ftx_decode_status_t* status)
 {
     float log174[FTX_LDPC_N]; // message bits encoded as likelihood
-    if (ftx_protocol_uses_ft4_layout(wf->protocol))
+    if (wf->protocol == FTX_PROTOCOL_FT2)
+    {
+        ft2_extract_likelihood(wf, cand, log174);
+    }
+    else if (ftx_protocol_uses_ft4_layout(wf->protocol))
     {
         ft4_extract_likelihood(wf, cand, log174);
     }
@@ -477,6 +597,42 @@ static void ft4_extract_symbol(const WF_ELEM_T* wf, float* logl)
 
     logl[0] = max2(s2[2], s2[3]) - max2(s2[0], s2[1]);
     logl[1] = max2(s2[1], s2[3]) - max2(s2[0], s2[2]);
+}
+
+static void ft2_extract_logl_sequence(const float complex symbols[4][FT2_NN - FT2_NR], int start_sym, int n_syms, float* metrics)
+{
+    const int n_bits = 2 * n_syms;
+    const int n_sequences = 1 << n_bits;
+
+    for (int bit = 0; bit < n_bits; ++bit)
+    {
+        float max_zero = -INFINITY;
+        float max_one = -INFINITY;
+        for (int seq = 0; seq < n_sequences; ++seq)
+        {
+            float complex sum = 0.0f;
+            for (int sym = 0; sym < n_syms; ++sym)
+            {
+                int shift = 2 * (n_syms - sym - 1);
+                int dibit = (seq >> shift) & 0x3;
+                int tone = kFT4_Gray_map[dibit];
+                sum += symbols[tone][start_sym + sym];
+            }
+            float strength = cabsf(sum);
+            int mask_bit = n_bits - bit - 1;
+            if (((seq >> mask_bit) & 0x1) != 0)
+            {
+                if (strength > max_one)
+                    max_one = strength;
+            }
+            else
+            {
+                if (strength > max_zero)
+                    max_zero = strength;
+            }
+        }
+        metrics[bit] = max_one - max_zero;
+    }
 }
 
 // Compute unnormalized log likelihood log(p(1) / p(0)) of 3 message bits (1 FSK symbol)

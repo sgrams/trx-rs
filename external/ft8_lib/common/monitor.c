@@ -192,7 +192,7 @@ void monitor_process(monitor_t* me, const float* frame)
 }
 
 #ifdef WATERFALL_USE_PHASE
-void monitor_resynth(const monitor_t* me, const candidate_t* candidate, float* signal)
+void monitor_resynth(const monitor_t* me, const ftx_candidate_t* candidate, float* signal)
 {
     const int num_ifft = me->nifft;
     const int num_shift = num_ifft / 2;

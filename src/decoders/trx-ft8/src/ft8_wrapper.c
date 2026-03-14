@@ -115,6 +115,33 @@ typedef struct
     float freq_hz;
 } ft8_decode_result_t;
 
+static float ft2_frequency_offset_hz(void)
+{
+    return -1.5f / FT2_SYMBOL_PERIOD;
+}
+
+static float decoder_candidate_freq_hz(const ft8_decoder_t* dec, const ftx_candidate_t* cand)
+{
+    const ftx_waterfall_t* wf = &dec->mon.wf;
+    float freq_hz = (dec->mon.min_bin + cand->freq_offset + (float)cand->freq_sub / wf->freq_osr) / dec->mon.symbol_period;
+    if (dec->cfg.protocol == FTX_PROTOCOL_FT2)
+    {
+        freq_hz += ft2_frequency_offset_hz();
+    }
+    return freq_hz;
+}
+
+static float decoder_candidate_dt_s(const ft8_decoder_t* dec, const ftx_candidate_t* cand)
+{
+    const ftx_waterfall_t* wf = &dec->mon.wf;
+    float time_sec = (cand->time_offset + (float)cand->time_sub / wf->time_osr) * dec->mon.symbol_period;
+    if (dec->cfg.protocol == FTX_PROTOCOL_FT2)
+    {
+        time_sec -= 0.5f;
+    }
+    return time_sec;
+}
+
 ft8_decoder_t* ft8_decoder_create(int sample_rate, float f_min, float f_max, int time_osr, int freq_osr, int protocol)
 {
     ft8_decoder_t* dec = (ft8_decoder_t*)calloc(1, sizeof(ft8_decoder_t));
@@ -195,7 +222,7 @@ int ft8_decoder_decode(ft8_decoder_t* dec, ft8_decode_result_t* out, int max_res
     const ftx_waterfall_t* wf = &dec->mon.wf;
     const bool is_ft2 = (dec->cfg.protocol == FTX_PROTOCOL_FT2);
     const int kMaxCandidates = is_ft2 ? 400 : 200;
-    const int kMinScore = is_ft2 ? 4 : 10;
+    const int kMinScore = is_ft2 ? 0 : 10;
     const int kLdpcIters = is_ft2 ? 50 : 30;
 
     ftx_candidate_t candidate_list[kMaxCandidates];
@@ -213,8 +240,8 @@ int ft8_decoder_decode(ft8_decoder_t* dec, ft8_decode_result_t* out, int max_res
     {
         const ftx_candidate_t* cand = &candidate_list[idx];
 
-        float freq_hz = (dec->mon.min_bin + cand->freq_offset + (float)cand->freq_sub / wf->freq_osr) / dec->mon.symbol_period;
-        float time_sec = (cand->time_offset + (float)cand->time_sub / wf->time_osr) * dec->mon.symbol_period;
+        float freq_hz = decoder_candidate_freq_hz(dec, cand);
+        float time_sec = decoder_candidate_dt_s(dec, cand);
 
         ftx_message_t message;
         ftx_decode_status_t status;

@@ -18,7 +18,7 @@ typedef struct
     float phase;
 } waterfall_cpx_t;
 
-// #define WATERFALL_USE_PHASE
+#define WATERFALL_USE_PHASE
 
 #ifdef WATERFALL_USE_PHASE
 #define WF_ELEM_T          waterfall_cpx_t
