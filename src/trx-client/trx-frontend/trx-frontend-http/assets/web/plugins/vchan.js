@@ -188,6 +188,9 @@ function vchanRender() {
   picker.appendChild(addBtn);
 
   vchanSyncAccentUI();
+  if (typeof updateDocumentTitle === "function" && typeof activeChannelRds === "function") {
+    updateDocumentTitle(activeChannelRds());
+  }
   vchanRenderSchedulerRelease();
 }
 
@@ -388,6 +391,9 @@ function vchanSyncAccentUI() {
     vchanSyncBwDisplay();
   } else if (typeof _origRefreshFreqDisplay === "function") {
     _origRefreshFreqDisplay();
+  }
+  if (typeof updateDocumentTitle === "function" && typeof activeChannelRds === "function") {
+    updateDocumentTitle(activeChannelRds());
   }
 }
 

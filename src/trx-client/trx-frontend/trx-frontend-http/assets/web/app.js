@@ -412,11 +412,12 @@ function currentTheme() {
 }
 
 function updateDocumentTitle(rds = null) {
-  if (!Number.isFinite(lastFreqHz)) {
+  const freqHz = activeChannelFreqHz();
+  if (!Number.isFinite(freqHz)) {
     document.title = originalTitle;
     return;
   }
-  const parts = [formatFreq(lastFreqHz)];
+  const parts = [formatFreq(freqHz)];
   const ps = rds?.program_service;
   if (ps && ps.length > 0) {
     parts.push(ps);
