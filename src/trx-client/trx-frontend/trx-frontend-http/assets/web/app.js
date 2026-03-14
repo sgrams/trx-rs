@@ -58,6 +58,7 @@ async function authLogout() {
     authRole = null;
     // Disconnect and show auth gate without page reload
     disconnect();
+    setDecodeHistoryOverlayVisible(false);
     document.getElementById("content").style.display = "none";
     document.getElementById("loading").style.display = "none";
     document.getElementById("auth-passphrase").value = "";
@@ -75,6 +76,7 @@ async function authLogout() {
 
 function showAuthGate(allowGuest = false) {
   if (!authEnabled) return;
+  setDecodeHistoryOverlayVisible(false);
   document.getElementById("loading").style.display = "none";
   document.getElementById("content").style.display = "none";
   const authGate = document.getElementById("auth-gate");
@@ -324,6 +326,9 @@ const rigSubtitle = document.getElementById("rig-subtitle");
 const ownerSubtitle = document.getElementById("owner-subtitle");
 const loadingTitle = document.getElementById("loading-title");
 const loadingSub = document.getElementById("loading-sub");
+const decodeHistoryOverlayEl = document.getElementById("decode-history-overlay");
+const decodeHistoryOverlayTitleEl = document.getElementById("decode-history-overlay-title");
+const decodeHistoryOverlaySubEl = document.getElementById("decode-history-overlay-sub");
 const overviewCanvas = document.getElementById("overview-canvas");
 const signalOverlayCanvas = document.getElementById("signal-overlay-canvas");
 const overviewGl = typeof createTrxWebGlRenderer === "function"
@@ -368,6 +373,12 @@ function syncTopBarAccess() {
 }
 
 let overviewDrawPending = false;
+function setDecodeHistoryOverlayVisible(visible, title = "", sub = "") {
+  if (!decodeHistoryOverlayEl) return;
+  if (title && decodeHistoryOverlayTitleEl) decodeHistoryOverlayTitleEl.textContent = title;
+  if (decodeHistoryOverlaySubEl) decodeHistoryOverlaySubEl.textContent = sub || "";
+  decodeHistoryOverlayEl.classList.toggle("is-hidden", !visible);
+}
 let lastSpectrumData = null;
 window.lastSpectrumData = null;
 let lastControl;
@@ -2941,6 +2952,7 @@ function disconnect() {
     clearTimeout(reconnectTimer);
     reconnectTimer = null;
   }
+  setDecodeHistoryOverlayVisible(false);
 }
 
 // Yield the main thread so the browser can paint before heavy async work.
@@ -3919,9 +3931,72 @@ function removeMapMarker(marker) {
   mapMarkers.delete(marker);
 }
 
+function setRetainedMapMarkerVisible(marker, visible) {
+  if (!marker) return;
+  marker.__trxHistoryVisible = visible !== false;
+  if (!visible) {
+    if (marker === selectedLocatorMarker) {
+      setSelectedLocatorMarker(null);
+      clearMapRadioPath();
+    }
+    if (aprsMap && aprsMap.hasLayer(marker)) marker.removeFrom(aprsMap);
+  }
+}
+
+function ensureAprsMarker(call, entry) {
+  if (!aprsMap || !entry || entry.marker || entry.lat == null || entry.lon == null) return;
+  _aprsAddMarkerToMap(call, entry);
+}
+
+function ensureAisMarker(key, entry) {
+  if (!aprsMap || !entry || entry.marker || entry?.msg?.lat == null || entry?.msg?.lon == null) return;
+  const marker = createAisMarker(entry.msg.lat, entry.msg.lon, entry.msg)
+    .addTo(aprsMap)
+    .bindPopup(buildAisPopupHtml(entry.msg));
+  marker.__trxType = "ais";
+  marker._aisMmsi = String(key);
+  entry.marker = marker;
+  mapMarkers.add(marker);
+}
+
+function ensureVdesMarker(key, entry) {
+  if (!aprsMap || !entry || entry.marker || entry?.msg?.lat == null || entry?.msg?.lon == null) return;
+  const marker = L.circleMarker([entry.msg.lat, entry.msg.lon], {
+    radius: 5,
+    color: "#5c394f",
+    fillColor: "#c46392",
+    fillOpacity: 0.82,
+  }).addTo(aprsMap).bindPopup(buildVdesPopupHtml(entry.msg));
+  marker.__trxType = "vdes";
+  marker._vdesKey = String(key);
+  entry.marker = marker;
+  mapMarkers.add(marker);
+}
+
+function ensureDecodeLocatorMarker(entry) {
+  if (!aprsMap || !entry || entry.marker || !entry.grid || (entry.sourceType !== "ft8" && entry.sourceType !== "wspr")) return;
+  const bounds = maidenheadToBounds(entry.grid);
+  if (!bounds) return;
+  const count = Math.max(entry.stationDetails?.size || 0, entry.stations?.size || 0, 1);
+  const tooltipHtml = buildDecodeLocatorTooltipHtml(entry.grid, entry, entry.sourceType);
+  const marker = L.rectangle(bounds, locatorStyleForEntry(entry, count))
+    .addTo(aprsMap)
+    .bindPopup(tooltipHtml);
+  marker.__trxType = entry.sourceType;
+  sendLocatorOverlayToBack(marker);
+  assignLocatorMarkerMeta(marker, entry.sourceType, entry.bandMeta);
+  entry.marker = marker;
+  mapMarkers.add(marker);
+}
+
 function pruneAprsEntry(call, entry, cutoffMs) {
   const pktTsMs = Number(entry?.pkt?._tsMs);
-  if (!Number.isFinite(pktTsMs) || pktTsMs < cutoffMs) {
+  const visible = Number.isFinite(pktTsMs) && pktTsMs >= cutoffMs;
+  entry.visibleInHistoryWindow = visible;
+  entry.trackPoints = trimTrackHistory(entry.trackHistory, cutoffMs, APRS_TRACK_MAX_POINTS)
+    .map((point) => [point.lat, point.lon]);
+  refreshAprsTrack(call, entry);
+  if (!visible) {
     if (selectedAprsTrackCall && String(selectedAprsTrackCall) === String(call)) {
       selectedAprsTrackCall = null;
     }
@@ -3929,19 +4004,26 @@ function pruneAprsEntry(call, entry, cutoffMs) {
       entry.track.remove();
       entry.track = null;
     }
-    removeMapMarker(entry?.marker);
-    stationMarkers.delete(call);
+    setRetainedMapMarkerVisible(entry?.marker, false);
     return false;
   }
-  entry.trackHistory = trimTrackHistory(entry.trackHistory, cutoffMs, APRS_TRACK_MAX_POINTS);
-  entry.trackPoints = entry.trackHistory.map((point) => [point.lat, point.lon]);
-  refreshAprsTrack(call, entry);
+  ensureAprsMarker(call, entry);
+  setRetainedMapMarkerVisible(entry?.marker, true);
+  if (entry?.marker) {
+    entry.marker.setLatLng([entry.lat, entry.lon]);
+    entry.marker.setPopupContent(buildAprsPopupHtml(call, entry.lat, entry.lon, entry.info || "", entry.pkt));
+  }
   return true;
 }
 
 function pruneAisEntry(key, entry, cutoffMs) {
   const msgTsMs = Number(entry?.msg?._tsMs);
-  if (!Number.isFinite(msgTsMs) || msgTsMs < cutoffMs) {
+  const visible = Number.isFinite(msgTsMs) && msgTsMs >= cutoffMs;
+  entry.visibleInHistoryWindow = visible;
+  entry.trackPoints = trimTrackHistory(entry.trackHistory, cutoffMs, AIS_TRACK_MAX_POINTS)
+    .map((point) => [point.lat, point.lon]);
+  refreshAisTrack(key, entry);
+  if (!visible) {
     if (selectedAisTrackMmsi && String(selectedAisTrackMmsi) === String(key)) {
       selectedAisTrackMmsi = null;
     }
@@ -3949,28 +4031,37 @@ function pruneAisEntry(key, entry, cutoffMs) {
       entry.track.remove();
       entry.track = null;
     }
-    removeMapMarker(entry?.marker);
-    aisMarkers.delete(key);
+    setRetainedMapMarkerVisible(entry?.marker, false);
     return false;
   }
-  entry.trackHistory = trimTrackHistory(entry.trackHistory, cutoffMs, AIS_TRACK_MAX_POINTS);
-  entry.trackPoints = entry.trackHistory.map((point) => [point.lat, point.lon]);
-  refreshAisTrack(key, entry);
+  ensureAisMarker(key, entry);
+  setRetainedMapMarkerVisible(entry?.marker, true);
+  if (entry?.marker) {
+    updateAisMarker(entry.marker, entry.msg, buildAisPopupHtml(entry.msg));
+  }
   return true;
 }
 
 function pruneLocatorEntry(key, entry, cutoffMs) {
   if (!entry || (entry.sourceType !== "ft8" && entry.sourceType !== "wspr")) return true;
+  if (!(entry.allStationDetails instanceof Map)) {
+    entry.allStationDetails = entry.stationDetails instanceof Map
+      ? new Map(entry.stationDetails)
+      : new Map();
+  }
   const nextDetails = new Map();
-  for (const [detailKey, detail] of entry.stationDetails instanceof Map ? entry.stationDetails.entries() : []) {
+  for (const [detailKey, detail] of entry.allStationDetails.entries()) {
     const tsMs = Number(detail?.ts_ms);
     if (Number.isFinite(tsMs) && tsMs >= cutoffMs) {
       nextDetails.set(detailKey, detail);
     }
   }
+  entry.visibleInHistoryWindow = nextDetails.size > 0;
   if (nextDetails.size === 0) {
-    removeMapMarker(entry.marker);
-    locatorMarkers.delete(key);
+    entry.stationDetails = new Map();
+    entry.stations = new Set();
+    entry.bandMeta = new Map();
+    setRetainedMapMarkerVisible(entry.marker, false);
     return false;
   }
   const nextStations = new Set();
@@ -3984,6 +4075,8 @@ function pruneLocatorEntry(key, entry, cutoffMs) {
     Array.from(nextDetails.values()).map((detail) => Number(detail?.freq_hz))
   );
   const count = Math.max(nextDetails.size, nextStations.size || 0, 1);
+  ensureDecodeLocatorMarker(entry);
+  setRetainedMapMarkerVisible(entry.marker, true);
   if (entry.marker) {
     entry.marker.setStyle(locatorStyleForEntry(entry, count));
     entry.marker.setPopupContent(buildDecodeLocatorTooltipHtml(entry.grid, entry, entry.sourceType));
@@ -3994,19 +4087,28 @@ function pruneLocatorEntry(key, entry, cutoffMs) {
 
 function pruneMapHistory() {
   const cutoffMs = mapHistoryCutoffMs();
-  for (const [call, entry] of Array.from(stationMarkers.entries())) {
+  for (const [call, entry] of stationMarkers.entries()) {
     pruneAprsEntry(call, entry, cutoffMs);
   }
-  for (const [key, entry] of Array.from(aisMarkers.entries())) {
+  for (const [key, entry] of aisMarkers.entries()) {
     pruneAisEntry(key, entry, cutoffMs);
   }
-  for (const [key, entry] of Array.from(vdesMarkers.entries())) {
+  for (const [key, entry] of vdesMarkers.entries()) {
     const tsMs = Number(entry?.msg?._tsMs);
-    if (Number.isFinite(tsMs) && tsMs >= cutoffMs) continue;
-    removeMapMarker(entry?.marker);
-    vdesMarkers.delete(key);
+    const visible = Number.isFinite(tsMs) && tsMs >= cutoffMs;
+    entry.visibleInHistoryWindow = visible;
+    if (!visible) {
+      setRetainedMapMarkerVisible(entry?.marker, false);
+      continue;
+    }
+    ensureVdesMarker(key, entry);
+    setRetainedMapMarkerVisible(entry?.marker, true);
+    if (entry?.marker) {
+      entry.marker.setLatLng([entry.msg.lat, entry.msg.lon]);
+      entry.marker.setPopupContent(buildVdesPopupHtml(entry.msg));
+    }
   }
-  for (const [key, entry] of Array.from(locatorMarkers.entries())) {
+  for (const [key, entry] of locatorMarkers.entries()) {
     pruneLocatorEntry(key, entry, cutoffMs);
   }
   rebuildDecodeContactPaths();
@@ -4566,10 +4668,20 @@ function rebuildMapLocatorFilters() {
   const choiceLabelEl = document.getElementById("map-locator-choice-label");
 
   const availableSources = new Set();
-  if (aisMarkers.size > 0) availableSources.add("ais");
-  if (vdesMarkers.size > 0) availableSources.add("vdes");
+  for (const entry of aisMarkers.values()) {
+    if (entry?.visibleInHistoryWindow) {
+      availableSources.add("ais");
+      break;
+    }
+  }
+  for (const entry of vdesMarkers.values()) {
+    if (entry?.visibleInHistoryWindow) {
+      availableSources.add("vdes");
+      break;
+    }
+  }
   for (const entry of stationMarkers.values()) {
-    if (entry?.type === "aprs" && (entry.marker || (entry.lat != null && entry.lon != null))) {
+    if (entry?.type === "aprs" && entry?.visibleInHistoryWindow) {
       availableSources.add("aprs");
       break;
     }
@@ -4578,6 +4690,7 @@ function rebuildMapLocatorFilters() {
   for (const entry of locatorMarkers.values()) {
     const sourceType = entry?.sourceType;
     if (!sourceType) continue;
+    if ((sourceType === "ft8" || sourceType === "wspr") && !entry?.visibleInHistoryWindow) continue;
     availableSources.add(sourceType);
     const meta = entry?.bandMeta instanceof Map ? entry.bandMeta : new Map();
     for (const [label, hz] of meta.entries()) {
@@ -5050,8 +5163,8 @@ function initAprsMap() {
 
   // Materialise any stations that were buffered before the map was ready
   for (const [call, entry] of stationMarkers) {
-    if (entry.type === "aprs" && !entry.marker && entry.lat != null && entry.lon != null) {
-      _aprsAddMarkerToMap(call, entry);
+    if (entry.type === "aprs" && entry.visibleInHistoryWindow) {
+      ensureAprsMarker(call, entry);
     }
   }
   for (const [key, entry] of locatorMarkers) {
@@ -5614,10 +5727,8 @@ window.aprsMapAddStation = function(call, lat, lon, info, symbolTable, symbolCod
     };
     stationMarkers.set(call, entry);
     pruneAprsEntry(call, entry, mapHistoryCutoffMs());
-    if (aprsMap) {
-      _aprsAddMarkerToMap(call, entry);
-      scheduleDecodeMapMaintenance();
-    }
+    if (entry.visibleInHistoryWindow) ensureAprsMarker(call, entry);
+    if (aprsMap) scheduleDecodeMapMaintenance();
   }
 };
 
@@ -5724,32 +5835,36 @@ window.aisMapAddVessel = function(msg) {
     }
     return;
   }
-  if (!aprsMap) return;
-  const marker = createAisMarker(msg.lat, msg.lon, msg).addTo(aprsMap).bindPopup(popupHtml);
-  marker.__trxType = "ais";
-  marker._aisMmsi = key;
-  mapMarkers.add(marker);
   aisMarkers.set(key, {
-    marker,
+    marker: null,
     track: null,
     trackHistory: [{ lat: msg.lat, lon: msg.lon, tsMs }],
     trackPoints: [nextPoint],
     msg,
   });
   pruneAisEntry(key, aisMarkers.get(key), mapHistoryCutoffMs());
+  if (aisMarkers.get(key)?.visibleInHistoryWindow) ensureAisMarker(key, aisMarkers.get(key));
   scheduleDecodeMapMaintenance();
 };
 
 window.vdesMapAddPoint = function(msg) {
   if (msg == null || msg.lat == null || msg.lon == null) return;
-  if (Number(msg?._tsMs) < mapHistoryCutoffMs()) return;
   const key = vdesMarkerKey(msg);
   if (!key) return;
   if (!aprsMap) initAprsMap();
   const popupHtml = buildVdesPopupHtml(msg);
+  const visible = Number.isFinite(Number(msg?._tsMs))
+    && Number(msg._tsMs) >= mapHistoryCutoffMs();
   const existing = vdesMarkers.get(key);
   if (existing) {
     existing.msg = msg;
+    existing.visibleInHistoryWindow = visible;
+    if (!visible) {
+      setRetainedMapMarkerVisible(existing.marker, false);
+      return;
+    }
+    ensureVdesMarker(key, existing);
+    setRetainedMapMarkerVisible(existing.marker, true);
     if (existing.marker) {
       existing.marker.setLatLng([msg.lat, msg.lon]);
       existing.marker.setPopupContent(popupHtml);
@@ -5759,23 +5874,15 @@ window.vdesMapAddPoint = function(msg) {
   const entry = {
     marker: null,
     msg,
+    visibleInHistoryWindow: visible,
   };
   vdesMarkers.set(key, entry);
-  if (Number(msg._tsMs) < mapHistoryCutoffMs()) {
-    vdesMarkers.delete(key);
-    return;
+  if (!visible) return;
+  ensureVdesMarker(key, entry);
+  setRetainedMapMarkerVisible(entry.marker, true);
+  if (entry.marker) {
+    entry.marker.setPopupContent(popupHtml);
   }
-  if (!aprsMap) return;
-  const marker = L.circleMarker([msg.lat, msg.lon], {
-    radius: 5,
-    color: "#5c394f",
-    fillColor: "#c46392",
-    fillOpacity: 0.82,
-  }).addTo(aprsMap).bindPopup(popupHtml);
-  marker.__trxType = "vdes";
-  marker._vdesKey = key;
-  entry.marker = marker;
-  mapMarkers.add(marker);
   scheduleDecodeMapMaintenance();
 };
 
@@ -5812,7 +5919,10 @@ function applyMapFilter() {
   if (!aprsMap) return;
   mapMarkers.forEach((marker) => {
     const type = marker.__trxType;
-    const visible = markerPassesSearchFilter(marker) && markerPassesLocatorFilters(marker) && (
+    const visible = marker.__trxHistoryVisible !== false
+      && markerPassesSearchFilter(marker)
+      && markerPassesLocatorFilters(marker)
+      && (
       (type === "bookmark" && mapFilter.bookmark) ||
       (type === "ais" && mapFilter.ais) ||
       (type === "vdes" && mapFilter.vdes) ||
@@ -6028,7 +6138,7 @@ function renderMapQsoSummary() {
 
     const pair = document.createElement("div");
     pair.className = "map-qso-card-pair";
-    pair.textContent = `${entry.source || "Unknown"} -> ${entry.target || "Unknown"}`;
+    pair.textContent = `${entry.source || "Unknown"} <-> ${entry.target || "Unknown"}`;
     body.appendChild(pair);
 
     const meta = document.createElement("div");
@@ -6059,7 +6169,7 @@ function renderMapQsoSummary() {
 
     const grids = document.createElement("div");
     grids.className = "map-qso-card-grids";
-    grids.textContent = `${entry.sourceGrid || "--"} -> ${entry.targetGrid || "--"}`;
+    grids.textContent = `${entry.sourceGrid || "--"} <-> ${entry.targetGrid || "--"}`;
     body.appendChild(grids);
 
     card.appendChild(head);
@@ -6197,46 +6307,38 @@ window.ft8MapAddLocator = function(message, grids, type = "ft8", station = null,
       freq_hz: Number.isFinite(details?.freq_hz) ? Number(details.freq_hz) : null,
       message: String(details?.message || message || "").trim() || null,
     };
-    if (Number(detailEntry.ts_ms) < mapHistoryCutoffMs()) continue;
     const detailKey = detailStationId || `${targetId || "decode"}:${detailEntry.message || "decode"}:${detailEntry.ts_ms || Date.now()}`;
     const key = `${markerType}:${grid}`;
     const existing = locatorMarkers.get(key);
     if (existing) {
       existing.grid = grid;
-      if (detailStationId) existing.stations.add(detailStationId);
-      if (!(existing.stationDetails instanceof Map)) existing.stationDetails = new Map();
-      existing.stationDetails.set(detailKey, { ...detailEntry });
+      if (!(existing.allStationDetails instanceof Map)) {
+        existing.allStationDetails = existing.stationDetails instanceof Map
+          ? new Map(existing.stationDetails)
+          : new Map();
+      }
+      existing.allStationDetails.set(detailKey, { ...detailEntry });
       existing.sourceType = markerType;
-      existing.bandMeta = collectBandMeta(
-        Array.from(existing.stationDetails.values()).map((detail) => Number(detail?.freq_hz))
-      );
-      const count = Math.max(existing.stationDetails.size, existing.stations.size || 0, 1);
-      const tooltipHtml = buildDecodeLocatorTooltipHtml(grid, existing, markerType);
-      existing.marker.setStyle(locatorStyleForEntry(existing, count));
-      existing.marker.setPopupContent(tooltipHtml);
-      sendLocatorOverlayToBack(existing.marker);
-      assignLocatorMarkerMeta(existing.marker, existing.sourceType, existing.bandMeta);
+      pruneLocatorEntry(key, existing, mapHistoryCutoffMs());
+      if (existing.marker) sendLocatorOverlayToBack(existing.marker);
       scheduleDecodeMapMaintenance();
       continue;
     }
 
-    const stations = new Set();
-    if (detailStationId) stations.add(detailStationId);
-    const stationDetails = new Map();
-    stationDetails.set(detailKey, { ...detailEntry });
-    const bandMeta = collectBandMeta(
-      Array.from(stationDetails.values()).map((detail) => Number(detail?.freq_hz))
-    );
-    const count = Math.max(stationDetails.size, stations.size || 0, 1);
-    const tooltipHtml = buildDecodeLocatorTooltipHtml(grid, { stations, stationDetails }, markerType);
-    const marker = L.rectangle(bounds, locatorStyleForEntry({ sourceType: markerType, bandMeta }, count))
-      .addTo(aprsMap)
-      .bindPopup(tooltipHtml);
-    marker.__trxType = markerType;
-    sendLocatorOverlayToBack(marker);
-    assignLocatorMarkerMeta(marker, markerType, bandMeta);
-    locatorMarkers.set(key, { marker, grid, stations, stationDetails, sourceType: markerType, bandMeta });
-    mapMarkers.add(marker);
+    const allStationDetails = new Map();
+    allStationDetails.set(detailKey, { ...detailEntry });
+    const entry = {
+      marker: null,
+      grid,
+      stations: new Set(),
+      stationDetails: new Map(),
+      allStationDetails,
+      sourceType: markerType,
+      bandMeta: new Map(),
+    };
+    locatorMarkers.set(key, entry);
+    pruneLocatorEntry(key, entry, mapHistoryCutoffMs());
+    if (entry.marker) sendLocatorOverlayToBack(entry.marker);
   }
   scheduleDecodeMapMaintenance();
 };
@@ -7003,7 +7105,7 @@ function scheduleDecodeHistoryDrainStep(callback) {
   }
 }
 
-function drainDecodeHistory(buffer, index, onDone) {
+function drainDecodeHistory(buffer, index, onDone, onProgress) {
   const startedAt = typeof performance !== "undefined" && typeof performance.now === "function"
     ? performance.now()
     : 0;
@@ -7014,8 +7116,11 @@ function drainDecodeHistory(buffer, index, onDone) {
     if (nextIndex - index >= DECODE_HISTORY_MAX_BATCH) break;
     if (startedAt > 0 && (performance.now() - startedAt) >= DECODE_HISTORY_SLICE_BUDGET_MS) break;
   }
+  if (typeof onProgress === "function") {
+    onProgress(nextIndex, buffer.length);
+  }
   if (nextIndex < buffer.length) {
-    scheduleDecodeHistoryDrainStep(() => drainDecodeHistory(buffer, nextIndex, onDone));
+    scheduleDecodeHistoryDrainStep(() => drainDecodeHistory(buffer, nextIndex, onDone, onProgress));
   } else if (typeof onDone === "function") {
     onDone();
   }
@@ -7036,6 +7141,7 @@ function connectDecode() {
   const liveBuffer = [];
   function flushLiveBuffer() {
     historySettled = true;
+    setDecodeHistoryOverlayVisible(false);
     for (const msg of liveBuffer) {
       try { dispatchDecodeMessage(msg); } catch (_) {}
     }
@@ -7043,6 +7149,7 @@ function connectDecode() {
   }
   // Safety valve: if the history fetch hangs, unblock after 8 s.
   const historyTimeout = setTimeout(() => { if (!historySettled) flushLiveBuffer(); }, 8000);
+  setDecodeHistoryOverlayVisible(true, "Loading decode history…", "Fetching recent decodes from the client buffer");
 
   decodeSource = new EventSource("/decode");
   decodeSource.onopen = () => {
@@ -7077,7 +7184,19 @@ function connectDecode() {
   }).then((msgs) => {
     clearTimeout(historyTimeout);
     if (Array.isArray(msgs) && msgs.length > 0) {
-      drainDecodeHistory(msgs, 0, flushLiveBuffer);
+      setDecodeHistoryOverlayVisible(true, "Loading decode history…", `Replaying 0 / ${msgs.length} decoded messages`);
+      drainDecodeHistory(
+        msgs,
+        0,
+        flushLiveBuffer,
+        (processed, total) => {
+          setDecodeHistoryOverlayVisible(
+            true,
+            "Loading decode history…",
+            `Replaying ${processed} / ${total} decoded messages`
+          );
+        }
+      );
     } else {
       flushLiveBuffer();
     }

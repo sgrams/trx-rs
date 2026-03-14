@@ -1223,6 +1223,46 @@ small { color: var(--text-muted); }
 .sub-tab { flex-shrink: 0; background: transparent; border: none; border-bottom: 2px solid transparent; border-radius: 0; padding: 0.35rem 0.75rem; color: var(--text-muted); cursor: pointer; font-size: 0.85rem; height: auto; }
 .sub-tab.active { border-bottom-color: var(--accent-green); color: var(--accent-green); font-weight: 600; }
 .sub-tab:hover:not(.active) { color: var(--text); }
+.decode-history-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9500;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.2rem;
+  background: color-mix(in srgb, var(--bg) 36%, transparent);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  pointer-events: none;
+  opacity: 1;
+  visibility: visible;
+  transition: opacity 140ms ease, visibility 140ms ease;
+}
+.decode-history-overlay.is-hidden {
+  opacity: 0;
+  visibility: hidden;
+}
+.decode-history-overlay-card {
+  min-width: min(26rem, calc(100vw - 2.4rem));
+  max-width: min(30rem, calc(100vw - 2.4rem));
+  padding: 0.9rem 1rem;
+  border-radius: 0.9rem;
+  border: 1px solid color-mix(in srgb, var(--border-light) 72%, transparent);
+  background: color-mix(in srgb, var(--card-bg) 88%, transparent);
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.22);
+  text-align: center;
+}
+.decode-history-overlay-title {
+  font-size: 0.98rem;
+  font-weight: 800;
+  color: var(--text-heading);
+}
+.decode-history-overlay-sub {
+  margin-top: 0.24rem;
+  font-size: 0.82rem;
+  color: var(--text-muted);
+}
 #tab-map {
   display: flex;
   flex-direction: column;
