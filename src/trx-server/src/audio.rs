@@ -1811,12 +1811,12 @@ pub async fn run_ft4_decoder(
             recv = pcm_rx.recv() => {
                 match recv {
                     Ok(frame) => {
-                        let now = match std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH) {
-                            Ok(dur) => dur.as_secs() as i64,
+                        let now_ms = match std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH) {
+                            Ok(dur) => dur.as_millis() as i64,
                             Err(_) => 0,
                         };
-                        // FT4 slot period is 7.5s; use now * 2 / 15 for integer slot index
-                        let slot = now * 2 / 15;
+                        // FT4 slot period is 7.5s
+                        let slot = now_ms / 7_500;
                         if slot != last_slot {
                             last_slot = slot;
                             decoder.reset();
@@ -2426,13 +2426,14 @@ async fn run_background_ft4_decoder(
     loop {
         match pcm_rx.recv().await {
             Ok(frame) => {
-                let now = match std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)
+                let now_ms =
+                    match std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)
                 {
-                    Ok(dur) => dur.as_secs() as i64,
+                    Ok(dur) => dur.as_millis() as i64,
                     Err(_) => 0,
                 };
-                // FT4 slot period is 7.5s; use now * 2 / 15 for integer slot index
-                let slot = now * 2 / 15;
+                // FT4 slot period is 7.5s
+                let slot = now_ms / 7_500;
                 if slot != last_slot {
                     last_slot = slot;
                     decoder.reset();
