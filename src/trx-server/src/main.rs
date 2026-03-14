@@ -520,7 +520,7 @@ fn spawn_rig_audio_stack(
             let ai_shutdown_rx = shutdown_rx.clone();
             handles.push(tokio::spawn(async move {
                 tokio::select! {
-                    _ = trx_reporting::aprsfi::run_aprsfi_uplink(ai_cfg, cs, ai_decode_rx) => {}
+                    _ = trx_reporting::aprsfi::run_aprsfi_uplink(ai_cfg, cs, latitude, longitude, ai_decode_rx) => {}
                     _ = wait_for_shutdown(ai_shutdown_rx) => {}
                 }
             }));

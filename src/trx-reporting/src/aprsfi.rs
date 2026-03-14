@@ -9,7 +9,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::TcpStream;
 use tokio::sync::broadcast;
-use tokio::time::{self, Duration};
+use tokio::time::{self, Duration, Instant};
 use tracing::{debug, info, warn};
 
 use trx_core::decode::{AprsPacket, DecodedMessage};
@@ -63,6 +63,42 @@ fn format_tnc2(pkt: &AprsPacket, igate_call: &str) -> String {
     }
 }
 
+/// Format decimal-degree latitude as `DDMM.mmN` / `DDMM.mmS`.
+fn format_aprs_lat(lat: f64) -> String {
+    let ns = if lat >= 0.0 { 'N' } else { 'S' };
+    let lat = lat.abs();
+    let deg = lat as u32;
+    let min = (lat - deg as f64) * 60.0;
+    format!("{:02}{:05.2}{}", deg, min, ns)
+}
+
+/// Format decimal-degree longitude as `DDDMM.mmE` / `DDDMM.mmW`.
+fn format_aprs_lon(lon: f64) -> String {
+    let ew = if lon >= 0.0 { 'E' } else { 'W' };
+    let lon = lon.abs();
+    let deg = lon as u32;
+    let min = (lon - deg as f64) * 60.0;
+    format!("{:03}{:05.2}{}", deg, min, ew)
+}
+
+/// Build a position beacon TNC2 line for this IGate station.
+///
+/// Uses APRS uncompressed position format (`!`) with path `TCPIP*`.
+/// The two-character `symbol` string sets the symbol-table and symbol-code
+/// (e.g. `/-` = house, `/&` = diamond/gateway).
+fn format_beacon(callsign: &str, lat: f64, lon: f64, symbol: &str) -> String {
+    let sym_table = symbol.chars().next().unwrap_or('/');
+    let sym_code = symbol.chars().nth(1).unwrap_or('-');
+    format!(
+        "{}>APRS,TCPIP*:!{}{}{}{}\r\n",
+        callsign,
+        format_aprs_lat(lat),
+        sym_table,
+        format_aprs_lon(lon),
+        sym_code,
+    )
+}
+
 /// Run the APRS-IS IGate uplink task.
 ///
 /// Subscribes to the decoded-message broadcast channel and forwards every
@@ -71,6 +107,8 @@ fn format_tnc2(pkt: &AprsPacket, igate_call: &str) -> String {
 pub async fn run_aprsfi_uplink(
     cfg: AprsFiConfig,
     callsign: String,
+    latitude: Option<f64>,
+    longitude: Option<f64>,
     mut decode_rx: broadcast::Receiver<DecodedMessage>,
 ) {
     let passcode: u16 = if cfg.passcode == -1 {
@@ -78,6 +116,30 @@ pub async fn run_aprsfi_uplink(
     } else {
         (cfg.passcode as u16) & 0x7fff
     };
+
+    // Resolve coordinates: [aprsfi] overrides [general].
+    let coords = cfg
+        .latitude
+        .zip(cfg.longitude)
+        .or_else(|| latitude.zip(longitude));
+
+    // Pre-build the beacon packet (None if beaconing disabled or no coords).
+    let beacon_packet: Option<String> = if cfg.beacon {
+        match coords {
+            Some((lat, lon)) => Some(format_beacon(&callsign, lat, lon, &cfg.beacon_symbol)),
+            None => {
+                warn!(
+                    "APRS-IS IGate: beacon enabled but no coordinates available \
+                     (set [aprsfi].latitude/longitude or [general].latitude/longitude)"
+                );
+                None
+            }
+        }
+    } else {
+        None
+    };
+
+    let beacon_interval = Duration::from_secs(cfg.beacon_interval_secs.max(60));
 
     let mut stats_received: u64 = 0;
     let mut stats_forwarded: u64 = 0;
@@ -191,9 +253,11 @@ pub async fn run_aprsfi_uplink(
         // Forward loop
         // ----------------------------------------------------------------
         let period = Duration::from_secs(60);
-        let first_at = time::Instant::now() + period;
+        let first_at = Instant::now() + period;
         let mut keepalive_tick = time::interval_at(first_at, period);
         let mut stats_tick = time::interval_at(first_at, period);
+        // Beacon fires immediately on connect, then every beacon_interval.
+        let mut beacon_tick = time::interval_at(Instant::now(), beacon_interval);
         // Reuse a single allocation for draining server-sent lines.
         let mut server_line = String::new();
 
@@ -213,6 +277,17 @@ pub async fn run_aprsfi_uplink(
                         stats_received, stats_forwarded, stats_skipped,
                         stats_write_errors, stats_reconnects
                     );
+                }
+
+                _ = beacon_tick.tick() => {
+                    if let Some(pkt) = &beacon_packet {
+                        if let Err(e) = write_half.write_all(pkt.as_bytes()).await {
+                            warn!("APRS-IS IGate: beacon write failed: {}", e);
+                            stats_write_errors += 1;
+                            break 'forward;
+                        }
+                        debug!("APRS-IS IGate: sent position beacon");
+                    }
                 }
 
                 // Drain the server feed. The server sends a full APRS stream;
@@ -364,5 +439,30 @@ mod tests {
             format_tnc2(&pkt, "SP2SJG"),
             "W1AW>BEACON,qAR,SP2SJG:>Test status\r\n"
         );
+    }
+
+    #[test]
+    fn beacon_format_house_symbol() {
+        let s = format_beacon("SP2SJG-10", 52.2297, 21.0122, "/-");
+        assert_eq!(s, "SP2SJG-10>APRS,TCPIP*:!5213.78N/02100.73E-\r\n");
+    }
+
+    #[test]
+    fn beacon_format_southern_western() {
+        let s = format_beacon("VK2ABC-10", -33.8688, 151.2093, "/-");
+        assert!(s.contains('S'));
+        assert!(s.contains('E'));
+    }
+
+    #[test]
+    fn aprs_lat_format() {
+        assert_eq!(format_aprs_lat(52.2297), "5213.78N");
+        assert_eq!(format_aprs_lat(-33.8688), "3352.13S");
+    }
+
+    #[test]
+    fn aprs_lon_format() {
+        assert_eq!(format_aprs_lon(21.0122), "02100.73E");
+        assert_eq!(format_aprs_lon(-87.6298), "08737.79W");
     }
 }

@@ -49,6 +49,18 @@ pub struct AprsFiConfig {
     pub passcode: i32,
     /// IGate callsign. Overrides [general].callsign when set.
     pub callsign: Option<String>,
+    /// Send periodic position beacons for this IGate station.
+    /// Requires [general].latitude/longitude (or [aprsfi].latitude/longitude).
+    pub beacon: bool,
+    /// How often to send a position beacon, in seconds. Default: 1200 (20 min).
+    pub beacon_interval_secs: u64,
+    /// APRS symbol as a two-character string: symbol-table + symbol-code.
+    /// E.g. "/&" = diamond (gateway), "/-" = house. Default: "/-".
+    pub beacon_symbol: String,
+    /// Beacon latitude override (decimal degrees). Falls back to [general].latitude.
+    pub latitude: Option<f64>,
+    /// Beacon longitude override (decimal degrees). Falls back to [general].longitude.
+    pub longitude: Option<f64>,
 }
 
 impl Default for AprsFiConfig {
@@ -59,6 +71,11 @@ impl Default for AprsFiConfig {
             port: 14580,
             passcode: -1,
             callsign: None,
+            beacon: false,
+            beacon_interval_secs: 1200,
+            beacon_symbol: "/-".to_string(),
+            latitude: None,
+            longitude: None,
         }
     }
 }
