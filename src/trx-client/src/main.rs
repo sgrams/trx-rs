@@ -306,6 +306,66 @@ async fn async_init() -> DynResult<AppState> {
 
         let (vchan_destroyed_tx, _) = broadcast::channel::<uuid::Uuid>(64);
         frontend_runtime.vchan_destroyed = Some(vchan_destroyed_tx.clone());
+        let ais_history = frontend_runtime.ais_history.clone();
+        let vdes_history = frontend_runtime.vdes_history.clone();
+        let aprs_history = frontend_runtime.aprs_history.clone();
+        let hf_aprs_history = frontend_runtime.hf_aprs_history.clone();
+        let cw_history = frontend_runtime.cw_history.clone();
+        let ft8_history = frontend_runtime.ft8_history.clone();
+        let wspr_history = frontend_runtime.wspr_history.clone();
+        let replay_history_sink: Arc<dyn Fn(DecodedMessage) + Send + Sync> =
+            Arc::new(move |msg| {
+                let now = std::time::Instant::now();
+                match msg {
+                    DecodedMessage::Ais(mut message) => {
+                        if message.ts_ms.is_none() {
+                            message.ts_ms = Some(current_timestamp_ms());
+                        }
+                        if let Ok(mut history) = ais_history.lock() {
+                            history.push_back((now, message));
+                        }
+                    }
+                    DecodedMessage::Vdes(mut message) => {
+                        if message.ts_ms.is_none() {
+                            message.ts_ms = Some(current_timestamp_ms());
+                        }
+                        if let Ok(mut history) = vdes_history.lock() {
+                            history.push_back((now, message));
+                        }
+                    }
+                    DecodedMessage::Aprs(mut packet) => {
+                        if packet.ts_ms.is_none() {
+                            packet.ts_ms = Some(current_timestamp_ms());
+                        }
+                        if let Ok(mut history) = aprs_history.lock() {
+                            history.push_back((now, packet));
+                        }
+                    }
+                    DecodedMessage::HfAprs(mut packet) => {
+                        if packet.ts_ms.is_none() {
+                            packet.ts_ms = Some(current_timestamp_ms());
+                        }
+                        if let Ok(mut history) = hf_aprs_history.lock() {
+                            history.push_back((now, packet));
+                        }
+                    }
+                    DecodedMessage::Cw(event) => {
+                        if let Ok(mut history) = cw_history.lock() {
+                            history.push_back((now, event));
+                        }
+                    }
+                    DecodedMessage::Ft8(message) => {
+                        if let Ok(mut history) = ft8_history.lock() {
+                            history.push_back((now, message));
+                        }
+                    }
+                    DecodedMessage::Wspr(message) => {
+                        if let Ok(mut history) = wspr_history.lock() {
+                            history.push_back((now, message));
+                        }
+                    }
+                }
+            });
 
         info!(
             "Audio enabled: default port {}, decode channel set",
@@ -325,6 +385,7 @@ async fn async_init() -> DynResult<AppState> {
             tx_audio_rx,
             stream_info_tx,
             decode_tx,
+            Some(replay_history_sink),
             audio_shutdown_rx,
             vchan_audio_map,
             vchan_cmd_rx,
@@ -441,4 +502,12 @@ async fn async_init() -> DynResult<AppState> {
         task_handles,
         request_tx: tx,
     })
+}
+
+fn current_timestamp_ms() -> i64 {
+    let millis = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis();
+    i64::try_from(millis).unwrap_or(i64::MAX)
 }

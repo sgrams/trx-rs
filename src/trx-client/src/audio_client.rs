@@ -54,6 +54,7 @@ pub async fn run_audio_client(
     mut tx_rx: mpsc::Receiver<Bytes>,
     stream_info_tx: watch::Sender<Option<AudioStreamInfo>>,
     decode_tx: broadcast::Sender<DecodedMessage>,
+    replay_history_sink: Option<Arc<dyn Fn(DecodedMessage) + Send + Sync>>,
     mut shutdown_rx: watch::Receiver<bool>,
     vchan_audio: Arc<RwLock<HashMap<Uuid, broadcast::Sender<Bytes>>>>,
     mut vchan_cmd_rx: mpsc::UnboundedReceiver<VChanAudioCmd>,
@@ -97,6 +98,7 @@ pub async fn run_audio_client(
                     &mut tx_rx,
                     &stream_info_tx,
                     &decode_tx,
+                    replay_history_sink.clone(),
                     &mut shutdown_rx,
                     &vchan_audio,
                     &mut vchan_cmd_rx,
@@ -144,6 +146,7 @@ async fn handle_audio_connection(
     tx_rx: &mut mpsc::Receiver<Bytes>,
     stream_info_tx: &watch::Sender<Option<AudioStreamInfo>>,
     decode_tx: &broadcast::Sender<DecodedMessage>,
+    replay_history_sink: Option<Arc<dyn Fn(DecodedMessage) + Send + Sync>>,
     shutdown_rx: &mut watch::Receiver<bool>,
     vchan_audio: &Arc<RwLock<HashMap<Uuid, broadcast::Sender<Bytes>>>>,
     vchan_cmd_rx: &mut mpsc::UnboundedReceiver<VChanAudioCmd>,
@@ -269,7 +272,9 @@ async fn handle_audio_connection(
                             }
                             let json = &decompressed[pos..pos + len];
                             if let Ok(msg) = serde_json::from_slice::<DecodedMessage>(json) {
-                                let _ = decode_tx.send(msg);
+                                if let Some(ref sink) = replay_history_sink {
+                                    sink(msg);
+                                }
                             }
                             pos += len;
                         }
