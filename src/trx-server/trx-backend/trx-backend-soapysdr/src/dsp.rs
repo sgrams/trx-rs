@@ -155,7 +155,7 @@ impl SdrPipeline {
                 wfm_deemphasis_us,
                 wfm_stereo,
                 fir_taps,
-                channel_idx == 0,
+                false,
                 channel_squelch_cfg,
                 pcm_tx.clone(),
                 iq_tx.clone(),

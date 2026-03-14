@@ -575,12 +575,6 @@ fn spawn_rig_audio_stack(
                 loop {
                     match sdr_rx.recv().await {
                         Ok(frame) => {
-                            let has_audio_clients = rx_audio_tx_sdr.receiver_count() > 0;
-                            if !has_audio_clients {
-                                let _ = pcm_tx_clone.send(frame);
-                                continue;
-                            }
-
                             let pcm_frame = match sdr_channels {
                                 1 => frame,
                                 2 => {
@@ -598,6 +592,9 @@ fn spawn_rig_audio_stack(
                                 _ => unreachable!("validated above"),
                             };
                             let _ = pcm_tx_clone.send(pcm_frame.clone());
+                            if rx_audio_tx_sdr.receiver_count() == 0 {
+                                continue;
+                            }
                             match encoder.encode_float(&pcm_frame, &mut opus_buf) {
                                 Ok(len) => {
                                     let pkt = Bytes::copy_from_slice(&opus_buf[..len]);
