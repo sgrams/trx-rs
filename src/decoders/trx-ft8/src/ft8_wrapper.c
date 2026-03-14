@@ -195,6 +195,18 @@ typedef struct
     float dmin[5];
 } ft2_pass_diag_t;
 
+typedef struct
+{
+    int nraw;
+    int nfft2;
+    float df;
+    float* window;
+    kiss_fft_cpx* spectrum;
+    kiss_fft_cpx* band;
+    kiss_fft_cfg ifft_cfg;
+    void* ifft_mem;
+} ft2_downsample_ctx_t;
+
 typedef enum
 {
     FT2_FAIL_NONE = 0,
@@ -411,106 +423,139 @@ static void ft2_prepare_sync_waveforms(float complex sync_wave[4][64], float com
 }
 
 static int ft2_downsample_candidate(
-    const ft8_decoder_t* dec,
+    const ft2_downsample_ctx_t* ctx,
     float freq_hz,
     float complex* out_samples,
     int out_len)
 {
-    const int nraw = dec->ft2_raw_len;
-    const int nfft2 = nraw / FT2_NDOWN;
-    if (!dec->ft2_raw || nraw <= 0 || out_len < nfft2)
+    if (!ctx || !ctx->spectrum || !ctx->window || !ctx->band || !ctx->ifft_cfg)
         return 0;
 
-    kiss_fft_scalar* timedata = (kiss_fft_scalar*)malloc(sizeof(kiss_fft_scalar) * nraw);
-    kiss_fft_cpx* spectrum = (kiss_fft_cpx*)malloc(sizeof(kiss_fft_cpx) * (nraw / 2 + 1));
-    kiss_fft_cpx* band = (kiss_fft_cpx*)calloc(nfft2, sizeof(kiss_fft_cpx));
-    float* filt = (float*)calloc(nfft2, sizeof(float));
-    if (!timedata || !spectrum || !band || !filt)
-    {
-        free(timedata);
-        free(spectrum);
-        free(band);
-        free(filt);
+    const int nraw = ctx->nraw;
+    const int nfft2 = ctx->nfft2;
+    if (nraw <= 0 || out_len < nfft2)
         return 0;
+
+    memset(ctx->band, 0, sizeof(kiss_fft_cpx) * nfft2);
+    const int i0 = (int)lroundf(freq_hz / ctx->df);
+    if (i0 >= 0 && i0 <= nraw / 2)
+        ctx->band[0] = ctx->spectrum[i0];
+    for (int i = 1; i <= nfft2 / 2; ++i)
+    {
+        if ((i0 + i) >= 0 && (i0 + i) <= nraw / 2)
+            ctx->band[i] = ctx->spectrum[i0 + i];
+        if ((i0 - i) >= 0 && (i0 - i) <= nraw / 2)
+            ctx->band[nfft2 - i] = ctx->spectrum[i0 - i];
     }
 
-    size_t rfft_mem_len = 0;
-    kiss_fftr_alloc(nraw, 0, NULL, &rfft_mem_len);
-    void* rfft_mem = malloc(rfft_mem_len);
-    kiss_fftr_cfg rfft_cfg = kiss_fftr_alloc(nraw, 0, rfft_mem, &rfft_mem_len);
-
-    size_t ifft_mem_len = 0;
-    kiss_fft_alloc(nfft2, 1, NULL, &ifft_mem_len);
-    void* ifft_mem = malloc(ifft_mem_len);
-    kiss_fft_cfg ifft_cfg = kiss_fft_alloc(nfft2, 1, ifft_mem, &ifft_mem_len);
-
-    if (!rfft_cfg || !ifft_cfg)
-    {
-        free(timedata);
-        free(spectrum);
-        free(band);
-        free(filt);
-        free(rfft_mem);
-        free(ifft_mem);
-        return 0;
-    }
-
-    for (int i = 0; i < nraw; ++i)
-        timedata[i] = dec->ft2_raw[i];
-    kiss_fftr(rfft_cfg, timedata, spectrum);
-
-    const float df = (float)dec->cfg.sample_rate / nraw;
-    const float baud = 1.0f / FT2_SYMBOL_PERIOD;
-    const int i0 = (int)lroundf(freq_hz / df);
-    const int iwt = (int)lroundf((0.5f * baud) / df);
-    const int iwf = (int)lroundf((4.0f * baud) / df);
-    const int iws = (int)lroundf(baud / df);
     for (int i = 0; i < nfft2; ++i)
-        filt[i] = 0.0f;
-    for (int i = 0; i < iwt && i < nfft2; ++i)
-        filt[i] = 0.5f * (1.0f + cosf((float)M_PI * (float)(iwt - 1 - i) / fmaxf((float)iwt, 1.0f)));
-    for (int i = iwt; i < iwt + iwf && i < nfft2; ++i)
-        filt[i] = 1.0f;
-    for (int i = iwt + iwf; i < 2 * iwt + iwf && i < nfft2; ++i)
-        filt[i] = 0.5f * (1.0f + cosf((float)M_PI * (float)(i - (iwt + iwf)) / fmaxf((float)iwt, 1.0f)));
+    {
+        ctx->band[i].r = ctx->band[i].r * ctx->window[i] / nfft2;
+        ctx->band[i].i = ctx->band[i].i * ctx->window[i] / nfft2;
+    }
+    kiss_fft(ctx->ifft_cfg, ctx->band, ctx->band);
+    for (int i = 0; i < nfft2; ++i)
+        out_samples[i] = ctx->band[i].r + I * ctx->band[i].i;
 
+    return nfft2;
+}
+
+static void ft2_downsample_ctx_free(ft2_downsample_ctx_t* ctx)
+{
+    if (!ctx)
+        return;
+    free(ctx->window);
+    free(ctx->spectrum);
+    free(ctx->band);
+    free(ctx->ifft_mem);
+    memset(ctx, 0, sizeof(*ctx));
+}
+
+static bool ft2_downsample_ctx_init(const ft8_decoder_t* dec, ft2_downsample_ctx_t* ctx)
+{
+    if (!dec || !ctx || !dec->ft2_raw)
+        return false;
+
+    memset(ctx, 0, sizeof(*ctx));
+    ctx->nraw = dec->ft2_raw_len;
+    ctx->nfft2 = ctx->nraw / FT2_NDOWN;
+    if (ctx->nraw <= 0 || ctx->nfft2 <= 0)
+        return false;
+
+    ctx->df = (float)dec->cfg.sample_rate / ctx->nraw;
+    ctx->window = (float*)calloc(ctx->nfft2, sizeof(float));
+    ctx->spectrum = (kiss_fft_cpx*)malloc(sizeof(kiss_fft_cpx) * (ctx->nraw / 2 + 1));
+    ctx->band = (kiss_fft_cpx*)malloc(sizeof(kiss_fft_cpx) * ctx->nfft2);
+    if (!ctx->window || !ctx->spectrum || !ctx->band)
+    {
+        ft2_downsample_ctx_free(ctx);
+        return false;
+    }
+
+    const float baud = 1.0f / FT2_SYMBOL_PERIOD;
+    const int iwt = (int)((0.5f * baud) / ctx->df);
+    const int iwf = (int)((4.0f * baud) / ctx->df);
+    const int iws = (int)(baud / ctx->df);
+    if (iwt <= 0)
+    {
+        ft2_downsample_ctx_free(ctx);
+        return false;
+    }
+    for (int i = 0; i < iwt && i < ctx->nfft2; ++i)
+        ctx->window[i] = 0.5f * (1.0f + cosf((float)M_PI * (float)(iwt - 1 - i) / (float)iwt));
+    for (int i = iwt; i < iwt + iwf && i < ctx->nfft2; ++i)
+        ctx->window[i] = 1.0f;
+    for (int i = iwt + iwf; i < 2 * iwt + iwf && i < ctx->nfft2; ++i)
+        ctx->window[i] = 0.5f * (1.0f + cosf((float)M_PI * (float)(i - (iwt + iwf)) / (float)iwt));
     if (iws > 0)
     {
-        float* shifted = (float*)calloc(nfft2, sizeof(float));
-        for (int i = 0; i < nfft2; ++i)
+        float* shifted = (float*)calloc(ctx->nfft2, sizeof(float));
+        if (!shifted)
         {
-            shifted[(i + iws) % nfft2] = filt[i];
+            ft2_downsample_ctx_free(ctx);
+            return false;
         }
-        memcpy(filt, shifted, sizeof(float) * nfft2);
+        for (int i = 0; i < ctx->nfft2; ++i)
+            shifted[i] = ctx->window[(i + iws) % ctx->nfft2];
+        memcpy(ctx->window, shifted, sizeof(float) * ctx->nfft2);
         free(shifted);
     }
 
-    if (i0 >= 0 && i0 <= nraw / 2)
-        band[0] = spectrum[i0];
-    for (int i = 1; i < nfft2 / 2; ++i)
+    kiss_fft_scalar* timedata = (kiss_fft_scalar*)malloc(sizeof(kiss_fft_scalar) * ctx->nraw);
+    if (!timedata)
     {
-        if ((i0 + i) >= 0 && (i0 + i) <= nraw / 2)
-            band[i] = spectrum[i0 + i];
-        if ((i0 - i) >= 0 && (i0 - i) <= nraw / 2)
-            band[nfft2 - i] = spectrum[i0 - i];
+        ft2_downsample_ctx_free(ctx);
+        return false;
     }
 
-    for (int i = 0; i < nfft2; ++i)
+    size_t rfft_mem_len = 0;
+    kiss_fftr_alloc(ctx->nraw, 0, NULL, &rfft_mem_len);
+    void* rfft_mem = malloc(rfft_mem_len);
+    kiss_fftr_cfg rfft_cfg = kiss_fftr_alloc(ctx->nraw, 0, rfft_mem, &rfft_mem_len);
+    if (!rfft_cfg)
     {
-        band[i].r = band[i].r * filt[i] / nfft2;
-        band[i].i = band[i].i * filt[i] / nfft2;
+        free(timedata);
+        free(rfft_mem);
+        ft2_downsample_ctx_free(ctx);
+        return false;
     }
-    kiss_fft(ifft_cfg, band, band);
-    for (int i = 0; i < nfft2; ++i)
-        out_samples[i] = band[i].r + I * band[i].i;
-
+    for (int i = 0; i < ctx->nraw; ++i)
+        timedata[i] = dec->ft2_raw[i];
+    kiss_fftr(rfft_cfg, timedata, ctx->spectrum);
     free(timedata);
-    free(spectrum);
-    free(band);
-    free(filt);
     free(rfft_mem);
-    free(ifft_mem);
-    return nfft2;
+
+    size_t ifft_mem_len = 0;
+    kiss_fft_alloc(ctx->nfft2, 1, NULL, &ifft_mem_len);
+    ctx->ifft_mem = malloc(ifft_mem_len);
+    ctx->ifft_cfg = kiss_fft_alloc(ctx->nfft2, 1, ctx->ifft_mem, &ifft_mem_len);
+    if (!ctx->ifft_cfg)
+    {
+        ft2_downsample_ctx_free(ctx);
+        return false;
+    }
+
+    return true;
 }
 
 static float ft2_sync2d_score(
@@ -550,7 +595,7 @@ static float ft2_sync2d_score(
     return score;
 }
 
-static void ft2_normalize_downsampled(float complex* samples, int n_samples)
+static void ft2_normalize_downsampled(float complex* samples, int n_samples, int ref_count)
 {
     float power = 0.0f;
     for (int i = 0; i < n_samples; ++i)
@@ -559,7 +604,9 @@ static void ft2_normalize_downsampled(float complex* samples, int n_samples)
     }
     if (power <= 0.0f)
         return;
-    float scale = sqrtf((float)n_samples / power);
+    if (ref_count <= 0)
+        ref_count = n_samples;
+    float scale = sqrtf((float)ref_count / power);
     for (int i = 0; i < n_samples; ++i)
     {
         samples[i] *= scale;
@@ -568,10 +615,14 @@ static void ft2_normalize_downsampled(float complex* samples, int n_samples)
 
 static int ft2_find_scan_hits(
     const ft8_decoder_t* dec,
+    const ft2_downsample_ctx_t* downsample_ctx,
     ft2_scan_hit_t* out,
     int max_hits,
     ft2_scan_stats_t* stats)
 {
+    if (!downsample_ctx)
+        return 0;
+
     ft2_raw_candidate_t peaks[FT2_MAX_RAW_CANDIDATES];
     int n_peaks = ft2_find_frequency_peaks(dec, peaks, FT2_MAX_RAW_CANDIDATES);
     if (stats)
@@ -589,8 +640,7 @@ static int ft2_find_scan_hits(
     if (n_peaks <= 0)
         return 0;
 
-    const int nraw = dec->ft2_raw_len;
-    const int nfft2 = nraw / FT2_NDOWN;
+    const int nfft2 = downsample_ctx ? downsample_ctx->nfft2 : 0;
     float complex* down = (float complex*)malloc(sizeof(float complex) * nfft2);
     float complex sync_wave[4][64];
     float complex tweak_wave[33][64];
@@ -599,10 +649,10 @@ static int ft2_find_scan_hits(
     int count = 0;
     for (int peak = 0; peak < n_peaks && count < max_hits; ++peak)
     {
-        int produced = ft2_downsample_candidate(dec, peaks[peak].freq_hz, down, nfft2);
+        int produced = ft2_downsample_candidate(downsample_ctx, peaks[peak].freq_hz, down, nfft2);
         if (produced <= 0)
             continue;
-        ft2_normalize_downsampled(down, produced);
+        ft2_normalize_downsampled(down, produced, produced);
 
         float best_score = -1.0f;
         int best_start = 0;
@@ -1010,7 +1060,7 @@ static bool ft2_unpack_message(const uint8_t plain174[], ftx_message_t* message)
 }
 
 static bool ft2_decode_hit(
-    const ft8_decoder_t* dec,
+    const ft2_downsample_ctx_t* downsample_ctx,
     const ft2_scan_hit_t* hit,
     ftx_message_t* message,
     float* dt_s,
@@ -1019,6 +1069,9 @@ static bool ft2_decode_hit(
     ft2_fail_stage_t* fail_stage,
     ft2_pass_diag_t* pass_diag)
 {
+    if (!downsample_ctx)
+        return false;
+
     if (fail_stage)
         *fail_stage = FT2_FAIL_NONE;
     if (pass_diag)
@@ -1030,8 +1083,7 @@ static bool ft2_decode_hit(
             pass_diag->dmin[i] = INFINITY;
         }
     }
-    const int nraw = dec->ft2_raw_len;
-    const int nfft2 = nraw / FT2_NDOWN;
+    const int nfft2 = downsample_ctx ? downsample_ctx->nfft2 : 0;
     float complex* cd2 = (float complex*)malloc(sizeof(float complex) * nfft2);
     float complex* cb = (float complex*)malloc(sizeof(float complex) * nfft2);
     float complex signal[FT2_FRAME_SAMPLES];
@@ -1047,7 +1099,7 @@ static bool ft2_decode_hit(
 
     ft2_prepare_sync_waveforms(sync_wave, tweak_wave);
 
-    int produced = ft2_downsample_candidate(dec, hit->freq_hz, cd2, nfft2);
+    int produced = ft2_downsample_candidate(downsample_ctx, hit->freq_hz, cd2, nfft2);
     if (produced <= 0)
     {
         if (fail_stage)
@@ -1056,7 +1108,7 @@ static bool ft2_decode_hit(
         free(cb);
         return false;
     }
-    ft2_normalize_downsampled(cd2, produced);
+    ft2_normalize_downsampled(cd2, produced, produced);
 
     float best_score = -1.0f;
     int best_start = hit->start;
@@ -1095,7 +1147,7 @@ static bool ft2_decode_hit(
         return false;
     }
 
-    produced = ft2_downsample_candidate(dec, corrected_freq_hz, cb, nfft2);
+    produced = ft2_downsample_candidate(downsample_ctx, corrected_freq_hz, cb, nfft2);
     if (produced <= 0)
     {
         if (fail_stage)
@@ -1104,7 +1156,7 @@ static bool ft2_decode_hit(
         free(cb);
         return false;
     }
-    ft2_normalize_downsampled(cb, produced);
+    ft2_normalize_downsampled(cb, produced, FT2_FRAME_SAMPLES);
     ft2_extract_signal_region(cb, produced, best_start, signal);
 
     if (!ft2_extract_bitmetrics_raw(signal, bitmetrics))
@@ -1331,9 +1383,15 @@ int ft8_decoder_decode(ft8_decoder_t* dec, ft8_decode_result_t* out, int max_res
 
     if (is_ft2)
     {
+        ft2_downsample_ctx_t downsample_ctx;
+        if (!ft2_downsample_ctx_init(dec, &downsample_ctx))
+        {
+            LOG(LOG_WARN, "FT2 decode: downsample context init failed\n");
+            return 0;
+        }
         ft2_scan_hit_t hit_list[FT2_MAX_SCAN_HITS];
         ft2_scan_stats_t scan_stats;
-        int num_hits = ft2_find_scan_hits(dec, hit_list, FT2_MAX_SCAN_HITS, &scan_stats);
+        int num_hits = ft2_find_scan_hits(dec, &downsample_ctx, hit_list, FT2_MAX_SCAN_HITS, &scan_stats);
         int fail_refined_sync = 0;
         int fail_freq_range = 0;
         int fail_final_downsample = 0;
@@ -1354,7 +1412,7 @@ int ft8_decoder_decode(ft8_decoder_t* dec, ft8_decode_result_t* out, int max_res
             float snr_db = -21.0f;
             ft2_fail_stage_t fail_stage = FT2_FAIL_NONE;
             ft2_pass_diag_t pass_diag;
-            if (!ft2_decode_hit(dec, hit, &message, &time_sec, &freq_hz, &snr_db, &fail_stage, &pass_diag))
+            if (!ft2_decode_hit(&downsample_ctx, hit, &message, &time_sec, &freq_hz, &snr_db, &fail_stage, &pass_diag))
             {
                 for (int pass = 0; pass < 5; ++pass)
                 {
@@ -1472,6 +1530,7 @@ int ft8_decoder_decode(ft8_decoder_t* dec, ft8_decode_result_t* out, int max_res
             isfinite(pass_best_dmin[2]) ? pass_best_dmin[2] : -1.0f,
             isfinite(pass_best_dmin[3]) ? pass_best_dmin[3] : -1.0f,
             isfinite(pass_best_dmin[4]) ? pass_best_dmin[4] : -1.0f);
+        ft2_downsample_ctx_free(&downsample_ctx);
     }
     else
     {
