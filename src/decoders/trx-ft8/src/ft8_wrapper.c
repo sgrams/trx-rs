@@ -188,6 +188,13 @@ typedef struct
     float best_sync_score;
 } ft2_scan_stats_t;
 
+typedef struct
+{
+    int ntype[5];
+    int nharderror[5];
+    float dmin[5];
+} ft2_pass_diag_t;
+
 typedef enum
 {
     FT2_FAIL_NONE = 0,
@@ -660,39 +667,22 @@ static void ft2_extract_signal_region(const float complex* input, int input_len,
     }
 }
 
-static void ft2_extract_logl_sequence_raw(const float complex symbols[4][FT2_FRAME_SYMBOLS], int start_sym, int n_syms, float* metrics)
+static void ft2_normalize_metric(float* metric, int count)
 {
-    const int n_bits = 2 * n_syms;
-    const int n_sequences = 1 << n_bits;
-
-    for (int bit = 0; bit < n_bits; ++bit)
+    float sum = 0.0f;
+    float sum2 = 0.0f;
+    for (int i = 0; i < count; ++i)
     {
-        float max_zero = -INFINITY;
-        float max_one = -INFINITY;
-        for (int seq = 0; seq < n_sequences; ++seq)
-        {
-            float complex sum = 0.0f;
-            for (int sym = 0; sym < n_syms; ++sym)
-            {
-                int shift = 2 * (n_syms - sym - 1);
-                int dibit = (seq >> shift) & 0x3;
-                sum += symbols[kFT4_Gray_map[dibit]][start_sym + sym];
-            }
-            float strength = cabsf(sum);
-            int mask_bit = n_bits - bit - 1;
-            if (((seq >> mask_bit) & 0x1) != 0)
-            {
-                if (strength > max_one)
-                    max_one = strength;
-            }
-            else
-            {
-                if (strength > max_zero)
-                    max_zero = strength;
-            }
-        }
-        metrics[bit] = max_one - max_zero;
+        sum += metric[i];
+        sum2 += metric[i] * metric[i];
     }
+    float mean = sum / count;
+    float variance = (sum2 / count) - (mean * mean);
+    float sigma = (variance > 0.0f) ? sqrtf(variance) : sqrtf(fmaxf(sum2 / count, 0.0f));
+    if (sigma <= 1.0e-6f)
+        return;
+    for (int i = 0; i < count; ++i)
+        metric[i] /= sigma;
 }
 
 static bool ft2_extract_bitmetrics_raw(const float complex* signal, float bitmetrics[2 * FT2_FRAME_SYMBOLS][3])
@@ -731,6 +721,18 @@ static bool ft2_extract_bitmetrics_raw(const float complex* signal, float bitmet
 
     free(fft_mem);
 
+    static bool one_ready = false;
+    static uint8_t one_mask[256][8];
+    if (!one_ready)
+    {
+        for (int i = 0; i < 256; ++i)
+        {
+            for (int j = 0; j < 8; ++j)
+                one_mask[i][j] = ((i & (1 << j)) != 0) ? 1u : 0u;
+        }
+        one_ready = true;
+    }
+
     int sync_ok = 0;
     for (int group = 0; group < 4; ++group)
     {
@@ -753,18 +755,66 @@ static bool ft2_extract_bitmetrics_raw(const float complex* signal, float bitmet
     float metric1[2 * FT2_FRAME_SYMBOLS] = { 0 };
     float metric2[2 * FT2_FRAME_SYMBOLS] = { 0 };
     float metric4[2 * FT2_FRAME_SYMBOLS] = { 0 };
+    float s2[256];
 
-    for (int start = 0; start <= FT2_FRAME_SYMBOLS - 1; start += 1)
+    for (int nseq = 0; nseq < 3; ++nseq)
     {
-        ft2_extract_logl_sequence_raw(symbols, start, 1, metric1 + (2 * start));
-    }
-    for (int start = 0; start <= FT2_FRAME_SYMBOLS - 2; start += 2)
-    {
-        ft2_extract_logl_sequence_raw(symbols, start, 2, metric2 + (2 * start));
-    }
-    for (int start = 0; start <= FT2_FRAME_SYMBOLS - 4; start += 4)
-    {
-        ft2_extract_logl_sequence_raw(symbols, start, 4, metric4 + (2 * start));
+        int nsym = (nseq == 0) ? 1 : (nseq == 1 ? 2 : 4);
+        int nt = 1 << (2 * nsym);
+        for (int ks = 0; ks <= FT2_FRAME_SYMBOLS - nsym; ks += nsym)
+        {
+            for (int i = 0; i < nt; ++i)
+            {
+                int i1 = i / 64;
+                int i2 = (i & 63) / 16;
+                int i3 = (i & 15) / 4;
+                int i4 = i & 3;
+                if (nsym == 1)
+                {
+                    s2[i] = cabsf(symbols[kFT4_Gray_map[i4]][ks]);
+                }
+                else if (nsym == 2)
+                {
+                    s2[i] = cabsf(symbols[kFT4_Gray_map[i3]][ks] + symbols[kFT4_Gray_map[i4]][ks + 1]);
+                }
+                else
+                {
+                    s2[i] = cabsf(
+                        symbols[kFT4_Gray_map[i1]][ks] +
+                        symbols[kFT4_Gray_map[i2]][ks + 1] +
+                        symbols[kFT4_Gray_map[i3]][ks + 2] +
+                        symbols[kFT4_Gray_map[i4]][ks + 3]);
+                }
+            }
+
+            int ipt = 2 * ks;
+            int ibmax = (nsym == 1) ? 1 : (nsym == 2 ? 3 : 7);
+            for (int ib = 0; ib <= ibmax; ++ib)
+            {
+                float max_one = -INFINITY;
+                float max_zero = -INFINITY;
+                for (int i = 0; i < nt; ++i)
+                {
+                    if (one_mask[i][ibmax - ib])
+                    {
+                        if (s2[i] > max_one)
+                            max_one = s2[i];
+                    }
+                    else if (s2[i] > max_zero)
+                    {
+                        max_zero = s2[i];
+                    }
+                }
+                if ((ipt + ib) >= 2 * FT2_FRAME_SYMBOLS)
+                    continue;
+                if (nseq == 0)
+                    metric1[ipt + ib] = max_one - max_zero;
+                else if (nseq == 1)
+                    metric2[ipt + ib] = max_one - max_zero;
+                else
+                    metric4[ipt + ib] = max_one - max_zero;
+            }
+        }
     }
 
     metric2[204] = metric1[204];
@@ -776,32 +826,15 @@ static bool ft2_extract_bitmetrics_raw(const float complex* signal, float bitmet
     metric4[204] = metric1[204];
     metric4[205] = metric1[205];
 
+    ft2_normalize_metric(metric1, 2 * FT2_FRAME_SYMBOLS);
+    ft2_normalize_metric(metric2, 2 * FT2_FRAME_SYMBOLS);
+    ft2_normalize_metric(metric4, 2 * FT2_FRAME_SYMBOLS);
+
     for (int i = 0; i < 2 * FT2_FRAME_SYMBOLS; ++i)
     {
         bitmetrics[i][0] = metric1[i];
         bitmetrics[i][1] = metric2[i];
         bitmetrics[i][2] = metric4[i];
-    }
-    for (int metric = 0; metric < 3; ++metric)
-    {
-        float sum = 0.0f;
-        float sum2 = 0.0f;
-        for (int i = 0; i < 2 * FT2_FRAME_SYMBOLS; ++i)
-        {
-            float v = bitmetrics[i][metric];
-            sum += v;
-            sum2 += v * v;
-        }
-        float mean = sum / (2 * FT2_FRAME_SYMBOLS);
-        float variance = (sum2 / (2 * FT2_FRAME_SYMBOLS)) - (mean * mean);
-        float sigma = (variance > 0.0f) ? sqrtf(variance) : sqrtf(fmaxf(sum2 / (2 * FT2_FRAME_SYMBOLS), 0.0f));
-        if (sigma > 1.0e-6f)
-        {
-            for (int i = 0; i < 2 * FT2_FRAME_SYMBOLS; ++i)
-            {
-                bitmetrics[i][metric] /= sigma;
-            }
-        }
     }
     return true;
 }
@@ -983,10 +1016,20 @@ static bool ft2_decode_hit(
     float* dt_s,
     float* freq_hz,
     float* snr_db,
-    ft2_fail_stage_t* fail_stage)
+    ft2_fail_stage_t* fail_stage,
+    ft2_pass_diag_t* pass_diag)
 {
     if (fail_stage)
         *fail_stage = FT2_FAIL_NONE;
+    if (pass_diag)
+    {
+        for (int i = 0; i < 5; ++i)
+        {
+            pass_diag->ntype[i] = 0;
+            pass_diag->nharderror[i] = -1;
+            pass_diag->dmin[i] = INFINITY;
+        }
+    }
     const int nraw = dec->ft2_raw_len;
     const int nfft2 = nraw / FT2_NDOWN;
     float complex* cd2 = (float complex*)malloc(sizeof(float complex) * nfft2);
@@ -1131,6 +1174,12 @@ static bool ft2_decode_hit(
         int nharderror = -1;
         float dmin = 0.0f;
         decode174_91_osd(log174, FTX_LDPC_K, 3, 3, apmask, message91, cw, &ntype, &nharderror, &dmin);
+        if (pass_diag)
+        {
+            pass_diag->ntype[pass] = ntype;
+            pass_diag->nharderror[pass] = nharderror;
+            pass_diag->dmin[pass] = dmin;
+        }
         if (ntype != 0 && nharderror >= 0)
             ok = ft2_unpack_message(cw, message);
     }
@@ -1293,6 +1342,9 @@ int ft8_decoder_decode(ft8_decoder_t* dec, ft8_decode_result_t* out, int max_res
         int fail_ldpc = 0;
         int fail_crc = 0;
         int fail_unpack = 0;
+        int pass_bp[5] = { 0 };
+        int pass_osd[5] = { 0 };
+        float pass_best_dmin[5] = { INFINITY, INFINITY, INFINITY, INFINITY, INFINITY };
         for (int idx = 0; idx < num_hits && num_decoded < max_results; ++idx)
         {
             const ft2_scan_hit_t* hit = &hit_list[idx];
@@ -1301,8 +1353,18 @@ int ft8_decoder_decode(ft8_decoder_t* dec, ft8_decode_result_t* out, int max_res
             float freq_hz = 0.0f;
             float snr_db = -21.0f;
             ft2_fail_stage_t fail_stage = FT2_FAIL_NONE;
-            if (!ft2_decode_hit(dec, hit, &message, &time_sec, &freq_hz, &snr_db, &fail_stage))
+            ft2_pass_diag_t pass_diag;
+            if (!ft2_decode_hit(dec, hit, &message, &time_sec, &freq_hz, &snr_db, &fail_stage, &pass_diag))
             {
+                for (int pass = 0; pass < 5; ++pass)
+                {
+                    if (pass_diag.ntype[pass] == 1)
+                        ++pass_bp[pass];
+                    else if (pass_diag.ntype[pass] == 2)
+                        ++pass_osd[pass];
+                    if (pass_diag.dmin[pass] < pass_best_dmin[pass])
+                        pass_best_dmin[pass] = pass_diag.dmin[pass];
+                }
                 switch (fail_stage)
                 {
                 case FT2_FAIL_REFINED_SYNC:
@@ -1333,6 +1395,15 @@ int ft8_decoder_decode(ft8_decoder_t* dec, ft8_decode_result_t* out, int max_res
                     break;
                 }
                 continue;
+            }
+            for (int pass = 0; pass < 5; ++pass)
+            {
+                if (pass_diag.ntype[pass] == 1)
+                    ++pass_bp[pass];
+                else if (pass_diag.ntype[pass] == 2)
+                    ++pass_osd[pass];
+                if (pass_diag.dmin[pass] < pass_best_dmin[pass])
+                    pass_best_dmin[pass] = pass_diag.dmin[pass];
             }
 
             int idx_hash = message.hash % 200;
@@ -1379,7 +1450,7 @@ int ft8_decoder_decode(ft8_decoder_t* dec, ft8_decode_result_t* out, int max_res
             num_decoded++;
         }
         LOG(LOG_INFO,
-            "FT2 window: raw=%d peaks=%d hits=%d best_peak=%.3f best_sync=%.3f decoded=%d fail(sync=%d freq=%d down=%d bits=%d qual=%d ldpc=%d crc=%d unpack=%d)\n",
+            "FT2 window: raw=%d peaks=%d hits=%d best_peak=%.3f best_sync=%.3f decoded=%d fail(sync=%d freq=%d down=%d bits=%d qual=%d ldpc=%d crc=%d unpack=%d) pass(bp=%d/%d/%d/%d/%d osd=%d/%d/%d/%d/%d dmin=%.2f/%.2f/%.2f/%.2f/%.2f)\n",
             dec->ft2_raw_len,
             scan_stats.peaks_found,
             scan_stats.hits_found,
@@ -1393,7 +1464,14 @@ int ft8_decoder_decode(ft8_decoder_t* dec, ft8_decode_result_t* out, int max_res
             fail_sync_qual,
             fail_ldpc,
             fail_crc,
-            fail_unpack);
+            fail_unpack,
+            pass_bp[0], pass_bp[1], pass_bp[2], pass_bp[3], pass_bp[4],
+            pass_osd[0], pass_osd[1], pass_osd[2], pass_osd[3], pass_osd[4],
+            isfinite(pass_best_dmin[0]) ? pass_best_dmin[0] : -1.0f,
+            isfinite(pass_best_dmin[1]) ? pass_best_dmin[1] : -1.0f,
+            isfinite(pass_best_dmin[2]) ? pass_best_dmin[2] : -1.0f,
+            isfinite(pass_best_dmin[3]) ? pass_best_dmin[3] : -1.0f,
+            isfinite(pass_best_dmin[4]) ? pass_best_dmin[4] : -1.0f);
     }
     else
     {
