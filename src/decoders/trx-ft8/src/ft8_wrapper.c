@@ -713,7 +713,7 @@ static bool ft2_extract_bitmetrics_raw(const float complex* signal, float bitmet
         kiss_fft(fft_cfg, csymb, csymb);
         for (int tone = 0; tone < 4; ++tone)
         {
-            float complex bin = csymb[tone + 1].r + I * csymb[tone + 1].i;
+            float complex bin = csymb[tone].r + I * csymb[tone].i;
             symbols[tone][sym] = bin;
             s4[tone][sym] = cabsf(bin);
         }
