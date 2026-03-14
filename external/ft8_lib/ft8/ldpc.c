@@ -515,17 +515,11 @@ static void osd174_91(float llr[], int k, uint8_t apmask[], int ndeep, uint8_t m
         for (int i = 0; i < FTX_LDPC_K; ++i)
         {
             uint8_t msg[FTX_LDPC_K] = { 0 };
+            msg[i] = 1;
             if (i < 77)
             {
-                uint8_t payload[10] = { 0 };
-                uint8_t a91[FTX_LDPC_K_BYTES];
-                payload[i / 8] |= (uint8_t)(0x80u >> (i % 8));
-                ftx_add_crc(payload, a91);
-                unpack_bits91(a91, FTX_LDPC_K, msg);
-            }
-            else
-            {
-                msg[i] = 1;
+                for (int j = 77; j < FTX_LDPC_K; ++j)
+                    msg[j] = 0;
             }
             encode174_91_nocrc_bits(msg, gen[i]);
         }
