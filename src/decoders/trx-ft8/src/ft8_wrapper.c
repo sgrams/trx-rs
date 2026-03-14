@@ -128,6 +128,11 @@ typedef struct
     float freq_hz;
 } ft8_decode_result_t;
 
+static int decode_from_waterfall_candidates(
+    const ft8_decoder_t* dec,
+    ft8_decode_result_t* out,
+    int max_results);
+
 static float ft2_frequency_offset_hz(void)
 {
     return -1.5f / FT2_SYMBOL_PERIOD;
@@ -735,6 +740,25 @@ static void ft2_normalize_metric(float* metric, int count)
         metric[i] /= sigma;
 }
 
+static void ft2_normalize_log174(float* log174)
+{
+    float sum = 0.0f;
+    float sum2 = 0.0f;
+    for (int i = 0; i < FTX_LDPC_N; ++i)
+    {
+        sum += log174[i];
+        sum2 += log174[i] * log174[i];
+    }
+    float inv_n = 1.0f / FTX_LDPC_N;
+    float variance = (sum2 - (sum * sum * inv_n)) * inv_n;
+    if (variance <= 1.0e-12f)
+        return;
+
+    float norm_factor = sqrtf(24.0f / variance);
+    for (int i = 0; i < FTX_LDPC_N; ++i)
+        log174[i] *= norm_factor;
+}
+
 static bool ft2_extract_bitmetrics_raw(const float complex* signal, float bitmetrics[2 * FT2_FRAME_SYMBOLS][3])
 {
     float complex symbols[4][FT2_FRAME_SYMBOLS];
@@ -1059,6 +1083,84 @@ static bool ft2_unpack_message(const uint8_t plain174[], ftx_message_t* message)
     return true;
 }
 
+static int decode_from_waterfall_candidates(
+    const ft8_decoder_t* dec,
+    ft8_decode_result_t* out,
+    int max_results)
+{
+    if (!dec || !out || max_results <= 0)
+        return 0;
+
+    const ftx_waterfall_t* wf = &dec->mon.wf;
+    const int kMaxCandidates = 200;
+    const int kMinScore = 10;
+    const int kLdpcIters = 30;
+
+    int num_decoded = 0;
+    ftx_message_t decoded[200];
+    ftx_message_t* decoded_hashtable[200];
+    for (int i = 0; i < 200; ++i)
+        decoded_hashtable[i] = NULL;
+
+    ftx_candidate_t candidate_list[kMaxCandidates];
+    int num_candidates = ftx_find_candidates(wf, kMaxCandidates, candidate_list, kMinScore);
+
+    for (int idx = 0; idx < num_candidates && num_decoded < max_results; ++idx)
+    {
+        const ftx_candidate_t* cand = &candidate_list[idx];
+
+        float freq_hz = decoder_candidate_freq_hz(dec, cand);
+        float time_sec = decoder_candidate_dt_s(dec, cand);
+
+        ftx_message_t message;
+        ftx_decode_status_t status;
+        if (!ftx_decode_candidate(wf, cand, kLdpcIters, &message, &status))
+            continue;
+
+        int idx_hash = message.hash % 200;
+        bool found_empty_slot = false;
+        bool found_duplicate = false;
+        do
+        {
+            if (decoded_hashtable[idx_hash] == NULL)
+            {
+                found_empty_slot = true;
+            }
+            else if ((decoded_hashtable[idx_hash]->hash == message.hash) && (0 == memcmp(decoded_hashtable[idx_hash]->payload, message.payload, sizeof(message.payload))))
+            {
+                found_duplicate = true;
+            }
+            else
+            {
+                idx_hash = (idx_hash + 1) % 200;
+            }
+        } while (!found_empty_slot && !found_duplicate);
+
+        if (!found_empty_slot)
+            continue;
+
+        memcpy(&decoded[idx_hash], &message, sizeof(message));
+        decoded_hashtable[idx_hash] = &decoded[idx_hash];
+
+        char text[FTX_MAX_MESSAGE_LENGTH];
+        ftx_message_offsets_t offsets;
+        ftx_message_rc_t unpack_status = ftx_message_decode(&message, &hash_if, text, &offsets);
+        if (unpack_status != FTX_MESSAGE_RC_OK)
+            continue;
+
+        ft8_decode_result_t* dst = &out[num_decoded];
+        strncpy(dst->text, text, sizeof(dst->text) - 1);
+        dst->text[sizeof(dst->text) - 1] = '\0';
+        dst->dt_s = time_sec;
+        dst->freq_hz = freq_hz;
+        dst->snr_db = cand->score * 0.5f - 29.0f;
+
+        num_decoded++;
+    }
+
+    return num_decoded;
+}
+
 static bool ft2_decode_hit(
     const ft2_downsample_ctx_t* downsample_ctx,
     const ft2_scan_hit_t* hit,
@@ -1220,6 +1322,7 @@ static bool ft2_decode_hit(
     {
         float log174[FTX_LDPC_N];
         memcpy(log174, llr_passes[pass], sizeof(log174));
+        ft2_normalize_log174(log174);
         int ntype = 0;      // 1: bp_decode, 2: ldpc_decode
         int nharderror = FTX_LDPC_M;
         float dmin = 0.0f;
@@ -1403,16 +1506,9 @@ int ft8_decoder_decode(ft8_decoder_t* dec, ft8_decode_result_t* out, int max_res
     if (!dec || !out || max_results <= 0)
         return 0;
 
-    const ftx_waterfall_t* wf = &dec->mon.wf;
     const bool is_ft2 = (dec->cfg.protocol == FTX_PROTOCOL_FT2);
 
     int num_decoded = 0;
-    ftx_message_t decoded[200];
-    ftx_message_t* decoded_hashtable[200];
-    for (int i = 0; i < 200; ++i)
-    {
-        decoded_hashtable[i] = NULL;
-    }
 
     if (is_ft2)
     {
@@ -1433,6 +1529,11 @@ int ft8_decoder_decode(ft8_decoder_t* dec, ft8_decode_result_t* out, int max_res
         int fail_ldpc = 0;
         int fail_crc = 0;
         int fail_unpack = 0;
+        int fallback_decoded = 0;
+        ftx_message_t decoded[200];
+        ftx_message_t* decoded_hashtable[200];
+        for (int i = 0; i < 200; ++i)
+            decoded_hashtable[i] = NULL;
         int pass_bp[5] = { 0 };
         int pass_sp[5] = { 0 };
         float pass_best_dmin[5] = { INFINITY, INFINITY, INFINITY, INFINITY, INFINITY };
@@ -1540,14 +1641,21 @@ int ft8_decoder_decode(ft8_decoder_t* dec, ft8_decode_result_t* out, int max_res
 
             num_decoded++;
         }
+        if (num_decoded == 0)
+        {
+            fallback_decoded = decode_from_waterfall_candidates(dec, out, max_results);
+            if (fallback_decoded > 0)
+                num_decoded = fallback_decoded;
+        }
         LOG(LOG_INFO,
-            "FT2 window: raw=%d peaks=%d hits=%d best_peak=%.3f best_sync=%.3f decoded=%d fail(sync=%d freq=%d down=%d bits=%d qual=%d ldpc=%d crc=%d unpack=%d) pass(bp=%d/%d/%d/%d/%d sp=%d/%d/%d/%d/%d dmin=%.2f/%.2f/%.2f/%.2f/%.2f)\n",
+            "FT2 window: raw=%d peaks=%d hits=%d best_peak=%.3f best_sync=%.3f decoded=%d fallback=%d fail(sync=%d freq=%d down=%d bits=%d qual=%d ldpc=%d crc=%d unpack=%d) pass(bp=%d/%d/%d/%d/%d sp=%d/%d/%d/%d/%d dmin=%.2f/%.2f/%.2f/%.2f/%.2f)\n",
             dec->ft2_raw_len,
             scan_stats.peaks_found,
             scan_stats.hits_found,
             scan_stats.best_peak_score,
             scan_stats.best_sync_score,
             num_decoded,
+            fallback_decoded,
             fail_refined_sync,
             fail_freq_range,
             fail_final_downsample,
@@ -1567,66 +1675,7 @@ int ft8_decoder_decode(ft8_decoder_t* dec, ft8_decode_result_t* out, int max_res
     }
     else
     {
-        const int kMaxCandidates = 200;
-        const int kMinScore = 10;
-        const int kLdpcIters = 30;
-        ftx_candidate_t candidate_list[kMaxCandidates];
-        int num_candidates = ftx_find_candidates(wf, kMaxCandidates, candidate_list, kMinScore);
-
-        for (int idx = 0; idx < num_candidates && num_decoded < max_results; ++idx)
-        {
-            const ftx_candidate_t* cand = &candidate_list[idx];
-
-            float freq_hz = decoder_candidate_freq_hz(dec, cand);
-            float time_sec = decoder_candidate_dt_s(dec, cand);
-
-            ftx_message_t message;
-            ftx_decode_status_t status;
-            if (!ftx_decode_candidate(wf, cand, kLdpcIters, &message, &status))
-            {
-                continue;
-            }
-
-            int idx_hash = message.hash % 200;
-            bool found_empty_slot = false;
-            bool found_duplicate = false;
-            do
-            {
-                if (decoded_hashtable[idx_hash] == NULL)
-                {
-                    found_empty_slot = true;
-                }
-                else if ((decoded_hashtable[idx_hash]->hash == message.hash) && (0 == memcmp(decoded_hashtable[idx_hash]->payload, message.payload, sizeof(message.payload))))
-                {
-                    found_duplicate = true;
-                }
-                else
-                {
-                    idx_hash = (idx_hash + 1) % 200;
-                }
-            } while (!found_empty_slot && !found_duplicate);
-
-            if (!found_empty_slot)
-                continue;
-
-            memcpy(&decoded[idx_hash], &message, sizeof(message));
-            decoded_hashtable[idx_hash] = &decoded[idx_hash];
-
-            char text[FTX_MAX_MESSAGE_LENGTH];
-            ftx_message_offsets_t offsets;
-            ftx_message_rc_t unpack_status = ftx_message_decode(&message, &hash_if, text, &offsets);
-            if (unpack_status != FTX_MESSAGE_RC_OK)
-                continue;
-
-            ft8_decode_result_t* dst = &out[num_decoded];
-            strncpy(dst->text, text, sizeof(dst->text) - 1);
-            dst->text[sizeof(dst->text) - 1] = '\0';
-            dst->dt_s = time_sec;
-            dst->freq_hz = freq_hz;
-            dst->snr_db = cand->score * 0.5f - 29.0f;
-
-            num_decoded++;
-        }
+        num_decoded = decode_from_waterfall_candidates(dec, out, max_results);
     }
 
     hashtable_cleanup(10);
