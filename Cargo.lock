@@ -2588,6 +2588,7 @@ dependencies = [
  "actix-ws",
  "bytes",
  "dirs",
+ "flate2",
  "futures-util",
  "hex",
  "pickledb",

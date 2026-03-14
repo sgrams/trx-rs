@@ -2,12 +2,15 @@
 //
 // SPDX-License-Identifier: BSD-2-Clause
 
+use std::io::Write;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
 use actix_web::{delete, get, post, put, web, HttpRequest, HttpResponse, Responder};
 use actix_web::{http::header, Error};
 use bytes::Bytes;
+use flate2::write::GzEncoder;
+use flate2::Compression;
 use futures_util::stream::{select, StreamExt};
 use tokio::sync::{broadcast, mpsc, oneshot, watch};
 use tokio::time::{self, Duration};
@@ -441,46 +444,114 @@ fn sync_scheduler_vchannels(
 
 /// Build the combined decode history vector from all per-decoder ring-buffers.
 fn collect_decode_history(context: &FrontendRuntimeContext) -> Vec<trx_core::decode::DecodedMessage> {
-    let mut out = Vec::new();
-    out.extend(
-        crate::server::audio::snapshot_ais_history(context)
-            .into_iter()
-            .map(trx_core::decode::DecodedMessage::Ais),
+    let ais = crate::server::audio::snapshot_ais_history(context);
+    let vdes = crate::server::audio::snapshot_vdes_history(context);
+    let aprs = crate::server::audio::snapshot_aprs_history(context);
+    let hf_aprs = crate::server::audio::snapshot_hf_aprs_history(context);
+    let cw = crate::server::audio::snapshot_cw_history(context);
+    let ft8 = crate::server::audio::snapshot_ft8_history(context);
+    let wspr = crate::server::audio::snapshot_wspr_history(context);
+
+    let mut out = Vec::with_capacity(
+        ais.len()
+            + vdes.len()
+            + aprs.len()
+            + hf_aprs.len()
+            + cw.len()
+            + ft8.len()
+            + wspr.len(),
     );
-    out.extend(
-        crate::server::audio::snapshot_vdes_history(context)
-            .into_iter()
-            .map(trx_core::decode::DecodedMessage::Vdes),
-    );
-    out.extend(
-        crate::server::audio::snapshot_aprs_history(context)
-            .into_iter()
-            .map(trx_core::decode::DecodedMessage::Aprs),
-    );
-    out.extend(
-        crate::server::audio::snapshot_hf_aprs_history(context)
-            .into_iter()
-            .map(trx_core::decode::DecodedMessage::HfAprs),
-    );
-    out.extend(
-        crate::server::audio::snapshot_cw_history(context)
-            .into_iter()
-            .map(trx_core::decode::DecodedMessage::Cw),
-    );
-    out.extend(
-        crate::server::audio::snapshot_ft8_history(context)
-            .into_iter()
-            .map(trx_core::decode::DecodedMessage::Ft8),
-    );
-    out.extend(
-        crate::server::audio::snapshot_wspr_history(context)
-            .into_iter()
-            .map(trx_core::decode::DecodedMessage::Wspr),
-    );
+    out.extend(ais.into_iter().map(trx_core::decode::DecodedMessage::Ais));
+    out.extend(vdes.into_iter().map(trx_core::decode::DecodedMessage::Vdes));
+    out.extend(aprs.into_iter().map(trx_core::decode::DecodedMessage::Aprs));
+    out.extend(hf_aprs.into_iter().map(trx_core::decode::DecodedMessage::HfAprs));
+    out.extend(cw.into_iter().map(trx_core::decode::DecodedMessage::Cw));
+    out.extend(ft8.into_iter().map(trx_core::decode::DecodedMessage::Ft8));
+    out.extend(wspr.into_iter().map(trx_core::decode::DecodedMessage::Wspr));
     out
 }
 
-/// `GET /decode/history` — returns the full decode history as a JSON array.
+fn encode_cbor_length(out: &mut Vec<u8>, major: u8, value: u64) {
+    debug_assert!(major <= 7);
+    match value {
+        0..=23 => out.push((major << 5) | (value as u8)),
+        24..=0xff => {
+            out.push((major << 5) | 24);
+            out.push(value as u8);
+        }
+        0x100..=0xffff => {
+            out.push((major << 5) | 25);
+            out.extend_from_slice(&(value as u16).to_be_bytes());
+        }
+        0x1_0000..=0xffff_ffff => {
+            out.push((major << 5) | 26);
+            out.extend_from_slice(&(value as u32).to_be_bytes());
+        }
+        _ => {
+            out.push((major << 5) | 27);
+            out.extend_from_slice(&value.to_be_bytes());
+        }
+    }
+}
+
+fn encode_cbor_json_value(out: &mut Vec<u8>, value: &serde_json::Value) {
+    match value {
+        serde_json::Value::Null => out.push(0xf6),
+        serde_json::Value::Bool(false) => out.push(0xf4),
+        serde_json::Value::Bool(true) => out.push(0xf5),
+        serde_json::Value::Number(number) => {
+            if let Some(value) = number.as_u64() {
+                encode_cbor_length(out, 0, value);
+            } else if let Some(value) = number.as_i64() {
+                if value >= 0 {
+                    encode_cbor_length(out, 0, value as u64);
+                } else {
+                    encode_cbor_length(out, 1, value.unsigned_abs() - 1);
+                }
+            } else if let Some(value) = number.as_f64() {
+                out.push(0xfb);
+                out.extend_from_slice(&value.to_be_bytes());
+            } else {
+                out.push(0xf6);
+            }
+        }
+        serde_json::Value::String(text) => {
+            encode_cbor_length(out, 3, text.len() as u64);
+            out.extend_from_slice(text.as_bytes());
+        }
+        serde_json::Value::Array(items) => {
+            encode_cbor_length(out, 4, items.len() as u64);
+            for item in items {
+                encode_cbor_json_value(out, item);
+            }
+        }
+        serde_json::Value::Object(map) => {
+            encode_cbor_length(out, 5, map.len() as u64);
+            for (key, item) in map {
+                encode_cbor_length(out, 3, key.len() as u64);
+                out.extend_from_slice(key.as_bytes());
+                encode_cbor_json_value(out, item);
+            }
+        }
+    }
+}
+
+fn encode_decode_history_cbor(
+    history: &[trx_core::decode::DecodedMessage],
+) -> Result<Vec<u8>, serde_json::Error> {
+    let value = serde_json::to_value(history)?;
+    let mut out = Vec::with_capacity(history.len().saturating_mul(96));
+    encode_cbor_json_value(&mut out, &value);
+    Ok(out)
+}
+
+fn gzip_bytes(payload: &[u8]) -> std::io::Result<Vec<u8>> {
+    let mut encoder = GzEncoder::new(Vec::new(), Compression::fast());
+    encoder.write_all(payload)?;
+    encoder.finish()
+}
+
+/// `GET /decode/history` — returns the full decode history as gzipped CBOR.
 ///
 /// Separated from the live `/decode` SSE stream so that history replay does
 /// not block real-time messages: the client fetches this endpoint in parallel
@@ -493,7 +564,24 @@ pub async fn decode_history(
         return HttpResponse::NotFound().body("decode not enabled");
     }
     let history = collect_decode_history(context.get_ref());
-    HttpResponse::Ok().json(history)
+    let cbor = match encode_decode_history_cbor(&history) {
+        Ok(cbor) => cbor,
+        Err(err) => {
+            tracing::error!("failed to encode decode history as CBOR: {err}");
+            return HttpResponse::InternalServerError().finish();
+        }
+    };
+    let payload = match gzip_bytes(&cbor) {
+        Ok(payload) => payload,
+        Err(err) => {
+            tracing::error!("failed to gzip decode history payload: {err}");
+            return HttpResponse::InternalServerError().finish();
+        }
+    };
+    HttpResponse::Ok()
+        .insert_header((header::CONTENT_TYPE, "application/cbor"))
+        .insert_header((header::CONTENT_ENCODING, "gzip"))
+        .body(payload)
 }
 
 #[get("/decode")]

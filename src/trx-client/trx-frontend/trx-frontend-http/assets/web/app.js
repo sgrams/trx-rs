@@ -396,6 +396,155 @@ function setDecodeHistoryOverlayVisible(visible, title = "", sub = "") {
   if (decodeHistoryOverlaySubEl) decodeHistoryOverlaySubEl.textContent = sub || "";
   decodeHistoryOverlayEl.classList.toggle("is-hidden", !visible);
 }
+const decodeHistoryTextDecoder = typeof TextDecoder === "function" ? new TextDecoder() : null;
+let decodeHistoryReplayActive = false;
+let decodeMapSyncPending = false;
+
+function markDecodeMapSyncPending() {
+  decodeMapSyncPending = true;
+}
+
+function flushDeferredDecodeMapSync() {
+  if (!decodeMapSyncPending || decodeHistoryReplayActive || !aprsMap) return;
+  decodeMapSyncPending = false;
+  scheduleUiFrameJob("decode-map-maintenance", () => {
+    pruneMapHistory();
+  });
+}
+
+function setDecodeHistoryReplayActive(active) {
+  decodeHistoryReplayActive = !!active;
+  if (!decodeHistoryReplayActive) {
+    flushDeferredDecodeMapSync();
+  }
+}
+
+function decodeHistoryMapRenderingDeferred() {
+  return decodeHistoryReplayActive || !aprsMap;
+}
+
+function decodeCborUint(view, bytes, state, additional) {
+  const offset = state.offset;
+  if (additional < 24) return additional;
+  if (additional === 24) {
+    if (offset + 1 > bytes.length) throw new Error("CBOR payload truncated");
+    state.offset += 1;
+    return bytes[offset];
+  }
+  if (additional === 25) {
+    if (offset + 2 > bytes.length) throw new Error("CBOR payload truncated");
+    state.offset += 2;
+    return view.getUint16(offset);
+  }
+  if (additional === 26) {
+    if (offset + 4 > bytes.length) throw new Error("CBOR payload truncated");
+    state.offset += 4;
+    return view.getUint32(offset);
+  }
+  if (additional === 27) {
+    if (offset + 8 > bytes.length) throw new Error("CBOR payload truncated");
+    const value = view.getBigUint64(offset);
+    state.offset += 8;
+    const numeric = Number(value);
+    if (!Number.isSafeInteger(numeric)) throw new Error("CBOR integer exceeds JS safe range");
+    return numeric;
+  }
+  throw new Error("Unsupported CBOR additional info");
+}
+
+function decodeCborFloat16(bits) {
+  const sign = (bits & 0x8000) ? -1 : 1;
+  const exponent = (bits >> 10) & 0x1f;
+  const fraction = bits & 0x03ff;
+  if (exponent === 0) {
+    return fraction === 0 ? sign * 0 : sign * Math.pow(2, -14) * (fraction / 1024);
+  }
+  if (exponent === 0x1f) {
+    return fraction === 0 ? sign * Infinity : Number.NaN;
+  }
+  return sign * Math.pow(2, exponent - 15) * (1 + (fraction / 1024));
+}
+
+function decodeCborItem(view, bytes, state) {
+  if (state.offset >= bytes.length) throw new Error("CBOR payload truncated");
+  const initial = bytes[state.offset++];
+  const major = initial >> 5;
+  const additional = initial & 0x1f;
+  if (major === 0) return decodeCborUint(view, bytes, state, additional);
+  if (major === 1) return -1 - decodeCborUint(view, bytes, state, additional);
+  if (major === 2) {
+    const length = decodeCborUint(view, bytes, state, additional);
+    if (state.offset + length > bytes.length) throw new Error("CBOR payload truncated");
+    const chunk = bytes.slice(state.offset, state.offset + length);
+    state.offset += length;
+    return Array.from(chunk);
+  }
+  if (major === 3) {
+    const length = decodeCborUint(view, bytes, state, additional);
+    if (state.offset + length > bytes.length) throw new Error("CBOR payload truncated");
+    const chunk = bytes.subarray(state.offset, state.offset + length);
+    state.offset += length;
+    return decodeHistoryTextDecoder ? decodeHistoryTextDecoder.decode(chunk) : String.fromCharCode(...chunk);
+  }
+  if (major === 4) {
+    const length = decodeCborUint(view, bytes, state, additional);
+    const items = new Array(length);
+    for (let i = 0; i < length; i += 1) {
+      items[i] = decodeCborItem(view, bytes, state);
+    }
+    return items;
+  }
+  if (major === 5) {
+    const length = decodeCborUint(view, bytes, state, additional);
+    const value = {};
+    for (let i = 0; i < length; i += 1) {
+      const key = decodeCborItem(view, bytes, state);
+      value[String(key)] = decodeCborItem(view, bytes, state);
+    }
+    return value;
+  }
+  if (major === 6) {
+    decodeCborUint(view, bytes, state, additional);
+    return decodeCborItem(view, bytes, state);
+  }
+  if (major === 7) {
+    if (additional === 20) return false;
+    if (additional === 21) return true;
+    if (additional === 22) return null;
+    if (additional === 23) return undefined;
+    if (additional === 25) {
+      if (state.offset + 2 > bytes.length) throw new Error("CBOR payload truncated");
+      const bits = view.getUint16(state.offset);
+      state.offset += 2;
+      return decodeCborFloat16(bits);
+    }
+    if (additional === 26) {
+      if (state.offset + 4 > bytes.length) throw new Error("CBOR payload truncated");
+      const value = view.getFloat32(state.offset);
+      state.offset += 4;
+      return value;
+    }
+    if (additional === 27) {
+      if (state.offset + 8 > bytes.length) throw new Error("CBOR payload truncated");
+      const value = view.getFloat64(state.offset);
+      state.offset += 8;
+      return value;
+    }
+  }
+  throw new Error("Unsupported CBOR major type");
+}
+
+function decodeCborPayload(buffer) {
+  const bytes = buffer instanceof Uint8Array ? buffer : new Uint8Array(buffer);
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const state = { offset: 0 };
+  const value = decodeCborItem(view, bytes, state);
+  if (state.offset !== bytes.length) {
+    throw new Error("Unexpected trailing bytes in CBOR payload");
+  }
+  return value;
+}
+
 let lastSpectrumData = null;
 window.lastSpectrumData = null;
 let lastControl;
@@ -4021,23 +4170,29 @@ function ensureDecodeLocatorMarker(entry) {
 }
 
 function pruneAprsEntry(call, entry, cutoffMs) {
+  const canRenderMap = !!aprsMap && !decodeHistoryReplayActive;
   const pktTsMs = Number(entry?.pkt?._tsMs);
   const visible = Number.isFinite(pktTsMs) && pktTsMs >= cutoffMs;
   entry.visibleInHistoryWindow = visible;
   entry.trackPoints = trimTrackHistory(entry.trackHistory, cutoffMs, APRS_TRACK_MAX_POINTS)
     .map((point) => [point.lat, point.lon]);
-  refreshAprsTrack(call, entry);
+  if (canRenderMap) {
+    refreshAprsTrack(call, entry);
+  } else {
+    markDecodeMapSyncPending();
+  }
   if (!visible) {
-    if (selectedAprsTrackCall && String(selectedAprsTrackCall) === String(call)) {
+    if (canRenderMap && selectedAprsTrackCall && String(selectedAprsTrackCall) === String(call)) {
       selectedAprsTrackCall = null;
     }
-    if (entry?.track) {
+    if (canRenderMap && entry?.track) {
       entry.track.remove();
       entry.track = null;
     }
-    setRetainedMapMarkerVisible(entry?.marker, false);
+    if (canRenderMap) setRetainedMapMarkerVisible(entry?.marker, false);
     return false;
   }
+  if (!canRenderMap) return true;
   ensureAprsMarker(call, entry);
   setRetainedMapMarkerVisible(entry?.marker, true);
   if (entry?.marker) {
@@ -4048,23 +4203,29 @@ function pruneAprsEntry(call, entry, cutoffMs) {
 }
 
 function pruneAisEntry(key, entry, cutoffMs) {
+  const canRenderMap = !!aprsMap && !decodeHistoryReplayActive;
   const msgTsMs = Number(entry?.msg?._tsMs);
   const visible = Number.isFinite(msgTsMs) && msgTsMs >= cutoffMs;
   entry.visibleInHistoryWindow = visible;
   entry.trackPoints = trimTrackHistory(entry.trackHistory, cutoffMs, AIS_TRACK_MAX_POINTS)
     .map((point) => [point.lat, point.lon]);
-  refreshAisTrack(key, entry);
+  if (canRenderMap) {
+    refreshAisTrack(key, entry);
+  } else {
+    markDecodeMapSyncPending();
+  }
   if (!visible) {
-    if (selectedAisTrackMmsi && String(selectedAisTrackMmsi) === String(key)) {
+    if (canRenderMap && selectedAisTrackMmsi && String(selectedAisTrackMmsi) === String(key)) {
       selectedAisTrackMmsi = null;
     }
-    if (entry?.track) {
+    if (canRenderMap && entry?.track) {
       entry.track.remove();
       entry.track = null;
     }
-    setRetainedMapMarkerVisible(entry?.marker, false);
+    if (canRenderMap) setRetainedMapMarkerVisible(entry?.marker, false);
     return false;
   }
+  if (!canRenderMap) return true;
   ensureAisMarker(key, entry);
   setRetainedMapMarkerVisible(entry?.marker, true);
   if (entry?.marker) {
@@ -4074,6 +4235,7 @@ function pruneAisEntry(key, entry, cutoffMs) {
 }
 
 function pruneLocatorEntry(key, entry, cutoffMs) {
+  const canRenderMap = !!aprsMap && !decodeHistoryReplayActive;
   if (!entry || (entry.sourceType !== "ft8" && entry.sourceType !== "wspr")) return true;
   if (!(entry.allStationDetails instanceof Map)) {
     entry.allStationDetails = entry.stationDetails instanceof Map
@@ -4092,7 +4254,8 @@ function pruneLocatorEntry(key, entry, cutoffMs) {
     entry.stationDetails = new Map();
     entry.stations = new Set();
     entry.bandMeta = new Map();
-    setRetainedMapMarkerVisible(entry.marker, false);
+    if (canRenderMap) setRetainedMapMarkerVisible(entry.marker, false);
+    else markDecodeMapSyncPending();
     return false;
   }
   const nextStations = new Set();
@@ -4106,6 +4269,10 @@ function pruneLocatorEntry(key, entry, cutoffMs) {
     Array.from(nextDetails.values()).map((detail) => Number(detail?.freq_hz))
   );
   const count = Math.max(nextDetails.size, nextStations.size || 0, 1);
+  if (!canRenderMap) {
+    markDecodeMapSyncPending();
+    return true;
+  }
   ensureDecodeLocatorMarker(entry);
   setRetainedMapMarkerVisible(entry.marker, true);
   if (entry.marker) {
@@ -4141,6 +4308,10 @@ function pruneMapHistory() {
   }
   for (const [key, entry] of locatorMarkers.entries()) {
     pruneLocatorEntry(key, entry, cutoffMs);
+  }
+  if (!aprsMap || decodeHistoryReplayActive) {
+    markDecodeMapSyncPending();
+    return;
   }
   rebuildDecodeContactPaths();
   rebuildMapLocatorFilters();
@@ -5102,6 +5273,25 @@ document.addEventListener("keydown", (e) => {
   }
 });
 
+function materializeBufferedMapLayers() {
+  if (!aprsMap) return;
+  for (const [key, entry] of locatorMarkers) {
+    if (!key.startsWith("bookmark:") || entry?.marker || !entry?.grid) continue;
+    const bounds = maidenheadToBounds(entry.grid);
+    if (!bounds) continue;
+    entry.sourceType = "bookmark";
+    entry.bandMeta = collectBandMeta((entry.bookmarks || []).map((bm) => Number(bm?.freq_hz)));
+    entry.marker = L.rectangle(bounds, locatorStyleForEntry(entry, entry.bookmarks?.length || 1))
+      .addTo(aprsMap)
+      .bindPopup(buildBookmarkLocatorPopupHtml(entry.grid, entry.bookmarks || []));
+    entry.marker.__trxType = "bookmark";
+    sendLocatorOverlayToBack(entry.marker);
+    assignLocatorMarkerMeta(entry.marker, entry.sourceType, entry.bandMeta);
+    mapMarkers.add(entry.marker);
+  }
+  pruneMapHistory();
+}
+
 function initAprsMap() {
   const mapEl = document.getElementById("aprs-map");
   if (!mapEl) return;
@@ -5203,30 +5393,7 @@ function initAprsMap() {
     }
   });
 
-  // Materialise any stations that were buffered before the map was ready
-  for (const [call, entry] of stationMarkers) {
-    if (entry.type === "aprs" && entry.visibleInHistoryWindow) {
-      ensureAprsMarker(call, entry);
-    }
-  }
-  for (const [key, entry] of locatorMarkers) {
-    if (!key.startsWith("bookmark:") || entry?.marker || !entry?.grid) continue;
-    const bounds = maidenheadToBounds(entry.grid);
-    if (!bounds) continue;
-    entry.sourceType = "bookmark";
-    entry.bandMeta = collectBandMeta((entry.bookmarks || []).map((bm) => Number(bm?.freq_hz)));
-    entry.marker = L.rectangle(bounds, locatorStyleForEntry(entry, entry.bookmarks?.length || 1))
-      .addTo(aprsMap)
-      .bindPopup(buildBookmarkLocatorPopupHtml(entry.grid, entry.bookmarks || []));
-    entry.marker.__trxType = "bookmark";
-    sendLocatorOverlayToBack(entry.marker);
-    assignLocatorMarkerMeta(entry.marker, entry.sourceType, entry.bandMeta);
-    mapMarkers.add(entry.marker);
-  }
-  pruneMapHistory();
-  rebuildDecodeContactPaths();
-  rebuildMapLocatorFilters();
-  applyMapFilter();
+  materializeBufferedMapLayers();
 
   const locatorPhaseEl = document.getElementById("map-locator-phase");
   const locatorChoiceEl = document.getElementById("map-locator-choice-filter");
@@ -5749,7 +5916,7 @@ window.aprsMapAddStation = function(call, lat, lon, info, symbolTable, symbolCod
       prevPoint.tsMs = tsMs;
     }
     pruneAprsEntry(call, existing, mapHistoryCutoffMs());
-    if (aprsMap && existing.marker) {
+    if (aprsMap && existing.marker && !decodeHistoryReplayActive) {
       existing.marker.setLatLng([lat, lon]);
       existing.marker.setPopupContent(buildAprsPopupHtml(call, lat, lon, info, pkt));
     }
@@ -5856,7 +6023,6 @@ function refreshAisMarkerColors() {
 
 window.aisMapAddVessel = function(msg) {
   if (msg == null || msg.lat == null || msg.lon == null || !Number.isFinite(msg.mmsi)) return;
-  if (!aprsMap) initAprsMap();
   const key = String(msg.mmsi);
   const popupHtml = buildAisPopupHtml(msg);
   const nextPoint = [msg.lat, msg.lon];
@@ -5872,7 +6038,7 @@ window.aisMapAddVessel = function(msg) {
       prevPoint.tsMs = tsMs;
     }
     pruneAisEntry(key, existing, mapHistoryCutoffMs());
-    if (existing.marker) {
+    if (aprsMap && existing.marker && !decodeHistoryReplayActive) {
       updateAisMarker(existing.marker, msg, popupHtml);
     }
     return;
@@ -5893,7 +6059,6 @@ window.vdesMapAddPoint = function(msg) {
   if (msg == null || msg.lat == null || msg.lon == null) return;
   const key = vdesMarkerKey(msg);
   if (!key) return;
-  if (!aprsMap) initAprsMap();
   const popupHtml = buildVdesPopupHtml(msg);
   const visible = Number.isFinite(Number(msg?._tsMs))
     && Number(msg._tsMs) >= mapHistoryCutoffMs();
@@ -5902,12 +6067,20 @@ window.vdesMapAddPoint = function(msg) {
     existing.msg = msg;
     existing.visibleInHistoryWindow = visible;
     if (!visible) {
-      setRetainedMapMarkerVisible(existing.marker, false);
+      if (!decodeHistoryMapRenderingDeferred()) {
+        setRetainedMapMarkerVisible(existing.marker, false);
+      } else {
+        markDecodeMapSyncPending();
+      }
       return;
     }
-    ensureVdesMarker(key, existing);
-    setRetainedMapMarkerVisible(existing.marker, true);
-    if (existing.marker) {
+    if (!decodeHistoryMapRenderingDeferred()) {
+      ensureVdesMarker(key, existing);
+      setRetainedMapMarkerVisible(existing.marker, true);
+    } else {
+      markDecodeMapSyncPending();
+    }
+    if (aprsMap && existing.marker && !decodeHistoryReplayActive) {
       existing.marker.setLatLng([msg.lat, msg.lon]);
       existing.marker.setPopupContent(popupHtml);
     }
@@ -5920,9 +6093,13 @@ window.vdesMapAddPoint = function(msg) {
   };
   vdesMarkers.set(key, entry);
   if (!visible) return;
-  ensureVdesMarker(key, entry);
-  setRetainedMapMarkerVisible(entry.marker, true);
-  if (entry.marker) {
+  if (!decodeHistoryMapRenderingDeferred()) {
+    ensureVdesMarker(key, entry);
+    setRetainedMapMarkerVisible(entry.marker, true);
+  } else {
+    markDecodeMapSyncPending();
+  }
+  if (aprsMap && entry.marker && !decodeHistoryReplayActive) {
     entry.marker.setPopupContent(popupHtml);
   }
   scheduleDecodeMapMaintenance();
@@ -5998,6 +6175,10 @@ function updateMapP2pPathsToggle() {
 }
 
 function scheduleDecodeMapMaintenance() {
+  if (decodeHistoryMapRenderingDeferred()) {
+    markDecodeMapSyncPending();
+    return;
+  }
   scheduleUiFrameJob("decode-map-maintenance", () => {
     rebuildDecodeContactPaths();
     rebuildMapLocatorFilters();
@@ -6325,8 +6506,6 @@ window.syncBookmarkMapLocators = function(bookmarks) {
 };
 
 window.ft8MapAddLocator = function(message, grids, type = "ft8", station = null, details = null) {
-  if (!aprsMap) initAprsMap();
-  if (!aprsMap) return;
   if (!Array.isArray(grids) || grids.length === 0) return;
   const markerType = type === "wspr" ? "wspr" : "ft8";
   const unique = [...new Set(grids.map((g) => String(g).toUpperCase()))];
@@ -7181,6 +7360,8 @@ function drainDecodeHistory(buffer, index, onDone, onProgress) {
 
 function connectDecode() {
   if (decodeSource) { decodeSource.close(); }
+  decodeHistoryReplayActive = false;
+  decodeMapSyncPending = false;
   if (window.resetAisHistoryView) window.resetAisHistoryView();
   if (window.resetVdesHistoryView) window.resetVdesHistoryView();
   if (window.resetAprsHistoryView) window.resetAprsHistoryView();
@@ -7194,6 +7375,7 @@ function connectDecode() {
   const liveBuffer = [];
   function flushLiveBuffer() {
     historySettled = true;
+    setDecodeHistoryReplayActive(false);
     setDecodeHistoryOverlayVisible(false);
     for (const msg of liveBuffer) {
       try { dispatchDecodeMessage(msg); } catch (_) {}
@@ -7231,12 +7413,17 @@ function connectDecode() {
   };
 
   // Fetch history in parallel; drain it first, then flush buffered live msgs.
-  fetch("/decode/history").then((resp) => {
+  fetch("/decode/history").then(async (resp) => {
     if (!resp.ok) return null;
-    return resp.json();
+    setDecodeHistoryOverlayVisible(true, "Loading decode history…", "Receiving compressed history payload");
+    const payload = await resp.arrayBuffer();
+    if (!payload || payload.byteLength === 0) return [];
+    setDecodeHistoryOverlayVisible(true, "Loading decode history…", "Decoding compressed history payload");
+    return decodeCborPayload(payload);
   }).then((msgs) => {
     clearTimeout(historyTimeout);
     if (Array.isArray(msgs) && msgs.length > 0) {
+      setDecodeHistoryReplayActive(true);
       setDecodeHistoryOverlayVisible(true, "Loading decode history…", `Replaying 0 / ${msgs.length} decoded messages`);
       drainDecodeHistory(
         msgs,
@@ -7253,7 +7440,11 @@ function connectDecode() {
     } else {
       flushLiveBuffer();
     }
-  }).catch(() => { clearTimeout(historyTimeout); flushLiveBuffer(); });
+  }).catch((err) => {
+    console.error("Decode history fetch failed", err);
+    clearTimeout(historyTimeout);
+    flushLiveBuffer();
+  });
 }
 // connectDecode() is called from initializeApp() after auth succeeds,
 // and from login/guest handlers — no standalone window.load call needed.

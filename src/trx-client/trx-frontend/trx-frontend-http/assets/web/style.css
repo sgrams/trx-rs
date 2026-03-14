@@ -1330,14 +1330,21 @@ small { color: var(--text-muted); }
 .map-qso-card {
   display: flex;
   appearance: none;
+  -webkit-appearance: none;
   width: 100%;
   flex-direction: column;
+  align-items: stretch;
   gap: 0.5rem;
   min-width: 0;
+  margin: 0;
   padding: 0.8rem 0.85rem;
+  box-sizing: border-box;
   border-radius: 0.75rem;
   border: 1px solid color-mix(in srgb, var(--border-light) 74%, transparent);
   background: color-mix(in srgb, var(--card-bg) 78%, transparent);
+  font: inherit;
+  color: inherit;
+  line-height: inherit;
   text-align: left;
   cursor: pointer;
   transition: border-color 120ms ease, background 120ms ease, transform 120ms ease, box-shadow 120ms ease;
