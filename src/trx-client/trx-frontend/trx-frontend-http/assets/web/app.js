@@ -4124,8 +4124,13 @@ function midpointLatLon(a, b) {
 }
 
 function decodeContactPathColor(entry) {
+  if (entry?.bandLabel) return locatorBandChipColor(entry.bandLabel);
   const srcEntry = locatorMarkers.get(entry?.sourceGrid);
-  if (srcEntry) return locatorStyleForEntry(srcEntry, locatorEntryCount(srcEntry)).color;
+  if (srcEntry) {
+    const label = locatorBandLabelForEntry(srcEntry);
+    if (label) return locatorBandChipColor(label);
+    return locatorStyleForEntry(srcEntry, locatorEntryCount(srcEntry)).color;
+  }
   return locatorFilterColor("ft8");
 }
 
@@ -5723,11 +5728,13 @@ function rebuildDecodeContactPaths() {
         }
       }
       if (source && target && source !== target) {
+        const band = bandForHz(Number(detail?.freq_hz));
         directedMessages.push({
           source,
           target,
           sourceGrid: grid,
           tsMs,
+          bandLabel: band?.label || null,
         });
       }
     }
@@ -5747,6 +5754,7 @@ function rebuildDecodeContactPaths() {
       target: msg.target,
       sourceGrid: msg.sourceGrid,
       targetGrid: targetLocator.grid,
+      bandLabel: msg.bandLabel,
       from: sourceCenter,
       to: targetCenter,
       tsMs: msg.tsMs,

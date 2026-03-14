@@ -399,7 +399,14 @@ impl RouteAccess {
     /// Classify a request path
     fn from_path(path: &str) -> Self {
         // Public routes
-        if path == "/" || path == "/index.html" || path.starts_with("/auth/") {
+        if path == "/"
+            || path == "/index.html"
+            || path == "/map"
+            || path == "/decoders"
+            || path == "/settings"
+            || path == "/about"
+            || path.starts_with("/auth/")
+        {
             return Self::Public;
         }
 
@@ -583,6 +590,10 @@ mod tests {
     #[test]
     fn test_route_access_public_paths() {
         assert_eq!(RouteAccess::from_path("/"), RouteAccess::Public);
+        assert_eq!(RouteAccess::from_path("/map"), RouteAccess::Public);
+        assert_eq!(RouteAccess::from_path("/decoders"), RouteAccess::Public);
+        assert_eq!(RouteAccess::from_path("/settings"), RouteAccess::Public);
+        assert_eq!(RouteAccess::from_path("/about"), RouteAccess::Public);
         assert_eq!(RouteAccess::from_path("/auth/login"), RouteAccess::Public);
         assert_eq!(RouteAccess::from_path("/auth/logout"), RouteAccess::Public);
         assert_eq!(RouteAccess::from_path("/style.css"), RouteAccess::Public);
