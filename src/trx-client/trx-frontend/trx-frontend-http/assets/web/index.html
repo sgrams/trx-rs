@@ -375,6 +375,7 @@
                 <label class="bm-decoder-check"><input type="checkbox" id="bm-dec-ais" value="ais" /> AIS</label>
                 <label class="bm-decoder-check"><input type="checkbox" id="bm-dec-ft8" value="ft8" /> FT8</label>
                 <label class="bm-decoder-check"><input type="checkbox" id="bm-dec-ft4" value="ft4" /> FT4</label>
+                <label class="bm-decoder-check"><input type="checkbox" id="bm-dec-ft2" value="ft2" /> FT2</label>
                 <label class="bm-decoder-check"><input type="checkbox" id="bm-dec-wspr" value="wspr" /> WSPR</label>
                 <label class="bm-decoder-check"><input type="checkbox" id="bm-dec-hf-aprs" value="hf-aprs" /> HF APRS</label>
               </div>
@@ -427,6 +428,7 @@
         <button class="sub-tab" data-subtab="cw">CW</button>
         <button class="sub-tab" data-subtab="ft8">FT8</button>
         <button class="sub-tab" data-subtab="ft4">FT4</button>
+        <button class="sub-tab" data-subtab="ft2">FT2</button>
         <button class="sub-tab" data-subtab="wspr">WSPR</button>
         <button class="sub-tab" data-subtab="rds">RDS</button>
       </div>
@@ -465,6 +467,12 @@
           <strong>FT4 Decoder</strong>
           <div style="color:var(--text-muted); font-size:0.85rem; margin-top:0.2rem;">
             Decodes FT4 messages from RX audio (DIG/USB only, toggle required). 7.5-second slots.
+          </div>
+        </div>
+        <div class="plugin-item">
+          <strong>FT2 Decoder</strong>
+          <div style="color:var(--text-muted); font-size:0.85rem; margin-top:0.2rem;">
+            Decodes FT2 messages from RX audio (DIG/USB only, toggle required). 3.75-second slots.
           </div>
         </div>
         <div class="plugin-item">
@@ -659,6 +667,24 @@
           <span class="ft8-msg">Message</span>
         </div>
         <div id="ft4-messages"></div>
+      </div>
+      <div id="subtab-ft2" class="sub-tab-panel" style="display:none;">
+        <div class="ft8-controls">
+          <button id="ft2-decode-toggle-btn" type="button">Enable FT2</button>
+          <button id="ft2-pause-btn" type="button">Pause</button>
+          <button id="ft2-clear-btn" type="button">Clear</button>
+          <input id="ft2-filter" class="ft8-filter" type="text" placeholder="Filter (e.g. CQ, DL4)" />
+          <small id="ft2-status" style="color:var(--text-muted);">Waiting for server decode</small>
+          <small id="ft2-period" style="color:var(--text-muted);">Next slot --s</small>
+        </div>
+        <div class="ft8-header">
+          <span class="ft8-time">Time</span>
+          <span class="ft8-snr">SNR</span>
+          <span class="ft8-dt">DT</span>
+          <span class="ft8-freq">RF</span>
+          <span class="ft8-msg">Message</span>
+        </div>
+        <div id="ft2-messages"></div>
       </div>
       <div id="subtab-wspr" class="sub-tab-panel" style="display:none;">
         <div class="ft8-controls">
@@ -937,6 +963,7 @@
   <script src="/hf-aprs.js"></script>
   <script src="/ft8.js"></script>
   <script src="/ft4.js"></script>
+  <script src="/ft2.js"></script>
   <script src="/wspr.js"></script>
   <script src="/cw.js"></script>
   <script src="/bookmarks.js"></script>

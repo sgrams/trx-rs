@@ -673,6 +673,7 @@ async fn apply_scheduler_decoders(
     let mut want_hf_aprs = false;
     let mut want_ft8 = false;
     let mut want_ft4 = false;
+    let mut want_ft2 = false;
     let mut want_wspr = false;
 
     let mut update_from = |bm: &crate::server::bookmarks::Bookmark| {
@@ -682,6 +683,7 @@ async fn apply_scheduler_decoders(
                 "hf-aprs" => want_hf_aprs = true,
                 "ft8" => want_ft8 = true,
                 "ft4" => want_ft4 = true,
+                "ft2" => want_ft2 = true,
                 "wspr" => want_wspr = true,
                 _ => {}
             }
@@ -698,6 +700,7 @@ async fn apply_scheduler_decoders(
         ("HF APRS", RigCommand::SetHfAprsDecodeEnabled(want_hf_aprs)),
         ("FT8", RigCommand::SetFt8DecodeEnabled(want_ft8)),
         ("FT4", RigCommand::SetFt4DecodeEnabled(want_ft4)),
+        ("FT2", RigCommand::SetFt2DecodeEnabled(want_ft2)),
         ("WSPR", RigCommand::SetWsprDecodeEnabled(want_wspr)),
     ];
 

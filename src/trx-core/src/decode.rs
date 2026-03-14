@@ -24,6 +24,8 @@ pub enum DecodedMessage {
     Ft8(Ft8Message),
     #[serde(rename = "ft4")]
     Ft4(Ft8Message),
+    #[serde(rename = "ft2")]
+    Ft2(Ft8Message),
     #[serde(rename = "wspr")]
     Wspr(WsprMessage),
 }

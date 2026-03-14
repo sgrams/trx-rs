@@ -24,7 +24,8 @@ use uuid::Uuid;
 use trx_core::audio::{
     parse_vchan_audio_frame, parse_vchan_uuid_msg, read_audio_msg, write_audio_msg,
     write_vchan_uuid_msg, AudioStreamInfo, AUDIO_MSG_AIS_DECODE, AUDIO_MSG_APRS_DECODE,
-    AUDIO_MSG_CW_DECODE, AUDIO_MSG_FT4_DECODE, AUDIO_MSG_FT8_DECODE, AUDIO_MSG_HF_APRS_DECODE,
+    AUDIO_MSG_CW_DECODE, AUDIO_MSG_FT2_DECODE, AUDIO_MSG_FT4_DECODE, AUDIO_MSG_FT8_DECODE,
+    AUDIO_MSG_HF_APRS_DECODE,
     AUDIO_MSG_HISTORY_COMPRESSED, AUDIO_MSG_RX_FRAME, AUDIO_MSG_RX_FRAME_CH,
     AUDIO_MSG_STREAM_INFO, AUDIO_MSG_TX_FRAME, AUDIO_MSG_VCHAN_ALLOCATED, AUDIO_MSG_VCHAN_BW,
     AUDIO_MSG_VCHAN_DESTROYED, AUDIO_MSG_VCHAN_FREQ, AUDIO_MSG_VCHAN_MODE, AUDIO_MSG_VCHAN_REMOVE,
@@ -288,6 +289,7 @@ async fn handle_audio_connection(
                     | AUDIO_MSG_CW_DECODE
                     | AUDIO_MSG_FT8_DECODE
                     | AUDIO_MSG_FT4_DECODE
+                    | AUDIO_MSG_FT2_DECODE
                     | AUDIO_MSG_WSPR_DECODE,
                     payload,
                 )) => {

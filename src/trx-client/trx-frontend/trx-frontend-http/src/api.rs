@@ -451,6 +451,7 @@ struct DecodeHistoryPayload {
     cw: Vec<trx_core::decode::CwEvent>,
     ft8: Vec<trx_core::decode::Ft8Message>,
     ft4: Vec<trx_core::decode::Ft8Message>,
+    ft2: Vec<trx_core::decode::Ft8Message>,
     wspr: Vec<trx_core::decode::WsprMessage>,
 }
 
@@ -463,6 +464,7 @@ impl DecodeHistoryPayload {
             + self.cw.len()
             + self.ft8.len()
             + self.ft4.len()
+            + self.ft2.len()
             + self.wspr.len()
     }
 }
@@ -477,6 +479,7 @@ fn collect_decode_history(context: &FrontendRuntimeContext) -> DecodeHistoryPayl
         cw: crate::server::audio::snapshot_cw_history(context),
         ft8: crate::server::audio::snapshot_ft8_history(context),
         ft4: crate::server::audio::snapshot_ft4_history(context),
+        ft2: crate::server::audio::snapshot_ft2_history(context),
         wspr: crate::server::audio::snapshot_wspr_history(context),
     }
 }
@@ -1014,6 +1017,15 @@ pub async fn toggle_ft4_decode(
     send_command(&rig_tx, RigCommand::SetFt4DecodeEnabled(!enabled)).await
 }
 
+#[post("/toggle_ft2_decode")]
+pub async fn toggle_ft2_decode(
+    state: web::Data<watch::Receiver<RigState>>,
+    rig_tx: web::Data<mpsc::Sender<RigRequest>>,
+) -> Result<HttpResponse, Error> {
+    let enabled = state.get_ref().borrow().ft2_decode_enabled;
+    send_command(&rig_tx, RigCommand::SetFt2DecodeEnabled(!enabled)).await
+}
+
 #[post("/toggle_wspr_decode")]
 pub async fn toggle_wspr_decode(
     state: web::Data<watch::Receiver<RigState>>,
@@ -1039,6 +1051,15 @@ pub async fn clear_ft4_decode(
 ) -> Result<HttpResponse, Error> {
     crate::server::audio::clear_ft4_history(context.get_ref());
     send_command(&rig_tx, RigCommand::ResetFt4Decoder).await
+}
+
+#[post("/clear_ft2_decode")]
+pub async fn clear_ft2_decode(
+    context: web::Data<Arc<FrontendRuntimeContext>>,
+    rig_tx: web::Data<mpsc::Sender<RigRequest>>,
+) -> Result<HttpResponse, Error> {
+    crate::server::audio::clear_ft2_history(context.get_ref());
+    send_command(&rig_tx, RigCommand::ResetFt2Decoder).await
 }
 
 #[post("/clear_wspr_decode")]
@@ -1524,6 +1545,7 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
         .service(set_cw_tone)
         .service(toggle_ft8_decode)
         .service(toggle_ft4_decode)
+        .service(toggle_ft2_decode)
         .service(toggle_wspr_decode)
         .service(clear_ais_decode)
         .service(clear_vdes_decode)
@@ -1532,6 +1554,7 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
         .service(clear_cw_decode)
         .service(clear_ft8_decode)
         .service(clear_ft4_decode)
+        .service(clear_ft2_decode)
         .service(clear_wspr_decode)
         .service(select_rig)
         // Bookmark CRUD
@@ -1566,6 +1589,7 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
         .service(hf_aprs_js)
         .service(ft8_js)
         .service(ft4_js)
+        .service(ft2_js)
         .service(wspr_js)
         .service(cw_js)
         .service(bookmarks_js)
@@ -1746,6 +1770,13 @@ async fn ft4_js() -> impl Responder {
         .body(status::FT4_JS)
 }
 
+#[get("/ft2.js")]
+async fn ft2_js() -> impl Responder {
+    HttpResponse::Ok()
+        .insert_header((header::CONTENT_TYPE, "application/javascript; charset=utf-8"))
+        .body(status::FT2_JS)
+}
+
 #[get("/wspr.js")]
 async fn wspr_js() -> impl Responder {
     HttpResponse::Ok()
@@ -1879,11 +1910,12 @@ async fn send_command_to_rig(
 
 fn bookmark_decoder_state(
     bookmark: &crate::server::bookmarks::Bookmark,
-) -> (bool, bool, bool, bool, bool) {
+) -> (bool, bool, bool, bool, bool, bool) {
     let mut want_aprs = bookmark.mode.trim().eq_ignore_ascii_case("PKT");
     let mut want_hf_aprs = false;
     let mut want_ft8 = false;
     let mut want_ft4 = false;
+    let mut want_ft2 = false;
     let mut want_wspr = false;
 
     for decoder in bookmark
@@ -1896,12 +1928,13 @@ fn bookmark_decoder_state(
             "hf-aprs" => want_hf_aprs = true,
             "ft8" => want_ft8 = true,
             "ft4" => want_ft4 = true,
+            "ft2" => want_ft2 = true,
             "wspr" => want_wspr = true,
             _ => {}
         }
     }
 
-    (want_aprs, want_hf_aprs, want_ft8, want_ft4, want_wspr)
+    (want_aprs, want_hf_aprs, want_ft8, want_ft4, want_ft2, want_wspr)
 }
 
 fn bookmark_decoder_kinds(bookmark: &crate::server::bookmarks::Bookmark) -> Vec<String> {
@@ -1913,7 +1946,7 @@ fn bookmark_decoder_kinds(bookmark: &crate::server::bookmarks::Bookmark) -> Vec<
     {
         if matches!(
             decoder.as_str(),
-            "aprs" | "ais" | "ft8" | "ft4" | "wspr" | "hf-aprs"
+            "aprs" | "ais" | "ft8" | "ft4" | "ft2" | "wspr" | "hf-aprs"
         ) && !out.iter().any(|existing| existing == &decoder)
         {
             out.push(decoder);
@@ -1968,12 +2001,13 @@ async fn apply_selected_channel(
     let Some(bookmark) = bookmark_store.get(bookmark_id) else {
         return Ok(());
     };
-    let (want_aprs, want_hf_aprs, want_ft8, want_ft4, want_wspr) = bookmark_decoder_state(&bookmark);
+    let (want_aprs, want_hf_aprs, want_ft8, want_ft4, want_ft2, want_wspr) = bookmark_decoder_state(&bookmark);
     let desired = [
         RigCommand::SetAprsDecodeEnabled(want_aprs),
         RigCommand::SetHfAprsDecodeEnabled(want_hf_aprs),
         RigCommand::SetFt8DecodeEnabled(want_ft8),
         RigCommand::SetFt4DecodeEnabled(want_ft4),
+        RigCommand::SetFt2DecodeEnabled(want_ft2),
         RigCommand::SetWsprDecodeEnabled(want_wspr),
     ];
     for cmd in desired {
@@ -2022,6 +2056,7 @@ async fn wait_for_view(mut rx: watch::Receiver<RigState>) -> Result<RigSnapshot,
         cw_tone_hz: state.cw_tone_hz,
         ft8_decode_enabled: state.ft8_decode_enabled,
         ft4_decode_enabled: state.ft4_decode_enabled,
+        ft2_decode_enabled: state.ft2_decode_enabled,
         wspr_decode_enabled: state.wspr_decode_enabled,
         filter: state.filter.clone(),
         spectrum: None,

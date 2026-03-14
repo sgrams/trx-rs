@@ -64,6 +64,8 @@ pub const AUDIO_MSG_VCHAN_DESTROYED: u8 = 0x12;
 pub const AUDIO_MSG_VCHAN_BW: u8 = 0x13;
 /// Server → client: FT4 decoded message (JSON `DecodedMessage::Ft4`).
 pub const AUDIO_MSG_FT4_DECODE: u8 = 0x14;
+/// Server → client: FT2 decoded message (JSON `DecodedMessage::Ft2`).
+pub const AUDIO_MSG_FT2_DECODE: u8 = 0x15;
 
 /// Maximum payload size for normal messages (1 MB).
 const MAX_PAYLOAD_SIZE: u32 = 1_048_576;

@@ -110,6 +110,11 @@ impl Ft8Decoder {
         }
     }
 
+    pub fn new_ft2(sample_rate: u32) -> Result<Self, String> {
+        // Wired to FT4 protocol pending a dedicated FT2 implementation.
+        Self::new_ft4(sample_rate)
+    }
+
     pub fn block_size(&self) -> usize {
         self.block_size
     }

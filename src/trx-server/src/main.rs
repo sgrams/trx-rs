@@ -741,6 +741,21 @@ fn spawn_rig_audio_stack(
             }
         }));
 
+        // Spawn FT2 decoder task
+        let ft2_pcm_rx = pcm_tx.subscribe();
+        let ft2_state_rx = state_rx.clone();
+        let ft2_decode_tx = decode_tx.clone();
+        let ft2_sr = rig_cfg.audio.sample_rate;
+        let ft2_ch = rig_cfg.audio.channels;
+        let ft2_shutdown_rx = shutdown_rx.clone();
+        let ft2_histories = histories.clone();
+        handles.push(tokio::spawn(async move {
+            tokio::select! {
+                _ = audio::run_ft2_decoder(ft2_sr, ft2_ch as u16, ft2_pcm_rx, ft2_state_rx, ft2_decode_tx, ft2_histories) => {}
+                _ = wait_for_shutdown(ft2_shutdown_rx) => {}
+            }
+        }));
+
         // Spawn WSPR decoder task
         let wspr_pcm_rx = pcm_tx.subscribe();
         let wspr_state_rx = state_rx.clone();

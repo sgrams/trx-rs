@@ -20,6 +20,7 @@ pub const APRS_JS: &str = include_str!("../assets/web/plugins/aprs.js");
 pub const HF_APRS_JS: &str = include_str!("../assets/web/plugins/hf-aprs.js");
 pub const FT8_JS: &str = include_str!("../assets/web/plugins/ft8.js");
 pub const FT4_JS: &str = include_str!("../assets/web/plugins/ft4.js");
+pub const FT2_JS: &str = include_str!("../assets/web/plugins/ft2.js");
 pub const WSPR_JS: &str = include_str!("../assets/web/plugins/wspr.js");
 pub const CW_JS: &str = include_str!("../assets/web/plugins/cw.js");
 pub const BOOKMARKS_JS: &str = include_str!("../assets/web/plugins/bookmarks.js");

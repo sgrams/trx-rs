@@ -215,12 +215,14 @@ function applyAuthRestrictions() {
       "vdes-clear-btn",
       "ft8-decode-toggle-btn",
       "ft4-decode-toggle-btn",
+      "ft2-decode-toggle-btn",
       "wspr-decode-toggle-btn",
       "hf-aprs-decode-toggle-btn",
       "cw-auto",
       "aprs-clear-btn",
       "ft8-clear-btn",
       "ft4-clear-btn",
+      "ft2-clear-btn",
       "wspr-clear-btn",
       "cw-clear-btn"
     ];
@@ -2856,6 +2858,13 @@ function render(update) {
     ft4ToggleBtn.style.borderColor = ft4On ? "#00d17f" : "";
     ft4ToggleBtn.style.color = ft4On ? "#00d17f" : "";
   }
+  const ft2ToggleBtn = document.getElementById("ft2-decode-toggle-btn");
+  if (ft2ToggleBtn) {
+    const ft2On = !!update.ft2_decode_enabled;
+    ft2ToggleBtn.textContent = ft2On ? "Disable FT2" : "Enable FT2";
+    ft2ToggleBtn.style.borderColor = ft2On ? "#00d17f" : "";
+    ft2ToggleBtn.style.color = ft2On ? "#00d17f" : "";
+  }
   const wsprToggleBtn = document.getElementById("wspr-decode-toggle-btn");
   if (wsprToggleBtn) {
     const wsprOn = !!update.wspr_decode_enabled;
@@ -3986,7 +3995,7 @@ const locatorMarkers = new Map();
 const decodeContactPaths = new Map();
 let selectedMapQsoKey = null;
 const mapMarkers = new Set();
-const DEFAULT_MAP_SOURCE_FILTER = { ais: true, vdes: true, aprs: true, bookmark: false, ft8: true, ft4: true, wspr: true };
+const DEFAULT_MAP_SOURCE_FILTER = { ais: true, vdes: true, aprs: true, bookmark: false, ft8: true, ft4: true, ft2: true, wspr: true };
 const mapFilter = { ...DEFAULT_MAP_SOURCE_FILTER };
 const mapLocatorFilter = { phase: "band", bands: new Set() };
 let mapSearchFilter = "";
@@ -4163,7 +4172,7 @@ function ensureVdesMarker(key, entry) {
 }
 
 function ensureDecodeLocatorMarker(entry) {
-  if (!aprsMap || !entry || entry.marker || !entry.grid || (entry.sourceType !== "ft8" && entry.sourceType !== "ft4" && entry.sourceType !== "wspr")) return;
+  if (!aprsMap || !entry || entry.marker || !entry.grid || (entry.sourceType !== "ft8" && entry.sourceType !== "ft4" && entry.sourceType !== "ft2" && entry.sourceType !== "wspr")) return;
   const bounds = maidenheadToBounds(entry.grid);
   if (!bounds) return;
   const count = Math.max(entry.stationDetails?.size || 0, entry.stations?.size || 0, 1);
@@ -4245,7 +4254,7 @@ function pruneAisEntry(key, entry, cutoffMs) {
 
 function pruneLocatorEntry(key, entry, cutoffMs) {
   const canRenderMap = !!aprsMap && !decodeHistoryReplayActive;
-  if (!entry || (entry.sourceType !== "ft8" && entry.sourceType !== "ft4" && entry.sourceType !== "wspr")) return true;
+  if (!entry || (entry.sourceType !== "ft8" && entry.sourceType !== "ft4" && entry.sourceType !== "ft2" && entry.sourceType !== "wspr")) return true;
   if (!(entry.allStationDetails instanceof Map)) {
     entry.allStationDetails = entry.stationDetails instanceof Map
       ? new Map(entry.stationDetails)
@@ -4331,6 +4340,7 @@ function locatorSourceLabel(type) {
   if (type === "bookmark") return "Bookmarks";
   if (type === "wspr") return "WSPR";
   if (type === "ft4") return "FT4";
+  if (type === "ft2") return "FT2";
   return "FT8";
 }
 
@@ -4346,7 +4356,7 @@ function locatorFilterColor(type) {
   const light = lightTheme ? 42 : 56;
   const hue = type === "bookmark"
     ? hues.bookmark
-    : (type === "wspr" ? hues.wspr : (type === "ft4" ? hues.ft4 : hues.ft8));
+    : (type === "wspr" ? hues.wspr : (type === "ft4" ? hues.ft4 : (type === "ft2" ? hues.ft2 : hues.ft8)));
   return `hsl(${hue.toFixed(1)} ${sat}% ${light}%)`;
 }
 
@@ -4472,6 +4482,7 @@ function locatorThemeHues() {
     bookmark: wrapHue(baseHue),
     ft8: wrapHue(peakHue),
     ft4: wrapHue(peakHue + 30),
+    ft2: wrapHue(peakHue + 60),
     wspr: wrapHue((waveHue + baseHue) / 2),
     bandBase: wrapHue((baseHue * 0.65) + (peakHue * 0.35)),
   };
@@ -4522,6 +4533,7 @@ function locatorHueForEntry(entry) {
   if (entry?.sourceType === "bookmark") return hues.bookmark;
   if (entry?.sourceType === "wspr") return hues.wspr;
   if (entry?.sourceType === "ft4") return hues.ft4;
+  if (entry?.sourceType === "ft2") return hues.ft2;
   return hues.ft8;
 }
 
@@ -4788,7 +4800,7 @@ function setSelectedLocatorMarker(marker) {
 
 function isLocatorOverlay(marker) {
   const type = marker?.__trxType;
-  return type === "bookmark" || type === "ft8" || type === "ft4" || type === "wspr";
+  return type === "bookmark" || type === "ft8" || type === "ft4" || type === "ft2" || type === "wspr";
 }
 
 function sendLocatorOverlayToBack(marker) {
@@ -4919,7 +4931,7 @@ function rebuildMapLocatorFilters() {
   for (const entry of locatorMarkers.values()) {
     const sourceType = entry?.sourceType;
     if (!sourceType) continue;
-    if ((sourceType === "ft8" || sourceType === "ft4" || sourceType === "wspr") && !entry?.visibleInHistoryWindow) continue;
+    if ((sourceType === "ft8" || sourceType === "ft4" || sourceType === "ft2" || sourceType === "wspr") && !entry?.visibleInHistoryWindow) continue;
     availableSources.add(sourceType);
     const meta = entry?.bandMeta instanceof Map ? entry.bandMeta : new Map();
     for (const [label, hz] of meta.entries()) {
@@ -4947,7 +4959,7 @@ function rebuildMapLocatorFilters() {
     if (!bandMap.has(key)) mapLocatorFilter.bands.delete(key);
   }
 
-  const sourceItems = ["ais", "vdes", "aprs", "bookmark", "ft8", "ft4", "wspr"]
+  const sourceItems = ["ais", "vdes", "aprs", "bookmark", "ft8", "ft4", "ft2", "wspr"]
     .filter((key) => availableSources.has(key))
     .map((key) => ({
       key,
@@ -4989,7 +5001,7 @@ function markerPassesLocatorFilters(marker) {
 
 function markerSearchText(marker) {
   const type = marker?.__trxType;
-  if (type === "bookmark" || type === "ft8" || type === "ft4" || type === "wspr") {
+  if (type === "bookmark" || type === "ft8" || type === "ft4" || type === "ft2" || type === "wspr") {
     const entry = locatorEntryForMarker(marker);
     const parts = [];
     if (entry?.grid) parts.push(entry.grid);
@@ -5135,7 +5147,7 @@ window.clearMapMarkersByType = function(type) {
     return;
   }
 
-  if (type === "ft8" || type === "ft4" || type === "wspr") {
+  if (type === "ft8" || type === "ft4" || type === "ft2" || type === "wspr") {
     const prefix = `${type}:`;
     for (const [key, entry] of locatorMarkers.entries()) {
       if (!key.startsWith(prefix)) continue;
@@ -5382,7 +5394,7 @@ function initAprsMap() {
       return;
     }
 
-    if (marker.__trxType === "bookmark" || marker.__trxType === "ft8" || marker.__trxType === "ft4" || marker.__trxType === "wspr") {
+    if (marker.__trxType === "bookmark" || marker.__trxType === "ft8" || marker.__trxType === "ft4" || marker.__trxType === "ft2" || marker.__trxType === "wspr") {
       const center = locatorMarkerCenter(marker);
       if (center) {
         setSelectedLocatorMarker(marker);
@@ -5621,10 +5633,10 @@ window.navigateToMapLocator = function(grid, preferredType = null) {
   sizeAprsMapToViewport();
   if (!aprsMap) return false;
 
-  const pref = preferredType === "wspr" ? "wspr" : (preferredType === "ft4" ? "ft4" : (preferredType === "ft8" ? "ft8" : null));
+  const pref = preferredType === "wspr" ? "wspr" : (preferredType === "ft4" ? "ft4" : (preferredType === "ft2" ? "ft2" : (preferredType === "ft8" ? "ft8" : null)));
   const keys = pref
-    ? [`${pref}:${normalizedGrid}`, `ft8:${normalizedGrid}`, `ft4:${normalizedGrid}`, `wspr:${normalizedGrid}`, `bookmark:${normalizedGrid}`]
-    : [`ft8:${normalizedGrid}`, `ft4:${normalizedGrid}`, `wspr:${normalizedGrid}`, `bookmark:${normalizedGrid}`];
+    ? [`${pref}:${normalizedGrid}`, `ft8:${normalizedGrid}`, `ft4:${normalizedGrid}`, `ft2:${normalizedGrid}`, `wspr:${normalizedGrid}`, `bookmark:${normalizedGrid}`]
+    : [`ft8:${normalizedGrid}`, `ft4:${normalizedGrid}`, `ft2:${normalizedGrid}`, `wspr:${normalizedGrid}`, `bookmark:${normalizedGrid}`];
   let entry = null;
   for (const key of keys) {
     entry = locatorMarkers.get(key);
@@ -6164,6 +6176,7 @@ function applyMapFilter() {
       (type === "aprs" && mapFilter.aprs) ||
       (type === "ft8" && mapFilter.ft8) ||
       (type === "ft4" && mapFilter.ft4) ||
+      (type === "ft2" && mapFilter.ft2) ||
       (type === "wspr" && mapFilter.wspr)
     );
     const onMap = aprsMap.hasLayer(marker);
@@ -6275,7 +6288,7 @@ function rebuildDecodeContactPaths() {
   const stationLocators = new Map();
   const directedMessages = [];
   for (const entry of locatorMarkers.values()) {
-    if (!entry || (entry.sourceType !== "ft8" && entry.sourceType !== "ft4" && entry.sourceType !== "wspr")) continue;
+    if (!entry || (entry.sourceType !== "ft8" && entry.sourceType !== "ft4" && entry.sourceType !== "ft2" && entry.sourceType !== "wspr")) continue;
     const grid = String(entry.grid || "").trim().toUpperCase();
     if (!grid || !(entry.stationDetails instanceof Map)) continue;
     for (const detail of entry.stationDetails.values()) {
@@ -6524,7 +6537,7 @@ window.syncBookmarkMapLocators = function(bookmarks) {
 
 window.mapAddLocator = function(message, grids, type = "ft8", station = null, details = null) {
   if (!Array.isArray(grids) || grids.length === 0) return;
-  const markerType = type === "wspr" ? "wspr" : (type === "ft4" ? "ft4" : "ft8");
+  const markerType = type === "wspr" ? "wspr" : (type === "ft4" ? "ft4" : (type === "ft2" ? "ft2" : "ft8"));
   const unique = [...new Set(grids.map((g) => String(g).toUpperCase()))];
   const stationId = station && String(station).trim() ? String(station).trim().toUpperCase() : "";
   const locatorDetails = new Map();
@@ -7326,6 +7339,7 @@ function updateDecodeStatus(text) {
   const cw = document.getElementById("cw-status");
   const ft8 = document.getElementById("ft8-status");
   const ft4 = document.getElementById("ft4-status");
+  const ft2 = document.getElementById("ft2-status");
   setModeBoundDecodeStatus(ais, ["AIS"], "Select AIS mode to decode", text);
   const vdesText = text === "Connected, listening for packets" ? "Connected, listening for bursts" : text;
   setModeBoundDecodeStatus(vdes, ["VDES"], "Select VDES mode to decode", vdesText);
@@ -7334,6 +7348,7 @@ function updateDecodeStatus(text) {
   setModeBoundDecodeStatus(cw, ["CW", "CWR"], "Select CW mode to decode", cwText);
   if (ft8 && ft8.textContent !== "Receiving") ft8.textContent = text;
   if (ft4 && ft4.textContent !== "Receiving") ft4.textContent = text;
+  if (ft2 && ft2.textContent !== "Receiving") ft2.textContent = text;
 }
 function dispatchDecodeMessage(msg) {
   if (msg.type === "ais" && window.onServerAis) window.onServerAis(msg);
@@ -7343,6 +7358,7 @@ function dispatchDecodeMessage(msg) {
   if (msg.type === "cw" && window.onServerCw) window.onServerCw(msg);
   if (msg.type === "ft8" && window.onServerFt8) window.onServerFt8(msg);
   if (msg.type === "ft4" && window.onServerFt4) window.onServerFt4(msg);
+  if (msg.type === "ft2" && window.onServerFt2) window.onServerFt2(msg);
   if (msg.type === "wspr" && window.onServerWspr) window.onServerWspr(msg);
 }
 
@@ -7373,6 +7389,10 @@ function dispatchDecodeBatch(batch) {
     }
     if (type === "ft4" && window.onServerFt4Batch) {
       window.onServerFt4Batch(batch);
+      return;
+    }
+    if (type === "ft2" && window.onServerFt2Batch) {
+      window.onServerFt2Batch(batch);
       return;
     }
     if (type === "wspr" && window.onServerWsprBatch) {
@@ -7447,6 +7467,10 @@ function restoreDecodeHistoryGroup(kind, messages) {
   }
   if (kind === "ft4" && window.restoreFt4History) {
     window.restoreFt4History(messages);
+    return;
+  }
+  if (kind === "ft2" && window.restoreFt2History) {
+    window.restoreFt2History(messages);
     return;
   }
   if (kind === "wspr" && window.restoreWsprHistory) {
@@ -7537,7 +7561,7 @@ function connectDecode() {
 
   function totalDecodeHistoryMessages(groups) {
     if (!groups || typeof groups !== "object") return 0;
-    return ["ais", "vdes", "aprs", "hf_aprs", "cw", "ft8", "ft4", "wspr"]
+    return ["ais", "vdes", "aprs", "hf_aprs", "cw", "ft8", "ft4", "ft2", "wspr"]
       .reduce((sum, key) => sum + (Array.isArray(groups[key]) ? groups[key].length : 0), 0);
   }
 
@@ -7548,7 +7572,7 @@ function connectDecode() {
       setDecodeHistoryReplayActive(true);
       updateHistoryReplayOverlay();
     }
-    for (const kind of ["ais", "vdes", "aprs", "hf_aprs", "cw", "ft8", "ft4", "wspr"]) {
+    for (const kind of ["ais", "vdes", "aprs", "hf_aprs", "cw", "ft8", "ft4", "ft2", "wspr"]) {
       const messages = groups && Array.isArray(groups[kind]) ? groups[kind] : [];
       if (messages.length === 0) continue;
       for (let index = 0; index < messages.length; index += DECODE_HISTORY_WORKER_GROUP_LIMIT) {

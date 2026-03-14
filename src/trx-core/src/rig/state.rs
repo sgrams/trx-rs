@@ -40,6 +40,8 @@ pub struct RigState {
     #[serde(default)]
     pub ft4_decode_enabled: bool,
     #[serde(default)]
+    pub ft2_decode_enabled: bool,
+    #[serde(default)]
     pub wspr_decode_enabled: bool,
     #[serde(default)]
     pub cw_auto: bool,
@@ -69,6 +71,8 @@ pub struct RigState {
     pub ft8_decode_reset_seq: u64,
     #[serde(default, skip_serializing)]
     pub ft4_decode_reset_seq: u64,
+    #[serde(default, skip_serializing)]
+    pub ft2_decode_reset_seq: u64,
     #[serde(default, skip_serializing)]
     pub wspr_decode_reset_seq: u64,
 }
@@ -148,6 +152,7 @@ impl RigState {
             cw_decode_enabled: true,
             ft8_decode_enabled: false,
             ft4_decode_enabled: false,
+            ft2_decode_enabled: false,
             wspr_decode_enabled: false,
             cw_auto: true,
             cw_wpm: 15,
@@ -160,6 +165,7 @@ impl RigState {
             cw_decode_reset_seq: 0,
             ft8_decode_reset_seq: 0,
             ft4_decode_reset_seq: 0,
+            ft2_decode_reset_seq: 0,
             wspr_decode_reset_seq: 0,
         }
     }
@@ -217,6 +223,7 @@ impl RigState {
             cw_tone_hz: snapshot.cw_tone_hz,
             ft8_decode_enabled: snapshot.ft8_decode_enabled,
             ft4_decode_enabled: snapshot.ft4_decode_enabled,
+            ft2_decode_enabled: snapshot.ft2_decode_enabled,
             wspr_decode_enabled: snapshot.wspr_decode_enabled,
             filter: snapshot.filter,
             spectrum: None, // spectrum flows through /api/spectrum, not persistent state
@@ -226,6 +233,7 @@ impl RigState {
             cw_decode_reset_seq: 0,
             ft8_decode_reset_seq: 0,
             ft4_decode_reset_seq: 0,
+            ft2_decode_reset_seq: 0,
             wspr_decode_reset_seq: 0,
         }
     }
@@ -261,6 +269,7 @@ impl RigState {
             cw_tone_hz: self.cw_tone_hz,
             ft8_decode_enabled: self.ft8_decode_enabled,
             ft4_decode_enabled: self.ft4_decode_enabled,
+            ft2_decode_enabled: self.ft2_decode_enabled,
             wspr_decode_enabled: self.wspr_decode_enabled,
             filter: self.filter.clone(),
             spectrum: self.spectrum.clone(),
@@ -426,6 +435,8 @@ pub struct RigSnapshot {
     pub ft8_decode_enabled: bool,
     #[serde(default)]
     pub ft4_decode_enabled: bool,
+    #[serde(default)]
+    pub ft2_decode_enabled: bool,
     #[serde(default)]
     pub wspr_decode_enabled: bool,
     #[serde(default)]

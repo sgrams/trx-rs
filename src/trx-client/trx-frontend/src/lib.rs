@@ -204,6 +204,8 @@ pub struct FrontendRuntimeContext {
     pub ft8_history: Arc<Mutex<VecDeque<(Instant, Ft8Message)>>>,
     /// FT4 decode history (timestamp, message)
     pub ft4_history: Arc<Mutex<VecDeque<(Instant, Ft8Message)>>>,
+    /// FT2 decode history (timestamp, message)
+    pub ft2_history: Arc<Mutex<VecDeque<(Instant, Ft8Message)>>>,
     /// WSPR decode history (timestamp, message)
     pub wspr_history: Arc<Mutex<VecDeque<(Instant, WsprMessage)>>>,
     /// Authentication tokens for HTTP-JSON frontend
@@ -286,6 +288,7 @@ impl FrontendRuntimeContext {
             cw_history: Arc::new(Mutex::new(VecDeque::new())),
             ft8_history: Arc::new(Mutex::new(VecDeque::new())),
             ft4_history: Arc::new(Mutex::new(VecDeque::new())),
+            ft2_history: Arc::new(Mutex::new(VecDeque::new())),
             wspr_history: Arc::new(Mutex::new(VecDeque::new())),
             auth_tokens: HashSet::new(),
             sse_clients: Arc::new(AtomicUsize::new(0)),

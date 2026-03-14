@@ -21,7 +21,7 @@ use crate::server::bookmarks::{Bookmark, BookmarkStore};
 use crate::server::scheduler::{SchedulerStatusMap, SharedSchedulerControlManager};
 use crate::server::vchan::{ClientChannel, ClientChannelManager};
 
-const SUPPORTED_DECODER_KINDS: &[&str] = &["aprs", "ais", "ft8", "ft4", "wspr", "hf-aprs"];
+const SUPPORTED_DECODER_KINDS: &[&str] = &["aprs", "ais", "ft8", "ft4", "ft2", "wspr", "hf-aprs"];
 const CHANNEL_KIND_NAME: &str = "VirtualBackgroundDecodeChannel";
 const VISIBLE_CHANNEL_KIND_NAME: &str = "VirtualChannel";
 

@@ -777,6 +777,7 @@ mod tests {
             cw_decode_enabled: false,
             ft8_decode_enabled: false,
             ft4_decode_enabled: false,
+            ft2_decode_enabled: false,
             wspr_decode_enabled: false,
             cw_auto: true,
             cw_wpm: 15,

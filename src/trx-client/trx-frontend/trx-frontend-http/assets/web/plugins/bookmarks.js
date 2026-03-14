@@ -183,6 +183,7 @@ function bmReadDecoders() {
   if (document.getElementById("bm-dec-ais").checked) decoders.push("ais");
   if (document.getElementById("bm-dec-ft8").checked) decoders.push("ft8");
   if (document.getElementById("bm-dec-ft4").checked) decoders.push("ft4");
+  if (document.getElementById("bm-dec-ft2").checked) decoders.push("ft2");
   if (document.getElementById("bm-dec-wspr").checked) decoders.push("wspr");
   if (document.getElementById("bm-dec-hf-aprs").checked) decoders.push("hf-aprs");
   return decoders;
@@ -195,6 +196,7 @@ function bmWriteDecoders(decoders) {
   document.getElementById("bm-dec-ais").checked = list.includes("ais");
   document.getElementById("bm-dec-ft8").checked = list.includes("ft8");
   document.getElementById("bm-dec-ft4").checked = list.includes("ft4");
+  document.getElementById("bm-dec-ft2").checked = list.includes("ft2");
   document.getElementById("bm-dec-wspr").checked = list.includes("wspr");
   document.getElementById("bm-dec-hf-aprs").checked = list.includes("hf-aprs");
 }
@@ -357,6 +359,10 @@ async function bmApply(bm) {
         const wantFt4 = bm.decoders.includes("ft4");
         if (wantFt4 !== !!st.ft4_decode_enabled) {
           await postPath("/toggle_ft4_decode");
+        }
+        const wantFt2 = bm.decoders.includes("ft2");
+        if (wantFt2 !== !!st.ft2_decode_enabled) {
+          await postPath("/toggle_ft2_decode");
         }
         const wantWspr = bm.decoders.includes("wspr");
         if (wantWspr !== !!st.wspr_decode_enabled) {

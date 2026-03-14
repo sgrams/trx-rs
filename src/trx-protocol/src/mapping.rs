@@ -43,6 +43,7 @@ pub fn client_command_to_rig(cmd: ClientCommand) -> RigCommand {
         ClientCommand::SetCwToneHz { tone_hz } => RigCommand::SetCwToneHz(tone_hz),
         ClientCommand::SetFt8DecodeEnabled { enabled } => RigCommand::SetFt8DecodeEnabled(enabled),
         ClientCommand::SetFt4DecodeEnabled { enabled } => RigCommand::SetFt4DecodeEnabled(enabled),
+        ClientCommand::SetFt2DecodeEnabled { enabled } => RigCommand::SetFt2DecodeEnabled(enabled),
         ClientCommand::SetWsprDecodeEnabled { enabled } => {
             RigCommand::SetWsprDecodeEnabled(enabled)
         }
@@ -51,6 +52,7 @@ pub fn client_command_to_rig(cmd: ClientCommand) -> RigCommand {
         ClientCommand::ResetCwDecoder => RigCommand::ResetCwDecoder,
         ClientCommand::ResetFt8Decoder => RigCommand::ResetFt8Decoder,
         ClientCommand::ResetFt4Decoder => RigCommand::ResetFt4Decoder,
+        ClientCommand::ResetFt2Decoder => RigCommand::ResetFt2Decoder,
         ClientCommand::ResetWsprDecoder => RigCommand::ResetWsprDecoder,
         ClientCommand::SetBandwidth { bandwidth_hz } => RigCommand::SetBandwidth(bandwidth_hz),
         ClientCommand::SetFirTaps { taps } => RigCommand::SetFirTaps(taps),
@@ -103,6 +105,7 @@ pub fn rig_command_to_client(cmd: RigCommand) -> ClientCommand {
         RigCommand::SetCwToneHz(tone_hz) => ClientCommand::SetCwToneHz { tone_hz },
         RigCommand::SetFt8DecodeEnabled(enabled) => ClientCommand::SetFt8DecodeEnabled { enabled },
         RigCommand::SetFt4DecodeEnabled(enabled) => ClientCommand::SetFt4DecodeEnabled { enabled },
+        RigCommand::SetFt2DecodeEnabled(enabled) => ClientCommand::SetFt2DecodeEnabled { enabled },
         RigCommand::SetWsprDecodeEnabled(enabled) => {
             ClientCommand::SetWsprDecodeEnabled { enabled }
         }
@@ -111,6 +114,7 @@ pub fn rig_command_to_client(cmd: RigCommand) -> ClientCommand {
         RigCommand::ResetCwDecoder => ClientCommand::ResetCwDecoder,
         RigCommand::ResetFt8Decoder => ClientCommand::ResetFt8Decoder,
         RigCommand::ResetFt4Decoder => ClientCommand::ResetFt4Decoder,
+        RigCommand::ResetFt2Decoder => ClientCommand::ResetFt2Decoder,
         RigCommand::ResetWsprDecoder => ClientCommand::ResetWsprDecoder,
         RigCommand::SetBandwidth(bandwidth_hz) => ClientCommand::SetBandwidth { bandwidth_hz },
         RigCommand::SetFirTaps(taps) => ClientCommand::SetFirTaps { taps },
