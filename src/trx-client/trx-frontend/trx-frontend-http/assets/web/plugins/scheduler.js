@@ -13,6 +13,7 @@
   let schedulerRole = null;       // "control" | "rx" | null
   let currentRigId = null;
   let currentConfig = null;
+  let currentSchedulerStatus = null;
   let bookmarkList = [];          // [{id, name, freq_hz, mode}, ...]
   let statusInterval = null;
   let interleaveTicker = null;
@@ -211,6 +212,30 @@
     if (!(cycleMin > 0)) {
       return { activeEntries: active, currentIndex: 0, remainingSec: 0, cycleMin: 0 };
     }
+    const statusEntryId = currentSchedulerStatus && currentSchedulerStatus.last_entry_id
+      ? String(currentSchedulerStatus.last_entry_id)
+      : "";
+    const statusIndex = statusEntryId
+      ? active.findIndex(function (entry) { return String(entry && entry.id || "") === statusEntryId; })
+      : -1;
+    const statusAppliedUtc = currentSchedulerStatus && Number.isFinite(Number(currentSchedulerStatus.last_applied_utc))
+      ? Number(currentSchedulerStatus.last_applied_utc)
+      : null;
+    if (statusIndex >= 0 && statusAppliedUtc != null) {
+      const manualDurationMin = durations[statusIndex];
+      const elapsedSec = Math.max(0, schedulerUtcSeconds() - statusAppliedUtc);
+      const remainingSec = (manualDurationMin > 0)
+        ? Math.max(1, (manualDurationMin * 60) - elapsedSec)
+        : 0;
+      if (remainingSec > 0) {
+        return {
+          activeEntries: active,
+          currentIndex: statusIndex,
+          remainingSec: remainingSec,
+          cycleMin: cycleMin,
+        };
+      }
+    }
     const overlapStart = active.reduce(function (maxStart, entry) {
       return Math.max(maxStart, schedulerEntryCurrentWindowStart(entry, nowMin));
     }, Number.NEGATIVE_INFINITY);
@@ -285,7 +310,9 @@
     if (!rig) return;
     apiGetStatus(rig)
       .then(function (st) {
+        currentSchedulerStatus = st || null;
         renderStatus(st);
+        renderSchedulerInterleaveStatus();
       })
       .catch(function () {});
   }
@@ -297,7 +324,13 @@
       el.textContent = "No activity yet.";
       return;
     }
-    const name = st.last_bookmark_name || st.last_bookmark_id || "—";
+    const statusEntryId = st.last_entry_id ? String(st.last_entry_id) : "";
+    const entry = statusEntryId && currentConfig && Array.isArray(currentConfig.entries)
+      ? currentConfig.entries.find(function (item) { return String(item && item.id || "") === statusEntryId; })
+      : null;
+    const name = entry
+      ? schedulerEntryDisplayName(entry)
+      : (st.last_bookmark_name || st.last_bookmark_id || "—");
     let ts = "";
     if (st.last_applied_utc) {
       const d = new Date(st.last_applied_utc * 1000);
@@ -489,6 +522,7 @@
         return apiActivateSchedulerEntry(currentRigId, target.id);
       })
       .then(function (status) {
+        currentSchedulerStatus = status || null;
         renderStatus(status);
         renderSchedulerInterleaveStatus();
         showSchedulerToast("Selected " + schedulerEntryDisplayName(target) + ".");

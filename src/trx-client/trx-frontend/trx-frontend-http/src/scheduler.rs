@@ -398,6 +398,8 @@ fn utc_minutes_now() -> f64 {
 #[derive(Debug, Clone, Serialize, Default)]
 pub struct SchedulerStatus {
     pub active: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_entry_id: Option<String>,
     pub last_bookmark_id: Option<String>,
     pub last_bookmark_name: Option<String>,
     pub last_applied_utc: Option<i64>,
@@ -414,6 +416,7 @@ async fn apply_scheduler_target(
     rig_id: &str,
     status_map: &SchedulerStatusMap,
     bookmarks: &BookmarkStore,
+    entry_id: Option<&str>,
     bookmark_id: &str,
     center_hz: Option<u64>,
     extra_bm_ids: &[String],
@@ -456,6 +459,7 @@ async fn apply_scheduler_target(
 
     let status = SchedulerStatus {
         active: true,
+        last_entry_id: entry_id.map(str::to_string),
         last_bookmark_id: Some(bookmark_id.to_string()),
         last_bookmark_name: Some(bookmark.name.clone()),
         last_applied_utc: Some(
@@ -586,7 +590,7 @@ pub fn spawn_scheduler_task(
                     continue;
                 }
 
-                let (bm_id, center_hz, extra_bm_ids) = match &config.mode {
+                let (entry_id, bm_id, center_hz, extra_bm_ids) = match &config.mode {
                     SchedulerMode::Disabled => continue,
                     SchedulerMode::Grayline => {
                         let Some(bm_id) = config
@@ -596,7 +600,7 @@ pub fn spawn_scheduler_task(
                         else {
                             continue;
                         };
-                        (bm_id, None, Vec::new())
+                        (None, bm_id, None, Vec::new())
                     }
                     SchedulerMode::TimeSpan => {
                         let Some(entry) =
@@ -605,6 +609,7 @@ pub fn spawn_scheduler_task(
                             continue;
                         };
                         (
+                            Some(entry.id.clone()),
                             entry.bookmark_id.clone(),
                             entry.center_hz,
                             entry.bookmark_ids.clone(),
@@ -641,6 +646,7 @@ pub fn spawn_scheduler_task(
                     &config.rig_id,
                     &status_map,
                     &bookmarks,
+                    entry_id.as_deref(),
                     &bm_id,
                     center_hz,
                     &extra_bm_ids,
@@ -731,6 +737,7 @@ async fn apply_last_scheduler_cycle(
         rig_id,
         status_map,
         bookmarks,
+        status.last_entry_id.as_deref(),
         &bookmark_id,
         status.last_center_hz,
         &status.last_bookmark_ids,
@@ -858,6 +865,7 @@ pub async fn put_scheduler_activate_entry(
         &rig_id,
         status_map.get_ref(),
         bookmarks.get_ref().as_ref(),
+        Some(&entry.id),
         &entry.bookmark_id,
         entry.center_hz,
         &entry.bookmark_ids,
