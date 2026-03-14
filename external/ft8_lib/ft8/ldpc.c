@@ -22,6 +22,7 @@
 static int ldpc_check(uint8_t codeword[]);
 static float fast_tanh(float x);
 static float fast_atanh(float x);
+static float platanh(float x);
 static void pack_bits91(const uint8_t bit_array[], int num_bits, uint8_t packed[]);
 static void unpack_bits91(const uint8_t packed[], int num_bits, uint8_t bit_array[]);
 static bool check_crc91(const uint8_t plain91[]);
@@ -255,6 +256,26 @@ static float fast_atanh(float x)
     float a = x * (945.0f + x2 * (-735.0f + x2 * 64.0f));
     float b = (945.0f + x2 * (-1050.0f + x2 * 225.0f));
     return a / b;
+}
+
+static float platanh(float x)
+{
+    int isign = 1;
+    float z = x;
+    if (x < 0.0f)
+    {
+        isign = -1;
+        z = -x;
+    }
+    if (z <= 0.664f)
+        return x / 0.83f;
+    if (z <= 0.9217f)
+        return isign * ((z - 0.4064f) / 0.322f);
+    if (z <= 0.9951f)
+        return isign * ((z - 0.8378f) / 0.0524f);
+    if (z <= 0.9998f)
+        return isign * ((z - 0.9914f) / 0.0012f);
+    return isign * 7.0f;
 }
 
 typedef struct
@@ -967,7 +988,7 @@ void decode174_91_osd(float llr[], int keff, int maxosd, int norder, uint8_t apm
                 for (int kk = 0; kk < 3; ++kk)
                 {
                     if ((kFTX_LDPC_Mn[n][kk] - 1) == m)
-                        tov[n][kk] = 2.0f * fast_atanh(-Tmn);
+                        tov[n][kk] = 2.0f * platanh(-Tmn);
                 }
             }
         }
