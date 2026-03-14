@@ -85,15 +85,18 @@ fn format_aprs_lon(lon: f64) -> String {
 ///
 /// Uses APRS uncompressed position format (`!`) with path `TCPIP*`.
 /// The two-character `symbol` string sets the symbol-table and symbol-code
-/// (e.g. `/-` = house, `/&` = diamond/gateway).
+/// (e.g. `/-` = house, `/&` = diamond/gateway), followed by a software
+/// comment identifying this IGate instance.
 fn format_beacon(callsign: &str, lat: f64, lon: f64, sym_table: char, sym_code: char) -> String {
+    let comment = format!("trx-rs v{} by SP2SJG", env!("CARGO_PKG_VERSION"));
     format!(
-        "{}>APRS,TCPIP*:!{}{}{}{}\r\n",
+        "{}>APRS,TCPIP*:!{}{}{}{}{}\r\n",
         callsign,
         format_aprs_lat(lat),
         sym_table,
         format_aprs_lon(lon),
         sym_code,
+        comment,
     )
 }
 
@@ -442,7 +445,13 @@ mod tests {
     #[test]
     fn beacon_format_house_symbol() {
         let s = format_beacon("SP2SJG-10", 52.2297, 21.0122, '/', '-');
-        assert_eq!(s, "SP2SJG-10>APRS,TCPIP*:!5213.78N/02100.73E-\r\n");
+        assert_eq!(
+            s,
+            format!(
+                "SP2SJG-10>APRS,TCPIP*:!5213.78N/02100.73E-trx-rs v{} by SP2SJG\r\n",
+                env!("CARGO_PKG_VERSION")
+            )
+        );
     }
 
     #[test]
@@ -450,6 +459,7 @@ mod tests {
         let s = format_beacon("VK2ABC-10", -33.8688, 151.2093, '/', '-');
         assert!(s.contains('S'));
         assert!(s.contains('E'));
+        assert!(s.contains("trx-rs v"));
     }
 
     #[test]
