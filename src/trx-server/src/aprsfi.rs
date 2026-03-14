@@ -4,6 +4,8 @@
 
 //! APRS-IS IGate uplink — forwards RF-decoded APRS packets to APRS-IS (aprs.fi etc.).
 
+use std::time::{SystemTime, UNIX_EPOCH};
+
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::TcpStream;
 use tokio::sync::broadcast;
@@ -208,6 +210,20 @@ pub async fn run_aprsfi_uplink(
                             if !pkt.crc_ok {
                                 stats_skipped += 1;
                                 continue 'forward;
+                            }
+                            // Guard against history replays: skip packets whose timestamp
+                            // indicates they are older than 2 minutes. Live RF-decoded
+                            // packets arrive within milliseconds; history items can be
+                            // up to 24 hours old.
+                            if let Some(ts_ms) = pkt.ts_ms {
+                                let now_ms = SystemTime::now()
+                                    .duration_since(UNIX_EPOCH)
+                                    .map(|d| d.as_millis() as i64)
+                                    .unwrap_or(0);
+                                if now_ms.saturating_sub(ts_ms) > 120_000 {
+                                    stats_skipped += 1;
+                                    continue 'forward;
+                                }
                             }
                             let tnc2 = format_tnc2(&pkt);
                             debug!("APRS-IS: forwarded {}>{},...", pkt.src_call, pkt.dest_call);
