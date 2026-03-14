@@ -2651,6 +2651,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "trx-reporting"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "tokio",
+ "tracing",
+ "trx-core",
+]
+
+[[package]]
 name = "trx-server"
 version = "0.1.0"
 dependencies = [
@@ -2678,6 +2688,7 @@ dependencies = [
  "trx-decode-log",
  "trx-ft8",
  "trx-protocol",
+ "trx-reporting",
  "trx-vdes",
  "trx-wspr",
  "uuid",

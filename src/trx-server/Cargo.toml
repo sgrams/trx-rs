@@ -40,3 +40,4 @@ trx-decode-log = { path = "../decoders/trx-decode-log" }
 trx-ft8 = { path = "../decoders/trx-ft8" }
 trx-wspr = { path = "../decoders/trx-wspr" }
 trx-protocol = { path = "../trx-protocol" }
+trx-reporting = { path = "../trx-reporting" }

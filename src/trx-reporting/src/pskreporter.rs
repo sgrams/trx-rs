@@ -13,7 +13,7 @@ use tracing::{info, warn};
 use trx_core::decode::DecodedMessage;
 use trx_core::rig::state::RigState;
 
-use crate::config::PskReporterConfig;
+use crate::PskReporterConfig;
 
 const PSK_REPORTER_IDENTIFIER: u16 = 0x000A;
 const RECEIVER_FLOWSET: u16 = 0x9992;

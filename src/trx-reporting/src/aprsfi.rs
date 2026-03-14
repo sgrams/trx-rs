@@ -14,7 +14,7 @@ use tracing::{debug, info, warn};
 
 use trx_core::decode::{AprsPacket, DecodedMessage};
 
-use crate::config::AprsFiConfig;
+use crate::AprsFiConfig;
 
 /// Compute the APRS-IS passcode for a callsign.
 ///

@@ -2,13 +2,11 @@
 //
 // SPDX-License-Identifier: BSD-2-Clause
 
-mod aprsfi;
 mod audio;
 mod config;
 mod error;
 mod history_store;
 mod listener;
-mod pskreporter;
 mod rig_handle;
 mod rig_task;
 
@@ -489,7 +487,7 @@ fn spawn_rig_audio_stack(
             let pr_shutdown_rx = shutdown_rx.clone();
             handles.push(tokio::spawn(async move {
                 tokio::select! {
-                    _ = pskreporter::run_pskreporter_uplink(
+                    _ = trx_reporting::pskreporter::run_pskreporter_uplink(
                         pr_cfg,
                         cs,
                         latitude,
@@ -516,7 +514,7 @@ fn spawn_rig_audio_stack(
             let ai_shutdown_rx = shutdown_rx.clone();
             handles.push(tokio::spawn(async move {
                 tokio::select! {
-                    _ = aprsfi::run_aprsfi_uplink(ai_cfg, cs, ai_decode_rx) => {}
+                    _ = trx_reporting::aprsfi::run_aprsfi_uplink(ai_cfg, cs, ai_decode_rx) => {}
                     _ = wait_for_shutdown(ai_shutdown_rx) => {}
                 }
             }));

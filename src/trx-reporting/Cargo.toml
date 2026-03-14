@@ -1,0 +1,14 @@
+# SPDX-FileCopyrightText: 2026 Stanislaw Grams <stanislawgrams@gmail.com>
+#
+# SPDX-License-Identifier: BSD-2-Clause
+
+[package]
+name = "trx-reporting"
+version.workspace = true
+edition = "2021"
+
+[dependencies]
+tokio = { workspace = true, features = ["full"] }
+tracing = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+trx-core = { path = "../trx-core" }
