@@ -132,7 +132,7 @@ window.onServerFt4Batch = function(messages) {
   for (const msg of messages) {
     const next = normalizeServerFt4Message(msg);
     if (next.grids.length > 0 && window.ft8MapAddLocator) {
-      window.ft8MapAddLocator(next.raw, next.grids, "ft8", next.station, { ...msg, freq_hz: next.rfHz, locator_details: next.locatorDetails });
+      window.ft8MapAddLocator(next.raw, next.grids, "ft4", next.station, { ...msg, freq_hz: next.rfHz, locator_details: next.locatorDetails });
     }
     next.history._tsMs = Number.isFinite(next.history?.ts_ms) ? Number(next.history.ts_ms) : Date.now();
     normalized.push(next.history);
@@ -183,7 +183,7 @@ window.onServerFt4 = function(msg) {
   if (ft4Status) ft4Status.textContent = ft4Paused ? "Paused" : "Receiving";
   const next = normalizeServerFt4Message(msg);
   if (next.grids.length > 0 && window.ft8MapAddLocator) {
-    window.ft8MapAddLocator(next.raw, next.grids, "ft8", next.station, { ...msg, freq_hz: next.rfHz, locator_details: next.locatorDetails });
+    window.ft8MapAddLocator(next.raw, next.grids, "ft4", next.station, { ...msg, freq_hz: next.rfHz, locator_details: next.locatorDetails });
   }
   addFt4Message(next.history);
 };
