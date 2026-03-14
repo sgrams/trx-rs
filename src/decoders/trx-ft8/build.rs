@@ -12,7 +12,6 @@ fn main() {
         .include(format!("{base}/ft8"))
         .define("_GNU_SOURCE", None)
         .define("_POSIX_C_SOURCE", "200809L")
-        .file("src/ft2_ldpc.c")
         .file("src/ft8_wrapper.c")
         .file(format!("{base}/common/monitor.c"))
         .file(format!("{base}/fft/kiss_fft.c"))
@@ -30,8 +29,6 @@ fn main() {
 
     println!("cargo:rustc-link-lib=m");
 
-    println!("cargo:rerun-if-changed=src/ft2_ldpc.c");
-    println!("cargo:rerun-if-changed=src/ft2_ldpc.h");
     println!("cargo:rerun-if-changed=src/ft8_wrapper.c");
     println!("cargo:rerun-if-changed={base}/common/monitor.c");
     println!("cargo:rerun-if-changed={base}/common/monitor.h");

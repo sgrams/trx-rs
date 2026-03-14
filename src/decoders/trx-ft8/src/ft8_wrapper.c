@@ -12,7 +12,6 @@
 #include <common/monitor.h>
 #include <fft/kiss_fftr.h>
 #include <fft/kiss_fft.h>
-#include "ft2_ldpc.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -1216,25 +1215,58 @@ static bool ft2_decode_hit(
     }
 
     bool ok = false;
-    uint8_t apmask[FTX_LDPC_N] = { 0 };
-    uint8_t message91[FTX_LDPC_K] = { 0 };
     uint8_t cw[FTX_LDPC_N] = { 0 };
     for (int pass = 0; pass < 5 && !ok; ++pass)
     {
         float log174[FTX_LDPC_N];
         memcpy(log174, llr_passes[pass], sizeof(log174));
-        int ntype = 0;
-        int nharderror = -1;
+        int ntype = 0;      // 1: bp_decode, 2: ldpc_decode
+        int nharderror = FTX_LDPC_M;
         float dmin = 0.0f;
-        ft2_decode174_91_osd(log174, FTX_LDPC_K, 3, 3, apmask, message91, cw, &ntype, &nharderror, &dmin);
+
+        uint8_t bp_plain[FTX_LDPC_N];
+        int bp_errors = FTX_LDPC_M;
+        bp_decode(log174, 30, bp_plain, &bp_errors);
+        if (bp_errors < nharderror)
+        {
+            nharderror = bp_errors;
+            memcpy(cw, bp_plain, sizeof(cw));
+            ntype = 1;
+        }
+        if (bp_errors == 0 && ft2_unpack_message(bp_plain, message))
+        {
+            ok = true;
+            memcpy(cw, bp_plain, sizeof(cw));
+            ntype = 1;
+            nharderror = 0;
+        }
+
+        if (!ok)
+        {
+            uint8_t sp_plain[FTX_LDPC_N];
+            int sp_errors = FTX_LDPC_M;
+            ldpc_decode(log174, 30, sp_plain, &sp_errors);
+            if (sp_errors < nharderror)
+            {
+                nharderror = sp_errors;
+                memcpy(cw, sp_plain, sizeof(cw));
+                ntype = 2;
+            }
+            if (sp_errors == 0 && ft2_unpack_message(sp_plain, message))
+            {
+                ok = true;
+                memcpy(cw, sp_plain, sizeof(cw));
+                ntype = 2;
+                nharderror = 0;
+            }
+        }
+
         if (pass_diag)
         {
             pass_diag->ntype[pass] = ntype;
             pass_diag->nharderror[pass] = nharderror;
             pass_diag->dmin[pass] = dmin;
         }
-        if (ntype != 0 && nharderror >= 0)
-            ok = ft2_unpack_message(cw, message);
     }
     if (!ok && fail_stage)
         *fail_stage = FT2_FAIL_LDPC;
@@ -1402,7 +1434,7 @@ int ft8_decoder_decode(ft8_decoder_t* dec, ft8_decode_result_t* out, int max_res
         int fail_crc = 0;
         int fail_unpack = 0;
         int pass_bp[5] = { 0 };
-        int pass_osd[5] = { 0 };
+        int pass_sp[5] = { 0 };
         float pass_best_dmin[5] = { INFINITY, INFINITY, INFINITY, INFINITY, INFINITY };
         for (int idx = 0; idx < num_hits && num_decoded < max_results; ++idx)
         {
@@ -1420,7 +1452,7 @@ int ft8_decoder_decode(ft8_decoder_t* dec, ft8_decode_result_t* out, int max_res
                     if (pass_diag.ntype[pass] == 1)
                         ++pass_bp[pass];
                     else if (pass_diag.ntype[pass] == 2)
-                        ++pass_osd[pass];
+                        ++pass_sp[pass];
                     if (pass_diag.dmin[pass] < pass_best_dmin[pass])
                         pass_best_dmin[pass] = pass_diag.dmin[pass];
                 }
@@ -1460,7 +1492,7 @@ int ft8_decoder_decode(ft8_decoder_t* dec, ft8_decode_result_t* out, int max_res
                 if (pass_diag.ntype[pass] == 1)
                     ++pass_bp[pass];
                 else if (pass_diag.ntype[pass] == 2)
-                    ++pass_osd[pass];
+                    ++pass_sp[pass];
                 if (pass_diag.dmin[pass] < pass_best_dmin[pass])
                     pass_best_dmin[pass] = pass_diag.dmin[pass];
             }
@@ -1509,7 +1541,7 @@ int ft8_decoder_decode(ft8_decoder_t* dec, ft8_decode_result_t* out, int max_res
             num_decoded++;
         }
         LOG(LOG_INFO,
-            "FT2 window: raw=%d peaks=%d hits=%d best_peak=%.3f best_sync=%.3f decoded=%d fail(sync=%d freq=%d down=%d bits=%d qual=%d ldpc=%d crc=%d unpack=%d) pass(bp=%d/%d/%d/%d/%d osd=%d/%d/%d/%d/%d dmin=%.2f/%.2f/%.2f/%.2f/%.2f)\n",
+            "FT2 window: raw=%d peaks=%d hits=%d best_peak=%.3f best_sync=%.3f decoded=%d fail(sync=%d freq=%d down=%d bits=%d qual=%d ldpc=%d crc=%d unpack=%d) pass(bp=%d/%d/%d/%d/%d sp=%d/%d/%d/%d/%d dmin=%.2f/%.2f/%.2f/%.2f/%.2f)\n",
             dec->ft2_raw_len,
             scan_stats.peaks_found,
             scan_stats.hits_found,
@@ -1525,7 +1557,7 @@ int ft8_decoder_decode(ft8_decoder_t* dec, ft8_decode_result_t* out, int max_res
             fail_crc,
             fail_unpack,
             pass_bp[0], pass_bp[1], pass_bp[2], pass_bp[3], pass_bp[4],
-            pass_osd[0], pass_osd[1], pass_osd[2], pass_osd[3], pass_osd[4],
+            pass_sp[0], pass_sp[1], pass_sp[2], pass_sp[3], pass_sp[4],
             isfinite(pass_best_dmin[0]) ? pass_best_dmin[0] : -1.0f,
             isfinite(pass_best_dmin[1]) ? pass_best_dmin[1] : -1.0f,
             isfinite(pass_best_dmin[2]) ? pass_best_dmin[2] : -1.0f,
