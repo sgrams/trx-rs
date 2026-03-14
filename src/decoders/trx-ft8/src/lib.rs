@@ -6,10 +6,14 @@ use libc::{c_float, c_int, c_void};
 use std::ffi::CStr;
 use std::ptr::NonNull;
 
-const F_MIN_HZ: f32 = 200.0;
-const F_MAX_HZ: f32 = 3000.0;
-const TIME_OSR: i32 = 2;
-const FREQ_OSR: i32 = 2;
+const DEFAULT_F_MIN_HZ: f32 = 200.0;
+const DEFAULT_F_MAX_HZ: f32 = 3000.0;
+const DEFAULT_TIME_OSR: i32 = 2;
+const DEFAULT_FREQ_OSR: i32 = 2;
+const FT2_F_MIN_HZ: f32 = 200.0;
+const FT2_F_MAX_HZ: f32 = 5000.0;
+const FT2_TIME_OSR: i32 = 8;
+const FT2_FREQ_OSR: i32 = 4;
 
 const FTX_MAX_MESSAGE_LENGTH: usize = 35;
 const PROTOCOL_FT4: c_int = 0;
@@ -44,6 +48,7 @@ extern "C" {
     ) -> *mut c_void;
     fn ft8_decoder_free(dec: *mut c_void);
     fn ft8_decoder_block_size(dec: *const c_void) -> c_int;
+    fn ft8_decoder_window_samples(dec: *const c_void) -> c_int;
     fn ft8_decoder_reset(dec: *mut c_void);
     fn ft8_decoder_process(dec: *mut c_void, frame: *const c_float);
     fn ft8_decoder_is_ready(dec: *const c_void) -> c_int;
@@ -57,6 +62,7 @@ extern "C" {
 pub struct Ft8Decoder {
     inner: NonNull<c_void>,
     block_size: usize,
+    window_samples: usize,
     sample_rate: u32,
 }
 
@@ -78,24 +84,39 @@ impl Ft8Decoder {
     }
 
     fn new_with_protocol(sample_rate: u32, protocol: c_int, label: &str) -> Result<Self, String> {
+        let (f_min, f_max, time_osr, freq_osr) = match protocol {
+            PROTOCOL_FT2 => (FT2_F_MIN_HZ, FT2_F_MAX_HZ, FT2_TIME_OSR, FT2_FREQ_OSR),
+            _ => (
+                DEFAULT_F_MIN_HZ,
+                DEFAULT_F_MAX_HZ,
+                DEFAULT_TIME_OSR,
+                DEFAULT_FREQ_OSR,
+            ),
+        };
         unsafe {
             let ptr = ft8_decoder_create(
                 sample_rate as c_int,
-                F_MIN_HZ,
-                F_MAX_HZ,
-                TIME_OSR as c_int,
-                FREQ_OSR as c_int,
+                f_min,
+                f_max,
+                time_osr as c_int,
+                freq_osr as c_int,
                 protocol,
             );
             let inner = NonNull::new(ptr).ok_or_else(|| "ft8_decoder_create failed".to_string())?;
             let block_size = ft8_decoder_block_size(inner.as_ptr()) as usize;
+            let window_samples = ft8_decoder_window_samples(inner.as_ptr()) as usize;
             if block_size == 0 {
                 ft8_decoder_free(inner.as_ptr());
                 return Err(format!("invalid {label} block size"));
             }
+            if window_samples == 0 {
+                ft8_decoder_free(inner.as_ptr());
+                return Err(format!("invalid {label} analysis window"));
+            }
             Ok(Self {
                 inner,
                 block_size,
+                window_samples,
                 sample_rate,
             })
         }
@@ -107,6 +128,10 @@ impl Ft8Decoder {
 
     pub fn sample_rate(&self) -> u32 {
         self.sample_rate
+    }
+
+    pub fn window_samples(&self) -> usize {
+        self.window_samples
     }
 
     pub fn reset(&mut self) {
@@ -178,5 +203,6 @@ mod tests {
         assert!(ft2.block_size() < ft4.block_size());
         assert_eq!(ft4.block_size(), 576);
         assert_eq!(ft2.block_size(), 288);
+        assert_eq!(ft2.window_samples(), 44_928);
     }
 }

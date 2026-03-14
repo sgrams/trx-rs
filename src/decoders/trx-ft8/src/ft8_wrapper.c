@@ -159,6 +159,13 @@ int ft8_decoder_block_size(const ft8_decoder_t* dec)
     return dec ? dec->mon.block_size : 0;
 }
 
+int ft8_decoder_window_samples(const ft8_decoder_t* dec)
+{
+    if (!dec)
+        return 0;
+    return dec->mon.block_size * dec->mon.wf.max_blocks;
+}
+
 void ft8_decoder_reset(ft8_decoder_t* dec)
 {
     if (!dec)
@@ -186,9 +193,10 @@ int ft8_decoder_decode(ft8_decoder_t* dec, ft8_decode_result_t* out, int max_res
         return 0;
 
     const ftx_waterfall_t* wf = &dec->mon.wf;
-    const int kMaxCandidates = 200;
-    const int kMinScore = 10;
-    const int kLdpcIters = 30;
+    const bool is_ft2 = (dec->cfg.protocol == FTX_PROTOCOL_FT2);
+    const int kMaxCandidates = is_ft2 ? 400 : 200;
+    const int kMinScore = is_ft2 ? 4 : 10;
+    const int kLdpcIters = is_ft2 ? 50 : 30;
 
     ftx_candidate_t candidate_list[kMaxCandidates];
     int num_candidates = ftx_find_candidates(wf, kMaxCandidates, candidate_list, kMinScore);
