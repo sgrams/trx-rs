@@ -145,8 +145,8 @@ window.onServerFt8Batch = function(messages) {
   const normalized = [];
   for (const msg of messages) {
     const next = normalizeServerFt8Message(msg);
-    if (next.grids.length > 0 && window.ft8MapAddLocator) {
-      window.ft8MapAddLocator(next.raw, next.grids, "ft8", next.station, {
+    if (next.grids.length > 0 && window.mapAddLocator) {
+      window.mapAddLocator(next.raw, next.grids, "ft8", next.station, {
         ...msg,
         freq_hz: next.rfHz,
         locator_details: next.locatorDetails,
@@ -443,8 +443,8 @@ document.getElementById("ft8-clear-btn").addEventListener("click", async () => {
 window.onServerFt8 = function(msg) {
   ft8Status.textContent = ft8Paused ? "Paused" : "Receiving";
   const next = normalizeServerFt8Message(msg);
-  if (next.grids.length > 0 && window.ft8MapAddLocator) {
-    window.ft8MapAddLocator(next.raw, next.grids, "ft8", next.station, {
+  if (next.grids.length > 0 && window.mapAddLocator) {
+    window.mapAddLocator(next.raw, next.grids, "ft8", next.station, {
       ...msg,
       freq_hz: next.rfHz,
       locator_details: next.locatorDetails,

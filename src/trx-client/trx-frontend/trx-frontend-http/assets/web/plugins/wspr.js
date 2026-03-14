@@ -124,8 +124,8 @@ window.onServerWsprBatch = function(messages) {
   const normalized = [];
   for (const msg of messages) {
     const next = normalizeServerWsprMessage(msg);
-    if (next.grids.length > 0 && window.ft8MapAddLocator) {
-      window.ft8MapAddLocator(next.raw, next.grids, "wspr", next.station, {
+    if (next.grids.length > 0 && window.mapAddLocator) {
+      window.mapAddLocator(next.raw, next.grids, "wspr", next.station, {
         ...msg,
         freq_hz: next.rfHz,
       });
@@ -307,8 +307,8 @@ document.getElementById("wspr-clear-btn").addEventListener("click", async () => 
 window.onServerWspr = function(msg) {
   wsprStatus.textContent = wsprPaused ? "Paused" : "Receiving";
   const next = normalizeServerWsprMessage(msg);
-  if (next.grids.length > 0 && window.ft8MapAddLocator) {
-    window.ft8MapAddLocator(next.raw, next.grids, "wspr", next.station, {
+  if (next.grids.length > 0 && window.mapAddLocator) {
+    window.mapAddLocator(next.raw, next.grids, "wspr", next.station, {
       ...msg,
       freq_hz: next.rfHz,
     });

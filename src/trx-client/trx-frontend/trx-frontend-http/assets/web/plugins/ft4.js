@@ -131,8 +131,8 @@ window.onServerFt4Batch = function(messages) {
   const normalized = [];
   for (const msg of messages) {
     const next = normalizeServerFt4Message(msg);
-    if (next.grids.length > 0 && window.ft8MapAddLocator) {
-      window.ft8MapAddLocator(next.raw, next.grids, "ft4", next.station, { ...msg, freq_hz: next.rfHz, locator_details: next.locatorDetails });
+    if (next.grids.length > 0 && window.mapAddLocator) {
+      window.mapAddLocator(next.raw, next.grids, "ft4", next.station, { ...msg, freq_hz: next.rfHz, locator_details: next.locatorDetails });
     }
     next.history._tsMs = Number.isFinite(next.history?.ts_ms) ? Number(next.history.ts_ms) : Date.now();
     normalized.push(next.history);
@@ -182,8 +182,8 @@ document.getElementById("ft4-clear-btn")?.addEventListener("click", async () => 
 window.onServerFt4 = function(msg) {
   if (ft4Status) ft4Status.textContent = ft4Paused ? "Paused" : "Receiving";
   const next = normalizeServerFt4Message(msg);
-  if (next.grids.length > 0 && window.ft8MapAddLocator) {
-    window.ft8MapAddLocator(next.raw, next.grids, "ft4", next.station, { ...msg, freq_hz: next.rfHz, locator_details: next.locatorDetails });
+  if (next.grids.length > 0 && window.mapAddLocator) {
+    window.mapAddLocator(next.raw, next.grids, "ft4", next.station, { ...msg, freq_hz: next.rfHz, locator_details: next.locatorDetails });
   }
   addFt4Message(next.history);
 };

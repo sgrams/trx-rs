@@ -6522,7 +6522,7 @@ window.syncBookmarkMapLocators = function(bookmarks) {
   applyMapFilter();
 };
 
-window.ft8MapAddLocator = function(message, grids, type = "ft8", station = null, details = null) {
+window.mapAddLocator = function(message, grids, type = "ft8", station = null, details = null) {
   if (!Array.isArray(grids) || grids.length === 0) return;
   const markerType = type === "wspr" ? "wspr" : (type === "ft4" ? "ft4" : "ft8");
   const unique = [...new Set(grids.map((g) => String(g).toUpperCase()))];
