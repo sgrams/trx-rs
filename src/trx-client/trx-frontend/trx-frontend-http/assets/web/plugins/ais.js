@@ -390,6 +390,10 @@ window.onServerAisBatch = function(messages) {
   scheduleAisHistoryRender();
 };
 
+window.restoreAisHistory = function(messages) {
+  window.onServerAisBatch(messages);
+};
+
 window.pruneAisHistoryView = function() {
   pruneAisMessageHistory();
   updateAisBar();

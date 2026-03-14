@@ -1,4 +1,5 @@
 const textDecoder = typeof TextDecoder === "function" ? new TextDecoder() : null;
+const HISTORY_GROUP_KEYS = ["ais", "vdes", "aprs", "hf_aprs", "cw", "ft8", "wspr"];
 
 function decodeCborUint(view, bytes, state, additional) {
   const offset = state.offset;
@@ -111,13 +112,15 @@ function decodeCborItem(view, bytes, state) {
   throw new Error("Unsupported CBOR major type");
 }
 
-function decodeTopLevelArrayLength(view, bytes, state) {
-  if (state.offset >= bytes.length) throw new Error("CBOR payload truncated");
-  const initial = bytes[state.offset++];
-  const major = initial >> 5;
-  const additional = initial & 0x1f;
-  if (major !== 4) throw new Error("Decode history payload is not a CBOR array");
-  return decodeCborUint(view, bytes, state, additional);
+function decodeCborPayload(buffer) {
+  const bytes = buffer instanceof Uint8Array ? buffer : new Uint8Array(buffer);
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const state = { offset: 0 };
+  const value = decodeCborItem(view, bytes, state);
+  if (state.offset !== bytes.length) {
+    throw new Error("Unexpected trailing bytes in decode history payload");
+  }
+  return value;
 }
 
 async function fetchAndDecodeHistory(url, batchLimit) {
@@ -132,46 +135,30 @@ async function fetchAndDecodeHistory(url, batchLimit) {
   }
 
   self.postMessage({ type: "status", phase: "decoding" });
-  const bytes = new Uint8Array(payload);
-  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-  const state = { offset: 0 };
-  const total = decodeTopLevelArrayLength(view, bytes, state);
+  const history = decodeCborPayload(payload);
+  const total = HISTORY_GROUP_KEYS.reduce((sum, key) => {
+    const items = history && Array.isArray(history[key]) ? history[key] : [];
+    return sum + items.length;
+  }, 0);
   self.postMessage({ type: "start", total });
 
   let processed = 0;
-  let currentType = "";
-  let currentBatch = [];
-  const safeLimit = Math.max(1, Math.min(512, Number(batchLimit) || 192));
+  const safeLimit = Math.max(1, Math.min(2048, Number(batchLimit) || 512));
 
-  function flushBatch() {
-    if (currentBatch.length === 0) return;
-    self.postMessage({
-      type: "batch",
-      batch: currentBatch,
-      processed,
-      total,
-    });
-    currentBatch = [];
-    currentType = "";
-  }
-
-  for (let i = 0; i < total; i += 1) {
-    const item = decodeCborItem(view, bytes, state);
-    const itemType = String(item?.type || "");
-    if (
-      currentBatch.length > 0
-      && (itemType !== currentType || currentBatch.length >= safeLimit)
-    ) {
-      flushBatch();
+  for (const kind of HISTORY_GROUP_KEYS) {
+    const items = history && Array.isArray(history[kind]) ? history[kind] : [];
+    if (items.length === 0) continue;
+    for (let index = 0; index < items.length; index += safeLimit) {
+      const messages = items.slice(index, index + safeLimit);
+      processed += messages.length;
+      self.postMessage({
+        type: "group",
+        kind,
+        messages,
+        processed,
+        total,
+      });
     }
-    currentType = itemType;
-    currentBatch.push(item);
-    processed += 1;
-  }
-  flushBatch();
-
-  if (state.offset !== bytes.length) {
-    throw new Error("Unexpected trailing bytes in decode history payload");
   }
   self.postMessage({ type: "done", total });
 }

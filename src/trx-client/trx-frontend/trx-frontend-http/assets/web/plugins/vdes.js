@@ -331,6 +331,10 @@ window.onServerVdesBatch = function(messages) {
   scheduleVdesHistoryRender();
 };
 
+window.restoreVdesHistory = function(messages) {
+  window.onServerVdesBatch(messages);
+};
+
 if (vdesClearBtn) {
   vdesClearBtn.addEventListener("click", async () => {
     try {

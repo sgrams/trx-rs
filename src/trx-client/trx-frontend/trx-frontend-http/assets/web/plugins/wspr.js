@@ -144,6 +144,10 @@ window.onServerWsprBatch = function(messages) {
   scheduleWsprHistoryRender();
 };
 
+window.restoreWsprHistory = function(messages) {
+  window.onServerWsprBatch(messages);
+};
+
 window.pruneWsprHistoryView = function() {
   pruneWsprMessageHistory();
   renderWsprHistory();

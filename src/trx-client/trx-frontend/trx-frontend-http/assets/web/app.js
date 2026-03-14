@@ -7361,9 +7361,8 @@ function dispatchDecodeBatch(batch) {
   }
 }
 
-const DECODE_HISTORY_MAX_BATCH = 256;
 const DECODE_HISTORY_TYPE_BATCH_LIMIT = 192;
-const DECODE_HISTORY_SLICE_BUDGET_MS = 10;
+const DECODE_HISTORY_WORKER_GROUP_LIMIT = 512;
 const DECODE_HISTORY_BATCH_DRAIN_BUDGET_MS = 8;
 
 function terminateDecodeHistoryWorker() {
@@ -7381,50 +7380,51 @@ function scheduleDecodeHistoryDrainStep(callback) {
   }
 }
 
-function drainDecodeHistory(buffer, index, onDone, onProgress) {
-  const startedAt = typeof performance !== "undefined" && typeof performance.now === "function"
-    ? performance.now()
-    : 0;
-  let nextIndex = index;
-  while (nextIndex < buffer.length) {
-    const batchStart = nextIndex;
-    const batchType = String(buffer[nextIndex]?.type || "");
-    nextIndex += 1;
-    while (
-      nextIndex < buffer.length
-      && (nextIndex - batchStart) < DECODE_HISTORY_TYPE_BATCH_LIMIT
-      && (nextIndex - index) < DECODE_HISTORY_MAX_BATCH
-      && String(buffer[nextIndex]?.type || "") === batchType
-    ) {
-      nextIndex += 1;
-    }
-    dispatchDecodeBatch(buffer.slice(batchStart, nextIndex));
-    if ((nextIndex - index) >= DECODE_HISTORY_MAX_BATCH) break;
-    if (startedAt > 0 && (performance.now() - startedAt) >= DECODE_HISTORY_SLICE_BUDGET_MS) break;
-  }
-  if (typeof onProgress === "function") {
-    onProgress(nextIndex, buffer.length);
-  }
-  if (nextIndex < buffer.length) {
-    scheduleDecodeHistoryDrainStep(() => drainDecodeHistory(buffer, nextIndex, onDone, onProgress));
-  } else if (typeof onDone === "function") {
-    onDone();
-  }
-}
-
 function loadDecodeHistoryOnMainThread(onReady, onError) {
   fetch("/decode/history").then(async (resp) => {
     if (!resp.ok) return null;
     setDecodeHistoryOverlayVisible(true, "Loading decode history…", "Receiving compressed history payload");
     const payload = await resp.arrayBuffer();
-    if (!payload || payload.byteLength === 0) return [];
+    if (!payload || payload.byteLength === 0) return {};
     setDecodeHistoryOverlayVisible(true, "Loading decode history…", "Decoding compressed history payload");
     return decodeCborPayload(payload);
-  }).then((msgs) => {
-    if (typeof onReady === "function") onReady(Array.isArray(msgs) ? msgs : []);
+  }).then((groups) => {
+    if (typeof onReady === "function") onReady(groups && typeof groups === "object" ? groups : {});
   }).catch((err) => {
     if (typeof onError === "function") onError(err);
   });
+}
+
+function restoreDecodeHistoryGroup(kind, messages) {
+  if (!Array.isArray(messages) || messages.length === 0) return;
+  if (kind === "ais" && window.restoreAisHistory) {
+    window.restoreAisHistory(messages);
+    return;
+  }
+  if (kind === "vdes" && window.restoreVdesHistory) {
+    window.restoreVdesHistory(messages);
+    return;
+  }
+  if (kind === "aprs" && window.restoreAprsHistory) {
+    window.restoreAprsHistory(messages);
+    return;
+  }
+  if (kind === "hf_aprs" && window.restoreHfAprsHistory) {
+    window.restoreHfAprsHistory(messages);
+    return;
+  }
+  if (kind === "cw" && window.restoreCwHistory) {
+    window.restoreCwHistory(messages);
+    return;
+  }
+  if (kind === "ft8" && window.restoreFt8History) {
+    window.restoreFt8History(messages);
+    return;
+  }
+  if (kind === "wspr" && window.restoreWsprHistory) {
+    window.restoreWsprHistory(messages);
+    return;
+  }
 }
 
 function connectDecode() {
@@ -7447,7 +7447,7 @@ function connectDecode() {
   let historyBatchDrainScheduled = false;
   let historyTotal = 0;
   let historyProcessed = 0;
-  const historyBatchQueue = [];
+  const historyGroupQueue = [];
   const liveBuffer = [];
   function flushLiveBuffer() {
     historySettled = true;
@@ -7470,62 +7470,74 @@ function connectDecode() {
 
   function maybeFinishHistoryReplay() {
     if (historySettled) return;
-    if (historyWorkerDone && historyBatchQueue.length === 0) {
+    if (historyWorkerDone && historyGroupQueue.length === 0) {
       clearTimeout(historyTimeout);
       flushLiveBuffer();
     }
   }
 
-  function pumpDecodeHistoryBatchQueue() {
+  function pumpDecodeHistoryGroupQueue() {
     historyBatchDrainScheduled = false;
     const startedAt = typeof performance !== "undefined" && typeof performance.now === "function"
       ? performance.now()
       : 0;
-    while (historyBatchQueue.length > 0) {
-      const batch = historyBatchQueue.shift();
-      dispatchDecodeBatch(batch);
-      historyProcessed += Array.isArray(batch) ? batch.length : 0;
+    while (historyGroupQueue.length > 0) {
+      const next = historyGroupQueue.shift();
+      restoreDecodeHistoryGroup(next.kind, next.messages);
+      historyProcessed += Array.isArray(next.messages) ? next.messages.length : 0;
       updateHistoryReplayOverlay();
       if (startedAt > 0 && (performance.now() - startedAt) >= DECODE_HISTORY_BATCH_DRAIN_BUDGET_MS) {
         break;
       }
     }
-    if (historyBatchQueue.length > 0) {
-      scheduleDecodeHistoryDrainStep(pumpDecodeHistoryBatchQueue);
+    if (historyGroupQueue.length > 0) {
+      scheduleDecodeHistoryDrainStep(pumpDecodeHistoryGroupQueue);
       historyBatchDrainScheduled = true;
       return;
     }
     maybeFinishHistoryReplay();
   }
 
-  function enqueueDecodeHistoryBatch(batch) {
-    if (!Array.isArray(batch) || batch.length === 0) return;
-    historyBatchQueue.push(batch);
+  function enqueueDecodeHistoryGroup(kind, messages) {
+    if (!Array.isArray(messages) || messages.length === 0) return;
+    historyGroupQueue.push({ kind, messages });
     if (historyBatchDrainScheduled) return;
     historyBatchDrainScheduled = true;
-    scheduleDecodeHistoryDrainStep(pumpDecodeHistoryBatchQueue);
+    scheduleDecodeHistoryDrainStep(pumpDecodeHistoryGroupQueue);
+  }
+
+  function totalDecodeHistoryMessages(groups) {
+    if (!groups || typeof groups !== "object") return 0;
+    return ["ais", "vdes", "aprs", "hf_aprs", "cw", "ft8", "wspr"]
+      .reduce((sum, key) => sum + (Array.isArray(groups[key]) ? groups[key].length : 0), 0);
+  }
+
+  function enqueueDecodeHistoryGroups(groups) {
+    historyTotal = totalDecodeHistoryMessages(groups);
+    historyProcessed = 0;
+    if (historyTotal > 0) {
+      setDecodeHistoryReplayActive(true);
+      updateHistoryReplayOverlay();
+    }
+    for (const kind of ["ais", "vdes", "aprs", "hf_aprs", "cw", "ft8", "wspr"]) {
+      const messages = groups && Array.isArray(groups[kind]) ? groups[kind] : [];
+      if (messages.length === 0) continue;
+      for (let index = 0; index < messages.length; index += DECODE_HISTORY_WORKER_GROUP_LIMIT) {
+        enqueueDecodeHistoryGroup(kind, messages.slice(index, index + DECODE_HISTORY_WORKER_GROUP_LIMIT));
+      }
+    }
+    historyWorkerDone = true;
+    maybeFinishHistoryReplay();
   }
 
   function startDecodeHistoryFallback() {
     if (historyFallbackStarted || historySettled) return;
     historyFallbackStarted = true;
-    loadDecodeHistoryOnMainThread((msgs) => {
+    loadDecodeHistoryOnMainThread((groups) => {
       clearTimeout(historyTimeout);
-      if (Array.isArray(msgs) && msgs.length > 0) {
-        setDecodeHistoryReplayActive(true);
-        setDecodeHistoryOverlayVisible(true, "Loading decode history…", `Replaying 0 / ${msgs.length} decoded messages`);
-        drainDecodeHistory(
-          msgs,
-          0,
-          flushLiveBuffer,
-          (processed, total) => {
-            setDecodeHistoryOverlayVisible(
-              true,
-              "Loading decode history…",
-              `Replaying ${processed} / ${total} decoded messages`
-            );
-          }
-        );
+      const total = totalDecodeHistoryMessages(groups);
+      if (total > 0) {
+        enqueueDecodeHistoryGroups(groups);
       } else {
         flushLiveBuffer();
       }
@@ -7567,8 +7579,8 @@ function connectDecode() {
         }
         return;
       }
-      if (data.type === "batch") {
-        enqueueDecodeHistoryBatch(data.batch);
+      if (data.type === "group") {
+        enqueueDecodeHistoryGroup(String(data.kind || ""), data.messages);
         return;
       }
       if (data.type === "done") {
@@ -7587,7 +7599,7 @@ function connectDecode() {
     worker.postMessage({
       type: "fetch-history",
       url: "/decode/history",
-      batchLimit: DECODE_HISTORY_TYPE_BATCH_LIMIT,
+      batchLimit: DECODE_HISTORY_WORKER_GROUP_LIMIT,
     });
     return true;
   }

@@ -167,6 +167,10 @@ window.onServerFt8Batch = function(messages) {
   scheduleFt8HistoryRender();
 };
 
+window.restoreFt8History = function(messages) {
+  window.onServerFt8Batch(messages);
+};
+
 window.pruneFt8HistoryView = function() {
   pruneFt8MessageHistory();
   updateFt8Bar();

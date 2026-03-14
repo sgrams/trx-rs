@@ -447,6 +447,10 @@ window.onServerAprsBatch = function(packets) {
   scheduleAprsHistoryRender();
 };
 
+window.restoreAprsHistory = function(packets) {
+  window.onServerAprsBatch(packets);
+};
+
 document.getElementById("aprs-clear-btn").addEventListener("click", async () => {
   try {
     await postPath("/clear_aprs_decode");

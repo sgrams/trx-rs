@@ -426,6 +426,14 @@ window.onServerCw = function(evt) {
   });
 };
 
+window.restoreCwHistory = function(events) {
+  if (!Array.isArray(events) || events.length === 0) return;
+  if (cwStatusEl) cwStatusEl.textContent = cwPaused ? "Paused" : "Receiving";
+  for (const evt of events) {
+    window.onServerCw(evt);
+  }
+};
+
 if (cwPauseBtn) {
   cwPauseBtn.addEventListener("click", () => {
     cwPaused = !cwPaused;

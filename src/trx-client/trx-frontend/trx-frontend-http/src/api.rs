@@ -442,33 +442,40 @@ fn sync_scheduler_vchannels(
     vchan_mgr.sync_scheduler_channels(rig_id, &desired);
 }
 
-/// Build the combined decode history vector from all per-decoder ring-buffers.
-fn collect_decode_history(context: &FrontendRuntimeContext) -> Vec<trx_core::decode::DecodedMessage> {
-    let ais = crate::server::audio::snapshot_ais_history(context);
-    let vdes = crate::server::audio::snapshot_vdes_history(context);
-    let aprs = crate::server::audio::snapshot_aprs_history(context);
-    let hf_aprs = crate::server::audio::snapshot_hf_aprs_history(context);
-    let cw = crate::server::audio::snapshot_cw_history(context);
-    let ft8 = crate::server::audio::snapshot_ft8_history(context);
-    let wspr = crate::server::audio::snapshot_wspr_history(context);
+#[derive(serde::Serialize)]
+struct DecodeHistoryPayload {
+    ais: Vec<trx_core::decode::AisMessage>,
+    vdes: Vec<trx_core::decode::VdesMessage>,
+    aprs: Vec<trx_core::decode::AprsPacket>,
+    hf_aprs: Vec<trx_core::decode::AprsPacket>,
+    cw: Vec<trx_core::decode::CwEvent>,
+    ft8: Vec<trx_core::decode::Ft8Message>,
+    wspr: Vec<trx_core::decode::WsprMessage>,
+}
 
-    let mut out = Vec::with_capacity(
-        ais.len()
-            + vdes.len()
-            + aprs.len()
-            + hf_aprs.len()
-            + cw.len()
-            + ft8.len()
-            + wspr.len(),
-    );
-    out.extend(ais.into_iter().map(trx_core::decode::DecodedMessage::Ais));
-    out.extend(vdes.into_iter().map(trx_core::decode::DecodedMessage::Vdes));
-    out.extend(aprs.into_iter().map(trx_core::decode::DecodedMessage::Aprs));
-    out.extend(hf_aprs.into_iter().map(trx_core::decode::DecodedMessage::HfAprs));
-    out.extend(cw.into_iter().map(trx_core::decode::DecodedMessage::Cw));
-    out.extend(ft8.into_iter().map(trx_core::decode::DecodedMessage::Ft8));
-    out.extend(wspr.into_iter().map(trx_core::decode::DecodedMessage::Wspr));
-    out
+impl DecodeHistoryPayload {
+    fn total_messages(&self) -> usize {
+        self.ais.len()
+            + self.vdes.len()
+            + self.aprs.len()
+            + self.hf_aprs.len()
+            + self.cw.len()
+            + self.ft8.len()
+            + self.wspr.len()
+    }
+}
+
+/// Build the grouped decode history payload from all per-decoder ring-buffers.
+fn collect_decode_history(context: &FrontendRuntimeContext) -> DecodeHistoryPayload {
+    DecodeHistoryPayload {
+        ais: crate::server::audio::snapshot_ais_history(context),
+        vdes: crate::server::audio::snapshot_vdes_history(context),
+        aprs: crate::server::audio::snapshot_aprs_history(context),
+        hf_aprs: crate::server::audio::snapshot_hf_aprs_history(context),
+        cw: crate::server::audio::snapshot_cw_history(context),
+        ft8: crate::server::audio::snapshot_ft8_history(context),
+        wspr: crate::server::audio::snapshot_wspr_history(context),
+    }
 }
 
 fn encode_cbor_length(out: &mut Vec<u8>, major: u8, value: u64) {
@@ -537,10 +544,10 @@ fn encode_cbor_json_value(out: &mut Vec<u8>, value: &serde_json::Value) {
 }
 
 fn encode_decode_history_cbor(
-    history: &[trx_core::decode::DecodedMessage],
+    history: &DecodeHistoryPayload,
 ) -> Result<Vec<u8>, serde_json::Error> {
     let value = serde_json::to_value(history)?;
-    let mut out = Vec::with_capacity(history.len().saturating_mul(96));
+    let mut out = Vec::with_capacity(history.total_messages().saturating_mul(96));
     encode_cbor_json_value(&mut out, &value);
     Ok(out)
 }

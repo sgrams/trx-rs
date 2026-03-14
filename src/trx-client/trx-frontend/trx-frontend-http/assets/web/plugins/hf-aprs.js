@@ -393,6 +393,10 @@ window.onServerHfAprsBatch = function(packets) {
   scheduleHfAprsHistoryRender();
 };
 
+window.restoreHfAprsHistory = function(packets) {
+  window.onServerHfAprsBatch(packets);
+};
+
 document.getElementById("hf-aprs-decode-toggle-btn")?.addEventListener("click", async () => {
   try { await postPath("/toggle_hf_aprs_decode"); } catch (e) { console.error("HF APRS toggle failed", e); }
 });
