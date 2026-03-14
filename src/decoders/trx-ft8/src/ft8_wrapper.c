@@ -234,7 +234,11 @@ int ft8_decoder_decode(ft8_decoder_t* dec, ft8_decode_result_t* out, int max_res
         dst->text[sizeof(dst->text) - 1] = '\0';
         dst->dt_s = time_sec;
         dst->freq_hz = freq_hz;
-        dst->snr_db = cand->score * 0.5f;
+        /* Convert sync score to SNR in dB (WSJT-X 2500 Hz reference bandwidth).
+         * score is an average uint8 difference between Costas tones and their
+         * neighbours; each unit = 0.5 dB.  Subtract 10*log10(2500/3.125) ≈ 29 dB
+         * to normalise from a 3.125 Hz bin (6.25 Hz / freq_osr=2) to 2500 Hz. */
+        dst->snr_db = cand->score * 0.5f - 29.0f;
 
         num_decoded++;
     }
