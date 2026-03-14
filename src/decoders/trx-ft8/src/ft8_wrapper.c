@@ -3,6 +3,8 @@
 // SPDX-License-Identifier: BSD-2-Clause
 
 #include <ft8/decode.h>
+#include <ft8/ldpc.h>
+#include <ft8/crc.h>
 #include <ft8/message.h>
 #include <ft8/text.h>
 #include <common/monitor.h>
@@ -154,14 +156,27 @@ static float decoder_candidate_dt_s(const ft8_decoder_t* dec, const ftx_candidat
 #define FT2_NH1   (FT2_NFFT1 / 2)
 #define FT2_NSTEP 288
 #define FT2_MAX_RAW_CANDIDATES 96
+#define FT2_MAX_SCAN_HITS 128
 #define FT2_SYNC_TWEAK_MIN (-16)
 #define FT2_SYNC_TWEAK_MAX (16)
+#define FT2_NSS (FT2_NSTEP / FT2_NDOWN)
+#define FT2_FRAME_SYMBOLS (FT2_NN - FT2_NR)
+#define FT2_FRAME_SAMPLES (FT2_FRAME_SYMBOLS * FT2_NSS)
 
 typedef struct
 {
     float freq_hz;
     float score;
 } ft2_raw_candidate_t;
+
+typedef struct
+{
+    float freq_hz;
+    float snr0;
+    float sync_score;
+    int start;
+    int idf;
+} ft2_scan_hit_t;
 
 static void ft2_nuttall_window(float* window, int n)
 {
@@ -183,6 +198,17 @@ static int ft2_cmp_candidates_desc(const void* lhs, const void* rhs)
     if (a->score < b->score)
         return 1;
     if (a->score > b->score)
+        return -1;
+    return 0;
+}
+
+static int ft2_cmp_scan_hits_desc(const void* lhs, const void* rhs)
+{
+    const ft2_scan_hit_t* a = (const ft2_scan_hit_t*)lhs;
+    const ft2_scan_hit_t* b = (const ft2_scan_hit_t*)rhs;
+    if (a->sync_score < b->sync_score)
+        return 1;
+    if (a->sync_score > b->sync_score)
         return -1;
     return 0;
 }
@@ -445,7 +471,7 @@ static float ft2_sync2d_score(
     const float complex sync_wave[4][64],
     const float complex tweak_wave[33][64])
 {
-    const int nss = FT2_NSTEP / FT2_NDOWN;
+    const int nss = FT2_NSS;
     const int positions[4] = {
         start,
         start + 33 * nss,
@@ -453,30 +479,47 @@ static float ft2_sync2d_score(
         start + 99 * nss,
     };
     float score = 0.0f;
-    int groups = 0;
     const float complex* tweak = tweak_wave[idf - FT2_SYNC_TWEAK_MIN];
 
     for (int group = 0; group < 4; ++group)
     {
         int pos = positions[group];
-        if (pos < 0 || (pos + 4 * nss) > n_samples)
-            continue;
         float complex sum = 0.0f;
+        int usable = 0;
         for (int i = 0; i < 64; ++i)
         {
             int sample_idx = pos + 2 * i;
+            if (sample_idx < 0 || sample_idx >= n_samples)
+                continue;
             sum += samples[sample_idx] * conjf(sync_wave[group][i] * tweak[i]);
+            ++usable;
         }
-        score += cabsf(sum) / 64.0f;
-        ++groups;
+        if (usable > 16)
+            score += cabsf(sum) / (2.0f * nss);
     }
-    return (groups > 0) ? (score / groups) : 0.0f;
+    return score;
 }
 
-static int ft2_find_candidates_raw(
+static void ft2_normalize_downsampled(float complex* samples, int n_samples)
+{
+    float power = 0.0f;
+    for (int i = 0; i < n_samples; ++i)
+    {
+        power += crealf(samples[i] * conjf(samples[i]));
+    }
+    if (power <= 0.0f)
+        return;
+    float scale = sqrtf((float)n_samples / power);
+    for (int i = 0; i < n_samples; ++i)
+    {
+        samples[i] *= scale;
+    }
+}
+
+static int ft2_find_scan_hits(
     const ft8_decoder_t* dec,
-    ftx_candidate_t* out,
-    int max_candidates)
+    ft2_scan_hit_t* out,
+    int max_hits)
 {
     ft2_raw_candidate_t peaks[FT2_MAX_RAW_CANDIDATES];
     int n_peaks = ft2_find_frequency_peaks(dec, peaks, FT2_MAX_RAW_CANDIDATES);
@@ -491,11 +534,12 @@ static int ft2_find_candidates_raw(
     ft2_prepare_sync_waveforms(sync_wave, tweak_wave);
 
     int count = 0;
-    for (int peak = 0; peak < n_peaks && count < max_candidates; ++peak)
+    for (int peak = 0; peak < n_peaks && count < max_hits; ++peak)
     {
         int produced = ft2_downsample_candidate(dec, peaks[peak].freq_hz, down, nfft2);
         if (produced <= 0)
             continue;
+        ft2_normalize_downsampled(down, produced);
 
         float best_score = -1.0f;
         int best_start = 0;
@@ -513,7 +557,7 @@ static int ft2_find_candidates_raw(
                 }
             }
         }
-        if (best_score < 0.18f)
+        if (best_score < 0.60f)
             continue;
 
         for (int idf = best_idf - 4; idf <= best_idf + 4; ++idf)
@@ -531,48 +575,379 @@ static int ft2_find_candidates_raw(
                 }
             }
         }
-        if (best_score < 0.24f)
+        if (best_score < 0.60f)
             continue;
 
-        float corrected_freq_hz = peaks[peak].freq_hz + best_idf;
-        float base_freq_hz = corrected_freq_hz - ft2_frequency_offset_hz();
-        float bin_pos = base_freq_hz * FT2_SYMBOL_PERIOD;
-        int absolute_bin = (int)floorf(bin_pos);
-        int freq_sub = (int)lroundf((bin_pos - absolute_bin) * dec->cfg.freq_osr);
-        if (freq_sub >= dec->cfg.freq_osr)
-        {
-            absolute_bin += 1;
-            freq_sub = 0;
-        }
-        int freq_offset = absolute_bin - dec->mon.min_bin;
-        if (freq_offset < 0 || (freq_offset + 3) >= dec->mon.wf.num_bins)
-            continue;
-
-        int start_with_ramp = best_start - 32;
-        int time_offset = start_with_ramp / 32;
-        int rem = start_with_ramp - time_offset * 32;
-        if (rem < 0)
-        {
-            rem += 32;
-            time_offset -= 1;
-        }
-        int time_sub = (int)lroundf((float)rem / 4.0f);
-        if (time_sub >= dec->cfg.time_osr)
-        {
-            time_offset += 1;
-            time_sub = 0;
-        }
-
-        out[count].score = (int16_t)lroundf(best_score * 100.0f);
-        out[count].time_offset = (int16_t)time_offset;
-        out[count].time_sub = (uint8_t)time_sub;
-        out[count].freq_offset = (int16_t)freq_offset;
-        out[count].freq_sub = (uint8_t)freq_sub;
+        out[count].freq_hz = peaks[peak].freq_hz;
+        out[count].snr0 = peaks[peak].score - 1.0f;
+        out[count].sync_score = best_score;
+        out[count].start = best_start;
+        out[count].idf = best_idf;
         ++count;
     }
 
+    qsort(out, count, sizeof(out[0]), ft2_cmp_scan_hits_desc);
     free(down);
     return count;
+}
+
+static void ft2_extract_signal_region(const float complex* input, int input_len, int start, float complex* out_signal)
+{
+    for (int i = 0; i < FT2_FRAME_SAMPLES; ++i)
+    {
+        int src = start + i;
+        out_signal[i] = (src >= 0 && src < input_len) ? input[src] : 0.0f;
+    }
+}
+
+static void ft2_extract_logl_sequence_raw(const float complex symbols[4][FT2_FRAME_SYMBOLS], int start_sym, int n_syms, float* metrics)
+{
+    const int n_bits = 2 * n_syms;
+    const int n_sequences = 1 << n_bits;
+
+    for (int bit = 0; bit < n_bits; ++bit)
+    {
+        float max_zero = -INFINITY;
+        float max_one = -INFINITY;
+        for (int seq = 0; seq < n_sequences; ++seq)
+        {
+            float complex sum = 0.0f;
+            for (int sym = 0; sym < n_syms; ++sym)
+            {
+                int shift = 2 * (n_syms - sym - 1);
+                int dibit = (seq >> shift) & 0x3;
+                sum += symbols[kFT4_Gray_map[dibit]][start_sym + sym];
+            }
+            float strength = cabsf(sum);
+            int mask_bit = n_bits - bit - 1;
+            if (((seq >> mask_bit) & 0x1) != 0)
+            {
+                if (strength > max_one)
+                    max_one = strength;
+            }
+            else
+            {
+                if (strength > max_zero)
+                    max_zero = strength;
+            }
+        }
+        metrics[bit] = max_one - max_zero;
+    }
+}
+
+static bool ft2_extract_bitmetrics_raw(const float complex* signal, float bitmetrics[2 * FT2_FRAME_SYMBOLS][3])
+{
+    float complex symbols[4][FT2_FRAME_SYMBOLS];
+    float s4[4][FT2_FRAME_SYMBOLS];
+    memset(bitmetrics, 0, sizeof(float) * 2 * FT2_FRAME_SYMBOLS * 3);
+
+    size_t fft_mem_len = 0;
+    kiss_fft_alloc(FT2_NSS, 0, NULL, &fft_mem_len);
+    void* fft_mem = malloc(fft_mem_len);
+    kiss_fft_cfg fft_cfg = kiss_fft_alloc(FT2_NSS, 0, fft_mem, &fft_mem_len);
+    if (!fft_cfg)
+    {
+        free(fft_mem);
+        return false;
+    }
+
+    for (int sym = 0; sym < FT2_FRAME_SYMBOLS; ++sym)
+    {
+        kiss_fft_cpx csymb[FT2_NSS];
+        for (int i = 0; i < FT2_NSS; ++i)
+        {
+            float complex sample = signal[sym * FT2_NSS + i];
+            csymb[i].r = crealf(sample);
+            csymb[i].i = cimagf(sample);
+        }
+        kiss_fft(fft_cfg, csymb, csymb);
+        for (int tone = 0; tone < 4; ++tone)
+        {
+            float complex bin = csymb[tone].r + I * csymb[tone].i;
+            symbols[tone][sym] = bin;
+            s4[tone][sym] = cabsf(bin);
+        }
+    }
+
+    free(fft_mem);
+
+    int sync_ok = 0;
+    for (int group = 0; group < 4; ++group)
+    {
+        int base = group * 33;
+        for (int i = 0; i < 4; ++i)
+        {
+            int best = 0;
+            for (int tone = 1; tone < 4; ++tone)
+            {
+                if (s4[tone][base + i] > s4[best][base + i])
+                    best = tone;
+            }
+            if (best == kFT4_Costas_pattern[group][i])
+                ++sync_ok;
+        }
+    }
+    if (sync_ok < 4)
+        return false;
+
+    float metric1[2 * FT2_FRAME_SYMBOLS] = { 0 };
+    float metric2[2 * FT2_FRAME_SYMBOLS] = { 0 };
+    float metric4[2 * FT2_FRAME_SYMBOLS] = { 0 };
+
+    for (int start = 0; start <= FT2_FRAME_SYMBOLS - 1; start += 1)
+    {
+        ft2_extract_logl_sequence_raw(symbols, start, 1, metric1 + (2 * start));
+    }
+    for (int start = 0; start <= FT2_FRAME_SYMBOLS - 2; start += 2)
+    {
+        ft2_extract_logl_sequence_raw(symbols, start, 2, metric2 + (2 * start));
+    }
+    for (int start = 0; start <= FT2_FRAME_SYMBOLS - 4; start += 4)
+    {
+        ft2_extract_logl_sequence_raw(symbols, start, 4, metric4 + (2 * start));
+    }
+
+    metric2[204] = metric1[204];
+    metric2[205] = metric1[205];
+    metric4[200] = metric2[200];
+    metric4[201] = metric2[201];
+    metric4[202] = metric2[202];
+    metric4[203] = metric2[203];
+    metric4[204] = metric1[204];
+    metric4[205] = metric1[205];
+
+    for (int i = 0; i < 2 * FT2_FRAME_SYMBOLS; ++i)
+    {
+        bitmetrics[i][0] = metric1[i];
+        bitmetrics[i][1] = metric2[i];
+        bitmetrics[i][2] = metric4[i];
+    }
+    return true;
+}
+
+static void ft2_normalize_logl(float* log174)
+{
+    float sum = 0.0f;
+    float sum2 = 0.0f;
+    for (int i = 0; i < FTX_LDPC_N; ++i)
+    {
+        sum += log174[i];
+        sum2 += log174[i] * log174[i];
+    }
+    float inv_n = 1.0f / FTX_LDPC_N;
+    float variance = (sum2 - (sum * sum * inv_n)) * inv_n;
+    if (variance <= 1.0e-6f)
+        return;
+    float norm_factor = sqrtf(24.0f / variance);
+    for (int i = 0; i < FTX_LDPC_N; ++i)
+    {
+        log174[i] *= norm_factor;
+    }
+}
+
+static void ft2_pack_bits(const uint8_t bit_array[], int num_bits, uint8_t packed[])
+{
+    int num_bytes = (num_bits + 7) / 8;
+    for (int i = 0; i < num_bytes; ++i)
+        packed[i] = 0;
+
+    uint8_t mask = 0x80;
+    int byte_idx = 0;
+    for (int i = 0; i < num_bits; ++i)
+    {
+        if (bit_array[i])
+            packed[byte_idx] |= mask;
+        mask >>= 1;
+        if (!mask)
+        {
+            mask = 0x80;
+            ++byte_idx;
+        }
+    }
+}
+
+static bool ft2_unpack_message(const uint8_t plain174[], ftx_message_t* message)
+{
+    uint8_t a91[FTX_LDPC_K_BYTES];
+    ft2_pack_bits(plain174, FTX_LDPC_K, a91);
+
+    uint16_t crc_extracted = ftx_extract_crc(a91);
+    a91[9] &= 0xF8;
+    a91[10] &= 0x00;
+    uint16_t crc_calculated = ftx_compute_crc(a91, 96 - 14);
+    if (crc_extracted != crc_calculated)
+        return false;
+
+    message->hash = crc_calculated;
+    for (int i = 0; i < 10; ++i)
+    {
+        message->payload[i] = a91[i] ^ kFT4_XOR_sequence[i];
+    }
+    return true;
+}
+
+static bool ft2_decode_hit(
+    const ft8_decoder_t* dec,
+    const ft2_scan_hit_t* hit,
+    ftx_message_t* message,
+    float* dt_s,
+    float* freq_hz,
+    float* snr_db)
+{
+    const int nraw = dec->ft2_raw_len;
+    const int nfft2 = nraw / FT2_NDOWN;
+    float complex* cd2 = (float complex*)malloc(sizeof(float complex) * nfft2);
+    float complex* cb = (float complex*)malloc(sizeof(float complex) * nfft2);
+    float complex signal[FT2_FRAME_SAMPLES];
+    float bitmetrics[2 * FT2_FRAME_SYMBOLS][3];
+    float complex sync_wave[4][64];
+    float complex tweak_wave[33][64];
+    if (!cd2 || !cb)
+    {
+        free(cd2);
+        free(cb);
+        return false;
+    }
+
+    ft2_prepare_sync_waveforms(sync_wave, tweak_wave);
+
+    int produced = ft2_downsample_candidate(dec, hit->freq_hz, cd2, nfft2);
+    if (produced <= 0)
+    {
+        free(cd2);
+        free(cb);
+        return false;
+    }
+    ft2_normalize_downsampled(cd2, produced);
+
+    float best_score = -1.0f;
+    int best_start = hit->start;
+    int best_idf = hit->idf;
+    for (int idf = hit->idf - 4; idf <= hit->idf + 4; ++idf)
+    {
+        if (idf < FT2_SYNC_TWEAK_MIN || idf > FT2_SYNC_TWEAK_MAX)
+            continue;
+        for (int start = hit->start - 5; start <= hit->start + 5; ++start)
+        {
+            float score = ft2_sync2d_score(cd2, produced, start, idf, sync_wave, tweak_wave);
+            if (score > best_score)
+            {
+                best_score = score;
+                best_start = start;
+                best_idf = idf;
+            }
+        }
+    }
+    if (best_score < 0.80f)
+    {
+        free(cd2);
+        free(cb);
+        return false;
+    }
+
+    float corrected_freq_hz = hit->freq_hz + best_idf;
+    if (corrected_freq_hz <= 10.0f || corrected_freq_hz >= 4990.0f)
+    {
+        free(cd2);
+        free(cb);
+        return false;
+    }
+
+    produced = ft2_downsample_candidate(dec, corrected_freq_hz, cb, nfft2);
+    if (produced <= 0)
+    {
+        free(cd2);
+        free(cb);
+        return false;
+    }
+    ft2_normalize_downsampled(cb, produced);
+    ft2_extract_signal_region(cb, produced, best_start, signal);
+
+    if (!ft2_extract_bitmetrics_raw(signal, bitmetrics))
+    {
+        free(cd2);
+        free(cb);
+        return false;
+    }
+
+    static const uint8_t sync_bits_a[8] = { 0, 0, 0, 1, 1, 0, 1, 1 };
+    static const uint8_t sync_bits_b[8] = { 0, 1, 0, 0, 1, 1, 1, 0 };
+    static const uint8_t sync_bits_c[8] = { 1, 1, 1, 0, 0, 1, 0, 0 };
+    static const uint8_t sync_bits_d[8] = { 1, 0, 1, 1, 0, 0, 0, 1 };
+    int sync_qual = 0;
+    for (int i = 0; i < 8; ++i)
+    {
+        sync_qual += ((bitmetrics[i][0] >= 0.0f) ? 1 : 0) == sync_bits_a[i];
+        sync_qual += ((bitmetrics[66 + i][0] >= 0.0f) ? 1 : 0) == sync_bits_b[i];
+        sync_qual += ((bitmetrics[132 + i][0] >= 0.0f) ? 1 : 0) == sync_bits_c[i];
+        sync_qual += ((bitmetrics[198 + i][0] >= 0.0f) ? 1 : 0) == sync_bits_d[i];
+    }
+    if (sync_qual < 13)
+    {
+        free(cd2);
+        free(cb);
+        return false;
+    }
+
+    float llr_passes[5][FTX_LDPC_N];
+    for (int i = 0; i < 58; ++i)
+    {
+        llr_passes[0][i] = bitmetrics[8 + i][0];
+        llr_passes[0][58 + i] = bitmetrics[74 + i][0];
+        llr_passes[0][116 + i] = bitmetrics[140 + i][0];
+        llr_passes[1][i] = bitmetrics[8 + i][1];
+        llr_passes[1][58 + i] = bitmetrics[74 + i][1];
+        llr_passes[1][116 + i] = bitmetrics[140 + i][1];
+        llr_passes[2][i] = bitmetrics[8 + i][2];
+        llr_passes[2][58 + i] = bitmetrics[74 + i][2];
+        llr_passes[2][116 + i] = bitmetrics[140 + i][2];
+    }
+    for (int i = 0; i < FTX_LDPC_N; ++i)
+    {
+        llr_passes[0][i] *= 2.83f;
+        llr_passes[1][i] *= 2.83f;
+        llr_passes[2][i] *= 2.83f;
+        float a = llr_passes[0][i];
+        float b = llr_passes[1][i];
+        float c = llr_passes[2][i];
+        llr_passes[3][i] = (fabsf(a) >= fabsf(b) && fabsf(a) >= fabsf(c)) ? a : ((fabsf(b) >= fabsf(c)) ? b : c);
+        llr_passes[4][i] = (a + b + c) / 3.0f;
+    }
+
+    uint8_t plain174[FTX_LDPC_N];
+    bool ok = false;
+    for (int pass = 0; pass < 5 && !ok; ++pass)
+    {
+        float log174[FTX_LDPC_N];
+        memcpy(log174, llr_passes[pass], sizeof(log174));
+        ft2_normalize_logl(log174);
+        int ldpc_errors = 0;
+        bp_decode(log174, 50, plain174, &ldpc_errors);
+        if (ldpc_errors > 0)
+            continue;
+        ok = ft2_unpack_message(plain174, message);
+    }
+
+    if (ok)
+    {
+        float sm1 = ft2_sync2d_score(cd2, produced, best_start - 1, best_idf, sync_wave, tweak_wave);
+        float sp1 = ft2_sync2d_score(cd2, produced, best_start + 1, best_idf, sync_wave, tweak_wave);
+        float xstart = (float)best_start;
+        float den = sm1 - 2.0f * best_score + sp1;
+        if (fabsf(den) > 1.0e-6f)
+            xstart += 0.5f * (sm1 - sp1) / den;
+
+        *dt_s = xstart / (12000.0f / FT2_NDOWN) - 0.5f;
+        *freq_hz = corrected_freq_hz;
+        if (hit->snr0 > 0.0f)
+            *snr_db = fmaxf(-21.0f, 10.0f * log10f(hit->snr0) - 13.0f);
+        else
+            *snr_db = -21.0f;
+    }
+
+    free(cd2);
+    free(cb);
+    return ok;
 }
 
 ft8_decoder_t* ft8_decoder_create(int sample_rate, float f_min, float f_max, int time_osr, int freq_osr, int protocol)
@@ -684,14 +1059,6 @@ int ft8_decoder_decode(ft8_decoder_t* dec, ft8_decode_result_t* out, int max_res
 
     const ftx_waterfall_t* wf = &dec->mon.wf;
     const bool is_ft2 = (dec->cfg.protocol == FTX_PROTOCOL_FT2);
-    const int kMaxCandidates = is_ft2 ? 400 : 200;
-    const int kMinScore = is_ft2 ? 0 : 10;
-    const int kLdpcIters = is_ft2 ? 50 : 30;
-
-    ftx_candidate_t candidate_list[kMaxCandidates];
-    int num_candidates = is_ft2
-        ? ft2_find_candidates_raw(dec, candidate_list, kMaxCandidates)
-        : ftx_find_candidates(wf, kMaxCandidates, candidate_list, kMinScore);
 
     int num_decoded = 0;
     ftx_message_t decoded[200];
@@ -701,63 +1068,125 @@ int ft8_decoder_decode(ft8_decoder_t* dec, ft8_decode_result_t* out, int max_res
         decoded_hashtable[i] = NULL;
     }
 
-    for (int idx = 0; idx < num_candidates && num_decoded < max_results; ++idx)
+    if (is_ft2)
     {
-        const ftx_candidate_t* cand = &candidate_list[idx];
-
-        float freq_hz = decoder_candidate_freq_hz(dec, cand);
-        float time_sec = decoder_candidate_dt_s(dec, cand);
-
-        ftx_message_t message;
-        ftx_decode_status_t status;
-        if (!ftx_decode_candidate(wf, cand, kLdpcIters, &message, &status))
+        ft2_scan_hit_t hit_list[FT2_MAX_SCAN_HITS];
+        int num_hits = ft2_find_scan_hits(dec, hit_list, FT2_MAX_SCAN_HITS);
+        for (int idx = 0; idx < num_hits && num_decoded < max_results; ++idx)
         {
-            continue;
+            const ft2_scan_hit_t* hit = &hit_list[idx];
+            ftx_message_t message;
+            float time_sec = 0.0f;
+            float freq_hz = 0.0f;
+            float snr_db = -21.0f;
+            if (!ft2_decode_hit(dec, hit, &message, &time_sec, &freq_hz, &snr_db))
+            {
+                continue;
+            }
+
+            int idx_hash = message.hash % 200;
+            bool found_empty_slot = false;
+            bool found_duplicate = false;
+            do
+            {
+                if (decoded_hashtable[idx_hash] == NULL)
+                {
+                    found_empty_slot = true;
+                }
+                else if ((decoded_hashtable[idx_hash]->hash == message.hash) && (0 == memcmp(decoded_hashtable[idx_hash]->payload, message.payload, sizeof(message.payload))))
+                {
+                    found_duplicate = true;
+                }
+                else
+                {
+                    idx_hash = (idx_hash + 1) % 200;
+                }
+            } while (!found_empty_slot && !found_duplicate);
+
+            if (!found_empty_slot)
+                continue;
+
+            memcpy(&decoded[idx_hash], &message, sizeof(message));
+            decoded_hashtable[idx_hash] = &decoded[idx_hash];
+
+            char text[FTX_MAX_MESSAGE_LENGTH];
+            ftx_message_offsets_t offsets;
+            ftx_message_rc_t unpack_status = ftx_message_decode(&message, &hash_if, text, &offsets);
+            if (unpack_status != FTX_MESSAGE_RC_OK)
+                continue;
+
+            ft8_decode_result_t* dst = &out[num_decoded];
+            strncpy(dst->text, text, sizeof(dst->text) - 1);
+            dst->text[sizeof(dst->text) - 1] = '\0';
+            dst->dt_s = time_sec;
+            dst->freq_hz = freq_hz;
+            dst->snr_db = snr_db;
+
+            num_decoded++;
         }
+    }
+    else
+    {
+        const int kMaxCandidates = 200;
+        const int kMinScore = 10;
+        const int kLdpcIters = 30;
+        ftx_candidate_t candidate_list[kMaxCandidates];
+        int num_candidates = ftx_find_candidates(wf, kMaxCandidates, candidate_list, kMinScore);
 
-        int idx_hash = message.hash % 200;
-        bool found_empty_slot = false;
-        bool found_duplicate = false;
-        do
+        for (int idx = 0; idx < num_candidates && num_decoded < max_results; ++idx)
         {
-            if (decoded_hashtable[idx_hash] == NULL)
+            const ftx_candidate_t* cand = &candidate_list[idx];
+
+            float freq_hz = decoder_candidate_freq_hz(dec, cand);
+            float time_sec = decoder_candidate_dt_s(dec, cand);
+
+            ftx_message_t message;
+            ftx_decode_status_t status;
+            if (!ftx_decode_candidate(wf, cand, kLdpcIters, &message, &status))
             {
-                found_empty_slot = true;
+                continue;
             }
-            else if ((decoded_hashtable[idx_hash]->hash == message.hash) && (0 == memcmp(decoded_hashtable[idx_hash]->payload, message.payload, sizeof(message.payload))))
+
+            int idx_hash = message.hash % 200;
+            bool found_empty_slot = false;
+            bool found_duplicate = false;
+            do
             {
-                found_duplicate = true;
-            }
-            else
-            {
-                idx_hash = (idx_hash + 1) % 200;
-            }
-        } while (!found_empty_slot && !found_duplicate);
+                if (decoded_hashtable[idx_hash] == NULL)
+                {
+                    found_empty_slot = true;
+                }
+                else if ((decoded_hashtable[idx_hash]->hash == message.hash) && (0 == memcmp(decoded_hashtable[idx_hash]->payload, message.payload, sizeof(message.payload))))
+                {
+                    found_duplicate = true;
+                }
+                else
+                {
+                    idx_hash = (idx_hash + 1) % 200;
+                }
+            } while (!found_empty_slot && !found_duplicate);
 
-        if (!found_empty_slot)
-            continue;
+            if (!found_empty_slot)
+                continue;
 
-        memcpy(&decoded[idx_hash], &message, sizeof(message));
-        decoded_hashtable[idx_hash] = &decoded[idx_hash];
+            memcpy(&decoded[idx_hash], &message, sizeof(message));
+            decoded_hashtable[idx_hash] = &decoded[idx_hash];
 
-        char text[FTX_MAX_MESSAGE_LENGTH];
-        ftx_message_offsets_t offsets;
-        ftx_message_rc_t unpack_status = ftx_message_decode(&message, &hash_if, text, &offsets);
-        if (unpack_status != FTX_MESSAGE_RC_OK)
-            continue;
+            char text[FTX_MAX_MESSAGE_LENGTH];
+            ftx_message_offsets_t offsets;
+            ftx_message_rc_t unpack_status = ftx_message_decode(&message, &hash_if, text, &offsets);
+            if (unpack_status != FTX_MESSAGE_RC_OK)
+                continue;
 
-        ft8_decode_result_t* dst = &out[num_decoded];
-        strncpy(dst->text, text, sizeof(dst->text) - 1);
-        dst->text[sizeof(dst->text) - 1] = '\0';
-        dst->dt_s = time_sec;
-        dst->freq_hz = freq_hz;
-        /* Convert sync score to SNR in dB (WSJT-X 2500 Hz reference bandwidth).
-         * score is an average uint8 difference between Costas tones and their
-         * neighbours; each unit = 0.5 dB.  Subtract 10*log10(2500/3.125) ≈ 29 dB
-         * to normalise from a 3.125 Hz bin (6.25 Hz / freq_osr=2) to 2500 Hz. */
-        dst->snr_db = cand->score * 0.5f - 29.0f;
+            ft8_decode_result_t* dst = &out[num_decoded];
+            strncpy(dst->text, text, sizeof(dst->text) - 1);
+            dst->text[sizeof(dst->text) - 1] = '\0';
+            dst->dt_s = time_sec;
+            dst->freq_hz = freq_hz;
+            dst->snr_db = cand->score * 0.5f - 29.0f;
 
-        num_decoded++;
+            num_decoded++;
+        }
     }
 
     hashtable_cleanup(10);
