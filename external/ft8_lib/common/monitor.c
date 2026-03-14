@@ -197,8 +197,6 @@ void monitor_resynth(const monitor_t* me, const ftx_candidate_t* candidate, floa
     const int num_ifft = me->nifft;
     const int num_shift = num_ifft / 2;
     const int taper_width = 4;
-    const int num_tones = 8;
-
     // Starting offset is 3 subblocks due to analysis buffer loading
     int offset = 1;                          // candidate->time_offset;
     offset = (offset * me->wf.time_osr) + 1; // + candidate->time_sub;
