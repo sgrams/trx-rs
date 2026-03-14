@@ -3780,6 +3780,7 @@ let mapP2pRadioPathsEnabled = loadSetting("mapP2pRadioPathsEnabled", true) !== f
 let mapDecodeContactPathsEnabled = loadSetting("mapDecodeContactPathsEnabled", true) !== false;
 let mapOverlayPanelVisible = loadSetting("mapOverlayPanelVisible", true) !== false;
 const MAP_HISTORY_LIMIT_OPTIONS = [15, 30, 60, 180, 360, 720, 1440];
+const MAP_QSO_SUMMARY_LIMIT = 5;
 const stationMarkers = new Map();
 const locatorMarkers = new Map();
 const decodeContactPaths = new Map();
@@ -4398,6 +4399,7 @@ function syncDecodeContactPathVisibility() {
     }
     ensureDecodeContactPathRendered(entry);
   }
+  renderMapQsoSummary();
 }
 
 function setMapRadioPathTo(lat, lon, color, className = "aprs-radio-path") {
@@ -5942,6 +5944,7 @@ function rebuildDecodeContactPaths() {
           source,
           target,
           sourceGrid: grid,
+          sourceType: entry.sourceType,
           tsMs,
           bandLabel: band?.label || null,
         });
@@ -5955,6 +5958,7 @@ function rebuildDecodeContactPaths() {
     const sourceCenter = locatorToLatLon(msg.sourceGrid);
     const targetCenter = locatorToLatLon(targetLocator.grid);
     if (!sourceCenter || !targetCenter) continue;
+    const distanceKm = haversineKm(sourceCenter.lat, sourceCenter.lon, targetCenter.lat, targetCenter.lon);
     const key = [msg.source, msg.target].sort().join("::");
     const prev = decodeContactPaths.get(key);
     if (prev && prev.tsMs > msg.tsMs) continue;
@@ -5963,18 +5967,107 @@ function rebuildDecodeContactPaths() {
       target: msg.target,
       sourceGrid: msg.sourceGrid,
       targetGrid: targetLocator.grid,
+      sourceType: msg.sourceType,
       bandLabel: msg.bandLabel,
       from: sourceCenter,
       to: targetCenter,
       tsMs: msg.tsMs,
-      distanceText: formatDecodeContactDistance(
-        haversineKm(sourceCenter.lat, sourceCenter.lon, targetCenter.lat, targetCenter.lon)
-      ),
+      distanceKm,
+      distanceText: formatDecodeContactDistance(distanceKm),
       line: null,
       labelMarker: null,
     });
   }
   syncDecodeContactPathVisibility();
+}
+
+function renderMapQsoSummary() {
+  const listEl = document.getElementById("map-qso-summary-list");
+  if (!listEl) return;
+
+  const entries = Array.from(decodeContactPaths.values())
+    .filter((entry) => entry
+      && Number.isFinite(entry.distanceKm)
+      && decodeLocatorPathVisibility(entry.sourceGrid)
+      && decodeLocatorPathVisibility(entry.targetGrid))
+    .sort((a, b) => {
+      const distanceDelta = Number(b.distanceKm) - Number(a.distanceKm);
+      if (Math.abs(distanceDelta) > 0.001) return distanceDelta;
+      return Number(b.tsMs || 0) - Number(a.tsMs || 0);
+    })
+    .slice(0, MAP_QSO_SUMMARY_LIMIT);
+
+  if (entries.length === 0) {
+    const empty = document.createElement("div");
+    empty.className = "map-qso-summary-empty";
+    empty.textContent = "No directed FT8 or WSPR contacts match the current map history and filters.";
+    listEl.replaceChildren(empty);
+    return;
+  }
+
+  const fragment = document.createDocumentFragment();
+  entries.forEach((entry, index) => {
+    const card = document.createElement("article");
+    card.className = "map-qso-card";
+
+    const head = document.createElement("div");
+    head.className = "map-qso-card-head";
+
+    const rank = document.createElement("span");
+    rank.className = "map-qso-card-rank";
+    rank.textContent = `#${index + 1}`;
+    head.appendChild(rank);
+
+    const distance = document.createElement("span");
+    distance.className = "map-qso-card-distance";
+    distance.textContent = entry.distanceText || "--";
+    head.appendChild(distance);
+
+    const body = document.createElement("div");
+    body.className = "map-qso-card-body";
+
+    const pair = document.createElement("div");
+    pair.className = "map-qso-card-pair";
+    pair.textContent = `${entry.source || "Unknown"} -> ${entry.target || "Unknown"}`;
+    body.appendChild(pair);
+
+    const meta = document.createElement("div");
+    meta.className = "map-qso-card-meta";
+
+    const sourceType = document.createElement("span");
+    sourceType.className = "map-qso-card-pill";
+    sourceType.textContent = String(entry.sourceType || "ft8").toUpperCase();
+    meta.appendChild(sourceType);
+
+    if (entry.bandLabel) {
+      const band = document.createElement("span");
+      band.className = "map-qso-card-pill map-qso-card-band";
+      band.style.setProperty("--band-color", locatorBandChipColor(entry.bandLabel));
+      band.textContent = entry.bandLabel;
+      meta.appendChild(band);
+    }
+
+    const ageText = formatTimeAgo(Number(entry.tsMs));
+    if (ageText) {
+      const age = document.createElement("span");
+      age.className = "map-qso-card-pill";
+      age.textContent = ageText;
+      meta.appendChild(age);
+    }
+
+    body.appendChild(meta);
+
+    const grids = document.createElement("div");
+    grids.className = "map-qso-card-grids";
+    grids.textContent = `${entry.sourceGrid || "--"} -> ${entry.targetGrid || "--"}`;
+    body.appendChild(grids);
+
+    card.appendChild(head);
+    card.appendChild(body);
+    fragment.appendChild(card);
+  });
+
+  listEl.replaceChildren(fragment);
 }
 
 function buildBookmarkLocatorPopupHtml(grid, bookmarks) {
