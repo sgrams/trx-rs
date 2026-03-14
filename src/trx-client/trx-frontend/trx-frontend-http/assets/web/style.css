@@ -1816,13 +1816,11 @@ body.map-fake-fullscreen-active {
   color: var(--text);
   word-break: break-word;
 }
-.aprs-radio-path { stroke: var(--accent-green) !important; stroke-opacity: 0.8 !important; stroke-dasharray: 10 5 !important; animation: aprs-radio-path-flow 0.7s linear infinite; }
-.locator-radio-path { stroke: var(--accent-green) !important; stroke-opacity: 0.9 !important; stroke-dasharray: 12 6 !important; animation: aprs-radio-path-flow 0.7s linear infinite; }
+.aprs-radio-path { stroke-dasharray: 10 5 !important; animation: aprs-radio-path-flow 0.7s linear infinite; }
+.locator-radio-path { stroke-dasharray: 12 6 !important; animation: aprs-radio-path-flow 0.7s linear infinite; }
 .decode-contact-path {
-  stroke: color-mix(in srgb, var(--accent-green) 72%, var(--accent-yellow)) !important;
-  stroke-opacity: 0.78 !important;
   stroke-dasharray: 9 6 !important;
-  filter: drop-shadow(0 0 3px color-mix(in srgb, var(--accent-green) 34%, transparent));
+  filter: drop-shadow(0 0 3px color-mix(in srgb, currentColor 34%, transparent));
   animation: aprs-radio-path-flow 0.85s linear infinite;
 }
 .decode-contact-distance-label {

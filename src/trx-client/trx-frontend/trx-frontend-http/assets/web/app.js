@@ -4035,6 +4035,11 @@ function syncLocatorMarkerStyles() {
     if (!entry?.marker) continue;
     entry.marker.setStyle(locatorStyleForEntry(entry, locatorEntryCount(entry)));
   }
+  for (const entry of decodeContactPaths.values()) {
+    if (!entry?.line) continue;
+    const color = decodeContactPathColor(entry);
+    entry.line.setStyle({ color, opacity: 0.78 });
+  }
 }
 
 function stopSelectedLocatorPulse() {
@@ -4118,20 +4123,30 @@ function midpointLatLon(a, b) {
   };
 }
 
+function decodeContactPathColor(entry) {
+  const srcEntry = locatorMarkers.get(entry?.sourceGrid);
+  if (srcEntry) return locatorStyleForEntry(srcEntry, locatorEntryCount(srcEntry)).color;
+  return locatorFilterColor("ft8");
+}
+
 function ensureDecodeContactPathRendered(entry) {
   if (!entry || !aprsMap) return;
   const linePoints = [
     [entry.from.lat, entry.from.lon],
     [entry.to.lat, entry.to.lon],
   ];
+  const color = decodeContactPathColor(entry);
   if (!entry.line) {
     entry.line = L.polyline(linePoints, {
+      color,
+      opacity: 0.78,
       className: "decode-contact-path",
       weight: 2.8,
       interactive: false,
     }).addTo(aprsMap);
   } else {
     entry.line.setLatLngs(linePoints);
+    entry.line.setStyle({ color, opacity: 0.78 });
     if (!aprsMap.hasLayer(entry.line)) entry.line.addTo(aprsMap);
   }
   const mid = midpointLatLon(entry.from, entry.to);
@@ -4169,14 +4184,14 @@ function syncDecodeContactPathVisibility() {
   }
 }
 
-function setMapRadioPathTo(lat, lon, className = "aprs-radio-path") {
+function setMapRadioPathTo(lat, lon, color, className = "aprs-radio-path") {
   clearMapRadioPath();
   if (!mapP2pRadioPathsEnabled || serverLat == null || serverLon == null || !Number.isFinite(lat) || !Number.isFinite(lon) || !aprsMap) {
     return;
   }
   aprsRadioPath = L.polyline(
     [[serverLat, serverLon], [lat, lon]],
-    { className, weight: 2, interactive: false }
+    { color, opacity: 0.85, weight: 2, interactive: false, className }
   ).addTo(aprsMap);
 }
 
@@ -4763,7 +4778,7 @@ function initAprsMap() {
         entry.track.addTo(aprsMap);
       }
       selectedAprsTrackCall = String(marker._aprsCall);
-      setMapRadioPathTo(ll.lat, ll.lng, "aprs-radio-path");
+      setMapRadioPathTo(ll.lat, ll.lng, mapSourceColor("aprs"), "aprs-radio-path");
       return;
     }
 
@@ -4775,7 +4790,7 @@ function initAprsMap() {
       ensureAisTrack(String(marker._aisMmsi), entry);
       selectedAisTrackMmsi = String(marker._aisMmsi);
       syncSelectedAisTrackVisibility();
-      setMapRadioPathTo(ll.lat, ll.lng, "aprs-radio-path");
+      setMapRadioPathTo(ll.lat, ll.lng, mapSourceColor("ais"), "aprs-radio-path");
       return;
     }
 
@@ -4784,7 +4799,7 @@ function initAprsMap() {
       const entry = vdesMarkers.get(String(marker._vdesKey));
       if (!entry || !entry.msg) return;
       e.popup.setContent(buildVdesPopupHtml(entry.msg));
-      setMapRadioPathTo(ll.lat, ll.lng, "aprs-radio-path");
+      setMapRadioPathTo(ll.lat, ll.lng, mapSourceColor("vdes"), "aprs-radio-path");
       return;
     }
 
@@ -4792,7 +4807,9 @@ function initAprsMap() {
       const center = locatorMarkerCenter(marker);
       if (center) {
         setSelectedLocatorMarker(marker);
-        setMapRadioPathTo(center.lat, center.lon, "locator-radio-path");
+        const lEntry = locatorEntryForMarker(marker);
+        const lColor = lEntry ? locatorStyleForEntry(lEntry, locatorEntryCount(lEntry)).color : locatorFilterColor(marker.__trxType);
+        setMapRadioPathTo(center.lat, center.lon, lColor, "locator-radio-path");
       }
     }
   });
@@ -5061,7 +5078,9 @@ window.navigateToMapLocator = function(grid, preferredType = null) {
     if (center) {
       const targetZoom = Math.max(aprsMap.getZoom() || 0, 7);
       aprsMap.setView([center.lat, center.lon], targetZoom);
-      setMapRadioPathTo(center.lat, center.lon, "locator-radio-path");
+      const fEntry = locatorEntryForMarker(marker);
+      const fColor = fEntry ? locatorStyleForEntry(fEntry, locatorEntryCount(fEntry)).color : locatorFilterColor(marker?.__trxType);
+      setMapRadioPathTo(center.lat, center.lon, fColor, "locator-radio-path");
     }
     setSelectedLocatorMarker(marker);
     if (typeof marker.openPopup === "function") marker.openPopup();
