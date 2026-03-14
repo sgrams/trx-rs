@@ -107,6 +107,12 @@ fn decode_ft2_window(
     for block in window.chunks_exact(block_size) {
         decoder.process_block(block);
     }
+    let remainder = window.chunks_exact(block_size).remainder();
+    if !remainder.is_empty() {
+        let mut tail = vec![0.0f32; block_size];
+        tail[..remainder.len()].copy_from_slice(remainder);
+        decoder.process_block(&tail);
+    }
     decoder.decode_if_ready(max_results)
 }
 

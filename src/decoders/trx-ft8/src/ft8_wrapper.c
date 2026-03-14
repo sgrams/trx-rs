@@ -155,6 +155,7 @@ static float decoder_candidate_dt_s(const ft8_decoder_t* dec, const ftx_candidat
 #define FT2_NFFT1 1152
 #define FT2_NH1   (FT2_NFFT1 / 2)
 #define FT2_NSTEP 288
+#define FT2_NMAX 45000
 #define FT2_MAX_RAW_CANDIDATES 96
 #define FT2_MAX_SCAN_HITS 128
 #define FT2_SYNC_TWEAK_MIN (-16)
@@ -663,7 +664,7 @@ static bool ft2_extract_bitmetrics_raw(const float complex* signal, float bitmet
         kiss_fft(fft_cfg, csymb, csymb);
         for (int tone = 0; tone < 4; ++tone)
         {
-            float complex bin = csymb[tone].r + I * csymb[tone].i;
+            float complex bin = csymb[tone + 1].r + I * csymb[tone + 1].i;
             symbols[tone][sym] = bin;
             s4[tone][sym] = cabsf(bin);
         }
@@ -980,7 +981,7 @@ ft8_decoder_t* ft8_decoder_create(int sample_rate, float f_min, float f_max, int
     monitor_init(&dec->mon, &dec->cfg);
     if (dec->cfg.protocol == FTX_PROTOCOL_FT2)
     {
-        dec->ft2_raw_capacity = dec->mon.block_size * dec->mon.wf.max_blocks;
+        dec->ft2_raw_capacity = FT2_NMAX;
         dec->ft2_raw = (float*)calloc(dec->ft2_raw_capacity, sizeof(float));
         dec->ft2_raw_len = 0;
         if (!dec->ft2_raw)
@@ -1011,6 +1012,8 @@ int ft8_decoder_window_samples(const ft8_decoder_t* dec)
 {
     if (!dec)
         return 0;
+    if (dec->cfg.protocol == FTX_PROTOCOL_FT2)
+        return FT2_NMAX;
     return dec->mon.block_size * dec->mon.wf.max_blocks;
 }
 
@@ -1032,10 +1035,12 @@ void ft8_decoder_process(ft8_decoder_t* dec, const float* frame)
         return;
     if (dec->cfg.protocol == FTX_PROTOCOL_FT2 && dec->ft2_raw && dec->ft2_raw_capacity > 0)
     {
-        if (dec->ft2_raw_len + dec->mon.block_size <= dec->ft2_raw_capacity)
+        int remaining = dec->ft2_raw_capacity - dec->ft2_raw_len;
+        if (remaining > 0)
         {
-            memcpy(dec->ft2_raw + dec->ft2_raw_len, frame, sizeof(float) * dec->mon.block_size);
-            dec->ft2_raw_len += dec->mon.block_size;
+            int copy_len = (remaining < dec->mon.block_size) ? remaining : dec->mon.block_size;
+            memcpy(dec->ft2_raw + dec->ft2_raw_len, frame, sizeof(float) * copy_len);
+            dec->ft2_raw_len += copy_len;
         }
     }
     monitor_process(&dec->mon, frame);

@@ -203,6 +203,6 @@ mod tests {
         assert!(ft2.block_size() < ft4.block_size());
         assert_eq!(ft4.block_size(), 576);
         assert_eq!(ft2.block_size(), 288);
-        assert_eq!(ft2.window_samples(), 44_928);
+        assert_eq!(ft2.window_samples(), 45_000);
     }
 }
