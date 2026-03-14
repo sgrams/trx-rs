@@ -502,10 +502,16 @@ fn spawn_rig_audio_stack(
     }
 
     if rig_cfg.aprsfi.enabled {
-        let cs = callsign.clone().unwrap_or_default();
+        let cs = rig_cfg
+            .aprsfi
+            .callsign
+            .clone()
+            .or_else(|| callsign.clone())
+            .unwrap_or_default();
         if cs.trim().is_empty() {
             warn!(
-                "[{}] APRS-IS IGate enabled but [general].callsign is empty; uplink disabled",
+                "[{}] APRS-IS IGate enabled but callsign is not set \
+                 (set [aprsfi].callsign or [general].callsign); uplink disabled",
                 rig_cfg.id
             );
         } else {

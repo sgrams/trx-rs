@@ -45,8 +45,10 @@ pub struct AprsFiConfig {
     pub host: String,
     /// APRS-IS server port
     pub port: u16,
-    /// APRS-IS passcode. -1 = auto-compute from [general].callsign.
+    /// APRS-IS passcode. -1 = auto-compute from callsign.
     pub passcode: i32,
+    /// IGate callsign. Overrides [general].callsign when set.
+    pub callsign: Option<String>,
 }
 
 impl Default for AprsFiConfig {
@@ -56,6 +58,7 @@ impl Default for AprsFiConfig {
             host: "rotate.aprs.net".to_string(),
             port: 14580,
             passcode: -1,
+            callsign: None,
         }
     }
 }
