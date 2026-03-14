@@ -225,9 +225,7 @@ int ft8_decoder_decode(ft8_decoder_t* dec, ft8_decode_result_t* out, int max_res
         ftx_message_offsets_t offsets;
         ftx_message_rc_t unpack_status = ftx_message_decode(&message, &hash_if, text, &offsets);
         if (unpack_status != FTX_MESSAGE_RC_OK)
-        {
-            snprintf(text, sizeof(text), "Error [%d] while unpacking!", (int)unpack_status);
-        }
+            continue;
 
         ft8_decode_result_t* dst = &out[num_decoded];
         strncpy(dst->text, text, sizeof(dst->text) - 1);
