@@ -54,9 +54,10 @@ pub struct AprsFiConfig {
     pub beacon: bool,
     /// How often to send a position beacon, in seconds. Default: 1200 (20 min).
     pub beacon_interval_secs: u64,
-    /// APRS symbol as a two-character string: symbol-table + symbol-code.
-    /// E.g. "/&" = diamond (gateway), "/-" = house. Default: "/-".
-    pub beacon_symbol: String,
+    /// APRS symbol table identifier: "/" = primary, "\\" = alternate.
+    pub beacon_symbol_table: char,
+    /// APRS symbol code. E.g. '-' = house, '&' = diamond/gateway, 'I' = IGate.
+    pub beacon_symbol_code: char,
     /// Beacon latitude override (decimal degrees). Falls back to [general].latitude.
     pub latitude: Option<f64>,
     /// Beacon longitude override (decimal degrees). Falls back to [general].longitude.
@@ -73,7 +74,8 @@ impl Default for AprsFiConfig {
             callsign: None,
             beacon: false,
             beacon_interval_secs: 1200,
-            beacon_symbol: "/-".to_string(),
+            beacon_symbol_table: '/',
+            beacon_symbol_code: '-',
             latitude: None,
             longitude: None,
         }

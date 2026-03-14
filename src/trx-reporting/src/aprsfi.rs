@@ -86,9 +86,7 @@ fn format_aprs_lon(lon: f64) -> String {
 /// Uses APRS uncompressed position format (`!`) with path `TCPIP*`.
 /// The two-character `symbol` string sets the symbol-table and symbol-code
 /// (e.g. `/-` = house, `/&` = diamond/gateway).
-fn format_beacon(callsign: &str, lat: f64, lon: f64, symbol: &str) -> String {
-    let sym_table = symbol.chars().next().unwrap_or('/');
-    let sym_code = symbol.chars().nth(1).unwrap_or('-');
+fn format_beacon(callsign: &str, lat: f64, lon: f64, sym_table: char, sym_code: char) -> String {
     format!(
         "{}>APRS,TCPIP*:!{}{}{}{}\r\n",
         callsign,
@@ -126,7 +124,7 @@ pub async fn run_aprsfi_uplink(
     // Pre-build the beacon packet (None if beaconing disabled or no coords).
     let beacon_packet: Option<String> = if cfg.beacon {
         match coords {
-            Some((lat, lon)) => Some(format_beacon(&callsign, lat, lon, &cfg.beacon_symbol)),
+            Some((lat, lon)) => Some(format_beacon(&callsign, lat, lon, cfg.beacon_symbol_table, cfg.beacon_symbol_code)),
             None => {
                 warn!(
                     "APRS-IS IGate: beacon enabled but no coordinates available \
@@ -443,13 +441,13 @@ mod tests {
 
     #[test]
     fn beacon_format_house_symbol() {
-        let s = format_beacon("SP2SJG-10", 52.2297, 21.0122, "/-");
+        let s = format_beacon("SP2SJG-10", 52.2297, 21.0122, '/', '-');
         assert_eq!(s, "SP2SJG-10>APRS,TCPIP*:!5213.78N/02100.73E-\r\n");
     }
 
     #[test]
     fn beacon_format_southern_western() {
-        let s = format_beacon("VK2ABC-10", -33.8688, 151.2093, "/-");
+        let s = format_beacon("VK2ABC-10", -33.8688, 151.2093, '/', '-');
         assert!(s.contains('S'));
         assert!(s.contains('E'));
     }
