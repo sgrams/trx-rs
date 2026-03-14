@@ -12,6 +12,7 @@
 #include <common/monitor.h>
 #include <fft/kiss_fftr.h>
 #include <fft/kiss_fft.h>
+#include "ft2_ldpc.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -1225,7 +1226,7 @@ static bool ft2_decode_hit(
         int ntype = 0;
         int nharderror = -1;
         float dmin = 0.0f;
-        decode174_91_osd(log174, FTX_LDPC_K, 3, 3, apmask, message91, cw, &ntype, &nharderror, &dmin);
+        ft2_decode174_91_osd(log174, FTX_LDPC_K, 3, 3, apmask, message91, cw, &ntype, &nharderror, &dmin);
         if (pass_diag)
         {
             pass_diag->ntype[pass] = ntype;
