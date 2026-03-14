@@ -1131,7 +1131,7 @@ static bool ft2_decode_hit(
         int nharderror = -1;
         float dmin = 0.0f;
         decode174_91_osd(log174, FTX_LDPC_K, 3, 3, apmask, message91, cw, &ntype, &nharderror, &dmin);
-        if (ntype != 0 && nharderror > 0)
+        if (ntype != 0 && nharderror >= 0)
             ok = ft2_unpack_message(cw, message);
     }
     if (!ok && fail_stage)

@@ -23,6 +23,7 @@ static int ldpc_check(uint8_t codeword[]);
 static float fast_tanh(float x);
 static float fast_atanh(float x);
 static void pack_bits91(const uint8_t bit_array[], int num_bits, uint8_t packed[]);
+static void unpack_bits91(const uint8_t packed[], int num_bits, uint8_t bit_array[]);
 static bool check_crc91(const uint8_t plain91[]);
 static void encode174_91_nocrc_bits(const uint8_t message91[], uint8_t codeword[]);
 static int cmp_reliability_desc(const void* lhs, const void* rhs);
@@ -293,6 +294,12 @@ static void pack_bits91(const uint8_t bit_array[], int num_bits, uint8_t packed[
     }
 }
 
+static void unpack_bits91(const uint8_t packed[], int num_bits, uint8_t bit_array[])
+{
+    for (int i = 0; i < num_bits; ++i)
+        bit_array[i] = (packed[i / 8] >> (7 - (i % 8))) & 0x1u;
+}
+
 static bool check_crc91(const uint8_t plain91[])
 {
     uint8_t a91[FTX_LDPC_K_BYTES];
@@ -508,7 +515,18 @@ static void osd174_91(float llr[], int k, uint8_t apmask[], int ndeep, uint8_t m
         for (int i = 0; i < FTX_LDPC_K; ++i)
         {
             uint8_t msg[FTX_LDPC_K] = { 0 };
-            msg[i] = 1;
+            if (i < 77)
+            {
+                uint8_t payload[10] = { 0 };
+                uint8_t a91[FTX_LDPC_K_BYTES];
+                payload[i / 8] |= (uint8_t)(0x80u >> (i % 8));
+                ftx_add_crc(payload, a91);
+                unpack_bits91(a91, FTX_LDPC_K, msg);
+            }
+            else
+            {
+                msg[i] = 1;
+            }
             encode174_91_nocrc_bits(msg, gen[i]);
         }
         gen_ready = true;
