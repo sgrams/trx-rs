@@ -396,6 +396,14 @@ input.status-input, select.status-input { width: 100%; padding: 0.45rem 0.5rem; 
   border-color: var(--accent-yellow);
   color: var(--accent-yellow);
 }
+.scheduler-step-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+.scheduler-step-controls button {
+  min-width: 7.6rem;
+}
 .scheduler-release-status {
   color: var(--text-muted);
   font-size: 0.78rem;

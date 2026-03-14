@@ -16,6 +16,7 @@
   let bookmarkList = [];          // [{id, name, freq_hz, mode}, ...]
   let statusInterval = null;
   let interleaveTicker = null;
+  let schedulerStepPending = false;
 
   // -------------------------------------------------------------------------
   // Init
@@ -91,6 +92,17 @@
     );
   }
 
+  function apiActivateSchedulerEntry(rigId, entryId) {
+    return fetch("/scheduler/" + encodeURIComponent(rigId) + "/activate", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ entry_id: entryId }),
+    }).then(function (r) {
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      return r.json();
+    });
+  }
+
   function apiGetBookmarks() {
     return fetch("/bookmarks").then(function (r) {
       if (!r.ok) throw new Error("HTTP " + r.status);
@@ -156,15 +168,38 @@
     return nowMin >= start || nowMin < end;
   }
 
-  function schedulerInterleaveSummary(config) {
-    if (!config || config.mode !== "time_span") return "Interleaving: off";
+  function schedulerEntryCurrentWindowStart(entry, nowMin) {
+    const start = Number(entry && entry.start_min);
+    const end = Number(entry && entry.end_min);
+    if (!Number.isFinite(start) || !Number.isFinite(end)) return Number.NEGATIVE_INFINITY;
+    if (start === end) return 0;
+    if (start < end) return start;
+    return nowMin >= start ? start : (start - 1440);
+  }
+
+  function schedulerEntryDisplayName(entry) {
+    if (!entry) return "Scheduler entry";
+    if (entry.label) return String(entry.label);
+    const bookmarkName = bmName(entry.bookmark_id);
+    return bookmarkName || "Scheduler entry";
+  }
+
+  function schedulerInterleaveState(config) {
+    if (!config || config.mode !== "time_span") {
+      return { activeEntries: [], currentIndex: -1, remainingSec: 0, cycleMin: 0 };
+    }
     const entries = Array.isArray(config.entries) ? config.entries : [];
     const minuteInfo = schedulerUtcMinuteInfo();
     const nowMin = minuteInfo.minuteOfDay;
     const active = entries.filter(function (entry) {
       return schedulerEntryIsActive(entry, nowMin);
     });
-    if (active.length <= 1) return "Interleaving: off";
+    if (active.length === 0) {
+      return { activeEntries: [], currentIndex: -1, remainingSec: 0, cycleMin: 0 };
+    }
+    if (active.length === 1) {
+      return { activeEntries: active, currentIndex: 0, remainingSec: 0, cycleMin: 0 };
+    }
     const defaultInterleave = Number(config.interleave_min);
     const durations = active.map(function (entry) {
       const own = Number(entry && entry.interleave_min);
@@ -173,27 +208,76 @@
       return 0;
     });
     const cycleMin = durations.reduce(function (sum, value) { return sum + value; }, 0);
-    if (!(cycleMin > 0)) return "Interleaving: off";
-    const posMin = minuteInfo.minuteOfDay % cycleMin;
+    if (!(cycleMin > 0)) {
+      return { activeEntries: active, currentIndex: 0, remainingSec: 0, cycleMin: 0 };
+    }
+    const overlapStart = active.reduce(function (maxStart, entry) {
+      return Math.max(maxStart, schedulerEntryCurrentWindowStart(entry, nowMin));
+    }, Number.NEGATIVE_INFINITY);
+    if (!Number.isFinite(overlapStart)) {
+      return { activeEntries: active, currentIndex: 0, remainingSec: 0, cycleMin: 0 };
+    }
+    const nowMinPrecise = minuteInfo.minuteOfDay + (minuteInfo.secondOfMinute / 60);
+    const posMin = ((nowMinPrecise - overlapStart) % cycleMin + cycleMin) % cycleMin;
     let cumulative = 0;
+    let slotStart = 0;
+    let currentIndex = 0;
     let currentDuration = 0;
     for (let i = 0; i < durations.length; i += 1) {
-      cumulative += durations[i];
-      if (posMin < cumulative) {
+      const nextCumulative = cumulative + durations[i];
+      if (posMin < nextCumulative) {
+        slotStart = cumulative;
+        cumulative = nextCumulative;
+        currentIndex = i;
         currentDuration = durations[i];
         break;
       }
+      cumulative = nextCumulative;
     }
-    if (!(currentDuration > 0)) return "Interleaving: off";
-    const remainingMin = cumulative - posMin;
-    const remainingSec = Math.max(1, (remainingMin * 60) - minuteInfo.secondOfMinute);
-    return "Interleaving: next switch in " + remainingSec + "s (" + cycleMin + " min cycle)";
+    if (!(currentDuration > 0)) {
+      return { activeEntries: active, currentIndex: 0, remainingSec: 0, cycleMin: 0 };
+    }
+    const elapsedSlotSec = Math.max(0, Math.floor((posMin - slotStart) * 60));
+    const remainingSec = Math.max(1, (currentDuration * 60) - elapsedSlotSec);
+    return {
+      activeEntries: active,
+      currentIndex: currentIndex,
+      remainingSec: remainingSec,
+      cycleMin: cycleMin,
+    };
+  }
+
+  function schedulerInterleaveSummary(config) {
+    const state = schedulerInterleaveState(config);
+    if (state.activeEntries.length <= 1 || !(state.cycleMin > 0)) return "Interleaving: off";
+    const activeName = schedulerEntryDisplayName(state.activeEntries[state.currentIndex]);
+    return "Interleaving: " + activeName + " · next switch in " + state.remainingSec + "s (" + state.cycleMin + " min cycle)";
   }
 
   function renderSchedulerInterleaveStatus() {
     const el = document.getElementById("scheduler-cycle-status");
     if (!el) return;
     el.textContent = schedulerInterleaveSummary(currentConfig);
+    renderSchedulerStepControls();
+  }
+
+  function renderSchedulerStepControls() {
+    const prevBtn = document.getElementById("scheduler-prev-btn");
+    const nextBtn = document.getElementById("scheduler-next-btn");
+    if (!prevBtn || !nextBtn) return;
+    const state = schedulerInterleaveState(currentConfig);
+    const enabled =
+      schedulerRole === "control" &&
+      !!currentRigId &&
+      !schedulerStepPending &&
+      state.activeEntries.length > 1;
+    prevBtn.disabled = !enabled;
+    nextBtn.disabled = !enabled;
+    const hint = enabled
+      ? "Select a different active scheduler entry"
+      : "Available only when multiple scheduler entries are active";
+    prevBtn.title = hint;
+    nextBtn.title = hint;
   }
 
   function pollStatus() {
@@ -350,7 +434,7 @@
         '<td>' + (allDay ? "All day" : minToHHMM(entry.start_min)) + '</td>' +
         '<td>' + (allDay ? "—" : minToHHMM(entry.end_min)) + '</td>' +
         '<td>' + centerCell + '</td>' +
-        '<td>' + bmName(entry.bookmark_id) + '</td>' +
+        '<td>' + escHtml(bmName(entry.bookmark_id)) + '</td>' +
         '<td>' + extraCell + '</td>' +
         '<td>' + escHtml(entry.label || "") + '</td>' +
         '<td>' + il + '</td>' +
@@ -366,7 +450,7 @@
 
   function bmName(id) {
     const bm = bookmarkList.find(function (b) { return b.id === id; });
-    return bm ? escHtml(bm.name) : escHtml(id);
+    return bm ? bm.name : String(id || "");
   }
 
   function minToHHMM(min) {
@@ -386,6 +470,38 @@
       .replace(/</g, "&lt;")
       .replace(/>/g, "&gt;")
       .replace(/"/g, "&quot;");
+  }
+
+  function schedulerSelectRelativeEntry(delta) {
+    const state = schedulerInterleaveState(currentConfig);
+    if (!currentRigId || schedulerStepPending || state.activeEntries.length <= 1) return;
+    const count = state.activeEntries.length;
+    const currentIndex = state.currentIndex >= 0 ? state.currentIndex : 0;
+    const targetIndex = (currentIndex + delta + count) % count;
+    const target = state.activeEntries[targetIndex];
+    if (!target || !target.id) return;
+
+    schedulerStepPending = true;
+    renderSchedulerStepControls();
+
+    Promise.resolve(typeof vchanTakeSchedulerControl === "function" ? vchanTakeSchedulerControl() : null)
+      .then(function () {
+        return apiActivateSchedulerEntry(currentRigId, target.id);
+      })
+      .then(function (status) {
+        renderStatus(status);
+        renderSchedulerInterleaveStatus();
+        showSchedulerToast("Selected " + schedulerEntryDisplayName(target) + ".");
+        pollStatus();
+      })
+      .catch(function (e) {
+        console.error("scheduler entry selection failed", e);
+        showSchedulerToast("Scheduler entry selection failed: " + e.message, true);
+      })
+      .finally(function () {
+        schedulerStepPending = false;
+        renderSchedulerStepControls();
+      });
   }
 
   function removeEntry(idx) {
@@ -565,6 +681,16 @@
 
     const addBtn = document.getElementById("scheduler-ts-add-btn");
     if (addBtn) addBtn.addEventListener("click", addEntry);
+
+    const prevBtn = document.getElementById("scheduler-prev-btn");
+    if (prevBtn) prevBtn.addEventListener("click", function () {
+      schedulerSelectRelativeEntry(-1);
+    });
+
+    const nextBtn = document.getElementById("scheduler-next-btn");
+    if (nextBtn) nextBtn.addEventListener("click", function () {
+      schedulerSelectRelativeEntry(1);
+    });
 
     wireExtraBmAdd();
   }

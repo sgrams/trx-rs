@@ -1322,6 +1322,7 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
         .service(crate::server::scheduler::put_scheduler)
         .service(crate::server::scheduler::delete_scheduler)
         .service(crate::server::scheduler::get_scheduler_status)
+        .service(crate::server::scheduler::put_scheduler_activate_entry)
         .service(crate::server::scheduler::get_scheduler_control)
         .service(crate::server::scheduler::put_scheduler_control)
         .service(crate::server::background_decode::get_background_decode)

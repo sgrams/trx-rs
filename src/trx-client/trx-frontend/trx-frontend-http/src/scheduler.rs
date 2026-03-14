@@ -302,39 +302,79 @@ fn entry_is_active(entry: &ScheduleEntry, now_min: f64) -> bool {
     }
 }
 
+fn entry_current_window_start(entry: &ScheduleEntry, now_min: f64) -> f64 {
+    let start = entry.start_min as f64;
+    let end = entry.end_min as f64;
+    if start == end {
+        return 0.0;
+    }
+    if start < end {
+        return start;
+    }
+    if now_min >= start {
+        start
+    } else {
+        start - 1440.0
+    }
+}
+
+fn timespan_active_entries(entries: &[ScheduleEntry], now_min: f64) -> Vec<&ScheduleEntry> {
+    entries
+        .iter()
+        .filter(|entry| entry_is_active(entry, now_min))
+        .collect()
+}
+
+fn timespan_cycle_slot(
+    active: &[&ScheduleEntry],
+    now_min: f64,
+    default_interleave: Option<u32>,
+) -> Option<usize> {
+    if active.len() <= 1 {
+        return None;
+    }
+
+    let durations: Vec<u32> = active
+        .iter()
+        .map(|entry| entry.interleave_min.or(default_interleave).unwrap_or(0))
+        .collect();
+    let cycle: u32 = durations.iter().sum();
+    if cycle == 0 {
+        return None;
+    }
+
+    let overlap_start = active
+        .iter()
+        .map(|entry| entry_current_window_start(entry, now_min))
+        .fold(f64::NEG_INFINITY, f64::max);
+    if !overlap_start.is_finite() {
+        return None;
+    }
+
+    let elapsed = (now_min - overlap_start).rem_euclid(cycle as f64);
+    let mut cumulative = 0.0;
+    for (idx, duration) in durations.iter().enumerate() {
+        cumulative += *duration as f64;
+        if elapsed < cumulative {
+            return Some(idx);
+        }
+    }
+    durations.len().checked_sub(1)
+}
+
 fn timespan_active_entry(
     entries: &[ScheduleEntry],
     now_min: f64,
     default_interleave: Option<u32>,
 ) -> Option<&ScheduleEntry> {
-    let active: Vec<&ScheduleEntry> = entries
-        .iter()
-        .filter(|e| entry_is_active(e, now_min))
-        .collect();
+    let active = timespan_active_entries(entries, now_min);
 
     if active.is_empty() {
         return None;
     }
 
-    // With interleaving and more than one active entry, use a weighted cycle.
-    // Each entry's effective duration is its own interleave_min, falling back
-    // to the config-level default.  The cycle length is the sum of all durations.
-    if active.len() > 1 {
-        let durations: Vec<u32> = active
-            .iter()
-            .map(|e| e.interleave_min.or(default_interleave).unwrap_or(0))
-            .collect();
-        let cycle: u32 = durations.iter().sum();
-        if cycle > 0 {
-            let pos = (now_min as u64) % (cycle as u64);
-            let mut cum = 0u64;
-            for (entry, &dur) in active.iter().zip(durations.iter()) {
-                cum += dur as u64;
-                if pos < cum {
-                    return Some(*entry);
-                }
-            }
-        }
+    if let Some(idx) = timespan_cycle_slot(&active, now_min, default_interleave) {
+        return Some(active[idx]);
     }
 
     // Default: first matching entry wins.
@@ -346,8 +386,8 @@ fn utc_minutes_now() -> f64 {
     let secs = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
-        .as_secs();
-    ((secs % 86400) as f64) / 60.0
+        .as_secs_f64();
+    (secs % 86400.0) / 60.0
 }
 
 // ============================================================================
@@ -367,6 +407,73 @@ pub struct SchedulerStatus {
     /// Additional bookmark IDs active alongside the primary (virtual channels).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub last_bookmark_ids: Vec<String>,
+}
+
+async fn apply_scheduler_target(
+    rig_tx: &mpsc::Sender<RigRequest>,
+    rig_id: &str,
+    status_map: &SchedulerStatusMap,
+    bookmarks: &BookmarkStore,
+    bookmark_id: &str,
+    center_hz: Option<u64>,
+    extra_bm_ids: &[String],
+) -> Result<SchedulerStatus, String> {
+    let bookmark = bookmarks
+        .get(bookmark_id)
+        .ok_or_else(|| format!("bookmark '{bookmark_id}' not found for rig '{rig_id}'"))?;
+
+    let extra_bookmarks: Vec<_> = extra_bm_ids
+        .iter()
+        .filter_map(|id| bookmarks.get(id))
+        .collect();
+
+    if let Some(chz) = center_hz {
+        scheduler_send(
+            rig_tx,
+            RigCommand::SetCenterFreq(Freq { hz: chz }),
+            rig_id.to_string(),
+        )
+        .await?;
+    }
+
+    scheduler_send(
+        rig_tx,
+        RigCommand::SetFreq(Freq {
+            hz: bookmark.freq_hz,
+        }),
+        rig_id.to_string(),
+    )
+    .await?;
+
+    scheduler_send(
+        rig_tx,
+        RigCommand::SetMode(trx_protocol::parse_mode(&bookmark.mode)),
+        rig_id.to_string(),
+    )
+    .await?;
+
+    apply_scheduler_decoders(rig_tx, rig_id, &bookmark, &extra_bookmarks).await;
+
+    let status = SchedulerStatus {
+        active: true,
+        last_bookmark_id: Some(bookmark_id.to_string()),
+        last_bookmark_name: Some(bookmark.name.clone()),
+        last_applied_utc: Some(
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs() as i64,
+        ),
+        last_center_hz: center_hz,
+        last_bookmark_ids: extra_bm_ids.to_vec(),
+    };
+
+    {
+        let mut map = status_map.write().unwrap_or_else(|e| e.into_inner());
+        map.insert(rig_id.to_string(), status.clone());
+    }
+
+    Ok(status)
 }
 
 /// Shared mutable state for scheduler status (one entry per rig).
@@ -524,91 +631,27 @@ pub fn spawn_scheduler_task(
                     continue;
                 };
 
-                let extra_bookmarks: Vec<_> = extra_bm_ids
-                    .iter()
-                    .filter_map(|id| bookmarks.get(id))
-                    .collect();
-
                 info!(
                     "scheduler: rig '{}' → bookmark '{}' ({} Hz {})",
                     config.rig_id, bm.name, bm.freq_hz, bm.mode
                 );
 
-                // Apply SetCenterFreq first if this is a multi-channel SDR slot.
-                if let Some(chz) = center_hz {
-                    if let Err(e) = scheduler_send(
-                        &rig_tx,
-                        RigCommand::SetCenterFreq(Freq { hz: chz }),
-                        config.rig_id.clone(),
-                    )
-                    .await
-                    {
-                        warn!(
-                            "scheduler: SetCenterFreq failed for '{}': {:?}",
-                            config.rig_id, e
-                        );
-                    }
-                }
-
-                // Apply SetFreq.
-                if let Err(e) = scheduler_send(
+                if let Err(e) = apply_scheduler_target(
                     &rig_tx,
-                    RigCommand::SetFreq(Freq { hz: bm.freq_hz }),
-                    config.rig_id.clone(),
+                    &config.rig_id,
+                    &status_map,
+                    &bookmarks,
+                    &bm_id,
+                    center_hz,
+                    &extra_bm_ids,
                 )
                 .await
                 {
-                    warn!("scheduler: SetFreq failed for '{}': {:?}", config.rig_id, e);
+                    warn!("scheduler: failed to apply target for '{}': {e}", config.rig_id);
                     continue;
                 }
 
-                // Apply SetMode.
-                {
-                    let mode = trx_protocol::parse_mode(&bm.mode);
-                    if let Err(e) = scheduler_send(
-                        &rig_tx,
-                        RigCommand::SetMode(mode),
-                        config.rig_id.clone(),
-                    )
-                    .await
-                    {
-                        warn!(
-                            "scheduler: SetMode failed for '{}': {:?}",
-                            config.rig_id, e
-                        );
-                    }
-                }
-
-                apply_scheduler_decoders(
-                    &rig_tx,
-                    &config.rig_id,
-                    &bm,
-                    &extra_bookmarks,
-                )
-                .await;
-
                 last_applied.insert(config.rig_id.clone(), target);
-
-                // Update status map (includes center_hz + extra bookmark_ids
-                // so the JS frontend can set up virtual channels on connect).
-                let now_ts = std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .unwrap_or_default()
-                    .as_secs() as i64;
-                {
-                    let mut map = status_map.write().unwrap_or_else(|e| e.into_inner());
-                    map.insert(
-                        config.rig_id.clone(),
-                        SchedulerStatus {
-                            active: true,
-                            last_bookmark_id: Some(bm_id),
-                            last_bookmark_name: Some(bm.name),
-                            last_applied_utc: Some(now_ts),
-                            last_center_hz: center_hz,
-                            last_bookmark_ids: extra_bm_ids,
-                        },
-                    );
-                }
             }
         }
     });
@@ -675,57 +718,27 @@ async fn apply_last_scheduler_cycle(
     let Some(bookmark_id) = status.last_bookmark_id else {
         return;
     };
-    let Some(bookmark) = bookmarks.get(&bookmark_id) else {
+    if bookmarks.get(&bookmark_id).is_none() {
         warn!(
             "scheduler: last bookmark '{}' not found for rig '{}'",
             bookmark_id, rig_id
         );
         return;
-    };
-
-    let extra_bookmarks: Vec<_> = status
-        .last_bookmark_ids
-        .iter()
-        .filter_map(|id| bookmarks.get(id))
-        .collect();
-
-    if let Some(center_hz) = status.last_center_hz {
-        if let Err(e) = scheduler_send(
-            rig_tx,
-            RigCommand::SetCenterFreq(Freq { hz: center_hz }),
-            rig_id.to_string(),
-        )
-        .await
-        {
-            warn!(
-                "scheduler: restore SetCenterFreq failed for '{}': {:?}",
-                rig_id, e
-            );
-        }
     }
 
-    if let Err(e) = scheduler_send(
+    if let Err(e) = apply_scheduler_target(
         rig_tx,
-        RigCommand::SetFreq(Freq { hz: bookmark.freq_hz }),
-        rig_id.to_string(),
+        rig_id,
+        status_map,
+        bookmarks,
+        &bookmark_id,
+        status.last_center_hz,
+        &status.last_bookmark_ids,
     )
     .await
     {
-        warn!("scheduler: restore SetFreq failed for '{}': {:?}", rig_id, e);
-        return;
+        warn!("scheduler: restore failed for '{}': {e}", rig_id);
     }
-
-    if let Err(e) = scheduler_send(
-        rig_tx,
-        RigCommand::SetMode(trx_protocol::parse_mode(&bookmark.mode)),
-        rig_id.to_string(),
-    )
-    .await
-    {
-        warn!("scheduler: restore SetMode failed for '{}': {:?}", rig_id, e);
-    }
-
-    apply_scheduler_decoders(rig_tx, rig_id, &bookmark, &extra_bookmarks).await;
 }
 
 /// Send a single RigCommand from the scheduler context (fire-and-forget style).
@@ -810,6 +823,53 @@ pub async fn get_scheduler_status(
 }
 
 #[derive(Deserialize)]
+pub struct SchedulerActivateEntryRequest {
+    pub entry_id: String,
+}
+
+/// PUT /scheduler/{rig_id}/activate
+#[put("/scheduler/{rig_id}/activate")]
+pub async fn put_scheduler_activate_entry(
+    path: web::Path<String>,
+    body: web::Json<SchedulerActivateEntryRequest>,
+    store: web::Data<Arc<SchedulerStore>>,
+    status_map: web::Data<SchedulerStatusMap>,
+    bookmarks: web::Data<Arc<BookmarkStore>>,
+    rig_tx: web::Data<mpsc::Sender<RigRequest>>,
+) -> impl Responder {
+    let rig_id = path.into_inner();
+    let Some(config) = store.get(&rig_id) else {
+        return HttpResponse::NotFound().body("scheduler config not found");
+    };
+    if config.mode != SchedulerMode::TimeSpan {
+        return HttpResponse::BadRequest().body("scheduler mode is not time_span");
+    }
+
+    let entry_id = body.entry_id.trim();
+    let Some(entry) = config.entries.iter().find(|entry| entry.id == entry_id) else {
+        return HttpResponse::NotFound().body("scheduler entry not found");
+    };
+    if entry.bookmark_id.trim().is_empty() {
+        return HttpResponse::BadRequest().body("scheduler entry has no primary bookmark");
+    }
+
+    match apply_scheduler_target(
+        rig_tx.get_ref(),
+        &rig_id,
+        status_map.get_ref(),
+        bookmarks.get_ref().as_ref(),
+        &entry.bookmark_id,
+        entry.center_hz,
+        &entry.bookmark_ids,
+    )
+    .await
+    {
+        Ok(status) => HttpResponse::Ok().json(status),
+        Err(err) => HttpResponse::InternalServerError().body(err),
+    }
+}
+
+#[derive(Deserialize)]
 pub struct SchedulerControlQuery {
     pub session_id: Option<Uuid>,
 }
@@ -856,7 +916,7 @@ pub async fn put_scheduler_control(
 
 #[cfg(test)]
 mod tests {
-    use super::{timespan_active_entry, ScheduleEntry};
+    use super::{timespan_active_entry, timespan_cycle_slot, timespan_active_entries, ScheduleEntry};
 
     fn entry(
         id: &str,
@@ -900,5 +960,32 @@ mod tests {
         let active = timespan_active_entry(&entries, 90.0, None).expect("active entry");
         assert_eq!(active.id, "slot-a");
         assert_eq!(active.center_hz, Some(14_100_000));
+    }
+
+    #[test]
+    fn timespan_cycle_is_anchored_to_overlap_start() {
+        let entries = vec![
+            entry("slot-a", 60, 180, "bm-a", Some(14_100_000), Some(10)),
+            entry("slot-b", 90, 180, "bm-b", Some(14_200_000), Some(10)),
+        ];
+
+        let active = timespan_active_entry(&entries, 100.0, None).expect("active entry");
+        assert_eq!(active.id, "slot-b");
+    }
+
+    #[test]
+    fn timespan_cycle_handles_overlap_spanning_midnight() {
+        let entries = vec![
+            entry("slot-a", 1380, 120, "bm-a", Some(14_100_000), Some(10)),
+            entry("slot-b", 0, 120, "bm-b", Some(14_200_000), Some(10)),
+        ];
+
+        let active_entries = timespan_active_entries(&entries, 5.0);
+        assert_eq!(active_entries.len(), 2);
+        let slot = timespan_cycle_slot(&active_entries, 5.0, None).expect("cycle slot");
+        assert_eq!(slot, 0);
+
+        let active = timespan_active_entry(&entries, 10.0, None).expect("active entry");
+        assert_eq!(active.id, "slot-b");
     }
 }
