@@ -7294,6 +7294,7 @@ document.getElementById("copyright-year").textContent = new Date().getFullYear()
 // --- Server-side decode SSE ---
 let decodeSource = null;
 let decodeConnected = false;
+let decodeHistoryWorker = null;
 function setModeBoundDecodeStatus(el, activeModes, inactiveText, connectedText) {
   if (!el) return;
   const modeUpper = (document.getElementById("mode")?.value || "").toUpperCase();
@@ -7363,6 +7364,13 @@ function dispatchDecodeBatch(batch) {
 const DECODE_HISTORY_MAX_BATCH = 256;
 const DECODE_HISTORY_TYPE_BATCH_LIMIT = 192;
 const DECODE_HISTORY_SLICE_BUDGET_MS = 10;
+const DECODE_HISTORY_BATCH_DRAIN_BUDGET_MS = 8;
+
+function terminateDecodeHistoryWorker() {
+  if (!decodeHistoryWorker) return;
+  try { decodeHistoryWorker.terminate(); } catch (_) {}
+  decodeHistoryWorker = null;
+}
 
 function scheduleDecodeHistoryDrainStep(callback) {
   if (typeof callback !== "function") return;
@@ -7404,8 +7412,24 @@ function drainDecodeHistory(buffer, index, onDone, onProgress) {
   }
 }
 
+function loadDecodeHistoryOnMainThread(onReady, onError) {
+  fetch("/decode/history").then(async (resp) => {
+    if (!resp.ok) return null;
+    setDecodeHistoryOverlayVisible(true, "Loading decode history…", "Receiving compressed history payload");
+    const payload = await resp.arrayBuffer();
+    if (!payload || payload.byteLength === 0) return [];
+    setDecodeHistoryOverlayVisible(true, "Loading decode history…", "Decoding compressed history payload");
+    return decodeCborPayload(payload);
+  }).then((msgs) => {
+    if (typeof onReady === "function") onReady(Array.isArray(msgs) ? msgs : []);
+  }).catch((err) => {
+    if (typeof onError === "function") onError(err);
+  });
+}
+
 function connectDecode() {
   if (decodeSource) { decodeSource.close(); }
+  terminateDecodeHistoryWorker();
   decodeHistoryReplayActive = false;
   decodeMapSyncPending = false;
   if (window.resetAisHistoryView) window.resetAisHistoryView();
@@ -7418,9 +7442,16 @@ function connectDecode() {
   // Buffer live messages until history fetch settles so history always appears
   // before any live updates, regardless of network ordering.
   let historySettled = false;
+  let historyWorkerDone = false;
+  let historyFallbackStarted = false;
+  let historyBatchDrainScheduled = false;
+  let historyTotal = 0;
+  let historyProcessed = 0;
+  const historyBatchQueue = [];
   const liveBuffer = [];
   function flushLiveBuffer() {
     historySettled = true;
+    terminateDecodeHistoryWorker();
     setDecodeHistoryReplayActive(false);
     setDecodeHistoryOverlayVisible(false);
     for (const msg of liveBuffer) {
@@ -7428,8 +7459,146 @@ function connectDecode() {
     }
     liveBuffer.length = 0;
   }
-  // Safety valve: if the history fetch hangs, unblock after 8 s.
-  const historyTimeout = setTimeout(() => { if (!historySettled) flushLiveBuffer(); }, 8000);
+
+  function updateHistoryReplayOverlay() {
+    setDecodeHistoryOverlayVisible(
+      true,
+      "Loading decode history…",
+      `Replaying ${historyProcessed} / ${historyTotal} decoded messages`
+    );
+  }
+
+  function maybeFinishHistoryReplay() {
+    if (historySettled) return;
+    if (historyWorkerDone && historyBatchQueue.length === 0) {
+      clearTimeout(historyTimeout);
+      flushLiveBuffer();
+    }
+  }
+
+  function pumpDecodeHistoryBatchQueue() {
+    historyBatchDrainScheduled = false;
+    const startedAt = typeof performance !== "undefined" && typeof performance.now === "function"
+      ? performance.now()
+      : 0;
+    while (historyBatchQueue.length > 0) {
+      const batch = historyBatchQueue.shift();
+      dispatchDecodeBatch(batch);
+      historyProcessed += Array.isArray(batch) ? batch.length : 0;
+      updateHistoryReplayOverlay();
+      if (startedAt > 0 && (performance.now() - startedAt) >= DECODE_HISTORY_BATCH_DRAIN_BUDGET_MS) {
+        break;
+      }
+    }
+    if (historyBatchQueue.length > 0) {
+      scheduleDecodeHistoryDrainStep(pumpDecodeHistoryBatchQueue);
+      historyBatchDrainScheduled = true;
+      return;
+    }
+    maybeFinishHistoryReplay();
+  }
+
+  function enqueueDecodeHistoryBatch(batch) {
+    if (!Array.isArray(batch) || batch.length === 0) return;
+    historyBatchQueue.push(batch);
+    if (historyBatchDrainScheduled) return;
+    historyBatchDrainScheduled = true;
+    scheduleDecodeHistoryDrainStep(pumpDecodeHistoryBatchQueue);
+  }
+
+  function startDecodeHistoryFallback() {
+    if (historyFallbackStarted || historySettled) return;
+    historyFallbackStarted = true;
+    loadDecodeHistoryOnMainThread((msgs) => {
+      clearTimeout(historyTimeout);
+      if (Array.isArray(msgs) && msgs.length > 0) {
+        setDecodeHistoryReplayActive(true);
+        setDecodeHistoryOverlayVisible(true, "Loading decode history…", `Replaying 0 / ${msgs.length} decoded messages`);
+        drainDecodeHistory(
+          msgs,
+          0,
+          flushLiveBuffer,
+          (processed, total) => {
+            setDecodeHistoryOverlayVisible(
+              true,
+              "Loading decode history…",
+              `Replaying ${processed} / ${total} decoded messages`
+            );
+          }
+        );
+      } else {
+        flushLiveBuffer();
+      }
+    }, (err) => {
+      console.error("Decode history fallback failed", err);
+      clearTimeout(historyTimeout);
+      flushLiveBuffer();
+    });
+  }
+
+  function startDecodeHistoryWorkerReplay() {
+    if (typeof Worker !== "function") return false;
+    let worker;
+    try {
+      worker = new Worker("/decode-history-worker.js");
+    } catch (err) {
+      console.error("Decode history worker startup failed", err);
+      return false;
+    }
+    decodeHistoryWorker = worker;
+    worker.onmessage = (evt) => {
+      if (historySettled || worker !== decodeHistoryWorker) return;
+      const data = evt?.data || {};
+      if (data.type === "status") {
+        const phase = String(data.phase || "");
+        if (phase === "fetching") {
+          setDecodeHistoryOverlayVisible(true, "Loading decode history…", "Fetching recent decodes from the client buffer");
+        } else if (phase === "decoding") {
+          setDecodeHistoryOverlayVisible(true, "Loading decode history…", "Decoding compressed history in background");
+        }
+        return;
+      }
+      if (data.type === "start") {
+        historyTotal = Math.max(0, Number(data.total) || 0);
+        historyProcessed = 0;
+        if (historyTotal > 0) {
+          setDecodeHistoryReplayActive(true);
+          updateHistoryReplayOverlay();
+        }
+        return;
+      }
+      if (data.type === "batch") {
+        enqueueDecodeHistoryBatch(data.batch);
+        return;
+      }
+      if (data.type === "done") {
+        historyWorkerDone = true;
+        clearTimeout(historyTimeout);
+        terminateDecodeHistoryWorker();
+        maybeFinishHistoryReplay();
+        return;
+      }
+      if (data.type === "error") {
+        console.error("Decode history worker failed", data.message || "unknown worker failure");
+        terminateDecodeHistoryWorker();
+        startDecodeHistoryFallback();
+      }
+    };
+    worker.postMessage({
+      type: "fetch-history",
+      url: "/decode/history",
+      batchLimit: DECODE_HISTORY_TYPE_BATCH_LIMIT,
+    });
+    return true;
+  }
+
+  // Safety valve: if the history fetch hangs, unblock after 20 s.
+  const historyTimeout = setTimeout(() => {
+    if (!historySettled) {
+      terminateDecodeHistoryWorker();
+      flushLiveBuffer();
+    }
+  }, 20000);
   setDecodeHistoryOverlayVisible(true, "Loading decode history…", "Fetching recent decodes from the client buffer");
 
   decodeSource = new EventSource("/decode");
@@ -7449,6 +7618,7 @@ function connectDecode() {
     const wasClosed = decodeSource.readyState === 2;
     decodeSource.close();
     decodeConnected = false;
+    terminateDecodeHistoryWorker();
     if (wasClosed) {
       updateDecodeStatus("Decode not available (check client audio config)");
       setTimeout(connectDecode, 10000);
@@ -7458,39 +7628,9 @@ function connectDecode() {
     }
   };
 
-  // Fetch history in parallel; drain it first, then flush buffered live msgs.
-  fetch("/decode/history").then(async (resp) => {
-    if (!resp.ok) return null;
-    setDecodeHistoryOverlayVisible(true, "Loading decode history…", "Receiving compressed history payload");
-    const payload = await resp.arrayBuffer();
-    if (!payload || payload.byteLength === 0) return [];
-    setDecodeHistoryOverlayVisible(true, "Loading decode history…", "Decoding compressed history payload");
-    return decodeCborPayload(payload);
-  }).then((msgs) => {
-    clearTimeout(historyTimeout);
-    if (Array.isArray(msgs) && msgs.length > 0) {
-      setDecodeHistoryReplayActive(true);
-      setDecodeHistoryOverlayVisible(true, "Loading decode history…", `Replaying 0 / ${msgs.length} decoded messages`);
-      drainDecodeHistory(
-        msgs,
-        0,
-        flushLiveBuffer,
-        (processed, total) => {
-          setDecodeHistoryOverlayVisible(
-            true,
-            "Loading decode history…",
-            `Replaying ${processed} / ${total} decoded messages`
-          );
-        }
-      );
-    } else {
-      flushLiveBuffer();
-    }
-  }).catch((err) => {
-    console.error("Decode history fetch failed", err);
-    clearTimeout(historyTimeout);
-    flushLiveBuffer();
-  });
+  if (!startDecodeHistoryWorkerReplay()) {
+    startDecodeHistoryFallback();
+  }
 }
 // connectDecode() is called from initializeApp() after auth succeeds,
 // and from login/guest handlers — no standalone window.load call needed.

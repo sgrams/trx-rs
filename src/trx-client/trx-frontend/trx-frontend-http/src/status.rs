@@ -9,6 +9,8 @@ const CLIENT_BUILD_DATE: &str = env!("TRX_CLIENT_BUILD_DATE");
 const INDEX_HTML: &str = include_str!("../assets/web/index.html");
 pub const STYLE_CSS: &str = include_str!("../assets/web/style.css");
 pub const APP_JS: &str = include_str!("../assets/web/app.js");
+pub const DECODE_HISTORY_WORKER_JS: &str =
+    include_str!("../assets/web/decode-history-worker.js");
 pub const WEBGL_RENDERER_JS: &str = include_str!("../assets/web/webgl-renderer.js");
 pub const LEAFLET_AIS_TRACKSYMBOL_JS: &str =
     include_str!("../assets/web/leaflet-ais-tracksymbol.js");

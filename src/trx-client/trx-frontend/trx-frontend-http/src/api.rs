@@ -1527,6 +1527,7 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
         .service(logo)
         .service(style_css)
         .service(app_js)
+        .service(decode_history_worker_js)
         .service(webgl_renderer_js)
         .service(leaflet_ais_tracksymbol_js)
         .service(ais_js)
@@ -1625,6 +1626,16 @@ async fn app_js() -> impl Responder {
             "application/javascript; charset=utf-8",
         ))
         .body(status::APP_JS)
+}
+
+#[get("/decode-history-worker.js")]
+async fn decode_history_worker_js() -> impl Responder {
+    HttpResponse::Ok()
+        .insert_header((
+            header::CONTENT_TYPE,
+            "application/javascript; charset=utf-8",
+        ))
+        .body(status::DECODE_HISTORY_WORKER_JS)
 }
 
 #[get("/webgl-renderer.js")]
