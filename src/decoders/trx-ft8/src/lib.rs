@@ -37,6 +37,7 @@ extern "C" {
         f_max: c_float,
         time_osr: c_int,
         freq_osr: c_int,
+        protocol: c_int,
     ) -> *mut c_void;
     fn ft8_decoder_free(dec: *mut c_void);
     fn ft8_decoder_block_size(dec: *const c_void) -> c_int;
@@ -69,12 +70,37 @@ impl Ft8Decoder {
                 F_MAX_HZ,
                 TIME_OSR as c_int,
                 FREQ_OSR as c_int,
+                1, // FTX_PROTOCOL_FT8
             );
             let inner = NonNull::new(ptr).ok_or_else(|| "ft8_decoder_create failed".to_string())?;
             let block_size = ft8_decoder_block_size(inner.as_ptr()) as usize;
             if block_size == 0 {
                 ft8_decoder_free(inner.as_ptr());
                 return Err("invalid FT8 block size".to_string());
+            }
+            Ok(Self {
+                inner,
+                block_size,
+                sample_rate,
+            })
+        }
+    }
+
+    pub fn new_ft4(sample_rate: u32) -> Result<Self, String> {
+        unsafe {
+            let ptr = ft8_decoder_create(
+                sample_rate as c_int,
+                F_MIN_HZ,
+                F_MAX_HZ,
+                TIME_OSR as c_int,
+                FREQ_OSR as c_int,
+                0, // FTX_PROTOCOL_FT4
+            );
+            let inner = NonNull::new(ptr).ok_or_else(|| "ft8_decoder_create failed".to_string())?;
+            let block_size = ft8_decoder_block_size(inner.as_ptr()) as usize;
+            if block_size == 0 {
+                ft8_decoder_free(inner.as_ptr());
+                return Err("invalid FT4 block size".to_string());
             }
             Ok(Self {
                 inner,

@@ -147,6 +147,16 @@ fn prune_ft8_history(context: &FrontendRuntimeContext, history: &mut VecDeque<(I
     }
 }
 
+fn prune_ft4_history(context: &FrontendRuntimeContext, history: &mut VecDeque<(Instant, Ft8Message)>) {
+    let cutoff = decode_history_cutoff(context);
+    while let Some((ts, _)) = history.front() {
+        if *ts >= cutoff {
+            break;
+        }
+        history.pop_front();
+    }
+}
+
 fn prune_wspr_history(
     context: &FrontendRuntimeContext,
     history: &mut VecDeque<(Instant, WsprMessage)>,
@@ -200,6 +210,15 @@ fn record_ft8(context: &FrontendRuntimeContext, msg: Ft8Message) {
         .expect("ft8 history mutex poisoned");
     history.push_back((Instant::now(), msg));
     prune_ft8_history(context, &mut history);
+}
+
+fn record_ft4(context: &FrontendRuntimeContext, msg: Ft8Message) {
+    let mut history = context
+        .ft4_history
+        .lock()
+        .expect("ft4 history mutex poisoned");
+    history.push_back((Instant::now(), msg));
+    prune_ft4_history(context, &mut history);
 }
 
 fn record_wspr(context: &FrontendRuntimeContext, msg: WsprMessage) {
@@ -280,6 +299,15 @@ pub fn snapshot_ft8_history(context: &FrontendRuntimeContext) -> Vec<Ft8Message>
     history.iter().map(|(_, msg)| msg.clone()).collect()
 }
 
+pub fn snapshot_ft4_history(context: &FrontendRuntimeContext) -> Vec<Ft8Message> {
+    let mut history = context
+        .ft4_history
+        .lock()
+        .expect("ft4 history mutex poisoned");
+    prune_ft4_history(context, &mut history);
+    history.iter().map(|(_, msg)| msg.clone()).collect()
+}
+
 pub fn snapshot_wspr_history(context: &FrontendRuntimeContext) -> Vec<WsprMessage> {
     let mut history = context
         .wspr_history
@@ -337,6 +365,14 @@ pub fn clear_ft8_history(context: &FrontendRuntimeContext) {
     history.clear();
 }
 
+pub fn clear_ft4_history(context: &FrontendRuntimeContext) {
+    let mut history = context
+        .ft4_history
+        .lock()
+        .expect("ft4 history mutex poisoned");
+    history.clear();
+}
+
 pub fn clear_wspr_history(context: &FrontendRuntimeContext) {
     let mut history = context
         .wspr_history
@@ -374,6 +410,7 @@ pub fn start_decode_history_collector(context: Arc<FrontendRuntimeContext>) {
                     DecodedMessage::HfAprs(pkt) => record_hf_aprs(&context, pkt),
                     DecodedMessage::Cw(evt) => record_cw(&context, evt),
                     DecodedMessage::Ft8(msg) => record_ft8(&context, msg),
+                    DecodedMessage::Ft4(msg) => record_ft4(&context, msg),
                     DecodedMessage::Wspr(msg) => record_wspr(&context, msg),
                 },
                 Err(broadcast::error::RecvError::Lagged(_)) => continue,

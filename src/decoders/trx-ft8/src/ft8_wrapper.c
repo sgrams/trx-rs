@@ -108,7 +108,7 @@ typedef struct
     float freq_hz;
 } ft8_decode_result_t;
 
-ft8_decoder_t* ft8_decoder_create(int sample_rate, float f_min, float f_max, int time_osr, int freq_osr)
+ft8_decoder_t* ft8_decoder_create(int sample_rate, float f_min, float f_max, int time_osr, int freq_osr, int protocol)
 {
     ft8_decoder_t* dec = (ft8_decoder_t*)calloc(1, sizeof(ft8_decoder_t));
     if (!dec)
@@ -120,7 +120,7 @@ ft8_decoder_t* ft8_decoder_create(int sample_rate, float f_min, float f_max, int
     dec->cfg.sample_rate = sample_rate;
     dec->cfg.time_osr = time_osr;
     dec->cfg.freq_osr = freq_osr;
-    dec->cfg.protocol = FTX_PROTOCOL_FT8;
+    dec->cfg.protocol = (protocol == 0) ? FTX_PROTOCOL_FT4 : FTX_PROTOCOL_FT8;
 
     hashtable_init();
     monitor_init(&dec->mon, &dec->cfg);

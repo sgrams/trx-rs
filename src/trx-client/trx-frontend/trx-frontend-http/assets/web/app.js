@@ -214,11 +214,13 @@ function applyAuthRestrictions() {
       "ais-clear-btn",
       "vdes-clear-btn",
       "ft8-decode-toggle-btn",
+      "ft4-decode-toggle-btn",
       "wspr-decode-toggle-btn",
       "hf-aprs-decode-toggle-btn",
       "cw-auto",
       "aprs-clear-btn",
       "ft8-clear-btn",
+      "ft4-clear-btn",
       "wspr-clear-btn",
       "cw-clear-btn"
     ];
@@ -2846,6 +2848,13 @@ function render(update) {
     ft8ToggleBtn.textContent = ft8On ? "Disable FT8" : "Enable FT8";
     ft8ToggleBtn.style.borderColor = ft8On ? "#00d17f" : "";
     ft8ToggleBtn.style.color = ft8On ? "#00d17f" : "";
+  }
+  const ft4ToggleBtn = document.getElementById("ft4-decode-toggle-btn");
+  if (ft4ToggleBtn) {
+    const ft4On = !!update.ft4_decode_enabled;
+    ft4ToggleBtn.textContent = ft4On ? "Disable FT4" : "Enable FT4";
+    ft4ToggleBtn.style.borderColor = ft4On ? "#00d17f" : "";
+    ft4ToggleBtn.style.color = ft4On ? "#00d17f" : "";
   }
   const wsprToggleBtn = document.getElementById("wspr-decode-toggle-btn");
   if (wsprToggleBtn) {
@@ -7312,6 +7321,7 @@ function updateDecodeStatus(text) {
   const aprs = document.getElementById("aprs-status");
   const cw = document.getElementById("cw-status");
   const ft8 = document.getElementById("ft8-status");
+  const ft4 = document.getElementById("ft4-status");
   setModeBoundDecodeStatus(ais, ["AIS"], "Select AIS mode to decode", text);
   const vdesText = text === "Connected, listening for packets" ? "Connected, listening for bursts" : text;
   setModeBoundDecodeStatus(vdes, ["VDES"], "Select VDES mode to decode", vdesText);
@@ -7319,6 +7329,7 @@ function updateDecodeStatus(text) {
   const cwText = text === "Connected, listening for packets" ? "Connected, listening for CW" : text;
   setModeBoundDecodeStatus(cw, ["CW", "CWR"], "Select CW mode to decode", cwText);
   if (ft8 && ft8.textContent !== "Receiving") ft8.textContent = text;
+  if (ft4 && ft4.textContent !== "Receiving") ft4.textContent = text;
 }
 function dispatchDecodeMessage(msg) {
   if (msg.type === "ais" && window.onServerAis) window.onServerAis(msg);
@@ -7327,6 +7338,7 @@ function dispatchDecodeMessage(msg) {
   if (msg.type === "hf_aprs" && window.onServerHfAprs) window.onServerHfAprs(msg);
   if (msg.type === "cw" && window.onServerCw) window.onServerCw(msg);
   if (msg.type === "ft8" && window.onServerFt8) window.onServerFt8(msg);
+  if (msg.type === "ft4" && window.onServerFt4) window.onServerFt4(msg);
   if (msg.type === "wspr" && window.onServerWspr) window.onServerWspr(msg);
 }
 
@@ -7353,6 +7365,10 @@ function dispatchDecodeBatch(batch) {
     }
     if (type === "ft8" && window.onServerFt8Batch) {
       window.onServerFt8Batch(batch);
+      return;
+    }
+    if (type === "ft4" && window.onServerFt4Batch) {
+      window.onServerFt4Batch(batch);
       return;
     }
     if (type === "wspr" && window.onServerWsprBatch) {
@@ -7425,6 +7441,10 @@ function restoreDecodeHistoryGroup(kind, messages) {
     window.restoreFt8History(messages);
     return;
   }
+  if (kind === "ft4" && window.restoreFt4History) {
+    window.restoreFt4History(messages);
+    return;
+  }
   if (kind === "wspr" && window.restoreWsprHistory) {
     window.restoreWsprHistory(messages);
     return;
@@ -7441,6 +7461,7 @@ function connectDecode() {
   if (window.resetAprsHistoryView) window.resetAprsHistoryView();
   if (window.resetCwHistoryView) window.resetCwHistoryView();
   if (window.resetFt8HistoryView) window.resetFt8HistoryView();
+  if (window.resetFt4HistoryView) window.resetFt4HistoryView();
   if (window.resetWsprHistoryView) window.resetWsprHistoryView();
 
   // Buffer live messages until history fetch settles so history always appears
@@ -7512,7 +7533,7 @@ function connectDecode() {
 
   function totalDecodeHistoryMessages(groups) {
     if (!groups || typeof groups !== "object") return 0;
-    return ["ais", "vdes", "aprs", "hf_aprs", "cw", "ft8", "wspr"]
+    return ["ais", "vdes", "aprs", "hf_aprs", "cw", "ft8", "ft4", "wspr"]
       .reduce((sum, key) => sum + (Array.isArray(groups[key]) ? groups[key].length : 0), 0);
   }
 
@@ -7523,7 +7544,7 @@ function connectDecode() {
       setDecodeHistoryReplayActive(true);
       updateHistoryReplayOverlay();
     }
-    for (const kind of ["ais", "vdes", "aprs", "hf_aprs", "cw", "ft8", "wspr"]) {
+    for (const kind of ["ais", "vdes", "aprs", "hf_aprs", "cw", "ft8", "ft4", "wspr"]) {
       const messages = groups && Array.isArray(groups[kind]) ? groups[kind] : [];
       if (messages.length === 0) continue;
       for (let index = 0; index < messages.length; index += DECODE_HISTORY_WORKER_GROUP_LIMIT) {

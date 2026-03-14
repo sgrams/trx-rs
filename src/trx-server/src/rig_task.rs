@@ -470,6 +470,12 @@ async fn process_command(
             let _ = ctx.state_tx.send(ctx.state.clone());
             return snapshot_from(ctx.state);
         }
+        RigCommand::SetFt4DecodeEnabled(en) => {
+            ctx.state.ft4_decode_enabled = en;
+            info!("FT4 decode {}", if en { "enabled" } else { "disabled" });
+            let _ = ctx.state_tx.send(ctx.state.clone());
+            return snapshot_from(ctx.state);
+        }
         RigCommand::SetWsprDecodeEnabled(en) => {
             ctx.state.wspr_decode_enabled = en;
             info!("WSPR decode {}", if en { "enabled" } else { "disabled" });
@@ -502,6 +508,12 @@ async fn process_command(
         RigCommand::ResetFt8Decoder => {
             ctx.histories.clear_ft8_history();
             ctx.state.ft8_decode_reset_seq += 1;
+            let _ = ctx.state_tx.send(ctx.state.clone());
+            return snapshot_from(ctx.state);
+        }
+        RigCommand::ResetFt4Decoder => {
+            ctx.histories.clear_ft4_history();
+            ctx.state.ft4_decode_reset_seq += 1;
             let _ = ctx.state_tx.send(ctx.state.clone());
             return snapshot_from(ctx.state);
         }

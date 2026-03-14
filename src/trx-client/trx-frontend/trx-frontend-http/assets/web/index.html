@@ -374,6 +374,7 @@
                 <label class="bm-decoder-check"><input type="checkbox" id="bm-dec-aprs" value="aprs" /> APRS</label>
                 <label class="bm-decoder-check"><input type="checkbox" id="bm-dec-ais" value="ais" /> AIS</label>
                 <label class="bm-decoder-check"><input type="checkbox" id="bm-dec-ft8" value="ft8" /> FT8</label>
+                <label class="bm-decoder-check"><input type="checkbox" id="bm-dec-ft4" value="ft4" /> FT4</label>
                 <label class="bm-decoder-check"><input type="checkbox" id="bm-dec-wspr" value="wspr" /> WSPR</label>
                 <label class="bm-decoder-check"><input type="checkbox" id="bm-dec-hf-aprs" value="hf-aprs" /> HF APRS</label>
               </div>
@@ -425,6 +426,7 @@
         <button class="sub-tab" data-subtab="hf-aprs">HF APRS</button>
         <button class="sub-tab" data-subtab="cw">CW</button>
         <button class="sub-tab" data-subtab="ft8">FT8</button>
+        <button class="sub-tab" data-subtab="ft4">FT4</button>
         <button class="sub-tab" data-subtab="wspr">WSPR</button>
         <button class="sub-tab" data-subtab="rds">RDS</button>
       </div>
@@ -633,6 +635,24 @@
           <span class="ft8-msg">Message</span>
         </div>
         <div id="ft8-messages"></div>
+      </div>
+      <div id="subtab-ft4" class="sub-tab-panel" style="display:none;">
+        <div class="ft8-controls">
+          <button id="ft4-decode-toggle-btn" type="button">Enable FT4</button>
+          <button id="ft4-pause-btn" type="button">Pause</button>
+          <button id="ft4-clear-btn" type="button">Clear</button>
+          <input id="ft4-filter" class="ft8-filter" type="text" placeholder="Filter (e.g. CQ, DL4)" />
+          <small id="ft4-status" style="color:var(--text-muted);">Waiting for server decode</small>
+          <small id="ft4-period" style="color:var(--text-muted);">Next slot --s</small>
+        </div>
+        <div class="ft8-header">
+          <span class="ft8-time">Time</span>
+          <span class="ft8-snr">SNR</span>
+          <span class="ft8-dt">DT</span>
+          <span class="ft8-freq">RF</span>
+          <span class="ft8-msg">Message</span>
+        </div>
+        <div id="ft4-messages"></div>
       </div>
       <div id="subtab-wspr" class="sub-tab-panel" style="display:none;">
         <div class="ft8-controls">
@@ -910,6 +930,7 @@
   <script src="/aprs.js"></script>
   <script src="/hf-aprs.js"></script>
   <script src="/ft8.js"></script>
+  <script src="/ft4.js"></script>
   <script src="/wspr.js"></script>
   <script src="/cw.js"></script>
   <script src="/bookmarks.js"></script>

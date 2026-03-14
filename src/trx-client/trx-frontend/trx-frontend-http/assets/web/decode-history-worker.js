@@ -1,5 +1,5 @@
 const textDecoder = typeof TextDecoder === "function" ? new TextDecoder() : null;
-const HISTORY_GROUP_KEYS = ["ais", "vdes", "aprs", "hf_aprs", "cw", "ft8", "wspr"];
+const HISTORY_GROUP_KEYS = ["ais", "vdes", "aprs", "hf_aprs", "cw", "ft8", "ft4", "wspr"];
 
 function decodeCborUint(view, bytes, state, additional) {
   const offset = state.offset;

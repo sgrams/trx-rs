@@ -509,12 +509,14 @@ pub fn command_from_rig_command(cmd: RigCommand) -> Box<dyn RigCommandHandler> {
         | RigCommand::SetCwWpm(_)
         | RigCommand::SetCwToneHz(_)
         | RigCommand::SetFt8DecodeEnabled(_)
+        | RigCommand::SetFt4DecodeEnabled(_)
         | RigCommand::SetWsprDecodeEnabled(_)
         | RigCommand::SetHfAprsDecodeEnabled(_)
         | RigCommand::ResetHfAprsDecoder
         | RigCommand::ResetAprsDecoder
         | RigCommand::ResetCwDecoder
         | RigCommand::ResetFt8Decoder
+        | RigCommand::ResetFt4Decoder
         | RigCommand::ResetWsprDecoder
         | RigCommand::SetBandwidth(_)
         | RigCommand::SetFirTaps(_)

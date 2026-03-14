@@ -363,6 +363,9 @@ async fn async_init() -> DynResult<AppState> {
                             history.push_back((now, message));
                         }
                     }
+                    DecodedMessage::Ft4(_) => {
+                        // FT4 history is managed by the frontend HTTP audio collector
+                    }
                     DecodedMessage::Wspr(message) => {
                         if let Ok(mut history) = wspr_history.lock() {
                             history.push_back((now, message));

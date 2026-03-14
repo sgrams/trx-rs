@@ -672,6 +672,7 @@ async fn apply_scheduler_decoders(
     let mut want_aprs = bookmark.mode.trim().eq_ignore_ascii_case("PKT");
     let mut want_hf_aprs = false;
     let mut want_ft8 = false;
+    let mut want_ft4 = false;
     let mut want_wspr = false;
 
     let mut update_from = |bm: &crate::server::bookmarks::Bookmark| {
@@ -680,6 +681,7 @@ async fn apply_scheduler_decoders(
                 "aprs" => want_aprs = true,
                 "hf-aprs" => want_hf_aprs = true,
                 "ft8" => want_ft8 = true,
+                "ft4" => want_ft4 = true,
                 "wspr" => want_wspr = true,
                 _ => {}
             }
@@ -695,6 +697,7 @@ async fn apply_scheduler_decoders(
         ("APRS", RigCommand::SetAprsDecodeEnabled(want_aprs)),
         ("HF APRS", RigCommand::SetHfAprsDecodeEnabled(want_hf_aprs)),
         ("FT8", RigCommand::SetFt8DecodeEnabled(want_ft8)),
+        ("FT4", RigCommand::SetFt4DecodeEnabled(want_ft4)),
         ("WSPR", RigCommand::SetWsprDecodeEnabled(want_wspr)),
     ];
 
