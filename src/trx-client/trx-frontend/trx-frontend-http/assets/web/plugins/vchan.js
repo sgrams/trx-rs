@@ -245,6 +245,7 @@ async function vchanDelete(channelId) {
 async function vchanSubscribe(channelId) {
   if (!vchanSessionId || !vchanRigId) return;
   try {
+    await vchanTakeSchedulerControl();
     const resp = await fetch(
       `/channels/${encodeURIComponent(vchanRigId)}/${encodeURIComponent(channelId)}/subscribe`,
       {
@@ -418,6 +419,7 @@ async function vchanSetChannelFreq(freqHz) {
     }
   }
   try {
+    await vchanTakeSchedulerControl();
     const resp = await fetch(
       `/channels/${encodeURIComponent(vchanRigId)}/${encodeURIComponent(vchanActiveId)}/freq`,
       {
@@ -435,6 +437,7 @@ async function vchanSetChannelFreq(freqHz) {
 async function vchanSetChannelBandwidth(bwHz) {
   if (!vchanRigId || !vchanActiveId) return;
   try {
+    await vchanTakeSchedulerControl();
     const resp = await fetch(
       `/channels/${encodeURIComponent(vchanRigId)}/${encodeURIComponent(vchanActiveId)}/bw`,
       {
@@ -452,6 +455,7 @@ async function vchanSetChannelBandwidth(bwHz) {
 async function vchanSetChannelMode(mode) {
   if (!vchanRigId || !vchanActiveId) return;
   try {
+    await vchanTakeSchedulerControl();
     const resp = await fetch(
       `/channels/${encodeURIComponent(vchanRigId)}/${encodeURIComponent(vchanActiveId)}/mode`,
       {

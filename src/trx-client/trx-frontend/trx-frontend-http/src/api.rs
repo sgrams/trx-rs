@@ -1256,10 +1256,30 @@ pub async fn subscribe_channel(
     path: web::Path<(String, Uuid)>,
     body: web::Json<SubscribeBody>,
     vchan_mgr: web::Data<Arc<ClientChannelManager>>,
+    rig_tx: web::Data<mpsc::Sender<RigRequest>>,
+    bookmark_store: web::Data<Arc<crate::server::bookmarks::BookmarkStore>>,
+    scheduler_control: web::Data<crate::server::scheduler::SharedSchedulerControlManager>,
 ) -> impl Responder {
+    let body = body.into_inner();
     let (rig_id, channel_id) = path.into_inner();
     match vchan_mgr.subscribe_session(body.session_id, &rig_id, channel_id) {
-        Some(ch) => HttpResponse::Ok().json(ch),
+        Some(ch) => {
+            scheduler_control.set_released(body.session_id, false);
+            let Some(selected) = vchan_mgr.selected_channel(&rig_id, channel_id) else {
+                return HttpResponse::InternalServerError().body("subscribed channel missing");
+            };
+            if let Err(err) = apply_selected_channel(
+                rig_tx.get_ref(),
+                &rig_id,
+                &selected,
+                bookmark_store.get_ref().as_ref(),
+            )
+            .await
+            {
+                return HttpResponse::from_error(err);
+            }
+            HttpResponse::Ok().json(ch)
+        }
         None => HttpResponse::NotFound().finish(),
     }
 }
@@ -1663,6 +1683,112 @@ async fn send_command(
             "rig response channel error: {e:?}"
         ))),
     }
+}
+
+async fn send_command_to_rig(
+    rig_tx: &mpsc::Sender<RigRequest>,
+    rig_id: &str,
+    cmd: RigCommand,
+) -> Result<(), Error> {
+    let (resp_tx, resp_rx) = oneshot::channel();
+    rig_tx
+        .send(RigRequest {
+            cmd,
+            respond_to: resp_tx,
+            rig_id_override: Some(rig_id.to_string()),
+        })
+        .await
+        .map_err(|e| {
+            actix_web::error::ErrorInternalServerError(format!("failed to send to rig: {e:?}"))
+        })?;
+
+    let resp = tokio::time::timeout(REQUEST_TIMEOUT, resp_rx)
+        .await
+        .map_err(|_| actix_web::error::ErrorGatewayTimeout("rig response timeout"))?;
+
+    match resp {
+        Ok(Ok(_)) => Ok(()),
+        Ok(Err(err)) => Err(actix_web::error::ErrorBadRequest(err.message)),
+        Err(e) => Err(actix_web::error::ErrorInternalServerError(format!(
+            "rig response channel error: {e:?}"
+        ))),
+    }
+}
+
+fn bookmark_decoder_state(
+    bookmark: &crate::server::bookmarks::Bookmark,
+) -> (bool, bool, bool, bool) {
+    let mut want_aprs = bookmark.mode.trim().eq_ignore_ascii_case("PKT");
+    let mut want_hf_aprs = false;
+    let mut want_ft8 = false;
+    let mut want_wspr = false;
+
+    for decoder in bookmark
+        .decoders
+        .iter()
+        .map(|item| item.trim().to_ascii_lowercase())
+    {
+        match decoder.as_str() {
+            "aprs" => want_aprs = true,
+            "hf-aprs" => want_hf_aprs = true,
+            "ft8" => want_ft8 = true,
+            "wspr" => want_wspr = true,
+            _ => {}
+        }
+    }
+
+    (want_aprs, want_hf_aprs, want_ft8, want_wspr)
+}
+
+async fn apply_selected_channel(
+    rig_tx: &mpsc::Sender<RigRequest>,
+    rig_id: &str,
+    channel: &crate::server::vchan::SelectedChannel,
+    bookmark_store: &crate::server::bookmarks::BookmarkStore,
+) -> Result<(), Error> {
+    send_command_to_rig(
+        rig_tx,
+        rig_id,
+        RigCommand::SetMode(parse_mode(&channel.mode)),
+    )
+    .await?;
+
+    if channel.bandwidth_hz > 0 {
+        send_command_to_rig(
+            rig_tx,
+            rig_id,
+            RigCommand::SetBandwidth(channel.bandwidth_hz),
+        )
+        .await?;
+    }
+
+    send_command_to_rig(
+        rig_tx,
+        rig_id,
+        RigCommand::SetFreq(Freq {
+            hz: channel.freq_hz,
+        }),
+    )
+    .await?;
+
+    let Some(bookmark_id) = channel.scheduler_bookmark_id.as_deref() else {
+        return Ok(());
+    };
+    let Some(bookmark) = bookmark_store.get(bookmark_id) else {
+        return Ok(());
+    };
+    let (want_aprs, want_hf_aprs, want_ft8, want_wspr) = bookmark_decoder_state(&bookmark);
+    let desired = [
+        RigCommand::SetAprsDecodeEnabled(want_aprs),
+        RigCommand::SetHfAprsDecodeEnabled(want_hf_aprs),
+        RigCommand::SetFt8DecodeEnabled(want_ft8),
+        RigCommand::SetWsprDecodeEnabled(want_wspr),
+    ];
+    for cmd in desired {
+        send_command_to_rig(rig_tx, rig_id, cmd).await?;
+    }
+
+    Ok(())
 }
 
 async fn wait_for_view(mut rx: watch::Receiver<RigState>) -> Result<RigSnapshot, actix_web::Error> {

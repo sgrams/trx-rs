@@ -1773,7 +1773,6 @@ body.map-fake-fullscreen-active {
   max-height: min(22rem, 60vh);
   overflow: auto;
   padding: 0.55rem 0.65rem;
-  border: 1px solid color-mix(in srgb, var(--accent-yellow) 26%, var(--border-light));
   border-radius: 0.65rem;
   background: color-mix(in srgb, var(--card-bg) 84%, transparent);
   color: var(--text);

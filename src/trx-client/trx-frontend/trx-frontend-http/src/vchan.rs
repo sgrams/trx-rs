@@ -44,6 +44,15 @@ pub struct ClientChannel {
     pub subscribers: usize,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SelectedChannel {
+    pub id: Uuid,
+    pub freq_hz: u64,
+    pub mode: String,
+    pub bandwidth_hz: u32,
+    pub scheduler_bookmark_id: Option<String>,
+}
+
 #[derive(Debug, Clone)]
 pub enum VChanClientError {
     /// Channel cap would be exceeded.
@@ -138,7 +147,7 @@ impl ClientChannelManager {
                 freq_hz: c.freq_hz,
                 mode: c.mode.clone(),
                 bandwidth_hz: c.bandwidth_hz,
-                permanent: c.permanent,
+                permanent: c.permanent || c.scheduler_bookmark_id.is_some(),
                 subscribers: c.session_ids.len(),
             })
             .collect();
@@ -194,7 +203,7 @@ impl ClientChannelManager {
                         freq_hz: c.freq_hz,
                         mode: c.mode.clone(),
                         bandwidth_hz: c.bandwidth_hz,
-                        permanent: c.permanent,
+                        permanent: c.permanent || c.scheduler_bookmark_id.is_some(),
                         subscribers: c.session_ids.len(),
                     })
                     .collect()
@@ -289,7 +298,7 @@ impl ClientChannelManager {
             freq_hz: ch.freq_hz,
             mode: ch.mode.clone(),
             bandwidth_hz: ch.bandwidth_hz,
-            permanent: ch.permanent,
+            permanent: ch.permanent || ch.scheduler_bookmark_id.is_some(),
             subscribers: ch.session_ids.len(),
         };
 
@@ -331,7 +340,10 @@ impl ClientChannelManager {
         }
         let mut idx = 0;
         while idx < channels.len() {
-            if !channels[idx].permanent && channels[idx].session_ids.is_empty() {
+            if !channels[idx].permanent
+                && channels[idx].scheduler_bookmark_id.is_none()
+                && channels[idx].session_ids.is_empty()
+            {
                 removed_channel_ids.push(channels[idx].id);
                 channels.remove(idx);
                 changed = true;
@@ -361,7 +373,7 @@ impl ClientChannelManager {
             .iter()
             .position(|c| c.id == channel_id)
             .ok_or(VChanClientError::NotFound)?;
-        if channels[pos].permanent {
+        if channels[pos].permanent || channels[pos].scheduler_bookmark_id.is_some() {
             return Err(VChanClientError::Permanent);
         }
         // Collect evicted sessions to clean up the session map.
@@ -478,6 +490,20 @@ impl ClientChannelManager {
     /// Return the channel a session is currently subscribed to.
     pub fn session_channel(&self, session_id: Uuid) -> Option<(String, Uuid)> {
         self.sessions.read().unwrap().get(&session_id).cloned()
+    }
+
+    /// Return the selected channel's tune metadata.
+    pub fn selected_channel(&self, rig_id: &str, channel_id: Uuid) -> Option<SelectedChannel> {
+        let rigs = self.rigs.read().unwrap();
+        let channels = rigs.get(rig_id)?;
+        let channel = channels.iter().find(|channel| channel.id == channel_id)?;
+        Some(SelectedChannel {
+            id: channel.id,
+            freq_hz: channel.freq_hz,
+            mode: channel.mode.clone(),
+            bandwidth_hz: channel.bandwidth_hz,
+            scheduler_bookmark_id: channel.scheduler_bookmark_id.clone(),
+        })
     }
 
     /// Reconcile visible scheduler-managed channels for a rig.
@@ -638,6 +664,59 @@ mod tests {
         assert_eq!(channels[1].mode, "DIG");
         assert_eq!(channels[1].bandwidth_hz, 3_000);
         assert_eq!(channels[1].subscribers, 0);
-        assert!(!channels[1].permanent);
+        assert!(channels[1].permanent);
+    }
+
+    #[test]
+    fn release_session_keeps_scheduler_managed_channels() {
+        let mgr = ClientChannelManager::new(4);
+        let rig_id = "rig-a";
+        let session_id = Uuid::new_v4();
+
+        mgr.init_rig(rig_id, 14_074_000, "USB");
+        let _channel = mgr
+            .allocate(session_id, rig_id, 14_075_000, "DIG")
+            .expect("allocate vchan");
+        mgr.sync_scheduler_channels(
+            rig_id,
+            &[("bm-ft8".to_string(), 14_074_000, "DIG".to_string(), 3_000)],
+        );
+
+        mgr.release_session(session_id);
+
+        let channels = mgr.channels(rig_id);
+        assert_eq!(channels.len(), 2);
+        assert_eq!(channels[1].mode, "DIG");
+        assert_eq!(channels[1].subscribers, 0);
+    }
+
+    #[test]
+    fn subscribed_scheduler_channel_survives_scheduler_clear_until_released() {
+        let mgr = ClientChannelManager::new(4);
+        let rig_id = "rig-a";
+        let session_id = Uuid::new_v4();
+
+        mgr.init_rig(rig_id, 14_074_000, "USB");
+        mgr.sync_scheduler_channels(
+            rig_id,
+            &[("bm-aprs".to_string(), 144_800_000, "PKT".to_string(), 12_500)],
+        );
+
+        let channel_id = mgr.channels(rig_id)[1].id;
+        mgr.subscribe_session(session_id, rig_id, channel_id)
+            .expect("subscribe scheduler channel");
+
+        mgr.sync_scheduler_channels(rig_id, &[]);
+
+        let channels = mgr.channels(rig_id);
+        assert_eq!(channels.len(), 2);
+        assert_eq!(channels[1].id, channel_id);
+        assert_eq!(channels[1].subscribers, 1);
+
+        mgr.release_session(session_id);
+        mgr.sync_scheduler_channels(rig_id, &[]);
+
+        let channels = mgr.channels(rig_id);
+        assert_eq!(channels.len(), 1);
     }
 }
