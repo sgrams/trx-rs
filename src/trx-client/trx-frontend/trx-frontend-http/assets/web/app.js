@@ -2951,6 +2951,35 @@ function yieldToMain() {
   return new Promise((resolve) => setTimeout(resolve, 0));
 }
 
+const uiFrameJobs = new Map();
+let uiFrameJobsHandle = null;
+
+function flushUiFrameJobs() {
+  uiFrameJobsHandle = null;
+  const jobs = Array.from(uiFrameJobs.values());
+  uiFrameJobs.clear();
+  for (const job of jobs) {
+    try {
+      job();
+    } catch (err) {
+      console.error("Deferred UI job failed:", err);
+    }
+  }
+}
+
+function scheduleUiFrameJob(key, job) {
+  if (typeof job !== "function") return;
+  uiFrameJobs.set(key, job);
+  if (uiFrameJobsHandle !== null) return;
+  if (typeof requestAnimationFrame === "function") {
+    uiFrameJobsHandle = requestAnimationFrame(flushUiFrameJobs);
+  } else {
+    uiFrameJobsHandle = setTimeout(flushUiFrameJobs, 16);
+  }
+}
+
+window.trxScheduleUiFrameJob = scheduleUiFrameJob;
+
 async function postPath(path) {
   const resp = await fetch(path, { method: "POST" });
   if (authEnabled && resp.status === 401) {
@@ -5397,8 +5426,7 @@ window.aprsMapAddStation = function(call, lat, lon, info, symbolTable, symbolCod
     stationMarkers.set(call, entry);
     if (aprsMap) {
       _aprsAddMarkerToMap(call, entry);
-      rebuildMapLocatorFilters();
-      applyMapFilter();
+      scheduleDecodeMapMaintenance();
     }
   }
 };
@@ -5537,8 +5565,7 @@ window.aisMapAddVessel = function(msg) {
     trackPoints: [nextPoint],
     msg,
   });
-  rebuildMapLocatorFilters();
-  applyMapFilter();
+  scheduleDecodeMapMaintenance();
 };
 
 window.vdesMapAddPoint = function(msg) {
@@ -5572,8 +5599,7 @@ window.vdesMapAddPoint = function(msg) {
   marker._vdesKey = key;
   entry.marker = marker;
   mapMarkers.add(marker);
-  rebuildMapLocatorFilters();
-  applyMapFilter();
+  scheduleDecodeMapMaintenance();
 };
 
 function maidenheadToBounds(grid) {
@@ -5640,6 +5666,14 @@ function updateMapP2pPathsToggle() {
   if (!btn) return;
   btn.textContent = mapP2pRadioPathsEnabled ? "TRX Paths On" : "TRX Paths Off";
   btn.classList.toggle("is-active", mapP2pRadioPathsEnabled);
+}
+
+function scheduleDecodeMapMaintenance() {
+  scheduleUiFrameJob("decode-map-maintenance", () => {
+    rebuildDecodeContactPaths();
+    rebuildMapLocatorFilters();
+    applyMapFilter();
+  });
 }
 
 function escapeMapHtml(input) {
@@ -5913,8 +5947,7 @@ window.ft8MapAddLocator = function(message, grids, type = "ft8", station = null,
       existing.marker.setPopupContent(tooltipHtml);
       sendLocatorOverlayToBack(existing.marker);
       assignLocatorMarkerMeta(existing.marker, existing.sourceType, existing.bandMeta);
-      rebuildMapLocatorFilters();
-      applyMapFilter();
+      scheduleDecodeMapMaintenance();
       continue;
     }
 
@@ -5936,9 +5969,7 @@ window.ft8MapAddLocator = function(message, grids, type = "ft8", station = null,
     locatorMarkers.set(key, { marker, grid, stations, stationDetails, sourceType: markerType, bandMeta });
     mapMarkers.add(marker);
   }
-  rebuildDecodeContactPaths();
-  rebuildMapLocatorFilters();
-  applyMapFilter();
+  scheduleDecodeMapMaintenance();
 };
 
 // --- Sub-tab navigation ---
@@ -6691,12 +6722,31 @@ function dispatchDecodeMessage(msg) {
   if (msg.type === "wspr" && window.onServerWspr) window.onServerWspr(msg);
 }
 
+const DECODE_HISTORY_MAX_BATCH = 12;
+const DECODE_HISTORY_SLICE_BUDGET_MS = 6;
+
+function scheduleDecodeHistoryDrainStep(callback) {
+  if (typeof callback !== "function") return;
+  if (typeof requestAnimationFrame === "function") {
+    requestAnimationFrame(() => callback());
+  } else {
+    setTimeout(callback, 16);
+  }
+}
+
 function drainDecodeHistory(buffer, index, onDone) {
-  const CHUNK = 30;
-  const end = Math.min(index + CHUNK, buffer.length);
-  for (let i = index; i < end; i++) dispatchDecodeMessage(buffer[i]);
-  if (end < buffer.length) {
-    setTimeout(() => drainDecodeHistory(buffer, end, onDone), 0);
+  const startedAt = typeof performance !== "undefined" && typeof performance.now === "function"
+    ? performance.now()
+    : 0;
+  let nextIndex = index;
+  while (nextIndex < buffer.length) {
+    dispatchDecodeMessage(buffer[nextIndex]);
+    nextIndex += 1;
+    if (nextIndex - index >= DECODE_HISTORY_MAX_BATCH) break;
+    if (startedAt > 0 && (performance.now() - startedAt) >= DECODE_HISTORY_SLICE_BUDGET_MS) break;
+  }
+  if (nextIndex < buffer.length) {
+    scheduleDecodeHistoryDrainStep(() => drainDecodeHistory(buffer, nextIndex, onDone));
   } else if (typeof onDone === "function") {
     onDone();
   }

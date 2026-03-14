@@ -17,6 +17,22 @@ let aisMessageHistory = [];
 let aisPaused = false;
 let aisBufferedWhilePaused = 0;
 
+function scheduleAisUi(key, job) {
+  if (typeof window.trxScheduleUiFrameJob === "function") {
+    window.trxScheduleUiFrameJob(key, job);
+    return;
+  }
+  job();
+}
+
+function scheduleAisHistoryRender() {
+  scheduleAisUi("ais-history", () => renderAisHistory());
+}
+
+function scheduleAisBarUpdate() {
+  scheduleAisUi("ais-bar", () => updateAisBar());
+}
+
 function formatAisMhz(freqHz) {
   return `${(freqHz / 1_000_000).toFixed(3)} MHz`;
 }
@@ -283,10 +299,11 @@ function renderAisHistory() {
     updateAisSummary();
     return;
   }
-  aisMessagesEl.innerHTML = "";
+  const fragment = document.createDocumentFragment();
   for (let i = 0; i < aisMessageHistory.length; i += 1) {
-    aisMessagesEl.appendChild(renderAisRow(aisMessageHistory[i]));
+    fragment.appendChild(renderAisRow(aisMessageHistory[i]));
   }
+  aisMessagesEl.replaceChildren(fragment);
   updateAisSummary();
 }
 
@@ -301,13 +318,13 @@ function addAisMessage(msg) {
 
   aisMessageHistory.unshift(msg);
   if (aisMessageHistory.length > AIS_MAX_MESSAGES) aisMessageHistory.length = AIS_MAX_MESSAGES;
-  updateAisBar();
+  scheduleAisBarUpdate();
 
   if (aisPaused) {
     aisBufferedWhilePaused += 1;
     updateAisSummary();
   } else {
-    renderAisHistory();
+    scheduleAisHistoryRender();
   }
 
   if (msg.lat != null && msg.lon != null && window.aisMapAddVessel) {

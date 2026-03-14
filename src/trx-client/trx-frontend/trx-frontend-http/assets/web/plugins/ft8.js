@@ -13,6 +13,22 @@ let ft8MessageHistory = [];
 let ft8Paused = false;
 let ft8BufferedWhilePaused = 0;
 
+function scheduleFt8Ui(key, job) {
+  if (typeof window.trxScheduleUiFrameJob === "function") {
+    window.trxScheduleUiFrameJob(key, job);
+    return;
+  }
+  job();
+}
+
+function scheduleFt8HistoryRender() {
+  scheduleFt8Ui("ft8-history", () => renderFt8History());
+}
+
+function scheduleFt8BarUpdate() {
+  scheduleFt8Ui("ft8-bar", () => updateFt8Bar());
+}
+
 function normalizeFt8DisplayFreqHz(freqHz) {
   const rawHz = Number(freqHz);
   if (!Number.isFinite(rawHz)) return null;
@@ -66,23 +82,24 @@ function renderFt8History() {
     updateFt8PauseUi();
     return;
   }
-  ft8MessagesEl.innerHTML = "";
+  const fragment = document.createDocumentFragment();
   for (let i = 0; i < ft8MessageHistory.length; i += 1) {
-    ft8MessagesEl.appendChild(renderFt8Row(ft8MessageHistory[i]));
+    fragment.appendChild(renderFt8Row(ft8MessageHistory[i]));
   }
+  ft8MessagesEl.replaceChildren(fragment);
   updateFt8PauseUi();
 }
 
 function addFt8Message(msg) {
   ft8MessageHistory.unshift(msg);
   if (ft8MessageHistory.length > FT8_MAX_MESSAGES) ft8MessageHistory.length = FT8_MAX_MESSAGES;
-  updateFt8Bar();
+  scheduleFt8BarUpdate();
   if (ft8Paused) {
     ft8BufferedWhilePaused += 1;
     updateFt8PauseUi();
     return;
   }
-  renderFt8History();
+  scheduleFt8HistoryRender();
 }
 
 function ft8BarRfText(msg) {

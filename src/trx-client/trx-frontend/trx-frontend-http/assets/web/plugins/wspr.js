@@ -11,6 +11,14 @@ let wsprMessageHistory = [];
 let wsprPaused = false;
 let wsprBufferedWhilePaused = 0;
 
+function scheduleWsprHistoryRender() {
+  if (typeof window.trxScheduleUiFrameJob === "function") {
+    window.trxScheduleUiFrameJob("wspr-history", () => renderWsprHistory());
+    return;
+  }
+  renderWsprHistory();
+}
+
 function fmtWsprTime(tsMs) {
   if (!tsMs) return "--:--:--";
   return new Date(tsMs).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
@@ -55,10 +63,11 @@ function renderWsprHistory() {
     updateWsprPauseUi();
     return;
   }
-  wsprMessagesEl.innerHTML = "";
+  const fragment = document.createDocumentFragment();
   for (let i = 0; i < wsprMessageHistory.length; i += 1) {
-    wsprMessagesEl.appendChild(renderWsprRow(wsprMessageHistory[i]));
+    fragment.appendChild(renderWsprRow(wsprMessageHistory[i]));
   }
+  wsprMessagesEl.replaceChildren(fragment);
   updateWsprPauseUi();
 }
 
@@ -70,7 +79,7 @@ function addWsprMessage(msg) {
     updateWsprPauseUi();
     return;
   }
-  renderWsprHistory();
+  scheduleWsprHistoryRender();
 }
 
 function escapeWsprHtml(input) {

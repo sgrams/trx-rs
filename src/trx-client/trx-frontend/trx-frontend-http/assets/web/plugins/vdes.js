@@ -15,6 +15,22 @@ let vdesMessageHistory = [];
 let vdesPaused = false;
 let vdesBufferedWhilePaused = 0;
 
+function scheduleVdesUi(key, job) {
+  if (typeof window.trxScheduleUiFrameJob === "function") {
+    window.trxScheduleUiFrameJob(key, job);
+    return;
+  }
+  job();
+}
+
+function scheduleVdesHistoryRender() {
+  scheduleVdesUi("vdes-history", () => renderVdesHistory());
+}
+
+function scheduleVdesBarUpdate() {
+  scheduleVdesUi("vdes-bar", () => updateVdesBar());
+}
+
 function currentVdesCenterText() {
   const raw = (document.getElementById("freq")?.value || "").replace(/[^\d]/g, "");
   const hz = raw ? Number(raw) : 0;
@@ -216,10 +232,11 @@ function renderVdesHistory() {
     updateVdesSummary();
     return;
   }
-  vdesMessagesEl.innerHTML = "";
+  const fragment = document.createDocumentFragment();
   for (let i = 0; i < vdesMessageHistory.length; i += 1) {
-    vdesMessagesEl.appendChild(renderVdesRow(vdesMessageHistory[i]));
+    fragment.appendChild(renderVdesRow(vdesMessageHistory[i]));
   }
+  vdesMessagesEl.replaceChildren(fragment);
   updateVdesSummary();
 }
 
@@ -234,13 +251,13 @@ function addVdesMessage(msg) {
 
   vdesMessageHistory.unshift(msg);
   if (vdesMessageHistory.length > VDES_MAX_MESSAGES) vdesMessageHistory.length = VDES_MAX_MESSAGES;
-  updateVdesBar();
+  scheduleVdesBarUpdate();
 
   if (vdesPaused) {
     vdesBufferedWhilePaused += 1;
     updateVdesSummary();
   } else {
-    renderVdesHistory();
+    scheduleVdesHistoryRender();
   }
 }
 

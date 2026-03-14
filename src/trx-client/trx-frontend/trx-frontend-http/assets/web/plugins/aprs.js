@@ -21,6 +21,22 @@ let aprsHideCrc = false;
 let aprsCollapseDup = false;
 let aprsTypeFilter = "all";
 
+function scheduleAprsUi(key, job) {
+  if (typeof window.trxScheduleUiFrameJob === "function") {
+    window.trxScheduleUiFrameJob(key, job);
+    return;
+  }
+  job();
+}
+
+function scheduleAprsHistoryRender() {
+  scheduleAprsUi("aprs-history", () => renderAprsHistory());
+}
+
+function scheduleAprsBarUpdate() {
+  scheduleAprsUi("aprs-bar", () => updateAprsBar());
+}
+
 function renderAprsInfo(pkt) {
   const bytes = Array.isArray(pkt.info_bytes) ? pkt.info_bytes : null;
   if (bytes && bytes.length > 0) {
@@ -294,10 +310,11 @@ function renderAprsHistory() {
     return;
   }
   const visible = aprsVisiblePackets();
-  aprsPacketsEl.innerHTML = "";
+  const fragment = document.createDocumentFragment();
   for (let i = 0; i < visible.length; i++) {
-    aprsPacketsEl.appendChild(renderAprsRow(visible[i], i === 0));
+    fragment.appendChild(renderAprsRow(visible[i], i === 0));
   }
+  aprsPacketsEl.replaceChildren(fragment);
   updateAprsSummary();
   updateAprsChipState();
 }
@@ -354,7 +371,7 @@ function addAprsPacket(pkt) {
     window.aprsMapAddStation(pkt.srcCall, pkt.lat, pkt.lon, pkt.info, pkt.symbolTable, pkt.symbolCode, pkt);
   }
 
-  if (pkt.crcOk) updateAprsBar();
+  if (pkt.crcOk) scheduleAprsBarUpdate();
 
   if (aprsPaused) {
     aprsBufferedWhilePaused += 1;
@@ -363,7 +380,7 @@ function addAprsPacket(pkt) {
     return;
   }
 
-  renderAprsHistory();
+  scheduleAprsHistoryRender();
 }
 
 document.getElementById("aprs-clear-btn").addEventListener("click", async () => {

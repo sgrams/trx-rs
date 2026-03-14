@@ -19,6 +19,14 @@ let hfAprsHideCrc = false;
 let hfAprsCollapseDup = false;
 let hfAprsTypeFilter = "all";
 
+function scheduleHfAprsHistoryRender() {
+  if (typeof window.trxScheduleUiFrameJob === "function") {
+    window.trxScheduleUiFrameJob("hf-aprs-history", () => renderHfAprsHistory());
+    return;
+  }
+  renderHfAprsHistory();
+}
+
 function hfAprsPacketCategory(pkt) {
   const type = String(pkt.type || "").toLowerCase();
   const info = String(pkt.info || "").toLowerCase();
@@ -294,10 +302,11 @@ function renderHfAprsHistory() {
     return;
   }
   const visible = hfAprsVisiblePackets();
-  hfAprsPacketsEl.innerHTML = "";
+  const fragment = document.createDocumentFragment();
   for (let i = 0; i < visible.length; i++) {
-    hfAprsPacketsEl.appendChild(renderHfAprsRow(visible[i], i === 0));
+    fragment.appendChild(renderHfAprsRow(visible[i], i === 0));
   }
+  hfAprsPacketsEl.replaceChildren(fragment);
   updateHfAprsSummary();
   updateHfAprsChipState();
 }
@@ -324,7 +333,7 @@ function addHfAprsPacket(pkt) {
     return;
   }
 
-  renderHfAprsHistory();
+  scheduleHfAprsHistoryRender();
 }
 
 document.getElementById("hf-aprs-decode-toggle-btn")?.addEventListener("click", async () => {
