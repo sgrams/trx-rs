@@ -763,27 +763,28 @@ static bool ft2_extract_bitmetrics_raw(const float complex* signal, float bitmet
         bitmetrics[i][1] = metric2[i];
         bitmetrics[i][2] = metric4[i];
     }
+    for (int metric = 0; metric < 3; ++metric)
+    {
+        float sum = 0.0f;
+        float sum2 = 0.0f;
+        for (int i = 0; i < 2 * FT2_FRAME_SYMBOLS; ++i)
+        {
+            float v = bitmetrics[i][metric];
+            sum += v;
+            sum2 += v * v;
+        }
+        float mean = sum / (2 * FT2_FRAME_SYMBOLS);
+        float variance = (sum2 / (2 * FT2_FRAME_SYMBOLS)) - (mean * mean);
+        float sigma = (variance > 0.0f) ? sqrtf(variance) : sqrtf(fmaxf(sum2 / (2 * FT2_FRAME_SYMBOLS), 0.0f));
+        if (sigma > 1.0e-6f)
+        {
+            for (int i = 0; i < 2 * FT2_FRAME_SYMBOLS; ++i)
+            {
+                bitmetrics[i][metric] /= sigma;
+            }
+        }
+    }
     return true;
-}
-
-static void ft2_normalize_logl(float* log174)
-{
-    float sum = 0.0f;
-    float sum2 = 0.0f;
-    for (int i = 0; i < FTX_LDPC_N; ++i)
-    {
-        sum += log174[i];
-        sum2 += log174[i] * log174[i];
-    }
-    float inv_n = 1.0f / FTX_LDPC_N;
-    float variance = (sum2 - (sum * sum * inv_n)) * inv_n;
-    if (variance <= 1.0e-6f)
-        return;
-    float norm_factor = sqrtf(24.0f / variance);
-    for (int i = 0; i < FTX_LDPC_N; ++i)
-    {
-        log174[i] *= norm_factor;
-    }
 }
 
 static void ft2_pack_bits(const uint8_t bit_array[], int num_bits, uint8_t packed[])
@@ -977,7 +978,6 @@ static bool ft2_decode_hit(
     {
         float log174[FTX_LDPC_N];
         memcpy(log174, llr_passes[pass], sizeof(log174));
-        ft2_normalize_logl(log174);
         int ldpc_errors = 0;
         bp_decode(log174, 50, plain174, &ldpc_errors);
         if (ldpc_errors > 0)
