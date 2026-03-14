@@ -690,6 +690,18 @@
             <input type="text" id="map-search-filter" class="map-search-input" placeholder="Callsign, MMSI, locator, message..." />
           </div>
           <div class="map-locator-filter-group">
+            <span class="map-locator-filter-label">History</span>
+            <select id="map-history-limit" class="map-history-select" aria-label="Map history limit">
+              <option value="15">15 min</option>
+              <option value="30">30 min</option>
+              <option value="60">1 hr</option>
+              <option value="180">3 hrs</option>
+              <option value="360">6 hrs</option>
+              <option value="720">12 hrs</option>
+              <option value="1440">24 hrs</option>
+            </select>
+          </div>
+          <div class="map-locator-filter-group">
             <span class="map-locator-filter-label">Paths</span>
             <div class="map-locator-phase-row">
               <button type="button" id="map-p2p-paths-toggle" class="map-locator-phase-btn">TRX Paths On</button>

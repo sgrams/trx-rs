@@ -3779,6 +3779,7 @@ let mapFullscreenListenerBound = false;
 let mapP2pRadioPathsEnabled = loadSetting("mapP2pRadioPathsEnabled", true) !== false;
 let mapDecodeContactPathsEnabled = loadSetting("mapDecodeContactPathsEnabled", true) !== false;
 let mapOverlayPanelVisible = loadSetting("mapOverlayPanelVisible", true) !== false;
+const MAP_HISTORY_LIMIT_OPTIONS = [15, 30, 60, 180, 360, 720, 1440];
 const stationMarkers = new Map();
 const locatorMarkers = new Map();
 const decodeContactPaths = new Map();
@@ -3787,6 +3788,10 @@ const DEFAULT_MAP_SOURCE_FILTER = { ais: true, vdes: true, aprs: true, bookmark:
 const mapFilter = { ...DEFAULT_MAP_SOURCE_FILTER };
 const mapLocatorFilter = { phase: "band", bands: new Set() };
 let mapSearchFilter = "";
+let mapHistoryPruneTimer = null;
+let mapHistoryLimitMinutes = normalizeMapHistoryLimitMinutes(
+  Number(loadSetting("mapHistoryLimitMinutes", 1440))
+);
 const APRS_TRACK_MAX_POINTS = 64;
 const AIS_TRACK_MAX_POINTS = 64;
 const aisMarkers = new Map();
@@ -3830,6 +3835,182 @@ function normalizeLocatorFreqHz(hz) {
     return baseHz + hz;
   }
   return hz;
+}
+
+function normalizeMapHistoryLimitMinutes(value) {
+  const minutes = Math.round(Number(value));
+  return MAP_HISTORY_LIMIT_OPTIONS.includes(minutes) ? minutes : 1440;
+}
+
+function mapHistoryCutoffMs() {
+  return Date.now() - (mapHistoryLimitMinutes * 60 * 1000);
+}
+
+function trimTrackHistory(history, cutoffMs, maxPoints) {
+  const list = Array.isArray(history) ? history : [];
+  const trimmed = list.filter((point) => Number(point?.tsMs) >= cutoffMs);
+  if (trimmed.length > maxPoints) {
+    trimmed.splice(0, trimmed.length - maxPoints);
+  }
+  return trimmed;
+}
+
+function refreshAprsTrack(call, entry) {
+  if (!entry) return;
+  if (!Array.isArray(entry.trackPoints) || entry.trackPoints.length < 2) {
+    if (entry.track) {
+      entry.track.remove();
+      entry.track = null;
+    }
+    return;
+  }
+  if (entry.track) {
+    entry.track.setLatLngs(entry.trackPoints);
+    return;
+  }
+  const track = L.polyline(entry.trackPoints, {
+    color: "#f0be4d",
+    weight: 2,
+    opacity: 0.72,
+    lineCap: "round",
+    lineJoin: "round",
+    interactive: false,
+  });
+  track.__trxType = "aprs";
+  track._aprsCall = call;
+  entry.track = track;
+}
+
+function refreshAisTrack(mmsi, entry) {
+  if (!entry) return;
+  if (!Array.isArray(entry.trackPoints) || entry.trackPoints.length < 2) {
+    if (entry.track) {
+      entry.track.remove();
+      entry.track = null;
+    }
+    return;
+  }
+  if (entry.track) {
+    entry.track.setLatLngs(entry.trackPoints);
+    return;
+  }
+  const track = L.polyline(entry.trackPoints, {
+    color: getAisAccentColor(),
+    weight: 2,
+    opacity: 0.68,
+    lineCap: "round",
+    lineJoin: "round",
+    interactive: false,
+    dashArray: "5 4",
+  });
+  track.__trxType = "ais";
+  track._aisMmsi = mmsi;
+  entry.track = track;
+}
+
+function removeMapMarker(marker) {
+  if (!marker) return;
+  if (marker === selectedLocatorMarker) {
+    setSelectedLocatorMarker(null);
+    clearMapRadioPath();
+  }
+  if (aprsMap && aprsMap.hasLayer(marker)) marker.removeFrom(aprsMap);
+  mapMarkers.delete(marker);
+}
+
+function pruneAprsEntry(call, entry, cutoffMs) {
+  const pktTsMs = Number(entry?.pkt?._tsMs);
+  if (!Number.isFinite(pktTsMs) || pktTsMs < cutoffMs) {
+    if (selectedAprsTrackCall && String(selectedAprsTrackCall) === String(call)) {
+      selectedAprsTrackCall = null;
+    }
+    if (entry?.track) {
+      entry.track.remove();
+      entry.track = null;
+    }
+    removeMapMarker(entry?.marker);
+    stationMarkers.delete(call);
+    return false;
+  }
+  entry.trackHistory = trimTrackHistory(entry.trackHistory, cutoffMs, APRS_TRACK_MAX_POINTS);
+  entry.trackPoints = entry.trackHistory.map((point) => [point.lat, point.lon]);
+  refreshAprsTrack(call, entry);
+  return true;
+}
+
+function pruneAisEntry(key, entry, cutoffMs) {
+  const msgTsMs = Number(entry?.msg?._tsMs);
+  if (!Number.isFinite(msgTsMs) || msgTsMs < cutoffMs) {
+    if (selectedAisTrackMmsi && String(selectedAisTrackMmsi) === String(key)) {
+      selectedAisTrackMmsi = null;
+    }
+    if (entry?.track) {
+      entry.track.remove();
+      entry.track = null;
+    }
+    removeMapMarker(entry?.marker);
+    aisMarkers.delete(key);
+    return false;
+  }
+  entry.trackHistory = trimTrackHistory(entry.trackHistory, cutoffMs, AIS_TRACK_MAX_POINTS);
+  entry.trackPoints = entry.trackHistory.map((point) => [point.lat, point.lon]);
+  refreshAisTrack(key, entry);
+  return true;
+}
+
+function pruneLocatorEntry(key, entry, cutoffMs) {
+  if (!entry || (entry.sourceType !== "ft8" && entry.sourceType !== "wspr")) return true;
+  const nextDetails = new Map();
+  for (const [detailKey, detail] of entry.stationDetails instanceof Map ? entry.stationDetails.entries() : []) {
+    const tsMs = Number(detail?.ts_ms);
+    if (Number.isFinite(tsMs) && tsMs >= cutoffMs) {
+      nextDetails.set(detailKey, detail);
+    }
+  }
+  if (nextDetails.size === 0) {
+    removeMapMarker(entry.marker);
+    locatorMarkers.delete(key);
+    return false;
+  }
+  const nextStations = new Set();
+  for (const detail of nextDetails.values()) {
+    const source = String(detail?.source || detail?.station || "").trim().toUpperCase();
+    if (source) nextStations.add(source);
+  }
+  entry.stationDetails = nextDetails;
+  entry.stations = nextStations;
+  entry.bandMeta = collectBandMeta(
+    Array.from(nextDetails.values()).map((detail) => Number(detail?.freq_hz))
+  );
+  const count = Math.max(nextDetails.size, nextStations.size || 0, 1);
+  if (entry.marker) {
+    entry.marker.setStyle(locatorStyleForEntry(entry, count));
+    entry.marker.setPopupContent(buildDecodeLocatorTooltipHtml(entry.grid, entry, entry.sourceType));
+    assignLocatorMarkerMeta(entry.marker, entry.sourceType, entry.bandMeta);
+  }
+  return true;
+}
+
+function pruneMapHistory() {
+  const cutoffMs = mapHistoryCutoffMs();
+  for (const [call, entry] of Array.from(stationMarkers.entries())) {
+    pruneAprsEntry(call, entry, cutoffMs);
+  }
+  for (const [key, entry] of Array.from(aisMarkers.entries())) {
+    pruneAisEntry(key, entry, cutoffMs);
+  }
+  for (const [key, entry] of Array.from(vdesMarkers.entries())) {
+    const tsMs = Number(entry?.msg?._tsMs);
+    if (Number.isFinite(tsMs) && tsMs >= cutoffMs) continue;
+    removeMapMarker(entry?.marker);
+    vdesMarkers.delete(key);
+  }
+  for (const [key, entry] of Array.from(locatorMarkers.entries())) {
+    pruneLocatorEntry(key, entry, cutoffMs);
+  }
+  rebuildDecodeContactPaths();
+  rebuildMapLocatorFilters();
+  applyMapFilter();
 }
 
 function locatorSourceLabel(type) {
@@ -4808,7 +4989,7 @@ function initAprsMap() {
       const entry = stationMarkers.get(marker._aprsCall);
       if (!entry) return;
       e.popup.setContent(buildAprsPopupHtml(marker._aprsCall, ll.lat, ll.lng, entry.info || "", entry.pkt));
-      ensureAprsTrack(String(marker._aprsCall), entry);
+      refreshAprsTrack(String(marker._aprsCall), entry);
       if (entry.track && aprsMap && mapFilter.aprs && !aprsMap.hasLayer(entry.track)) {
         entry.track.addTo(aprsMap);
       }
@@ -4822,7 +5003,7 @@ function initAprsMap() {
       const entry = aisMarkers.get(String(marker._aisMmsi));
       if (!entry || !entry.msg) return;
       e.popup.setContent(buildAisPopupHtml(entry.msg));
-      ensureAisTrack(String(marker._aisMmsi), entry);
+      refreshAisTrack(String(marker._aisMmsi), entry);
       selectedAisTrackMmsi = String(marker._aisMmsi);
       syncSelectedAisTrackVisibility();
       setMapRadioPathTo(ll.lat, ll.lng, mapSourceColor("ais"), "aprs-radio-path");
@@ -4885,6 +5066,7 @@ function initAprsMap() {
     assignLocatorMarkerMeta(entry.marker, entry.sourceType, entry.bandMeta);
     mapMarkers.add(entry.marker);
   }
+  pruneMapHistory();
   rebuildDecodeContactPaths();
   rebuildMapLocatorFilters();
   applyMapFilter();
@@ -4892,6 +5074,7 @@ function initAprsMap() {
   const locatorPhaseEl = document.getElementById("map-locator-phase");
   const locatorChoiceEl = document.getElementById("map-locator-choice-filter");
   const mapSearchEl = document.getElementById("map-search-filter");
+  const mapHistoryLimitEl = document.getElementById("map-history-limit");
   const mapP2pPathsToggleEl = document.getElementById("map-p2p-paths-toggle");
   const mapContactPathsToggleEl = document.getElementById("map-contact-paths-toggle");
   const fullscreenBtn = document.getElementById("map-fullscreen-btn");
@@ -4949,6 +5132,15 @@ function initAprsMap() {
       applyMapFilter();
     });
   }
+  if (mapHistoryLimitEl) {
+    mapHistoryLimitEl.value = String(mapHistoryLimitMinutes);
+    mapHistoryLimitEl.addEventListener("change", () => {
+      mapHistoryLimitMinutes = normalizeMapHistoryLimitMinutes(Number(mapHistoryLimitEl.value));
+      mapHistoryLimitEl.value = String(mapHistoryLimitMinutes);
+      saveSetting("mapHistoryLimitMinutes", mapHistoryLimitMinutes);
+      pruneMapHistory();
+    });
+  }
   if (mapP2pPathsToggleEl) {
     updateMapP2pPathsToggle();
     mapP2pPathsToggleEl.addEventListener("click", () => {
@@ -4991,6 +5183,11 @@ function initAprsMap() {
     document.addEventListener("fullscreenchange", onFullscreenChange);
     document.addEventListener("webkitfullscreenchange", onFullscreenChange);
     mapFullscreenListenerBound = true;
+  }
+  if (!mapHistoryPruneTimer) {
+    mapHistoryPruneTimer = setInterval(() => {
+      pruneMapHistory();
+    }, 60 * 1000);
   }
   rebuildMapLocatorFilters();
 }
@@ -5336,12 +5533,20 @@ function buildVdesPopupHtml(msg) {
 
 function aprsPositionsEqual(a, b) {
   if (!a || !b) return false;
-  return Math.abs(a[0] - b[0]) < 0.000001 && Math.abs(a[1] - b[1]) < 0.000001;
+  const aLat = Array.isArray(a) ? a[0] : a.lat;
+  const aLon = Array.isArray(a) ? a[1] : a.lon;
+  const bLat = Array.isArray(b) ? b[0] : b.lat;
+  const bLon = Array.isArray(b) ? b[1] : b.lon;
+  return Math.abs(aLat - bLat) < 0.000001 && Math.abs(aLon - bLon) < 0.000001;
 }
 
 function aisPositionsEqual(a, b) {
   if (!a || !b) return false;
-  return Math.abs(a[0] - b[0]) < 0.000001 && Math.abs(a[1] - b[1]) < 0.000001;
+  const aLat = Array.isArray(a) ? a[0] : a.lat;
+  const aLon = Array.isArray(a) ? a[1] : a.lon;
+  const bLat = Array.isArray(b) ? b[0] : b.lat;
+  const bLon = Array.isArray(b) ? b[1] : b.lon;
+  return Math.abs(aLat - bLat) < 0.000001 && Math.abs(aLon - bLon) < 0.000001;
 }
 
 function vdesMarkerKey(msg) {
@@ -5353,27 +5558,8 @@ function vdesMarkerKey(msg) {
   return null;
 }
 
-function ensureAprsTrack(call, entry) {
-  if (!aprsMap || !entry || !Array.isArray(entry.trackPoints) || entry.trackPoints.length < 2) return;
-  if (entry.track) {
-    entry.track.setLatLngs(entry.trackPoints);
-    return;
-  }
-  const track = L.polyline(entry.trackPoints, {
-    color: "#f0be4d",
-    weight: 2,
-    opacity: 0.72,
-    lineCap: "round",
-    lineJoin: "round",
-    interactive: false,
-  });
-  track.__trxType = "aprs";
-  track._aprsCall = call;
-  entry.track = track;
-}
-
 function _aprsAddMarkerToMap(call, entry) {
-  ensureAprsTrack(call, entry);
+  refreshAprsTrack(call, entry);
   const icon = aprsSymbolIcon(entry.symbolTable, entry.symbolCode);
   const popupContent = buildAprsPopupHtml(call, entry.lat, entry.lon, entry.info || "", entry.pkt);
   const marker = icon
@@ -5389,24 +5575,23 @@ function _aprsAddMarkerToMap(call, entry) {
 
 window.aprsMapAddStation = function(call, lat, lon, info, symbolTable, symbolCode, pkt) {
   const nextPoint = [lat, lon];
+  const tsMs = Number.isFinite(pkt?._tsMs) ? Number(pkt._tsMs) : Date.now();
   const existing = stationMarkers.get(call);
   if (existing) {
-    // Update stored data (preserves original _tsMs if pkt is newer)
     existing.pkt = pkt;
     existing.lat = lat;
     existing.lon = lon;
     existing.info = info;
     existing.symbolTable = symbolTable;
     existing.symbolCode = symbolCode;
-    if (!Array.isArray(existing.trackPoints)) existing.trackPoints = [];
-    const prevPoint = existing.trackPoints[existing.trackPoints.length - 1];
+    if (!Array.isArray(existing.trackHistory)) existing.trackHistory = [];
+    const prevPoint = existing.trackHistory[existing.trackHistory.length - 1];
     if (!aprsPositionsEqual(prevPoint, nextPoint)) {
-      existing.trackPoints.push(nextPoint);
-      if (existing.trackPoints.length > APRS_TRACK_MAX_POINTS) {
-        existing.trackPoints.splice(0, existing.trackPoints.length - APRS_TRACK_MAX_POINTS);
-      }
-      ensureAprsTrack(call, existing);
+      existing.trackHistory.push({ lat, lon, tsMs });
+    } else if (prevPoint) {
+      prevPoint.tsMs = tsMs;
     }
+    pruneAprsEntry(call, existing, mapHistoryCutoffMs());
     if (aprsMap && existing.marker) {
       existing.marker.setLatLng([lat, lon]);
       existing.marker.setPopupContent(buildAprsPopupHtml(call, lat, lon, info, pkt));
@@ -5415,6 +5600,7 @@ window.aprsMapAddStation = function(call, lat, lon, info, symbolTable, symbolCod
     const entry = {
       marker: null,
       track: null,
+      trackHistory: [{ lat, lon, tsMs }],
       trackPoints: [nextPoint],
       type: "aprs",
       pkt,
@@ -5425,32 +5611,13 @@ window.aprsMapAddStation = function(call, lat, lon, info, symbolTable, symbolCod
       symbolCode,
     };
     stationMarkers.set(call, entry);
+    pruneAprsEntry(call, entry, mapHistoryCutoffMs());
     if (aprsMap) {
       _aprsAddMarkerToMap(call, entry);
       scheduleDecodeMapMaintenance();
     }
   }
 };
-
-function ensureAisTrack(mmsi, entry) {
-  if (!aprsMap || !entry || !Array.isArray(entry.trackPoints) || entry.trackPoints.length < 2) return;
-  if (entry.track) {
-    entry.track.setLatLngs(entry.trackPoints);
-    return;
-  }
-  const track = L.polyline(entry.trackPoints, {
-    color: getAisAccentColor(),
-    weight: 2,
-    opacity: 0.68,
-    lineCap: "round",
-    lineJoin: "round",
-    interactive: false,
-    dashArray: "5 4",
-  });
-  track.__trxType = "ais";
-  track._aisMmsi = mmsi;
-  entry.track = track;
-}
 
 function syncSelectedAisTrackVisibility() {
   if (!aprsMap) return;
@@ -5538,18 +5705,18 @@ window.aisMapAddVessel = function(msg) {
   const key = String(msg.mmsi);
   const popupHtml = buildAisPopupHtml(msg);
   const nextPoint = [msg.lat, msg.lon];
+  const tsMs = Number.isFinite(msg?._tsMs) ? Number(msg._tsMs) : Date.now();
   const existing = aisMarkers.get(key);
   if (existing) {
     existing.msg = msg;
-    if (!Array.isArray(existing.trackPoints)) existing.trackPoints = [];
-    const prevPoint = existing.trackPoints[existing.trackPoints.length - 1];
+    if (!Array.isArray(existing.trackHistory)) existing.trackHistory = [];
+    const prevPoint = existing.trackHistory[existing.trackHistory.length - 1];
     if (!aisPositionsEqual(prevPoint, nextPoint)) {
-      existing.trackPoints.push(nextPoint);
-      if (existing.trackPoints.length > AIS_TRACK_MAX_POINTS) {
-        existing.trackPoints.splice(0, existing.trackPoints.length - AIS_TRACK_MAX_POINTS);
-      }
-      ensureAisTrack(key, existing);
+      existing.trackHistory.push({ lat: msg.lat, lon: msg.lon, tsMs });
+    } else if (prevPoint) {
+      prevPoint.tsMs = tsMs;
     }
+    pruneAisEntry(key, existing, mapHistoryCutoffMs());
     if (existing.marker) {
       updateAisMarker(existing.marker, msg, popupHtml);
     }
@@ -5563,14 +5730,17 @@ window.aisMapAddVessel = function(msg) {
   aisMarkers.set(key, {
     marker,
     track: null,
+    trackHistory: [{ lat: msg.lat, lon: msg.lon, tsMs }],
     trackPoints: [nextPoint],
     msg,
   });
+  pruneAisEntry(key, aisMarkers.get(key), mapHistoryCutoffMs());
   scheduleDecodeMapMaintenance();
 };
 
 window.vdesMapAddPoint = function(msg) {
   if (msg == null || msg.lat == null || msg.lon == null) return;
+  if (Number(msg?._tsMs) < mapHistoryCutoffMs()) return;
   const key = vdesMarkerKey(msg);
   if (!key) return;
   if (!aprsMap) initAprsMap();
@@ -5589,6 +5759,10 @@ window.vdesMapAddPoint = function(msg) {
     msg,
   };
   vdesMarkers.set(key, entry);
+  if (Number(msg._tsMs) < mapHistoryCutoffMs()) {
+    vdesMarkers.delete(key);
+    return;
+  }
   if (!aprsMap) return;
   const marker = L.circleMarker([msg.lat, msg.lon], {
     radius: 5,
@@ -5930,6 +6104,7 @@ window.ft8MapAddLocator = function(message, grids, type = "ft8", station = null,
       freq_hz: Number.isFinite(details?.freq_hz) ? Number(details.freq_hz) : null,
       message: String(details?.message || message || "").trim() || null,
     };
+    if (Number(detailEntry.ts_ms) < mapHistoryCutoffMs()) continue;
     const detailKey = detailStationId || `${targetId || "decode"}:${detailEntry.message || "decode"}:${detailEntry.ts_ms || Date.now()}`;
     const key = `${markerType}:${grid}`;
     const existing = locatorMarkers.get(key);

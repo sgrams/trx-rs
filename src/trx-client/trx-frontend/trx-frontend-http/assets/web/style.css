@@ -2005,6 +2005,18 @@ body.map-fake-fullscreen-active {
 .map-search-input::placeholder {
   color: color-mix(in srgb, var(--text-muted) 92%, transparent);
 }
+.map-history-select {
+  flex: 1 1 10rem;
+  width: 100%;
+  max-width: 12rem;
+  min-height: 1.95rem;
+  padding: 0.3rem 0.55rem;
+  border-radius: 7px;
+  border: 1px solid color-mix(in srgb, var(--border-light) 76%, transparent);
+  background: color-mix(in srgb, var(--card-bg) 72%, transparent);
+  color: var(--text);
+  font-size: 0.82rem;
+}
 
 .rds-grid { display: grid; grid-template-columns: auto 1fr; gap: 0.4rem 1rem; align-items: baseline; margin-bottom: 1rem; }
 .rds-field { display: contents; }
