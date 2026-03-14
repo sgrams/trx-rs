@@ -77,6 +77,7 @@ struct InternalChannel {
     /// Audio filter bandwidth in Hz (0 = mode default).
     bandwidth_hz: u32,
     permanent: bool,
+    scheduler_bookmark_id: Option<String>,
     /// Session UUIDs currently subscribed to this channel.
     session_ids: Vec<Uuid>,
 }
@@ -160,6 +161,7 @@ impl ClientChannelManager {
                 mode: mode.to_string(),
                 bandwidth_hz: 0,
                 permanent: true,
+                scheduler_bookmark_id: None,
                 session_ids: Vec::new(),
             });
         }
@@ -227,6 +229,7 @@ impl ClientChannelManager {
             mode: mode.to_string(),
             bandwidth_hz: 0,
             permanent: false,
+            scheduler_bookmark_id: None,
             session_ids: vec![session_id],
         });
 
@@ -476,6 +479,121 @@ impl ClientChannelManager {
     pub fn session_channel(&self, session_id: Uuid) -> Option<(String, Uuid)> {
         self.sessions.read().unwrap().get(&session_id).cloned()
     }
+
+    /// Reconcile visible scheduler-managed channels for a rig.
+    ///
+    /// These channels are user-visible virtual channels sourced from the
+    /// scheduler's currently active extra bookmarks. They are kept separate
+    /// from user-allocated channels so connect-time sync can materialise them
+    /// without duplicating arbitrary user state.
+    pub fn sync_scheduler_channels(
+        &self,
+        rig_id: &str,
+        desired: &[(String, u64, String, u32)],
+    ) {
+        let mut rigs = self.rigs.write().unwrap();
+        let Some(channels) = rigs.get_mut(rig_id) else {
+            return;
+        };
+
+        let mut changed = false;
+        let desired_map: HashMap<String, (u64, String, u32)> = desired
+            .iter()
+            .map(|(bookmark_id, freq_hz, mode, bandwidth_hz)| {
+                (bookmark_id.clone(), (*freq_hz, mode.clone(), *bandwidth_hz))
+            })
+            .collect();
+        let desired_ids: std::collections::HashSet<&str> =
+            desired_map.keys().map(String::as_str).collect();
+
+        let mut idx = 0;
+        while idx < channels.len() {
+            let remove = if let Some(bookmark_id) = channels[idx].scheduler_bookmark_id.as_deref() {
+                !desired_ids.contains(bookmark_id) && channels[idx].session_ids.is_empty()
+            } else {
+                false
+            };
+            if remove {
+                let channel_id = channels[idx].id;
+                channels.remove(idx);
+                self.send_audio_cmd(VChanAudioCmd::Remove(channel_id));
+                changed = true;
+                continue;
+            }
+            idx += 1;
+        }
+
+        for channel in channels.iter_mut() {
+            let Some(bookmark_id) = channel.scheduler_bookmark_id.as_deref() else {
+                continue;
+            };
+            let Some((freq_hz, mode, bandwidth_hz)) = desired_map.get(bookmark_id) else {
+                continue;
+            };
+            if channel.freq_hz != *freq_hz {
+                channel.freq_hz = *freq_hz;
+                self.send_audio_cmd(VChanAudioCmd::SetFreq {
+                    uuid: channel.id,
+                    freq_hz: *freq_hz,
+                });
+                changed = true;
+            }
+            if channel.mode != *mode {
+                channel.mode = mode.clone();
+                self.send_audio_cmd(VChanAudioCmd::SetMode {
+                    uuid: channel.id,
+                    mode: mode.clone(),
+                });
+                changed = true;
+            }
+            if channel.bandwidth_hz != *bandwidth_hz {
+                channel.bandwidth_hz = *bandwidth_hz;
+                self.send_audio_cmd(VChanAudioCmd::SetBandwidth {
+                    uuid: channel.id,
+                    bandwidth_hz: *bandwidth_hz,
+                });
+                changed = true;
+            }
+        }
+
+        for (bookmark_id, freq_hz, mode, bandwidth_hz) in desired {
+            let exists = channels.iter().any(|channel| {
+                channel.scheduler_bookmark_id.as_deref() == Some(bookmark_id.as_str())
+            });
+            if exists {
+                continue;
+            }
+            if channels.len() >= self.max_channels {
+                break;
+            }
+            let channel_id = Uuid::new_v4();
+            channels.push(InternalChannel {
+                id: channel_id,
+                freq_hz: *freq_hz,
+                mode: mode.clone(),
+                bandwidth_hz: *bandwidth_hz,
+                permanent: false,
+                scheduler_bookmark_id: Some(bookmark_id.clone()),
+                session_ids: Vec::new(),
+            });
+            self.send_audio_cmd(VChanAudioCmd::Subscribe {
+                uuid: channel_id,
+                freq_hz: *freq_hz,
+                mode: mode.clone(),
+            });
+            if *bandwidth_hz > 0 {
+                self.send_audio_cmd(VChanAudioCmd::SetBandwidth {
+                    uuid: channel_id,
+                    bandwidth_hz: *bandwidth_hz,
+                });
+            }
+            changed = true;
+        }
+
+        if changed {
+            self.broadcast_change(rig_id, channels);
+        }
+    }
 }
 
 #[cfg(test)]
@@ -501,5 +619,25 @@ mod tests {
         assert_eq!(channels.len(), 1);
         assert!(channels.iter().all(|ch| ch.id != channel.id));
         assert!(mgr.session_channel(session_id).is_none());
+    }
+
+    #[test]
+    fn sync_scheduler_channels_materializes_visible_scheduler_channels() {
+        let mgr = ClientChannelManager::new(4);
+        let rig_id = "rig-a";
+
+        mgr.init_rig(rig_id, 14_074_000, "USB");
+        mgr.sync_scheduler_channels(
+            rig_id,
+            &[("bm-ft8".to_string(), 14_074_000, "DIG".to_string(), 3_000)],
+        );
+
+        let channels = mgr.channels(rig_id);
+        assert_eq!(channels.len(), 2);
+        assert_eq!(channels[1].freq_hz, 14_074_000);
+        assert_eq!(channels[1].mode, "DIG");
+        assert_eq!(channels[1].bandwidth_hz, 3_000);
+        assert_eq!(channels[1].subscribers, 0);
+        assert!(!channels[1].permanent);
     }
 }

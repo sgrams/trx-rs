@@ -223,6 +223,8 @@ pub async fn events(
     clients: web::Data<Arc<AtomicUsize>>,
     context: web::Data<Arc<FrontendRuntimeContext>>,
     vchan_mgr: web::Data<Arc<ClientChannelManager>>,
+    bookmark_store: web::Data<Arc<crate::server::bookmarks::BookmarkStore>>,
+    scheduler_status: web::Data<crate::server::scheduler::SchedulerStatusMap>,
     scheduler_control: web::Data<crate::server::scheduler::SharedSchedulerControlManager>,
 ) -> Result<HttpResponse, Error> {
     let rx = state.get_ref().clone();
@@ -248,6 +250,31 @@ pub async fn events(
             initial.status.freq.hz,
             &format!("{:?}", initial.status.mode),
         );
+        if scheduler_control.scheduler_allowed() {
+            let desired = {
+                let map = scheduler_status.read().unwrap_or_else(|e| e.into_inner());
+                map.get(rid)
+                    .filter(|status| status.active)
+                    .map(|status| {
+                        status
+                            .last_bookmark_ids
+                            .iter()
+                            .filter_map(|bookmark_id| {
+                                bookmark_store.get(bookmark_id).map(|bookmark| {
+                                    (
+                                        bookmark_id.clone(),
+                                        bookmark.freq_hz,
+                                        bookmark.mode,
+                                        bookmark.bandwidth_hz.unwrap_or(0) as u32,
+                                    )
+                                })
+                            })
+                            .collect::<Vec<_>>()
+                    })
+                    .unwrap_or_default()
+            };
+            vchan_mgr.sync_scheduler_channels(rid, &desired);
+        }
     }
 
     // Build the prefix burst: rig state → session UUID → initial channels.
