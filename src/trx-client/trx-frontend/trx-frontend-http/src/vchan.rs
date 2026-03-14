@@ -85,6 +85,7 @@ struct InternalChannel {
     mode: String,
     /// Audio filter bandwidth in Hz (0 = mode default).
     bandwidth_hz: u32,
+    decoder_kinds: Vec<String>,
     permanent: bool,
     scheduler_bookmark_id: Option<String>,
     /// Session UUIDs currently subscribed to this channel.
@@ -169,6 +170,7 @@ impl ClientChannelManager {
                 freq_hz,
                 mode: mode.to_string(),
                 bandwidth_hz: 0,
+                decoder_kinds: Vec::new(),
                 permanent: true,
                 scheduler_bookmark_id: None,
                 session_ids: Vec::new(),
@@ -237,6 +239,7 @@ impl ClientChannelManager {
             freq_hz,
             mode: mode.to_string(),
             bandwidth_hz: 0,
+            decoder_kinds: Vec::new(),
             permanent: false,
             scheduler_bookmark_id: None,
             session_ids: vec![session_id],
@@ -266,6 +269,8 @@ impl ClientChannelManager {
             uuid: id,
             freq_hz,
             mode: mode.to_string(),
+            bandwidth_hz: 0,
+            decoder_kinds: Vec::new(),
         });
 
         Ok(snapshot)
@@ -515,7 +520,7 @@ impl ClientChannelManager {
     pub fn sync_scheduler_channels(
         &self,
         rig_id: &str,
-        desired: &[(String, u64, String, u32)],
+        desired: &[(String, u64, String, u32, Vec<String>)],
     ) {
         let mut rigs = self.rigs.write().unwrap();
         let Some(channels) = rigs.get_mut(rig_id) else {
@@ -523,10 +528,13 @@ impl ClientChannelManager {
         };
 
         let mut changed = false;
-        let desired_map: HashMap<String, (u64, String, u32)> = desired
+        let desired_map: HashMap<String, (u64, String, u32, Vec<String>)> = desired
             .iter()
-            .map(|(bookmark_id, freq_hz, mode, bandwidth_hz)| {
-                (bookmark_id.clone(), (*freq_hz, mode.clone(), *bandwidth_hz))
+            .map(|(bookmark_id, freq_hz, mode, bandwidth_hz, decoder_kinds)| {
+                (
+                    bookmark_id.clone(),
+                    (*freq_hz, mode.clone(), *bandwidth_hz, decoder_kinds.clone()),
+                )
             })
             .collect();
         let desired_ids: std::collections::HashSet<&str> =
@@ -553,7 +561,7 @@ impl ClientChannelManager {
             let Some(bookmark_id) = channel.scheduler_bookmark_id.as_deref() else {
                 continue;
             };
-            let Some((freq_hz, mode, bandwidth_hz)) = desired_map.get(bookmark_id) else {
+            let Some((freq_hz, mode, bandwidth_hz, decoder_kinds)) = desired_map.get(bookmark_id) else {
                 continue;
             };
             if channel.freq_hz != *freq_hz {
@@ -580,9 +588,20 @@ impl ClientChannelManager {
                 });
                 changed = true;
             }
+            if channel.decoder_kinds != *decoder_kinds {
+                channel.decoder_kinds = decoder_kinds.clone();
+                self.send_audio_cmd(VChanAudioCmd::Subscribe {
+                    uuid: channel.id,
+                    freq_hz: channel.freq_hz,
+                    mode: channel.mode.clone(),
+                    bandwidth_hz: channel.bandwidth_hz,
+                    decoder_kinds: channel.decoder_kinds.clone(),
+                });
+                changed = true;
+            }
         }
 
-        for (bookmark_id, freq_hz, mode, bandwidth_hz) in desired {
+        for (bookmark_id, freq_hz, mode, bandwidth_hz, decoder_kinds) in desired {
             let exists = channels.iter().any(|channel| {
                 channel.scheduler_bookmark_id.as_deref() == Some(bookmark_id.as_str())
             });
@@ -598,6 +617,7 @@ impl ClientChannelManager {
                 freq_hz: *freq_hz,
                 mode: mode.clone(),
                 bandwidth_hz: *bandwidth_hz,
+                decoder_kinds: decoder_kinds.clone(),
                 permanent: false,
                 scheduler_bookmark_id: Some(bookmark_id.clone()),
                 session_ids: Vec::new(),
@@ -606,13 +626,9 @@ impl ClientChannelManager {
                 uuid: channel_id,
                 freq_hz: *freq_hz,
                 mode: mode.clone(),
+                bandwidth_hz: *bandwidth_hz,
+                decoder_kinds: decoder_kinds.clone(),
             });
-            if *bandwidth_hz > 0 {
-                self.send_audio_cmd(VChanAudioCmd::SetBandwidth {
-                    uuid: channel_id,
-                    bandwidth_hz: *bandwidth_hz,
-                });
-            }
             changed = true;
         }
 
@@ -655,7 +671,13 @@ mod tests {
         mgr.init_rig(rig_id, 14_074_000, "USB");
         mgr.sync_scheduler_channels(
             rig_id,
-            &[("bm-ft8".to_string(), 14_074_000, "DIG".to_string(), 3_000)],
+            &[(
+                "bm-ft8".to_string(),
+                14_074_000,
+                "DIG".to_string(),
+                3_000,
+                vec!["ft8".to_string()],
+            )],
         );
 
         let channels = mgr.channels(rig_id);
@@ -679,7 +701,13 @@ mod tests {
             .expect("allocate vchan");
         mgr.sync_scheduler_channels(
             rig_id,
-            &[("bm-ft8".to_string(), 14_074_000, "DIG".to_string(), 3_000)],
+            &[(
+                "bm-ft8".to_string(),
+                14_074_000,
+                "DIG".to_string(),
+                3_000,
+                vec!["ft8".to_string()],
+            )],
         );
 
         mgr.release_session(session_id);
@@ -699,7 +727,13 @@ mod tests {
         mgr.init_rig(rig_id, 14_074_000, "USB");
         mgr.sync_scheduler_channels(
             rig_id,
-            &[("bm-aprs".to_string(), 144_800_000, "PKT".to_string(), 12_500)],
+            &[(
+                "bm-aprs".to_string(),
+                144_800_000,
+                "PKT".to_string(),
+                12_500,
+                vec!["aprs".to_string()],
+            )],
         );
 
         let channel_id = mgr.channels(rig_id)[1].id;

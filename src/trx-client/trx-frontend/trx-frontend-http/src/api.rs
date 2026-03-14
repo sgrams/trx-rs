@@ -402,8 +402,9 @@ fn sync_scheduler_vchannels(
                             (
                                 bookmark_id.clone(),
                                 bookmark.freq_hz,
-                                bookmark.mode,
+                                bookmark.mode.clone(),
                                 bookmark.bandwidth_hz.unwrap_or(0) as u32,
+                                bookmark_decoder_kinds(&bookmark),
                             )
                         })
                     })
@@ -1738,6 +1739,33 @@ fn bookmark_decoder_state(
     }
 
     (want_aprs, want_hf_aprs, want_ft8, want_wspr)
+}
+
+fn bookmark_decoder_kinds(bookmark: &crate::server::bookmarks::Bookmark) -> Vec<String> {
+    let mut out = Vec::new();
+    for decoder in bookmark
+        .decoders
+        .iter()
+        .map(|item| item.trim().to_ascii_lowercase())
+    {
+        if matches!(
+            decoder.as_str(),
+            "aprs" | "ais" | "ft8" | "wspr" | "hf-aprs"
+        ) && !out.iter().any(|existing| existing == &decoder)
+        {
+            out.push(decoder);
+        }
+    }
+
+    if !out.is_empty() {
+        return out;
+    }
+
+    match bookmark.mode.trim().to_ascii_uppercase().as_str() {
+        "AIS" => vec!["ais".to_string()],
+        "PKT" => vec!["aprs".to_string()],
+        _ => Vec::new(),
+    }
 }
 
 async fn apply_selected_channel(

@@ -327,13 +327,13 @@ async fn handle_audio_connection(
             }
             cmd = vchan_cmd_rx.recv() => {
                 match cmd {
-                    Some(VChanAudioCmd::Subscribe { uuid, freq_hz, mode }) => {
+                    Some(VChanAudioCmd::Subscribe { uuid, freq_hz, mode, bandwidth_hz, decoder_kinds }) => {
                         active_subs.insert(uuid, ActiveVChanSub {
                             freq_hz,
                             mode: mode.clone(),
-                            bandwidth_hz: 0,
+                            bandwidth_hz,
                             hidden: false,
-                            decoder_kinds: Vec::new(),
+                            decoder_kinds: decoder_kinds.clone(),
                         });
                         // Skip if already re-sent during reconnect initialization.
                         if resubscribed.remove(&uuid) {
@@ -344,6 +344,8 @@ async fn handle_audio_connection(
                                 "freq_hz": freq_hz,
                                 "mode": mode,
                                 "hidden": false,
+                                "decoder_kinds": decoder_kinds,
+                                "bandwidth_hz": bandwidth_hz,
                             });
                             if let Ok(payload) = serde_json::to_vec(&json) {
                                 if let Err(e) = write_audio_msg(&mut writer, AUDIO_MSG_VCHAN_SUB, &payload).await {

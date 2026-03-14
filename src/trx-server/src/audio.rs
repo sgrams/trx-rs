@@ -2335,13 +2335,19 @@ async fn handle_audio_client(
                     match cmd {
                         VChanCmd::Subscribe { uuid, pcm_rx, send_audio, background_decode } => {
                             let mut handles = Vec::new();
-                            let is_hidden = background_decode.is_some();
+                            let is_hidden = !send_audio;
 
                             if let Ok(mut guard) = hidden_channels_for_rx.lock() {
                                 if is_hidden {
                                     guard.insert(uuid);
                                 } else {
                                     guard.remove(&uuid);
+                                }
+                            }
+
+                            if let Some(existing_handles) = vchan_tasks.remove(&uuid) {
+                                for handle in existing_handles {
+                                    handle.abort();
                                 }
                             }
 
@@ -2600,7 +2606,7 @@ async fn handle_audio_client(
                                                 uuid,
                                                 pcm_rx,
                                                 send_audio: !hidden,
-                                                background_decode: hidden.then_some(BackgroundDecodeSpec {
+                                                background_decode: (!decoder_kinds.is_empty()).then_some(BackgroundDecodeSpec {
                                                     base_freq_hz: freq_hz,
                                                     decoder_kinds,
                                                 }),
