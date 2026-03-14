@@ -4692,21 +4692,25 @@ function ensureDecodeContactPathRendered(entry) {
   if (typeof entry.line.bringToBack === "function") entry.line.bringToBack();
 }
 
-function decodeContactPathBaseVisible(entry) {
-  return mapDecodeContactPathsEnabled
-    && decodeLocatorPathVisibility(entry.sourceGrid)
+function decodeContactPathMatchesCurrentMap(entry) {
+  return decodeLocatorPathVisibility(entry.sourceGrid)
     && decodeLocatorPathVisibility(entry.targetGrid);
+}
+
+function decodeContactPathRenderVisible(entry) {
+  return mapDecodeContactPathsEnabled
+    && decodeContactPathMatchesCurrentMap(entry);
 }
 
 function syncDecodeContactPathVisibility() {
   if (selectedMapQsoKey) {
     const selectedEntry = decodeContactPaths.get(selectedMapQsoKey);
-    if (!selectedEntry || !decodeContactPathBaseVisible(selectedEntry)) {
+    if (!selectedEntry || !decodeContactPathMatchesCurrentMap(selectedEntry)) {
       selectedMapQsoKey = null;
     }
   }
   for (const entry of decodeContactPaths.values()) {
-    const visible = decodeContactPathBaseVisible(entry)
+    const visible = decodeContactPathRenderVisible(entry)
       && (!selectedMapQsoKey || entry.pathKey === selectedMapQsoKey);
     if (!visible) {
       clearDecodeContactPathRender(entry);
@@ -6322,7 +6326,7 @@ function renderMapQsoSummary() {
   const entries = Array.from(decodeContactPaths.values())
     .filter((entry) => entry
       && Number.isFinite(entry.distanceKm)
-      && decodeContactPathBaseVisible(entry))
+      && decodeContactPathMatchesCurrentMap(entry))
     .sort((a, b) => {
       const distanceDelta = Number(b.distanceKm) - Number(a.distanceKm);
       if (Math.abs(distanceDelta) > 0.001) return distanceDelta;
