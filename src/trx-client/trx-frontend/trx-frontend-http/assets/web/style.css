@@ -1327,7 +1327,7 @@ small { color: var(--text-muted); }
   color: var(--text-muted);
   font-size: 0.82rem;
 }
-.map-qso-card {
+button.map-qso-card {
   display: flex;
   appearance: none;
   -webkit-appearance: none;
@@ -1339,6 +1339,8 @@ small { color: var(--text-muted); }
   margin: 0;
   padding: 0.8rem 0.85rem;
   box-sizing: border-box;
+  min-height: 0;
+  height: auto;
   border-radius: 0.75rem;
   border: 1px solid color-mix(in srgb, var(--border-light) 74%, transparent);
   background: color-mix(in srgb, var(--card-bg) 78%, transparent);
@@ -1347,19 +1349,28 @@ small { color: var(--text-muted); }
   line-height: inherit;
   text-align: left;
   cursor: pointer;
+  box-shadow: none;
   transition: border-color 120ms ease, background 120ms ease, transform 120ms ease, box-shadow 120ms ease;
 }
-.map-qso-card:hover {
+button.map-qso-card:hover:not(:disabled) {
   border-color: color-mix(in srgb, var(--accent-green) 38%, var(--border-light));
   background: color-mix(in srgb, var(--card-bg) 70%, transparent);
+  box-shadow: none;
 }
-.map-qso-card.is-selected {
+button.map-qso-card.is-selected {
   border-color: color-mix(in srgb, var(--accent-green) 62%, var(--border-light));
   background: color-mix(in srgb, var(--accent-green) 10%, var(--card-bg));
   box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent-green) 18%, transparent);
 }
-.map-qso-card:active {
+button.map-qso-card:active:not(:disabled) {
   transform: translateY(1px);
+  background: color-mix(in srgb, var(--card-bg) 66%, transparent);
+  border-color: color-mix(in srgb, var(--accent-green) 46%, var(--border-light));
+  box-shadow: none;
+}
+button.map-qso-card:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent-green) 52%, transparent);
+  outline-offset: 2px;
 }
 .map-qso-card-head {
   display: flex;
