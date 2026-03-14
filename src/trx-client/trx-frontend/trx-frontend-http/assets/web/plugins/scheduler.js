@@ -523,10 +523,16 @@
       })
       .then(function (status) {
         currentSchedulerStatus = status || null;
-        renderStatus(status);
-        renderSchedulerInterleaveStatus();
-        showSchedulerToast("Selected " + schedulerEntryDisplayName(target) + ".");
-        pollStatus();
+        return Promise.resolve(
+          typeof vchanToggleSchedulerRelease === "function"
+            ? vchanToggleSchedulerRelease()
+            : null
+        ).then(function () {
+          renderStatus(status);
+          renderSchedulerInterleaveStatus();
+          showSchedulerToast("Selected " + schedulerEntryDisplayName(target) + ".");
+          pollStatus();
+        });
       })
       .catch(function (e) {
         console.error("scheduler entry selection failed", e);
