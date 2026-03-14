@@ -3796,6 +3796,7 @@ const MAP_QSO_SUMMARY_LIMIT = 5;
 const stationMarkers = new Map();
 const locatorMarkers = new Map();
 const decodeContactPaths = new Map();
+let selectedMapQsoKey = null;
 const mapMarkers = new Set();
 const DEFAULT_MAP_SOURCE_FILTER = { ais: true, vdes: true, aprs: true, bookmark: false, ft8: true, wspr: true };
 const mapFilter = { ...DEFAULT_MAP_SOURCE_FILTER };
@@ -4490,11 +4491,22 @@ function ensureDecodeContactPathRendered(entry) {
   if (typeof entry.line.bringToBack === "function") entry.line.bringToBack();
 }
 
+function decodeContactPathBaseVisible(entry) {
+  return mapDecodeContactPathsEnabled
+    && decodeLocatorPathVisibility(entry.sourceGrid)
+    && decodeLocatorPathVisibility(entry.targetGrid);
+}
+
 function syncDecodeContactPathVisibility() {
+  if (selectedMapQsoKey) {
+    const selectedEntry = decodeContactPaths.get(selectedMapQsoKey);
+    if (!selectedEntry || !decodeContactPathBaseVisible(selectedEntry)) {
+      selectedMapQsoKey = null;
+    }
+  }
   for (const entry of decodeContactPaths.values()) {
-    const visible = mapDecodeContactPathsEnabled
-      && decodeLocatorPathVisibility(entry.sourceGrid)
-      && decodeLocatorPathVisibility(entry.targetGrid);
+    const visible = decodeContactPathBaseVisible(entry)
+      && (!selectedMapQsoKey || entry.pathKey === selectedMapQsoKey);
     if (!visible) {
       clearDecodeContactPathRender(entry);
       continue;
@@ -6073,6 +6085,7 @@ function rebuildDecodeContactPaths() {
     const prev = decodeContactPaths.get(key);
     if (prev && prev.tsMs > msg.tsMs) continue;
     decodeContactPaths.set(key, {
+      pathKey: key,
       source: msg.source,
       target: msg.target,
       sourceGrid: msg.sourceGrid,
@@ -6098,14 +6111,17 @@ function renderMapQsoSummary() {
   const entries = Array.from(decodeContactPaths.values())
     .filter((entry) => entry
       && Number.isFinite(entry.distanceKm)
-      && decodeLocatorPathVisibility(entry.sourceGrid)
-      && decodeLocatorPathVisibility(entry.targetGrid))
+      && decodeContactPathBaseVisible(entry))
     .sort((a, b) => {
       const distanceDelta = Number(b.distanceKm) - Number(a.distanceKm);
       if (Math.abs(distanceDelta) > 0.001) return distanceDelta;
       return Number(b.tsMs || 0) - Number(a.tsMs || 0);
     })
     .slice(0, MAP_QSO_SUMMARY_LIMIT);
+
+  if (selectedMapQsoKey && !entries.some((entry) => entry.pathKey === selectedMapQsoKey)) {
+    selectedMapQsoKey = null;
+  }
 
   if (entries.length === 0) {
     const empty = document.createElement("div");
@@ -6117,8 +6133,15 @@ function renderMapQsoSummary() {
 
   const fragment = document.createDocumentFragment();
   entries.forEach((entry, index) => {
-    const card = document.createElement("article");
+    const card = document.createElement("button");
+    card.type = "button";
     card.className = "map-qso-card";
+    card.classList.toggle("is-selected", entry.pathKey === selectedMapQsoKey);
+    card.setAttribute("aria-pressed", entry.pathKey === selectedMapQsoKey ? "true" : "false");
+    card.addEventListener("click", () => {
+      selectedMapQsoKey = selectedMapQsoKey === entry.pathKey ? null : entry.pathKey;
+      syncDecodeContactPathVisibility();
+    });
 
     const head = document.createElement("div");
     head.className = "map-qso-card-head";

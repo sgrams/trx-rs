@@ -1329,6 +1329,8 @@ small { color: var(--text-muted); }
 }
 .map-qso-card {
   display: flex;
+  appearance: none;
+  width: 100%;
   flex-direction: column;
   gap: 0.5rem;
   min-width: 0;
@@ -1336,6 +1338,21 @@ small { color: var(--text-muted); }
   border-radius: 0.75rem;
   border: 1px solid color-mix(in srgb, var(--border-light) 74%, transparent);
   background: color-mix(in srgb, var(--card-bg) 78%, transparent);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 120ms ease, background 120ms ease, transform 120ms ease, box-shadow 120ms ease;
+}
+.map-qso-card:hover {
+  border-color: color-mix(in srgb, var(--accent-green) 38%, var(--border-light));
+  background: color-mix(in srgb, var(--card-bg) 70%, transparent);
+}
+.map-qso-card.is-selected {
+  border-color: color-mix(in srgb, var(--accent-green) 62%, var(--border-light));
+  background: color-mix(in srgb, var(--accent-green) 10%, var(--card-bg));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent-green) 18%, transparent);
+}
+.map-qso-card:active {
+  transform: translateY(1px);
 }
 .map-qso-card-head {
   display: flex;
@@ -1934,11 +1951,8 @@ body.map-fake-fullscreen-active {
   max-width: 26rem;
   max-height: min(22rem, 60vh);
   overflow: auto;
-  padding: 0.55rem 0.65rem;
-  border-radius: 0.65rem;
-  background: color-mix(in srgb, var(--card-bg) 84%, transparent);
+  padding: 0.1rem 0.05rem 0.05rem;
   color: var(--text);
-  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.28);
 }
 .decode-locator-tip-title {
   color: var(--accent-yellow);
