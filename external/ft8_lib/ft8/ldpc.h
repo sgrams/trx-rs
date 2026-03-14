@@ -16,6 +16,8 @@ void ldpc_decode(float codeword[], int max_iters, uint8_t plain[], int* ok);
 
 void bp_decode(float codeword[], int max_iters, uint8_t plain[], int* ok);
 
+void decode174_91_osd(float llr[], int keff, int maxosd, int norder, uint8_t apmask[], uint8_t message91[], uint8_t cw[], int* ntype, int* nharderror, float* dmin);
+
 #ifdef __cplusplus
 }
 #endif

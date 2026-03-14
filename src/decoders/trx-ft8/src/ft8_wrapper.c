@@ -107,6 +107,8 @@ static ftx_callsign_hash_interface_t hash_if = {
     .save_hash = hashtable_add,
 };
 
+static bool ft2_unpack_message(const uint8_t plain174[], ftx_message_t* message);
+
 // Decoder wrapper
 
 typedef struct
@@ -174,6 +176,12 @@ typedef struct
 
 typedef struct
 {
+    int index;
+    float reliability;
+} ft2_reliability_t;
+
+typedef struct
+{
     int peaks_found;
     int hits_found;
     float best_peak_score;
@@ -223,6 +231,17 @@ static int ft2_cmp_candidates_desc(const void* lhs, const void* rhs)
         return 1;
     if (a->score > b->score)
         return -1;
+    return 0;
+}
+
+static int ft2_cmp_reliability_asc(const void* lhs, const void* rhs)
+{
+    const ft2_reliability_t* a = (const ft2_reliability_t*)lhs;
+    const ft2_reliability_t* b = (const ft2_reliability_t*)rhs;
+    if (a->reliability < b->reliability)
+        return -1;
+    if (a->reliability > b->reliability)
+        return 1;
     return 0;
 }
 
@@ -808,6 +827,135 @@ static void ft2_pack_bits(const uint8_t bit_array[], int num_bits, uint8_t packe
     }
 }
 
+static uint8_t ft2_parity8(uint8_t x)
+{
+    x ^= x >> 4;
+    x ^= x >> 2;
+    x ^= x >> 1;
+    return x & 1u;
+}
+
+static void ft2_encode_codeword_from_a91(const uint8_t a91[FTX_LDPC_K_BYTES], uint8_t codeword[FTX_LDPC_N])
+{
+    for (int i = 0; i < FTX_LDPC_K; ++i)
+    {
+        codeword[i] = (a91[i / 8] >> (7 - (i % 8))) & 0x1u;
+    }
+    for (int i = 0; i < FTX_LDPC_M; ++i)
+    {
+        uint8_t nsum = 0;
+        for (int j = 0; j < FTX_LDPC_K_BYTES; ++j)
+        {
+            nsum ^= ft2_parity8(a91[j] & kFTX_LDPC_generator[i][j]);
+        }
+        codeword[FTX_LDPC_K + i] = nsum & 0x1u;
+    }
+}
+
+static float ft2_codeword_distance(const uint8_t codeword[FTX_LDPC_N], const float log174[FTX_LDPC_N])
+{
+    float distance = 0.0f;
+    for (int i = 0; i < FTX_LDPC_N; ++i)
+    {
+        uint8_t hard = (log174[i] >= 0.0f) ? 1u : 0u;
+        if (codeword[i] != hard)
+            distance += fabsf(log174[i]);
+    }
+    return distance;
+}
+
+static bool ft2_try_crc_candidate(const uint8_t a91[FTX_LDPC_K_BYTES], ftx_message_t* message)
+{
+    uint8_t codeword[FTX_LDPC_N];
+    ft2_encode_codeword_from_a91(a91, codeword);
+    return ft2_unpack_message(codeword, message);
+}
+
+static bool ft2_osd_lite_decode(const float log174[FTX_LDPC_N], ftx_message_t* message)
+{
+    uint8_t base_a91[FTX_LDPC_K_BYTES];
+    memset(base_a91, 0, sizeof(base_a91));
+    for (int i = 0; i < FTX_LDPC_K; ++i)
+    {
+        if (log174[i] >= 0.0f)
+            base_a91[i / 8] |= (uint8_t)(0x80u >> (i % 8));
+    }
+
+    if (ft2_try_crc_candidate(base_a91, message))
+        return true;
+
+    ft2_reliability_t reliabilities[FTX_LDPC_K];
+    for (int i = 0; i < FTX_LDPC_K; ++i)
+    {
+        reliabilities[i].index = i;
+        reliabilities[i].reliability = fabsf(log174[i]);
+    }
+    qsort(reliabilities, FTX_LDPC_K, sizeof(reliabilities[0]), ft2_cmp_reliability_asc);
+
+    const int max_candidates = 12;
+    const int n = (FTX_LDPC_K < max_candidates) ? FTX_LDPC_K : max_candidates;
+    uint8_t trial_a91[FTX_LDPC_K_BYTES];
+    uint8_t best_codeword[FTX_LDPC_N];
+    float best_distance = INFINITY;
+    bool have_best = false;
+
+    for (int i = 0; i < n; ++i)
+    {
+        memcpy(trial_a91, base_a91, sizeof(trial_a91));
+        int b0 = reliabilities[i].index;
+        trial_a91[b0 / 8] ^= (uint8_t)(0x80u >> (b0 % 8));
+        if (ft2_try_crc_candidate(trial_a91, message))
+            return true;
+    }
+
+    for (int i = 0; i < n; ++i)
+    {
+        for (int j = i + 1; j < n; ++j)
+        {
+            memcpy(trial_a91, base_a91, sizeof(trial_a91));
+            int b0 = reliabilities[i].index;
+            int b1 = reliabilities[j].index;
+            trial_a91[b0 / 8] ^= (uint8_t)(0x80u >> (b0 % 8));
+            trial_a91[b1 / 8] ^= (uint8_t)(0x80u >> (b1 % 8));
+            if (ft2_try_crc_candidate(trial_a91, message))
+                return true;
+        }
+    }
+
+    for (int i = 0; i < n; ++i)
+    {
+        for (int j = i + 1; j < n; ++j)
+        {
+            for (int k = j + 1; k < n; ++k)
+            {
+                memcpy(trial_a91, base_a91, sizeof(trial_a91));
+                int b0 = reliabilities[i].index;
+                int b1 = reliabilities[j].index;
+                int b2 = reliabilities[k].index;
+                trial_a91[b0 / 8] ^= (uint8_t)(0x80u >> (b0 % 8));
+                trial_a91[b1 / 8] ^= (uint8_t)(0x80u >> (b1 % 8));
+                trial_a91[b2 / 8] ^= (uint8_t)(0x80u >> (b2 % 8));
+                if (ft2_try_crc_candidate(trial_a91, message))
+                    return true;
+
+                uint8_t codeword[FTX_LDPC_N];
+                ft2_encode_codeword_from_a91(trial_a91, codeword);
+                float distance = ft2_codeword_distance(codeword, log174);
+                if (distance < best_distance)
+                {
+                    memcpy(best_codeword, codeword, sizeof(best_codeword));
+                    best_distance = distance;
+                    have_best = true;
+                }
+            }
+        }
+    }
+
+    if (have_best)
+        return ft2_unpack_message(best_codeword, message);
+    return false;
+}
+
 static bool ft2_unpack_message(const uint8_t plain174[], ftx_message_t* message)
 {
     uint8_t a91[FTX_LDPC_K_BYTES];
@@ -971,22 +1119,23 @@ static bool ft2_decode_hit(
         llr_passes[4][i] = (a + b + c) / 3.0f;
     }
 
-    uint8_t plain174[FTX_LDPC_N];
     bool ok = false;
-    bool ldpc_passed = false;
+    uint8_t apmask[FTX_LDPC_N] = { 0 };
+    uint8_t message91[FTX_LDPC_K] = { 0 };
+    uint8_t cw[FTX_LDPC_N] = { 0 };
     for (int pass = 0; pass < 5 && !ok; ++pass)
     {
         float log174[FTX_LDPC_N];
         memcpy(log174, llr_passes[pass], sizeof(log174));
-        int ldpc_errors = 0;
-        bp_decode(log174, 50, plain174, &ldpc_errors);
-        if (ldpc_errors > 0)
-            continue;
-        ldpc_passed = true;
-        ok = ft2_unpack_message(plain174, message);
+        int ntype = 0;
+        int nharderror = -1;
+        float dmin = 0.0f;
+        decode174_91_osd(log174, FTX_LDPC_K, 3, 3, apmask, message91, cw, &ntype, &nharderror, &dmin);
+        if (ntype != 0 && nharderror > 0)
+            ok = ft2_unpack_message(cw, message);
     }
     if (!ok && fail_stage)
-        *fail_stage = ldpc_passed ? FT2_FAIL_CRC : FT2_FAIL_LDPC;
+        *fail_stage = FT2_FAIL_LDPC;
 
     if (ok)
     {
