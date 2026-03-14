@@ -7,6 +7,8 @@
 #include <ft8/crc.h>
 #include <ft8/message.h>
 #include <ft8/text.h>
+#define LOG_LEVEL LOG_INFO
+#include <ft8/debug.h>
 #include <common/monitor.h>
 #include <fft/kiss_fftr.h>
 #include <fft/kiss_fft.h>
@@ -169,6 +171,27 @@ typedef struct
     float freq_hz;
     float score;
 } ft2_raw_candidate_t;
+
+typedef struct
+{
+    int peaks_found;
+    int hits_found;
+    float best_peak_score;
+    float best_sync_score;
+} ft2_scan_stats_t;
+
+typedef enum
+{
+    FT2_FAIL_NONE = 0,
+    FT2_FAIL_REFINED_SYNC,
+    FT2_FAIL_FREQ_RANGE,
+    FT2_FAIL_FINAL_DOWNSAMPLE,
+    FT2_FAIL_BITMETRICS,
+    FT2_FAIL_SYNC_QUAL,
+    FT2_FAIL_LDPC,
+    FT2_FAIL_CRC,
+    FT2_FAIL_UNPACK
+} ft2_fail_stage_t;
 
 typedef struct
 {
@@ -520,10 +543,23 @@ static void ft2_normalize_downsampled(float complex* samples, int n_samples)
 static int ft2_find_scan_hits(
     const ft8_decoder_t* dec,
     ft2_scan_hit_t* out,
-    int max_hits)
+    int max_hits,
+    ft2_scan_stats_t* stats)
 {
     ft2_raw_candidate_t peaks[FT2_MAX_RAW_CANDIDATES];
     int n_peaks = ft2_find_frequency_peaks(dec, peaks, FT2_MAX_RAW_CANDIDATES);
+    if (stats)
+    {
+        stats->peaks_found = n_peaks;
+        stats->hits_found = 0;
+        stats->best_peak_score = 0.0f;
+        stats->best_sync_score = 0.0f;
+        for (int i = 0; i < n_peaks; ++i)
+        {
+            if (peaks[i].score > stats->best_peak_score)
+                stats->best_peak_score = peaks[i].score;
+        }
+    }
     if (n_peaks <= 0)
         return 0;
 
@@ -584,10 +620,14 @@ static int ft2_find_scan_hits(
         out[count].sync_score = best_score;
         out[count].start = best_start;
         out[count].idf = best_idf;
+        if (stats && best_score > stats->best_sync_score)
+            stats->best_sync_score = best_score;
         ++count;
     }
 
     qsort(out, count, sizeof(out[0]), ft2_cmp_scan_hits_desc);
+    if (stats)
+        stats->hits_found = count;
     free(down);
     return count;
 }
@@ -793,8 +833,11 @@ static bool ft2_decode_hit(
     ftx_message_t* message,
     float* dt_s,
     float* freq_hz,
-    float* snr_db)
+    float* snr_db,
+    ft2_fail_stage_t* fail_stage)
 {
+    if (fail_stage)
+        *fail_stage = FT2_FAIL_NONE;
     const int nraw = dec->ft2_raw_len;
     const int nfft2 = nraw / FT2_NDOWN;
     float complex* cd2 = (float complex*)malloc(sizeof(float complex) * nfft2);
@@ -815,6 +858,8 @@ static bool ft2_decode_hit(
     int produced = ft2_downsample_candidate(dec, hit->freq_hz, cd2, nfft2);
     if (produced <= 0)
     {
+        if (fail_stage)
+            *fail_stage = FT2_FAIL_FINAL_DOWNSAMPLE;
         free(cd2);
         free(cb);
         return false;
@@ -841,6 +886,8 @@ static bool ft2_decode_hit(
     }
     if (best_score < 0.80f)
     {
+        if (fail_stage)
+            *fail_stage = FT2_FAIL_REFINED_SYNC;
         free(cd2);
         free(cb);
         return false;
@@ -849,6 +896,8 @@ static bool ft2_decode_hit(
     float corrected_freq_hz = hit->freq_hz + best_idf;
     if (corrected_freq_hz <= 10.0f || corrected_freq_hz >= 4990.0f)
     {
+        if (fail_stage)
+            *fail_stage = FT2_FAIL_FREQ_RANGE;
         free(cd2);
         free(cb);
         return false;
@@ -857,6 +906,8 @@ static bool ft2_decode_hit(
     produced = ft2_downsample_candidate(dec, corrected_freq_hz, cb, nfft2);
     if (produced <= 0)
     {
+        if (fail_stage)
+            *fail_stage = FT2_FAIL_FINAL_DOWNSAMPLE;
         free(cd2);
         free(cb);
         return false;
@@ -866,6 +917,8 @@ static bool ft2_decode_hit(
 
     if (!ft2_extract_bitmetrics_raw(signal, bitmetrics))
     {
+        if (fail_stage)
+            *fail_stage = FT2_FAIL_BITMETRICS;
         free(cd2);
         free(cb);
         return false;
@@ -885,6 +938,8 @@ static bool ft2_decode_hit(
     }
     if (sync_qual < 13)
     {
+        if (fail_stage)
+            *fail_stage = FT2_FAIL_SYNC_QUAL;
         free(cd2);
         free(cb);
         return false;
@@ -917,6 +972,7 @@ static bool ft2_decode_hit(
 
     uint8_t plain174[FTX_LDPC_N];
     bool ok = false;
+    bool ldpc_passed = false;
     for (int pass = 0; pass < 5 && !ok; ++pass)
     {
         float log174[FTX_LDPC_N];
@@ -926,8 +982,11 @@ static bool ft2_decode_hit(
         bp_decode(log174, 50, plain174, &ldpc_errors);
         if (ldpc_errors > 0)
             continue;
+        ldpc_passed = true;
         ok = ft2_unpack_message(plain174, message);
     }
+    if (!ok && fail_stage)
+        *fail_stage = ldpc_passed ? FT2_FAIL_CRC : FT2_FAIL_LDPC;
 
     if (ok)
     {
@@ -945,7 +1004,6 @@ static bool ft2_decode_hit(
         else
             *snr_db = -21.0f;
     }
-
     free(cd2);
     free(cb);
     return ok;
@@ -1076,7 +1134,16 @@ int ft8_decoder_decode(ft8_decoder_t* dec, ft8_decode_result_t* out, int max_res
     if (is_ft2)
     {
         ft2_scan_hit_t hit_list[FT2_MAX_SCAN_HITS];
-        int num_hits = ft2_find_scan_hits(dec, hit_list, FT2_MAX_SCAN_HITS);
+        ft2_scan_stats_t scan_stats;
+        int num_hits = ft2_find_scan_hits(dec, hit_list, FT2_MAX_SCAN_HITS, &scan_stats);
+        int fail_refined_sync = 0;
+        int fail_freq_range = 0;
+        int fail_final_downsample = 0;
+        int fail_bitmetrics = 0;
+        int fail_sync_qual = 0;
+        int fail_ldpc = 0;
+        int fail_crc = 0;
+        int fail_unpack = 0;
         for (int idx = 0; idx < num_hits && num_decoded < max_results; ++idx)
         {
             const ft2_scan_hit_t* hit = &hit_list[idx];
@@ -1084,8 +1151,38 @@ int ft8_decoder_decode(ft8_decoder_t* dec, ft8_decode_result_t* out, int max_res
             float time_sec = 0.0f;
             float freq_hz = 0.0f;
             float snr_db = -21.0f;
-            if (!ft2_decode_hit(dec, hit, &message, &time_sec, &freq_hz, &snr_db))
+            ft2_fail_stage_t fail_stage = FT2_FAIL_NONE;
+            if (!ft2_decode_hit(dec, hit, &message, &time_sec, &freq_hz, &snr_db, &fail_stage))
             {
+                switch (fail_stage)
+                {
+                case FT2_FAIL_REFINED_SYNC:
+                    ++fail_refined_sync;
+                    break;
+                case FT2_FAIL_FREQ_RANGE:
+                    ++fail_freq_range;
+                    break;
+                case FT2_FAIL_FINAL_DOWNSAMPLE:
+                    ++fail_final_downsample;
+                    break;
+                case FT2_FAIL_BITMETRICS:
+                    ++fail_bitmetrics;
+                    break;
+                case FT2_FAIL_SYNC_QUAL:
+                    ++fail_sync_qual;
+                    break;
+                case FT2_FAIL_LDPC:
+                    ++fail_ldpc;
+                    break;
+                case FT2_FAIL_CRC:
+                    ++fail_crc;
+                    break;
+                case FT2_FAIL_UNPACK:
+                    ++fail_unpack;
+                    break;
+                default:
+                    break;
+                }
                 continue;
             }
 
@@ -1118,7 +1215,10 @@ int ft8_decoder_decode(ft8_decoder_t* dec, ft8_decode_result_t* out, int max_res
             ftx_message_offsets_t offsets;
             ftx_message_rc_t unpack_status = ftx_message_decode(&message, &hash_if, text, &offsets);
             if (unpack_status != FTX_MESSAGE_RC_OK)
+            {
+                ++fail_unpack;
                 continue;
+            }
 
             ft8_decode_result_t* dst = &out[num_decoded];
             strncpy(dst->text, text, sizeof(dst->text) - 1);
@@ -1129,6 +1229,22 @@ int ft8_decoder_decode(ft8_decoder_t* dec, ft8_decode_result_t* out, int max_res
 
             num_decoded++;
         }
+        LOG(LOG_INFO,
+            "FT2 window: raw=%d peaks=%d hits=%d best_peak=%.3f best_sync=%.3f decoded=%d fail(sync=%d freq=%d down=%d bits=%d qual=%d ldpc=%d crc=%d unpack=%d)\n",
+            dec->ft2_raw_len,
+            scan_stats.peaks_found,
+            scan_stats.hits_found,
+            scan_stats.best_peak_score,
+            scan_stats.best_sync_score,
+            num_decoded,
+            fail_refined_sync,
+            fail_freq_range,
+            fail_final_downsample,
+            fail_bitmetrics,
+            fail_sync_qual,
+            fail_ldpc,
+            fail_crc,
+            fail_unpack);
     }
     else
     {
