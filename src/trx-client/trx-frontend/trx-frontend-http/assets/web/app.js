@@ -347,9 +347,26 @@ const headerRigSwitchSelect = document.getElementById("header-rig-switch-select"
 const headerStylePickSelect = document.getElementById("header-style-pick-select");
 const rdsPsOverlay = document.getElementById("rds-ps-overlay");
 let overviewPeakHoldMs = Number(loadSetting("overviewPeakHoldMs", 2000));
+let decodeHistoryRetentionMin = 24 * 60;
 let primaryRds = null;
 let vchanRdsById = new Map();
 let rdsOverlayEntries = [];
+
+function currentDecodeHistoryRetentionMs() {
+  const minutes = Math.max(1, Math.round(Number(decodeHistoryRetentionMin) || (24 * 60)));
+  return minutes * 60 * 1000;
+}
+
+window.getDecodeHistoryRetentionMs = currentDecodeHistoryRetentionMs;
+
+window.applyDecodeHistoryRetention = function() {
+  if (typeof window.pruneAprsHistoryView === "function") window.pruneAprsHistoryView();
+  if (typeof window.pruneHfAprsHistoryView === "function") window.pruneHfAprsHistoryView();
+  if (typeof window.pruneAisHistoryView === "function") window.pruneAisHistoryView();
+  if (typeof window.pruneVdesHistoryView === "function") window.pruneVdesHistoryView();
+  if (typeof window.pruneFt8HistoryView === "function") window.pruneFt8HistoryView();
+  if (typeof window.pruneWsprHistoryView === "function") window.pruneWsprHistoryView();
+};
 
 function syncTopBarAccess() {
   const loggedOut = authEnabled && !authRole;
@@ -2440,6 +2457,19 @@ function render(update) {
     Number.isFinite(update.spectrum_usable_span_ratio)
   ) {
     spectrumUsableSpanRatio = Math.max(0.01, Math.min(1.0, Number(update.spectrum_usable_span_ratio)));
+  }
+  if (
+    typeof update.decode_history_retention_min === "number" &&
+    Number.isFinite(update.decode_history_retention_min) &&
+    update.decode_history_retention_min > 0
+  ) {
+    const nextRetentionMin = Math.max(1, Math.round(Number(update.decode_history_retention_min)));
+    if (nextRetentionMin !== decodeHistoryRetentionMin) {
+      decodeHistoryRetentionMin = nextRetentionMin;
+      if (typeof window.applyDecodeHistoryRetention === "function") {
+        window.applyDecodeHistoryRetention();
+      }
+    }
   }
   scheduleSpectrumLayout();
   updateTitle();

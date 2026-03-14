@@ -10,7 +10,6 @@ const aprsCollapseDupBtn = document.getElementById("aprs-collapse-dup-btn");
 const aprsTotalCountEl = document.getElementById("aprs-total-count");
 const aprsVisibleCountEl = document.getElementById("aprs-visible-count");
 const aprsLatestSeenEl = document.getElementById("aprs-latest-seen");
-const APRS_MAX_PACKETS = 100;
 const APRS_BAR_WINDOW_MS = 15 * 60 * 1000;
 let aprsFilterText = "";
 let aprsPacketHistory = [];
@@ -20,6 +19,17 @@ let aprsOnlyPos = false;
 let aprsHideCrc = false;
 let aprsCollapseDup = false;
 let aprsTypeFilter = "all";
+
+function currentAprsHistoryRetentionMs() {
+  return typeof window.getDecodeHistoryRetentionMs === "function"
+    ? window.getDecodeHistoryRetentionMs()
+    : 24 * 60 * 60 * 1000;
+}
+
+function pruneAprsPacketHistory() {
+  const cutoffMs = Date.now() - currentAprsHistoryRetentionMs();
+  aprsPacketHistory = aprsPacketHistory.filter((pkt) => Number(pkt?._tsMs) >= cutoffMs);
+}
 
 function scheduleAprsUi(key, job) {
   if (typeof window.trxScheduleUiFrameJob === "function") {
@@ -304,6 +314,7 @@ function renderAprsRow(pkt, isFresh) {
 }
 
 function renderAprsHistory() {
+  pruneAprsPacketHistory();
   if (!aprsPacketsEl || aprsPaused) {
     updateAprsSummary();
     updateAprsChipState();
@@ -359,13 +370,19 @@ window.resetAprsHistoryView = function() {
   if (window.clearMapMarkersByType) window.clearMapMarkersByType("aprs");
 };
 
+window.pruneAprsHistoryView = function() {
+  pruneAprsPacketHistory();
+  updateAprsBar();
+  renderAprsHistory();
+};
+
 function addAprsPacket(pkt) {
   const tsMs = Number.isFinite(pkt.ts_ms) ? Number(pkt.ts_ms) : Date.now();
   pkt._tsMs = tsMs;
   pkt._ts = new Date(tsMs).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
 
   aprsPacketHistory.unshift(pkt);
-  if (aprsPacketHistory.length > APRS_MAX_PACKETS) aprsPacketHistory.length = APRS_MAX_PACKETS;
+  pruneAprsPacketHistory();
 
   if (pkt.lat != null && pkt.lon != null && window.aprsMapAddStation) {
     window.aprsMapAddStation(pkt.srcCall, pkt.lat, pkt.lon, pkt.info, pkt.symbolTable, pkt.symbolCode, pkt);

@@ -5,13 +5,23 @@ const ft8MessagesEl = document.getElementById("ft8-messages");
 const ft8FilterInput = document.getElementById("ft8-filter");
 const ft8PauseBtn = document.getElementById("ft8-pause-btn");
 const ft8BarOverlay = document.getElementById("ft8-bar-overlay");
-const FT8_MAX_MESSAGES = 200;
 const FT8_BAR_WINDOW_MS = 15 * 60 * 1000;
 const FT8_PERIOD_SECONDS = 15;
 let ft8FilterText = "";
 let ft8MessageHistory = [];
 let ft8Paused = false;
 let ft8BufferedWhilePaused = 0;
+
+function currentFt8HistoryRetentionMs() {
+  return typeof window.getDecodeHistoryRetentionMs === "function"
+    ? window.getDecodeHistoryRetentionMs()
+    : 24 * 60 * 60 * 1000;
+}
+
+function pruneFt8MessageHistory() {
+  const cutoffMs = Date.now() - currentFt8HistoryRetentionMs();
+  ft8MessageHistory = ft8MessageHistory.filter((msg) => Number(msg?._tsMs ?? msg?.ts_ms) >= cutoffMs);
+}
 
 function scheduleFt8Ui(key, job) {
   if (typeof window.trxScheduleUiFrameJob === "function") {
@@ -78,6 +88,7 @@ function updateFt8PauseUi() {
 }
 
 function renderFt8History() {
+  pruneFt8MessageHistory();
   if (!ft8MessagesEl || ft8Paused) {
     updateFt8PauseUi();
     return;
@@ -91,8 +102,9 @@ function renderFt8History() {
 }
 
 function addFt8Message(msg) {
+  msg._tsMs = Number.isFinite(msg?.ts_ms) ? Number(msg.ts_ms) : Date.now();
   ft8MessageHistory.unshift(msg);
-  if (ft8MessageHistory.length > FT8_MAX_MESSAGES) ft8MessageHistory.length = FT8_MAX_MESSAGES;
+  pruneFt8MessageHistory();
   scheduleFt8BarUpdate();
   if (ft8Paused) {
     ft8BufferedWhilePaused += 1;
@@ -101,6 +113,12 @@ function addFt8Message(msg) {
   }
   scheduleFt8HistoryRender();
 }
+
+window.pruneFt8HistoryView = function() {
+  pruneFt8MessageHistory();
+  updateFt8Bar();
+  renderFt8History();
+};
 
 function ft8BarRfText(msg) {
   const displayFreqHz = normalizeFt8DisplayFreqHz(msg.freq_hz);

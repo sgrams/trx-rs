@@ -8,12 +8,22 @@ const vdesBarOverlay = document.getElementById("vdes-bar-overlay");
 const vdesChannelSummaryEl = document.getElementById("vdes-channel-summary");
 const vdesFrameCountEl = document.getElementById("vdes-frame-count");
 const vdesLatestSeenEl = document.getElementById("vdes-latest-seen");
-const VDES_MAX_MESSAGES = 200;
 const VDES_BAR_WINDOW_MS = 15 * 60 * 1000;
 let vdesFilterText = "";
 let vdesMessageHistory = [];
 let vdesPaused = false;
 let vdesBufferedWhilePaused = 0;
+
+function currentVdesHistoryRetentionMs() {
+  return typeof window.getDecodeHistoryRetentionMs === "function"
+    ? window.getDecodeHistoryRetentionMs()
+    : 24 * 60 * 60 * 1000;
+}
+
+function pruneVdesMessageHistory() {
+  const cutoffMs = Date.now() - currentVdesHistoryRetentionMs();
+  vdesMessageHistory = vdesMessageHistory.filter((msg) => Number(msg?._tsMs) >= cutoffMs);
+}
 
 function scheduleVdesUi(key, job) {
   if (typeof window.trxScheduleUiFrameJob === "function") {
@@ -60,6 +70,7 @@ function vdesHexPreview(rawBytes) {
 }
 
 function updateVdesSummary() {
+  pruneVdesMessageHistory();
   if (vdesChannelSummaryEl) {
     vdesChannelSummaryEl.textContent = currentVdesCenterText();
   }
@@ -228,6 +239,7 @@ window.resetVdesHistoryView = function() {
 };
 
 function renderVdesHistory() {
+  pruneVdesMessageHistory();
   if (!vdesMessagesEl || vdesPaused) {
     updateVdesSummary();
     return;
@@ -250,7 +262,7 @@ function addVdesMessage(msg) {
   });
 
   vdesMessageHistory.unshift(msg);
-  if (vdesMessageHistory.length > VDES_MAX_MESSAGES) vdesMessageHistory.length = VDES_MAX_MESSAGES;
+  pruneVdesMessageHistory();
   scheduleVdesBarUpdate();
 
   if (vdesPaused) {
@@ -321,6 +333,12 @@ window.onServerVdes = function(msg) {
   if (msg.lat != null && msg.lon != null && window.vdesMapAddPoint) {
     window.vdesMapAddPoint(msg);
   }
+};
+
+window.pruneVdesHistoryView = function() {
+  pruneVdesMessageHistory();
+  updateVdesBar();
+  renderVdesHistory();
 };
 
 updateVdesSummary();

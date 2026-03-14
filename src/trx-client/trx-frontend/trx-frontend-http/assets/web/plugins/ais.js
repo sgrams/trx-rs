@@ -8,7 +8,6 @@ const aisBarOverlay = document.getElementById("ais-bar-overlay");
 const aisChannelSummaryEl = document.getElementById("ais-channel-summary");
 const aisVesselCountEl = document.getElementById("ais-vessel-count");
 const aisLatestSeenEl = document.getElementById("ais-latest-seen");
-const AIS_MAX_MESSAGES = 200;
 const AIS_BAR_WINDOW_MS = 15 * 60 * 1000;
 const AIS_DEFAULT_A_HZ = 161_975_000;
 const AIS_CHANNEL_SPACING_HZ = 50_000;
@@ -16,6 +15,17 @@ let aisFilterText = "";
 let aisMessageHistory = [];
 let aisPaused = false;
 let aisBufferedWhilePaused = 0;
+
+function currentAisHistoryRetentionMs() {
+  return typeof window.getDecodeHistoryRetentionMs === "function"
+    ? window.getDecodeHistoryRetentionMs()
+    : 24 * 60 * 60 * 1000;
+}
+
+function pruneAisMessageHistory() {
+  const cutoffMs = Date.now() - currentAisHistoryRetentionMs();
+  aisMessageHistory = aisMessageHistory.filter((msg) => Number(msg?._tsMs) >= cutoffMs);
+}
 
 function scheduleAisUi(key, job) {
   if (typeof window.trxScheduleUiFrameJob === "function") {
@@ -295,6 +305,7 @@ window.resetAisHistoryView = function() {
 };
 
 function renderAisHistory() {
+  pruneAisMessageHistory();
   if (!aisMessagesEl || aisPaused) {
     updateAisSummary();
     return;
@@ -317,7 +328,7 @@ function addAisMessage(msg) {
   });
 
   aisMessageHistory.unshift(msg);
-  if (aisMessageHistory.length > AIS_MAX_MESSAGES) aisMessageHistory.length = AIS_MAX_MESSAGES;
+  pruneAisMessageHistory();
   scheduleAisBarUpdate();
 
   if (aisPaused) {
@@ -331,6 +342,12 @@ function addAisMessage(msg) {
     window.aisMapAddVessel(msg);
   }
 }
+
+window.pruneAisHistoryView = function() {
+  pruneAisMessageHistory();
+  updateAisBar();
+  renderAisHistory();
+};
 
 if (aisClearBtn) {
   aisClearBtn.addEventListener("click", async () => {

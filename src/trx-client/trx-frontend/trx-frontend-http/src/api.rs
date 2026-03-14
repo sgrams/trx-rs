@@ -82,6 +82,7 @@ struct FrontendMeta {
     initial_map_zoom: u8,
     spectrum_coverage_margin_hz: u32,
     spectrum_usable_span_ratio: f32,
+    decode_history_retention_min: u64,
 }
 
 #[get("/status")]
@@ -127,6 +128,10 @@ fn inject_frontend_meta(json: &str, meta: FrontendMeta) -> String {
     extra.insert("initial_map_zoom".into(), serde_json::json!(meta.initial_map_zoom));
     extra.insert("spectrum_coverage_margin_hz".into(), serde_json::json!(meta.spectrum_coverage_margin_hz));
     extra.insert("spectrum_usable_span_ratio".into(), serde_json::json!(meta.spectrum_usable_span_ratio));
+    extra.insert(
+        "decode_history_retention_min".into(),
+        serde_json::json!(meta.decode_history_retention_min),
+    );
 
     // Serialize the extra map, strip its outer braces, and splice in.
     let extra_json = match serde_json::to_string(&extra) {
@@ -156,6 +161,7 @@ fn frontend_meta_from_context(
         initial_map_zoom: initial_map_zoom_from_context(context),
         spectrum_coverage_margin_hz: spectrum_coverage_margin_hz_from_context(context),
         spectrum_usable_span_ratio: spectrum_usable_span_ratio_from_context(context),
+        decode_history_retention_min: decode_history_retention_min_from_context(context),
     }
 }
 
@@ -215,6 +221,24 @@ fn spectrum_coverage_margin_hz_from_context(context: &FrontendRuntimeContext) ->
 
 fn spectrum_usable_span_ratio_from_context(context: &FrontendRuntimeContext) -> f32 {
     context.http_spectrum_usable_span_ratio
+}
+
+fn decode_history_retention_min_from_context(context: &FrontendRuntimeContext) -> u64 {
+    let default_minutes = context.http_decode_history_retention_min.max(1);
+    let Some(active_rig_id) = context
+        .remote_active_rig_id
+        .lock()
+        .ok()
+        .and_then(|v| v.clone())
+    else {
+        return default_minutes;
+    };
+    context
+        .http_decode_history_retention_min_by_rig
+        .get(&active_rig_id)
+        .copied()
+        .filter(|minutes| *minutes > 0)
+        .unwrap_or(default_minutes)
 }
 
 #[get("/events")]

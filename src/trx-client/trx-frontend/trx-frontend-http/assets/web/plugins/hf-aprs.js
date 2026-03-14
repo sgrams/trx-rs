@@ -9,7 +9,6 @@ const hfAprsCollapseDupBtn = document.getElementById("hf-aprs-collapse-dup-btn")
 const hfAprsTotalCountEl = document.getElementById("hf-aprs-total-count");
 const hfAprsVisibleCountEl = document.getElementById("hf-aprs-visible-count");
 const hfAprsLatestSeenEl = document.getElementById("hf-aprs-latest-seen");
-const HF_APRS_MAX_PACKETS = 100;
 let hfAprsFilterText = "";
 let hfAprsPacketHistory = [];
 let hfAprsPaused = false;
@@ -18,6 +17,17 @@ let hfAprsOnlyPos = false;
 let hfAprsHideCrc = false;
 let hfAprsCollapseDup = false;
 let hfAprsTypeFilter = "all";
+
+function currentHfAprsHistoryRetentionMs() {
+  return typeof window.getDecodeHistoryRetentionMs === "function"
+    ? window.getDecodeHistoryRetentionMs()
+    : 24 * 60 * 60 * 1000;
+}
+
+function pruneHfAprsPacketHistory() {
+  const cutoffMs = Date.now() - currentHfAprsHistoryRetentionMs();
+  hfAprsPacketHistory = hfAprsPacketHistory.filter((pkt) => Number(pkt?._tsMs) >= cutoffMs);
+}
 
 function scheduleHfAprsHistoryRender() {
   if (typeof window.trxScheduleUiFrameJob === "function") {
@@ -296,6 +306,7 @@ function renderHfAprsRow(pkt, isFresh) {
 }
 
 function renderHfAprsHistory() {
+  pruneHfAprsPacketHistory();
   if (!hfAprsPacketsEl || hfAprsPaused) {
     updateHfAprsSummary();
     updateHfAprsChipState();
@@ -318,13 +329,18 @@ window.resetHfAprsHistoryView = function() {
   renderHfAprsHistory();
 };
 
+window.pruneHfAprsHistoryView = function() {
+  pruneHfAprsPacketHistory();
+  renderHfAprsHistory();
+};
+
 function addHfAprsPacket(pkt) {
   const tsMs = Number.isFinite(pkt.ts_ms) ? Number(pkt.ts_ms) : Date.now();
   pkt._tsMs = tsMs;
   pkt._ts = new Date(tsMs).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
 
   hfAprsPacketHistory.unshift(pkt);
-  if (hfAprsPacketHistory.length > HF_APRS_MAX_PACKETS) hfAprsPacketHistory.length = HF_APRS_MAX_PACKETS;
+  pruneHfAprsPacketHistory();
 
   if (hfAprsPaused) {
     hfAprsBufferedWhilePaused += 1;

@@ -4,12 +4,22 @@ const wsprPeriodEl = document.getElementById("wspr-period");
 const wsprMessagesEl = document.getElementById("wspr-messages");
 const wsprFilterInput = document.getElementById("wspr-filter");
 const wsprPauseBtn = document.getElementById("wspr-pause-btn");
-const WSPR_MAX_MESSAGES = 200;
 const WSPR_PERIOD_SECONDS = 120;
 let wsprFilterText = "";
 let wsprMessageHistory = [];
 let wsprPaused = false;
 let wsprBufferedWhilePaused = 0;
+
+function currentWsprHistoryRetentionMs() {
+  return typeof window.getDecodeHistoryRetentionMs === "function"
+    ? window.getDecodeHistoryRetentionMs()
+    : 24 * 60 * 60 * 1000;
+}
+
+function pruneWsprMessageHistory() {
+  const cutoffMs = Date.now() - currentWsprHistoryRetentionMs();
+  wsprMessageHistory = wsprMessageHistory.filter((msg) => Number(msg?._tsMs ?? msg?.ts_ms) >= cutoffMs);
+}
 
 function scheduleWsprHistoryRender() {
   if (typeof window.trxScheduleUiFrameJob === "function") {
@@ -59,6 +69,7 @@ function updateWsprPauseUi() {
 }
 
 function renderWsprHistory() {
+  pruneWsprMessageHistory();
   if (!wsprMessagesEl || wsprPaused) {
     updateWsprPauseUi();
     return;
@@ -72,8 +83,9 @@ function renderWsprHistory() {
 }
 
 function addWsprMessage(msg) {
+  msg._tsMs = Number.isFinite(msg?.ts_ms) ? Number(msg.ts_ms) : Date.now();
   wsprMessageHistory.unshift(msg);
-  if (wsprMessageHistory.length > WSPR_MAX_MESSAGES) wsprMessageHistory.length = WSPR_MAX_MESSAGES;
+  pruneWsprMessageHistory();
   if (wsprPaused) {
     wsprBufferedWhilePaused += 1;
     updateWsprPauseUi();
@@ -81,6 +93,11 @@ function addWsprMessage(msg) {
   }
   scheduleWsprHistoryRender();
 }
+
+window.pruneWsprHistoryView = function() {
+  pruneWsprMessageHistory();
+  renderWsprHistory();
+};
 
 function escapeWsprHtml(input) {
   return input

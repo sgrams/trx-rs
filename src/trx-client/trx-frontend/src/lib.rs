@@ -236,6 +236,10 @@ pub struct FrontendRuntimeContext {
     pub http_spectrum_coverage_margin_hz: u32,
     /// Fraction of the sampled spectrum span treated as usable by the web UI.
     pub http_spectrum_usable_span_ratio: f32,
+    /// Default decode history retention in minutes.
+    pub http_decode_history_retention_min: u64,
+    /// Per-rig decode history retention overrides in minutes.
+    pub http_decode_history_retention_min_by_rig: HashMap<String, u64>,
     /// Currently selected remote rig id (used by remote client routing).
     pub remote_active_rig_id: Arc<Mutex<Option<String>>>,
     /// Cached remote rig list from GetRigs polling.
@@ -296,6 +300,8 @@ impl FrontendRuntimeContext {
             http_initial_map_zoom: 10,
             http_spectrum_coverage_margin_hz: 50_000,
             http_spectrum_usable_span_ratio: 0.92,
+            http_decode_history_retention_min: 24 * 60,
+            http_decode_history_retention_min_by_rig: HashMap::new(),
             remote_active_rig_id: Arc::new(Mutex::new(None)),
             remote_rigs: Arc::new(Mutex::new(Vec::new())),
             owner_callsign: None,

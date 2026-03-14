@@ -247,6 +247,10 @@ pub struct HttpFrontendConfig {
     pub spectrum_usable_span_ratio: f32,
     /// Whether to expose the RF Gain control in the web UI.
     pub show_sdr_gain_control: bool,
+    /// Default decode history retention in minutes for the active rig.
+    pub decode_history_retention_min: u64,
+    /// Optional per-rig decode history retention overrides in minutes.
+    pub decode_history_retention_min_by_rig: HashMap<String, u64>,
     /// Authentication settings
     pub auth: HttpAuthConfig,
 }
@@ -262,6 +266,8 @@ impl Default for HttpFrontendConfig {
             spectrum_coverage_margin_hz: 50_000,
             spectrum_usable_span_ratio: 0.92,
             show_sdr_gain_control: true,
+            decode_history_retention_min: 24 * 60,
+            decode_history_retention_min_by_rig: HashMap::new(),
             auth: HttpAuthConfig::default(),
         }
     }
@@ -388,6 +394,25 @@ impl ClientConfig {
                 "[frontends.http].spectrum_usable_span_ratio must be > 0.0 and <= 1.0".to_string(),
             );
         }
+        if self.frontends.http.decode_history_retention_min == 0 {
+            return Err(
+                "[frontends.http].decode_history_retention_min must be > 0".to_string(),
+            );
+        }
+        for (rig_id, minutes) in &self.frontends.http.decode_history_retention_min_by_rig {
+            if rig_id.trim().is_empty() {
+                return Err(
+                    "[frontends.http].decode_history_retention_min_by_rig keys must not be empty"
+                        .to_string(),
+                );
+            }
+            if *minutes == 0 {
+                return Err(format!(
+                    "[frontends.http].decode_history_retention_min_by_rig[\"{}\"] must be > 0",
+                    rig_id
+                ));
+            }
+        }
         if self.frontends.rigctl.enabled && self.frontends.rigctl.rig_ports.is_empty() {
             return Err(
                 "[frontends.rigctl].rig_ports must contain at least one rig when enabled"
@@ -487,6 +512,8 @@ impl ClientConfig {
                     spectrum_coverage_margin_hz: 50_000,
                     spectrum_usable_span_ratio: 0.92,
                     show_sdr_gain_control: true,
+                    decode_history_retention_min: 24 * 60,
+                    decode_history_retention_min_by_rig: HashMap::new(),
                     auth: HttpAuthConfig {
                         enabled: false,
                         rx_passphrase: Some("rx-passphrase-example".to_string()),
@@ -588,13 +615,24 @@ mod tests {
         assert_eq!(config.frontends.http.initial_map_zoom, 10);
         assert_eq!(config.frontends.http.spectrum_coverage_margin_hz, 50_000);
         assert_eq!(config.frontends.http.spectrum_usable_span_ratio, 0.92);
+        assert_eq!(config.frontends.http.decode_history_retention_min, 1440);
+        assert!(
+            config
+                .frontends
+                .http
+                .decode_history_retention_min_by_rig
+                .is_empty()
+        );
         assert_eq!(config.frontends.rigctl.port, 4532);
         assert!(config.frontends.http_json.enabled);
         assert_eq!(config.frontends.http_json.port, 0);
         assert!(config.remote.url.is_none());
         assert!(config.general.website_url.is_none());
         assert!(config.general.website_name.is_none());
-        assert!(config.general.ais_vessel_url_base.is_none());
+        assert_eq!(
+            config.general.ais_vessel_url_base,
+            Some("https://www.vesselfinder.com/?mmsi=".to_string())
+        );
         assert_eq!(config.remote.poll_interval_ms, 750);
         assert!(config.frontends.audio.enabled);
         assert_eq!(config.frontends.audio.server_port, 4531);
@@ -626,6 +664,11 @@ port = 8080
 initial_map_zoom = 12
 spectrum_coverage_margin_hz = 40000
 spectrum_usable_span_ratio = 0.9
+decode_history_retention_min = 720
+
+[frontends.http.decode_history_retention_min_by_rig]
+vhf = 180
+uhf = 60
 
 "#;
 
@@ -648,6 +691,23 @@ spectrum_usable_span_ratio = 0.9
         assert_eq!(config.frontends.http.initial_map_zoom, 12);
         assert_eq!(config.frontends.http.spectrum_coverage_margin_hz, 40_000);
         assert_eq!(config.frontends.http.spectrum_usable_span_ratio, 0.9);
+        assert_eq!(config.frontends.http.decode_history_retention_min, 720);
+        assert_eq!(
+            config
+                .frontends
+                .http
+                .decode_history_retention_min_by_rig
+                .get("vhf"),
+            Some(&180)
+        );
+        assert_eq!(
+            config
+                .frontends
+                .http
+                .decode_history_retention_min_by_rig
+                .get("uhf"),
+            Some(&60)
+        );
     }
 
     #[test]

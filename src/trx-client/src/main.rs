@@ -183,6 +183,10 @@ async fn async_init() -> DynResult<AppState> {
         cfg.frontends.http.spectrum_coverage_margin_hz;
     frontend_runtime.http_spectrum_usable_span_ratio =
         cfg.frontends.http.spectrum_usable_span_ratio;
+    frontend_runtime.http_decode_history_retention_min =
+        cfg.frontends.http.decode_history_retention_min;
+    frontend_runtime.http_decode_history_retention_min_by_rig =
+        cfg.frontends.http.decode_history_retention_min_by_rig.clone();
 
     // Resolve remote URL: CLI > config [remote] section > error
     let remote_url = cli
