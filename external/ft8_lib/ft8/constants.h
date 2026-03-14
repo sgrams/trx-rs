@@ -14,6 +14,9 @@ extern "C"
 #define FT4_SYMBOL_PERIOD (0.048f) ///< FT4 symbol duration, defines tone deviation in Hz and symbol rate
 #define FT4_SLOT_TIME     (7.5f)   ///< FT4 slot period
 
+#define FT2_SYMBOL_PERIOD (0.024f) ///< FT2 symbol duration (288 samples @ 12 kHz)
+#define FT2_SLOT_TIME     (3.75f)  ///< FT2 slot period
+
 // Define FT8 symbol counts
 // FT8 message structure:
 //     S D1 S D2 S
@@ -38,6 +41,14 @@ extern "C"
 #define FT4_NUM_SYNC    (4)   ///< Number of sync groups
 #define FT4_SYNC_OFFSET (33)  ///< Offset between sync groups
 
+// FT2 reuses the FT4 channel structure with a shorter slot and symbol period.
+#define FT2_ND          FT4_ND
+#define FT2_NR          FT4_NR
+#define FT2_NN          FT4_NN
+#define FT2_LENGTH_SYNC FT4_LENGTH_SYNC
+#define FT2_NUM_SYNC    FT4_NUM_SYNC
+#define FT2_SYNC_OFFSET FT4_SYNC_OFFSET
+
 // Define LDPC parameters
 #define FTX_LDPC_N       (174)                  ///< Number of bits in the encoded message (payload with LDPC checksum bits)
 #define FTX_LDPC_K       (91)                   ///< Number of payload bits (including CRC)
@@ -52,8 +63,28 @@ extern "C"
 typedef enum
 {
     FTX_PROTOCOL_FT4,
-    FTX_PROTOCOL_FT8
+    FTX_PROTOCOL_FT8,
+    FTX_PROTOCOL_FT2
 } ftx_protocol_t;
+
+static inline float ftx_protocol_symbol_period(ftx_protocol_t protocol)
+{
+    return (protocol == FTX_PROTOCOL_FT8)
+        ? FT8_SYMBOL_PERIOD
+        : ((protocol == FTX_PROTOCOL_FT2) ? FT2_SYMBOL_PERIOD : FT4_SYMBOL_PERIOD);
+}
+
+static inline float ftx_protocol_slot_time(ftx_protocol_t protocol)
+{
+    return (protocol == FTX_PROTOCOL_FT8)
+        ? FT8_SLOT_TIME
+        : ((protocol == FTX_PROTOCOL_FT2) ? FT2_SLOT_TIME : FT4_SLOT_TIME);
+}
+
+static inline int ftx_protocol_uses_ft4_layout(ftx_protocol_t protocol)
+{
+    return (protocol == FTX_PROTOCOL_FT4) || (protocol == FTX_PROTOCOL_FT2);
+}
 
 /// Costas 7x7 tone pattern for synchronization
 extern const uint8_t kFT8_Costas_pattern[7];

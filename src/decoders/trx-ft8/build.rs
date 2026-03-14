@@ -31,12 +31,21 @@ fn main() {
 
     println!("cargo:rerun-if-changed=src/ft8_wrapper.c");
     println!("cargo:rerun-if-changed={base}/common/monitor.c");
+    println!("cargo:rerun-if-changed={base}/common/monitor.h");
     println!("cargo:rerun-if-changed={base}/fft/kiss_fft.c");
+    println!("cargo:rerun-if-changed={base}/fft/kiss_fft.h");
     println!("cargo:rerun-if-changed={base}/fft/kiss_fftr.c");
+    println!("cargo:rerun-if-changed={base}/fft/kiss_fftr.h");
     println!("cargo:rerun-if-changed={base}/ft8/constants.c");
+    println!("cargo:rerun-if-changed={base}/ft8/constants.h");
     println!("cargo:rerun-if-changed={base}/ft8/crc.c");
+    println!("cargo:rerun-if-changed={base}/ft8/crc.h");
     println!("cargo:rerun-if-changed={base}/ft8/decode.c");
+    println!("cargo:rerun-if-changed={base}/ft8/decode.h");
     println!("cargo:rerun-if-changed={base}/ft8/ldpc.c");
+    println!("cargo:rerun-if-changed={base}/ft8/ldpc.h");
     println!("cargo:rerun-if-changed={base}/ft8/message.c");
+    println!("cargo:rerun-if-changed={base}/ft8/message.h");
     println!("cargo:rerun-if-changed={base}/ft8/text.c");
+    println!("cargo:rerun-if-changed={base}/ft8/text.h");
 }

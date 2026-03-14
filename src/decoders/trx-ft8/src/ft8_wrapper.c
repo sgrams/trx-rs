@@ -11,6 +11,13 @@
 #include <string.h>
 #include <stdio.h>
 
+enum
+{
+    TRX_FTX_PROTOCOL_FT4 = 0,
+    TRX_FTX_PROTOCOL_FT8 = 1,
+    TRX_FTX_PROTOCOL_FT2 = 2,
+};
+
 // Callsign hash table (from demo/decode_ft8.c)
 #define CALLSIGN_HASHTABLE_SIZE 256
 
@@ -120,7 +127,19 @@ ft8_decoder_t* ft8_decoder_create(int sample_rate, float f_min, float f_max, int
     dec->cfg.sample_rate = sample_rate;
     dec->cfg.time_osr = time_osr;
     dec->cfg.freq_osr = freq_osr;
-    dec->cfg.protocol = (protocol == 0) ? FTX_PROTOCOL_FT4 : FTX_PROTOCOL_FT8;
+    switch (protocol)
+    {
+    case TRX_FTX_PROTOCOL_FT4:
+        dec->cfg.protocol = FTX_PROTOCOL_FT4;
+        break;
+    case TRX_FTX_PROTOCOL_FT2:
+        dec->cfg.protocol = FTX_PROTOCOL_FT2;
+        break;
+    case TRX_FTX_PROTOCOL_FT8:
+    default:
+        dec->cfg.protocol = FTX_PROTOCOL_FT8;
+        break;
+    }
 
     hashtable_init();
     monitor_init(&dec->mon, &dec->cfg);

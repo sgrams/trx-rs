@@ -1853,7 +1853,7 @@ pub async fn run_ft4_decoder(
     }
 }
 
-/// Run the FT2 decoder task. Mirrors FT4 but uses FT2 protocol (7.5s slots for now).
+/// Run the FT2 decoder task. Mirrors FT4 but uses FT2 protocol timing.
 pub async fn run_ft2_decoder(
     sample_rate: u32,
     channels: u16,
@@ -1902,12 +1902,11 @@ pub async fn run_ft2_decoder(
             recv = pcm_rx.recv() => {
                 match recv {
                     Ok(frame) => {
-                        let now = match std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH) {
-                            Ok(dur) => dur.as_secs() as i64,
+                        let now_ms = match std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH) {
+                            Ok(dur) => dur.as_millis() as i64,
                             Err(_) => 0,
                         };
-                        // FT2 slot period is 7.5s (same as FT4 for now); use now * 2 / 15
-                        let slot = now * 2 / 15;
+                        let slot = now_ms / 3_750;
                         if slot != last_slot {
                             last_slot = slot;
                             decoder.reset();
@@ -2449,13 +2448,12 @@ async fn run_background_ft2_decoder(
     loop {
         match pcm_rx.recv().await {
             Ok(frame) => {
-                let now = match std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)
+                let now_ms = match std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)
                 {
-                    Ok(dur) => dur.as_secs() as i64,
+                    Ok(dur) => dur.as_millis() as i64,
                     Err(_) => 0,
                 };
-                // FT2 slot period is 7.5s (same as FT4 for now); use now * 2 / 15
-                let slot = now * 2 / 15;
+                let slot = now_ms / 3_750;
                 if slot != last_slot {
                     last_slot = slot;
                     decoder.reset();

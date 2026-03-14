@@ -193,3 +193,8 @@ void ft4_encode(const uint8_t* payload, uint8_t* tones)
         }
     }
 }
+
+void ft2_encode(const uint8_t* payload, uint8_t* tones)
+{
+    ft4_encode(payload, tones);
+}

@@ -12,6 +12,9 @@ const TIME_OSR: i32 = 2;
 const FREQ_OSR: i32 = 2;
 
 const FTX_MAX_MESSAGE_LENGTH: usize = 35;
+const PROTOCOL_FT4: c_int = 0;
+const PROTOCOL_FT8: c_int = 1;
+const PROTOCOL_FT2: c_int = 2;
 
 #[repr(C)]
 #[derive(Clone, Copy)]
@@ -63,30 +66,18 @@ unsafe impl Send for Ft8Decoder {}
 
 impl Ft8Decoder {
     pub fn new(sample_rate: u32) -> Result<Self, String> {
-        unsafe {
-            let ptr = ft8_decoder_create(
-                sample_rate as c_int,
-                F_MIN_HZ,
-                F_MAX_HZ,
-                TIME_OSR as c_int,
-                FREQ_OSR as c_int,
-                1, // FTX_PROTOCOL_FT8
-            );
-            let inner = NonNull::new(ptr).ok_or_else(|| "ft8_decoder_create failed".to_string())?;
-            let block_size = ft8_decoder_block_size(inner.as_ptr()) as usize;
-            if block_size == 0 {
-                ft8_decoder_free(inner.as_ptr());
-                return Err("invalid FT8 block size".to_string());
-            }
-            Ok(Self {
-                inner,
-                block_size,
-                sample_rate,
-            })
-        }
+        Self::new_with_protocol(sample_rate, PROTOCOL_FT8, "FT8")
     }
 
     pub fn new_ft4(sample_rate: u32) -> Result<Self, String> {
+        Self::new_with_protocol(sample_rate, PROTOCOL_FT4, "FT4")
+    }
+
+    pub fn new_ft2(sample_rate: u32) -> Result<Self, String> {
+        Self::new_with_protocol(sample_rate, PROTOCOL_FT2, "FT2")
+    }
+
+    fn new_with_protocol(sample_rate: u32, protocol: c_int, label: &str) -> Result<Self, String> {
         unsafe {
             let ptr = ft8_decoder_create(
                 sample_rate as c_int,
@@ -94,13 +85,13 @@ impl Ft8Decoder {
                 F_MAX_HZ,
                 TIME_OSR as c_int,
                 FREQ_OSR as c_int,
-                0, // FTX_PROTOCOL_FT4
+                protocol,
             );
             let inner = NonNull::new(ptr).ok_or_else(|| "ft8_decoder_create failed".to_string())?;
             let block_size = ft8_decoder_block_size(inner.as_ptr()) as usize;
             if block_size == 0 {
                 ft8_decoder_free(inner.as_ptr());
-                return Err("invalid FT4 block size".to_string());
+                return Err(format!("invalid {label} block size"));
             }
             Ok(Self {
                 inner,
@@ -108,11 +99,6 @@ impl Ft8Decoder {
                 sample_rate,
             })
         }
-    }
-
-    pub fn new_ft2(sample_rate: u32) -> Result<Self, String> {
-        // Wired to FT4 protocol pending a dedicated FT2 implementation.
-        Self::new_ft4(sample_rate)
     }
 
     pub fn block_size(&self) -> usize {
@@ -177,5 +163,20 @@ impl Drop for Ft8Decoder {
         unsafe {
             ft8_decoder_free(self.inner.as_ptr());
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Ft8Decoder;
+
+    #[test]
+    fn ft2_uses_distinct_block_size() {
+        let ft4 = Ft8Decoder::new_ft4(12_000).expect("ft4 decoder");
+        let ft2 = Ft8Decoder::new_ft2(12_000).expect("ft2 decoder");
+
+        assert!(ft2.block_size() < ft4.block_size());
+        assert_eq!(ft4.block_size(), 576);
+        assert_eq!(ft2.block_size(), 288);
     }
 }

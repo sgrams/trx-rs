@@ -34,6 +34,12 @@ void ft8_encode(const uint8_t* payload, uint8_t* tones);
 /// @param[out] tones  - array of FT4_NN (105) bytes to store the generated tones (encoded as 0..3)
 void ft4_encode(const uint8_t* payload, uint8_t* tones);
 
+/// Generate FT2 tone sequence from payload data.
+/// FT2 uses the FT4 framing with a doubled symbol rate.
+/// @param[in] payload - 10 byte array consisting of 77 bit payload
+/// @param[out] tones  - array of FT2_NN (105) bytes to store the generated tones (encoded as 0..3)
+void ft2_encode(const uint8_t* payload, uint8_t* tones);
+
 #ifdef __cplusplus
 }
 #endif
