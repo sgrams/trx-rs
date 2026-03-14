@@ -46,14 +46,19 @@ pub fn compute_passcode(callsign: &str) -> u16 {
     hash & 0x7fff
 }
 
-/// Format an [`AprsPacket`] as a TNC2 line (CRLF-terminated) for APRS-IS.
-fn format_tnc2(pkt: &AprsPacket) -> String {
+/// Format an [`AprsPacket`] as a TNC2 line (CRLF-terminated) for APRS-IS,
+/// appending the mandatory `,qAR,<igate_call>` q-construct that identifies
+/// the RF entry point per the APRS-IS IGate specification.
+fn format_tnc2(pkt: &AprsPacket, igate_call: &str) -> String {
     if pkt.path.is_empty() {
-        format!("{}>{}:{}\r\n", pkt.src_call, pkt.dest_call, pkt.info)
+        format!(
+            "{}>{},qAR,{}:{}\r\n",
+            pkt.src_call, pkt.dest_call, igate_call, pkt.info
+        )
     } else {
         format!(
-            "{}>{},{}:{}\r\n",
-            pkt.src_call, pkt.dest_call, pkt.path, pkt.info
+            "{}>{},{},qAR,{}:{}\r\n",
+            pkt.src_call, pkt.dest_call, pkt.path, igate_call, pkt.info
         )
     }
 }
@@ -99,6 +104,11 @@ pub async fn run_aprsfi_uplink(
             }
         };
 
+        // Disable Nagle algorithm for low-latency packet forwarding.
+        if let Err(e) = stream.set_nodelay(true) {
+            warn!("APRS-IS IGate: set_nodelay failed: {}", e);
+        }
+
         let (read_half, mut write_half) = stream.into_split();
         let mut reader = BufReader::new(read_half);
 
@@ -106,7 +116,7 @@ pub async fn run_aprsfi_uplink(
         // Login
         // ----------------------------------------------------------------
         let login = format!(
-            "user {} pass {} vers trx-server {}\r\n",
+            "user {} pass {} vers trx-rs {}\r\n",
             callsign,
             passcode,
             env!("CARGO_PKG_VERSION")
@@ -184,11 +194,13 @@ pub async fn run_aprsfi_uplink(
         let first_at = time::Instant::now() + period;
         let mut keepalive_tick = time::interval_at(first_at, period);
         let mut stats_tick = time::interval_at(first_at, period);
+        // Reuse a single allocation for draining server-sent lines.
+        let mut server_line = String::new();
 
         'forward: loop {
             tokio::select! {
                 _ = keepalive_tick.tick() => {
-                    if let Err(e) = write_half.write_all(b"# trx-server keepalive\r\n").await {
+                    if let Err(e) = write_half.write_all(b"# trx-rs keepalive\r\n").await {
                         warn!("APRS-IS IGate: keepalive write failed: {}", e);
                         stats_write_errors += 1;
                         break 'forward;
@@ -201,6 +213,20 @@ pub async fn run_aprsfi_uplink(
                         stats_received, stats_forwarded, stats_skipped,
                         stats_write_errors, stats_reconnects
                     );
+                }
+
+                // Drain the server feed. The server sends a full APRS stream;
+                // if we never read it the TCP receive buffer fills and stalls
+                // the connection via flow control. EOF triggers reconnect.
+                result = reader.read_line(&mut server_line) => {
+                    server_line.clear();
+                    match result {
+                        Ok(0) | Err(_) => {
+                            warn!("APRS-IS IGate: server closed connection");
+                            break 'forward;
+                        }
+                        Ok(_) => {} // discard — we do not gate IS→RF
+                    }
                 }
 
                 recv = decode_rx.recv() => {
@@ -225,7 +251,13 @@ pub async fn run_aprsfi_uplink(
                                     continue 'forward;
                                 }
                             }
-                            let tnc2 = format_tnc2(&pkt);
+                            // Loop prevention: do not re-gate packets that already
+                            // passed through APRS-IS (TCPIP or TCPXX in path).
+                            if pkt.path.contains("TCPIP") || pkt.path.contains("TCPXX") {
+                                stats_skipped += 1;
+                                continue 'forward;
+                            }
+                            let tnc2 = format_tnc2(&pkt, &callsign);
                             debug!("APRS-IS: forwarded {}>{},...", pkt.src_call, pkt.dest_call);
                             if let Err(e) = write_half.write_all(tnc2.as_bytes()).await {
                                 warn!("APRS-IS IGate: packet write failed: {}", e);
@@ -248,7 +280,7 @@ pub async fn run_aprsfi_uplink(
             }
         }
 
-        // Forward loop exited due to a write error — reconnect with backoff
+        // Forward loop exited due to a write error or server EOF — reconnect with backoff
         stats_reconnects += 1;
         warn!(
             "APRS-IS IGate: disconnected from {}:{}, reconnecting in {}s",
@@ -311,7 +343,7 @@ mod tests {
     }
 
     #[test]
-    fn tnc2_with_path() {
+    fn tnc2_with_path_adds_qar() {
         let pkt = make_pkt(
             "N0CALL-9",
             "APRS",
@@ -320,14 +352,17 @@ mod tests {
             true,
         );
         assert_eq!(
-            format_tnc2(&pkt),
-            "N0CALL-9>APRS,WIDE1-1,WIDE2-1:!1234.56N/01234.56E-Test\r\n"
+            format_tnc2(&pkt, "SP2SJG"),
+            "N0CALL-9>APRS,WIDE1-1,WIDE2-1,qAR,SP2SJG:!1234.56N/01234.56E-Test\r\n"
         );
     }
 
     #[test]
-    fn tnc2_without_path() {
+    fn tnc2_without_path_adds_qar() {
         let pkt = make_pkt("W1AW", "BEACON", "", ">Test status", true);
-        assert_eq!(format_tnc2(&pkt), "W1AW>BEACON:>Test status\r\n");
+        assert_eq!(
+            format_tnc2(&pkt, "SP2SJG"),
+            "W1AW>BEACON,qAR,SP2SJG:>Test status\r\n"
+        );
     }
 }
