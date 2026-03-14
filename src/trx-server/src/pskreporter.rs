@@ -88,7 +88,7 @@ pub async fn run_pskreporter_uplink(
         }
     };
 
-    let software = format!("trx-server v{} by SP2SJG", env!("CARGO_PKG_VERSION"));
+    let software = format!("trx-rs v{} by SP2SJG", env!("CARGO_PKG_VERSION"));
     let mut client = match PskReporterClient::connect(
         &cfg.host,
         cfg.port,
