@@ -94,6 +94,56 @@ function addWsprMessage(msg) {
   scheduleWsprHistoryRender();
 }
 
+function normalizeServerWsprMessage(msg) {
+  const raw = (msg.message || "").toString();
+  const grids = extractAllGrids(raw);
+  const station = extractLikelyCallsign(raw);
+  const baseHz = Number.isFinite(window.ft8BaseHz) ? Number(window.ft8BaseHz) : null;
+  const rfHz = Number.isFinite(msg.freq_hz) && Number.isFinite(baseHz)
+    ? (baseHz + Number(msg.freq_hz))
+    : (Number.isFinite(msg.freq_hz) ? Number(msg.freq_hz) : null);
+  return {
+    raw,
+    grids,
+    station,
+    rfHz,
+    history: {
+      receiver: window.getDecodeRigMeta ? window.getDecodeRigMeta() : null,
+      ts_ms: msg.ts_ms,
+      snr_db: msg.snr_db,
+      dt_s: msg.dt_s,
+      freq_hz: msg.freq_hz,
+      message: raw,
+    },
+  };
+}
+
+window.onServerWsprBatch = function(messages) {
+  if (!Array.isArray(messages) || messages.length === 0) return;
+  wsprStatus.textContent = wsprPaused ? "Paused" : "Receiving";
+  const normalized = [];
+  for (const msg of messages) {
+    const next = normalizeServerWsprMessage(msg);
+    if (next.grids.length > 0 && window.ft8MapAddLocator) {
+      window.ft8MapAddLocator(next.raw, next.grids, "wspr", next.station, {
+        ...msg,
+        freq_hz: next.rfHz,
+      });
+    }
+    next.history._tsMs = Number.isFinite(next.history?.ts_ms) ? Number(next.history.ts_ms) : Date.now();
+    normalized.push(next.history);
+  }
+  normalized.reverse();
+  wsprMessageHistory = normalized.concat(wsprMessageHistory);
+  pruneWsprMessageHistory();
+  if (wsprPaused) {
+    wsprBufferedWhilePaused += messages.length;
+    updateWsprPauseUi();
+    return;
+  }
+  scheduleWsprHistoryRender();
+};
+
 window.pruneWsprHistoryView = function() {
   pruneWsprMessageHistory();
   renderWsprHistory();
@@ -252,27 +302,14 @@ document.getElementById("wspr-clear-btn").addEventListener("click", async () => 
 
 window.onServerWspr = function(msg) {
   wsprStatus.textContent = wsprPaused ? "Paused" : "Receiving";
-  const raw = (msg.message || "").toString();
-  const grids = extractAllGrids(raw);
-  const station = extractLikelyCallsign(raw);
-  const baseHz = Number.isFinite(window.ft8BaseHz) ? Number(window.ft8BaseHz) : null;
-  const rfHz = Number.isFinite(msg.freq_hz) && Number.isFinite(baseHz)
-    ? (baseHz + Number(msg.freq_hz))
-    : (Number.isFinite(msg.freq_hz) ? Number(msg.freq_hz) : null);
-  if (grids.length > 0 && window.ft8MapAddLocator) {
-    window.ft8MapAddLocator(raw, grids, "wspr", station, {
+  const next = normalizeServerWsprMessage(msg);
+  if (next.grids.length > 0 && window.ft8MapAddLocator) {
+    window.ft8MapAddLocator(next.raw, next.grids, "wspr", next.station, {
       ...msg,
-      freq_hz: rfHz,
+      freq_hz: next.rfHz,
     });
   }
-  addWsprMessage({
-    receiver: window.getDecodeRigMeta ? window.getDecodeRigMeta() : null,
-    ts_ms: msg.ts_ms,
-    snr_db: msg.snr_db,
-    dt_s: msg.dt_s,
-    freq_hz: msg.freq_hz,
-    message: raw,
-  });
+  addWsprMessage(next.history);
 };
 
 updateWsprPauseUi();

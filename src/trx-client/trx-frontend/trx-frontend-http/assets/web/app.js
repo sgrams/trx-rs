@@ -7325,8 +7325,44 @@ function dispatchDecodeMessage(msg) {
   if (msg.type === "wspr" && window.onServerWspr) window.onServerWspr(msg);
 }
 
-const DECODE_HISTORY_MAX_BATCH = 12;
-const DECODE_HISTORY_SLICE_BUDGET_MS = 6;
+function dispatchDecodeBatch(batch) {
+  if (!Array.isArray(batch) || batch.length === 0) return;
+  const type = String(batch[0]?.type || "");
+  const uniformType = batch.every((msg) => String(msg?.type || "") === type);
+  if (uniformType) {
+    if (type === "ais" && window.onServerAisBatch) {
+      window.onServerAisBatch(batch);
+      return;
+    }
+    if (type === "vdes" && window.onServerVdesBatch) {
+      window.onServerVdesBatch(batch);
+      return;
+    }
+    if (type === "aprs" && window.onServerAprsBatch) {
+      window.onServerAprsBatch(batch);
+      return;
+    }
+    if (type === "hf_aprs" && window.onServerHfAprsBatch) {
+      window.onServerHfAprsBatch(batch);
+      return;
+    }
+    if (type === "ft8" && window.onServerFt8Batch) {
+      window.onServerFt8Batch(batch);
+      return;
+    }
+    if (type === "wspr" && window.onServerWsprBatch) {
+      window.onServerWsprBatch(batch);
+      return;
+    }
+  }
+  for (const msg of batch) {
+    dispatchDecodeMessage(msg);
+  }
+}
+
+const DECODE_HISTORY_MAX_BATCH = 256;
+const DECODE_HISTORY_TYPE_BATCH_LIMIT = 192;
+const DECODE_HISTORY_SLICE_BUDGET_MS = 10;
 
 function scheduleDecodeHistoryDrainStep(callback) {
   if (typeof callback !== "function") return;
@@ -7343,9 +7379,19 @@ function drainDecodeHistory(buffer, index, onDone, onProgress) {
     : 0;
   let nextIndex = index;
   while (nextIndex < buffer.length) {
-    dispatchDecodeMessage(buffer[nextIndex]);
+    const batchStart = nextIndex;
+    const batchType = String(buffer[nextIndex]?.type || "");
     nextIndex += 1;
-    if (nextIndex - index >= DECODE_HISTORY_MAX_BATCH) break;
+    while (
+      nextIndex < buffer.length
+      && (nextIndex - batchStart) < DECODE_HISTORY_TYPE_BATCH_LIMIT
+      && (nextIndex - index) < DECODE_HISTORY_MAX_BATCH
+      && String(buffer[nextIndex]?.type || "") === batchType
+    ) {
+      nextIndex += 1;
+    }
+    dispatchDecodeBatch(buffer.slice(batchStart, nextIndex));
+    if ((nextIndex - index) >= DECODE_HISTORY_MAX_BATCH) break;
     if (startedAt > 0 && (performance.now() - startedAt) >= DECODE_HISTORY_SLICE_BUDGET_MS) break;
   }
   if (typeof onProgress === "function") {

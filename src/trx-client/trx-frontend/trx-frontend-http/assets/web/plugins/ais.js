@@ -343,6 +343,53 @@ function addAisMessage(msg) {
   }
 }
 
+function normalizeServerAisMessage(msg) {
+  return {
+    channel: msg.channel,
+    message_type: msg.message_type,
+    mmsi: msg.mmsi,
+    lat: msg.lat,
+    lon: msg.lon,
+    sog_knots: msg.sog_knots,
+    cog_deg: msg.cog_deg,
+    heading_deg: msg.heading_deg,
+    vessel_name: msg.vessel_name,
+    callsign: msg.callsign,
+    destination: msg.destination,
+    ts_ms: msg.ts_ms,
+  };
+}
+
+window.onServerAisBatch = function(messages) {
+  if (!Array.isArray(messages) || messages.length === 0) return;
+  if (aisStatus) aisStatus.textContent = aisPaused ? "Paused" : "Receiving";
+  const normalized = [];
+  for (const msg of messages) {
+    const next = normalizeServerAisMessage(msg);
+    const tsMs = Number.isFinite(next.ts_ms) ? Number(next.ts_ms) : Date.now();
+    next._tsMs = tsMs;
+    next._ts = new Date(tsMs).toLocaleTimeString([], {
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+    });
+    if (next.lat != null && next.lon != null && window.aisMapAddVessel) {
+      window.aisMapAddVessel(next);
+    }
+    normalized.push(next);
+  }
+  normalized.reverse();
+  aisMessageHistory = normalized.concat(aisMessageHistory);
+  pruneAisMessageHistory();
+  scheduleAisBarUpdate();
+  if (aisPaused) {
+    aisBufferedWhilePaused += messages.length;
+    updateAisSummary();
+    return;
+  }
+  scheduleAisHistoryRender();
+};
+
 window.pruneAisHistoryView = function() {
   pruneAisMessageHistory();
   updateAisBar();
@@ -381,20 +428,7 @@ if (aisFilterInput) {
 
 window.onServerAis = function(msg) {
   if (aisStatus) aisStatus.textContent = aisPaused ? "Paused" : "Receiving";
-  addAisMessage({
-    channel: msg.channel,
-    message_type: msg.message_type,
-    mmsi: msg.mmsi,
-    lat: msg.lat,
-    lon: msg.lon,
-    sog_knots: msg.sog_knots,
-    cog_deg: msg.cog_deg,
-    heading_deg: msg.heading_deg,
-    vessel_name: msg.vessel_name,
-    callsign: msg.callsign,
-    destination: msg.destination,
-    ts_ms: msg.ts_ms,
-  });
+  addAisMessage(normalizeServerAisMessage(msg));
 };
 
 updateAisSummary();

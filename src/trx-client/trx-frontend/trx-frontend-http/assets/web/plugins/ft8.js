@@ -114,6 +114,59 @@ function addFt8Message(msg) {
   scheduleFt8HistoryRender();
 }
 
+function normalizeServerFt8Message(msg) {
+  const raw = (msg.message || "").toString();
+  const locatorDetails = ft8ExtractLocatorDetails(raw);
+  const grids = locatorDetails.length > 0
+    ? locatorDetails.map((detail) => detail.grid)
+    : ft8ExtractAllGrids(raw);
+  const station = ft8ExtractLikelyCallsign(raw);
+  const rfHz = normalizeFt8DisplayFreqHz(msg.freq_hz);
+  return {
+    raw,
+    grids,
+    station,
+    rfHz,
+    locatorDetails,
+    history: {
+      receiver: window.getDecodeRigMeta ? window.getDecodeRigMeta() : null,
+      ts_ms: msg.ts_ms,
+      snr_db: msg.snr_db,
+      dt_s: msg.dt_s,
+      freq_hz: Number.isFinite(rfHz) ? rfHz : msg.freq_hz,
+      message: msg.message,
+    },
+  };
+}
+
+window.onServerFt8Batch = function(messages) {
+  if (!Array.isArray(messages) || messages.length === 0) return;
+  ft8Status.textContent = ft8Paused ? "Paused" : "Receiving";
+  const normalized = [];
+  for (const msg of messages) {
+    const next = normalizeServerFt8Message(msg);
+    if (next.grids.length > 0 && window.ft8MapAddLocator) {
+      window.ft8MapAddLocator(next.raw, next.grids, "ft8", next.station, {
+        ...msg,
+        freq_hz: next.rfHz,
+        locator_details: next.locatorDetails,
+      });
+    }
+    next.history._tsMs = Number.isFinite(next.history?.ts_ms) ? Number(next.history.ts_ms) : Date.now();
+    normalized.push(next.history);
+  }
+  normalized.reverse();
+  ft8MessageHistory = normalized.concat(ft8MessageHistory);
+  pruneFt8MessageHistory();
+  scheduleFt8BarUpdate();
+  if (ft8Paused) {
+    ft8BufferedWhilePaused += messages.length;
+    updateFt8PauseUi();
+    return;
+  }
+  scheduleFt8HistoryRender();
+};
+
 window.pruneFt8HistoryView = function() {
   pruneFt8MessageHistory();
   updateFt8Bar();
@@ -385,28 +438,15 @@ document.getElementById("ft8-clear-btn").addEventListener("click", async () => {
 // --- Server-side FT8 decode handler ---
 window.onServerFt8 = function(msg) {
   ft8Status.textContent = ft8Paused ? "Paused" : "Receiving";
-  const raw = (msg.message || "").toString();
-  const locatorDetails = ft8ExtractLocatorDetails(raw);
-  const grids = locatorDetails.length > 0
-    ? locatorDetails.map((detail) => detail.grid)
-    : ft8ExtractAllGrids(raw);
-  const station = ft8ExtractLikelyCallsign(raw);
-  const rfHz = normalizeFt8DisplayFreqHz(msg.freq_hz);
-  if (grids.length > 0 && window.ft8MapAddLocator) {
-    window.ft8MapAddLocator(raw, grids, "ft8", station, {
+  const next = normalizeServerFt8Message(msg);
+  if (next.grids.length > 0 && window.ft8MapAddLocator) {
+    window.ft8MapAddLocator(next.raw, next.grids, "ft8", next.station, {
       ...msg,
-      freq_hz: rfHz,
-      locator_details: locatorDetails,
+      freq_hz: next.rfHz,
+      locator_details: next.locatorDetails,
     });
   }
-  addFt8Message({
-    receiver: window.getDecodeRigMeta ? window.getDecodeRigMeta() : null,
-    ts_ms: msg.ts_ms,
-    snr_db: msg.snr_db,
-    dt_s: msg.dt_s,
-    freq_hz: Number.isFinite(rfHz) ? rfHz : msg.freq_hz,
-    message: msg.message,
-  });
+  addFt8Message(next.history);
 };
 
 updateFt8PauseUi();

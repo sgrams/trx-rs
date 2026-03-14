@@ -352,6 +352,47 @@ function addHfAprsPacket(pkt) {
   scheduleHfAprsHistoryRender();
 }
 
+function normalizeServerHfAprsPacket(pkt) {
+  return {
+    receiver: window.getDecodeRigMeta ? window.getDecodeRigMeta() : null,
+    srcCall: pkt.src_call,
+    destCall: pkt.dest_call,
+    path: pkt.path,
+    info: pkt.info,
+    info_bytes: pkt.info_bytes,
+    type: pkt.packet_type,
+    crcOk: pkt.crc_ok,
+    ts_ms: pkt.ts_ms,
+    lat: pkt.lat,
+    lon: pkt.lon,
+    symbolTable: pkt.symbol_table,
+    symbolCode: pkt.symbol_code,
+  };
+}
+
+window.onServerHfAprsBatch = function(packets) {
+  if (!Array.isArray(packets) || packets.length === 0) return;
+  if (hfAprsStatus) hfAprsStatus.textContent = hfAprsPaused ? "Paused" : "Receiving";
+  const normalized = [];
+  for (const pkt of packets) {
+    const next = normalizeServerHfAprsPacket(pkt);
+    const tsMs = Number.isFinite(next.ts_ms) ? Number(next.ts_ms) : Date.now();
+    next._tsMs = tsMs;
+    next._ts = new Date(tsMs).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+    normalized.push(next);
+  }
+  normalized.reverse();
+  hfAprsPacketHistory = normalized.concat(hfAprsPacketHistory);
+  pruneHfAprsPacketHistory();
+  if (hfAprsPaused) {
+    hfAprsBufferedWhilePaused += packets.length;
+    updateHfAprsSummary();
+    updateHfAprsChipState();
+    return;
+  }
+  scheduleHfAprsHistoryRender();
+};
+
 document.getElementById("hf-aprs-decode-toggle-btn")?.addEventListener("click", async () => {
   try { await postPath("/toggle_hf_aprs_decode"); } catch (e) { console.error("HF APRS toggle failed", e); }
 });
@@ -418,21 +459,7 @@ if (hfAprsFilterInput) {
 // --- Server-side HF APRS decode handler ---
 window.onServerHfAprs = function(pkt) {
   if (hfAprsStatus) hfAprsStatus.textContent = hfAprsPaused ? "Paused" : "Receiving";
-  addHfAprsPacket({
-    receiver: window.getDecodeRigMeta ? window.getDecodeRigMeta() : null,
-    srcCall: pkt.src_call,
-    destCall: pkt.dest_call,
-    path: pkt.path,
-    info: pkt.info,
-    info_bytes: pkt.info_bytes,
-    type: pkt.packet_type,
-    crcOk: pkt.crc_ok,
-    ts_ms: pkt.ts_ms,
-    lat: pkt.lat,
-    lon: pkt.lon,
-    symbolTable: pkt.symbol_table,
-    symbolCode: pkt.symbol_code,
-  });
+  addHfAprsPacket(normalizeServerHfAprsPacket(pkt));
 };
 
 renderHfAprsHistory();

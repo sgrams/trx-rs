@@ -400,6 +400,53 @@ function addAprsPacket(pkt) {
   scheduleAprsHistoryRender();
 }
 
+function normalizeServerAprsPacket(pkt) {
+  return {
+    receiver: window.getDecodeRigMeta ? window.getDecodeRigMeta() : null,
+    srcCall: pkt.src_call,
+    destCall: pkt.dest_call,
+    path: pkt.path,
+    info: pkt.info,
+    info_bytes: pkt.info_bytes,
+    type: pkt.packet_type,
+    crcOk: pkt.crc_ok,
+    ts_ms: pkt.ts_ms,
+    lat: pkt.lat,
+    lon: pkt.lon,
+    symbolTable: pkt.symbol_table,
+    symbolCode: pkt.symbol_code,
+  };
+}
+
+window.onServerAprsBatch = function(packets) {
+  if (!Array.isArray(packets) || packets.length === 0) return;
+  aprsStatus.textContent = aprsPaused ? "Paused" : "Receiving";
+  const normalized = [];
+  let hasCrcOk = false;
+  for (const pkt of packets) {
+    const next = normalizeServerAprsPacket(pkt);
+    const tsMs = Number.isFinite(next.ts_ms) ? Number(next.ts_ms) : Date.now();
+    next._tsMs = tsMs;
+    next._ts = new Date(tsMs).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+    if (next.lat != null && next.lon != null && window.aprsMapAddStation) {
+      window.aprsMapAddStation(next.srcCall, next.lat, next.lon, next.info, next.symbolTable, next.symbolCode, next);
+    }
+    if (next.crcOk) hasCrcOk = true;
+    normalized.push(next);
+  }
+  normalized.reverse();
+  aprsPacketHistory = normalized.concat(aprsPacketHistory);
+  pruneAprsPacketHistory();
+  if (hasCrcOk) scheduleAprsBarUpdate();
+  if (aprsPaused) {
+    aprsBufferedWhilePaused += packets.length;
+    updateAprsSummary();
+    updateAprsChipState();
+    return;
+  }
+  scheduleAprsHistoryRender();
+};
+
 document.getElementById("aprs-clear-btn").addEventListener("click", async () => {
   try {
     await postPath("/clear_aprs_decode");
@@ -462,21 +509,7 @@ if (aprsFilterInput) {
 // --- Server-side APRS decode handler ---
 window.onServerAprs = function(pkt) {
   aprsStatus.textContent = aprsPaused ? "Paused" : "Receiving";
-  addAprsPacket({
-    receiver: window.getDecodeRigMeta ? window.getDecodeRigMeta() : null,
-    srcCall: pkt.src_call,
-    destCall: pkt.dest_call,
-    path: pkt.path,
-    info: pkt.info,
-    info_bytes: pkt.info_bytes,
-    type: pkt.packet_type,
-    crcOk: pkt.crc_ok,
-    ts_ms: pkt.ts_ms,
-    lat: pkt.lat,
-    lon: pkt.lon,
-    symbolTable: pkt.symbol_table,
-    symbolCode: pkt.symbol_code,
-  });
+  addAprsPacket(normalizeServerAprsPacket(pkt));
 };
 
 renderAprsHistory();

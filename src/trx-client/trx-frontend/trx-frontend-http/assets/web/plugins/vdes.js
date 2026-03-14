@@ -273,6 +273,64 @@ function addVdesMessage(msg) {
   }
 }
 
+function normalizeServerVdesMessage(msg) {
+  return {
+    message_type: msg.message_type,
+    bit_len: msg.bit_len,
+    raw_bytes: msg.raw_bytes,
+    lat: msg.lat,
+    lon: msg.lon,
+    vessel_name: msg.vessel_name,
+    callsign: msg.callsign,
+    destination: msg.destination,
+    message_label: msg.message_label,
+    session_id: msg.session_id,
+    source_id: msg.source_id,
+    destination_id: msg.destination_id,
+    data_count: msg.data_count,
+    asm_identifier: msg.asm_identifier,
+    ack_nack_mask: msg.ack_nack_mask,
+    channel_quality: msg.channel_quality,
+    payload_preview: msg.payload_preview,
+    link_id: msg.link_id,
+    sync_score: msg.sync_score,
+    sync_errors: msg.sync_errors,
+    phase_rotation: msg.phase_rotation,
+    fec_state: msg.fec_state,
+    ts_ms: msg.ts_ms,
+  };
+}
+
+window.onServerVdesBatch = function(messages) {
+  if (!Array.isArray(messages) || messages.length === 0) return;
+  if (vdesStatus) vdesStatus.textContent = vdesPaused ? "Paused" : "Receiving";
+  const normalized = [];
+  for (const msg of messages) {
+    const next = normalizeServerVdesMessage(msg);
+    const tsMs = Number.isFinite(next.ts_ms) ? Number(next.ts_ms) : Date.now();
+    next._tsMs = tsMs;
+    next._ts = new Date(tsMs).toLocaleTimeString([], {
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+    });
+    if (next.lat != null && next.lon != null && window.vdesMapAddPoint) {
+      window.vdesMapAddPoint(next);
+    }
+    normalized.push(next);
+  }
+  normalized.reverse();
+  vdesMessageHistory = normalized.concat(vdesMessageHistory);
+  pruneVdesMessageHistory();
+  scheduleVdesBarUpdate();
+  if (vdesPaused) {
+    vdesBufferedWhilePaused += messages.length;
+    updateVdesSummary();
+    return;
+  }
+  scheduleVdesHistoryRender();
+};
+
 if (vdesClearBtn) {
   vdesClearBtn.addEventListener("click", async () => {
     try {
@@ -305,33 +363,10 @@ if (vdesFilterInput) {
 
 window.onServerVdes = function(msg) {
   if (vdesStatus) vdesStatus.textContent = vdesPaused ? "Paused" : "Receiving";
-  addVdesMessage({
-    message_type: msg.message_type,
-    bit_len: msg.bit_len,
-    raw_bytes: msg.raw_bytes,
-    lat: msg.lat,
-    lon: msg.lon,
-    vessel_name: msg.vessel_name,
-    callsign: msg.callsign,
-    destination: msg.destination,
-    message_label: msg.message_label,
-    session_id: msg.session_id,
-    source_id: msg.source_id,
-    destination_id: msg.destination_id,
-    data_count: msg.data_count,
-    asm_identifier: msg.asm_identifier,
-    ack_nack_mask: msg.ack_nack_mask,
-    channel_quality: msg.channel_quality,
-    payload_preview: msg.payload_preview,
-    link_id: msg.link_id,
-    sync_score: msg.sync_score,
-    sync_errors: msg.sync_errors,
-    phase_rotation: msg.phase_rotation,
-    fec_state: msg.fec_state,
-    ts_ms: msg.ts_ms,
-  });
-  if (msg.lat != null && msg.lon != null && window.vdesMapAddPoint) {
-    window.vdesMapAddPoint(msg);
+  const next = normalizeServerVdesMessage(msg);
+  addVdesMessage(next);
+  if (next.lat != null && next.lon != null && window.vdesMapAddPoint) {
+    window.vdesMapAddPoint(next);
   }
 };
 
