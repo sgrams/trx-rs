@@ -342,7 +342,7 @@ static void ft2_prepare_sync_waveforms(float complex sync_wave[4][64], float com
         for (int tone_idx = 0; tone_idx < 4; ++tone_idx)
         {
             int tone = kFT4_Costas_pattern[group][tone_idx];
-            float dphase = 2.0f * (float)M_PI * tone / nss;
+            float dphase = 4.0f * (float)M_PI * tone / nss;
             for (int step = 0; step < (int)(nss / 2.0f); ++step)
             {
                 sync_wave[group][idx++] = cexpf(I * phase);
@@ -355,7 +355,7 @@ static void ft2_prepare_sync_waveforms(float complex sync_wave[4][64], float com
     {
         for (int n = 0; n < 64; ++n)
         {
-            float phase = 2.0f * (float)M_PI * idf * n / fs_down;
+            float phase = 4.0f * (float)M_PI * idf * n / fs_down;
             tweak_wave[idf - FT2_SYNC_TWEAK_MIN][n] = cexpf(I * phase);
         }
     }
