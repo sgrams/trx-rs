@@ -3,7 +3,6 @@ const aprsStatus = document.getElementById("aprs-status");
 const aprsPacketsEl = document.getElementById("aprs-packets");
 const aprsFilterInput = document.getElementById("aprs-filter");
 const aprsBarOverlay = document.getElementById("aprs-bar-overlay");
-const aprsPauseBtn = document.getElementById("aprs-pause-btn");
 const aprsOnlyPosBtn = document.getElementById("aprs-only-pos-btn");
 const aprsHideCrcBtn = document.getElementById("aprs-hide-crc-btn");
 const aprsCollapseDupBtn = document.getElementById("aprs-collapse-dup-btn");
@@ -13,8 +12,7 @@ const aprsLatestSeenEl = document.getElementById("aprs-latest-seen");
 const APRS_BAR_WINDOW_MS = 15 * 60 * 1000;
 let aprsFilterText = "";
 let aprsPacketHistory = [];
-let aprsPaused = false;
-let aprsBufferedWhilePaused = 0;
+let aprsBarDismissedAtMs = 0;
 let aprsOnlyPos = false;
 let aprsHideCrc = false;
 let aprsCollapseDup = false;
@@ -187,11 +185,7 @@ function updateAprsSummary() {
     aprsTotalCountEl.textContent = `${aprsPacketHistory.length} total`;
   }
   if (aprsVisibleCountEl) {
-    let text = `${visible.length} shown`;
-    if (aprsPaused && aprsBufferedWhilePaused > 0) {
-      text += ` · ${aprsBufferedWhilePaused} buffered`;
-    }
-    aprsVisibleCountEl.textContent = text;
+    aprsVisibleCountEl.textContent = `${visible.length} shown`;
   }
   if (aprsLatestSeenEl) {
     const latest = aprsPacketHistory[0];
@@ -210,10 +204,6 @@ function updateAprsChipState() {
   aprsOnlyPosBtn?.classList.toggle("active", aprsOnlyPos);
   aprsHideCrcBtn?.classList.toggle("active", aprsHideCrc);
   aprsCollapseDupBtn?.classList.toggle("active", aprsCollapseDup);
-  if (aprsPauseBtn) {
-    aprsPauseBtn.textContent = aprsPaused ? "Resume" : "Pause";
-    aprsPauseBtn.classList.toggle("active", aprsPaused);
-  }
 }
 
 function renderAprsRow(pkt, isFresh) {
@@ -315,7 +305,7 @@ function renderAprsRow(pkt, isFresh) {
 
 function renderAprsHistory() {
   pruneAprsPacketHistory();
-  if (!aprsPacketsEl || aprsPaused) {
+  if (!aprsPacketsEl) {
     updateAprsSummary();
     updateAprsChipState();
     return;
@@ -336,11 +326,13 @@ function updateAprsBar() {
   const cutoffMs = Date.now() - APRS_BAR_WINDOW_MS;
   const okFrames = aprsPacketHistory.filter((p) => p.crcOk && p._tsMs >= cutoffMs);
   const frames = collapseAprsDuplicates(okFrames).slice(0, 8);
-  if (!isPkt || frames.length === 0) {
+  const newestTsMs = frames.reduce((latest, pkt) => Math.max(latest, Number(pkt._tsMs) || 0), 0);
+  if (!isPkt || frames.length === 0 || newestTsMs <= aprsBarDismissedAtMs) {
     aprsBarOverlay.style.display = "none";
+    aprsBarOverlay.innerHTML = "";
     return;
   }
-  let html = '<div class="aprs-bar-header"><span class="aprs-bar-title"><span class="aprs-bar-title-word">APRS</span><span class="aprs-bar-title-word">Live</span></span><span class="aprs-bar-clear-wrap"><span class="aprs-bar-clear" role="button" tabindex="0" onclick="window.clearAprsBar()" onkeydown="if(event.key===\'Enter\'||event.key===\' \'){event.preventDefault();window.clearAprsBar();}" aria-label="Clear APRS overlay">Clear</span></span><span class="aprs-bar-window">Last 15 minutes</span></div>';
+  let html = '<div class="aprs-bar-header"><span class="aprs-bar-title"><span class="aprs-bar-title-word">APRS</span><span class="aprs-bar-title-word">Live</span></span><span class="aprs-bar-actions"><span class="aprs-bar-window">Last 15 minutes</span><span class="aprs-bar-clear-wrap"><span class="aprs-bar-clear" role="button" tabindex="0" onclick="window.clearAprsBar()" onkeydown="if(event.key===\'Enter\'||event.key===\' \'){event.preventDefault();window.clearAprsBar();}" aria-label="Clear APRS overlay">Clear</span></span><button class="aprs-bar-close" type="button" onclick="window.closeAprsBar()" aria-label="Close APRS overlay">&times;</button></span></div>';
   for (const pkt of frames) {
     const ts = pkt._ts ? `<span class="aprs-bar-time">${pkt._ts}</span>` : "";
     const call = `<span class="aprs-bar-call">${escapeMapHtml(pkt.srcCall)}</span>`;
@@ -358,13 +350,19 @@ function updateAprsBar() {
 }
 window.updateAprsBar = updateAprsBar;
 window.clearAprsBar = function() {
-  document.getElementById("aprs-clear-btn")?.click();
+  window.resetAprsHistoryView();
+};
+window.closeAprsBar = function() {
+  aprsBarDismissedAtMs = Date.now();
+  if (aprsBarOverlay) {
+    aprsBarOverlay.style.display = "none";
+    aprsBarOverlay.innerHTML = "";
+  }
 };
 
 window.resetAprsHistoryView = function() {
   if (aprsPacketsEl) aprsPacketsEl.innerHTML = "";
   aprsPacketHistory = [];
-  aprsBufferedWhilePaused = 0;
   updateAprsBar();
   renderAprsHistory();
   if (window.clearMapMarkersByType) window.clearMapMarkersByType("aprs");
@@ -390,13 +388,6 @@ function addAprsPacket(pkt) {
 
   if (pkt.crcOk) scheduleAprsBarUpdate();
 
-  if (aprsPaused) {
-    aprsBufferedWhilePaused += 1;
-    updateAprsSummary();
-    updateAprsChipState();
-    return;
-  }
-
   scheduleAprsHistoryRender();
 }
 
@@ -420,7 +411,7 @@ function normalizeServerAprsPacket(pkt) {
 
 window.onServerAprsBatch = function(packets) {
   if (!Array.isArray(packets) || packets.length === 0) return;
-  aprsStatus.textContent = aprsPaused ? "Paused" : "Receiving";
+  aprsStatus.textContent = "Receiving";
   const normalized = [];
   let hasCrcOk = false;
   for (const pkt of packets) {
@@ -438,12 +429,6 @@ window.onServerAprsBatch = function(packets) {
   aprsPacketHistory = normalized.concat(aprsPacketHistory);
   pruneAprsPacketHistory();
   if (hasCrcOk) scheduleAprsBarUpdate();
-  if (aprsPaused) {
-    aprsBufferedWhilePaused += packets.length;
-    updateAprsSummary();
-    updateAprsChipState();
-    return;
-  }
   scheduleAprsHistoryRender();
 };
 
@@ -451,27 +436,14 @@ window.restoreAprsHistory = function(packets) {
   window.onServerAprsBatch(packets);
 };
 
-document.getElementById("aprs-clear-btn").addEventListener("click", async () => {
+document.getElementById("settings-clear-aprs-history")?.addEventListener("click", async () => {
   try {
     await postPath("/clear_aprs_decode");
     window.resetAprsHistoryView();
   } catch (e) {
-    console.error("APRS clear failed", e);
+    console.error("APRS history clear failed", e);
   }
 });
-
-if (aprsPauseBtn) {
-  aprsPauseBtn.addEventListener("click", () => {
-    aprsPaused = !aprsPaused;
-    if (!aprsPaused) {
-      aprsBufferedWhilePaused = 0;
-      renderAprsHistory();
-    } else {
-      updateAprsSummary();
-      updateAprsChipState();
-    }
-  });
-}
 
 if (aprsOnlyPosBtn) {
   aprsOnlyPosBtn.addEventListener("click", () => {
@@ -512,7 +484,7 @@ if (aprsFilterInput) {
 
 // --- Server-side APRS decode handler ---
 window.onServerAprs = function(pkt) {
-  aprsStatus.textContent = aprsPaused ? "Paused" : "Receiving";
+  aprsStatus.textContent = "Receiving";
   addAprsPacket(normalizeServerAprsPacket(pkt));
 };
 

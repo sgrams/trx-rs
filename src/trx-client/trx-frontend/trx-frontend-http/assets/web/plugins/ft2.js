@@ -12,12 +12,9 @@ const ft2Status = document.getElementById("ft2-status");
 const ft2PeriodEl = document.getElementById("ft2-period");
 const ft2MessagesEl = document.getElementById("ft2-messages");
 const ft2FilterInput = document.getElementById("ft2-filter");
-const ft2PauseBtn = document.getElementById("ft2-pause-btn");
 const FT2_PERIOD_MS = 3750;
 let ft2FilterText = "";
 let ft2MessageHistory = [];
-let ft2Paused = false;
-let ft2BufferedWhilePaused = 0;
 
 function currentFt2HistoryRetentionMs() {
   return typeof window.getDecodeHistoryRetentionMs === "function"
@@ -78,15 +75,9 @@ function renderFt2Row(msg) {
   return row;
 }
 
-function updateFt2PauseUi() {
-  if (!ft2PauseBtn) return;
-  ft2PauseBtn.textContent = ft2Paused ? "Resume" : "Pause";
-  ft2PauseBtn.classList.toggle("active", ft2Paused);
-}
-
 function renderFt2History() {
   pruneFt2MessageHistory();
-  if (!ft2MessagesEl || ft2Paused) { updateFt2PauseUi(); return; }
+  if (!ft2MessagesEl) return;
   const filter = ft2FilterText;
   const fragment = document.createDocumentFragment();
   for (let i = 0; i < ft2MessageHistory.length; i++) {
@@ -95,14 +86,14 @@ function renderFt2History() {
     fragment.appendChild(renderFt2Row(msg));
   }
   ft2MessagesEl.replaceChildren(fragment);
-  updateFt2PauseUi();
 }
 
 function addFt2Message(msg) {
   msg._tsMs = Number.isFinite(msg?.ts_ms) ? Number(msg.ts_ms) : Date.now();
   ft2MessageHistory.unshift(msg);
   pruneFt2MessageHistory();
-  if (ft2Paused) { ft2BufferedWhilePaused += 1; updateFt2PauseUi(); return; }
+  window.setFt8FamilyBarDecoder?.("ft2");
+  window.updateFt8Bar?.();
   scheduleFt2HistoryRender();
 }
 
@@ -127,7 +118,7 @@ function normalizeServerFt2Message(msg) {
 
 window.onServerFt2Batch = function(messages) {
   if (!Array.isArray(messages) || messages.length === 0) return;
-  if (ft2Status) ft2Status.textContent = ft2Paused ? "Paused" : "Receiving";
+  if (ft2Status) ft2Status.textContent = "Receiving";
   const normalized = [];
   for (const msg of messages) {
     const next = normalizeServerFt2Message(msg);
@@ -140,7 +131,8 @@ window.onServerFt2Batch = function(messages) {
   normalized.reverse();
   ft2MessageHistory = normalized.concat(ft2MessageHistory);
   pruneFt2MessageHistory();
-  if (ft2Paused) { ft2BufferedWhilePaused += messages.length; updateFt2PauseUi(); return; }
+  window.setFt8FamilyBarDecoder?.("ft2");
+  window.updateFt8Bar?.();
   scheduleFt2HistoryRender();
 };
 
@@ -150,9 +142,32 @@ window.pruneFt2HistoryView = function() { pruneFt2MessageHistory(); renderFt2His
 window.resetFt2HistoryView = function() {
   if (ft2MessagesEl) ft2MessagesEl.innerHTML = "";
   ft2MessageHistory = [];
-  ft2BufferedWhilePaused = 0;
+  window.updateFt8Bar?.();
   renderFt2History();
 };
+
+function buildFt2BarFrames() {
+  const cutoffMs = Date.now() - 15 * 60 * 1000;
+  const messages = ft2MessageHistory.filter((msg) => Number(msg._tsMs ?? msg.ts_ms) >= cutoffMs).slice(0, 8);
+  const newestTsMs = messages.reduce((latest, msg) => Math.max(latest, Number(msg._tsMs ?? msg.ts_ms) || 0), 0);
+  if (messages.length === 0) {
+    return { count: 0, newestTsMs: 0, html: "" };
+  }
+  let html = "";
+  for (const msg of messages) {
+    const tsMs = msg._tsMs ?? msg.ts_ms;
+    const ts = tsMs ? `<span class="aprs-bar-time">${fmtTime(tsMs)}</span>` : "";
+    const snr = Number.isFinite(msg.snr_db) ? `${msg.snr_db.toFixed(1)} dB` : "-- dB";
+    const dt = Number.isFinite(msg.dt_s) ? `dt ${msg.dt_s.toFixed(2)}` : null;
+    const displayFreqHz = normalizeFt2DisplayFreqHz(msg.freq_hz);
+    const rf = Number.isFinite(displayFreqHz) ? `${displayFreqHz.toFixed(0)} Hz` : null;
+    const detail = [snr, dt, rf].filter(Boolean).join(" · ");
+    const text = ft8RenderMessageFt2((msg.message || "").toString());
+    html += `<div class="aprs-bar-frame"><div class="aprs-bar-frame-main">${ts}<span class="aprs-bar-call">${text}</span>${detail ? ` · ${detail}` : ""}</div></div>`;
+  }
+  return { count: messages.length, newestTsMs, html };
+}
+window.registerFt8FamilyBarRenderer?.("ft2", buildFt2BarFrames);
 
 if (ft2FilterInput) {
   ft2FilterInput.addEventListener("input", () => {
@@ -161,31 +176,22 @@ if (ft2FilterInput) {
   });
 }
 
-if (ft2PauseBtn) {
-  ft2PauseBtn.addEventListener("click", () => {
-    ft2Paused = !ft2Paused;
-    if (!ft2Paused) { ft2BufferedWhilePaused = 0; renderFt2History(); } else { updateFt2PauseUi(); }
-  });
-}
-
 document.getElementById("ft2-decode-toggle-btn")?.addEventListener("click", async () => {
   try { await postPath("/toggle_ft2_decode"); } catch (e) { console.error("FT2 toggle failed", e); }
 });
 
-document.getElementById("ft2-clear-btn")?.addEventListener("click", async () => {
+document.getElementById("settings-clear-ft2-history")?.addEventListener("click", async () => {
   try {
     await postPath("/clear_ft2_decode");
     window.resetFt2HistoryView();
-  } catch (e) { console.error("FT2 clear failed", e); }
+  } catch (e) { console.error("FT2 history clear failed", e); }
 });
 
 window.onServerFt2 = function(msg) {
-  if (ft2Status) ft2Status.textContent = ft2Paused ? "Paused" : "Receiving";
+  if (ft2Status) ft2Status.textContent = "Receiving";
   const next = normalizeServerFt2Message(msg);
   if (next.grids.length > 0 && window.mapAddLocator) {
     window.mapAddLocator(next.raw, next.grids, "ft2", next.station, { ...msg, freq_hz: next.rfHz, locator_details: next.locatorDetails });
   }
   addFt2Message(next.history);
 };
-
-updateFt2PauseUi();

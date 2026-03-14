@@ -2,7 +2,6 @@
 const hfAprsStatus = document.getElementById("hf-aprs-status");
 const hfAprsPacketsEl = document.getElementById("hf-aprs-packets");
 const hfAprsFilterInput = document.getElementById("hf-aprs-filter");
-const hfAprsPauseBtn = document.getElementById("hf-aprs-pause-btn");
 const hfAprsOnlyPosBtn = document.getElementById("hf-aprs-only-pos-btn");
 const hfAprsHideCrcBtn = document.getElementById("hf-aprs-hide-crc-btn");
 const hfAprsCollapseDupBtn = document.getElementById("hf-aprs-collapse-dup-btn");
@@ -11,8 +10,6 @@ const hfAprsVisibleCountEl = document.getElementById("hf-aprs-visible-count");
 const hfAprsLatestSeenEl = document.getElementById("hf-aprs-latest-seen");
 let hfAprsFilterText = "";
 let hfAprsPacketHistory = [];
-let hfAprsPaused = false;
-let hfAprsBufferedWhilePaused = 0;
 let hfAprsOnlyPos = false;
 let hfAprsHideCrc = false;
 let hfAprsCollapseDup = false;
@@ -138,11 +135,7 @@ function updateHfAprsSummary() {
     hfAprsTotalCountEl.textContent = `${hfAprsPacketHistory.length} total`;
   }
   if (hfAprsVisibleCountEl) {
-    let text = `${visible.length} shown`;
-    if (hfAprsPaused && hfAprsBufferedWhilePaused > 0) {
-      text += ` · ${hfAprsBufferedWhilePaused} buffered`;
-    }
-    hfAprsVisibleCountEl.textContent = text;
+    hfAprsVisibleCountEl.textContent = `${visible.length} shown`;
   }
   if (hfAprsLatestSeenEl) {
     const latest = hfAprsPacketHistory[0];
@@ -161,10 +154,6 @@ function updateHfAprsChipState() {
   hfAprsOnlyPosBtn?.classList.toggle("active", hfAprsOnlyPos);
   hfAprsHideCrcBtn?.classList.toggle("active", hfAprsHideCrc);
   hfAprsCollapseDupBtn?.classList.toggle("active", hfAprsCollapseDup);
-  if (hfAprsPauseBtn) {
-    hfAprsPauseBtn.textContent = hfAprsPaused ? "Resume" : "Pause";
-    hfAprsPauseBtn.classList.toggle("active", hfAprsPaused);
-  }
 }
 
 function renderHfAprsInfo(pkt) {
@@ -307,7 +296,7 @@ function renderHfAprsRow(pkt, isFresh) {
 
 function renderHfAprsHistory() {
   pruneHfAprsPacketHistory();
-  if (!hfAprsPacketsEl || hfAprsPaused) {
+  if (!hfAprsPacketsEl) {
     updateHfAprsSummary();
     updateHfAprsChipState();
     return;
@@ -325,7 +314,6 @@ function renderHfAprsHistory() {
 window.resetHfAprsHistoryView = function() {
   if (hfAprsPacketsEl) hfAprsPacketsEl.innerHTML = "";
   hfAprsPacketHistory = [];
-  hfAprsBufferedWhilePaused = 0;
   renderHfAprsHistory();
 };
 
@@ -341,13 +329,6 @@ function addHfAprsPacket(pkt) {
 
   hfAprsPacketHistory.unshift(pkt);
   pruneHfAprsPacketHistory();
-
-  if (hfAprsPaused) {
-    hfAprsBufferedWhilePaused += 1;
-    updateHfAprsSummary();
-    updateHfAprsChipState();
-    return;
-  }
 
   scheduleHfAprsHistoryRender();
 }
@@ -372,7 +353,7 @@ function normalizeServerHfAprsPacket(pkt) {
 
 window.onServerHfAprsBatch = function(packets) {
   if (!Array.isArray(packets) || packets.length === 0) return;
-  if (hfAprsStatus) hfAprsStatus.textContent = hfAprsPaused ? "Paused" : "Receiving";
+  if (hfAprsStatus) hfAprsStatus.textContent = "Receiving";
   const normalized = [];
   for (const pkt of packets) {
     const next = normalizeServerHfAprsPacket(pkt);
@@ -384,12 +365,6 @@ window.onServerHfAprsBatch = function(packets) {
   normalized.reverse();
   hfAprsPacketHistory = normalized.concat(hfAprsPacketHistory);
   pruneHfAprsPacketHistory();
-  if (hfAprsPaused) {
-    hfAprsBufferedWhilePaused += packets.length;
-    updateHfAprsSummary();
-    updateHfAprsChipState();
-    return;
-  }
   scheduleHfAprsHistoryRender();
 };
 
@@ -401,27 +376,14 @@ document.getElementById("hf-aprs-decode-toggle-btn")?.addEventListener("click", 
   try { await postPath("/toggle_hf_aprs_decode"); } catch (e) { console.error("HF APRS toggle failed", e); }
 });
 
-document.getElementById("hf-aprs-clear-btn")?.addEventListener("click", async () => {
+document.getElementById("settings-clear-hf-aprs-history")?.addEventListener("click", async () => {
   try {
     await postPath("/clear_hf_aprs_decode");
     window.resetHfAprsHistoryView();
   } catch (e) {
-    console.error("HF APRS clear failed", e);
+    console.error("HF APRS history clear failed", e);
   }
 });
-
-if (hfAprsPauseBtn) {
-  hfAprsPauseBtn.addEventListener("click", () => {
-    hfAprsPaused = !hfAprsPaused;
-    if (!hfAprsPaused) {
-      hfAprsBufferedWhilePaused = 0;
-      renderHfAprsHistory();
-    } else {
-      updateHfAprsSummary();
-      updateHfAprsChipState();
-    }
-  });
-}
 
 if (hfAprsOnlyPosBtn) {
   hfAprsOnlyPosBtn.addEventListener("click", () => {
@@ -462,7 +424,7 @@ if (hfAprsFilterInput) {
 
 // --- Server-side HF APRS decode handler ---
 window.onServerHfAprs = function(pkt) {
-  if (hfAprsStatus) hfAprsStatus.textContent = hfAprsPaused ? "Paused" : "Receiving";
+  if (hfAprsStatus) hfAprsStatus.textContent = "Receiving";
   addHfAprsPacket(normalizeServerHfAprsPacket(pkt));
 };
 

@@ -821,7 +821,6 @@ small { color: var(--text-muted); }
   display: inline-block;
 }
 .aprs-bar-window {
-  margin-left: auto;
   display: inline-flex;
   align-items: center;
   color: var(--text-muted);
@@ -830,6 +829,13 @@ small { color: var(--text-muted); }
   letter-spacing: 0.03em;
   text-transform: none;
   white-space: nowrap;
+}
+.aprs-bar-actions {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.38rem;
+  flex: 0 0 auto;
 }
 .aprs-bar-clear-wrap {
   display: inline-flex;
@@ -863,6 +869,30 @@ small { color: var(--text-muted); }
 }
 .aprs-bar-clear-wrap:hover {
   color: inherit;
+}
+.aprs-bar-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.05rem;
+  height: 1.05rem;
+  padding: 0;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-muted);
+  font-family: inherit;
+  font-size: 0.95em;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0.82;
+  transition: opacity 120ms, color 120ms, background-color 120ms;
+}
+.aprs-bar-close:hover {
+  opacity: 1;
+  color: var(--accent-green);
+  background: color-mix(in srgb, var(--btn-bg) 70%, transparent);
 }
 .aprs-bar-frame {
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;

@@ -3,14 +3,23 @@ const ft8Status = document.getElementById("ft8-status");
 const ft8PeriodEl = document.getElementById("ft8-period");
 const ft8MessagesEl = document.getElementById("ft8-messages");
 const ft8FilterInput = document.getElementById("ft8-filter");
-const ft8PauseBtn = document.getElementById("ft8-pause-btn");
 const ft8BarOverlay = document.getElementById("ft8-bar-overlay");
 const FT8_BAR_WINDOW_MS = 15 * 60 * 1000;
 const FT8_PERIOD_SECONDS = 15;
+const FT8_BAR_DECODER_LABELS = {
+  ft8: "FT8",
+  ft4: "FT4",
+  ft2: "FT2",
+};
 let ft8FilterText = "";
 let ft8MessageHistory = [];
-let ft8Paused = false;
-let ft8BufferedWhilePaused = 0;
+let ft8BarActiveDecoder = "ft8";
+const ft8BarBuilders = {};
+const ft8BarDismissedAtMsByDecoder = {
+  ft8: 0,
+  ft4: 0,
+  ft2: 0,
+};
 
 function currentFt8HistoryRetentionMs() {
   return typeof window.getDecodeHistoryRetentionMs === "function"
@@ -38,6 +47,17 @@ function scheduleFt8HistoryRender() {
 function scheduleFt8BarUpdate() {
   scheduleFt8Ui("ft8-bar", () => updateFt8Bar());
 }
+
+window.registerFt8FamilyBarRenderer = function(decoder, builder) {
+  if (!FT8_BAR_DECODER_LABELS[decoder] || typeof builder !== "function") return;
+  ft8BarBuilders[decoder] = builder;
+};
+
+window.setFt8FamilyBarDecoder = function(decoder) {
+  if (!FT8_BAR_DECODER_LABELS[decoder]) return;
+  ft8BarActiveDecoder = decoder;
+  scheduleFt8BarUpdate();
+};
 
 function normalizeFt8DisplayFreqHz(freqHz) {
   const rawHz = Number(freqHz);
@@ -81,36 +101,22 @@ function renderFt8Row(msg) {
   return row;
 }
 
-function updateFt8PauseUi() {
-  if (!ft8PauseBtn) return;
-  ft8PauseBtn.textContent = ft8Paused ? "Resume" : "Pause";
-  ft8PauseBtn.classList.toggle("active", ft8Paused);
-}
-
 function renderFt8History() {
   pruneFt8MessageHistory();
-  if (!ft8MessagesEl || ft8Paused) {
-    updateFt8PauseUi();
-    return;
-  }
+  if (!ft8MessagesEl) return;
   const fragment = document.createDocumentFragment();
   for (let i = 0; i < ft8MessageHistory.length; i += 1) {
     fragment.appendChild(renderFt8Row(ft8MessageHistory[i]));
   }
   ft8MessagesEl.replaceChildren(fragment);
-  updateFt8PauseUi();
 }
 
 function addFt8Message(msg) {
   msg._tsMs = Number.isFinite(msg?.ts_ms) ? Number(msg.ts_ms) : Date.now();
   ft8MessageHistory.unshift(msg);
   pruneFt8MessageHistory();
+  ft8BarActiveDecoder = "ft8";
   scheduleFt8BarUpdate();
-  if (ft8Paused) {
-    ft8BufferedWhilePaused += 1;
-    updateFt8PauseUi();
-    return;
-  }
   scheduleFt8HistoryRender();
 }
 
@@ -141,7 +147,7 @@ function normalizeServerFt8Message(msg) {
 
 window.onServerFt8Batch = function(messages) {
   if (!Array.isArray(messages) || messages.length === 0) return;
-  ft8Status.textContent = ft8Paused ? "Paused" : "Receiving";
+  ft8Status.textContent = "Receiving";
   const normalized = [];
   for (const msg of messages) {
     const next = normalizeServerFt8Message(msg);
@@ -158,12 +164,8 @@ window.onServerFt8Batch = function(messages) {
   normalized.reverse();
   ft8MessageHistory = normalized.concat(ft8MessageHistory);
   pruneFt8MessageHistory();
+  ft8BarActiveDecoder = "ft8";
   scheduleFt8BarUpdate();
-  if (ft8Paused) {
-    ft8BufferedWhilePaused += messages.length;
-    updateFt8PauseUi();
-    return;
-  }
   scheduleFt8HistoryRender();
 };
 
@@ -183,19 +185,14 @@ function ft8BarRfText(msg) {
   return `${displayFreqHz.toFixed(0)} Hz`;
 }
 
-function updateFt8Bar() {
-  if (!ft8BarOverlay) return;
-  const modeUpper = (document.getElementById("mode")?.value || "").toUpperCase();
-  const isFt8Mode = modeUpper === "DIG" || modeUpper === "USB";
+function buildFt8BarFrames() {
   const cutoffMs = Date.now() - FT8_BAR_WINDOW_MS;
   const messages = ft8MessageHistory.filter((msg) => Number(msg.ts_ms) >= cutoffMs).slice(0, 8);
-  if (!isFt8Mode || messages.length === 0) {
-    ft8BarOverlay.style.display = "none";
-    ft8BarOverlay.innerHTML = "";
-    return;
+  const newestTsMs = messages.reduce((latest, msg) => Math.max(latest, Number(msg.ts_ms) || 0), 0);
+  if (messages.length === 0) {
+    return { count: 0, newestTsMs: 0, html: "" };
   }
-
-  let html = '<div class="aprs-bar-header"><span class="aprs-bar-title"><span class="aprs-bar-title-word">FT8</span><span class="aprs-bar-title-word">Live</span></span><span class="aprs-bar-clear-wrap"><span class="aprs-bar-clear" role="button" tabindex="0" onclick="window.clearFt8Bar()" onkeydown="if(event.key===\'Enter\'||event.key===\' \'){event.preventDefault();window.clearFt8Bar();}" aria-label="Clear FT8 overlay">Clear</span></span><span class="aprs-bar-window">Last 15 minutes</span></div>';
+  let html = "";
   for (const msg of messages) {
     const ts = msg.ts_ms ? `<span class="aprs-bar-time">${fmtTime(msg.ts_ms)}</span>` : "";
     const snr = Number.isFinite(msg.snr_db) ? `${msg.snr_db.toFixed(1)} dB` : "-- dB";
@@ -205,13 +202,48 @@ function updateFt8Bar() {
     const text = ft8EscapeHtml((msg.message || "").toString());
     html += `<div class="aprs-bar-frame"><div class="aprs-bar-frame-main">${ts}<span class="aprs-bar-call">${text}</span>${detail ? ` · ${detail}` : ""}</div></div>`;
   }
-  ft8BarOverlay.innerHTML = html;
+  return { count: messages.length, newestTsMs, html };
+}
+
+function updateFt8Bar() {
+  if (!ft8BarOverlay) return;
+  const modeUpper = (document.getElementById("mode")?.value || "").toUpperCase();
+  const isFt8Mode = modeUpper === "DIG" || modeUpper === "USB";
+  const decoder = ft8BarActiveDecoder;
+  const builder = ft8BarBuilders[decoder];
+  const label = FT8_BAR_DECODER_LABELS[decoder] || "FT8";
+  const result = typeof builder === "function" ? builder() : null;
+  const newestTsMs = Number(result?.newestTsMs) || 0;
+  if (!isFt8Mode || !result || result.count === 0 || newestTsMs <= (ft8BarDismissedAtMsByDecoder[decoder] || 0)) {
+    ft8BarOverlay.style.display = "none";
+    ft8BarOverlay.innerHTML = "";
+    return;
+  }
+
+  ft8BarOverlay.innerHTML = `<div class="aprs-bar-header"><span class="aprs-bar-title"><span class="aprs-bar-title-word">${label}</span><span class="aprs-bar-title-word">Live</span></span><span class="aprs-bar-actions"><span class="aprs-bar-window">Last 15 minutes</span><span class="aprs-bar-clear-wrap"><span class="aprs-bar-clear" role="button" tabindex="0" onclick="window.clearFt8Bar()" onkeydown="if(event.key===\'Enter\'||event.key===\' \'){event.preventDefault();window.clearFt8Bar();}" aria-label="Clear ${label} overlay">Clear</span></span><button class="aprs-bar-close" type="button" onclick="window.closeFt8Bar()" aria-label="Close ${label} overlay">&times;</button></span></div>${result.html}`;
   ft8BarOverlay.style.display = "flex";
 }
 window.updateFt8Bar = updateFt8Bar;
 window.clearFt8Bar = function() {
-  document.getElementById("ft8-clear-btn")?.click();
+  const decoder = ft8BarActiveDecoder;
+  if (decoder === "ft4") {
+    window.resetFt4HistoryView?.();
+    return;
+  }
+  if (decoder === "ft2") {
+    window.resetFt2HistoryView?.();
+    return;
+  }
+  window.resetFt8HistoryView?.();
 };
+window.closeFt8Bar = function() {
+  ft8BarDismissedAtMsByDecoder[ft8BarActiveDecoder] = Date.now();
+  if (ft8BarOverlay) {
+    ft8BarOverlay.style.display = "none";
+    ft8BarOverlay.innerHTML = "";
+  }
+};
+window.registerFt8FamilyBarRenderer("ft8", buildFt8BarFrames);
 
 function renderFt8Message(message) {
   let out = "";
@@ -387,7 +419,6 @@ window.updateFt8RfDisplay = function() {
 window.resetFt8HistoryView = function() {
   ft8MessagesEl.innerHTML = "";
   ft8MessageHistory = [];
-  ft8BufferedWhilePaused = 0;
   updateFt8Bar();
   renderFt8History();
   if (window.clearMapMarkersByType) window.clearMapMarkersByType("ft8");
@@ -414,34 +445,22 @@ if (ft8MessagesEl) {
   });
 }
 
-if (ft8PauseBtn) {
-  ft8PauseBtn.addEventListener("click", () => {
-    ft8Paused = !ft8Paused;
-    if (!ft8Paused) {
-      ft8BufferedWhilePaused = 0;
-      renderFt8History();
-    } else {
-      updateFt8PauseUi();
-    }
-  });
-}
-
 document.getElementById("ft8-decode-toggle-btn").addEventListener("click", async () => {
   try { await postPath("/toggle_ft8_decode"); } catch (e) { console.error("FT8 toggle failed", e); }
 });
 
-document.getElementById("ft8-clear-btn").addEventListener("click", async () => {
+document.getElementById("settings-clear-ft8-history")?.addEventListener("click", async () => {
   try {
     await postPath("/clear_ft8_decode");
     window.resetFt8HistoryView();
   } catch (e) {
-    console.error("FT8 clear failed", e);
+    console.error("FT8 history clear failed", e);
   }
 });
 
 // --- Server-side FT8 decode handler ---
 window.onServerFt8 = function(msg) {
-  ft8Status.textContent = ft8Paused ? "Paused" : "Receiving";
+  ft8Status.textContent = "Receiving";
   const next = normalizeServerFt8Message(msg);
   if (next.grids.length > 0 && window.mapAddLocator) {
     window.mapAddLocator(next.raw, next.grids, "ft8", next.station, {
@@ -452,5 +471,3 @@ window.onServerFt8 = function(msg) {
   }
   addFt8Message(next.history);
 };
-
-updateFt8PauseUi();

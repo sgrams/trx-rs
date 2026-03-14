@@ -211,20 +211,21 @@ function applyAuthRestrictions() {
     // Disable plugin enable/disable buttons and decode history clear buttons
     // Note: sig-clear-btn is allowed for RX (clears local measurements only)
     const pluginToggleBtns = [
-      "ais-clear-btn",
-      "vdes-clear-btn",
       "ft8-decode-toggle-btn",
       "ft4-decode-toggle-btn",
       "ft2-decode-toggle-btn",
       "wspr-decode-toggle-btn",
       "hf-aprs-decode-toggle-btn",
       "cw-auto",
-      "aprs-clear-btn",
-      "ft8-clear-btn",
-      "ft4-clear-btn",
-      "ft2-clear-btn",
-      "wspr-clear-btn",
-      "cw-clear-btn"
+      "settings-clear-ais-history",
+      "settings-clear-vdes-history",
+      "settings-clear-aprs-history",
+      "settings-clear-hf-aprs-history",
+      "settings-clear-cw-history",
+      "settings-clear-ft8-history",
+      "settings-clear-ft4-history",
+      "settings-clear-ft2-history",
+      "settings-clear-wspr-history"
     ];
     pluginToggleBtns.forEach(id => {
       const btn = document.getElementById(id);

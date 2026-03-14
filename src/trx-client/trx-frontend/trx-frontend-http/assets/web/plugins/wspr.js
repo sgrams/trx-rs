@@ -3,12 +3,9 @@ const wsprStatus = document.getElementById("wspr-status");
 const wsprPeriodEl = document.getElementById("wspr-period");
 const wsprMessagesEl = document.getElementById("wspr-messages");
 const wsprFilterInput = document.getElementById("wspr-filter");
-const wsprPauseBtn = document.getElementById("wspr-pause-btn");
 const WSPR_PERIOD_SECONDS = 120;
 let wsprFilterText = "";
 let wsprMessageHistory = [];
-let wsprPaused = false;
-let wsprBufferedWhilePaused = 0;
 
 function currentWsprHistoryRetentionMs() {
   return typeof window.getDecodeHistoryRetentionMs === "function"
@@ -62,35 +59,20 @@ function renderWsprRow(msg) {
   return row;
 }
 
-function updateWsprPauseUi() {
-  if (!wsprPauseBtn) return;
-  wsprPauseBtn.textContent = wsprPaused ? "Resume" : "Pause";
-  wsprPauseBtn.classList.toggle("active", wsprPaused);
-}
-
 function renderWsprHistory() {
   pruneWsprMessageHistory();
-  if (!wsprMessagesEl || wsprPaused) {
-    updateWsprPauseUi();
-    return;
-  }
+  if (!wsprMessagesEl) return;
   const fragment = document.createDocumentFragment();
   for (let i = 0; i < wsprMessageHistory.length; i += 1) {
     fragment.appendChild(renderWsprRow(wsprMessageHistory[i]));
   }
   wsprMessagesEl.replaceChildren(fragment);
-  updateWsprPauseUi();
 }
 
 function addWsprMessage(msg) {
   msg._tsMs = Number.isFinite(msg?.ts_ms) ? Number(msg.ts_ms) : Date.now();
   wsprMessageHistory.unshift(msg);
   pruneWsprMessageHistory();
-  if (wsprPaused) {
-    wsprBufferedWhilePaused += 1;
-    updateWsprPauseUi();
-    return;
-  }
   scheduleWsprHistoryRender();
 }
 
@@ -120,7 +102,7 @@ function normalizeServerWsprMessage(msg) {
 
 window.onServerWsprBatch = function(messages) {
   if (!Array.isArray(messages) || messages.length === 0) return;
-  wsprStatus.textContent = wsprPaused ? "Paused" : "Receiving";
+  wsprStatus.textContent = "Receiving";
   const normalized = [];
   for (const msg of messages) {
     const next = normalizeServerWsprMessage(msg);
@@ -136,11 +118,6 @@ window.onServerWsprBatch = function(messages) {
   normalized.reverse();
   wsprMessageHistory = normalized.concat(wsprMessageHistory);
   pruneWsprMessageHistory();
-  if (wsprPaused) {
-    wsprBufferedWhilePaused += messages.length;
-    updateWsprPauseUi();
-    return;
-  }
   scheduleWsprHistoryRender();
 };
 
@@ -253,7 +230,6 @@ function applyWsprFilterToAll() {
 window.resetWsprHistoryView = function() {
   wsprMessagesEl.innerHTML = "";
   wsprMessageHistory = [];
-  wsprBufferedWhilePaused = 0;
   renderWsprHistory();
   if (window.clearMapMarkersByType) window.clearMapMarkersByType("wspr");
 };
@@ -279,33 +255,21 @@ if (wsprMessagesEl) {
   });
 }
 
-if (wsprPauseBtn) {
-  wsprPauseBtn.addEventListener("click", () => {
-    wsprPaused = !wsprPaused;
-    if (!wsprPaused) {
-      wsprBufferedWhilePaused = 0;
-      renderWsprHistory();
-    } else {
-      updateWsprPauseUi();
-    }
-  });
-}
-
 document.getElementById("wspr-decode-toggle-btn").addEventListener("click", async () => {
   try { await postPath("/toggle_wspr_decode"); } catch (e) { console.error("WSPR toggle failed", e); }
 });
 
-document.getElementById("wspr-clear-btn").addEventListener("click", async () => {
+document.getElementById("settings-clear-wspr-history")?.addEventListener("click", async () => {
   try {
     await postPath("/clear_wspr_decode");
     window.resetWsprHistoryView();
   } catch (e) {
-    console.error("WSPR clear failed", e);
+    console.error("WSPR history clear failed", e);
   }
 });
 
 window.onServerWspr = function(msg) {
-  wsprStatus.textContent = wsprPaused ? "Paused" : "Receiving";
+  wsprStatus.textContent = "Receiving";
   const next = normalizeServerWsprMessage(msg);
   if (next.grids.length > 0 && window.mapAddLocator) {
     window.mapAddLocator(next.raw, next.grids, "wspr", next.station, {
@@ -315,5 +279,3 @@ window.onServerWspr = function(msg) {
   }
   addWsprMessage(next.history);
 };
-
-updateWsprPauseUi();

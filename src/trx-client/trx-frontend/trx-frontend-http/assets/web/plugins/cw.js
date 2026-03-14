@@ -1,7 +1,6 @@
 // --- CW (Morse) Decoder Plugin (server-side decode) ---
 const cwStatusEl = document.getElementById("cw-status");
 const cwOutputEl = document.getElementById("cw-output");
-const cwPauseBtn = document.getElementById("cw-pause-btn");
 const cwAutoInput = document.getElementById("cw-auto");
 const cwWpmInput = document.getElementById("cw-wpm");
 const cwToneInput = document.getElementById("cw-tone");
@@ -22,10 +21,9 @@ const CW_BAR_WINDOW_MS = 15 * 60 * 1000;
 const CW_BAR_LINE_GAP_MS = 5000;
 let cwLastAppendTime = 0;
 let cwTonePickerRaf = null;
-let cwPaused = false;
-let cwBufferedWhilePaused = 0;
 let cwBarHistory = [];     // [{tsMs, ts, text, wpm, tone_hz}]
 let cwBarCurrentLine = null; // accumulates chars until gap/newline
+let cwBarDismissedAtMs = 0;
 // Tracks a user-initiated auto toggle that is in-flight (POST not yet
 // acknowledged).  While set, server-state updates must not override the
 // checkbox so that a concurrent SSE event carrying the *old* cw_auto value
@@ -71,18 +69,23 @@ function updateCwBar() {
   const recent = cwBarHistory.filter((l) => l.tsMs >= cutoffMs);
   // Prepend the in-progress line so characters appear immediately
   const liveLines = cwBarCurrentLine && cwBarCurrentLine.text ? [cwBarCurrentLine, ...recent] : recent;
-  if (!isCw || liveLines.length === 0) {
+  const newestTsMs = liveLines.reduce((latest, line) => Math.max(latest, Number(line.tsMs) || 0), 0);
+  if (!isCw || liveLines.length === 0 || newestTsMs <= cwBarDismissedAtMs) {
     cwBarOverlay.style.display = "none";
+    cwBarOverlay.innerHTML = "";
     return;
   }
   let html =
     '<div class="aprs-bar-header">' +
       '<span class="aprs-bar-title"><span class="aprs-bar-title-word">CW</span><span class="aprs-bar-title-word">Live</span></span>' +
-      '<span class="aprs-bar-clear-wrap"><span class="aprs-bar-clear" role="button" tabindex="0"' +
-        ' onclick="window.clearCwBar()"' +
-        ' onkeydown="if(event.key===\'Enter\'||event.key===\' \'){event.preventDefault();window.clearCwBar();}"' +
-        ' aria-label="Clear CW overlay">Clear</span></span>' +
-      '<span class="aprs-bar-window">Last 15 minutes</span>' +
+      '<span class="aprs-bar-actions">' +
+        '<span class="aprs-bar-window">Last 15 minutes</span>' +
+        '<span class="aprs-bar-clear-wrap"><span class="aprs-bar-clear" role="button" tabindex="0"' +
+          ' onclick="window.clearCwBar()"' +
+          ' onkeydown="if(event.key===\'Enter\'||event.key===\' \'){event.preventDefault();window.clearCwBar();}"' +
+          ' aria-label="Clear CW overlay">Clear</span></span>' +
+        '<button class="aprs-bar-close" type="button" onclick="window.closeCwBar()" aria-label="Close CW overlay">&times;</button>' +
+      '</span>' +
     '</div>';
   for (const line of liveLines.slice(0, 8)) {
     const ts = line.ts ? `<span class="aprs-bar-time">${line.ts}</span>` : "";
@@ -100,7 +103,14 @@ function updateCwBar() {
 }
 window.updateCwBar = updateCwBar;
 window.clearCwBar = function() {
-  document.getElementById("cw-clear-btn")?.click();
+  window.resetCwHistoryView();
+};
+window.closeCwBar = function() {
+  cwBarDismissedAtMs = Date.now();
+  if (cwBarOverlay) {
+    cwBarOverlay.style.display = "none";
+    cwBarOverlay.innerHTML = "";
+  }
 };
 
 function clampCwWpm(wpm) {
@@ -343,33 +353,25 @@ if (cwToneCanvas) {
 window.resetCwHistoryView = function() {
   if (cwOutputEl) cwOutputEl.innerHTML = "";
   cwLastAppendTime = 0;
-  cwBufferedWhilePaused = 0;
   cwBarHistory = [];
   cwBarCurrentLine = null;
-  updateCwPauseUi();
   updateCwBar();
   drawCwTonePicker();
 };
 
-function updateCwPauseUi() {
-  if (!cwPauseBtn) return;
-  cwPauseBtn.textContent = cwPaused ? "Resume" : "Pause";
-  cwPauseBtn.classList.toggle("active", cwPaused);
-}
-
-document.getElementById("cw-clear-btn").addEventListener("click", async () => {
+document.getElementById("settings-clear-cw-history")?.addEventListener("click", async () => {
   try {
     await postPath("/clear_cw_decode");
     window.resetCwHistoryView();
   } catch (e) {
-    console.error("CW clear failed", e);
+    console.error("CW history clear failed", e);
   }
 });
 
 // --- Server-side CW decode handler ---
 window.onServerCw = function(evt) {
-  if (cwStatusEl) cwStatusEl.textContent = cwPaused ? "Paused" : "Receiving";
-  if (evt.text && cwOutputEl && !cwPaused) {
+  if (cwStatusEl) cwStatusEl.textContent = "Receiving";
+  if (evt.text && cwOutputEl) {
     // Append decoded text to output
     const now = Date.now();
     if (!cwOutputEl.lastElementChild || now - cwLastAppendTime > 10000 || evt.text === "\n") {
@@ -408,9 +410,6 @@ window.onServerCw = function(evt) {
   if (cwSignalIndicator) {
     cwSignalIndicator.className = evt.signal_on ? "cw-signal-on" : "cw-signal-off";
   }
-  if (cwPaused && evt.text) {
-    cwBufferedWhilePaused += 1;
-  }
   if (!cwAutoInput || cwAutoInput.checked) {
     if (cwWpmInput && Number.isFinite(Number(evt.wpm))) {
       cwWpmInput.value = clampCwWpm(evt.wpm);
@@ -428,21 +427,11 @@ window.onServerCw = function(evt) {
 
 window.restoreCwHistory = function(events) {
   if (!Array.isArray(events) || events.length === 0) return;
-  if (cwStatusEl) cwStatusEl.textContent = cwPaused ? "Paused" : "Receiving";
+  if (cwStatusEl) cwStatusEl.textContent = "Receiving";
   for (const evt of events) {
     window.onServerCw(evt);
   }
 };
-
-if (cwPauseBtn) {
-  cwPauseBtn.addEventListener("click", () => {
-    cwPaused = !cwPaused;
-    if (!cwPaused) {
-      cwBufferedWhilePaused = 0;
-    }
-    updateCwPauseUi();
-  });
-}
 
 window.refreshCwTonePicker = function refreshCwTonePicker() {
   ensureCwToneCanvasResolution();
@@ -452,7 +441,6 @@ window.addEventListener("resize", () => {
   if (ensureCwToneCanvasResolution()) drawCwTonePicker();
 });
 applyCwAutoUi(!!cwAutoInput?.checked);
-updateCwPauseUi();
 updateCwBar();
 ensureCwToneCanvasResolution();
 drawCwTonePicker();

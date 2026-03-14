@@ -2,8 +2,6 @@
 const aisStatus = document.getElementById("ais-status");
 const aisMessagesEl = document.getElementById("ais-messages");
 const aisFilterInput = document.getElementById("ais-filter");
-const aisPauseBtn = document.getElementById("ais-pause-btn");
-const aisClearBtn = document.getElementById("ais-clear-btn");
 const aisBarOverlay = document.getElementById("ais-bar-overlay");
 const aisChannelSummaryEl = document.getElementById("ais-channel-summary");
 const aisVesselCountEl = document.getElementById("ais-vessel-count");
@@ -13,8 +11,6 @@ const AIS_DEFAULT_A_HZ = 161_975_000;
 const AIS_CHANNEL_SPACING_HZ = 50_000;
 let aisFilterText = "";
 let aisMessageHistory = [];
-let aisPaused = false;
-let aisBufferedWhilePaused = 0;
 
 function currentAisHistoryRetentionMs() {
   return typeof window.getDecodeHistoryRetentionMs === "function"
@@ -161,11 +157,7 @@ function updateAisSummary() {
   const vessels = aisLatestByVessel(aisMessageHistory);
   if (aisVesselCountEl) {
     const count = vessels.length;
-    let text = `${count} vessel${count === 1 ? "" : "s"}`;
-    if (aisPaused && aisBufferedWhilePaused > 0) {
-      text += ` · ${aisBufferedWhilePaused} buffered`;
-    }
-    aisVesselCountEl.textContent = text;
+    aisVesselCountEl.textContent = `${count} vessel${count === 1 ? "" : "s"}`;
   }
 
   if (aisLatestSeenEl) {
@@ -176,10 +168,6 @@ function updateAisSummary() {
       const channel = aisChannelInfo(latest.channel);
       aisLatestSeenEl.textContent = `${channel.label} ${aisAgeText(latest._tsMs)}`;
     }
-  }
-  if (aisPauseBtn) {
-    aisPauseBtn.textContent = aisPaused ? "Resume" : "Pause";
-    aisPauseBtn.classList.toggle("active", aisPaused);
   }
 }
 
@@ -292,13 +280,12 @@ function updateAisBar() {
 }
 window.updateAisBar = updateAisBar;
 window.clearAisBar = function() {
-  document.getElementById("ais-clear-btn")?.click();
+  window.resetAisHistoryView();
 };
 
 window.resetAisHistoryView = function() {
   if (aisMessagesEl) aisMessagesEl.innerHTML = "";
   aisMessageHistory = [];
-  aisBufferedWhilePaused = 0;
   updateAisBar();
   renderAisHistory();
   if (window.clearMapMarkersByType) window.clearMapMarkersByType("ais");
@@ -306,7 +293,7 @@ window.resetAisHistoryView = function() {
 
 function renderAisHistory() {
   pruneAisMessageHistory();
-  if (!aisMessagesEl || aisPaused) {
+  if (!aisMessagesEl) {
     updateAisSummary();
     return;
   }
@@ -330,13 +317,7 @@ function addAisMessage(msg) {
   aisMessageHistory.unshift(msg);
   pruneAisMessageHistory();
   scheduleAisBarUpdate();
-
-  if (aisPaused) {
-    aisBufferedWhilePaused += 1;
-    updateAisSummary();
-  } else {
-    scheduleAisHistoryRender();
-  }
+  scheduleAisHistoryRender();
 
   if (msg.lat != null && msg.lon != null && window.aisMapAddVessel) {
     window.aisMapAddVessel(msg);
@@ -362,7 +343,7 @@ function normalizeServerAisMessage(msg) {
 
 window.onServerAisBatch = function(messages) {
   if (!Array.isArray(messages) || messages.length === 0) return;
-  if (aisStatus) aisStatus.textContent = aisPaused ? "Paused" : "Receiving";
+  if (aisStatus) aisStatus.textContent = "Receiving";
   const normalized = [];
   for (const msg of messages) {
     const next = normalizeServerAisMessage(msg);
@@ -382,11 +363,6 @@ window.onServerAisBatch = function(messages) {
   aisMessageHistory = normalized.concat(aisMessageHistory);
   pruneAisMessageHistory();
   scheduleAisBarUpdate();
-  if (aisPaused) {
-    aisBufferedWhilePaused += messages.length;
-    updateAisSummary();
-    return;
-  }
   scheduleAisHistoryRender();
 };
 
@@ -400,28 +376,14 @@ window.pruneAisHistoryView = function() {
   renderAisHistory();
 };
 
-if (aisClearBtn) {
-  aisClearBtn.addEventListener("click", async () => {
-    try {
-      await postPath("/clear_ais_decode");
-      window.resetAisHistoryView();
-    } catch (e) {
-      console.error("AIS clear failed", e);
-    }
-  });
-}
-
-if (aisPauseBtn) {
-  aisPauseBtn.addEventListener("click", () => {
-    aisPaused = !aisPaused;
-    if (!aisPaused) {
-      aisBufferedWhilePaused = 0;
-      renderAisHistory();
-    } else {
-      updateAisSummary();
-    }
-  });
-}
+document.getElementById("settings-clear-ais-history")?.addEventListener("click", async () => {
+  try {
+    await postPath("/clear_ais_decode");
+    window.resetAisHistoryView();
+  } catch (e) {
+    console.error("AIS history clear failed", e);
+  }
+});
 
 if (aisFilterInput) {
   aisFilterInput.addEventListener("input", () => {
@@ -431,7 +393,7 @@ if (aisFilterInput) {
 }
 
 window.onServerAis = function(msg) {
-  if (aisStatus) aisStatus.textContent = aisPaused ? "Paused" : "Receiving";
+  if (aisStatus) aisStatus.textContent = "Receiving";
   addAisMessage(normalizeServerAisMessage(msg));
 };
 

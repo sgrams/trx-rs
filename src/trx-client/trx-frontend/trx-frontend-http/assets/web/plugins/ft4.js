@@ -12,12 +12,9 @@ const ft4Status = document.getElementById("ft4-status");
 const ft4PeriodEl = document.getElementById("ft4-period");
 const ft4MessagesEl = document.getElementById("ft4-messages");
 const ft4FilterInput = document.getElementById("ft4-filter");
-const ft4PauseBtn = document.getElementById("ft4-pause-btn");
 const FT4_PERIOD_MS = 7500;
 let ft4FilterText = "";
 let ft4MessageHistory = [];
-let ft4Paused = false;
-let ft4BufferedWhilePaused = 0;
 
 function currentFt4HistoryRetentionMs() {
   return typeof window.getDecodeHistoryRetentionMs === "function"
@@ -78,15 +75,9 @@ function renderFt4Row(msg) {
   return row;
 }
 
-function updateFt4PauseUi() {
-  if (!ft4PauseBtn) return;
-  ft4PauseBtn.textContent = ft4Paused ? "Resume" : "Pause";
-  ft4PauseBtn.classList.toggle("active", ft4Paused);
-}
-
 function renderFt4History() {
   pruneFt4MessageHistory();
-  if (!ft4MessagesEl || ft4Paused) { updateFt4PauseUi(); return; }
+  if (!ft4MessagesEl) return;
   const filter = ft4FilterText;
   const fragment = document.createDocumentFragment();
   for (let i = 0; i < ft4MessageHistory.length; i++) {
@@ -95,14 +86,14 @@ function renderFt4History() {
     fragment.appendChild(renderFt4Row(msg));
   }
   ft4MessagesEl.replaceChildren(fragment);
-  updateFt4PauseUi();
 }
 
 function addFt4Message(msg) {
   msg._tsMs = Number.isFinite(msg?.ts_ms) ? Number(msg.ts_ms) : Date.now();
   ft4MessageHistory.unshift(msg);
   pruneFt4MessageHistory();
-  if (ft4Paused) { ft4BufferedWhilePaused += 1; updateFt4PauseUi(); return; }
+  window.setFt8FamilyBarDecoder?.("ft4");
+  window.updateFt8Bar?.();
   scheduleFt4HistoryRender();
 }
 
@@ -127,7 +118,7 @@ function normalizeServerFt4Message(msg) {
 
 window.onServerFt4Batch = function(messages) {
   if (!Array.isArray(messages) || messages.length === 0) return;
-  if (ft4Status) ft4Status.textContent = ft4Paused ? "Paused" : "Receiving";
+  if (ft4Status) ft4Status.textContent = "Receiving";
   const normalized = [];
   for (const msg of messages) {
     const next = normalizeServerFt4Message(msg);
@@ -140,7 +131,8 @@ window.onServerFt4Batch = function(messages) {
   normalized.reverse();
   ft4MessageHistory = normalized.concat(ft4MessageHistory);
   pruneFt4MessageHistory();
-  if (ft4Paused) { ft4BufferedWhilePaused += messages.length; updateFt4PauseUi(); return; }
+  window.setFt8FamilyBarDecoder?.("ft4");
+  window.updateFt8Bar?.();
   scheduleFt4HistoryRender();
 };
 
@@ -150,9 +142,32 @@ window.pruneFt4HistoryView = function() { pruneFt4MessageHistory(); renderFt4His
 window.resetFt4HistoryView = function() {
   if (ft4MessagesEl) ft4MessagesEl.innerHTML = "";
   ft4MessageHistory = [];
-  ft4BufferedWhilePaused = 0;
+  window.updateFt8Bar?.();
   renderFt4History();
 };
+
+function buildFt4BarFrames() {
+  const cutoffMs = Date.now() - 15 * 60 * 1000;
+  const messages = ft4MessageHistory.filter((msg) => Number(msg._tsMs ?? msg.ts_ms) >= cutoffMs).slice(0, 8);
+  const newestTsMs = messages.reduce((latest, msg) => Math.max(latest, Number(msg._tsMs ?? msg.ts_ms) || 0), 0);
+  if (messages.length === 0) {
+    return { count: 0, newestTsMs: 0, html: "" };
+  }
+  let html = "";
+  for (const msg of messages) {
+    const tsMs = msg._tsMs ?? msg.ts_ms;
+    const ts = tsMs ? `<span class="aprs-bar-time">${fmtTime(tsMs)}</span>` : "";
+    const snr = Number.isFinite(msg.snr_db) ? `${msg.snr_db.toFixed(1)} dB` : "-- dB";
+    const dt = Number.isFinite(msg.dt_s) ? `dt ${msg.dt_s.toFixed(2)}` : null;
+    const displayFreqHz = normalizeFt4DisplayFreqHz(msg.freq_hz);
+    const rf = Number.isFinite(displayFreqHz) ? `${displayFreqHz.toFixed(0)} Hz` : null;
+    const detail = [snr, dt, rf].filter(Boolean).join(" · ");
+    const text = ft8RenderMessage((msg.message || "").toString());
+    html += `<div class="aprs-bar-frame"><div class="aprs-bar-frame-main">${ts}<span class="aprs-bar-call">${text}</span>${detail ? ` · ${detail}` : ""}</div></div>`;
+  }
+  return { count: messages.length, newestTsMs, html };
+}
+window.registerFt8FamilyBarRenderer?.("ft4", buildFt4BarFrames);
 
 if (ft4FilterInput) {
   ft4FilterInput.addEventListener("input", () => {
@@ -161,31 +176,22 @@ if (ft4FilterInput) {
   });
 }
 
-if (ft4PauseBtn) {
-  ft4PauseBtn.addEventListener("click", () => {
-    ft4Paused = !ft4Paused;
-    if (!ft4Paused) { ft4BufferedWhilePaused = 0; renderFt4History(); } else { updateFt4PauseUi(); }
-  });
-}
-
 document.getElementById("ft4-decode-toggle-btn")?.addEventListener("click", async () => {
   try { await postPath("/toggle_ft4_decode"); } catch (e) { console.error("FT4 toggle failed", e); }
 });
 
-document.getElementById("ft4-clear-btn")?.addEventListener("click", async () => {
+document.getElementById("settings-clear-ft4-history")?.addEventListener("click", async () => {
   try {
     await postPath("/clear_ft4_decode");
     window.resetFt4HistoryView();
-  } catch (e) { console.error("FT4 clear failed", e); }
+  } catch (e) { console.error("FT4 history clear failed", e); }
 });
 
 window.onServerFt4 = function(msg) {
-  if (ft4Status) ft4Status.textContent = ft4Paused ? "Paused" : "Receiving";
+  if (ft4Status) ft4Status.textContent = "Receiving";
   const next = normalizeServerFt4Message(msg);
   if (next.grids.length > 0 && window.mapAddLocator) {
     window.mapAddLocator(next.raw, next.grids, "ft4", next.station, { ...msg, freq_hz: next.rfHz, locator_details: next.locatorDetails });
   }
   addFt4Message(next.history);
 };
-
-updateFt4PauseUi();

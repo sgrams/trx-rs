@@ -2,8 +2,6 @@
 const vdesStatus = document.getElementById("vdes-status");
 const vdesMessagesEl = document.getElementById("vdes-messages");
 const vdesFilterInput = document.getElementById("vdes-filter");
-const vdesPauseBtn = document.getElementById("vdes-pause-btn");
-const vdesClearBtn = document.getElementById("vdes-clear-btn");
 const vdesBarOverlay = document.getElementById("vdes-bar-overlay");
 const vdesChannelSummaryEl = document.getElementById("vdes-channel-summary");
 const vdesFrameCountEl = document.getElementById("vdes-frame-count");
@@ -11,8 +9,6 @@ const vdesLatestSeenEl = document.getElementById("vdes-latest-seen");
 const VDES_BAR_WINDOW_MS = 15 * 60 * 1000;
 let vdesFilterText = "";
 let vdesMessageHistory = [];
-let vdesPaused = false;
-let vdesBufferedWhilePaused = 0;
 
 function currentVdesHistoryRetentionMs() {
   return typeof window.getDecodeHistoryRetentionMs === "function"
@@ -76,19 +72,11 @@ function updateVdesSummary() {
   }
   if (vdesFrameCountEl) {
     const count = vdesMessageHistory.length;
-    let text = `${count} burst${count === 1 ? "" : "s"}`;
-    if (vdesPaused && vdesBufferedWhilePaused > 0) {
-      text += ` · ${vdesBufferedWhilePaused} buffered`;
-    }
-    vdesFrameCountEl.textContent = text;
+    vdesFrameCountEl.textContent = `${count} burst${count === 1 ? "" : "s"}`;
   }
   if (vdesLatestSeenEl) {
     const latest = vdesMessageHistory[0];
     vdesLatestSeenEl.textContent = latest ? vdesAgeText(latest._tsMs) : "No traffic yet";
-  }
-  if (vdesPauseBtn) {
-    vdesPauseBtn.textContent = vdesPaused ? "Resume" : "Pause";
-    vdesPauseBtn.classList.toggle("active", vdesPaused);
   }
 }
 
@@ -227,20 +215,19 @@ function updateVdesBar() {
 }
 window.updateVdesBar = updateVdesBar;
 window.clearVdesBar = function() {
-  document.getElementById("vdes-clear-btn")?.click();
+  window.resetVdesHistoryView();
 };
 
 window.resetVdesHistoryView = function() {
   if (vdesMessagesEl) vdesMessagesEl.innerHTML = "";
   vdesMessageHistory = [];
-  vdesBufferedWhilePaused = 0;
   updateVdesBar();
   renderVdesHistory();
 };
 
 function renderVdesHistory() {
   pruneVdesMessageHistory();
-  if (!vdesMessagesEl || vdesPaused) {
+  if (!vdesMessagesEl) {
     updateVdesSummary();
     return;
   }
@@ -264,13 +251,7 @@ function addVdesMessage(msg) {
   vdesMessageHistory.unshift(msg);
   pruneVdesMessageHistory();
   scheduleVdesBarUpdate();
-
-  if (vdesPaused) {
-    vdesBufferedWhilePaused += 1;
-    updateVdesSummary();
-  } else {
-    scheduleVdesHistoryRender();
-  }
+  scheduleVdesHistoryRender();
 }
 
 function normalizeServerVdesMessage(msg) {
@@ -303,7 +284,7 @@ function normalizeServerVdesMessage(msg) {
 
 window.onServerVdesBatch = function(messages) {
   if (!Array.isArray(messages) || messages.length === 0) return;
-  if (vdesStatus) vdesStatus.textContent = vdesPaused ? "Paused" : "Receiving";
+  if (vdesStatus) vdesStatus.textContent = "Receiving";
   const normalized = [];
   for (const msg of messages) {
     const next = normalizeServerVdesMessage(msg);
@@ -323,11 +304,6 @@ window.onServerVdesBatch = function(messages) {
   vdesMessageHistory = normalized.concat(vdesMessageHistory);
   pruneVdesMessageHistory();
   scheduleVdesBarUpdate();
-  if (vdesPaused) {
-    vdesBufferedWhilePaused += messages.length;
-    updateVdesSummary();
-    return;
-  }
   scheduleVdesHistoryRender();
 };
 
@@ -335,28 +311,14 @@ window.restoreVdesHistory = function(messages) {
   window.onServerVdesBatch(messages);
 };
 
-if (vdesClearBtn) {
-  vdesClearBtn.addEventListener("click", async () => {
-    try {
-      await postPath("/clear_vdes_decode");
-      window.resetVdesHistoryView();
-    } catch (e) {
-      console.error("VDES clear failed", e);
-    }
-  });
-}
-
-if (vdesPauseBtn) {
-  vdesPauseBtn.addEventListener("click", () => {
-    vdesPaused = !vdesPaused;
-    if (!vdesPaused) {
-      vdesBufferedWhilePaused = 0;
-      renderVdesHistory();
-    } else {
-      updateVdesSummary();
-    }
-  });
-}
+document.getElementById("settings-clear-vdes-history")?.addEventListener("click", async () => {
+  try {
+    await postPath("/clear_vdes_decode");
+    window.resetVdesHistoryView();
+  } catch (e) {
+    console.error("VDES history clear failed", e);
+  }
+});
 
 if (vdesFilterInput) {
   vdesFilterInput.addEventListener("input", () => {
@@ -366,7 +328,7 @@ if (vdesFilterInput) {
 }
 
 window.onServerVdes = function(msg) {
-  if (vdesStatus) vdesStatus.textContent = vdesPaused ? "Paused" : "Receiving";
+  if (vdesStatus) vdesStatus.textContent = "Receiving";
   const next = normalizeServerVdesMessage(msg);
   addVdesMessage(next);
   if (next.lat != null && next.lon != null && window.vdesMapAddPoint) {

@@ -515,8 +515,6 @@
       </div>
       <div id="subtab-ais" class="sub-tab-panel" style="display:none;">
         <div class="aprs-controls">
-          <button id="ais-pause-btn" type="button">Pause</button>
-          <button id="ais-clear-btn" type="button">Clear</button>
           <input id="ais-filter" class="ft8-filter" type="text" placeholder="Filter (e.g. MMSI, vessel, A)" />
           <small id="ais-status" style="color:var(--text-muted);">Waiting for server decode</small>
         </div>
@@ -538,8 +536,6 @@
       </div>
       <div id="subtab-vdes" class="sub-tab-panel" style="display:none;">
         <div class="aprs-controls">
-          <button id="vdes-pause-btn" type="button">Pause</button>
-          <button id="vdes-clear-btn" type="button">Clear</button>
           <input id="vdes-filter" class="ft8-filter" type="text" placeholder="Filter (e.g. frame, RMS, payload)" />
           <small id="vdes-status" style="color:var(--text-muted);">Waiting for server decode</small>
         </div>
@@ -561,8 +557,6 @@
       </div>
       <div id="subtab-aprs" class="sub-tab-panel" style="display:none;">
         <div class="ft8-controls aprs-controls">
-          <button id="aprs-pause-btn" type="button">Pause</button>
-          <button id="aprs-clear-btn" type="button">Clear</button>
           <input id="aprs-filter" class="ft8-filter" type="text" placeholder="Filter (e.g. SP2, beacon)" />
           <small id="aprs-status" style="color:var(--text-muted);">Waiting for server decode</small>
         </div>
@@ -598,8 +592,6 @@
       <div id="subtab-hf-aprs" class="sub-tab-panel" style="display:none;">
         <div class="ft8-controls aprs-controls">
           <button id="hf-aprs-decode-toggle-btn" type="button">Enable HF APRS</button>
-          <button id="hf-aprs-pause-btn" type="button">Pause</button>
-          <button id="hf-aprs-clear-btn" type="button">Clear</button>
           <input id="hf-aprs-filter" class="ft8-filter" type="text" placeholder="Filter (e.g. SP2, beacon)" />
           <small id="hf-aprs-status" style="color:var(--text-muted);">Waiting for server decode</small>
         </div>
@@ -635,8 +627,6 @@
       <div id="subtab-ft8" class="sub-tab-panel" style="display:none;">
         <div class="ft8-controls">
           <button id="ft8-decode-toggle-btn" type="button">Enable FT8</button>
-          <button id="ft8-pause-btn" type="button">Pause</button>
-          <button id="ft8-clear-btn" type="button">Clear</button>
           <input id="ft8-filter" class="ft8-filter" type="text" placeholder="Filter (e.g. CQ, DL4)" />
           <small id="ft8-status" style="color:var(--text-muted);">Waiting for server decode</small>
           <small id="ft8-period" style="color:var(--text-muted);">Next slot --s</small>
@@ -653,8 +643,6 @@
       <div id="subtab-ft4" class="sub-tab-panel" style="display:none;">
         <div class="ft8-controls">
           <button id="ft4-decode-toggle-btn" type="button">Enable FT4</button>
-          <button id="ft4-pause-btn" type="button">Pause</button>
-          <button id="ft4-clear-btn" type="button">Clear</button>
           <input id="ft4-filter" class="ft8-filter" type="text" placeholder="Filter (e.g. CQ, DL4)" />
           <small id="ft4-status" style="color:var(--text-muted);">Waiting for server decode</small>
           <small id="ft4-period" style="color:var(--text-muted);">Next slot --s</small>
@@ -671,8 +659,6 @@
       <div id="subtab-ft2" class="sub-tab-panel" style="display:none;">
         <div class="ft8-controls">
           <button id="ft2-decode-toggle-btn" type="button">Enable FT2</button>
-          <button id="ft2-pause-btn" type="button">Pause</button>
-          <button id="ft2-clear-btn" type="button">Clear</button>
           <input id="ft2-filter" class="ft8-filter" type="text" placeholder="Filter (e.g. CQ, DL4)" />
           <small id="ft2-status" style="color:var(--text-muted);">Waiting for server decode</small>
           <small id="ft2-period" style="color:var(--text-muted);">Next slot --s</small>
@@ -689,8 +675,6 @@
       <div id="subtab-wspr" class="sub-tab-panel" style="display:none;">
         <div class="ft8-controls">
           <button id="wspr-decode-toggle-btn" type="button">Enable WSPR</button>
-          <button id="wspr-pause-btn" type="button">Pause</button>
-          <button id="wspr-clear-btn" type="button">Clear</button>
           <input id="wspr-filter" class="ft8-filter" type="text" placeholder="Filter (e.g. K1ABC, FN31)" />
           <small id="wspr-status" style="color:var(--text-muted);">Waiting for server decode</small>
           <small id="wspr-period" style="color:var(--text-muted);">Next slot --:--</small>
@@ -706,8 +690,6 @@
       </div>
       <div id="subtab-cw" class="sub-tab-panel" style="display:none;">
         <div class="cw-controls">
-          <button id="cw-pause-btn" type="button">Pause</button>
-          <button id="cw-clear-btn" type="button">Clear</button>
           <small id="cw-status" style="color:var(--text-muted);">Waiting for server decode</small>
           <div id="cw-signal-indicator" class="cw-signal-off"></div>
         </div>
@@ -783,6 +765,7 @@
       <div class="sub-tab-bar">
         <button class="sub-tab active" data-subtab="settings-scheduler">Scheduler</button>
         <button class="sub-tab" data-subtab="settings-background-decode">Background Decode</button>
+        <button class="sub-tab" data-subtab="settings-history">History</button>
       </div>
       <div id="subtab-settings-scheduler" class="sub-tab-panel">
         <div id="scheduler-panel" class="sch-panel">
@@ -917,6 +900,27 @@
           <div class="sch-section">
             <div class="sch-section-title">Runtime Status</div>
             <div id="background-decode-status-card" class="sch-status-card">No background decode bookmarks configured.</div>
+          </div>
+        </div>
+      </div>
+      <div id="subtab-settings-history" class="sub-tab-panel" style="display:none;">
+        <div class="sch-panel">
+          <div class="sch-section">
+            <div class="sch-section-title">Full Decode History</div>
+            <div class="sch-row">
+              <small style="color:var(--text-muted);">These buttons clear the server-side decode history and reset the corresponding decoder state.</small>
+            </div>
+            <div class="sch-row" style="flex-wrap:wrap;">
+              <button id="settings-clear-ais-history" class="sch-write sch-reset-btn" type="button">Clear full AIS history</button>
+              <button id="settings-clear-vdes-history" class="sch-write sch-reset-btn" type="button">Clear full VDES history</button>
+              <button id="settings-clear-aprs-history" class="sch-write sch-reset-btn" type="button">Clear full APRS history</button>
+              <button id="settings-clear-hf-aprs-history" class="sch-write sch-reset-btn" type="button">Clear full HF APRS history</button>
+              <button id="settings-clear-cw-history" class="sch-write sch-reset-btn" type="button">Clear full CW history</button>
+              <button id="settings-clear-ft8-history" class="sch-write sch-reset-btn" type="button">Clear full FT8 history</button>
+              <button id="settings-clear-ft4-history" class="sch-write sch-reset-btn" type="button">Clear full FT4 history</button>
+              <button id="settings-clear-ft2-history" class="sch-write sch-reset-btn" type="button">Clear full FT2 history</button>
+              <button id="settings-clear-wspr-history" class="sch-write sch-reset-btn" type="button">Clear full WSPR history</button>
+            </div>
           </div>
         </div>
       </div>
