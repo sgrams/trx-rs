@@ -92,6 +92,24 @@ impl VirtualSquelch {
     }
 }
 
+/// Frequency shift for the IQ bandpass filter, expressed as a fraction of Fs.
+///
+/// For SSB modes the symmetric LPF (cutoff ±BW/2) is modulated by ±cutoff_norm
+/// to produce a one-sided passband:
+///   USB / CW   → [0,  BW] Hz  (shift up   by +cutoff_norm)
+///   LSB / CWR  → [-BW, 0] Hz  (shift down by -cutoff_norm)
+///   Everything else → symmetric LPF (shift_norm = 0)
+///
+/// After filtering, `demod_usb` / `demod_lsb` take `.re`, which correctly
+/// reconstructs the audio from the one-sided complex signal.
+fn ssb_shift_norm(mode: &RigMode, cutoff_norm: f32) -> f32 {
+    match mode {
+        RigMode::USB | RigMode::DIG | RigMode::CW | RigMode::Other(_) => cutoff_norm,
+        RigMode::LSB | RigMode::CWR => -cutoff_norm,
+        _ => 0.0,
+    }
+}
+
 fn agc_for_mode(mode: &RigMode, audio_sample_rate: u32) -> SoftAgc {
     let sr = audio_sample_rate.max(1) as f32;
     match mode {
@@ -226,7 +244,7 @@ impl ChannelDsp {
         } else {
             (cutoff_hz / self.sdr_sample_rate as f32).min(0.499)
         };
-        self.lpf_iq = BlockFirFilterPair::new(cutoff_norm, self.fir_taps, IQ_BLOCK_SIZE);
+        self.lpf_iq = BlockFirFilterPair::new(cutoff_norm, ssb_shift_norm(&self.mode, cutoff_norm), self.fir_taps, IQ_BLOCK_SIZE);
         let rate_changed = self.decim_factor != next_decim_factor;
         self.decim_factor = next_decim_factor;
         self.decim_counter = 0;
@@ -303,7 +321,7 @@ impl ChannelDsp {
             channel_if_hz,
             demodulator: Demodulator::for_mode(mode),
             mode: mode.clone(),
-            lpf_iq: BlockFirFilterPair::new(cutoff_norm, taps, IQ_BLOCK_SIZE),
+            lpf_iq: BlockFirFilterPair::new(cutoff_norm, ssb_shift_norm(mode, cutoff_norm), taps, IQ_BLOCK_SIZE),
             sdr_sample_rate,
             audio_sample_rate,
             audio_bandwidth_hz,
@@ -606,6 +624,7 @@ mod tests {
             75,
             true,
             31,
+            false,
             VirtualSquelchConfig::default(),
             pcm_tx,
             iq_tx,
@@ -629,6 +648,7 @@ mod tests {
             75,
             true,
             31,
+            false,
             VirtualSquelchConfig::default(),
             pcm_tx,
             iq_tx,

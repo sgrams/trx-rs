@@ -4,17 +4,26 @@
 
 use num_complex::Complex;
 
-/// USB demodulator: take the real part of each IQ sample.
+/// USB demodulator: take the real part of each baseband IQ sample.
+///
+/// Sideband selection is performed upstream by the asymmetric complex BPF
+/// (passband [0, BW] Hz), so only the upper sideband reaches this point.
 pub(super) fn demod_usb(samples: &[Complex<f32>]) -> Vec<f32> {
     samples.iter().map(|sample| sample.re).collect()
 }
 
-/// LSB demodulator: mixing is handled upstream by negating `channel_if_hz`.
+/// LSB demodulator: take the real part of each baseband IQ sample.
+///
+/// Sideband selection is performed upstream by the asymmetric complex BPF
+/// (passband [-BW, 0] Hz), so only the lower sideband reaches this point.
 pub(super) fn demod_lsb(samples: &[Complex<f32>]) -> Vec<f32> {
     samples.iter().map(|sample| sample.re).collect()
 }
 
 /// CW demodulator: take the real part of each baseband IQ sample.
+///
+/// Sideband selection is performed upstream by the asymmetric complex BPF
+/// (CW: [0, BW], CWR: [-BW, 0] Hz).
 pub(super) fn demod_cw(samples: &[Complex<f32>]) -> Vec<f32> {
     samples.iter().map(|sample| sample.re).collect()
 }
