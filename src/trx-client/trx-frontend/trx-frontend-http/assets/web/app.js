@@ -2719,6 +2719,11 @@ function render(update) {
     ) {
       sdrGainEl.value = String(Math.round(update.filter.sdr_gain_db));
     }
+    if (sdrLnaGainEl && typeof update.filter.sdr_lna_gain_db === "number"
+      && document.activeElement !== sdrLnaGainEl) {
+      sdrLnaGainEl.value = String(Math.round(update.filter.sdr_lna_gain_db));
+      if (sdrLnaGainControlsEl) sdrLnaGainControlsEl.style.display = "";
+    }
     if (wfmDeemphasisEl && typeof update.filter.wfm_deemphasis_us === "number") {
       wfmDeemphasisEl.value = String(update.filter.wfm_deemphasis_us);
     }
@@ -6720,6 +6725,9 @@ const sdrSettingsRowEl = document.getElementById("sdr-settings-row");
 const sdrGainControlsEl = document.getElementById("sdr-gain-controls");
 const sdrGainEl = document.getElementById("sdr-gain-db");
 const sdrGainSetBtn = document.getElementById("sdr-gain-set");
+const sdrLnaGainControlsEl = document.getElementById("sdr-lna-gain-controls");
+const sdrLnaGainEl = document.getElementById("sdr-lna-gain-db");
+const sdrLnaGainSetBtn = document.getElementById("sdr-lna-gain-set");
 const sdrAgcEl = document.getElementById("sdr-agc-enabled");
 const wfmStFlagEl = document.getElementById("wfm-st-flag");
 const sdrSquelchWrapEl = document.getElementById("sdr-squelch-wrap");
@@ -6896,10 +6904,12 @@ function submitSdrGain() {
   postPath(`/set_sdr_gain?db=${encodeURIComponent(parsed)}`).catch(() => {});
 }
 function updateSdrGainInputState() {
-  if (!sdrAgcEl || !sdrGainEl || !sdrGainSetBtn) return;
+  if (!sdrAgcEl) return;
   const agcOn = sdrAgcEl.checked;
-  sdrGainEl.disabled = agcOn;
-  sdrGainSetBtn.disabled = agcOn;
+  if (sdrGainEl) sdrGainEl.disabled = agcOn;
+  if (sdrGainSetBtn) sdrGainSetBtn.disabled = agcOn;
+  if (sdrLnaGainEl) sdrLnaGainEl.disabled = agcOn;
+  if (sdrLnaGainSetBtn) sdrLnaGainSetBtn.disabled = agcOn;
 }
 if (sdrAgcEl) {
   sdrAgcEl.addEventListener("change", () => {
@@ -6915,6 +6925,23 @@ if (sdrGainEl) {
     if (ev.key === "Enter") {
       ev.preventDefault();
       submitSdrGain();
+    }
+  });
+}
+function submitSdrLnaGain() {
+  if (!sdrLnaGainEl) return;
+  const parsed = Number.parseFloat(sdrLnaGainEl.value);
+  if (!Number.isFinite(parsed) || parsed < 0) return;
+  postPath(`/set_sdr_lna_gain?db=${encodeURIComponent(parsed)}`).catch(() => {});
+}
+if (sdrLnaGainSetBtn) {
+  sdrLnaGainSetBtn.addEventListener("click", submitSdrLnaGain);
+}
+if (sdrLnaGainEl) {
+  sdrLnaGainEl.addEventListener("keydown", (ev) => {
+    if (ev.key === "Enter") {
+      ev.preventDefault();
+      submitSdrLnaGain();
     }
   });
 }
