@@ -1537,6 +1537,7 @@ int ft8_decoder_decode(ft8_decoder_t* dec, ft8_decode_result_t* out, int max_res
         int pass_bp[5] = { 0 };
         int pass_sp[5] = { 0 };
         float pass_best_dmin[5] = { INFINITY, INFINITY, INFINITY, INFINITY, INFINITY };
+        int pass_best_errors[5] = { FTX_LDPC_M, FTX_LDPC_M, FTX_LDPC_M, FTX_LDPC_M, FTX_LDPC_M };
         for (int idx = 0; idx < num_hits && num_decoded < max_results; ++idx)
         {
             const ft2_scan_hit_t* hit = &hit_list[idx];
@@ -1556,6 +1557,8 @@ int ft8_decoder_decode(ft8_decoder_t* dec, ft8_decode_result_t* out, int max_res
                         ++pass_sp[pass];
                     if (pass_diag.dmin[pass] < pass_best_dmin[pass])
                         pass_best_dmin[pass] = pass_diag.dmin[pass];
+                    if (pass_diag.nharderror[pass] >= 0 && pass_diag.nharderror[pass] < pass_best_errors[pass])
+                        pass_best_errors[pass] = pass_diag.nharderror[pass];
                 }
                 switch (fail_stage)
                 {
@@ -1596,6 +1599,8 @@ int ft8_decoder_decode(ft8_decoder_t* dec, ft8_decode_result_t* out, int max_res
                     ++pass_sp[pass];
                 if (pass_diag.dmin[pass] < pass_best_dmin[pass])
                     pass_best_dmin[pass] = pass_diag.dmin[pass];
+                if (pass_diag.nharderror[pass] >= 0 && pass_diag.nharderror[pass] < pass_best_errors[pass])
+                    pass_best_errors[pass] = pass_diag.nharderror[pass];
             }
 
             int idx_hash = message.hash % 200;
@@ -1648,7 +1653,7 @@ int ft8_decoder_decode(ft8_decoder_t* dec, ft8_decode_result_t* out, int max_res
                 num_decoded = fallback_decoded;
         }
         LOG(LOG_INFO,
-            "FT2 window: raw=%d peaks=%d hits=%d best_peak=%.3f best_sync=%.3f decoded=%d fallback=%d fail(sync=%d freq=%d down=%d bits=%d qual=%d ldpc=%d crc=%d unpack=%d) pass(bp=%d/%d/%d/%d/%d sp=%d/%d/%d/%d/%d dmin=%.2f/%.2f/%.2f/%.2f/%.2f)\n",
+            "FT2 window: raw=%d peaks=%d hits=%d best_peak=%.3f best_sync=%.3f decoded=%d fallback=%d fail(sync=%d freq=%d down=%d bits=%d qual=%d ldpc=%d crc=%d unpack=%d) pass(bp=%d/%d/%d/%d/%d sp=%d/%d/%d/%d/%d err=%d/%d/%d/%d/%d dmin=%.2f/%.2f/%.2f/%.2f/%.2f)\n",
             dec->ft2_raw_len,
             scan_stats.peaks_found,
             scan_stats.hits_found,
@@ -1666,6 +1671,11 @@ int ft8_decoder_decode(ft8_decoder_t* dec, ft8_decode_result_t* out, int max_res
             fail_unpack,
             pass_bp[0], pass_bp[1], pass_bp[2], pass_bp[3], pass_bp[4],
             pass_sp[0], pass_sp[1], pass_sp[2], pass_sp[3], pass_sp[4],
+            (pass_best_errors[0] < FTX_LDPC_M) ? pass_best_errors[0] : -1,
+            (pass_best_errors[1] < FTX_LDPC_M) ? pass_best_errors[1] : -1,
+            (pass_best_errors[2] < FTX_LDPC_M) ? pass_best_errors[2] : -1,
+            (pass_best_errors[3] < FTX_LDPC_M) ? pass_best_errors[3] : -1,
+            (pass_best_errors[4] < FTX_LDPC_M) ? pass_best_errors[4] : -1,
             isfinite(pass_best_dmin[0]) ? pass_best_dmin[0] : -1.0f,
             isfinite(pass_best_dmin[1]) ? pass_best_dmin[1] : -1.0f,
             isfinite(pass_best_dmin[2]) ? pass_best_dmin[2] : -1.0f,
