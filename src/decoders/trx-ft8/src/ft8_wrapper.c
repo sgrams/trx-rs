@@ -913,6 +913,81 @@ static bool ft2_extract_bitmetrics_raw(const float complex* signal, float bitmet
     return true;
 }
 
+static int ft2_ldpc_check(const uint8_t* codeword)
+{
+    int errors = 0;
+    for (int m = 0; m < FTX_LDPC_M; ++m)
+    {
+        uint8_t x = 0;
+        for (int i = 0; i < kFTX_LDPC_Num_rows[m]; ++i)
+            x ^= codeword[kFTX_LDPC_Nm[m][i] - 1];
+        if (x != 0)
+            ++errors;
+    }
+    return errors;
+}
+
+// OSD-1 / OSD-2 trial decoder.
+// Tries flipping each of the K least-reliable bits (OSD-1), and all pairs when
+// nharderror <= 4 (OSD-2).  On success cw holds the corrected codeword.
+// The caller must verify the message (CRC) separately.
+static bool ft2_osd_decode(uint8_t* cw, const float* log174, int nharderror)
+{
+    const int K = 50;
+    if (nharderror < 1 || nharderror > 8)
+        return false;
+
+    // Find K indices with smallest |LLR| (least reliable), via partial selection.
+    int sel[50];
+    bool used[FTX_LDPC_N];
+    memset(used, 0, sizeof(used));
+    for (int j = 0; j < K; ++j)
+    {
+        int best = -1;
+        float best_r = INFINITY;
+        for (int i = 0; i < FTX_LDPC_N; ++i)
+        {
+            if (!used[i] && fabsf(log174[i]) < best_r)
+            {
+                best_r = fabsf(log174[i]);
+                best = i;
+            }
+        }
+        if (best < 0)
+            break;
+        sel[j] = best;
+        used[best] = true;
+    }
+
+    // OSD-1: flip each of the K least-reliable bits independently.
+    for (int j = 0; j < K; ++j)
+    {
+        cw[sel[j]] ^= 1;
+        if (ft2_ldpc_check(cw) == 0)
+            return true;
+        cw[sel[j]] ^= 1;
+    }
+
+    // OSD-2: try all pairs from the K least-reliable bits (only for small error counts).
+    if (nharderror <= 4)
+    {
+        for (int j = 0; j < K; ++j)
+        {
+            cw[sel[j]] ^= 1;
+            for (int l = j + 1; l < K; ++l)
+            {
+                cw[sel[l]] ^= 1;
+                if (ft2_ldpc_check(cw) == 0)
+                    return true;
+                cw[sel[l]] ^= 1;
+            }
+            cw[sel[j]] ^= 1;
+        }
+    }
+
+    return false;
+}
+
 static void ft2_pack_bits(const uint8_t bit_array[], int num_bits, uint8_t packed[])
 {
     int num_bytes = (num_bits + 7) / 8;
@@ -1318,6 +1393,8 @@ static bool ft2_decode_hit(
 
     bool ok = false;
     uint8_t cw[FTX_LDPC_N] = { 0 };
+    int global_best_errors = FTX_LDPC_M;
+    int global_best_pass = 0;
     for (int pass = 0; pass < 5 && !ok; ++pass)
     {
         float log174[FTX_LDPC_N];
@@ -1364,6 +1441,12 @@ static bool ft2_decode_hit(
             }
         }
 
+        if (nharderror < global_best_errors)
+        {
+            global_best_errors = nharderror;
+            global_best_pass = pass;
+        }
+
         if (pass_diag)
         {
             pass_diag->ntype[pass] = ntype;
@@ -1371,6 +1454,18 @@ static bool ft2_decode_hit(
             pass_diag->dmin[pass] = dmin;
         }
     }
+
+    // OSD-1 / OSD-2: when BP/SP leave only a few parity errors, try flipping
+    // the least-reliable bits to bridge the gap.
+    if (!ok && global_best_errors <= 8)
+    {
+        float osd_log174[FTX_LDPC_N];
+        memcpy(osd_log174, llr_passes[global_best_pass], sizeof(osd_log174));
+        ft2_normalize_log174(osd_log174);
+        if (ft2_osd_decode(cw, osd_log174, global_best_errors) && ft2_unpack_message(cw, message))
+            ok = true;
+    }
+
     if (!ok && fail_stage)
         *fail_stage = FT2_FAIL_LDPC;
 
