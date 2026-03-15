@@ -931,62 +931,6 @@ static int ft2_ldpc_check(const uint8_t* codeword)
 // Tries flipping each of the K least-reliable bits (OSD-1), and all pairs when
 // nharderror <= 4 (OSD-2).  On success cw holds the corrected codeword.
 // The caller must verify the message (CRC) separately.
-static bool ft2_osd_decode(uint8_t* cw, const float* log174, int nharderror)
-{
-    const int K = 50;
-    if (nharderror < 1 || nharderror > 8)
-        return false;
-
-    // Find K indices with smallest |LLR| (least reliable), via partial selection.
-    int sel[50];
-    bool used[FTX_LDPC_N];
-    memset(used, 0, sizeof(used));
-    for (int j = 0; j < K; ++j)
-    {
-        int best = -1;
-        float best_r = INFINITY;
-        for (int i = 0; i < FTX_LDPC_N; ++i)
-        {
-            if (!used[i] && fabsf(log174[i]) < best_r)
-            {
-                best_r = fabsf(log174[i]);
-                best = i;
-            }
-        }
-        if (best < 0)
-            break;
-        sel[j] = best;
-        used[best] = true;
-    }
-
-    // OSD-1: flip each of the K least-reliable bits independently.
-    for (int j = 0; j < K; ++j)
-    {
-        cw[sel[j]] ^= 1;
-        if (ft2_ldpc_check(cw) == 0)
-            return true;
-        cw[sel[j]] ^= 1;
-    }
-
-    // OSD-2: try all pairs from the K least-reliable bits (only for small error counts).
-    if (nharderror <= 4)
-    {
-        for (int j = 0; j < K; ++j)
-        {
-            cw[sel[j]] ^= 1;
-            for (int l = j + 1; l < K; ++l)
-            {
-                cw[sel[l]] ^= 1;
-                if (ft2_ldpc_check(cw) == 0)
-                    return true;
-                cw[sel[l]] ^= 1;
-            }
-            cw[sel[j]] ^= 1;
-        }
-    }
-
-    return false;
-}
 
 static void ft2_pack_bits(const uint8_t bit_array[], int num_bits, uint8_t packed[])
 {
@@ -1034,17 +978,6 @@ static void ft2_encode_codeword_from_a91(const uint8_t a91[FTX_LDPC_K_BYTES], ui
     }
 }
 
-static float ft2_codeword_distance(const uint8_t codeword[FTX_LDPC_N], const float log174[FTX_LDPC_N])
-{
-    float distance = 0.0f;
-    for (int i = 0; i < FTX_LDPC_N; ++i)
-    {
-        uint8_t hard = (log174[i] >= 0.0f) ? 1u : 0u;
-        if (codeword[i] != hard)
-            distance += fabsf(log174[i]);
-    }
-    return distance;
-}
 
 static bool ft2_try_crc_candidate(const uint8_t a91[FTX_LDPC_K_BYTES], ftx_message_t* message)
 {
@@ -1074,13 +1007,11 @@ static bool ft2_osd_lite_decode(const float log174[FTX_LDPC_N], ftx_message_t* m
     }
     qsort(reliabilities, FTX_LDPC_K, sizeof(reliabilities[0]), ft2_cmp_reliability_asc);
 
-    const int max_candidates = 24;
+    const int max_candidates = 16;
     const int n = (FTX_LDPC_K < max_candidates) ? FTX_LDPC_K : max_candidates;
     uint8_t trial_a91[FTX_LDPC_K_BYTES];
-    uint8_t best_codeword[FTX_LDPC_N];
-    float best_distance = INFINITY;
-    bool have_best = false;
 
+    // OSD-1: try flipping each of the n least-reliable systematic bits.
     for (int i = 0; i < n; ++i)
     {
         memcpy(trial_a91, base_a91, sizeof(trial_a91));
@@ -1090,6 +1021,7 @@ static bool ft2_osd_lite_decode(const float log174[FTX_LDPC_N], ftx_message_t* m
             return true;
     }
 
+    // OSD-2: try all pairs from the n least-reliable systematic bits.
     for (int i = 0; i < n; ++i)
     {
         for (int j = i + 1; j < n; ++j)
@@ -1104,37 +1036,6 @@ static bool ft2_osd_lite_decode(const float log174[FTX_LDPC_N], ftx_message_t* m
         }
     }
 
-    for (int i = 0; i < n; ++i)
-    {
-        for (int j = i + 1; j < n; ++j)
-        {
-            for (int k = j + 1; k < n; ++k)
-            {
-                memcpy(trial_a91, base_a91, sizeof(trial_a91));
-                int b0 = reliabilities[i].index;
-                int b1 = reliabilities[j].index;
-                int b2 = reliabilities[k].index;
-                trial_a91[b0 / 8] ^= (uint8_t)(0x80u >> (b0 % 8));
-                trial_a91[b1 / 8] ^= (uint8_t)(0x80u >> (b1 % 8));
-                trial_a91[b2 / 8] ^= (uint8_t)(0x80u >> (b2 % 8));
-                if (ft2_try_crc_candidate(trial_a91, message))
-                    return true;
-
-                uint8_t codeword[FTX_LDPC_N];
-                ft2_encode_codeword_from_a91(trial_a91, codeword);
-                float distance = ft2_codeword_distance(codeword, log174);
-                if (distance < best_distance)
-                {
-                    memcpy(best_codeword, codeword, sizeof(best_codeword));
-                    best_distance = distance;
-                    have_best = true;
-                }
-            }
-        }
-    }
-
-    if (have_best)
-        return ft2_unpack_message(best_codeword, message);
     return false;
 }
 
@@ -1393,6 +1294,7 @@ static bool ft2_decode_hit(
 
     bool ok = false;
     uint8_t cw[FTX_LDPC_N] = { 0 };
+    int global_best_errors = FTX_LDPC_M;
     for (int pass = 0; pass < 5 && !ok; ++pass)
     {
         float log174[FTX_LDPC_N];
@@ -1439,6 +1341,9 @@ static bool ft2_decode_hit(
             }
         }
 
+        if (nharderror < global_best_errors)
+            global_best_errors = nharderror;
+
         if (pass_diag)
         {
             pass_diag->ntype[pass] = ntype;
@@ -1447,9 +1352,11 @@ static bool ft2_decode_hit(
         }
     }
 
-    // CRC-based OSD: try flipping 1/2/3 of the least-reliable systematic bits.
-    // Works directly from LLRs without depending on LDPC convergence.
-    if (!ok)
+    // CRC-based OSD-1/OSD-2: only when LDPC was within 6 parity errors of
+    // converging, so the LLRs are reliable enough to trust bit-flip search.
+    // 16 least-reliable systematic bits, OSD-2 = 16+120 = 136 CRC checks per
+    // pass, 680 total — keeps false-positive rate acceptably low.
+    if (!ok && global_best_errors <= 6)
     {
         for (int pass = 0; pass < 5 && !ok; ++pass)
         {
