@@ -114,7 +114,7 @@ fn agc_for_mode(mode: &RigMode, audio_sample_rate: u32) -> SoftAgc {
     let sr = audio_sample_rate.max(1) as f32;
     match mode {
         RigMode::CW | RigMode::CWR => SoftAgc::new(sr, 1.0, 50.0, 0.5, 30.0),
-        RigMode::AM => SoftAgc::new(sr, 200.0, 3_500.0, 0.95, 46.0),
+        RigMode::AM => SoftAgc::new(sr, 5.0, 200.0, 0.5, 36.0),
         _ => SoftAgc::new(sr, 5.0, 500.0, 0.5, 30.0),
     }
 }
@@ -124,6 +124,11 @@ fn iq_agc_for_mode(mode: &RigMode, sample_rate: u32) -> Option<SoftAgc> {
     match mode {
         RigMode::FM | RigMode::PKT => Some(SoftAgc::new(sr, 0.5, 150.0, 0.8, 12.0)),
         RigMode::AIS => Some(SoftAgc::new(sr, 0.5, 150.0, 0.8, 12.0)),
+        // AM: normalize carrier amplitude before envelope detection so the
+        // DC blocker always sees the same steady-state bias (~0.7) regardless
+        // of RF signal strength.  Fast attack (0.5 ms) catches sudden carrier
+        // appearance; 50 ms release tracks slow fading without distorting audio.
+        RigMode::AM => Some(SoftAgc::new(sr, 0.5, 50.0, 0.7, 30.0)),
         RigMode::WFM => None,
         _ => None,
     }
@@ -132,6 +137,11 @@ fn iq_agc_for_mode(mode: &RigMode, sample_rate: u32) -> Option<SoftAgc> {
 fn dc_for_mode(mode: &RigMode) -> Option<DcBlocker> {
     match mode {
         RigMode::WFM => None,
+        // AM: the envelope detector output has a large carrier-amplitude DC
+        // bias (A_c).  r=0.999 gives τ≈125 ms at 8 kHz, tracking carrier
+        // level ~10× faster than r=0.9999 while still passing all audio
+        // (highpass cutoff <2 Hz, well below 100 Hz speech floor).
+        RigMode::AM => Some(DcBlocker::new(0.999)),
         _ => Some(DcBlocker::new(0.9999)),
     }
 }
