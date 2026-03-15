@@ -63,6 +63,12 @@ pub trait IqSource: Send + 'static {
         Ok(())
     }
 
+    /// Read the current value of a named gain element. Returns `None` for
+    /// sources that do not support named gain elements.
+    fn read_named_gain(&self, _name: &str) -> Option<f64> {
+        None
+    }
+
     /// Enable or disable hardware automatic gain control.  Default
     /// implementation is a no-op for sources that do not support AGC.
     fn set_gain_mode(&mut self, _automatic: bool) -> Result<(), String> {

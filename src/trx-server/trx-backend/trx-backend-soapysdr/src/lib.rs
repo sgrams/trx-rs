@@ -10,6 +10,7 @@ pub mod vchan_impl;
 use std::pin::Pin;
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex};
+use dsp::IqSource as _;
 use trx_core::radio::freq::{Band, Freq};
 use trx_core::rig::response::RigError;
 use trx_core::rig::state::{RigFilterState, SpectrumData, VchanRdsEntry, WfmDenoiseLevel};
@@ -155,13 +156,21 @@ impl SoapySdrRig {
         let hardware_center_hz = initial_freq.hz as i64 - center_offset_hz;
 
         // Create real IQ source from hardware device.
-        let iq_source: Box<dyn dsp::IqSource> = Box::new(real_iq_source::RealIqSource::new(
+        let iq_source = real_iq_source::RealIqSource::new(
             args,
             hardware_center_hz as f64,
             sdr_sample_rate as f64,
             bandwidth_hz as f64,
             effective_gain_db,
-        )?);
+        )?;
+        // Read the initial LNA gain from the hardware before the source is
+        // moved into the pipeline thread.  Returns None on devices that do
+        // not expose an "LNA" gain element (e.g. RTL-SDR exposes "TUNER").
+        let initial_lna_gain_db = iq_source.read_named_gain("LNA");
+        if let Some(lna) = initial_lna_gain_db {
+            tracing::info!("SDR LNA gain element present, initial value: {:.1} dB", lna);
+        }
+        let iq_source: Box<dyn dsp::IqSource> = Box::new(iq_source);
 
         let primary_channel_count = channels.len();
         let mut all_channels = channels.to_vec();
@@ -287,7 +296,7 @@ impl SoapySdrRig {
             wfm_denoise: WfmDenoiseLevel::Auto,
             gain_db,
             max_gain_db,
-            lna_gain_db: None,
+            lna_gain_db: initial_lna_gain_db,
             agc_enabled,
             squelch_enabled,
             squelch_threshold_db,
