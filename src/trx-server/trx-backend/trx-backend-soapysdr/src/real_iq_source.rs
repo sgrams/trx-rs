@@ -179,6 +179,12 @@ impl IqSource for RealIqSource {
             .map_err(|e| format!("Failed to set SDR gain: {}", e))
     }
 
+    fn set_gain_mode(&mut self, automatic: bool) -> Result<(), String> {
+        self.device
+            .set_gain_mode(soapysdr::Direction::Rx, 0, automatic)
+            .map_err(|e| format!("Failed to set SDR gain mode: {}", e))
+    }
+
     fn handle_read_error(&mut self, err: &str, streak: u32) -> Result<bool, String> {
         const OVERFLOW_RESTART_STREAK: u32 = 50;
         const NON_OVERFLOW_RESTART_STREAK: u32 = 10;

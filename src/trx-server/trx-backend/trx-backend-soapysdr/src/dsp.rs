@@ -57,6 +57,12 @@ pub trait IqSource: Send + 'static {
         Ok(())
     }
 
+    /// Enable or disable hardware automatic gain control.  Default
+    /// implementation is a no-op for sources that do not support AGC.
+    fn set_gain_mode(&mut self, _automatic: bool) -> Result<(), String> {
+        Ok(())
+    }
+
     /// Gives a source-specific implementation a chance to recover from a
     /// read error (for example, by rearming a hardware stream after overflow).
     /// Returns `true` when an active recovery action was attempted.
@@ -100,6 +106,9 @@ pub struct SdrPipeline {
     /// Write `Some(gain_db)` here to adjust the hardware RX gain.
     /// The IQ read loop picks it up on the next iteration.
     pub gain_cmd: Arc<std::sync::Mutex<Option<f64>>>,
+    /// Write `Some(enabled)` here to switch hardware AGC on or off.
+    /// The IQ read loop picks it up on the next iteration.
+    pub agc_cmd: Arc<std::sync::Mutex<Option<bool>>>,
     /// Current hardware center frequency in Hz, kept in sync by `SoapySdrRig`.
     /// Read by `SdrVirtualChannelManager` to validate and compute IF offsets.
     pub shared_center_hz: Arc<AtomicI64>,
@@ -174,6 +183,8 @@ impl SdrPipeline {
         let thread_retune_cmd = retune_cmd.clone();
         let gain_cmd: Arc<std::sync::Mutex<Option<f64>>> = Arc::new(std::sync::Mutex::new(None));
         let thread_gain_cmd = gain_cmd.clone();
+        let agc_cmd: Arc<std::sync::Mutex<Option<bool>>> = Arc::new(std::sync::Mutex::new(None));
+        let thread_agc_cmd = agc_cmd.clone();
 
         std::thread::Builder::new()
             .name("sdr-iq-read".to_string())
@@ -186,6 +197,7 @@ impl SdrPipeline {
                     thread_spectrum_buf,
                     thread_retune_cmd,
                     thread_gain_cmd,
+                    thread_agc_cmd,
                 );
             })
             .expect("failed to spawn sdr-iq-read thread");
@@ -198,6 +210,7 @@ impl SdrPipeline {
             sdr_sample_rate,
             retune_cmd,
             gain_cmd,
+            agc_cmd,
             shared_center_hz: Arc::new(AtomicI64::new(0)),
             audio_sample_rate,
             audio_channels: output_channels,
@@ -277,6 +290,7 @@ fn iq_read_loop(
     spectrum_buf: Arc<Mutex<Option<Vec<f32>>>>,
     retune_cmd: Arc<std::sync::Mutex<Option<f64>>>,
     gain_cmd: Arc<std::sync::Mutex<Option<f64>>>,
+    agc_cmd: Arc<std::sync::Mutex<Option<bool>>>,
 ) {
     let mut block = vec![Complex::new(0.0_f32, 0.0_f32); IQ_BLOCK_SIZE];
     let block_duration_ms = if sdr_sample_rate > 0 {
@@ -306,6 +320,15 @@ fn iq_read_loop(
                     tracing::warn!("SDR gain change to {:.1} dB failed: {}", gain_db, e);
                 } else {
                     tracing::info!("SDR gain updated to {:.1} dB", gain_db);
+                }
+            }
+        }
+        if let Ok(mut cmd) = agc_cmd.try_lock() {
+            if let Some(enabled) = cmd.take() {
+                if let Err(e) = source.set_gain_mode(enabled) {
+                    tracing::warn!("SDR AGC mode change to {} failed: {}", enabled, e);
+                } else {
+                    tracing::info!("SDR AGC mode set to {}", enabled);
                 }
             }
         }

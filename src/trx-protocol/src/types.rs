@@ -46,6 +46,7 @@ pub enum ClientCommand {
     SetBandwidth { bandwidth_hz: u32 },
     SetFirTaps { taps: u32 },
     SetSdrGain { gain_db: f64 },
+    SetSdrAgc { enabled: bool },
     SetSdrSquelch { enabled: bool, threshold_db: f64 },
     SetWfmDeemphasis { deemphasis_us: u32 },
     SetWfmStereo { enabled: bool },

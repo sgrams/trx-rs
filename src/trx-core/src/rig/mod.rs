@@ -190,6 +190,16 @@ pub trait RigCat: Rig + Send {
         )))
     }
 
+    fn set_sdr_agc<'a>(
+        &'a mut self,
+        _enabled: bool,
+    ) -> Pin<Box<dyn Future<Output = DynResult<()>> + Send + 'a>> {
+        Box::pin(std::future::ready(Err(
+            Box::new(response::RigError::not_supported("set_sdr_agc"))
+                as Box<dyn std::error::Error + Send + Sync>,
+        )))
+    }
+
     fn set_sdr_squelch<'a>(
         &'a mut self,
         _enabled: bool,

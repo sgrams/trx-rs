@@ -52,6 +52,8 @@ pub struct SoapySdrRig {
     gain_db: f64,
     /// Optional hard ceiling for the applied hardware gain in dB.
     max_gain_db: Option<f64>,
+    /// Whether hardware AGC is currently enabled.
+    agc_enabled: bool,
     /// Whether software squelch is enabled on primary channel (except WFM mode).
     squelch_enabled: bool,
     /// Software squelch threshold (dBFS) on primary channel.
@@ -133,13 +135,7 @@ impl SoapySdrRig {
             max_gain_db,
         );
 
-        if gain_mode == "auto" {
-            tracing::warn!(
-                "SoapySDR hardware AGC is not yet implemented; falling back to configured \
-                 gain of {} dB",
-                gain_db,
-            );
-        }
+        let agc_enabled = gain_mode == "auto";
 
         let effective_gain_db = max_gain_db
             .map(|max_gain| gain_db.min(max_gain))
@@ -289,6 +285,7 @@ impl SoapySdrRig {
             wfm_denoise: WfmDenoiseLevel::Auto,
             gain_db,
             max_gain_db,
+            agc_enabled,
             squelch_enabled,
             squelch_threshold_db,
             ais_channel_indices: Some((primary_channel_count, primary_channel_count + 1)),
@@ -582,6 +579,19 @@ impl RigCat for SoapySdrRig {
         })
     }
 
+    fn set_sdr_agc<'a>(
+        &'a mut self,
+        enabled: bool,
+    ) -> Pin<Box<dyn std::future::Future<Output = DynResult<()>> + Send + 'a>> {
+        Box::pin(async move {
+            self.agc_enabled = enabled;
+            if let Ok(mut cmd) = self.pipeline.agc_cmd.lock() {
+                *cmd = Some(enabled);
+            }
+            Ok(())
+        })
+    }
+
     fn set_sdr_squelch<'a>(
         &'a mut self,
         enabled: bool,
@@ -793,6 +803,7 @@ impl RigCat for SoapySdrRig {
                     .map(|max_gain| self.gain_db.min(max_gain))
                     .unwrap_or(self.gain_db),
             ),
+            sdr_agc_enabled: Some(self.agc_enabled),
             sdr_squelch_enabled: Some(self.squelch_enabled),
             sdr_squelch_threshold_db: Some(self.squelch_threshold_db as f64),
             wfm_deemphasis_us: self.wfm_deemphasis_us,

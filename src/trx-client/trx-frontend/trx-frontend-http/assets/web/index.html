@@ -232,13 +232,6 @@
                       <option value="high">High</option>
                     </select>
                   </label>
-                  <div class="wfm-gain-group" id="sdr-gain-controls">
-                    <label class="wfm-control">
-                      <span class="wfm-control-label">RF Gain</span>
-                      <input id="sdr-gain-db" class="status-input" type="number" min="0" max="60" step="1" inputmode="decimal">
-                    </label>
-                    <button id="sdr-gain-set" type="button" class="wfm-inline-btn">Set</button>
-                  </div>
                   <label class="wfm-control wfm-st-flag-wrap" aria-label="Stereo pilot status">
                     <span class="wfm-control-label">Pilot</span>
                     <span id="wfm-st-flag" class="wfm-st-flag wfm-st-flag-mono">MO</span>
@@ -258,6 +251,22 @@
             <div class="full-row label-below-row" id="vfo-row">
               <div class="label"><span>VFO</span></div>
               <div class="vfo-picker" id="vfo-picker"></div>
+            </div>
+            <div class="full-row label-below-row" id="sdr-settings-row" style="display:none;">
+              <div class="label"><span>SDR settings</span></div>
+              <div class="inline" style="gap: 0.6rem; flex-wrap: wrap; align-items: center;">
+                <label class="vol-label" id="sdr-agc-wrap">
+                  <span style="margin-right:0.3rem;">Hardware AGC</span>
+                  <input type="checkbox" id="sdr-agc-enabled">
+                </label>
+                <div class="wfm-gain-group" id="sdr-gain-controls">
+                  <label class="wfm-control">
+                    <span class="wfm-control-label">RF Gain</span>
+                    <input id="sdr-gain-db" class="status-input" type="number" min="0" max="60" step="1" inputmode="decimal">
+                  </label>
+                  <button id="sdr-gain-set" type="button" class="wfm-inline-btn">Set</button>
+                </div>
+              </div>
             </div>
             <div class="full-row label-below-row" id="vchan-row">
               <div class="label"><span>Channels / Scheduler</span></div>

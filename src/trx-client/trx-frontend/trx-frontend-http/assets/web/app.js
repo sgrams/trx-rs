@@ -2755,8 +2755,12 @@ function render(update) {
     }
     updateSdrSquelchControlVisibility();
   }
-  if (sdrGainControlsEl && typeof update.show_sdr_gain_control === "boolean") {
-    sdrGainControlsEl.style.display = update.show_sdr_gain_control ? "" : "none";
+  if (typeof update.show_sdr_gain_control === "boolean") {
+    if (sdrSettingsRowEl) sdrSettingsRowEl.style.display = update.show_sdr_gain_control ? "" : "none";
+  }
+  if (update.filter && sdrAgcEl && typeof update.filter.sdr_agc_enabled === "boolean") {
+    sdrAgcEl.checked = update.filter.sdr_agc_enabled;
+    updateSdrGainInputState();
   }
   if (update.status && update.status.freq && typeof update.status.freq.hz === "number") {
     applyLocalTunedFrequency(update.status.freq.hz, true);
@@ -6712,9 +6716,11 @@ const wfmControlsCol = document.getElementById("wfm-controls-col");
 const wfmDeemphasisEl = document.getElementById("wfm-deemphasis");
 const wfmAudioModeEl = document.getElementById("wfm-audio-mode");
 const wfmDenoiseEl = document.getElementById("wfm-denoise");
+const sdrSettingsRowEl = document.getElementById("sdr-settings-row");
 const sdrGainControlsEl = document.getElementById("sdr-gain-controls");
 const sdrGainEl = document.getElementById("sdr-gain-db");
 const sdrGainSetBtn = document.getElementById("sdr-gain-set");
+const sdrAgcEl = document.getElementById("sdr-agc-enabled");
 const wfmStFlagEl = document.getElementById("wfm-st-flag");
 const sdrSquelchWrapEl = document.getElementById("sdr-squelch-wrap");
 const sdrSquelchEl = document.getElementById("sdr-squelch");
@@ -6888,6 +6894,18 @@ function submitSdrGain() {
   const parsed = Number.parseFloat(sdrGainEl.value);
   if (!Number.isFinite(parsed) || parsed < 0) return;
   postPath(`/set_sdr_gain?db=${encodeURIComponent(parsed)}`).catch(() => {});
+}
+function updateSdrGainInputState() {
+  if (!sdrAgcEl || !sdrGainEl || !sdrGainSetBtn) return;
+  const agcOn = sdrAgcEl.checked;
+  sdrGainEl.disabled = agcOn;
+  sdrGainSetBtn.disabled = agcOn;
+}
+if (sdrAgcEl) {
+  sdrAgcEl.addEventListener("change", () => {
+    postPath(`/set_sdr_agc?enabled=${sdrAgcEl.checked ? "true" : "false"}`).catch(() => {});
+    updateSdrGainInputState();
+  });
 }
 if (sdrGainSetBtn) {
   sdrGainSetBtn.addEventListener("click", submitSdrGain);
