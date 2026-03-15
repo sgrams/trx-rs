@@ -57,6 +57,7 @@ pub fn client_command_to_rig(cmd: ClientCommand) -> RigCommand {
         ClientCommand::SetBandwidth { bandwidth_hz } => RigCommand::SetBandwidth(bandwidth_hz),
         ClientCommand::SetFirTaps { taps } => RigCommand::SetFirTaps(taps),
         ClientCommand::SetSdrGain { gain_db } => RigCommand::SetSdrGain(gain_db),
+        ClientCommand::SetSdrLnaGain { gain_db } => RigCommand::SetSdrLnaGain(gain_db),
         ClientCommand::SetSdrAgc { enabled } => RigCommand::SetSdrAgc(enabled),
         ClientCommand::SetSdrSquelch {
             enabled,
@@ -120,6 +121,7 @@ pub fn rig_command_to_client(cmd: RigCommand) -> ClientCommand {
         RigCommand::SetBandwidth(bandwidth_hz) => ClientCommand::SetBandwidth { bandwidth_hz },
         RigCommand::SetFirTaps(taps) => ClientCommand::SetFirTaps { taps },
         RigCommand::SetSdrGain(gain_db) => ClientCommand::SetSdrGain { gain_db },
+        RigCommand::SetSdrLnaGain(gain_db) => ClientCommand::SetSdrLnaGain { gain_db },
         RigCommand::SetSdrAgc(enabled) => ClientCommand::SetSdrAgc { enabled },
         RigCommand::SetSdrSquelch {
             enabled,
