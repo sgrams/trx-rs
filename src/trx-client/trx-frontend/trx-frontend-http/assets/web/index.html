@@ -254,10 +254,12 @@
             </div>
             <div class="full-row label-below-row" id="sdr-settings-row" style="display:none;">
               <div class="label"><span>SDR settings</span></div>
-              <div class="inline" style="gap: 0.6rem; flex-wrap: wrap; align-items: center;">
-                <label class="vol-label" id="sdr-agc-wrap">
-                  <span style="margin-right:0.3rem;">Hardware AGC</span>
-                  <input type="checkbox" id="sdr-agc-enabled">
+              <div class="inline" style="gap: 0.6rem; flex-wrap: wrap; align-items: flex-end;">
+                <label class="wfm-control" id="sdr-agc-wrap">
+                  <span class="wfm-control-label">Hardware AGC</span>
+                  <div style="height:2.1rem; display:flex; align-items:center;">
+                    <input type="checkbox" id="sdr-agc-enabled">
+                  </div>
                 </label>
                 <div class="wfm-gain-group" id="sdr-gain-controls">
                   <label class="wfm-control">
