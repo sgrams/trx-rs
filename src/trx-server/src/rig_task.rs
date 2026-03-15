@@ -563,6 +563,14 @@ async fn process_command(
             let _ = ctx.state_tx.send(ctx.state.clone());
             return snapshot_from(ctx.state);
         }
+        RigCommand::SetSdrLnaGain(gain_db) => {
+            if let Err(e) = ctx.rig.set_sdr_lna_gain(gain_db).await {
+                return Err(RigError::communication(format!("set_sdr_lna_gain: {e}")));
+            }
+            ctx.state.filter = ctx.rig.filter_state();
+            let _ = ctx.state_tx.send(ctx.state.clone());
+            return snapshot_from(ctx.state);
+        }
         RigCommand::SetSdrAgc(enabled) => {
             if let Err(e) = ctx.rig.set_sdr_agc(enabled).await {
                 return Err(RigError::communication(format!("set_sdr_agc: {e}")));
