@@ -313,6 +313,8 @@ pub struct RigFilterState {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sdr_gain_db: Option<f64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sdr_lna_gain_db: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sdr_agc_enabled: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sdr_squelch_enabled: Option<bool>,

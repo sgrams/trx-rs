@@ -523,6 +523,7 @@ pub fn command_from_rig_command(cmd: RigCommand) -> Box<dyn RigCommandHandler> {
         | RigCommand::SetBandwidth(_)
         | RigCommand::SetFirTaps(_)
         | RigCommand::SetSdrGain(_)
+        | RigCommand::SetSdrLnaGain(_)
         | RigCommand::SetSdrAgc(_)
         | RigCommand::SetSdrSquelch { .. }
         | RigCommand::SetWfmDeemphasis(_)

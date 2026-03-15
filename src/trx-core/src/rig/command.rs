@@ -41,6 +41,7 @@ pub enum RigCommand {
     SetBandwidth(u32),
     SetFirTaps(u32),
     SetSdrGain(f64),
+    SetSdrLnaGain(f64),
     SetSdrAgc(bool),
     SetSdrSquelch { enabled: bool, threshold_db: f64 },
     SetWfmDeemphasis(u32),
