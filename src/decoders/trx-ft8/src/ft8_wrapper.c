@@ -1074,7 +1074,7 @@ static bool ft2_osd_lite_decode(const float log174[FTX_LDPC_N], ftx_message_t* m
     }
     qsort(reliabilities, FTX_LDPC_K, sizeof(reliabilities[0]), ft2_cmp_reliability_asc);
 
-    const int max_candidates = 12;
+    const int max_candidates = 24;
     const int n = (FTX_LDPC_K < max_candidates) ? FTX_LDPC_K : max_candidates;
     uint8_t trial_a91[FTX_LDPC_K_BYTES];
     uint8_t best_codeword[FTX_LDPC_N];
@@ -1393,8 +1393,6 @@ static bool ft2_decode_hit(
 
     bool ok = false;
     uint8_t cw[FTX_LDPC_N] = { 0 };
-    int global_best_errors = FTX_LDPC_M;
-    int global_best_pass = 0;
     for (int pass = 0; pass < 5 && !ok; ++pass)
     {
         float log174[FTX_LDPC_N];
@@ -1406,7 +1404,7 @@ static bool ft2_decode_hit(
 
         uint8_t bp_plain[FTX_LDPC_N];
         int bp_errors = FTX_LDPC_M;
-        bp_decode(log174, 30, bp_plain, &bp_errors);
+        bp_decode(log174, 50, bp_plain, &bp_errors);
         if (bp_errors < nharderror)
         {
             nharderror = bp_errors;
@@ -1425,7 +1423,7 @@ static bool ft2_decode_hit(
         {
             uint8_t sp_plain[FTX_LDPC_N];
             int sp_errors = FTX_LDPC_M;
-            ldpc_decode(log174, 30, sp_plain, &sp_errors);
+            ldpc_decode(log174, 50, sp_plain, &sp_errors);
             if (sp_errors < nharderror)
             {
                 nharderror = sp_errors;
@@ -1441,12 +1439,6 @@ static bool ft2_decode_hit(
             }
         }
 
-        if (nharderror < global_best_errors)
-        {
-            global_best_errors = nharderror;
-            global_best_pass = pass;
-        }
-
         if (pass_diag)
         {
             pass_diag->ntype[pass] = ntype;
@@ -1455,15 +1447,18 @@ static bool ft2_decode_hit(
         }
     }
 
-    // OSD-1 / OSD-2: when BP/SP leave only a few parity errors, try flipping
-    // the least-reliable bits to bridge the gap.
-    if (!ok && global_best_errors <= 8)
+    // CRC-based OSD: try flipping 1/2/3 of the least-reliable systematic bits.
+    // Works directly from LLRs without depending on LDPC convergence.
+    if (!ok)
     {
-        float osd_log174[FTX_LDPC_N];
-        memcpy(osd_log174, llr_passes[global_best_pass], sizeof(osd_log174));
-        ft2_normalize_log174(osd_log174);
-        if (ft2_osd_decode(cw, osd_log174, global_best_errors) && ft2_unpack_message(cw, message))
-            ok = true;
+        for (int pass = 0; pass < 5 && !ok; ++pass)
+        {
+            float osd_log174[FTX_LDPC_N];
+            memcpy(osd_log174, llr_passes[pass], sizeof(osd_log174));
+            ft2_normalize_log174(osd_log174);
+            if (ft2_osd_lite_decode(osd_log174, message))
+                ok = true;
+        }
     }
 
     if (!ok && fail_stage)
