@@ -6,6 +6,7 @@ const ft8FilterInput = document.getElementById("ft8-filter");
 const ft8BarOverlay = document.getElementById("ft8-bar-overlay");
 const FT8_BAR_WINDOW_MS = 15 * 60 * 1000;
 const FT8_PERIOD_SECONDS = 15;
+const FT8_MAX_DOM_ROWS = 200;
 const FT8_BAR_DECODER_LABELS = {
   ft8: "FT8",
   ft4: "FT4",
@@ -105,7 +106,8 @@ function renderFt8History() {
   pruneFt8MessageHistory();
   if (!ft8MessagesEl) return;
   const fragment = document.createDocumentFragment();
-  for (let i = 0; i < ft8MessageHistory.length; i += 1) {
+  const limit = Math.min(ft8MessageHistory.length, FT8_MAX_DOM_ROWS);
+  for (let i = 0; i < limit; i += 1) {
     fragment.appendChild(renderFt8Row(ft8MessageHistory[i]));
   }
   ft8MessagesEl.replaceChildren(fragment);

@@ -13,6 +13,7 @@ const ft2PeriodEl = document.getElementById("ft2-period");
 const ft2MessagesEl = document.getElementById("ft2-messages");
 const ft2FilterInput = document.getElementById("ft2-filter");
 const FT2_PERIOD_MS = 3750;
+const FT2_MAX_DOM_ROWS = 200;
 let ft2FilterText = "";
 let ft2MessageHistory = [];
 
@@ -80,10 +81,12 @@ function renderFt2History() {
   if (!ft2MessagesEl) return;
   const filter = ft2FilterText;
   const fragment = document.createDocumentFragment();
-  for (let i = 0; i < ft2MessageHistory.length; i++) {
+  let rendered = 0;
+  for (let i = 0; i < ft2MessageHistory.length && rendered < FT2_MAX_DOM_ROWS; i++) {
     const msg = ft2MessageHistory[i];
     if (filter && !(msg.message || "").toString().toUpperCase().includes(filter)) continue;
     fragment.appendChild(renderFt2Row(msg));
+    rendered++;
   }
   ft2MessagesEl.replaceChildren(fragment);
 }

@@ -2104,7 +2104,10 @@ body.map-fake-fullscreen-active {
 }
 .ft8-filter::placeholder { color: color-mix(in srgb, var(--filter-fg) 55%, transparent); }
 .ft8-header { display: flex; gap: 0.6rem; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-muted); border-bottom: 1px solid var(--border); padding: 0 0 0.35rem 0; margin-bottom: 0.35rem; }
-#ft8-messages { max-height: 360px; overflow-y: auto; border: 1px solid var(--border-light); border-radius: 6px; background: var(--input-bg); font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; font-size: 0.85rem; padding: 0.35rem 0.5rem; }
+#ft8-messages,
+#ft4-messages,
+#ft2-messages,
+#wspr-messages { max-height: 360px; overflow-y: auto; border: 1px solid var(--border-light); border-radius: 6px; background: var(--input-bg); font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; font-size: 0.85rem; padding: 0.35rem 0.5rem; }
 .ft8-row { display: flex; gap: 0.6rem; line-height: 1.4; border-bottom: 1px solid var(--border); padding: 0.25rem 0; }
 .ft8-row:last-child { border-bottom: none; }
 .ft8-time { color: var(--text-muted); min-width: 4.6rem; }
@@ -2365,7 +2368,7 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   .controls-col.label-below-col .btn-grid { margin-top: 0; }
   .wfm-controls-inline { flex-wrap: wrap; }
   .ft8-controls { flex-wrap: wrap; }
-  #ft8-decode-toggle-btn, #wspr-decode-toggle-btn { white-space: nowrap; }
+  #ft8-decode-toggle-btn, #ft4-decode-toggle-btn, #ft2-decode-toggle-btn, #wspr-decode-toggle-btn { white-space: nowrap; }
   .jog-container { flex-wrap: wrap; }
   .vfo-picker { flex-direction: column; }
   .vfo-picker button { border-right: none; border-bottom: 1px solid var(--border-light); }
