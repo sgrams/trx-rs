@@ -57,6 +57,12 @@ pub trait IqSource: Send + 'static {
         Ok(())
     }
 
+    /// Apply a new gain to a named gain element (e.g. "LNA"). Default
+    /// implementation is a no-op for sources that do not support named gains.
+    fn set_named_gain(&mut self, _name: &str, _gain_db: f64) -> Result<(), String> {
+        Ok(())
+    }
+
     /// Enable or disable hardware automatic gain control.  Default
     /// implementation is a no-op for sources that do not support AGC.
     fn set_gain_mode(&mut self, _automatic: bool) -> Result<(), String> {
@@ -106,6 +112,9 @@ pub struct SdrPipeline {
     /// Write `Some(gain_db)` here to adjust the hardware RX gain.
     /// The IQ read loop picks it up on the next iteration.
     pub gain_cmd: Arc<std::sync::Mutex<Option<f64>>>,
+    /// Write `Some(gain_db)` here to adjust the LNA gain element.
+    /// The IQ read loop picks it up on the next iteration.
+    pub lna_gain_cmd: Arc<std::sync::Mutex<Option<f64>>>,
     /// Write `Some(enabled)` here to switch hardware AGC on or off.
     /// The IQ read loop picks it up on the next iteration.
     pub agc_cmd: Arc<std::sync::Mutex<Option<bool>>>,
@@ -183,6 +192,9 @@ impl SdrPipeline {
         let thread_retune_cmd = retune_cmd.clone();
         let gain_cmd: Arc<std::sync::Mutex<Option<f64>>> = Arc::new(std::sync::Mutex::new(None));
         let thread_gain_cmd = gain_cmd.clone();
+        let lna_gain_cmd: Arc<std::sync::Mutex<Option<f64>>> =
+            Arc::new(std::sync::Mutex::new(None));
+        let thread_lna_gain_cmd = lna_gain_cmd.clone();
         let agc_cmd: Arc<std::sync::Mutex<Option<bool>>> = Arc::new(std::sync::Mutex::new(None));
         let thread_agc_cmd = agc_cmd.clone();
 
@@ -197,6 +209,7 @@ impl SdrPipeline {
                     thread_spectrum_buf,
                     thread_retune_cmd,
                     thread_gain_cmd,
+                    thread_lna_gain_cmd,
                     thread_agc_cmd,
                 );
             })
@@ -210,6 +223,7 @@ impl SdrPipeline {
             sdr_sample_rate,
             retune_cmd,
             gain_cmd,
+            lna_gain_cmd,
             agc_cmd,
             shared_center_hz: Arc::new(AtomicI64::new(0)),
             audio_sample_rate,
@@ -290,6 +304,7 @@ fn iq_read_loop(
     spectrum_buf: Arc<Mutex<Option<Vec<f32>>>>,
     retune_cmd: Arc<std::sync::Mutex<Option<f64>>>,
     gain_cmd: Arc<std::sync::Mutex<Option<f64>>>,
+    lna_gain_cmd: Arc<std::sync::Mutex<Option<f64>>>,
     agc_cmd: Arc<std::sync::Mutex<Option<bool>>>,
 ) {
     let mut block = vec![Complex::new(0.0_f32, 0.0_f32); IQ_BLOCK_SIZE];
@@ -320,6 +335,15 @@ fn iq_read_loop(
                     tracing::warn!("SDR gain change to {:.1} dB failed: {}", gain_db, e);
                 } else {
                     tracing::info!("SDR gain updated to {:.1} dB", gain_db);
+                }
+            }
+        }
+        if let Ok(mut cmd) = lna_gain_cmd.try_lock() {
+            if let Some(gain_db) = cmd.take() {
+                if let Err(e) = source.set_named_gain("LNA", gain_db) {
+                    tracing::warn!("SDR LNA gain change to {:.1} dB failed: {}", gain_db, e);
+                } else {
+                    tracing::info!("SDR LNA gain updated to {:.1} dB", gain_db);
                 }
             }
         }

@@ -179,6 +179,12 @@ impl IqSource for RealIqSource {
             .map_err(|e| format!("Failed to set SDR gain: {}", e))
     }
 
+    fn set_named_gain(&mut self, name: &str, gain_db: f64) -> Result<(), String> {
+        self.device
+            .set_gain_element(soapysdr::Direction::Rx, 0, name, gain_db)
+            .map_err(|e| format!("Failed to set SDR {} gain: {}", name, e))
+    }
+
     fn set_gain_mode(&mut self, automatic: bool) -> Result<(), String> {
         self.device
             .set_gain_mode(soapysdr::Direction::Rx, 0, automatic)

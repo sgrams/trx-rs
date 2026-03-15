@@ -52,6 +52,8 @@ pub struct SoapySdrRig {
     gain_db: f64,
     /// Optional hard ceiling for the applied hardware gain in dB.
     max_gain_db: Option<f64>,
+    /// Requested LNA gain element setting in dB (None if not set by user).
+    lna_gain_db: Option<f64>,
     /// Whether hardware AGC is currently enabled.
     agc_enabled: bool,
     /// Whether software squelch is enabled on primary channel (except WFM mode).
@@ -285,6 +287,7 @@ impl SoapySdrRig {
             wfm_denoise: WfmDenoiseLevel::Auto,
             gain_db,
             max_gain_db,
+            lna_gain_db: None,
             agc_enabled,
             squelch_enabled,
             squelch_threshold_db,
@@ -579,6 +582,25 @@ impl RigCat for SoapySdrRig {
         })
     }
 
+    fn set_sdr_lna_gain<'a>(
+        &'a mut self,
+        gain_db: f64,
+    ) -> Pin<Box<dyn std::future::Future<Output = DynResult<()>> + Send + 'a>> {
+        Box::pin(async move {
+            if !gain_db.is_finite() {
+                return Err("LNA gain must be finite".into());
+            }
+            if gain_db < 0.0 {
+                return Err("LNA gain must be >= 0".into());
+            }
+            self.lna_gain_db = Some(gain_db);
+            if let Ok(mut cmd) = self.pipeline.lna_gain_cmd.lock() {
+                *cmd = Some(gain_db);
+            }
+            Ok(())
+        })
+    }
+
     fn set_sdr_agc<'a>(
         &'a mut self,
         enabled: bool,
@@ -803,6 +825,7 @@ impl RigCat for SoapySdrRig {
                     .map(|max_gain| self.gain_db.min(max_gain))
                     .unwrap_or(self.gain_db),
             ),
+            sdr_lna_gain_db: self.lna_gain_db,
             sdr_agc_enabled: Some(self.agc_enabled),
             sdr_squelch_enabled: Some(self.squelch_enabled),
             sdr_squelch_threshold_db: Some(self.squelch_threshold_db as f64),
