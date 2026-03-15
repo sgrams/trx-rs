@@ -100,7 +100,16 @@ type FirKernel = (
     Arc<dyn Fft<f32>>,
 );
 
-fn build_fir_kernel(cutoff_norm: f32, taps: usize, block_size: usize) -> FirKernel {
+/// Build an FFT-domain FIR kernel.
+///
+/// `shift_norm` shifts the passband by that fraction of Fs via complex
+/// modulation of the time-domain coefficients:
+///   h_shifted[n] = h_lpf[n] · e^{j·2π·shift_norm·n}
+///
+/// Setting `shift_norm = +cutoff_norm` produces a one-sided USB filter
+/// `[0, BW]`; `shift_norm = -cutoff_norm` produces a one-sided LSB filter
+/// `[-BW, 0]`; `shift_norm = 0` leaves the kernel symmetric (AM/FM/WFM).
+fn build_fir_kernel(cutoff_norm: f32, shift_norm: f32, taps: usize, block_size: usize) -> FirKernel {
     let coeffs = windowed_sinc_coeffs(cutoff_norm, taps);
     let fft_size = (block_size + taps - 1).next_power_of_two();
 
@@ -110,7 +119,16 @@ fn build_fir_kernel(cutoff_norm: f32, taps: usize, block_size: usize) -> FirKern
 
     let mut h_buf: Vec<FftComplex<f32>> = coeffs
         .iter()
-        .map(|&coeff| FftComplex::new(coeff, 0.0))
+        .enumerate()
+        .map(|(n, &coeff)| {
+            if shift_norm == 0.0 {
+                FftComplex::new(coeff, 0.0)
+            } else {
+                let phase = 2.0 * PI * shift_norm * n as f32;
+                let (sin_p, cos_p) = phase.sin_cos();
+                FftComplex::new(coeff * cos_p, coeff * sin_p)
+            }
+        })
         .collect();
     fft.process({
         h_buf.resize(fft_size, FftComplex::new(0.0, 0.0));
@@ -178,7 +196,7 @@ fn mul_freq_domain(buf: &mut [FftComplex<f32>], h_freq: &[FftComplex<f32>], scal
 impl BlockFirFilter {
     pub fn new(cutoff_norm: f32, taps: usize, block_size: usize) -> Self {
         let taps = taps.max(1);
-        let (h_buf, fft_size, fft, ifft) = build_fir_kernel(cutoff_norm, taps, block_size);
+        let (h_buf, fft_size, fft, ifft) = build_fir_kernel(cutoff_norm, 0.0, taps, block_size);
 
         Self {
             h_freq: h_buf,
@@ -235,9 +253,14 @@ impl BlockFirFilter {
 }
 
 impl BlockFirFilterPair {
-    pub fn new(cutoff_norm: f32, taps: usize, block_size: usize) -> Self {
+    /// Create an IQ filter pair.
+    ///
+    /// `shift_norm` shifts the passband (see `build_fir_kernel`).  Pass `0.0`
+    /// for a symmetric LPF (AM/FM/WFM); pass `+cutoff_norm` for USB/CW; pass
+    /// `-cutoff_norm` for LSB/CWR.
+    pub fn new(cutoff_norm: f32, shift_norm: f32, taps: usize, block_size: usize) -> Self {
         let taps = taps.max(1);
-        let (h_buf, fft_size, fft, ifft) = build_fir_kernel(cutoff_norm, taps, block_size);
+        let (h_buf, fft_size, fft, ifft) = build_fir_kernel(cutoff_norm, shift_norm, taps, block_size);
         Self {
             h_freq: h_buf,
             overlap: vec![FftComplex::new(0.0, 0.0); taps.saturating_sub(1)],
