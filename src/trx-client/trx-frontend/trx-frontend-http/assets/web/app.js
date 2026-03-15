@@ -6319,7 +6319,11 @@ function rebuildDecodeContactPaths() {
       }
     }
   }
+  // Index directed messages by "SOURCE::TARGET" for QSO (bidirectional) check
+  const directedPairs = new Set(directedMessages.map((m) => `${m.source}::${m.target}`));
   for (const msg of directedMessages) {
+    // A true QSO requires both A→B and B→A directed messages
+    if (!directedPairs.has(`${msg.target}::${msg.source}`)) continue;
     const targetLocator = stationLocators.get(msg.target);
     if (!targetLocator) continue;
     if (msg.sourceGrid === targetLocator.grid) continue;
