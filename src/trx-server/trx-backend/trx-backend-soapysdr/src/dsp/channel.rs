@@ -217,8 +217,12 @@ pub struct ChannelDsp {
 
 impl ChannelDsp {
     fn clamp_bandwidth_for_mode(mode: &RigMode, bandwidth_hz: u32) -> u32 {
-        let _ = mode;
-        bandwidth_hz
+        match mode {
+            // C-QUAM requires ≥ 9 kHz to capture both sum (L+R) and difference
+            // (L−R) sidebands; narrower bandwidths would discard stereo content.
+            RigMode::AMC => bandwidth_hz.max(9_000),
+            _ => bandwidth_hz,
+        }
     }
 
     pub fn set_channel_if_hz(&mut self, channel_if_hz: f64) {
