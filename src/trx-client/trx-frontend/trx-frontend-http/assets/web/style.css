@@ -2901,8 +2901,8 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   transition: height 80ms ease;
 }
 #spectrum-bookmark-axis.bm-axis-visible {
-  min-height: 26px;
-  height: auto;
+  height: 38px;
+  overflow: visible;
 }
 .spectrum-bookmark-chip {
   position: absolute;

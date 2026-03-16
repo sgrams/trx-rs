@@ -8734,7 +8734,7 @@ function updateBookmarkAxis(range) {
   // Always recompute horizontal positions (pan/zoom changes frac every frame).
   const axisWidth = axisEl.clientWidth || 0;
   const edgePad = 8;
-  const spans = axisEl.querySelectorAll("span");
+  const spans = axisEl.querySelectorAll(":scope > span");
   visBookmarks.forEach((bm, i) => {
     const span = spans[i];
     if (!span) return;
