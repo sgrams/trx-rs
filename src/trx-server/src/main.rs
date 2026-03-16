@@ -240,7 +240,7 @@ fn default_audio_bandwidth_for_mode(mode: &trx_core::rig::state::RigMode) -> u32
         RigMode::LSB | RigMode::USB | RigMode::DIG => 3_000,
         RigMode::PKT => 25_000,
         RigMode::CW | RigMode::CWR => 500,
-        RigMode::AM => 9_000,
+        RigMode::AM | RigMode::AMC => 9_000,
         RigMode::FM => 12_500,
         RigMode::WFM => 180_000,
         RigMode::AIS => 25_000,
