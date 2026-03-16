@@ -43,7 +43,7 @@ fn default_bandwidth_hz(mode: &RigMode) -> u32 {
     match mode {
         RigMode::CW | RigMode::CWR => 500,
         RigMode::LSB | RigMode::USB | RigMode::DIG => 3_000,
-        RigMode::AM => 9_000,
+        RigMode::AM | RigMode::AMC => 9_000,
         RigMode::FM => 12_500,
         RigMode::WFM => 180_000,
         RigMode::PKT | RigMode::AIS => 25_000,

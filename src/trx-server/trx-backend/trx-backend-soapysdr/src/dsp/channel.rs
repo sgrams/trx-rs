@@ -6,7 +6,7 @@ use num_complex::Complex;
 use tokio::sync::broadcast;
 use trx_core::rig::state::{RdsData, RigMode, WfmDenoiseLevel};
 
-use crate::demod::{DcBlocker, Demodulator, SoftAgc, WfmStereoDecoder};
+use crate::demod::{CquamDemod, DcBlocker, Demodulator, SoftAgc, WfmStereoDecoder};
 
 use super::{BlockFirFilterPair, IQ_BLOCK_SIZE};
 
@@ -114,7 +114,7 @@ fn agc_for_mode(mode: &RigMode, audio_sample_rate: u32) -> SoftAgc {
     let sr = audio_sample_rate.max(1) as f32;
     match mode {
         RigMode::CW | RigMode::CWR => SoftAgc::new(sr, 1.0, 50.0, 0.5, 30.0),
-        RigMode::AM => SoftAgc::new(sr, 5.0, 200.0, 0.5, 36.0),
+        RigMode::AM | RigMode::AMC => SoftAgc::new(sr, 5.0, 200.0, 0.5, 36.0),
         _ => SoftAgc::new(sr, 5.0, 500.0, 0.5, 30.0),
     }
 }
@@ -128,7 +128,7 @@ fn iq_agc_for_mode(mode: &RigMode, sample_rate: u32) -> Option<SoftAgc> {
         // DC blocker always sees the same steady-state bias (~0.7) regardless
         // of RF signal strength.  Fast attack (0.5 ms) catches sudden carrier
         // appearance; 50 ms release tracks slow fading without distorting audio.
-        RigMode::AM => Some(SoftAgc::new(sr, 0.5, 50.0, 0.7, 30.0)),
+        RigMode::AM | RigMode::AMC => Some(SoftAgc::new(sr, 0.5, 50.0, 0.7, 30.0)),
         RigMode::WFM => None,
         _ => None,
     }
@@ -137,6 +137,8 @@ fn iq_agc_for_mode(mode: &RigMode, sample_rate: u32) -> Option<SoftAgc> {
 fn dc_for_mode(mode: &RigMode) -> Option<DcBlocker> {
     match mode {
         RigMode::WFM => None,
+        // AMC: DC is handled inside CquamDemod per channel (L and R separately).
+        RigMode::AMC => None,
         // AM: the envelope detector output has a large carrier-amplitude DC
         // bias (A_c).  r=0.999 gives τ≈125 ms at 8 kHz, tracking carrier
         // level ~10× faster than r=0.9999 while still passing all audio
@@ -151,7 +153,7 @@ fn default_bandwidth_for_mode(mode: &RigMode) -> u32 {
         RigMode::LSB | RigMode::USB | RigMode::DIG => 3_000,
         RigMode::PKT => 25_000,
         RigMode::CW | RigMode::CWR => 500,
-        RigMode::AM => 9_000,
+        RigMode::AM | RigMode::AMC => 9_000,
         RigMode::FM => 12_500,
         RigMode::WFM => 180_000,
         RigMode::AIS => 25_000,
@@ -204,6 +206,7 @@ pub struct ChannelDsp {
     resample_phase: f64,
     resample_phase_inc: f64,
     wfm_decoder: Option<WfmStereoDecoder>,
+    cquam_decoder: Option<CquamDemod>,
     iq_agc: Option<SoftAgc>,
     audio_agc: SoftAgc,
     audio_dc: Option<DcBlocker>,
@@ -289,6 +292,11 @@ impl ChannelDsp {
             }
         } else {
             self.wfm_decoder = None;
+        }
+        if self.mode == RigMode::AMC {
+            self.cquam_decoder = Some(CquamDemod::new(self.audio_sample_rate));
+        } else {
+            self.cquam_decoder = None;
         }
         self.iq_agc = iq_agc_for_mode(&self.mode, channel_sample_rate);
         self.audio_agc = agc_for_mode(&self.mode, self.audio_sample_rate);
@@ -379,6 +387,11 @@ impl ChannelDsp {
                     wfm_deemphasis_us,
                     WfmDenoiseLevel::Auto,
                 ))
+            } else {
+                None
+            },
+            cquam_decoder: if *mode == RigMode::AMC {
+                Some(CquamDemod::new(audio_sample_rate))
             } else {
                 None
             },
@@ -580,6 +593,21 @@ impl ChannelDsp {
             let mut out = decoder.process_iq(decimated);
             for sample in &mut out {
                 *sample = (*sample * WFM_OUTPUT_GAIN).clamp(-1.0, 1.0);
+            }
+            out
+        } else if let Some(decoder) = self.cquam_decoder.as_mut() {
+            let stereo = decoder.demodulate_stereo(decimated);
+            // Apply stereo-aware AGC (shared gain preserves L/R balance).
+            let mut out = Vec::with_capacity(stereo.len());
+            let mut it = stereo.chunks_exact(2);
+            for chunk in it.by_ref() {
+                let (l, r) = self.audio_agc.process_pair(chunk[0], chunk[1]);
+                if self.output_channels >= 2 && !self.force_mono_pcm {
+                    out.push(l);
+                    out.push(r);
+                } else {
+                    out.push((l + r) * 0.5);
+                }
             }
             out
         } else {
