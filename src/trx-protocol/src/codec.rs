@@ -20,6 +20,7 @@ pub fn parse_mode(s: &str) -> RigMode {
         "CW" => RigMode::CW,
         "CWR" => RigMode::CWR,
         "AM" => RigMode::AM,
+        "AMC-QUAM" | "AMC_QUAM" | "AMC" => RigMode::AMC,
         "FM" => RigMode::FM,
         "WFM" => RigMode::WFM,
         "AIS" => RigMode::AIS,
@@ -41,6 +42,7 @@ pub fn mode_to_string(mode: &RigMode) -> String {
         RigMode::CW => "CW".to_string(),
         RigMode::CWR => "CWR".to_string(),
         RigMode::AM => "AM".to_string(),
+        RigMode::AMC => "AMC-QUAM".to_string(),
         RigMode::FM => "FM".to_string(),
         RigMode::WFM => "WFM".to_string(),
         RigMode::AIS => "AIS".to_string(),
@@ -80,6 +82,7 @@ mod tests {
         assert_eq!(parse_mode("CW"), RigMode::CW);
         assert_eq!(parse_mode("CWR"), RigMode::CWR);
         assert_eq!(parse_mode("AM"), RigMode::AM);
+        assert_eq!(parse_mode("AMC-QUAM"), RigMode::AMC);
         assert_eq!(parse_mode("FM"), RigMode::FM);
         assert_eq!(parse_mode("WFM"), RigMode::WFM);
         assert_eq!(parse_mode("AIS"), RigMode::AIS);
@@ -126,6 +129,7 @@ mod tests {
         assert_eq!(mode_to_string(&RigMode::CW), "CW");
         assert_eq!(mode_to_string(&RigMode::CWR), "CWR");
         assert_eq!(mode_to_string(&RigMode::AM), "AM");
+        assert_eq!(mode_to_string(&RigMode::AMC), "AMC-QUAM");
         assert_eq!(mode_to_string(&RigMode::FM), "FM");
         assert_eq!(mode_to_string(&RigMode::WFM), "WFM");
         assert_eq!(mode_to_string(&RigMode::AIS), "AIS");
@@ -147,6 +151,7 @@ mod tests {
             RigMode::CW,
             RigMode::CWR,
             RigMode::AM,
+            RigMode::AMC,
             RigMode::FM,
             RigMode::WFM,
             RigMode::AIS,
