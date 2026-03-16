@@ -7742,6 +7742,7 @@ function connectDecode() {
     decodeSource.close();
     decodeConnected = false;
     terminateDecodeHistoryWorker();
+    if (!historySettled) flushLiveBuffer();
     if (wasClosed) {
       updateDecodeStatus("Decode not available (check client audio config)");
       setTimeout(connectDecode, 10000);
