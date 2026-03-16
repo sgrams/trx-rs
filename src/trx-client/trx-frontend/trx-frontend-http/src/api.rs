@@ -848,19 +848,6 @@ pub async fn set_bandwidth(
 }
 
 #[derive(serde::Deserialize)]
-pub struct FirTapsQuery {
-    pub taps: u32,
-}
-
-#[post("/set_fir_taps")]
-pub async fn set_fir_taps(
-    query: web::Query<FirTapsQuery>,
-    rig_tx: web::Data<mpsc::Sender<RigRequest>>,
-) -> Result<HttpResponse, Error> {
-    send_command(&rig_tx, RigCommand::SetFirTaps(query.taps)).await
-}
-
-#[derive(serde::Deserialize)]
 pub struct SdrGainQuery {
     pub db: f64,
 }
@@ -1557,7 +1544,6 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
         .service(set_ptt)
         .service(set_tx_limit)
         .service(set_bandwidth)
-        .service(set_fir_taps)
         .service(set_sdr_gain)
         .service(set_sdr_lna_gain)
         .service(set_sdr_agc)
