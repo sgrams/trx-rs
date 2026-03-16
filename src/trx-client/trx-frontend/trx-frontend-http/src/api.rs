@@ -86,6 +86,7 @@ struct FrontendMeta {
     spectrum_coverage_margin_hz: u32,
     spectrum_usable_span_ratio: f32,
     decode_history_retention_min: u64,
+    server_connected: bool,
 }
 
 #[get("/status")]
@@ -135,6 +136,7 @@ fn inject_frontend_meta(json: &str, meta: FrontendMeta) -> String {
         "decode_history_retention_min".into(),
         serde_json::json!(meta.decode_history_retention_min),
     );
+    extra.insert("server_connected".into(), serde_json::json!(meta.server_connected));
 
     // Serialize the extra map, strip its outer braces, and splice in.
     let extra_json = match serde_json::to_string(&extra) {
@@ -165,6 +167,7 @@ fn frontend_meta_from_context(
         spectrum_coverage_margin_hz: spectrum_coverage_margin_hz_from_context(context),
         spectrum_usable_span_ratio: spectrum_usable_span_ratio_from_context(context),
         decode_history_retention_min: decode_history_retention_min_from_context(context),
+        server_connected: context.server_connected.load(Ordering::Relaxed),
     }
 }
 
