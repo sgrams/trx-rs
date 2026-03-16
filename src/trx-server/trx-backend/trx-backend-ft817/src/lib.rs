@@ -603,7 +603,7 @@ fn encode_mode(mode: &RigMode) -> Option<u8> {
         RigMode::FM => 0x08,
         RigMode::DIG => 0x0A,
         RigMode::PKT => 0x0C,
-        RigMode::AIS | RigMode::VDES | RigMode::Other(_) => return None,
+        RigMode::AIS | RigMode::VDES | RigMode::AMC | RigMode::Other(_) => return None,
     })
 }
 
