@@ -1822,12 +1822,20 @@ async function setRigFrequency(freqHz) {
     throw new Error(`Unsupported frequency: ${targetHz}`);
   }
   // Optimistic local update before any network round-trip.
+  const prevFreqHz = lastFreqHz;
   applyLocalTunedFrequency(targetHz);
-  // set_freq and set_center_freq are independent server operations — run in parallel.
-  await Promise.all([
-    postPath(`/set_freq?hz=${targetHz}`),
-    ensureTunedBandwidthCoverage(targetHz),
-  ]);
+  try {
+    // set_freq and set_center_freq are independent server operations — run in parallel.
+    await Promise.all([
+      postPath(`/set_freq?hz=${targetHz}`),
+      ensureTunedBandwidthCoverage(targetHz),
+    ]);
+  } catch (err) {
+    // Roll back the optimistic update so the spectrum view stays on the
+    // actual server-side frequency (e.g. when the user loses control access).
+    if (prevFreqHz != null) applyLocalTunedFrequency(prevFreqHz, true);
+    throw err;
+  }
 }
 
 function spectrumBinIndexForHz(data, hz) {
