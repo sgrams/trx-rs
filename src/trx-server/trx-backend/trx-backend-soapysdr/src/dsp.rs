@@ -147,7 +147,7 @@ impl SdrPipeline {
         wfm_deemphasis_us: u32,
         wfm_stereo: bool,
         squelch_cfg: VirtualSquelchConfig,
-        channels: &[(f64, RigMode, u32, usize)],
+        channels: &[(f64, RigMode, u32)],
     ) -> Self {
         const IQ_BROADCAST_CAPACITY: usize = 64;
         let (iq_tx, _iq_rx) = broadcast::channel::<Vec<Complex<f32>>>(IQ_BROADCAST_CAPACITY);
@@ -158,7 +158,7 @@ impl SdrPipeline {
         let mut iq_senders = Vec::with_capacity(channels.len());
         let mut channel_dsps_vec: Vec<Arc<Mutex<ChannelDsp>>> = Vec::with_capacity(channels.len());
 
-        for (channel_idx, &(channel_if_hz, ref mode, audio_bandwidth_hz, fir_taps)) in
+        for (channel_idx, &(channel_if_hz, ref mode, audio_bandwidth_hz)) in
             channels.iter().enumerate()
         {
             let (pcm_tx, _pcm_rx) = broadcast::channel::<Vec<f32>>(PCM_BROADCAST_CAPACITY);
@@ -178,7 +178,6 @@ impl SdrPipeline {
                 audio_bandwidth_hz,
                 wfm_deemphasis_us,
                 wfm_stereo,
-                fir_taps,
                 false,
                 channel_squelch_cfg,
                 pcm_tx.clone(),
@@ -250,7 +249,6 @@ impl SdrPipeline {
         channel_if_hz: f64,
         mode: &RigMode,
         bandwidth_hz: u32,
-        fir_taps: usize,
     ) -> (broadcast::Sender<Vec<f32>>, broadcast::Sender<Vec<Complex<f32>>>) {
         const PCM_BROADCAST_CAPACITY: usize = 32;
         const IQ_BROADCAST_CAPACITY: usize = 64;
@@ -266,7 +264,6 @@ impl SdrPipeline {
             bandwidth_hz,
             self.wfm_deemphasis_us,
             self.wfm_stereo,
-            fir_taps.max(1),
             false,
             VirtualSquelchConfig::default(),
             pcm_tx.clone(),
@@ -558,7 +555,7 @@ mod tests {
             75,
             true,
             VirtualSquelchConfig::default(),
-            &[(200_000.0, RigMode::USB, 3000, 64)],
+            &[(200_000.0, RigMode::USB, 3000)],
         );
         assert_eq!(pipeline.pcm_senders.len(), 1);
         assert_eq!(pipeline.channel_dsps.read().unwrap().len(), 1);

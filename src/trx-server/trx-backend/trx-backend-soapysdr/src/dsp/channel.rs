@@ -160,6 +160,18 @@ fn default_bandwidth_for_mode(mode: &RigMode) -> u32 {
     }
 }
 
+/// Calculate the FIR tap count automatically from the normalised cutoff frequency.
+///
+/// Uses the Hann-windowed sinc rule-of-thumb: taps = ceil(3.32 / cutoff_norm),
+/// clamped to [63, 16383].  This gives enough taps so the filter transition band
+/// equals one passband width (image rejection starts at audio_bandwidth_hz).
+fn auto_taps(cutoff_norm: f32) -> usize {
+    if cutoff_norm <= 0.0 {
+        return 63;
+    }
+    ((3.32 / cutoff_norm).ceil() as usize).clamp(63, 16383)
+}
+
 /// Per-channel DSP state: mixer, FFT-FIR, decimator, demodulator, frame accumulator.
 pub struct ChannelDsp {
     pub channel_if_hz: f64,
@@ -169,7 +181,6 @@ pub struct ChannelDsp {
     sdr_sample_rate: u32,
     audio_sample_rate: u32,
     audio_bandwidth_hz: u32,
-    fir_taps: usize,
     wfm_deemphasis_us: u32,
     wfm_stereo: bool,
     wfm_denoise: WfmDenoiseLevel,
@@ -254,7 +265,7 @@ impl ChannelDsp {
         } else {
             (cutoff_hz / self.sdr_sample_rate as f32).min(0.499)
         };
-        self.lpf_iq = BlockFirFilterPair::new(cutoff_norm, ssb_shift_norm(&self.mode, cutoff_norm), self.fir_taps, IQ_BLOCK_SIZE);
+        self.lpf_iq = BlockFirFilterPair::new(cutoff_norm, ssb_shift_norm(&self.mode, cutoff_norm), auto_taps(cutoff_norm), IQ_BLOCK_SIZE);
         let rate_changed = self.decim_factor != next_decim_factor;
         self.decim_factor = next_decim_factor;
         self.decim_counter = 0;
@@ -297,7 +308,6 @@ impl ChannelDsp {
         audio_bandwidth_hz: u32,
         wfm_deemphasis_us: u32,
         wfm_stereo: bool,
-        fir_taps: usize,
         force_mono_pcm: bool,
         squelch_cfg: VirtualSquelchConfig,
         pcm_tx: broadcast::Sender<Vec<f32>>,
@@ -311,7 +321,6 @@ impl ChannelDsp {
             (audio_sample_rate as usize * frame_duration_ms as usize * output_channels) / 1000
         };
 
-        let taps = fir_taps.max(1);
         let (decim_factor, channel_sample_rate) =
             Self::pipeline_rates(mode, sdr_sample_rate, audio_sample_rate, audio_bandwidth_hz);
         let cutoff_hz = audio_bandwidth_hz.min(channel_sample_rate.saturating_sub(1)) as f32 / 2.0;
@@ -331,11 +340,10 @@ impl ChannelDsp {
             channel_if_hz,
             demodulator: Demodulator::for_mode(mode),
             mode: mode.clone(),
-            lpf_iq: BlockFirFilterPair::new(cutoff_norm, ssb_shift_norm(mode, cutoff_norm), taps, IQ_BLOCK_SIZE),
+            lpf_iq: BlockFirFilterPair::new(cutoff_norm, ssb_shift_norm(mode, cutoff_norm), auto_taps(cutoff_norm), IQ_BLOCK_SIZE),
             sdr_sample_rate,
             audio_sample_rate,
             audio_bandwidth_hz,
-            fir_taps: taps,
             wfm_deemphasis_us,
             wfm_stereo,
             wfm_denoise: WfmDenoiseLevel::Auto,
@@ -406,9 +414,8 @@ impl ChannelDsp {
         self.rebuild_filters(true);
     }
 
-    pub fn set_filter(&mut self, bandwidth_hz: u32, taps: usize) {
+    pub fn set_filter(&mut self, bandwidth_hz: u32) {
         self.audio_bandwidth_hz = Self::clamp_bandwidth_for_mode(&self.mode, bandwidth_hz);
-        self.fir_taps = taps.max(1);
         self.rebuild_filters(false);
     }
 
@@ -633,7 +640,6 @@ mod tests {
             3000,
             75,
             true,
-            31,
             false,
             VirtualSquelchConfig::default(),
             pcm_tx,
@@ -657,7 +663,6 @@ mod tests {
             3000,
             75,
             true,
-            31,
             false,
             VirtualSquelchConfig::default(),
             pcm_tx,

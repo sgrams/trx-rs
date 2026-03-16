@@ -39,8 +39,6 @@ use trx_core::vchan::{VChanError, VChannelInfo, VirtualChannelManager};
 // Default DSP parameters for virtual channels
 // ---------------------------------------------------------------------------
 
-const DEFAULT_FIR_TAPS: usize = 64;
-
 fn default_bandwidth_hz(mode: &RigMode) -> u32 {
     match mode {
         RigMode::CW | RigMode::CWR => 500,
@@ -181,7 +179,7 @@ impl SdrVirtualChannelManager {
         let bandwidth_hz = default_bandwidth_hz(mode);
         let (pcm_tx, iq_tx) =
             self.pipeline
-                .add_virtual_channel(if_hz as f64, mode, bandwidth_hz, DEFAULT_FIR_TAPS);
+                .add_virtual_channel(if_hz as f64, mode, bandwidth_hz);
 
         let pipeline_slot = self
             .pipeline
@@ -344,7 +342,7 @@ impl VirtualChannelManager for SdrVirtualChannelManager {
 
         let dsps = self.pipeline.channel_dsps.read().unwrap();
         if let Some(dsp_arc) = dsps.get(ch.pipeline_slot) {
-            dsp_arc.lock().unwrap().set_filter(bandwidth_hz, DEFAULT_FIR_TAPS);
+            dsp_arc.lock().unwrap().set_filter(bandwidth_hz);
         }
         Ok(())
     }
@@ -436,7 +434,7 @@ mod tests {
             75,
             true,
             VirtualSquelchConfig::default(),
-            &[(0.0, RigMode::USB, 3_000, 64)],
+            &[(0.0, RigMode::USB, 3_000)],
         ))
     }
 

@@ -33,7 +33,6 @@ pub struct SoapySdrRig {
     primary_channel_idx: usize,
     /// Current filter state of the primary channel (for filter_controls support).
     bandwidth_hz: u32,
-    fir_taps: u32,
     /// Shared spectrum magnitude buffer populated by the IQ read loop.
     spectrum_buf: Arc<Mutex<Option<Vec<f32>>>>,
     /// How many Hz below the dial frequency the SDR hardware is actually tuned.
@@ -89,7 +88,7 @@ impl SoapySdrRig {
     /// - `args`: SoapySDR device args string (e.g. `"driver=rtlsdr"`).
     ///   Opens a real hardware device via SoapySDR.
     /// - `channels`: per-channel tuples of
-    ///   `(channel_if_hz, initial_mode, audio_bandwidth_hz, fir_taps)`.
+    ///   `(channel_if_hz, initial_mode, audio_bandwidth_hz)`.
     /// - `gain_mode`: `"auto"` or `"manual"`.
     /// - `gain_db`: gain in dB; used when `gain_mode == "manual"`.
     /// - `max_gain_db`: optional hard ceiling for the applied hardware gain.
@@ -111,7 +110,7 @@ impl SoapySdrRig {
     #[allow(clippy::too_many_arguments)]
     pub fn new_with_config(
         args: &str,
-        channels: &[(f64, RigMode, u32, usize)],
+        channels: &[(f64, RigMode, u32)],
         gain_mode: &str,
         gain_db: f64,
         max_gain_db: Option<f64>,
@@ -178,13 +177,11 @@ impl SoapySdrRig {
             (initial_freq.hz as i64 - hardware_center_hz) as f64,
             RigMode::FM,
             25_000,
-            96,
         ));
         all_channels.push((
             (initial_freq.hz as i64 + AIS_CHANNEL_SPACING_HZ - hardware_center_hz) as f64,
             RigMode::FM,
             25_000,
-            96,
         ));
         let block_ms = if sdr_sample_rate == 0 {
             0.0
@@ -259,10 +256,10 @@ impl SoapySdrRig {
         };
 
         // Initialise filter state from primary channel config (index 0), or defaults.
-        let (bandwidth_hz, fir_taps) = channels
+        let bandwidth_hz = channels
             .first()
-            .map(|&(_, _, bw, taps)| (bw, taps as u32))
-            .unwrap_or((3000, 64));
+            .map(|&(_, _, bw)| bw)
+            .unwrap_or(3000);
 
         let spectrum_buf = pipeline.spectrum_buf.clone();
         let retune_cmd = pipeline.retune_cmd.clone();
@@ -286,7 +283,6 @@ impl SoapySdrRig {
             pipeline,
             primary_channel_idx: 0,
             bandwidth_hz,
-            fir_taps,
             spectrum_buf,
             center_offset_hz,
             center_hz: hardware_center_hz,
@@ -365,7 +361,7 @@ impl SoapySdrRig {
                 dsp_arc
                     .lock()
                     .unwrap()
-                    .set_filter(self.bandwidth_hz, self.fir_taps as usize);
+                    .set_filter(self.bandwidth_hz);
             }
         }
     }
@@ -537,7 +533,7 @@ impl RigCat for SoapySdrRig {
                 if let Some(dsp_arc) = dsps.get(self.primary_channel_idx) {
                     let mut dsp = dsp_arc.lock().unwrap();
                     dsp.set_mode(&mode);
-                    dsp.set_filter(self.bandwidth_hz, self.fir_taps as usize);
+                    dsp.set_filter(self.bandwidth_hz);
                 }
             }
             self.apply_ais_channel_activity();
@@ -755,28 +751,7 @@ impl RigCat for SoapySdrRig {
                     dsp_arc
                         .lock()
                         .unwrap()
-                        .set_filter(bandwidth_hz, self.fir_taps as usize);
-                }
-            }
-            self.apply_ais_channel_filters();
-            Ok(())
-        })
-    }
-
-    fn set_fir_taps<'a>(
-        &'a mut self,
-        taps: u32,
-    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = DynResult<()>> + Send + 'a>> {
-        Box::pin(async move {
-            tracing::debug!("SoapySdrRig: set_fir_taps -> {}", taps);
-            self.fir_taps = taps;
-            {
-                let dsps = self.pipeline.channel_dsps.read().unwrap();
-                if let Some(dsp_arc) = dsps.get(self.primary_channel_idx) {
-                    dsp_arc
-                        .lock()
-                        .unwrap()
-                        .set_filter(self.bandwidth_hz, taps as usize);
+                        .set_filter(bandwidth_hz);
                 }
             }
             self.apply_ais_channel_filters();
@@ -827,7 +802,6 @@ impl RigCat for SoapySdrRig {
             .unwrap_or(false);
         Some(RigFilterState {
             bandwidth_hz: self.bandwidth_hz,
-            fir_taps: self.fir_taps,
             cw_center_hz: 700,
             sdr_gain_db: Some(
                 self.max_gain_db
