@@ -334,6 +334,9 @@ const loadingSub = document.getElementById("loading-sub");
 const decodeHistoryOverlayEl = document.getElementById("decode-history-overlay");
 const decodeHistoryOverlayTitleEl = document.getElementById("decode-history-overlay-title");
 const decodeHistoryOverlaySubEl = document.getElementById("decode-history-overlay-sub");
+const connLostOverlayEl = document.getElementById("conn-lost-overlay");
+const connLostOverlayTitleEl = document.getElementById("conn-lost-overlay-title");
+const connLostOverlaySubEl = document.getElementById("conn-lost-overlay-sub");
 const overviewCanvas = document.getElementById("overview-canvas");
 const signalOverlayCanvas = document.getElementById("signal-overlay-canvas");
 const overviewGl = typeof createTrxWebGlRenderer === "function"
@@ -400,6 +403,13 @@ function setDecodeHistoryOverlayVisible(visible, title = "", sub = "") {
   if (title && decodeHistoryOverlayTitleEl) decodeHistoryOverlayTitleEl.textContent = title;
   if (decodeHistoryOverlaySubEl) decodeHistoryOverlaySubEl.textContent = sub || "";
   decodeHistoryOverlayEl.classList.toggle("is-hidden", !visible);
+}
+
+function setConnLostOverlay(visible, title = "Connection lost", sub = "Retrying\u2026") {
+  if (!connLostOverlayEl) return;
+  if (connLostOverlayTitleEl) connLostOverlayTitleEl.textContent = title;
+  if (connLostOverlaySubEl) connLostOverlaySubEl.textContent = sub;
+  connLostOverlayEl.classList.toggle("is-hidden", !visible);
 }
 const decodeHistoryTextDecoder = typeof TextDecoder === "function" ? new TextDecoder() : null;
 let decodeHistoryReplayActive = false;
@@ -3093,6 +3103,7 @@ function connect() {
   es = new EventSource("/events");
   lastEventAt = Date.now();
   es.onopen = () => {
+    setConnLostOverlay(false);
     pollFreshSnapshot();
     refreshRigList();
   };
@@ -3105,8 +3116,10 @@ function connect() {
       lastEventAt = Date.now();
       if (data.server_connected === false) {
         powerHint.textContent = "trx-server connection lost";
-      } else if (data.initialized) {
-        powerHint.textContent = readyText();
+        setConnLostOverlay(true, "trx-server connection lost", "trx-client is running but cannot reach the radio server");
+      } else {
+        setConnLostOverlay(false);
+        if (data.initialized) powerHint.textContent = readyText();
       }
     } catch (e) {
       console.error("Bad event data", e);
@@ -3125,6 +3138,7 @@ function connect() {
     // Check if this is an auth error by looking at readyState
     if (es.readyState === EventSource.CLOSED) {
       powerHint.textContent = "trx-client connection lost, retrying\u2026";
+      setConnLostOverlay(true, "trx-client connection lost", "Retrying\u2026");
       es.close();
       pollFreshSnapshot();
       scheduleReconnect(1000);
@@ -3135,6 +3149,7 @@ function connect() {
     const now = Date.now();
     if (now - lastEventAt > 15000) {
       powerHint.textContent = "trx-client connection lost, retrying\u2026";
+      setConnLostOverlay(true, "trx-client connection lost", "Retrying\u2026");
       es.close();
       pollFreshSnapshot();
       scheduleReconnect(250);
@@ -3163,6 +3178,7 @@ function disconnect() {
     reconnectTimer = null;
   }
   setDecodeHistoryOverlayVisible(false);
+  setConnLostOverlay(false);
 }
 
 // Yield the main thread so the browser can paint before heavy async work.
