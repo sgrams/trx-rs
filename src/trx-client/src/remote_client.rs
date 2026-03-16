@@ -2,6 +2,7 @@
 //
 // SPDX-License-Identifier: BSD-2-Clause
 
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 use std::{sync::Arc, sync::Mutex};
 
@@ -55,6 +56,8 @@ pub struct RemoteClientConfig {
     pub poll_interval: Duration,
     /// Spectrum watch sender; spectrum task publishes here, SSE clients subscribe.
     pub spectrum: Arc<watch::Sender<SharedSpectrum>>,
+    /// Shared flag: `true` while a TCP connection to trx-server is active.
+    pub server_connected: Arc<AtomicBool>,
 }
 
 pub async fn run_remote_client(
@@ -90,11 +93,13 @@ pub async fn run_remote_client(
                 if let Err(e) = stream.set_nodelay(true) {
                     warn!("TCP_NODELAY failed: {}", e);
                 }
+                config.server_connected.store(true, Ordering::Relaxed);
                 if let Err(e) =
                     handle_connection(&config, stream, &mut rx, &state_tx, &mut shutdown_rx).await
                 {
                     warn!("Remote connection dropped: {}", e);
                 }
+                config.server_connected.store(false, Ordering::Relaxed);
             }
             Ok(Err(e)) => {
                 warn!("Remote connect failed: {}", e);
