@@ -2994,9 +2994,9 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   width: 100%;
   font-size: 0.64rem;
   font-weight: 600;
-  white-space: normal;
-  overflow-wrap: anywhere;
-  word-break: break-word;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
   line-height: 1.22;
 }
 .bm-icon-svg path {
