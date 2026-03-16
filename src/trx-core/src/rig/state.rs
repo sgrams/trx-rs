@@ -85,6 +85,8 @@ pub enum RigMode {
     CW,
     CWR,
     AM,
+    /// AM C-QUAM stereo (Compatible Quadrature Amplitude Modulation).
+    AMC,
     WFM,
     FM,
     AIS,
