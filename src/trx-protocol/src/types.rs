@@ -44,7 +44,6 @@ pub enum ClientCommand {
     ResetFt2Decoder,
     ResetWsprDecoder,
     SetBandwidth { bandwidth_hz: u32 },
-    SetFirTaps { taps: u32 },
     SetSdrGain { gain_db: f64 },
     SetSdrLnaGain { gain_db: f64 },
     SetSdrAgc { enabled: bool },

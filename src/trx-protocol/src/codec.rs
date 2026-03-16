@@ -305,9 +305,10 @@ mod tests {
         let snap_json = serde_json::to_string(&RigSnapshot {
             filter: Some(RigFilterState {
                 bandwidth_hz: 3000,
-                fir_taps: 64,
                 cw_center_hz: 700,
                 sdr_gain_db: Some(12.0),
+                sdr_lna_gain_db: None,
+                sdr_agc_enabled: None,
                 sdr_squelch_enabled: None,
                 sdr_squelch_threshold_db: None,
                 wfm_deemphasis_us: 75,
@@ -323,7 +324,6 @@ mod tests {
             "filter=Some should be serialized"
         );
         assert!(snap_json.contains("\"bandwidth_hz\":3000"));
-        assert!(snap_json.contains("\"fir_taps\":64"));
     }
 
     #[test]
@@ -347,9 +347,10 @@ mod tests {
         let orig = RigSnapshot {
             filter: Some(RigFilterState {
                 bandwidth_hz: 12000,
-                fir_taps: 128,
                 cw_center_hz: 700,
                 sdr_gain_db: Some(18.0),
+                sdr_lna_gain_db: None,
+                sdr_agc_enabled: None,
                 sdr_squelch_enabled: None,
                 sdr_squelch_threshold_db: None,
                 wfm_deemphasis_us: 50,
@@ -363,7 +364,6 @@ mod tests {
         let decoded: RigSnapshot = serde_json::from_str(&json).unwrap();
         let f = decoded.filter.expect("filter should round-trip");
         assert_eq!(f.bandwidth_hz, 12000);
-        assert_eq!(f.fir_taps, 128);
         assert_eq!(f.sdr_gain_db, Some(18.0));
         assert_eq!(f.wfm_deemphasis_us, 50);
         assert!(f.wfm_stereo_detected);
@@ -426,6 +426,8 @@ mod tests {
             hf_aprs_decode_enabled: false,
             cw_decode_enabled: false,
             ft8_decode_enabled: false,
+            ft4_decode_enabled: false,
+            ft2_decode_enabled: false,
             wspr_decode_enabled: false,
             cw_auto: false,
             cw_wpm: 0,
