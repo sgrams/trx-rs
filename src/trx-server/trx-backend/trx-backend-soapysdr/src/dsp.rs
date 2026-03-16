@@ -299,6 +299,7 @@ impl SdrPipeline {
 
 pub const IQ_BLOCK_SIZE: usize = 4096;
 
+#[allow(clippy::too_many_arguments)]
 fn iq_read_loop(
     mut source: Box<dyn IqSource>,
     sdr_sample_rate: u32,

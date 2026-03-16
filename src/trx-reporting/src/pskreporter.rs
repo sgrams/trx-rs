@@ -420,7 +420,7 @@ impl PskReporterClient {
         let include_templates = self.packets_sent < 3
             || self
                 .last_template_instant
-                .map_or(true, |t| t.elapsed() >= Duration::from_secs(TEMPLATE_RESEND_SECS));
+                .is_none_or(|t| t.elapsed() >= Duration::from_secs(TEMPLATE_RESEND_SECS));
 
         let packet = self.make_packet(spots, include_templates)?;
         self.socket
@@ -501,7 +501,7 @@ impl PskReporterClient {
 fn pad_to_4(buf: &mut Vec<u8>) {
     let rem = buf.len() % 4;
     if rem != 0 {
-        buf.extend(std::iter::repeat(0u8).take(4 - rem));
+        buf.extend(std::iter::repeat_n(0u8, 4 - rem));
     }
 }
 

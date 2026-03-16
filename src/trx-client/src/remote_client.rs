@@ -666,6 +666,7 @@ fn parse_port(port_str: &str) -> Result<u16, String> {
 #[cfg(test)]
 mod tests {
     use super::{parse_remote_url, RemoteClientConfig, RemoteEndpoint, SharedSpectrum};
+    use std::sync::atomic::AtomicBool;
     use std::sync::{Arc, Mutex};
     use std::time::Duration;
 
@@ -849,6 +850,7 @@ mod tests {
                 known_rigs: Arc::new(Mutex::new(Vec::new())),
                 poll_interval: Duration::from_millis(100),
                 spectrum: Arc::new(spectrum_tx),
+                server_connected: Arc::new(AtomicBool::new(false)),
             },
             req_rx,
             state_tx,
@@ -886,6 +888,7 @@ mod tests {
             known_rigs: Arc::new(Mutex::new(Vec::new())),
             poll_interval: Duration::from_millis(500),
             spectrum: Arc::new(spectrum_tx),
+            server_connected: Arc::new(AtomicBool::new(false)),
         };
         let envelope = super::build_envelope(&config, trx_protocol::ClientCommand::GetState, None);
         assert_eq!(envelope.token.as_deref(), Some("secret"));

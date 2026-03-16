@@ -411,6 +411,7 @@ pub struct SchedulerStatus {
     pub last_bookmark_ids: Vec<String>,
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn apply_scheduler_target(
     rig_tx: &mpsc::Sender<RigRequest>,
     rig_id: &str,
