@@ -545,16 +545,6 @@ async fn process_command(
             let _ = ctx.state_tx.send(ctx.state.clone());
             return snapshot_from(ctx.state);
         }
-        RigCommand::SetFirTaps(taps) => {
-            if let Err(e) = ctx.rig.set_fir_taps(taps).await {
-                return Err(RigError::communication(format!("set_fir_taps: {e}")));
-            }
-            if let Some(f) = ctx.state.filter.as_mut() {
-                f.fir_taps = taps;
-            }
-            let _ = ctx.state_tx.send(ctx.state.clone());
-            return snapshot_from(ctx.state);
-        }
         RigCommand::SetSdrGain(gain_db) => {
             if let Err(e) = ctx.rig.set_sdr_gain(gain_db).await {
                 return Err(RigError::communication(format!("set_sdr_gain: {e}")));

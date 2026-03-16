@@ -382,8 +382,6 @@ pub struct SdrChannelConfig {
     pub mode: String,
     /// One-sided bandwidth of the post-demod audio BPF (Hz).
     pub audio_bandwidth_hz: u32,
-    /// FIR filter tap count. Higher = sharper roll-off. Default 64.
-    pub fir_taps: usize,
     /// CW tone centre frequency in the audio domain (Hz). Default 700.
     pub cw_center_hz: u32,
     /// Pre-demod bandwidth for WFM only (Hz). Default 75000.
@@ -403,7 +401,6 @@ impl Default for SdrChannelConfig {
             offset_hz: 0,
             mode: "auto".to_string(),
             audio_bandwidth_hz: 3000,
-            fir_taps: 64,
             cw_center_hz: 700,
             wfm_bandwidth_hz: 75_000,
             decoders: Vec::new(),

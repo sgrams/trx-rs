@@ -297,14 +297,14 @@ fn build_sdr_rig_from_instance(rig_cfg: &RigInstanceConfig) -> SdrRigBuildResult
     use trx_core::rig::AudioSource;
 
     let args = rig_cfg.rig.access.args.as_deref().unwrap_or("");
-    let mut channels: Vec<(f64, trx_core::rig::state::RigMode, u32, usize)> = rig_cfg
+    let mut channels: Vec<(f64, trx_core::rig::state::RigMode, u32)> = rig_cfg
         .sdr
         .channels
         .iter()
         .map(|ch| {
             let if_hz = (rig_cfg.sdr.center_offset_hz + ch.offset_hz) as f64;
             let mode = parse_rig_mode(&ch.mode, &rig_cfg.rig.initial_mode);
-            (if_hz, mode, ch.audio_bandwidth_hz, ch.fir_taps)
+            (if_hz, mode, ch.audio_bandwidth_hz)
         })
         .collect();
 
@@ -320,7 +320,6 @@ fn build_sdr_rig_from_instance(rig_cfg: &RigInstanceConfig) -> SdrRigBuildResult
             rig_cfg.sdr.center_offset_hz as f64,
             rig_cfg.rig.initial_mode.clone(),
             default_bw,
-            64,
         ));
     }
     let ais_channel_base_idx = channels.len();
@@ -359,7 +358,7 @@ fn build_sdr_rig_from_instance(rig_cfg: &RigInstanceConfig) -> SdrRigBuildResult
     // explicit VDES channel has been configured.
     let vdes_channel_idx = channels
         .iter()
-        .position(|(_, mode, _, _)| matches!(mode, trx_core::rig::state::RigMode::VDES))
+        .position(|(_, mode, _)| matches!(mode, trx_core::rig::state::RigMode::VDES))
         .unwrap_or(0);
     let vdes_iq = sdr_rig.subscribe_iq_channel(vdes_channel_idx);
     // Extract the virtual channel manager before the rig is consumed by Box.
