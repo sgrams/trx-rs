@@ -228,6 +228,7 @@ impl SoapySdrRig {
                     RigMode::CW,
                     RigMode::CWR,
                     RigMode::AM,
+                    RigMode::AMC,
                     RigMode::WFM,
                     RigMode::FM,
                     RigMode::AIS,
