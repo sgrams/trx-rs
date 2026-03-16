@@ -271,6 +271,9 @@ pub struct FrontendRuntimeContext {
     /// channel (e.g. out-of-bandwidth after center-frequency retune).
     /// The HTTP frontend subscribes to clean up `ClientChannelManager`.
     pub vchan_destroyed: Option<broadcast::Sender<Uuid>>,
+    /// Whether the remote client currently has an active TCP connection to
+    /// trx-server.  Set to `true` on successful connect, `false` on drop.
+    pub server_connected: Arc<AtomicBool>,
 }
 
 impl FrontendRuntimeContext {
@@ -321,6 +324,7 @@ impl FrontendRuntimeContext {
             vchan_audio: Arc::new(RwLock::new(HashMap::new())),
             vchan_audio_cmd: Arc::new(Mutex::new(None)),
             vchan_destroyed: None,
+            server_connected: Arc::new(AtomicBool::new(false)),
         }
     }
 }
