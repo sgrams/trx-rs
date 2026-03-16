@@ -2079,6 +2079,12 @@ body.map-fake-fullscreen-active {
 .trx-receiver-marker { stroke: var(--accent-green) !important; fill: var(--accent-green) !important; }
 .receiver-popup-active { font-size: 0.75em; background: rgba(194,75,26,0.15); color: var(--accent-green); border: 1px solid rgba(194,75,26,0.3); border-radius: 3px; padding: 0 0.25rem; margin-left: 0.3rem; vertical-align: middle; }
 @keyframes aprs-radio-path-flow { to { stroke-dashoffset: -15; } }
+.map-paths-static .decode-contact-path,
+.map-paths-static .aprs-radio-path,
+.map-paths-static .locator-radio-path {
+  animation: none;
+  filter: none;
+}
 @keyframes trx-locator-breathe {
   0%, 100% { stroke-width: 2.4px; stroke-opacity: 0.78; filter: drop-shadow(0 0 2px color-mix(in srgb, var(--accent-green) 18%, transparent)); }
   50% { stroke-width: 4.2px; stroke-opacity: 1; filter: drop-shadow(0 0 10px color-mix(in srgb, var(--accent-green) 52%, transparent)); }
@@ -2895,13 +2901,13 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   transition: height 80ms ease;
 }
 #spectrum-bookmark-axis.bm-axis-visible {
-  height: 26px;
+  min-height: 26px;
+  height: auto;
 }
 .spectrum-bookmark-chip {
   position: absolute;
   transform: translateX(-50%);
   top: 2px;
-  white-space: nowrap;
   cursor: pointer;
   font-weight: 600;
   font-size: 0.66rem;
@@ -2912,14 +2918,18 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   padding: 2px 8px;
   max-width: 130px;
   overflow: hidden;
-  text-overflow: ellipsis;
   line-height: 1.4;
   display: inline-flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 4px;
 }
 .spectrum-bookmark-chip:hover {
   filter: brightness(1.15);
+}
+.spectrum-bookmark-chip .spectrum-bookmark-name {
+  white-space: normal;
+  word-break: break-word;
+  line-height: 1.2;
 }
 .spectrum-bookmark-side {
   position: absolute;

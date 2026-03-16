@@ -4647,6 +4647,14 @@ function clearDecodeContactPaths() {
     clearDecodeContactPathRender(entry);
   }
   decodeContactPaths.clear();
+  updateMapPathsAnimationClass();
+}
+
+const MAP_PATHS_STATIC_THRESHOLD = 20;
+function updateMapPathsAnimationClass() {
+  const mapEl = document.getElementById("aprs-map");
+  if (!mapEl) return;
+  mapEl.classList.toggle("map-paths-static", decodeContactPaths.size > MAP_PATHS_STATIC_THRESHOLD);
 }
 
 function formatDecodeContactDistance(distanceKm) {
@@ -4756,6 +4764,7 @@ function syncDecodeContactPathVisibility() {
     ensureDecodeContactPathRendered(entry);
   }
   renderMapQsoSummary();
+  updateMapPathsAnimationClass();
 }
 
 function setMapRadioPathTo(lat, lon, color, className = "aprs-radio-path") {
@@ -8646,7 +8655,7 @@ function createBookmarkChip(bm, colorMap, options = {}) {
     : (
       "<svg class='bm-icon-svg' viewBox='0 0 8 12' width='8' height='12' aria-hidden='true'>" +
       "<path d='M0,0 h8 v10 l-4,2 l-4,-2 Z'/>" +
-      "</svg>\u00a0" + esc(bm.name)
+      "</svg>\u00a0<span class='spectrum-bookmark-name'>" + esc(bm.name) + "</span>"
     );
   span.innerHTML =
     labelHtml;
