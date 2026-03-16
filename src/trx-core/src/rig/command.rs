@@ -39,7 +39,6 @@ pub enum RigCommand {
     ResetFt2Decoder,
     ResetWsprDecoder,
     SetBandwidth(u32),
-    SetFirTaps(u32),
     SetSdrGain(f64),
     SetSdrLnaGain(f64),
     SetSdrAgc(bool),

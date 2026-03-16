@@ -521,7 +521,6 @@ pub fn command_from_rig_command(cmd: RigCommand) -> Box<dyn RigCommandHandler> {
         | RigCommand::ResetFt2Decoder
         | RigCommand::ResetWsprDecoder
         | RigCommand::SetBandwidth(_)
-        | RigCommand::SetFirTaps(_)
         | RigCommand::SetSdrGain(_)
         | RigCommand::SetSdrLnaGain(_)
         | RigCommand::SetSdrAgc(_)

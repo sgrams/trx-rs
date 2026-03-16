@@ -57,7 +57,7 @@ pub struct RigCapabilities {
     pub tx_limit: bool,
     /// Backend supports toggle_vfo.
     pub vfo_switch: bool,
-    /// Backend supports runtime filter adjustment (bandwidth, FIR taps).
+    /// Backend supports runtime filter adjustment (bandwidth).
     pub filter_controls: bool,
     /// Backend returns a meaningful RX signal strength value.
     pub signal_meter: bool,
@@ -156,16 +156,6 @@ pub trait RigCat: Rig + Send {
     ) -> Pin<Box<dyn Future<Output = DynResult<()>> + Send + 'a>> {
         Box::pin(std::future::ready(Err(
             Box::new(response::RigError::not_supported("set_bandwidth"))
-                as Box<dyn std::error::Error + Send + Sync>,
-        )))
-    }
-
-    fn set_fir_taps<'a>(
-        &'a mut self,
-        _taps: u32,
-    ) -> Pin<Box<dyn Future<Output = DynResult<()>> + Send + 'a>> {
-        Box::pin(std::future::ready(Err(
-            Box::new(response::RigError::not_supported("set_fir_taps"))
                 as Box<dyn std::error::Error + Send + Sync>,
         )))
     }

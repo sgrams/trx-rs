@@ -308,7 +308,6 @@ impl RigState {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct RigFilterState {
     pub bandwidth_hz: u32,
-    pub fir_taps: u32,
     pub cw_center_hz: u32,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sdr_gain_db: Option<f64>,
