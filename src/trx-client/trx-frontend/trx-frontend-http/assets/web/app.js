@@ -3103,7 +3103,9 @@ function connect() {
       lastRendered = evt.data;
       render(data);
       lastEventAt = Date.now();
-      if (data.initialized) {
+      if (data.server_connected === false) {
+        powerHint.textContent = "trx-server connection lost";
+      } else if (data.initialized) {
         powerHint.textContent = readyText();
       }
     } catch (e) {
@@ -3122,7 +3124,7 @@ function connect() {
   es.onerror = () => {
     // Check if this is an auth error by looking at readyState
     if (es.readyState === EventSource.CLOSED) {
-      powerHint.textContent = "Disconnected, retrying…";
+      powerHint.textContent = "trx-client connection lost, retrying\u2026";
       es.close();
       pollFreshSnapshot();
       scheduleReconnect(1000);
@@ -3132,6 +3134,7 @@ function connect() {
   esHeartbeat = setInterval(() => {
     const now = Date.now();
     if (now - lastEventAt > 15000) {
+      powerHint.textContent = "trx-client connection lost, retrying\u2026";
       es.close();
       pollFreshSnapshot();
       scheduleReconnect(250);
