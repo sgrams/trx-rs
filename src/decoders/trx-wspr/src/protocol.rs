@@ -27,13 +27,17 @@ fn rev8(mut b: u8) -> u8 {
 ///
 /// In WSPR: symbol = sync_bit + 2*data_bit, so data_bit = symbol >> 1.
 /// The 162 data bits are reordered via bit-reversal of 8-bit indices.
+///
+/// The interleaving places coded bit p at transmitted position j = rev8(i)
+/// (for each i in 0..255 where rev8(i) < 162).  Deinterleaving reverses
+/// this: coded[p] = transmitted[j] >> 1.
 fn deinterleave(symbols: &[u8]) -> [u8; NSYMS] {
     let mut out = [0u8; NSYMS];
     let mut p = 0usize;
     for i in 0u8..=255 {
         let j = rev8(i) as usize;
         if j < NSYMS {
-            out[j] = symbols[p] >> 1;
+            out[p] = symbols[j] >> 1;
             p += 1;
         }
     }
