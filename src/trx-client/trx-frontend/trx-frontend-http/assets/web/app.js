@@ -339,11 +339,13 @@ const connLostOverlayTitleEl = document.getElementById("conn-lost-overlay-title"
 const connLostOverlaySubEl = document.getElementById("conn-lost-overlay-sub");
 const overviewCanvas = document.getElementById("overview-canvas");
 const signalOverlayCanvas = document.getElementById("signal-overlay-canvas");
+// Screenshots composite these live WebGL canvases into a PNG.
+const spectrumSnapshotGlOptions = { alpha: true, preserveDrawingBuffer: true };
 const overviewGl = typeof createTrxWebGlRenderer === "function"
-  ? createTrxWebGlRenderer(overviewCanvas, { alpha: true })
+  ? createTrxWebGlRenderer(overviewCanvas, spectrumSnapshotGlOptions)
   : null;
 const signalOverlayGl = typeof createTrxWebGlRenderer === "function"
-  ? createTrxWebGlRenderer(signalOverlayCanvas, { alpha: true })
+  ? createTrxWebGlRenderer(signalOverlayCanvas, spectrumSnapshotGlOptions)
   : null;
 const signalVisualBlockEl = document.querySelector(".signal-visual-block");
 const signalSplitControlEl = document.getElementById("signal-split-control");
@@ -7920,7 +7922,7 @@ window.addEventListener("beforeunload", () => {
 // ── Spectrum display ─────────────────────────────────────────────────────────
 const spectrumCanvas  = document.getElementById("spectrum-canvas");
 const spectrumGl = typeof createTrxWebGlRenderer === "function"
-  ? createTrxWebGlRenderer(spectrumCanvas, { alpha: true })
+  ? createTrxWebGlRenderer(spectrumCanvas, spectrumSnapshotGlOptions)
   : null;
 const spectrumDbAxis = document.getElementById("spectrum-db-axis");
 const spectrumFreqAxis = document.getElementById("spectrum-freq-axis");
@@ -9103,6 +9105,16 @@ function buildSpectrumSnapshotCanvas() {
   if (!rootEl || !isVisibleForSnapshot(rootEl) || !isVisibleForSnapshot(spectrumPanelEl)) {
     return null;
   }
+  for (const renderer of [overviewGl, spectrumGl, signalOverlayGl]) {
+    const gl = renderer?.gl;
+    if (!gl) continue;
+    try {
+      if (typeof gl.flush === "function") gl.flush();
+      if (typeof gl.finish === "function") gl.finish();
+    } catch (_) {
+      // Ignore transient WebGL state errors and capture the last good frame.
+    }
+  }
   const rootRect = rootEl.getBoundingClientRect();
   const dpr = window.devicePixelRatio || 1;
   const out = document.createElement("canvas");
@@ -9153,35 +9165,55 @@ function buildSpectrumSnapshotCanvas() {
   return out;
 }
 
-function saveCanvasAsPng(canvas, fileName) {
-  if (!canvas) return;
-  if (typeof canvas.toBlob === "function") {
-    canvas.toBlob((blob) => {
-      if (!blob) return;
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = fileName;
-      a.click();
-      setTimeout(() => URL.revokeObjectURL(url), 1000);
-    }, "image/png");
-    return;
-  }
+function clickCanvasDownload(href, fileName) {
   const a = document.createElement("a");
-  a.href = canvas.toDataURL("image/png");
+  a.href = href;
   a.download = fileName;
+  a.rel = "noopener";
+  a.style.display = "none";
+  document.body.appendChild(a);
   a.click();
+  requestAnimationFrame(() => a.remove());
 }
 
-function captureSpectrumScreenshot() {
+function saveCanvasAsPng(canvas, fileName) {
+  if (!canvas) return Promise.resolve(false);
+  if (typeof canvas.toBlob === "function") {
+    return new Promise((resolve) => {
+      try {
+        canvas.toBlob((blob) => {
+          if (!blob) {
+            resolve(false);
+            return;
+          }
+          const url = URL.createObjectURL(blob);
+          clickCanvasDownload(url, fileName);
+          setTimeout(() => URL.revokeObjectURL(url), 1000);
+          resolve(true);
+        }, "image/png");
+      } catch (_) {
+        resolve(false);
+      }
+    });
+  }
+  try {
+    clickCanvasDownload(canvas.toDataURL("image/png"), fileName);
+    return Promise.resolve(true);
+  } catch (_) {
+    return Promise.resolve(false);
+  }
+}
+
+async function captureSpectrumScreenshot() {
   const snapshotCanvas = buildSpectrumSnapshotCanvas();
   if (!snapshotCanvas) {
     showHint("Spectrum view not ready", 1300);
-    return;
+    return false;
   }
   const stamp = new Date().toISOString().replace(/[:.]/g, "-");
-  saveCanvasAsPng(snapshotCanvas, `trx-spectrum-${stamp}.png`);
-  showHint("Spectrum screenshot saved", 1500);
+  const saved = await saveCanvasAsPng(snapshotCanvas, `trx-spectrum-${stamp}.png`);
+  showHint(saved ? "Spectrum screenshot saved" : "Spectrum screenshot failed", saved ? 1500 : 1800);
+  return saved;
 }
 
 function shouldIgnoreGlobalShortcut(target) {
@@ -9193,13 +9225,13 @@ function shouldIgnoreGlobalShortcut(target) {
 }
 
 window.addEventListener("keydown", (event) => {
-  if (event.defaultPrevented || event.repeat) return;
+  if (event.defaultPrevented || event.repeat || event.isComposing) return;
   if (event.ctrlKey || event.metaKey || event.altKey) return;
   if (shouldIgnoreGlobalShortcut(event.target)) return;
   if ((event.key || "").toLowerCase() !== "s") return;
   event.preventDefault();
-  captureSpectrumScreenshot();
-});
+  void captureSpectrumScreenshot();
+}, { capture: true });
 
 // ── Zoom helpers ──────────────────────────────────────────────────────────────
 function spectrumZoomAt(cssX, cssW, data, factor) {
