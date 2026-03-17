@@ -141,8 +141,8 @@ fn unpack_message(bits: &[u8; NBITS]) -> Option<String> {
         power_code = (power_code << 1) | b as u32;
     }
 
-    // power_code = dBm + 64; valid WSPR levels are 0–60 dBm.
-    let power_dbm = power_code as i32 - 64;
+    // power_code is the raw dBm value; valid WSPR levels are 0–60 dBm.
+    let power_dbm = power_code as i32;
     if !(0..=60).contains(&power_dbm) {
         return None;
     }
@@ -179,7 +179,7 @@ fn unpack_message(bits: &[u8; NBITS]) -> Option<String> {
         CS27[i4] as char,
         CS27[i5] as char,
     )
-    .trim_end()
+    .trim()
     .to_string();
 
     if callsign.len() < 3 || !callsign.chars().any(|c| c.is_alphabetic()) {
@@ -243,10 +243,7 @@ mod tests {
         let c4 = idx27(b'T');
         let c5 = idx27(b' ');
 
-        let n1 = ((c0 * 36 + c1) * 10 + c2) * 27u32.pow(3)
-            + c3 * 27u32.pow(2)
-            + c4 * 27
-            + c5;
+        let n1 = ((c0 * 36 + c1) * 10 + c2) * 27u32.pow(3) + c3 * 27u32.pow(2) + c4 * 27 + c5;
 
         // Grid "FN20": loc1='F'=5 (lon), loc2='N'=13 (lat), loc3='2', loc4='0'
         let loc1 = (b'F' - b'A') as u32; // 5
@@ -255,8 +252,8 @@ mod tests {
         let loc4 = 0u32;
         let m1 = (179 - 10 * loc1 - loc3) * 180 + 10 * loc2 + loc4;
 
-        // Power 37 dBm → power_code = 37 + 64 = 101
-        let power_code = 37u32 + 64;
+        // Power 37 dBm → power_code = 37 (raw dBm value)
+        let power_code = 37u32;
 
         // Pack into 50-bit array
         let mut bits = [0u8; NBITS];
