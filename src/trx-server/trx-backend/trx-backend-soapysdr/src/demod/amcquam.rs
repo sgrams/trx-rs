@@ -2,8 +2,8 @@
 //
 // SPDX-License-Identifier: BSD-2-Clause
 
-use num_complex::Complex;
 use super::DcBlocker;
+use num_complex::Complex;
 
 /// C-QUAM (Compatible Quadrature AM) stereo demodulator.
 ///
@@ -57,8 +57,7 @@ impl CquamDemod {
             self.carrier_im = alpha * self.carrier_im + one_minus_alpha * s.im;
 
             // Rotate s by −φ to phase-align I with (1 + m_s) and Q with m_d.
-            let mag_sq =
-                self.carrier_re * self.carrier_re + self.carrier_im * self.carrier_im;
+            let mag_sq = self.carrier_re * self.carrier_re + self.carrier_im * self.carrier_im;
             let (i_corr, q_corr) = if mag_sq > 1e-8 {
                 let inv = mag_sq.sqrt().recip();
                 let cos_phi = self.carrier_re * inv;
@@ -94,7 +93,10 @@ mod tests {
         let out = demod.demodulate_stereo(&samples);
         assert_eq!(out.len(), 512);
         for &s in &out {
-            assert!(s.abs() < 1e-5, "silence should produce near-zero output, got {s}");
+            assert!(
+                s.abs() < 1e-5,
+                "silence should produce near-zero output, got {s}"
+            );
         }
     }
 

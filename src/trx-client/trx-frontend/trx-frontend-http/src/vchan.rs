@@ -367,11 +367,7 @@ impl ClientChannelManager {
     }
 
     /// Explicitly delete a channel by UUID (any session may do this).
-    pub fn delete_channel(
-        &self,
-        rig_id: &str,
-        channel_id: Uuid,
-    ) -> Result<(), VChanClientError> {
+    pub fn delete_channel(&self, rig_id: &str, channel_id: Uuid) -> Result<(), VChanClientError> {
         let mut rigs = self.rigs.write().unwrap();
         let channels = rigs.get_mut(rig_id).ok_or(VChanClientError::NotFound)?;
         let pos = channels
@@ -450,7 +446,10 @@ impl ClientChannelManager {
         ch.freq_hz = freq_hz;
         self.broadcast_change(rig_id, channels);
         drop(rigs);
-        self.send_audio_cmd(VChanAudioCmd::SetFreq { uuid: channel_id, freq_hz });
+        self.send_audio_cmd(VChanAudioCmd::SetFreq {
+            uuid: channel_id,
+            freq_hz,
+        });
         Ok(())
     }
 
@@ -469,7 +468,10 @@ impl ClientChannelManager {
         ch.mode = mode.to_string();
         self.broadcast_change(rig_id, channels);
         drop(rigs);
-        self.send_audio_cmd(VChanAudioCmd::SetMode { uuid: channel_id, mode: mode.to_string() });
+        self.send_audio_cmd(VChanAudioCmd::SetMode {
+            uuid: channel_id,
+            mode: mode.to_string(),
+        });
         Ok(())
     }
 
@@ -488,7 +490,10 @@ impl ClientChannelManager {
         ch.bandwidth_hz = bandwidth_hz;
         self.broadcast_change(rig_id, channels);
         drop(rigs);
-        self.send_audio_cmd(VChanAudioCmd::SetBandwidth { uuid: channel_id, bandwidth_hz });
+        self.send_audio_cmd(VChanAudioCmd::SetBandwidth {
+            uuid: channel_id,
+            bandwidth_hz,
+        });
         Ok(())
     }
 
@@ -530,12 +535,14 @@ impl ClientChannelManager {
         let mut changed = false;
         let desired_map: HashMap<String, (u64, String, u32, Vec<String>)> = desired
             .iter()
-            .map(|(bookmark_id, freq_hz, mode, bandwidth_hz, decoder_kinds)| {
-                (
-                    bookmark_id.clone(),
-                    (*freq_hz, mode.clone(), *bandwidth_hz, decoder_kinds.clone()),
-                )
-            })
+            .map(
+                |(bookmark_id, freq_hz, mode, bandwidth_hz, decoder_kinds)| {
+                    (
+                        bookmark_id.clone(),
+                        (*freq_hz, mode.clone(), *bandwidth_hz, decoder_kinds.clone()),
+                    )
+                },
+            )
             .collect();
         let desired_ids: std::collections::HashSet<&str> =
             desired_map.keys().map(String::as_str).collect();
@@ -561,7 +568,8 @@ impl ClientChannelManager {
             let Some(bookmark_id) = channel.scheduler_bookmark_id.as_deref() else {
                 continue;
             };
-            let Some((freq_hz, mode, bandwidth_hz, decoder_kinds)) = desired_map.get(bookmark_id) else {
+            let Some((freq_hz, mode, bandwidth_hz, decoder_kinds)) = desired_map.get(bookmark_id)
+            else {
                 continue;
             };
             if channel.freq_hz != *freq_hz {

@@ -6,10 +6,10 @@
 mod api;
 #[path = "audio.rs"]
 pub mod audio;
-#[path = "background_decode.rs"]
-pub mod background_decode;
 #[path = "auth.rs"]
 pub mod auth;
+#[path = "background_decode.rs"]
+pub mod background_decode;
 #[path = "bookmarks.rs"]
 pub mod bookmarks;
 #[path = "scheduler.rs"]
@@ -88,8 +88,7 @@ async fn serve(
     );
 
     let background_decode_path = BackgroundDecodeStore::default_path();
-    let background_decode_store =
-        Arc::new(BackgroundDecodeStore::open(&background_decode_path));
+    let background_decode_store = Arc::new(BackgroundDecodeStore::open(&background_decode_path));
     let vchan_mgr = Arc::new(ClientChannelManager::new(4));
     let background_decode_mgr = BackgroundDecodeManager::new(
         background_decode_store,

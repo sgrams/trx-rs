@@ -127,7 +127,13 @@ pub async fn run_aprsfi_uplink(
     // Pre-build the beacon packet (None if beaconing disabled or no coords).
     let beacon_packet: Option<String> = if cfg.beacon {
         match coords {
-            Some((lat, lon)) => Some(format_beacon(&callsign, lat, lon, cfg.beacon_symbol_table, cfg.beacon_symbol_code)),
+            Some((lat, lon)) => Some(format_beacon(
+                &callsign,
+                lat,
+                lon,
+                cfg.beacon_symbol_table,
+                cfg.beacon_symbol_code,
+            )),
             None => {
                 warn!(
                     "APRS-IS IGate: beacon enabled but no coordinates available \

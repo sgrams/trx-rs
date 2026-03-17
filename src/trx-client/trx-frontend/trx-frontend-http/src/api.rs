@@ -47,8 +47,16 @@ fn base64_encode(data: &[u8]) -> String {
         let n = (b0 << 16) | (b1 << 8) | b2;
         out.push(T[((n >> 18) & 63) as usize]);
         out.push(T[((n >> 12) & 63) as usize]);
-        out.push(if chunk.len() > 1 { T[((n >> 6) & 63) as usize] } else { b'=' });
-        out.push(if chunk.len() > 2 { T[(n & 63) as usize] } else { b'=' });
+        out.push(if chunk.len() > 1 {
+            T[((n >> 6) & 63) as usize]
+        } else {
+            b'='
+        });
+        out.push(if chunk.len() > 2 {
+            T[(n & 63) as usize]
+        } else {
+            b'='
+        });
     }
     // SAFETY: output contains only ASCII base64 characters.
     unsafe { String::from_utf8_unchecked(out) }
@@ -120,23 +128,53 @@ fn inject_frontend_meta(json: &str, meta: FrontendMeta) -> String {
     // Build only the extra key-value pairs as a JSON fragment.
     let mut extra = serde_json::Map::new();
     extra.insert("clients".into(), serde_json::json!(meta.http_clients));
-    extra.insert("rigctl_clients".into(), serde_json::json!(meta.rigctl_clients));
-    if let Some(v) = meta.rigctl_addr { extra.insert("rigctl_addr".into(), serde_json::json!(v)); }
-    if let Some(v) = meta.active_rig_id { extra.insert("active_rig_id".into(), serde_json::json!(v)); }
+    extra.insert(
+        "rigctl_clients".into(),
+        serde_json::json!(meta.rigctl_clients),
+    );
+    if let Some(v) = meta.rigctl_addr {
+        extra.insert("rigctl_addr".into(), serde_json::json!(v));
+    }
+    if let Some(v) = meta.active_rig_id {
+        extra.insert("active_rig_id".into(), serde_json::json!(v));
+    }
     extra.insert("rig_ids".into(), serde_json::json!(meta.rig_ids));
-    if let Some(v) = meta.owner_callsign { extra.insert("owner_callsign".into(), serde_json::json!(v)); }
-    if let Some(v) = meta.owner_website_url { extra.insert("owner_website_url".into(), serde_json::json!(v)); }
-    if let Some(v) = meta.owner_website_name { extra.insert("owner_website_name".into(), serde_json::json!(v)); }
-    if let Some(v) = meta.ais_vessel_url_base { extra.insert("ais_vessel_url_base".into(), serde_json::json!(v)); }
-    extra.insert("show_sdr_gain_control".into(), serde_json::json!(meta.show_sdr_gain_control));
-    extra.insert("initial_map_zoom".into(), serde_json::json!(meta.initial_map_zoom));
-    extra.insert("spectrum_coverage_margin_hz".into(), serde_json::json!(meta.spectrum_coverage_margin_hz));
-    extra.insert("spectrum_usable_span_ratio".into(), serde_json::json!(meta.spectrum_usable_span_ratio));
+    if let Some(v) = meta.owner_callsign {
+        extra.insert("owner_callsign".into(), serde_json::json!(v));
+    }
+    if let Some(v) = meta.owner_website_url {
+        extra.insert("owner_website_url".into(), serde_json::json!(v));
+    }
+    if let Some(v) = meta.owner_website_name {
+        extra.insert("owner_website_name".into(), serde_json::json!(v));
+    }
+    if let Some(v) = meta.ais_vessel_url_base {
+        extra.insert("ais_vessel_url_base".into(), serde_json::json!(v));
+    }
+    extra.insert(
+        "show_sdr_gain_control".into(),
+        serde_json::json!(meta.show_sdr_gain_control),
+    );
+    extra.insert(
+        "initial_map_zoom".into(),
+        serde_json::json!(meta.initial_map_zoom),
+    );
+    extra.insert(
+        "spectrum_coverage_margin_hz".into(),
+        serde_json::json!(meta.spectrum_coverage_margin_hz),
+    );
+    extra.insert(
+        "spectrum_usable_span_ratio".into(),
+        serde_json::json!(meta.spectrum_usable_span_ratio),
+    );
     extra.insert(
         "decode_history_retention_min".into(),
         serde_json::json!(meta.decode_history_retention_min),
     );
-    extra.insert("server_connected".into(), serde_json::json!(meta.server_connected));
+    extra.insert(
+        "server_connected".into(),
+        serde_json::json!(meta.server_connected),
+    );
 
     // Serialize the extra map, strip its outer braces, and splice in.
     let extra_json = match serde_json::to_string(&extra) {
@@ -328,9 +366,7 @@ pub async fn events(
         let scheduler_control = scheduler_control_updates.clone();
         async move {
             state.snapshot().and_then(|v| {
-                if let Ok(Some(rig_id)) =
-                    context.remote_active_rig_id.lock().map(|g| g.clone())
-                {
+                if let Ok(Some(rig_id)) = context.remote_active_rig_id.lock().map(|g| g.clone()) {
                     vchan.update_primary(
                         &rig_id,
                         v.status.freq.hz,
@@ -367,9 +403,8 @@ pub async fn events(
                     if let Some(colon) = msg.find(':') {
                         let rig_id = &msg[..colon];
                         let channels_json = &msg[colon + 1..];
-                        let payload = format!(
-                            "{{\"rig_id\":\"{rig_id}\",\"channels\":{channels_json}}}"
-                        );
+                        let payload =
+                            format!("{{\"rig_id\":\"{rig_id}\",\"channels\":{channels_json}}}");
                         return Some((
                             Ok::<Bytes, Error>(Bytes::from(format!(
                                 "event: channels\ndata: {payload}\n\n"
@@ -573,9 +608,7 @@ fn gzip_bytes(payload: &[u8]) -> std::io::Result<Vec<u8>> {
 /// not block real-time messages: the client fetches this endpoint in parallel
 /// with opening the SSE connection and drains it in the background.
 #[get("/decode/history")]
-pub async fn decode_history(
-    context: web::Data<Arc<FrontendRuntimeContext>>,
-) -> impl Responder {
+pub async fn decode_history(context: web::Data<Arc<FrontendRuntimeContext>>) -> impl Responder {
     if context.decode_rx.is_none() {
         return HttpResponse::NotFound().body("decode not enabled");
     }
@@ -1414,9 +1447,7 @@ pub async fn delete_channel_route(
     let (rig_id, channel_id) = path.into_inner();
     match vchan_mgr.delete_channel(&rig_id, channel_id) {
         Ok(()) => HttpResponse::Ok().finish(),
-        Err(crate::server::vchan::VChanClientError::NotFound) => {
-            HttpResponse::NotFound().finish()
-        }
+        Err(crate::server::vchan::VChanClientError::NotFound) => HttpResponse::NotFound().finish(),
         Err(crate::server::vchan::VChanClientError::Permanent) => {
             HttpResponse::BadRequest().body("cannot remove the primary channel")
         }
@@ -1476,9 +1507,7 @@ pub async fn set_vchan_freq(
     let (rig_id, channel_id) = path.into_inner();
     match vchan_mgr.set_channel_freq(&rig_id, channel_id, body.freq_hz) {
         Ok(()) => HttpResponse::Ok().finish(),
-        Err(crate::server::vchan::VChanClientError::NotFound) => {
-            HttpResponse::NotFound().finish()
-        }
+        Err(crate::server::vchan::VChanClientError::NotFound) => HttpResponse::NotFound().finish(),
         Err(e) => HttpResponse::BadRequest().body(e.to_string()),
     }
 }
@@ -1497,9 +1526,7 @@ pub async fn set_vchan_bw(
     let (rig_id, channel_id) = path.into_inner();
     match vchan_mgr.set_channel_bandwidth(&rig_id, channel_id, body.bandwidth_hz) {
         Ok(()) => HttpResponse::Ok().finish(),
-        Err(crate::server::vchan::VChanClientError::NotFound) => {
-            HttpResponse::NotFound().finish()
-        }
+        Err(crate::server::vchan::VChanClientError::NotFound) => HttpResponse::NotFound().finish(),
         Err(e) => HttpResponse::BadRequest().body(e.to_string()),
     }
 }
@@ -1518,9 +1545,7 @@ pub async fn set_vchan_mode(
     let (rig_id, channel_id) = path.into_inner();
     match vchan_mgr.set_channel_mode(&rig_id, channel_id, &body.mode) {
         Ok(()) => HttpResponse::Ok().finish(),
-        Err(crate::server::vchan::VChanClientError::NotFound) => {
-            HttpResponse::NotFound().finish()
-        }
+        Err(crate::server::vchan::VChanClientError::NotFound) => HttpResponse::NotFound().finish(),
         Err(e) => HttpResponse::BadRequest().body(e.to_string()),
     }
 }
@@ -1783,14 +1808,20 @@ async fn ft8_js() -> impl Responder {
 #[get("/ft4.js")]
 async fn ft4_js() -> impl Responder {
     HttpResponse::Ok()
-        .insert_header((header::CONTENT_TYPE, "application/javascript; charset=utf-8"))
+        .insert_header((
+            header::CONTENT_TYPE,
+            "application/javascript; charset=utf-8",
+        ))
         .body(status::FT4_JS)
 }
 
 #[get("/ft2.js")]
 async fn ft2_js() -> impl Responder {
     HttpResponse::Ok()
-        .insert_header((header::CONTENT_TYPE, "application/javascript; charset=utf-8"))
+        .insert_header((
+            header::CONTENT_TYPE,
+            "application/javascript; charset=utf-8",
+        ))
         .body(status::FT2_JS)
 }
 
@@ -1951,7 +1982,14 @@ fn bookmark_decoder_state(
         }
     }
 
-    (want_aprs, want_hf_aprs, want_ft8, want_ft4, want_ft2, want_wspr)
+    (
+        want_aprs,
+        want_hf_aprs,
+        want_ft8,
+        want_ft4,
+        want_ft2,
+        want_wspr,
+    )
 }
 
 fn bookmark_decoder_kinds(bookmark: &crate::server::bookmarks::Bookmark) -> Vec<String> {
@@ -2018,7 +2056,8 @@ async fn apply_selected_channel(
     let Some(bookmark) = bookmark_store.get(bookmark_id) else {
         return Ok(());
     };
-    let (want_aprs, want_hf_aprs, want_ft8, want_ft4, want_ft2, want_wspr) = bookmark_decoder_state(&bookmark);
+    let (want_aprs, want_hf_aprs, want_ft8, want_ft4, want_ft2, want_wspr) =
+        bookmark_decoder_state(&bookmark);
     let desired = [
         RigCommand::SetAprsDecodeEnabled(want_aprs),
         RigCommand::SetHfAprsDecodeEnabled(want_hf_aprs),

@@ -57,7 +57,10 @@ fn decode_history_cutoff(context: &FrontendRuntimeContext) -> Instant {
     Instant::now() - decode_history_retention(context)
 }
 
-fn prune_aprs_history(context: &FrontendRuntimeContext, history: &mut VecDeque<(Instant, AprsPacket)>) {
+fn prune_aprs_history(
+    context: &FrontendRuntimeContext,
+    history: &mut VecDeque<(Instant, AprsPacket)>,
+) {
     let cutoff = decode_history_cutoff(context);
     while let Some((ts, _)) = history.front() {
         if *ts >= cutoff {
@@ -80,7 +83,10 @@ fn prune_hf_aprs_history(
     }
 }
 
-fn prune_ais_history(context: &FrontendRuntimeContext, history: &mut VecDeque<(Instant, AisMessage)>) {
+fn prune_ais_history(
+    context: &FrontendRuntimeContext,
+    history: &mut VecDeque<(Instant, AisMessage)>,
+) {
     let cutoff = decode_history_cutoff(context);
     while let Some((ts, _)) = history.front() {
         if *ts >= cutoff {
@@ -137,7 +143,10 @@ fn prune_cw_history(context: &FrontendRuntimeContext, history: &mut VecDeque<(In
     }
 }
 
-fn prune_ft8_history(context: &FrontendRuntimeContext, history: &mut VecDeque<(Instant, Ft8Message)>) {
+fn prune_ft8_history(
+    context: &FrontendRuntimeContext,
+    history: &mut VecDeque<(Instant, Ft8Message)>,
+) {
     let cutoff = decode_history_cutoff(context);
     while let Some((ts, _)) = history.front() {
         if *ts >= cutoff {
@@ -147,7 +156,10 @@ fn prune_ft8_history(context: &FrontendRuntimeContext, history: &mut VecDeque<(I
     }
 }
 
-fn prune_ft4_history(context: &FrontendRuntimeContext, history: &mut VecDeque<(Instant, Ft8Message)>) {
+fn prune_ft4_history(
+    context: &FrontendRuntimeContext,
+    history: &mut VecDeque<(Instant, Ft8Message)>,
+) {
     let cutoff = decode_history_cutoff(context);
     while let Some((ts, _)) = history.front() {
         if *ts >= cutoff {
@@ -157,7 +169,10 @@ fn prune_ft4_history(context: &FrontendRuntimeContext, history: &mut VecDeque<(I
     }
 }
 
-fn prune_ft2_history(context: &FrontendRuntimeContext, history: &mut VecDeque<(Instant, Ft8Message)>) {
+fn prune_ft2_history(
+    context: &FrontendRuntimeContext,
+    history: &mut VecDeque<(Instant, Ft8Message)>,
+) {
     let cutoff = decode_history_cutoff(context);
     while let Some((ts, _)) = history.front() {
         if *ts >= cutoff {

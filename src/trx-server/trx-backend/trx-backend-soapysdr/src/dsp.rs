@@ -249,7 +249,10 @@ impl SdrPipeline {
         channel_if_hz: f64,
         mode: &RigMode,
         bandwidth_hz: u32,
-    ) -> (broadcast::Sender<Vec<f32>>, broadcast::Sender<Vec<Complex<f32>>>) {
+    ) -> (
+        broadcast::Sender<Vec<f32>>,
+        broadcast::Sender<Vec<Complex<f32>>>,
+    ) {
         const PCM_BROADCAST_CAPACITY: usize = 32;
         const IQ_BROADCAST_CAPACITY: usize = 64;
         let (pcm_tx, _) = broadcast::channel::<Vec<f32>>(PCM_BROADCAST_CAPACITY);
@@ -456,9 +459,7 @@ fn iq_read_loop(
         // Hold a read lock only for the duration of this block's DSP pass.
         // Write lock (add/remove channel) waits at most one block (~2 ms).
         {
-            let dsps = channel_dsps
-                .read()
-                .expect("channel_dsps RwLock poisoned");
+            let dsps = channel_dsps.read().expect("channel_dsps RwLock poisoned");
             for dsp_arc in dsps.iter() {
                 match dsp_arc.lock() {
                     Ok(mut dsp) => dsp.process_block(samples),

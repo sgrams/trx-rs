@@ -100,11 +100,7 @@ impl SdrVirtualChannelManager {
     /// - `fixed_slot_count`: number of fixed pipeline slots (primary + AIS),
     ///   i.e. the index of the first slot available for virtual channels.
     /// - `max_total`: maximum total channels including primary (e.g. 4).
-    pub fn new(
-        pipeline: Arc<SdrPipeline>,
-        fixed_slot_count: usize,
-        max_total: usize,
-    ) -> Self {
+    pub fn new(pipeline: Arc<SdrPipeline>, fixed_slot_count: usize, max_total: usize) -> Self {
         // Seed the channel list with a synthetic primary-channel entry.
         // We use the first PCM sender from the pipeline (index 0).
         let primary_pcm_tx = pipeline
@@ -177,9 +173,9 @@ impl SdrVirtualChannelManager {
         }
 
         let bandwidth_hz = default_bandwidth_hz(mode);
-        let (pcm_tx, iq_tx) =
-            self.pipeline
-                .add_virtual_channel(if_hz as f64, mode, bandwidth_hz);
+        let (pcm_tx, iq_tx) = self
+            .pipeline
+            .add_virtual_channel(if_hz as f64, mode, bandwidth_hz);
 
         let pipeline_slot = self
             .pipeline

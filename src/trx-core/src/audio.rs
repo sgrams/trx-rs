@@ -118,7 +118,10 @@ pub async fn read_audio_msg<R: AsyncRead + Unpin>(
     if len > limit {
         return Err(std::io::Error::new(
             std::io::ErrorKind::InvalidData,
-            format!("audio frame too large: {} bytes (type={:#04x})", len, msg_type),
+            format!(
+                "audio frame too large: {} bytes (type={:#04x})",
+                len, msg_type
+            ),
         ));
     }
     let mut payload = vec![0u8; len as usize];

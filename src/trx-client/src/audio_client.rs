@@ -25,11 +25,11 @@ use trx_core::audio::{
     parse_vchan_audio_frame, parse_vchan_uuid_msg, read_audio_msg, write_audio_msg,
     write_vchan_uuid_msg, AudioStreamInfo, AUDIO_MSG_AIS_DECODE, AUDIO_MSG_APRS_DECODE,
     AUDIO_MSG_CW_DECODE, AUDIO_MSG_FT2_DECODE, AUDIO_MSG_FT4_DECODE, AUDIO_MSG_FT8_DECODE,
-    AUDIO_MSG_HF_APRS_DECODE,
-    AUDIO_MSG_HISTORY_COMPRESSED, AUDIO_MSG_RX_FRAME, AUDIO_MSG_RX_FRAME_CH,
-    AUDIO_MSG_STREAM_INFO, AUDIO_MSG_TX_FRAME, AUDIO_MSG_VCHAN_ALLOCATED, AUDIO_MSG_VCHAN_BW,
-    AUDIO_MSG_VCHAN_DESTROYED, AUDIO_MSG_VCHAN_FREQ, AUDIO_MSG_VCHAN_MODE, AUDIO_MSG_VCHAN_REMOVE,
-    AUDIO_MSG_VCHAN_SUB, AUDIO_MSG_VCHAN_UNSUB, AUDIO_MSG_VDES_DECODE, AUDIO_MSG_WSPR_DECODE,
+    AUDIO_MSG_HF_APRS_DECODE, AUDIO_MSG_HISTORY_COMPRESSED, AUDIO_MSG_RX_FRAME,
+    AUDIO_MSG_RX_FRAME_CH, AUDIO_MSG_STREAM_INFO, AUDIO_MSG_TX_FRAME, AUDIO_MSG_VCHAN_ALLOCATED,
+    AUDIO_MSG_VCHAN_BW, AUDIO_MSG_VCHAN_DESTROYED, AUDIO_MSG_VCHAN_FREQ, AUDIO_MSG_VCHAN_MODE,
+    AUDIO_MSG_VCHAN_REMOVE, AUDIO_MSG_VCHAN_SUB, AUDIO_MSG_VCHAN_UNSUB, AUDIO_MSG_VDES_DECODE,
+    AUDIO_MSG_WSPR_DECODE,
 };
 use trx_core::decode::DecodedMessage;
 use trx_frontend::VChanAudioCmd;
@@ -195,7 +195,8 @@ async fn handle_audio_connection(
         }
         // Re-apply non-default bandwidth after re-subscribing.
         if sub.bandwidth_hz > 0 {
-            let bw_json = serde_json::json!({ "uuid": uuid.to_string(), "bandwidth_hz": sub.bandwidth_hz });
+            let bw_json =
+                serde_json::json!({ "uuid": uuid.to_string(), "bandwidth_hz": sub.bandwidth_hz });
             if let Ok(payload) = serde_json::to_vec(&bw_json) {
                 if let Err(e) = write_audio_msg(&mut writer, AUDIO_MSG_VCHAN_BW, &payload).await {
                     warn!("Audio vchan reconnect BW write failed: {}", e);
@@ -209,7 +210,8 @@ async fn handle_audio_connection(
     // Spawn RX read task
     let rx_tx = rx_tx.clone();
     let decode_tx = decode_tx.clone();
-    let vchan_audio_rx: Arc<RwLock<HashMap<Uuid, broadcast::Sender<Bytes>>>> = Arc::clone(vchan_audio);
+    let vchan_audio_rx: Arc<RwLock<HashMap<Uuid, broadcast::Sender<Bytes>>>> =
+        Arc::clone(vchan_audio);
     let vchan_destroyed_for_rx = vchan_destroyed_tx.clone();
     let mut rx_handle = tokio::spawn(async move {
         loop {

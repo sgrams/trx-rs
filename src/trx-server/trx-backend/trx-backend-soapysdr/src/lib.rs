@@ -7,10 +7,10 @@ pub mod dsp;
 pub mod real_iq_source;
 pub mod vchan_impl;
 
+use dsp::IqSource as _;
 use std::pin::Pin;
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex};
-use dsp::IqSource as _;
 use trx_core::radio::freq::{Band, Freq};
 use trx_core::rig::response::RigError;
 use trx_core::rig::state::{RigFilterState, SpectrumData, VchanRdsEntry, WfmDenoiseLevel};
@@ -257,10 +257,7 @@ impl SoapySdrRig {
         };
 
         // Initialise filter state from primary channel config (index 0), or defaults.
-        let bandwidth_hz = channels
-            .first()
-            .map(|&(_, _, bw)| bw)
-            .unwrap_or(3000);
+        let bandwidth_hz = channels.first().map(|&(_, _, bw)| bw).unwrap_or(3000);
 
         let spectrum_buf = pipeline.spectrum_buf.clone();
         let retune_cmd = pipeline.retune_cmd.clone();
@@ -359,10 +356,7 @@ impl SoapySdrRig {
         let dsps = self.pipeline.channel_dsps.read().unwrap();
         for idx in [ais_a_idx, ais_b_idx] {
             if let Some(dsp_arc) = dsps.get(idx) {
-                dsp_arc
-                    .lock()
-                    .unwrap()
-                    .set_filter(self.bandwidth_hz);
+                dsp_arc.lock().unwrap().set_filter(self.bandwidth_hz);
             }
         }
     }
@@ -749,10 +743,7 @@ impl RigCat for SoapySdrRig {
             {
                 let dsps = self.pipeline.channel_dsps.read().unwrap();
                 if let Some(dsp_arc) = dsps.get(self.primary_channel_idx) {
-                    dsp_arc
-                        .lock()
-                        .unwrap()
-                        .set_filter(bandwidth_hz);
+                    dsp_arc.lock().unwrap().set_filter(bandwidth_hz);
                 }
             }
             self.apply_ais_channel_filters();

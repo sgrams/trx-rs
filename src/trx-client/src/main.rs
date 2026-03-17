@@ -185,8 +185,11 @@ async fn async_init() -> DynResult<AppState> {
         cfg.frontends.http.spectrum_usable_span_ratio;
     frontend_runtime.http_decode_history_retention_min =
         cfg.frontends.http.decode_history_retention_min;
-    frontend_runtime.http_decode_history_retention_min_by_rig =
-        cfg.frontends.http.decode_history_retention_min_by_rig.clone();
+    frontend_runtime.http_decode_history_retention_min_by_rig = cfg
+        .frontends
+        .http
+        .decode_history_retention_min_by_rig
+        .clone();
 
     // Resolve remote URL: CLI > config [remote] section > error
     let remote_url = cli
@@ -305,8 +308,7 @@ async fn async_init() -> DynResult<AppState> {
         frontend_runtime.decode_rx = Some(decode_tx.clone());
 
         // Virtual-channel audio: shared broadcaster map + command channel.
-        let (vchan_cmd_tx, vchan_cmd_rx) =
-            mpsc::unbounded_channel::<trx_frontend::VChanAudioCmd>();
+        let (vchan_cmd_tx, vchan_cmd_rx) = mpsc::unbounded_channel::<trx_frontend::VChanAudioCmd>();
         *frontend_runtime.vchan_audio_cmd.lock().unwrap() = Some(vchan_cmd_tx);
 
         let (vchan_destroyed_tx, _) = broadcast::channel::<uuid::Uuid>(64);
@@ -318,65 +320,64 @@ async fn async_init() -> DynResult<AppState> {
         let cw_history = frontend_runtime.cw_history.clone();
         let ft8_history = frontend_runtime.ft8_history.clone();
         let wspr_history = frontend_runtime.wspr_history.clone();
-        let replay_history_sink: Arc<dyn Fn(DecodedMessage) + Send + Sync> =
-            Arc::new(move |msg| {
-                let now = std::time::Instant::now();
-                match msg {
-                    DecodedMessage::Ais(mut message) => {
-                        if message.ts_ms.is_none() {
-                            message.ts_ms = Some(current_timestamp_ms());
-                        }
-                        if let Ok(mut history) = ais_history.lock() {
-                            history.push_back((now, message));
-                        }
+        let replay_history_sink: Arc<dyn Fn(DecodedMessage) + Send + Sync> = Arc::new(move |msg| {
+            let now = std::time::Instant::now();
+            match msg {
+                DecodedMessage::Ais(mut message) => {
+                    if message.ts_ms.is_none() {
+                        message.ts_ms = Some(current_timestamp_ms());
                     }
-                    DecodedMessage::Vdes(mut message) => {
-                        if message.ts_ms.is_none() {
-                            message.ts_ms = Some(current_timestamp_ms());
-                        }
-                        if let Ok(mut history) = vdes_history.lock() {
-                            history.push_back((now, message));
-                        }
-                    }
-                    DecodedMessage::Aprs(mut packet) => {
-                        if packet.ts_ms.is_none() {
-                            packet.ts_ms = Some(current_timestamp_ms());
-                        }
-                        if let Ok(mut history) = aprs_history.lock() {
-                            history.push_back((now, packet));
-                        }
-                    }
-                    DecodedMessage::HfAprs(mut packet) => {
-                        if packet.ts_ms.is_none() {
-                            packet.ts_ms = Some(current_timestamp_ms());
-                        }
-                        if let Ok(mut history) = hf_aprs_history.lock() {
-                            history.push_back((now, packet));
-                        }
-                    }
-                    DecodedMessage::Cw(event) => {
-                        if let Ok(mut history) = cw_history.lock() {
-                            history.push_back((now, event));
-                        }
-                    }
-                    DecodedMessage::Ft8(message) => {
-                        if let Ok(mut history) = ft8_history.lock() {
-                            history.push_back((now, message));
-                        }
-                    }
-                    DecodedMessage::Ft4(_) => {
-                        // FT4 history is managed by the frontend HTTP audio collector
-                    }
-                    DecodedMessage::Ft2(_) => {
-                        // FT2 history is managed by the frontend HTTP audio collector
-                    }
-                    DecodedMessage::Wspr(message) => {
-                        if let Ok(mut history) = wspr_history.lock() {
-                            history.push_back((now, message));
-                        }
+                    if let Ok(mut history) = ais_history.lock() {
+                        history.push_back((now, message));
                     }
                 }
-            });
+                DecodedMessage::Vdes(mut message) => {
+                    if message.ts_ms.is_none() {
+                        message.ts_ms = Some(current_timestamp_ms());
+                    }
+                    if let Ok(mut history) = vdes_history.lock() {
+                        history.push_back((now, message));
+                    }
+                }
+                DecodedMessage::Aprs(mut packet) => {
+                    if packet.ts_ms.is_none() {
+                        packet.ts_ms = Some(current_timestamp_ms());
+                    }
+                    if let Ok(mut history) = aprs_history.lock() {
+                        history.push_back((now, packet));
+                    }
+                }
+                DecodedMessage::HfAprs(mut packet) => {
+                    if packet.ts_ms.is_none() {
+                        packet.ts_ms = Some(current_timestamp_ms());
+                    }
+                    if let Ok(mut history) = hf_aprs_history.lock() {
+                        history.push_back((now, packet));
+                    }
+                }
+                DecodedMessage::Cw(event) => {
+                    if let Ok(mut history) = cw_history.lock() {
+                        history.push_back((now, event));
+                    }
+                }
+                DecodedMessage::Ft8(message) => {
+                    if let Ok(mut history) = ft8_history.lock() {
+                        history.push_back((now, message));
+                    }
+                }
+                DecodedMessage::Ft4(_) => {
+                    // FT4 history is managed by the frontend HTTP audio collector
+                }
+                DecodedMessage::Ft2(_) => {
+                    // FT2 history is managed by the frontend HTTP audio collector
+                }
+                DecodedMessage::Wspr(message) => {
+                    if let Ok(mut history) = wspr_history.lock() {
+                        history.push_back((now, message));
+                    }
+                }
+            }
+        });
 
         info!(
             "Audio enabled: default port {}, decode channel set",

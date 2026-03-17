@@ -8,9 +8,7 @@ use num_complex::Complex;
 /// 7th-order minimax atan approximation for |z| <= 1.
 #[cfg(target_arch = "aarch64")]
 #[target_feature(enable = "neon")]
-unsafe fn atan_poly_neon(
-    z: std::arch::aarch64::float32x4_t,
-) -> std::arch::aarch64::float32x4_t {
+unsafe fn atan_poly_neon(z: std::arch::aarch64::float32x4_t) -> std::arch::aarch64::float32x4_t {
     use std::arch::aarch64::*;
     let c0 = vdupq_n_f32(0.999_999_5_f32);
     let c1 = vdupq_n_f32(-0.333_326_1_f32);

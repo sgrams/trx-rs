@@ -117,12 +117,24 @@ impl SchedulerStore {
             let _ = std::fs::create_dir_all(parent);
         }
         let db = if path.exists() {
-            PickleDb::load(path, PickleDbDumpPolicy::AutoDump, SerializationMethod::Json)
-                .unwrap_or_else(|_| {
-                    PickleDb::new(path, PickleDbDumpPolicy::AutoDump, SerializationMethod::Json)
-                })
+            PickleDb::load(
+                path,
+                PickleDbDumpPolicy::AutoDump,
+                SerializationMethod::Json,
+            )
+            .unwrap_or_else(|_| {
+                PickleDb::new(
+                    path,
+                    PickleDbDumpPolicy::AutoDump,
+                    SerializationMethod::Json,
+                )
+            })
         } else {
-            PickleDb::new(path, PickleDbDumpPolicy::AutoDump, SerializationMethod::Json)
+            PickleDb::new(
+                path,
+                PickleDbDumpPolicy::AutoDump,
+                SerializationMethod::Json,
+            )
         };
         Self {
             db: Arc::new(RwLock::new(db)),
@@ -206,10 +218,8 @@ fn sunrise_sunset_today(lat_deg: f64, lon_deg: f64) -> Option<(f64, f64)> {
     let lambda = sun_lon - 0.00569 - 0.00478 * omega.to_radians().sin();
 
     // Obliquity of the ecliptic.
-    let eps0 = 23.0
-        + (26.0
-            + (21.448 - jc * (46.8150 + jc * (0.00059 - jc * 0.001813))) / 60.0)
-            / 60.0;
+    let eps0 =
+        23.0 + (26.0 + (21.448 - jc * (46.8150 + jc * (0.00059 - jc * 0.001813))) / 60.0) / 60.0;
     let eps = eps0 + 0.00256 * omega.to_radians().cos();
 
     // Sun's declination.
@@ -219,8 +229,7 @@ fn sunrise_sunset_today(lat_deg: f64, lon_deg: f64) -> Option<(f64, f64)> {
     let y = (eps.to_radians() / 2.0).tan().powi(2);
     let l0_rad = l0.to_radians();
     let eot = 4.0
-        * (y * (2.0 * l0_rad).sin()
-            - 2.0 * m_rad.sin()
+        * (y * (2.0 * l0_rad).sin() - 2.0 * m_rad.sin()
             + 4.0 * y * m_rad.sin() * (2.0 * l0_rad).cos()
             - 0.5 * y * y * (4.0 * l0_rad).sin()
             - 1.25 * (2.0 * m_rad).sin())
@@ -228,8 +237,7 @@ fn sunrise_sunset_today(lat_deg: f64, lon_deg: f64) -> Option<(f64, f64)> {
 
     // Hour angle for sunrise/sunset (zenith = 90.833°).
     let lat_rad = lat_deg.to_radians();
-    let cos_ha = ((PI / 2.0 + 0.833_f64.to_radians()).cos())
-        / (lat_rad.cos() * decl.cos())
+    let cos_ha = ((PI / 2.0 + 0.833_f64.to_radians()).cos()) / (lat_rad.cos() * decl.cos())
         - lat_rad.tan() * decl.tan();
 
     if !(-1.0..=1.0).contains(&cos_ha) {
@@ -654,7 +662,10 @@ pub fn spawn_scheduler_task(
                 )
                 .await
                 {
-                    warn!("scheduler: failed to apply target for '{}': {e}", config.rig_id);
+                    warn!(
+                        "scheduler: failed to apply target for '{}': {e}",
+                        config.rig_id
+                    );
                     continue;
                 }
 
@@ -678,7 +689,11 @@ async fn apply_scheduler_decoders(
     let mut want_wspr = false;
 
     let mut update_from = |bm: &crate::server::bookmarks::Bookmark| {
-        for decoder in bm.decoders.iter().map(|item| item.trim().to_ascii_lowercase()) {
+        for decoder in bm
+            .decoders
+            .iter()
+            .map(|item| item.trim().to_ascii_lowercase())
+        {
             match decoder.as_str() {
                 "aprs" => want_aprs = true,
                 "hf-aprs" => want_hf_aprs = true,
@@ -707,7 +722,10 @@ async fn apply_scheduler_decoders(
 
     for (label, cmd) in desired {
         if let Err(e) = scheduler_send(rig_tx, cmd, rig_id.to_string()).await {
-            warn!("scheduler: Set{label}DecodeEnabled failed for '{}': {:?}", rig_id, e);
+            warn!(
+                "scheduler: Set{label}DecodeEnabled failed for '{}': {:?}",
+                rig_id, e
+            );
         }
     }
 }
@@ -931,7 +949,9 @@ pub async fn put_scheduler_control(
 
 #[cfg(test)]
 mod tests {
-    use super::{timespan_active_entry, timespan_cycle_slot, timespan_active_entries, ScheduleEntry};
+    use super::{
+        timespan_active_entries, timespan_active_entry, timespan_cycle_slot, ScheduleEntry,
+    };
 
     fn entry(
         id: &str,

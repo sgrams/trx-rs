@@ -3,9 +3,9 @@
 // SPDX-License-Identifier: BSD-2-Clause
 
 use std::collections::{HashMap, HashSet, VecDeque};
-use std::sync::RwLock;
 use std::net::SocketAddr;
 use std::sync::atomic::{AtomicBool, AtomicUsize};
+use std::sync::RwLock;
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
@@ -95,7 +95,11 @@ pub struct SharedSpectrum {
 
 impl SharedSpectrum {
     /// Replace the stored frame, pre-serialising RDS in one pass.
-    pub fn set(&mut self, frame: Option<SpectrumData>, vchan_rds: Option<Vec<trx_core::rig::state::VchanRdsEntry>>) {
+    pub fn set(
+        &mut self,
+        frame: Option<SpectrumData>,
+        vchan_rds: Option<Vec<trx_core::rig::state::VchanRdsEntry>>,
+    ) {
         self.rds_json = frame
             .as_ref()
             .and_then(|f| f.rds.as_ref())

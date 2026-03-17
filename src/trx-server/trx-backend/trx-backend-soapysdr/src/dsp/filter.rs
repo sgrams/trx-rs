@@ -109,7 +109,12 @@ type FirKernel = (
 /// Setting `shift_norm = +cutoff_norm` produces a one-sided USB filter
 /// `[0, BW]`; `shift_norm = -cutoff_norm` produces a one-sided LSB filter
 /// `[-BW, 0]`; `shift_norm = 0` leaves the kernel symmetric (AM/FM/WFM).
-fn build_fir_kernel(cutoff_norm: f32, shift_norm: f32, taps: usize, block_size: usize) -> FirKernel {
+fn build_fir_kernel(
+    cutoff_norm: f32,
+    shift_norm: f32,
+    taps: usize,
+    block_size: usize,
+) -> FirKernel {
     let coeffs = windowed_sinc_coeffs(cutoff_norm, taps);
     let fft_size = (block_size + taps - 1).next_power_of_two();
 
@@ -210,8 +215,14 @@ unsafe fn mul_freq_domain_neon(
         let (h_re, h_im) = (h_ri.0, h_ri.1);
 
         // Complex multiply: out.re = x.re*h.re - x.im*h.im, out.im = x.re*h.im + x.im*h.re
-        let out_re = vmulq_f32(vsubq_f32(vmulq_f32(x_re, h_re), vmulq_f32(x_im, h_im)), scale_v);
-        let out_im = vmulq_f32(vaddq_f32(vmulq_f32(x_re, h_im), vmulq_f32(x_im, h_re)), scale_v);
+        let out_re = vmulq_f32(
+            vsubq_f32(vmulq_f32(x_re, h_re), vmulq_f32(x_im, h_im)),
+            scale_v,
+        );
+        let out_im = vmulq_f32(
+            vaddq_f32(vmulq_f32(x_re, h_im), vmulq_f32(x_im, h_re)),
+            scale_v,
+        );
 
         // Reinterleave: .0 = [re0,im0,re1,im1], .1 = [re2,im2,re3,im3]
         let out = vzipq_f32(out_re, out_im);
@@ -313,7 +324,8 @@ impl BlockFirFilterPair {
     /// `-cutoff_norm` for LSB/CWR.
     pub fn new(cutoff_norm: f32, shift_norm: f32, taps: usize, block_size: usize) -> Self {
         let taps = taps.max(1);
-        let (h_buf, fft_size, fft, ifft) = build_fir_kernel(cutoff_norm, shift_norm, taps, block_size);
+        let (h_buf, fft_size, fft, ifft) =
+            build_fir_kernel(cutoff_norm, shift_norm, taps, block_size);
         Self {
             h_freq: h_buf,
             overlap: vec![FftComplex::new(0.0, 0.0); taps.saturating_sub(1)],

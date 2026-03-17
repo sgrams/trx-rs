@@ -395,9 +395,7 @@ impl ClientConfig {
             );
         }
         if self.frontends.http.decode_history_retention_min == 0 {
-            return Err(
-                "[frontends.http].decode_history_retention_min must be > 0".to_string(),
-            );
+            return Err("[frontends.http].decode_history_retention_min must be > 0".to_string());
         }
         for (rig_id, minutes) in &self.frontends.http.decode_history_retention_min_by_rig {
             if rig_id.trim().is_empty() {
@@ -616,13 +614,11 @@ mod tests {
         assert_eq!(config.frontends.http.spectrum_coverage_margin_hz, 50_000);
         assert_eq!(config.frontends.http.spectrum_usable_span_ratio, 0.92);
         assert_eq!(config.frontends.http.decode_history_retention_min, 1440);
-        assert!(
-            config
-                .frontends
-                .http
-                .decode_history_retention_min_by_rig
-                .is_empty()
-        );
+        assert!(config
+            .frontends
+            .http
+            .decode_history_retention_min_by_rig
+            .is_empty());
         assert_eq!(config.frontends.rigctl.port, 4532);
         assert!(config.frontends.http_json.enabled);
         assert_eq!(config.frontends.http_json.port, 0);

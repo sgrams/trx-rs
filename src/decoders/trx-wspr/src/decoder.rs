@@ -166,11 +166,7 @@ fn sync_correlation_score(signal: &[f32], base_hz: f32) -> f32 {
             base_hz + 2.0 * TONE_SPACING_HZ,
             WSPR_SAMPLE_RATE as f32,
         );
-        let p1 = goertzel_power(
-            frame,
-            base_hz + TONE_SPACING_HZ,
-            WSPR_SAMPLE_RATE as f32,
-        );
+        let p1 = goertzel_power(frame, base_hz + TONE_SPACING_HZ, WSPR_SAMPLE_RATE as f32);
         let p3 = goertzel_power(
             frame,
             base_hz + 3.0 * TONE_SPACING_HZ,

@@ -272,7 +272,12 @@ impl ChannelDsp {
         } else {
             (cutoff_hz / self.sdr_sample_rate as f32).min(0.499)
         };
-        self.lpf_iq = BlockFirFilterPair::new(cutoff_norm, ssb_shift_norm(&self.mode, cutoff_norm), auto_taps(cutoff_norm), IQ_BLOCK_SIZE);
+        self.lpf_iq = BlockFirFilterPair::new(
+            cutoff_norm,
+            ssb_shift_norm(&self.mode, cutoff_norm),
+            auto_taps(cutoff_norm),
+            IQ_BLOCK_SIZE,
+        );
         let rate_changed = self.decim_factor != next_decim_factor;
         self.decim_factor = next_decim_factor;
         self.decim_counter = 0;
@@ -352,7 +357,12 @@ impl ChannelDsp {
             channel_if_hz,
             demodulator: Demodulator::for_mode(mode),
             mode: mode.clone(),
-            lpf_iq: BlockFirFilterPair::new(cutoff_norm, ssb_shift_norm(mode, cutoff_norm), auto_taps(cutoff_norm), IQ_BLOCK_SIZE),
+            lpf_iq: BlockFirFilterPair::new(
+                cutoff_norm,
+                ssb_shift_norm(mode, cutoff_norm),
+                auto_taps(cutoff_norm),
+                IQ_BLOCK_SIZE,
+            ),
             sdr_sample_rate,
             audio_sample_rate,
             audio_bandwidth_hz,

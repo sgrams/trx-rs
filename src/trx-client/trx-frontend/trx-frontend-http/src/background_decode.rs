@@ -85,12 +85,24 @@ impl BackgroundDecodeStore {
             let _ = std::fs::create_dir_all(parent);
         }
         let db = if path.exists() {
-            PickleDb::load(path, PickleDbDumpPolicy::AutoDump, SerializationMethod::Json)
-                .unwrap_or_else(|_| {
-                    PickleDb::new(path, PickleDbDumpPolicy::AutoDump, SerializationMethod::Json)
-                })
+            PickleDb::load(
+                path,
+                PickleDbDumpPolicy::AutoDump,
+                SerializationMethod::Json,
+            )
+            .unwrap_or_else(|_| {
+                PickleDb::new(
+                    path,
+                    PickleDbDumpPolicy::AutoDump,
+                    SerializationMethod::Json,
+                )
+            })
         } else {
-            PickleDb::new(path, PickleDbDumpPolicy::AutoDump, SerializationMethod::Json)
+            PickleDb::new(
+                path,
+                PickleDbDumpPolicy::AutoDump,
+                SerializationMethod::Json,
+            )
         };
         Self {
             db: Arc::new(RwLock::new(db)),
@@ -160,11 +172,13 @@ impl BackgroundDecodeManager {
     }
 
     pub fn get_config(&self, rig_id: &str) -> BackgroundDecodeConfig {
-        self.store.get(rig_id).unwrap_or_else(|| BackgroundDecodeConfig {
-            rig_id: rig_id.to_string(),
-            enabled: false,
-            bookmark_ids: Vec::new(),
-        })
+        self.store
+            .get(rig_id)
+            .unwrap_or_else(|| BackgroundDecodeConfig {
+                rig_id: rig_id.to_string(),
+                enabled: false,
+                bookmark_ids: Vec::new(),
+            })
     }
 
     pub fn put_config(&self, mut config: BackgroundDecodeConfig) -> Option<BackgroundDecodeConfig> {
@@ -268,10 +282,7 @@ impl BackgroundDecodeManager {
             bookmark_id: bookmark.id.clone(),
             freq_hz: bookmark.freq_hz,
             mode: bookmark.mode.clone(),
-            bandwidth_hz: bookmark
-                .bandwidth_hz
-                .unwrap_or(0)
-                .min(u32::MAX as u64) as u32,
+            bandwidth_hz: bookmark.bandwidth_hz.unwrap_or(0).min(u32::MAX as u64) as u32,
             decoder_kinds,
         }
     }
@@ -565,7 +576,8 @@ fn bookmark_supported_decoder_kinds(bookmark: &Bookmark) -> Vec<String> {
 }
 
 fn channel_matches_bookmark(channel: &ClientChannel, bookmark: &Bookmark) -> bool {
-    channel.freq_hz == bookmark.freq_hz && normalized_mode(&channel.mode) == normalized_mode(&bookmark.mode)
+    channel.freq_hz == bookmark.freq_hz
+        && normalized_mode(&channel.mode) == normalized_mode(&bookmark.mode)
 }
 
 fn normalized_mode(mode: &str) -> String {

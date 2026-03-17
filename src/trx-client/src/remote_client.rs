@@ -68,10 +68,7 @@ pub async fn run_remote_client(
 ) -> RigResult<()> {
     // Spectrum polling runs on its own dedicated TCP connection so it never
     // blocks state polls or user commands on the main connection.
-    let spectrum_task = tokio::spawn(run_spectrum_connection(
-        config.clone(),
-        shutdown_rx.clone(),
-    ));
+    let spectrum_task = tokio::spawn(run_spectrum_connection(config.clone(), shutdown_rx.clone()));
 
     let mut reconnect_delay = Duration::from_secs(1);
 
@@ -147,8 +144,7 @@ async fn run_spectrum_connection(
                 if let Err(e) = stream.set_nodelay(true) {
                     warn!("Spectrum TCP_NODELAY failed: {}", e);
                 }
-                if let Err(e) =
-                    handle_spectrum_connection(&config, stream, &mut shutdown_rx).await
+                if let Err(e) = handle_spectrum_connection(&config, stream, &mut shutdown_rx).await
                 {
                     warn!("Spectrum connection dropped: {}", e);
                 }
@@ -301,13 +297,10 @@ async fn send_command(
         .map_err(|e| RigError::communication(format!("JSON serialize failed: {e}")))?;
     payload.push('\n');
 
-    time::timeout(
-        IO_TIMEOUT,
-        writer.write_all(payload.as_bytes()),
-    )
-    .await
-    .map_err(|_| RigError::communication(format!("write timed out after {:?}", IO_TIMEOUT)))?
-    .map_err(|e| RigError::communication(format!("write failed: {e}")))?;
+    time::timeout(IO_TIMEOUT, writer.write_all(payload.as_bytes()))
+        .await
+        .map_err(|_| RigError::communication(format!("write timed out after {:?}", IO_TIMEOUT)))?
+        .map_err(|e| RigError::communication(format!("write failed: {e}")))?;
     time::timeout(IO_TIMEOUT, writer.flush())
         .await
         .map_err(|_| RigError::communication(format!("flush timed out after {:?}", IO_TIMEOUT)))?
@@ -347,15 +340,12 @@ async fn send_command_no_state_update(
     let mut payload = serde_json::to_string(&envelope)
         .map_err(|e| RigError::communication(format!("JSON serialize failed: {e}")))?;
     payload.push('\n');
-    time::timeout(
-        SPECTRUM_IO_TIMEOUT,
-        writer.write_all(payload.as_bytes()),
-    )
-    .await
-    .map_err(|_| {
-        RigError::communication(format!("write timed out after {:?}", SPECTRUM_IO_TIMEOUT))
-    })?
-    .map_err(|e| RigError::communication(format!("write failed: {e}")))?;
+    time::timeout(SPECTRUM_IO_TIMEOUT, writer.write_all(payload.as_bytes()))
+        .await
+        .map_err(|_| {
+            RigError::communication(format!("write timed out after {:?}", SPECTRUM_IO_TIMEOUT))
+        })?
+        .map_err(|e| RigError::communication(format!("write failed: {e}")))?;
     time::timeout(SPECTRUM_IO_TIMEOUT, writer.flush())
         .await
         .map_err(|_| {
@@ -443,13 +433,10 @@ async fn send_get_rigs(
         .map_err(|e| RigError::communication(format!("JSON serialize failed: {e}")))?;
     payload.push('\n');
 
-    time::timeout(
-        IO_TIMEOUT,
-        writer.write_all(payload.as_bytes()),
-    )
-    .await
-    .map_err(|_| RigError::communication(format!("write timed out after {:?}", IO_TIMEOUT)))?
-    .map_err(|e| RigError::communication(format!("write failed: {e}")))?;
+    time::timeout(IO_TIMEOUT, writer.write_all(payload.as_bytes()))
+        .await
+        .map_err(|_| RigError::communication(format!("write timed out after {:?}", IO_TIMEOUT)))?
+        .map_err(|e| RigError::communication(format!("write failed: {e}")))?;
     time::timeout(IO_TIMEOUT, writer.flush())
         .await
         .map_err(|_| RigError::communication(format!("flush timed out after {:?}", IO_TIMEOUT)))?
