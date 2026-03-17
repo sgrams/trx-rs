@@ -18,6 +18,7 @@
   let statusInterval = null;
   let interleaveTicker = null;
   let schedulerStepPending = false;
+  let schEntryEditIdx = null;     // null = adding, number = editing that index
 
   // -------------------------------------------------------------------------
   // Init
@@ -444,6 +445,100 @@
   }
 
   // -------------------------------------------------------------------------
+  // Entry form (modal — mirrors bookmark add/edit modal)
+  // -------------------------------------------------------------------------
+  function schOpenEntryForm(entry, idx) {
+    schEntryEditIdx = (idx != null) ? idx : null;
+
+    const titleEl = document.getElementById("sch-entry-form-title");
+    if (titleEl) titleEl.textContent = entry ? "Edit Entry" : "Add Entry";
+
+    const startEl = document.getElementById("scheduler-ts-start");
+    const endEl = document.getElementById("scheduler-ts-end");
+    const bmEl = document.getElementById("scheduler-ts-bookmark");
+    const labelEl = document.getElementById("scheduler-ts-label");
+    const ilEl = document.getElementById("scheduler-ts-entry-interleave");
+    const centerHzEl = document.getElementById("scheduler-ts-center-hz");
+
+    if (startEl) startEl.value = entry ? minToHHMM(entry.start_min) : "";
+    if (endEl) endEl.value = entry ? minToHHMM(entry.end_min) : "";
+    if (bmEl) bmEl.value = entry ? (entry.bookmark_id || "") : "";
+    if (labelEl) labelEl.value = entry ? (entry.label || "") : "";
+    if (ilEl) ilEl.value = entry && entry.interleave_min ? entry.interleave_min : "";
+    if (centerHzEl) centerHzEl.value = entry && entry.center_hz ? entry.center_hz : "";
+
+    pendingExtraBmIds = entry && Array.isArray(entry.bookmark_ids) ? entry.bookmark_ids.slice() : [];
+    renderExtraBmList();
+
+    const wrap = document.getElementById("sch-entry-form-wrap");
+    if (wrap) {
+      wrap.style.display = "flex";
+      if (startEl) startEl.focus();
+    }
+  }
+
+  function schCloseEntryForm() {
+    const wrap = document.getElementById("sch-entry-form-wrap");
+    if (wrap) wrap.style.display = "none";
+    schEntryEditIdx = null;
+    pendingExtraBmIds = [];
+  }
+
+  function schEntryFormSubmit(e) {
+    e.preventDefault();
+
+    const startEl = document.getElementById("scheduler-ts-start");
+    const endEl = document.getElementById("scheduler-ts-end");
+    const bmEl = document.getElementById("scheduler-ts-bookmark");
+    const labelEl = document.getElementById("scheduler-ts-label");
+    const ilEl = document.getElementById("scheduler-ts-entry-interleave");
+    const centerHzEl = document.getElementById("scheduler-ts-center-hz");
+    if (!startEl || !endEl || !bmEl) return;
+
+    const bmId = bmEl.value;
+    if (!bmId) {
+      alert("Please select a primary bookmark.");
+      return;
+    }
+
+    const startMin = hhmmToMin(startEl.value);
+    const endMin = hhmmToMin(endEl.value);
+    const label = labelEl ? labelEl.value.trim() : "";
+    const ilVal = ilEl ? parseInt(ilEl.value, 10) : NaN;
+    const entryInterleave = !isNaN(ilVal) && ilVal > 0 ? ilVal : null;
+    const centerHzRaw = centerHzEl ? parseInt(centerHzEl.value, 10) : NaN;
+    const centerHz = !isNaN(centerHzRaw) && centerHzRaw > 0 ? centerHzRaw : null;
+    const extraBmIds = pendingExtraBmIds.slice();
+
+    if (!currentConfig) {
+      currentConfig = { rig_id: currentRigId, mode: "time_span", entries: [] };
+    }
+    if (!currentConfig.entries) currentConfig.entries = [];
+
+    const entryData = {
+      start_min: startMin,
+      end_min: endMin,
+      bookmark_id: bmId,
+      label: label || null,
+      interleave_min: entryInterleave,
+      center_hz: centerHz,
+      bookmark_ids: extraBmIds,
+    };
+
+    if (schEntryEditIdx !== null) {
+      const existing = currentConfig.entries[schEntryEditIdx];
+      entryData.id = existing ? existing.id : ("ts_" + Date.now().toString(36));
+      currentConfig.entries[schEntryEditIdx] = entryData;
+    } else {
+      entryData.id = "ts_" + Date.now().toString(36);
+      currentConfig.entries.push(entryData);
+    }
+
+    schCloseEntryForm();
+    renderTimespanEntries();
+  }
+
+  // -------------------------------------------------------------------------
   // TimeSpan entries table
   // -------------------------------------------------------------------------
   function renderTimespanEntries() {
@@ -471,8 +566,18 @@
         '<td>' + extraCell + '</td>' +
         '<td>' + escHtml(entry.label || "") + '</td>' +
         '<td>' + il + '</td>' +
-        '<td><button class="sch-write sch-remove-btn" data-idx="' + idx + '" type="button">Remove</button></td>';
+        '<td>' +
+          '<button class="sch-write sch-edit-btn" data-idx="' + idx + '" type="button">Edit</button>' +
+          '<button class="sch-write sch-remove-btn" data-idx="' + idx + '" type="button">Remove</button>' +
+        '</td>';
       tbody.appendChild(tr);
+    });
+    tbody.querySelectorAll(".sch-edit-btn").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        const i = parseInt(btn.dataset.idx, 10);
+        const entry = currentConfig && currentConfig.entries ? currentConfig.entries[i] : null;
+        if (entry) schOpenEntryForm(entry, i);
+      });
     });
     tbody.querySelectorAll(".sch-remove-btn").forEach(function (btn) {
       btn.addEventListener("click", function () {
@@ -547,62 +652,6 @@
   function removeEntry(idx) {
     if (!currentConfig || !currentConfig.entries) return;
     currentConfig.entries.splice(idx, 1);
-    renderTimespanEntries();
-  }
-
-  // -------------------------------------------------------------------------
-  // Add entry
-  // -------------------------------------------------------------------------
-  function addEntry() {
-    const startEl = document.getElementById("scheduler-ts-start");
-    const endEl = document.getElementById("scheduler-ts-end");
-    const bmEl = document.getElementById("scheduler-ts-bookmark");
-    const labelEl = document.getElementById("scheduler-ts-label");
-    const ilEl = document.getElementById("scheduler-ts-entry-interleave");
-    const centerHzEl = document.getElementById("scheduler-ts-center-hz");
-    if (!startEl || !endEl || !bmEl) return;
-
-    const startMin = hhmmToMin(startEl.value);
-    const endMin = hhmmToMin(endEl.value);
-    const bmId = bmEl.value;
-    const label = labelEl ? labelEl.value.trim() : "";
-    const ilVal = ilEl ? parseInt(ilEl.value, 10) : NaN;
-    const entryInterleave = !isNaN(ilVal) && ilVal > 0 ? ilVal : null;
-    const centerHzRaw = centerHzEl ? parseInt(centerHzEl.value, 10) : NaN;
-    const centerHz = !isNaN(centerHzRaw) && centerHzRaw > 0 ? centerHzRaw : null;
-    const extraBmIds = pendingExtraBmIds.slice();
-
-    if (!bmId) {
-      alert("Please select a primary bookmark.");
-      return;
-    }
-
-    if (!currentConfig) {
-      currentConfig = { rig_id: currentRigId, mode: "time_span", entries: [] };
-    }
-    if (!currentConfig.entries) currentConfig.entries = [];
-
-    const id = "ts_" + Date.now().toString(36);
-    currentConfig.entries.push({
-      id,
-      start_min: startMin,
-      end_min: endMin,
-      bookmark_id: bmId,
-      label: label || null,
-      interleave_min: entryInterleave,
-      center_hz: centerHz,
-      bookmark_ids: extraBmIds,
-    });
-
-    startEl.value = "";
-    endEl.value = "";
-    bmEl.value = "";
-    if (labelEl) labelEl.value = "";
-    if (ilEl) ilEl.value = "";
-    if (centerHzEl) centerHzEl.value = "";
-    pendingExtraBmIds = [];
-    renderExtraBmList();
-
     renderTimespanEntries();
   }
 
@@ -720,7 +769,13 @@
     if (resetBtn) resetBtn.addEventListener("click", resetScheduler);
 
     const addBtn = document.getElementById("scheduler-ts-add-btn");
-    if (addBtn) addBtn.addEventListener("click", addEntry);
+    if (addBtn) addBtn.addEventListener("click", function () { schOpenEntryForm(null, null); });
+
+    const entryForm = document.getElementById("sch-entry-form");
+    if (entryForm) entryForm.addEventListener("submit", schEntryFormSubmit);
+
+    const cancelBtn = document.getElementById("sch-entry-form-cancel");
+    if (cancelBtn) cancelBtn.addEventListener("click", schCloseEntryForm);
 
     const prevBtn = document.getElementById("scheduler-prev-btn");
     if (prevBtn) prevBtn.addEventListener("click", function () {

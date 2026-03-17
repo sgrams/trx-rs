@@ -3426,7 +3426,8 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   white-space: nowrap;
 }
 
-#bm-form-wrap {
+#bm-form-wrap,
+#sch-entry-form-wrap {
   position: fixed;
   inset: 0;
   z-index: 120;
@@ -3492,7 +3493,8 @@ button:focus-visible, input:focus-visible, select:focus-visible {
 }
 
 .bm-save-btn,
-#bm-form-cancel {
+#bm-form-cancel,
+#sch-entry-form-cancel {
   background: var(--accent-green);
   color: #fff;
   border: none;
@@ -3503,11 +3505,13 @@ button:focus-visible, input:focus-visible, select:focus-visible {
 }
 
 .bm-save-btn:hover,
-#bm-form-cancel:hover {
+#bm-form-cancel:hover,
+#sch-entry-form-cancel:hover {
   opacity: 0.88;
 }
 
-#bm-form-cancel {
+#bm-form-cancel,
+#sch-entry-form-cancel {
   background: var(--btn-bg);
   color: var(--text);
   border: 1px solid var(--btn-border);
