@@ -92,8 +92,6 @@ impl SoapySdrRig {
     /// - `gain_mode`: `"auto"` or `"manual"`.
     /// - `gain_db`: gain in dB; used when `gain_mode == "manual"`.
     /// - `max_gain_db`: optional hard ceiling for the applied hardware gain.
-    ///   When `gain_mode == "auto"` hardware AGC is not yet wired, so this
-    ///   value acts as the fallback.
     /// - `audio_sample_rate`: output PCM rate (Hz).
     /// - `frame_duration_ms`: output frame length (ms).
     /// - `initial_freq`: initial dial frequency reported by `get_status`.
@@ -137,8 +135,6 @@ impl SoapySdrRig {
             max_gain_db,
         );
 
-        let agc_enabled = gain_mode == "auto";
-
         let effective_gain_db = max_gain_db
             .map(|max_gain| gain_db.min(max_gain))
             .unwrap_or(gain_db);
@@ -155,7 +151,7 @@ impl SoapySdrRig {
         let hardware_center_hz = initial_freq.hz as i64 - center_offset_hz;
 
         // Create real IQ source from hardware device.
-        let iq_source = real_iq_source::RealIqSource::new(
+        let mut iq_source = real_iq_source::RealIqSource::new(
             args,
             hardware_center_hz as f64,
             sdr_sample_rate as f64,
@@ -169,6 +165,23 @@ impl SoapySdrRig {
         if let Some(lna) = initial_lna_gain_db {
             tracing::info!("SDR LNA gain element present, initial value: {:.1} dB", lna);
         }
+
+        // Enable hardware AGC by default if the device supports it.
+        let agc_enabled = if iq_source.has_gain_mode() {
+            match iq_source.set_gain_mode(true) {
+                Ok(()) => {
+                    tracing::info!("Hardware AGC enabled by default");
+                    true
+                }
+                Err(e) => {
+                    tracing::warn!("Failed to enable hardware AGC: {}", e);
+                    false
+                }
+            }
+        } else {
+            tracing::debug!("Hardware AGC not supported by this device");
+            false
+        };
         let iq_source: Box<dyn dsp::IqSource> = Box::new(iq_source);
 
         let primary_channel_count = channels.len();

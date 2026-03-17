@@ -69,6 +69,11 @@ pub trait IqSource: Send + 'static {
         None
     }
 
+    /// Returns `true` when the hardware supports automatic gain control.
+    fn has_gain_mode(&self) -> bool {
+        false
+    }
+
     /// Enable or disable hardware automatic gain control.  Default
     /// implementation is a no-op for sources that do not support AGC.
     fn set_gain_mode(&mut self, _automatic: bool) -> Result<(), String> {

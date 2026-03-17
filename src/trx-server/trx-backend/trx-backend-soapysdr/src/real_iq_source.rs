@@ -191,6 +191,12 @@ impl IqSource for RealIqSource {
             .ok()
     }
 
+    fn has_gain_mode(&self) -> bool {
+        self.device
+            .has_gain_mode(soapysdr::Direction::Rx, 0)
+            .unwrap_or(false)
+    }
+
     fn set_gain_mode(&mut self, automatic: bool) -> Result<(), String> {
         self.device
             .set_gain_mode(soapysdr::Direction::Rx, 0, automatic)
