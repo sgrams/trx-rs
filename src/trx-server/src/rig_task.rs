@@ -671,7 +671,9 @@ async fn process_command(
             // Apply state updates based on command result
             match cmd_result {
                 CommandResult::FreqUpdated(freq) => {
+                    let prev_freq_hz = ctx.state.status.freq.hz;
                     ctx.state.apply_freq(freq);
+                    invalidate_main_decoder_windows_on_freq_change(ctx.state, prev_freq_hz);
                     *ctx.poll_pause_until = Some(Instant::now() + Duration::from_millis(200));
                 }
                 CommandResult::ModeUpdated(mode) => {
@@ -786,7 +788,9 @@ async fn refresh_state_from_cat(rig: &mut Box<dyn RigCat>, state: &mut RigState)
     let (freq, mode, vfo) = rig.get_status().await?;
     state.filter = rig.filter_state();
     state.control.enabled = Some(true);
+    let prev_freq_hz = state.status.freq.hz;
     state.apply_freq(freq);
+    invalidate_main_decoder_windows_on_freq_change(state, prev_freq_hz);
     state.apply_mode(mode);
     state.status.vfo = vfo;
 
@@ -923,9 +927,7 @@ fn map_signal_strength(mode: &RigMode, raw: u8) -> i32 {
     // FT-817 returns 0-15 for signal strength
     // Map to approximate dBm / S-units
     match mode {
-        RigMode::FM | RigMode::WFM | RigMode::AIS | RigMode::VDES => {
-            -120 + (raw as i32 * 6)
-        }
+        RigMode::FM | RigMode::WFM | RigMode::AIS | RigMode::VDES => -120 + (raw as i32 * 6),
         _ => -127 + (raw as i32 * 6),
     }
 }
@@ -935,6 +937,19 @@ fn snapshot_from(state: &RigState) -> RigResult<RigSnapshot> {
     state
         .snapshot()
         .ok_or_else(|| RigError::invalid_state("Rig info unavailable"))
+}
+
+fn invalidate_main_decoder_windows_on_freq_change(state: &mut RigState, prev_freq_hz: u64) {
+    if state.status.freq.hz == prev_freq_hz {
+        return;
+    }
+    state.aprs_decode_reset_seq += 1;
+    state.hf_aprs_decode_reset_seq += 1;
+    state.cw_decode_reset_seq += 1;
+    state.ft8_decode_reset_seq += 1;
+    state.ft4_decode_reset_seq += 1;
+    state.ft2_decode_reset_seq += 1;
+    state.wspr_decode_reset_seq += 1;
 }
 
 fn sync_machine_state(machine: &mut RigStateMachine, state: &RigState) {
@@ -1068,4 +1083,51 @@ fn meters_changed(old_state: &RigState, new_state: &RigState) -> bool {
 fn tx_meter_parts(tx: Option<&RigTxStatus>) -> (Option<u8>, Option<u8>, Option<f32>, Option<u8>) {
     tx.map(|tx| (tx.power, tx.limit, tx.swr, tx.alc))
         .unwrap_or((None, None, None, None))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn freq_change_invalidates_all_main_decoder_windows() {
+        let mut state = RigState::new_uninitialized();
+        let prev_freq_hz = state.status.freq.hz;
+        state.apply_freq(Freq {
+            hz: prev_freq_hz + 2_700,
+        });
+
+        invalidate_main_decoder_windows_on_freq_change(&mut state, prev_freq_hz);
+
+        assert_eq!(state.aprs_decode_reset_seq, 1);
+        assert_eq!(state.hf_aprs_decode_reset_seq, 1);
+        assert_eq!(state.cw_decode_reset_seq, 1);
+        assert_eq!(state.ft8_decode_reset_seq, 1);
+        assert_eq!(state.ft4_decode_reset_seq, 1);
+        assert_eq!(state.ft2_decode_reset_seq, 1);
+        assert_eq!(state.wspr_decode_reset_seq, 1);
+    }
+
+    #[test]
+    fn unchanged_freq_keeps_decoder_windows_intact() {
+        let mut state = RigState::new_uninitialized();
+        state.aprs_decode_reset_seq = 2;
+        state.hf_aprs_decode_reset_seq = 3;
+        state.cw_decode_reset_seq = 4;
+        state.ft8_decode_reset_seq = 5;
+        state.ft4_decode_reset_seq = 6;
+        state.ft2_decode_reset_seq = 7;
+        state.wspr_decode_reset_seq = 8;
+        let prev_freq_hz = state.status.freq.hz;
+
+        invalidate_main_decoder_windows_on_freq_change(&mut state, prev_freq_hz);
+
+        assert_eq!(state.aprs_decode_reset_seq, 2);
+        assert_eq!(state.hf_aprs_decode_reset_seq, 3);
+        assert_eq!(state.cw_decode_reset_seq, 4);
+        assert_eq!(state.ft8_decode_reset_seq, 5);
+        assert_eq!(state.ft4_decode_reset_seq, 6);
+        assert_eq!(state.ft2_decode_reset_seq, 7);
+        assert_eq!(state.wspr_decode_reset_seq, 8);
+    }
 }
