@@ -1088,8 +1088,9 @@ small { color: var(--text-muted); }
 .meter-bar { flex: 1 1 auto; height: 12px; border-radius: 999px; background: var(--btn-bg); border: 1px solid var(--border-light); overflow: hidden; }
 .meter-fill { height: 100%; width: 0%; background: linear-gradient(90deg, var(--accent-green), var(--accent-yellow), var(--accent-red)); transition: width 150ms ease; }
 .meter-value { font-size: 0.95rem; color: var(--text-heading); min-width: 64px; text-align: right; }
-#content { display: flex; flex-direction: column; gap: 1.1rem; min-height: 0; overflow: visible; }
-.tab-panel { flex: 1 1 auto; min-height: 0; overflow: visible; }
+#content { display: flex; flex-direction: column; gap: 1.1rem; min-height: 0; flex: 1 1 auto; overflow: visible; }
+.tab-panel { flex: 1 1 auto; min-height: 0; overflow: visible; display: flex; flex-direction: column; }
+.sub-tab-panel { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
 .tab-bar {
   display: flex;
   align-items: center;
@@ -2125,7 +2126,7 @@ body.map-fake-fullscreen-active {
 #ft8-messages,
 #ft4-messages,
 #ft2-messages,
-#wspr-messages { max-height: 360px; overflow-y: auto; border: 1px solid var(--border-light); border-radius: 6px; background: var(--input-bg); font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; font-size: 0.85rem; padding: 0.35rem 0.5rem; }
+#wspr-messages { flex: 1 1 0; min-height: 120px; overflow-y: auto; border: 1px solid var(--border-light); border-radius: 6px; background: var(--input-bg); font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; font-size: 0.85rem; padding: 0.35rem 0.5rem; }
 .ft8-row { display: flex; gap: 0.6rem; line-height: 1.4; border-bottom: 1px solid var(--border); padding: 0.25rem 0; }
 .ft8-row:last-child { border-bottom: none; }
 .ft8-time { color: var(--text-muted); min-width: 4.6rem; }
