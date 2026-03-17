@@ -179,6 +179,51 @@ unsafe fn mul_freq_domain_avx2(
     mul_freq_domain_scalar(&mut buf[i..len], &h_freq[i..len], scale);
 }
 
+/// NEON frequency-domain complex multiply: processes 4 complex pairs per iteration.
+#[cfg(target_arch = "aarch64")]
+#[target_feature(enable = "neon")]
+unsafe fn mul_freq_domain_neon(
+    buf: &mut [FftComplex<f32>],
+    h_freq: &[FftComplex<f32>],
+    scale: f32,
+) {
+    use std::arch::aarch64::*;
+
+    let len = buf.len().min(h_freq.len());
+    let mut i = 0usize;
+    let scale_v = vdupq_n_f32(scale);
+
+    while i + 4 <= len {
+        let x_ptr = buf.as_mut_ptr().add(i) as *mut f32;
+        let h_ptr = h_freq.as_ptr().add(i) as *const f32;
+
+        // Load 4 complex numbers as two float32x4_t: [re0,im0,re1,im1] and [re2,im2,re3,im3]
+        let x_lo = vld1q_f32(x_ptr);
+        let x_hi = vld1q_f32(x_ptr.add(4));
+        let h_lo = vld1q_f32(h_ptr);
+        let h_hi = vld1q_f32(h_ptr.add(4));
+
+        // Deinterleave: .0 = [re0..re3], .1 = [im0..im3]
+        let x_ri = vuzpq_f32(x_lo, x_hi);
+        let h_ri = vuzpq_f32(h_lo, h_hi);
+        let (x_re, x_im) = (x_ri.0, x_ri.1);
+        let (h_re, h_im) = (h_ri.0, h_ri.1);
+
+        // Complex multiply: out.re = x.re*h.re - x.im*h.im, out.im = x.re*h.im + x.im*h.re
+        let out_re = vmulq_f32(vsubq_f32(vmulq_f32(x_re, h_re), vmulq_f32(x_im, h_im)), scale_v);
+        let out_im = vmulq_f32(vaddq_f32(vmulq_f32(x_re, h_im), vmulq_f32(x_im, h_re)), scale_v);
+
+        // Reinterleave: .0 = [re0,im0,re1,im1], .1 = [re2,im2,re3,im3]
+        let out = vzipq_f32(out_re, out_im);
+        vst1q_f32(x_ptr, out.0);
+        vst1q_f32(x_ptr.add(4), out.1);
+
+        i += 4;
+    }
+
+    mul_freq_domain_scalar(&mut buf[i..len], &h_freq[i..len], scale);
+}
+
 fn mul_freq_domain(buf: &mut [FftComplex<f32>], h_freq: &[FftComplex<f32>], scale: f32) {
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     {
@@ -188,6 +233,14 @@ fn mul_freq_domain(buf: &mut [FftComplex<f32>], h_freq: &[FftComplex<f32>], scal
             }
             return;
         }
+    }
+
+    #[cfg(target_arch = "aarch64")]
+    {
+        unsafe {
+            mul_freq_domain_neon(buf, h_freq, scale);
+        }
+        return;
     }
 
     mul_freq_domain_scalar(buf, h_freq, scale);
