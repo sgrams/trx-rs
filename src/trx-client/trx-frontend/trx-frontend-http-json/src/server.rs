@@ -403,6 +403,7 @@ mod tests {
             server_latitude: None,
             server_longitude: None,
             pskreporter_status: Some("Disabled".to_string()),
+            aprs_is_status: Some("Disabled".to_string()),
             aprs_decode_enabled: false,
             hf_aprs_decode_enabled: false,
             cw_decode_enabled: false,

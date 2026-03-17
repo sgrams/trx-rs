@@ -402,6 +402,25 @@ fn build_rig_task_config(
         Some("Disabled".to_string())
     };
 
+    let aprs_is_status = if rig_cfg.aprsfi.enabled {
+        let cs = rig_cfg
+            .aprsfi
+            .callsign
+            .as_deref()
+            .or(callsign.as_deref())
+            .unwrap_or("");
+        if cs.trim().is_empty() {
+            Some("Enabled but inactive (missing callsign)".to_string())
+        } else {
+            Some(format!(
+                "Enabled ({}:{}, {})",
+                rig_cfg.aprsfi.host, rig_cfg.aprsfi.port, cs
+            ))
+        }
+    } else {
+        Some("Disabled".to_string())
+    };
+
     rig_task::RigTaskConfig {
         registry,
         rig_id: rig_cfg.id.clone(),
@@ -424,6 +443,7 @@ fn build_rig_task_config(
         server_latitude: latitude,
         server_longitude: longitude,
         pskreporter_status,
+        aprs_is_status,
         histories,
         prebuilt_rig: None,
     }
@@ -1003,6 +1023,14 @@ async fn main() -> DynResult<()> {
             Some(format!(
                 "Enabled ({}:{})",
                 rig_cfg.pskreporter.host, rig_cfg.pskreporter.port
+            ))
+        } else {
+            Some("Disabled".to_string())
+        };
+        initial_state.aprs_is_status = if rig_cfg.aprsfi.enabled {
+            Some(format!(
+                "Enabled ({}:{})",
+                rig_cfg.aprsfi.host, rig_cfg.aprsfi.port
             ))
         } else {
             Some("Disabled".to_string())

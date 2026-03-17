@@ -427,6 +427,7 @@ mod tests {
             server_latitude: None,
             server_longitude: None,
             pskreporter_status: None,
+            aprs_is_status: None,
             aprs_decode_enabled: false,
             hf_aprs_decode_enabled: false,
             cw_decode_enabled: false,

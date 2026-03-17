@@ -46,6 +46,7 @@ pub struct RigTaskConfig {
     pub server_latitude: Option<f64>,
     pub server_longitude: Option<f64>,
     pub pskreporter_status: Option<String>,
+    pub aprs_is_status: Option<String>,
     /// Per-rig decoder history store.  Used by Reset* commands to clear the
     /// history and by the audio listener to serve history on connection.
     pub histories: Arc<DecoderHistories>,
@@ -78,6 +79,7 @@ impl Default for RigTaskConfig {
             server_latitude: None,
             server_longitude: None,
             pskreporter_status: None,
+            aprs_is_status: None,
             histories: DecoderHistories::new(),
             prebuilt_rig: None,
         }
@@ -136,6 +138,7 @@ pub async fn run_rig_task(
         config.initial_mode.clone(),
     );
     state.pskreporter_status = config.pskreporter_status.clone();
+    state.aprs_is_status = config.aprs_is_status.clone();
 
     // Polling configuration
     let polling = &config.polling;

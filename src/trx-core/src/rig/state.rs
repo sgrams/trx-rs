@@ -29,6 +29,8 @@ pub struct RigState {
     pub server_longitude: Option<f64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pskreporter_status: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub aprs_is_status: Option<String>,
     #[serde(default)]
     pub aprs_decode_enabled: bool,
     #[serde(default)]
@@ -149,6 +151,7 @@ impl RigState {
             server_latitude: None,
             server_longitude: None,
             pskreporter_status: None,
+            aprs_is_status: None,
             aprs_decode_enabled: false,
             hf_aprs_decode_enabled: false,
             cw_decode_enabled: true,
@@ -217,6 +220,7 @@ impl RigState {
             server_latitude: snapshot.server_latitude,
             server_longitude: snapshot.server_longitude,
             pskreporter_status: snapshot.pskreporter_status,
+            aprs_is_status: snapshot.aprs_is_status,
             aprs_decode_enabled: snapshot.aprs_decode_enabled,
             hf_aprs_decode_enabled: snapshot.hf_aprs_decode_enabled,
             cw_decode_enabled: snapshot.cw_decode_enabled,
@@ -263,6 +267,7 @@ impl RigState {
             server_latitude: self.server_latitude,
             server_longitude: self.server_longitude,
             pskreporter_status: self.pskreporter_status.clone(),
+            aprs_is_status: self.aprs_is_status.clone(),
             aprs_decode_enabled: self.aprs_decode_enabled,
             hf_aprs_decode_enabled: self.hf_aprs_decode_enabled,
             cw_decode_enabled: self.cw_decode_enabled,
@@ -430,6 +435,8 @@ pub struct RigSnapshot {
     pub server_longitude: Option<f64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pskreporter_status: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub aprs_is_status: Option<String>,
     #[serde(default)]
     pub aprs_decode_enabled: bool,
     #[serde(default)]

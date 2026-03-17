@@ -3021,6 +3021,9 @@ function render(update) {
   if (update.pskreporter_status) {
     document.getElementById("about-pskreporter").textContent = update.pskreporter_status;
   }
+  if (update.aprs_is_status) {
+    document.getElementById("about-aprs-is").textContent = update.aprs_is_status;
+  }
   if (update.info) {
     const parts = [update.info.manufacturer, update.info.model, update.info.revision].filter(Boolean).join(" ");
     if (parts) document.getElementById("about-rig-info").textContent = parts;
