@@ -111,6 +111,7 @@ async function vchanTakeSchedulerControl() {
     console.error("scheduler control takeover failed", e);
   }
 }
+window.vchanTakeSchedulerControl = vchanTakeSchedulerControl;
 
 // Called by app.js when the SSE `session` event arrives.
 function vchanHandleSession(data) {

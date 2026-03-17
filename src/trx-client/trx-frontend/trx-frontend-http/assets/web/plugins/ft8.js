@@ -447,8 +447,14 @@ if (ft8MessagesEl) {
   });
 }
 
-document.getElementById("ft8-decode-toggle-btn").addEventListener("click", async () => {
-  try { await postPath("/toggle_ft8_decode"); } catch (e) { console.error("FT8 toggle failed", e); }
+const ft8DecodeToggleBtn = document.getElementById("ft8-decode-toggle-btn");
+ft8DecodeToggleBtn?.addEventListener("click", async () => {
+  try {
+    await window.takeSchedulerControlForDecoderDisable?.(ft8DecodeToggleBtn);
+    await postPath("/toggle_ft8_decode");
+  } catch (e) {
+    console.error("FT8 toggle failed", e);
+  }
 });
 
 document.getElementById("settings-clear-ft8-history")?.addEventListener("click", async () => {

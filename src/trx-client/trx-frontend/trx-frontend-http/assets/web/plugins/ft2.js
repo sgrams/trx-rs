@@ -179,8 +179,14 @@ if (ft2FilterInput) {
   });
 }
 
-document.getElementById("ft2-decode-toggle-btn")?.addEventListener("click", async () => {
-  try { await postPath("/toggle_ft2_decode"); } catch (e) { console.error("FT2 toggle failed", e); }
+const ft2DecodeToggleBtn = document.getElementById("ft2-decode-toggle-btn");
+ft2DecodeToggleBtn?.addEventListener("click", async () => {
+  try {
+    await window.takeSchedulerControlForDecoderDisable?.(ft2DecodeToggleBtn);
+    await postPath("/toggle_ft2_decode");
+  } catch (e) {
+    console.error("FT2 toggle failed", e);
+  }
 });
 
 document.getElementById("settings-clear-ft2-history")?.addEventListener("click", async () => {

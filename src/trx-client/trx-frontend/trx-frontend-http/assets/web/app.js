@@ -2875,6 +2875,7 @@ function render(update) {
   const ft8ToggleBtn = document.getElementById("ft8-decode-toggle-btn");
   if (ft8ToggleBtn) {
     const ft8On = !!update.ft8_decode_enabled;
+    ft8ToggleBtn.dataset.enabled = ft8On ? "true" : "false";
     ft8ToggleBtn.textContent = ft8On ? "Disable FT8" : "Enable FT8";
     ft8ToggleBtn.style.borderColor = ft8On ? "#00d17f" : "";
     ft8ToggleBtn.style.color = ft8On ? "#00d17f" : "";
@@ -2882,6 +2883,7 @@ function render(update) {
   const ft4ToggleBtn = document.getElementById("ft4-decode-toggle-btn");
   if (ft4ToggleBtn) {
     const ft4On = !!update.ft4_decode_enabled;
+    ft4ToggleBtn.dataset.enabled = ft4On ? "true" : "false";
     ft4ToggleBtn.textContent = ft4On ? "Disable FT4" : "Enable FT4";
     ft4ToggleBtn.style.borderColor = ft4On ? "#00d17f" : "";
     ft4ToggleBtn.style.color = ft4On ? "#00d17f" : "";
@@ -2889,6 +2891,7 @@ function render(update) {
   const ft2ToggleBtn = document.getElementById("ft2-decode-toggle-btn");
   if (ft2ToggleBtn) {
     const ft2On = !!update.ft2_decode_enabled;
+    ft2ToggleBtn.dataset.enabled = ft2On ? "true" : "false";
     ft2ToggleBtn.textContent = ft2On ? "Disable FT2" : "Enable FT2";
     ft2ToggleBtn.style.borderColor = ft2On ? "#00d17f" : "";
     ft2ToggleBtn.style.color = ft2On ? "#00d17f" : "";
@@ -2896,6 +2899,7 @@ function render(update) {
   const wsprToggleBtn = document.getElementById("wspr-decode-toggle-btn");
   if (wsprToggleBtn) {
     const wsprOn = !!update.wspr_decode_enabled;
+    wsprToggleBtn.dataset.enabled = wsprOn ? "true" : "false";
     wsprToggleBtn.textContent = wsprOn ? "Disable WSPR" : "Enable WSPR";
     wsprToggleBtn.style.borderColor = wsprOn ? "#00d17f" : "";
     wsprToggleBtn.style.color = wsprOn ? "#00d17f" : "";
@@ -2903,6 +2907,7 @@ function render(update) {
   const hfAprsToggleBtn = document.getElementById("hf-aprs-decode-toggle-btn");
   if (hfAprsToggleBtn) {
     const hfAprsOn = !!update.hf_aprs_decode_enabled;
+    hfAprsToggleBtn.dataset.enabled = hfAprsOn ? "true" : "false";
     hfAprsToggleBtn.textContent = hfAprsOn ? "Disable HF APRS" : "Enable HF APRS";
     hfAprsToggleBtn.style.borderColor = hfAprsOn ? "#00d17f" : "";
     hfAprsToggleBtn.style.color = hfAprsOn ? "#00d17f" : "";
@@ -3246,6 +3251,16 @@ async function postPath(path) {
   }
   return resp;
 }
+
+async function takeSchedulerControlForDecoderDisable(buttonEl) {
+  const enabled = buttonEl?.dataset?.enabled === "true"
+    || /^\s*Disable\b/i.test(buttonEl?.textContent || "");
+  if (!enabled) return;
+  if (typeof window.vchanTakeSchedulerControl === "function") {
+    await window.vchanTakeSchedulerControl();
+  }
+}
+window.takeSchedulerControlForDecoderDisable = takeSchedulerControlForDecoderDisable;
 
 async function switchRigFromSelect(selectEl) {
   if (!selectEl || !selectEl.value) {

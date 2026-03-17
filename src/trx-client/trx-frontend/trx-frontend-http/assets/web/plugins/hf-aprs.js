@@ -372,8 +372,14 @@ window.restoreHfAprsHistory = function(packets) {
   window.onServerHfAprsBatch(packets);
 };
 
-document.getElementById("hf-aprs-decode-toggle-btn")?.addEventListener("click", async () => {
-  try { await postPath("/toggle_hf_aprs_decode"); } catch (e) { console.error("HF APRS toggle failed", e); }
+const hfAprsDecodeToggleBtn = document.getElementById("hf-aprs-decode-toggle-btn");
+hfAprsDecodeToggleBtn?.addEventListener("click", async () => {
+  try {
+    await window.takeSchedulerControlForDecoderDisable?.(hfAprsDecodeToggleBtn);
+    await postPath("/toggle_hf_aprs_decode");
+  } catch (e) {
+    console.error("HF APRS toggle failed", e);
+  }
 });
 
 document.getElementById("settings-clear-hf-aprs-history")?.addEventListener("click", async () => {

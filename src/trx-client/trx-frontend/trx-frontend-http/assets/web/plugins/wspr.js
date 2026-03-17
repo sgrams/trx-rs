@@ -255,8 +255,14 @@ if (wsprMessagesEl) {
   });
 }
 
-document.getElementById("wspr-decode-toggle-btn").addEventListener("click", async () => {
-  try { await postPath("/toggle_wspr_decode"); } catch (e) { console.error("WSPR toggle failed", e); }
+const wsprDecodeToggleBtn = document.getElementById("wspr-decode-toggle-btn");
+wsprDecodeToggleBtn?.addEventListener("click", async () => {
+  try {
+    await window.takeSchedulerControlForDecoderDisable?.(wsprDecodeToggleBtn);
+    await postPath("/toggle_wspr_decode");
+  } catch (e) {
+    console.error("WSPR toggle failed", e);
+  }
 });
 
 document.getElementById("settings-clear-wspr-history")?.addEventListener("click", async () => {
