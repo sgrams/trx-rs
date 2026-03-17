@@ -3944,6 +3944,17 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   color: var(--text-muted);
   font-weight: 600;
 }
+.sch-ts-table td:last-child {
+  white-space: nowrap;
+}
+.sch-ts-table td:last-child button {
+  font-size: 0.78rem;
+  padding: 0.18rem 0.45rem;
+  margin-right: 0.25rem;
+}
+.sch-ts-table td:last-child button:last-child {
+  margin-right: 0;
+}
 .sch-add-row {
   align-items: flex-end;
 }
