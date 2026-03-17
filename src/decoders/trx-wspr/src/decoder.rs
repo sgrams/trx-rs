@@ -25,6 +25,11 @@ const DT_SEARCH_STEP_SAMPLES: isize = (WSPR_SAMPLE_RATE as isize) / 2;
 // Number of top frequency candidates to try full decode on
 const MAX_FREQ_CANDIDATES: usize = 8;
 
+// Minimum sync correlation score to attempt a full decode.  Candidates below
+// this threshold are almost certainly noise and skipping them avoids expensive
+// Fano decode attempts that would produce false positives.
+const MIN_SYNC_SCORE: f32 = 10.0;
+
 /// WSPR sync vector (162 bits). symbol = sync[i] + 2*data[i].
 /// The LSB of each received symbol should match this pattern.
 #[rustfmt::skip]
@@ -123,7 +128,10 @@ impl WsprDecoder {
         let mut results = Vec::new();
         let mut seen_messages = std::collections::HashSet::new();
 
-        for &(freq, dt_samples, _) in candidates.iter().take(MAX_FREQ_CANDIDATES) {
+        for &(freq, dt_samples, score) in candidates.iter().take(MAX_FREQ_CANDIDATES) {
+            if score < MIN_SYNC_SCORE {
+                break; // candidates are sorted by score, no point continuing
+            }
             let start = (EXPECTED_SIGNAL_START_SAMPLES as isize + dt_samples) as usize;
             let signal = &samples[start..start + WSPR_SIGNAL_SAMPLES];
 

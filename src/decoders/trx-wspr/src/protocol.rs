@@ -141,9 +141,12 @@ fn unpack_message(bits: &[u8; NBITS]) -> Option<String> {
         power_code = (power_code << 1) | b as u32;
     }
 
-    // power_code is the raw dBm value; valid WSPR levels are 0–60 dBm.
+    // WSPR only permits specific power levels (dBm).
+    const VALID_POWER: [i32; 19] = [
+        0, 3, 7, 10, 13, 17, 20, 23, 27, 30, 33, 37, 40, 43, 47, 50, 53, 57, 60,
+    ];
     let power_dbm = power_code as i32;
-    if !(0..=60).contains(&power_dbm) {
+    if !VALID_POWER.contains(&power_dbm) {
         return None;
     }
 
@@ -182,7 +185,21 @@ fn unpack_message(bits: &[u8; NBITS]) -> Option<String> {
     .trim()
     .to_string();
 
+    // WSPR callsigns: after trimming, the digit (from position 2 of the
+    // 6-char padded form) must appear at index 1 or 2.  The callsign must
+    // also contain at least one letter and be at least 3 characters long.
     if callsign.len() < 3 || !callsign.chars().any(|c| c.is_alphabetic()) {
+        return None;
+    }
+    let has_digit_at_1_or_2 = callsign
+        .chars()
+        .nth(1)
+        .is_some_and(|c| c.is_ascii_digit())
+        || callsign
+            .chars()
+            .nth(2)
+            .is_some_and(|c| c.is_ascii_digit());
+    if !has_digit_at_1_or_2 {
         return None;
     }
 
