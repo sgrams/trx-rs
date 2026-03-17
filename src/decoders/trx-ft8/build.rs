@@ -19,6 +19,7 @@ fn main() {
         .file(format!("{base}/ft8/constants.c"))
         .file(format!("{base}/ft8/crc.c"))
         .file(format!("{base}/ft8/decode.c"))
+        .file(format!("{base}/ft8/encode.c"))
         .file(format!("{base}/ft8/ldpc.c"))
         .file(format!("{base}/ft8/message.c"))
         .file(format!("{base}/ft8/text.c"))
@@ -42,6 +43,8 @@ fn main() {
     println!("cargo:rerun-if-changed={base}/ft8/crc.h");
     println!("cargo:rerun-if-changed={base}/ft8/decode.c");
     println!("cargo:rerun-if-changed={base}/ft8/decode.h");
+    println!("cargo:rerun-if-changed={base}/ft8/encode.c");
+    println!("cargo:rerun-if-changed={base}/ft8/encode.h");
     println!("cargo:rerun-if-changed={base}/ft8/ldpc.c");
     println!("cargo:rerun-if-changed={base}/ft8/ldpc.h");
     println!("cargo:rerun-if-changed={base}/ft8/message.c");
