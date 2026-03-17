@@ -368,7 +368,7 @@ static int ft2_find_frequency_peaks(
         if (baseline[bin] <= 0.0f)
             continue;
         float value = smooth[bin] / baseline[bin];
-        if (value < 1.08f)
+        if (value < 1.03f)
             continue;
         if (!(value >= (smooth[bin - 1] / fmaxf(baseline[bin - 1], 1e-9f)) &&
               value >= (smooth[bin + 1] / fmaxf(baseline[bin + 1], 1e-9f))))
@@ -676,7 +676,7 @@ static int ft2_find_scan_hits(
                 }
             }
         }
-        if (best_score < 0.60f)
+        if (best_score < 0.50f)
             continue;
 
         for (int idf = best_idf - 4; idf <= best_idf + 4; ++idf)
@@ -694,7 +694,7 @@ static int ft2_find_scan_hits(
                 }
             }
         }
-        if (best_score < 0.60f)
+        if (best_score < 0.50f)
             continue;
 
         out[count].freq_hz = peaks[peak].freq_hz;
@@ -755,9 +755,9 @@ static void ft2_normalize_log174(float* log174)
     if (variance <= 1.0e-12f)
         return;
 
-    float norm_factor = sqrtf(24.0f / variance);
+    float sigma = sqrtf(variance);
     for (int i = 0; i < FTX_LDPC_N; ++i)
-        log174[i] *= norm_factor;
+        log174[i] /= sigma;
 }
 
 static bool ft2_extract_bitmetrics_raw(const float complex* signal, float bitmetrics[2 * FT2_FRAME_SYMBOLS][3])
@@ -1286,7 +1286,7 @@ static bool ft2_decode_hit(
             }
         }
     }
-    if (best_score < 0.80f)
+    if (best_score < 0.65f)
     {
         if (fail_stage)
             *fail_stage = FT2_FAIL_REFINED_SYNC;
@@ -1338,7 +1338,7 @@ static bool ft2_decode_hit(
         sync_qual += ((bitmetrics[132 + i][0] >= 0.0f) ? 1 : 0) == sync_bits_c[i];
         sync_qual += ((bitmetrics[198 + i][0] >= 0.0f) ? 1 : 0) == sync_bits_d[i];
     }
-    if (sync_qual < 13)
+    if (sync_qual < 10)
     {
         if (fail_stage)
             *fail_stage = FT2_FAIL_SYNC_QUAL;
@@ -1362,9 +1362,9 @@ static bool ft2_decode_hit(
     }
     for (int i = 0; i < FTX_LDPC_N; ++i)
     {
-        llr_passes[0][i] *= 2.83f;
-        llr_passes[1][i] *= 2.83f;
-        llr_passes[2][i] *= 2.83f;
+        llr_passes[0][i] *= 3.2f;
+        llr_passes[1][i] *= 3.2f;
+        llr_passes[2][i] *= 3.2f;
         float a = llr_passes[0][i];
         float b = llr_passes[1][i];
         float c = llr_passes[2][i];
