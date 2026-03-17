@@ -9,7 +9,7 @@ This document describes the design and implementation plan for the recorder feat
 | ID | Description |
 |----|-------------|
 | REQ-REC-001 | When the user starts recording, the system shall record the currently demodulated audio stream. |
-| REQ-REC-002 | When recording audio, the system shall store the recording in either FLAC or OPUS format. |
+| REQ-REC-002 | When recording audio, the system shall store the recording in OPUS format. |
 | REQ-REC-003 | While recording audio, the system shall automatically detect whether the recording should be stored in mono or stereo and select the appropriate format. |
 | REQ-REC-004 | While recording is active, the system shall simultaneously record FFT data and all currently visible decoded elements, including APRS and FT8. |
 | REQ-REC-005 | While recording metadata, the system shall store FFT data and decoded signal data in a structured data file format. |
@@ -32,7 +32,7 @@ src/trx-server/
     src/
       lib.rs          # Public API: RecorderHandle, start_recorder_task()
       session.rs      # RecordingSession: file management, open/close/finalise
-      writer.rs       # AudioWriter: PCM → FLAC or Opus encoder
+      writer.rs       # AudioWriter: PCM → Opus encoder
       data_file.rs    # DataFileWriter: structured JSON Lines data track
       index.rs        # SeekIndex: time → byte-offset table for audio seeking
       playback.rs     # PlaybackEngine: file → PCM broadcast for clients
@@ -63,7 +63,7 @@ Each recording is a **session directory** named by UTC start time and opening ri
 ```
 <output_dir>/
   20260317T142301Z_14074000_USB/
-    audio.flac          # or audio.opus
+    audio.opus
     data.jsonl          # structured event log (see below)
     index.bin           # seek index: sorted table of (offset_ms u64, audio_byte u64)
 ```
@@ -72,18 +72,16 @@ Each recording is a **session directory** named by UTC start time and opening ri
 
 ### Audio File (REQ-REC-001, REQ-REC-002, REQ-REC-003)
 
-- **Format**: FLAC (lossless, seekable) or Opus (compressed, needs external seek index). Configured via `recorder.format = "flac" | "opus"`.
+- **Format**: Opus, using the `opus` crate (already a workspace dependency via `trx-backend-soapysdr`). Seek index (`index.bin`) provides byte → time mapping.
 - **Channel count**: determined at session open from `AudioConfig.channels`. If `channels == 1` → mono; if `channels == 2` → stereo. Written into the file header and recorded in the session's first data event.
 - **Sample rate**: preserved from `AudioConfig.sample_rate` (default 48 000 Hz).
-- **FLAC**: uses the `claxon` crate for writing, or a thin wrapper around `libflac` via `flac-sys`. Native seekable by frame.
-- **Opus**: uses the `opus` crate (already a workspace dependency via `trx-ft8`). Seek index (`index.bin`) provides byte → time mapping.
 
 ### Data File (REQ-REC-004, REQ-REC-005)
 
 `data.jsonl` — one JSON object per line, each with a required `offset_ms` field giving the millisecond offset from session start (satisfies REQ-SYNC-001 at ≥1 s resolution):
 
 ```jsonl
-{"offset_ms":0,"type":"session_start","freq_hz":14074000,"mode":"USB","channels":1,"sample_rate":48000,"format":"flac"}
+{"offset_ms":0,"type":"session_start","freq_hz":14074000,"mode":"USB","channels":1,"sample_rate":48000,"format":"opus"}
 {"offset_ms":1000,"type":"rig_state","freq_hz":14074000,"mode":"USB","ptt":false}
 {"offset_ms":2000,"type":"fft","bins_db":[-90.1,-88.4,...]}
 {"offset_ms":3412,"type":"ft8","snr_db":-12,"dt_s":0.3,"freq_hz":14074350,"message":"CQ W5XYZ EN34"}
@@ -125,7 +123,6 @@ Added to `ServerConfig` under `[recorder]`:
 [recorder]
 enabled = false
 output_dir = "~/.local/share/trx-rs/recordings"
-format = "flac"           # "flac" | "opus"
 opus_bitrate_bps = 32000
 fft_record_interval_ms = 1000
 index_interval_ms = 1000
@@ -154,7 +151,7 @@ These are exposed via:
 
 `PlaybackEngine` opens a session directory and:
 
-1. Reads `audio.flac` or `audio.opus` and decodes PCM frames in real time.
+1. Reads `audio.opus` and decodes PCM frames in real time.
 2. Publishes decoded PCM frames onto a `broadcast::Sender<Vec<f32>>` — the **same channel type** as the live `pcm_tx`, so existing decoder tasks and audio-streaming clients receive playback data transparently.
 3. Replays `data.jsonl` events on their original `offset_ms` timestamps, injecting them into the `DecodedMessage` broadcast so the HTTP frontend displays historic decodes during playback.
 4. For seek: binary-searches `index.bin` to find the audio byte offset, then replays data events from the same point.
@@ -186,10 +183,9 @@ Wall-clock UTC is embedded only in `session_start` (`wall_clock_utc`) and in the
 ### Phase 1 — Audio recording (REQ-REC-001, REQ-REC-002, REQ-REC-003)
 
 1. Add `trx-recorder` crate skeleton; `RecorderConfig`; `RecorderHandle`.
-2. Implement `AudioWriter` with FLAC output (lossless path first).
+2. Implement `AudioWriter` with Opus output.
 3. Subscribe `AudioWriter` to `pcm_tx` in `audio.rs`; open session on `StartRecording` command.
 4. Auto-detect channel count from `AudioConfig.channels`.
-5. Write Opus variant behind a feature flag; test both.
 
 ### Phase 2 — Metadata recording (REQ-REC-004, REQ-REC-005, REQ-SYNC-001)
 
@@ -206,7 +202,7 @@ Wall-clock UTC is embedded only in `session_start` (`wall_clock_utc`) and in the
 
 ### Phase 4 — Playback (REQ-PLAY-001, REQ-PLAY-002)
 
-1. Implement `PlaybackEngine`; FLAC decode + PCM broadcast.
+1. Implement `PlaybackEngine`; Opus decode + PCM broadcast.
 2. Add `PlaybackState` to `RigState`; suppress live capture during playback.
 3. Implement seek via `index.bin` binary search.
 4. Replay `data.jsonl` events; feed into `DecodedMessage` broadcast.
@@ -218,7 +214,6 @@ Wall-clock UTC is embedded only in `session_start` (`wall_clock_utc`) and in the
 
 | Crate | Use | Already present? |
 |-------|-----|-----------------|
-| `claxon` or `flac` | FLAC encode/decode | No |
 | `opus` | Opus encode/decode | Yes (via trx-backend-soapysdr) |
 | `serde_json` | data.jsonl serialisation | Yes |
 | `tokio::fs` | async file I/O | Yes |
@@ -227,7 +222,6 @@ Wall-clock UTC is embedded only in `session_start` (`wall_clock_utc`) and in the
 
 ## Open Questions
 
-1. **FLAC encoder choice**: `claxon` is a pure-Rust decoder but has no encoder; `libflac-sys` has encode+decode but requires a C toolchain. May need to add a pure-Rust FLAC encoder or use an intermediate WAV stage with post-encode.
-2. **Playback isolation**: Should playback be exclusive (block all CAT commands) or concurrent? Initial design blocks CAT polling; revisit if users need to change frequency during playback.
-3. **Session listing API**: The HTTP frontend needs an endpoint to enumerate sessions (`GET /api/recorder/sessions`). Schema TBD in Phase 4.
-4. **Storage limits**: `max_session_duration_s` auto-splits sessions; a `max_total_size_gb` housekeeping option may be needed but is out of scope for initial phases.
+1. **Playback isolation**: Should playback be exclusive (block all CAT commands) or concurrent? Initial design blocks CAT polling; revisit if users need to change frequency during playback.
+2. **Session listing API**: The HTTP frontend needs an endpoint to enumerate sessions (`GET /api/recorder/sessions`). Schema TBD in Phase 4.
+3. **Storage limits**: `max_session_duration_s` auto-splits sessions; a `max_total_size_gb` housekeeping option may be needed but is out of scope for initial phases.
