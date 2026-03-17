@@ -31,6 +31,9 @@
   --spectrum-plot-height: 160px;
   --jog-wheel-size: 83.2px;
   --header-waterfall-overlap: 0rem;
+  --card-base-max-width: 1280px;
+  --card-max-width: 1600px;
+  --card-bookmark-gutter: 4rem;
 }
 
 [data-theme="light"] {
@@ -75,7 +78,7 @@ body {
   overflow-y: auto;
 }
 .card {
-  width: min(100%, 1280px);
+  width: min(100%, var(--card-base-max-width));
   margin: 0 auto;
   padding: 0.85rem 1.25rem 1.5rem;
   background: transparent;
@@ -85,6 +88,15 @@ body {
   display: flex;
   flex-direction: column;
   overflow: visible;
+}
+
+@media (min-width: 1440px) {
+  .card {
+    width: min(
+      var(--card-max-width),
+      calc(100vw - (var(--card-bookmark-gutter) * 2))
+    );
+  }
 }
 .label { color: var(--text-muted); font-size: 0.9rem; margin-bottom: 6px; display: block; }
 #tab-main .label > span {
