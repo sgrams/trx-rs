@@ -980,11 +980,40 @@ static void ft2_encode_codeword_from_a91(const uint8_t a91[FTX_LDPC_K_BYTES], ui
 }
 
 
-static bool ft2_try_crc_candidate(const uint8_t a91[FTX_LDPC_K_BYTES], ftx_message_t* message)
+// Count how many of the 174 coded bits in a candidate codeword disagree
+// with the received hard decisions (sign of LLRs).  A legitimate OSD
+// correction should disagree in very few positions; a false CRC match on
+// noise will disagree in ~half of the 83 parity positions.
+static int ft2_count_hard_errors_vs_llr(const float log174[FTX_LDPC_N], const uint8_t codeword[FTX_LDPC_N])
+{
+    int errors = 0;
+    for (int i = 0; i < FTX_LDPC_N; ++i)
+    {
+        uint8_t received = (log174[i] >= 0.0f) ? 1 : 0;
+        if (received != codeword[i])
+            ++errors;
+    }
+    return errors;
+}
+
+// Maximum hard-error count for accepting an OSD result.
+// The (174,91) code has minimum distance ~20, so a legitimate near-threshold
+// decode should disagree in far fewer than 36 positions.  Random CRC matches
+// typically disagree in ~40-50 parity positions alone.
+#define FT2_OSD_MAX_HARD_ERRORS 36
+
+static bool ft2_try_crc_candidate(const uint8_t a91[FTX_LDPC_K_BYTES],
+                                  const float log174[FTX_LDPC_N],
+                                  ftx_message_t* message)
 {
     uint8_t codeword[FTX_LDPC_N];
     ft2_encode_codeword_from_a91(a91, codeword);
-    return ft2_unpack_message(codeword, message);
+    if (!ft2_unpack_message(codeword, message))
+        return false;
+    // Verify the codeword is consistent with what we actually received.
+    if (log174 && ft2_count_hard_errors_vs_llr(log174, codeword) > FT2_OSD_MAX_HARD_ERRORS)
+        return false;
+    return true;
 }
 
 static bool ft2_osd_lite_decode(const float log174[FTX_LDPC_N], ftx_message_t* message)
@@ -997,7 +1026,7 @@ static bool ft2_osd_lite_decode(const float log174[FTX_LDPC_N], ftx_message_t* m
             base_a91[i / 8] |= (uint8_t)(0x80u >> (i % 8));
     }
 
-    if (ft2_try_crc_candidate(base_a91, message))
+    if (ft2_try_crc_candidate(base_a91, log174, message))
         return true;
 
     ft2_reliability_t reliabilities[FTX_LDPC_K];
@@ -1018,7 +1047,7 @@ static bool ft2_osd_lite_decode(const float log174[FTX_LDPC_N], ftx_message_t* m
         memcpy(trial_a91, base_a91, sizeof(trial_a91));
         int b0 = reliabilities[i].index;
         trial_a91[b0 / 8] ^= (uint8_t)(0x80u >> (b0 % 8));
-        if (ft2_try_crc_candidate(trial_a91, message))
+        if (ft2_try_crc_candidate(trial_a91, log174, message))
             return true;
     }
 
@@ -1032,7 +1061,7 @@ static bool ft2_osd_lite_decode(const float log174[FTX_LDPC_N], ftx_message_t* m
             int b1 = reliabilities[j].index;
             trial_a91[b0 / 8] ^= (uint8_t)(0x80u >> (b0 % 8));
             trial_a91[b1 / 8] ^= (uint8_t)(0x80u >> (b1 % 8));
-            if (ft2_try_crc_candidate(trial_a91, message))
+            if (ft2_try_crc_candidate(trial_a91, log174, message))
                 return true;
         }
     }
