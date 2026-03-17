@@ -3426,6 +3426,12 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   white-space: nowrap;
 }
 
+#sch-entry-form .bm-form-grid {
+  gap: 0.75rem 0.75rem;
+}
+#sch-entry-form .bm-label {
+  gap: 0.35rem;
+}
 #bm-form-wrap,
 #sch-entry-form-wrap {
   position: fixed;
