@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: BSD-2-Clause
 
 #include <ft8/decode.h>
+#include <ft8/encode.h>
 #include <ft8/ldpc.h>
 #include <ft8/crc.h>
 #include <ft8/message.h>
@@ -1059,6 +1060,85 @@ static bool ft2_unpack_message(const uint8_t plain174[], ftx_message_t* message)
     return true;
 }
 
+// Compute post-decode SNR using all decoded symbols.
+//
+// For each symbol we know the exact transmitted tone (by re-encoding), so we
+// compare the signal-bin power against the minimum power of the remaining
+// (noise-only) bins.  This avoids the systematic under-reporting caused by
+// using only the adjacent bin as a noise reference: on a crowded band that
+// adjacent bin is often occupied by another station, inflating the apparent
+// noise floor.
+//
+// The per-symbol dB differences are averaged across all valid symbols, then
+// converted to the WSJT-X convention (signal power relative to noise in a
+// 2500 Hz reference bandwidth).
+static float ftx_post_decode_snr(
+    const ftx_waterfall_t* wf,
+    const ftx_candidate_t* cand,
+    const ftx_message_t* message)
+{
+    int is_ft4 = ftx_protocol_uses_ft4_layout(wf->protocol);
+    int nn = is_ft4 ? FT4_NN : FT8_NN;
+    int num_tones = is_ft4 ? 4 : 8;
+
+    uint8_t tones[FT4_NN]; // FT4_NN (105) >= FT8_NN (79)
+    if (is_ft4)
+        ft4_encode(message->payload, tones);
+    else
+        ft8_encode(message->payload, tones);
+
+    // Replicate get_cand_mag() from decode.c (which is static there).
+    int offset = cand->time_offset;
+    offset = (offset * wf->time_osr) + cand->time_sub;
+    offset = (offset * wf->freq_osr) + cand->freq_sub;
+    offset = (offset * wf->num_bins) + cand->freq_offset;
+    const WF_ELEM_T* mag_cand = wf->mag + offset;
+
+    float sum_snr = 0.0f;
+    int n_valid = 0;
+
+    for (int sym = 0; sym < nn; sym++)
+    {
+        int block_abs = cand->time_offset + sym;
+        if (block_abs < 0 || block_abs >= wf->num_blocks)
+            continue;
+
+        const WF_ELEM_T* p = mag_cand + (sym * wf->block_stride);
+        float sig_db = WF_ELEM_MAG(p[tones[sym]]);
+
+        float noise_min = 0.0f;
+        int found_noise = 0;
+        for (int t = 0; t < num_tones; t++)
+        {
+            if (t == tones[sym])
+                continue;
+            float db = WF_ELEM_MAG(p[t]);
+            if (!found_noise || db < noise_min)
+            {
+                noise_min = db;
+                found_noise = 1;
+            }
+        }
+
+        if (found_noise)
+        {
+            sum_snr += sig_db - noise_min;
+            n_valid++;
+        }
+    }
+
+    if (n_valid == 0)
+        return cand->score * 0.5f - 29.0f;
+
+    // bin_width_hz = 1 / (symbol_period * freq_osr)
+    // bw_correction = 10*log10(2500 / bin_width_hz)
+    //               = 10*log10(2500 * symbol_period * freq_osr)
+    float symbol_period = ftx_protocol_symbol_period(wf->protocol);
+    float bw_correction = 10.0f * log10f(2500.0f * symbol_period * (float)wf->freq_osr);
+
+    return (sum_snr / (float)n_valid) - bw_correction;
+}
+
 static int decode_from_waterfall_candidates(
     const ft8_decoder_t* dec,
     ft8_decode_result_t* out,
@@ -1129,7 +1209,7 @@ static int decode_from_waterfall_candidates(
         dst->text[sizeof(dst->text) - 1] = '\0';
         dst->dt_s = time_sec;
         dst->freq_hz = freq_hz;
-        dst->snr_db = cand->score * 0.5f - 29.0f;
+        dst->snr_db = ftx_post_decode_snr(wf, cand, &message);
 
         num_decoded++;
     }
