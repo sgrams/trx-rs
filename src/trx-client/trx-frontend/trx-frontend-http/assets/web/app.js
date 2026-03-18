@@ -4893,7 +4893,7 @@ function renderMapLocatorChipRow(container, items, selectedSet, kind) {
     });
   if (kind === "source") {
     if (isDefaultSourceState) {
-      helperText = "Default: all non-bookmark sources visible";
+      helperText = "Click a source to isolate it";
     }
   } else if (!(selectedSet instanceof Set) || selectedSet.size === 0) {
     helperText = `All ${kind === "band" ? "bands" : "sources"} visible by default`;
@@ -5519,7 +5519,15 @@ function initAprsMap() {
       const key = String(chip.dataset.filterKey || "");
       if (!key) return;
       if (kind === "source" && Object.prototype.hasOwnProperty.call(mapFilter, key)) {
-        mapFilter[key] = !mapFilter[key];
+        const sourceKeys = Object.keys(DEFAULT_MAP_SOURCE_FILTER);
+        const onlyThisSelected = mapFilter[key] && sourceKeys.every((k) => mapFilter[k] === (k === key));
+        if (onlyThisSelected) {
+          // clicking the sole active source restores defaults
+          for (const k of sourceKeys) mapFilter[k] = DEFAULT_MAP_SOURCE_FILTER[k];
+        } else {
+          // select only the clicked source
+          for (const k of sourceKeys) mapFilter[k] = (k === key);
+        }
         if (!mapFilter.aprs && selectedAprsTrackCall) {
           const entry = stationMarkers.get(String(selectedAprsTrackCall));
           if (entry && entry.track && aprsMap && aprsMap.hasLayer(entry.track)) {
