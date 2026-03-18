@@ -2553,8 +2553,9 @@ button:focus-visible, input:focus-visible, select:focus-visible {
     padding-top: 0.45rem;
   }
   .spectrum-edge-shift {
-    width: 1.5rem;
-    height: 2.35rem;
+    top: 0.34rem;
+    width: 1.3rem;
+    height: 1.3rem;
   }
   /* Bookmark side panels need too much horizontal space on narrow screens */
   .spectrum-bookmark-side { display: none !important; }
@@ -2563,10 +2564,10 @@ button:focus-visible, input:focus-visible, select:focus-visible {
     padding: 2px 6px;
   }
   .spectrum-edge-shift-left {
-    left: -1.8rem;
+    left: 0.34rem;
   }
   .spectrum-edge-shift-right {
-    right: -1.8rem;
+    right: 0.34rem;
   }
   #spectrum-bw-row,
   #spectrum-level-row {
@@ -2814,22 +2815,21 @@ button:focus-visible, input:focus-visible, select:focus-visible {
 }
 .spectrum-edge-shift {
   position: absolute;
-  top: calc(var(--spectrum-plot-height) / 2);
-  transform: translateY(-50%);
+  top: 0.42rem;
   z-index: 8;
-  width: 1.7rem;
-  height: 2.8rem;
+  width: 1.45rem;
+  height: 1.45rem;
   border: 1px solid color-mix(in srgb, var(--border-light) 85%, transparent);
-  background: color-mix(in srgb, var(--card-bg) 78%, transparent);
+  background: color-mix(in srgb, var(--card-bg) 82%, transparent);
   color: var(--accent-yellow);
-  border-radius: 999px;
+  border-radius: 0.78rem;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   font-size: 0;
   line-height: 1;
   cursor: pointer;
-  box-shadow: 0 8px 18px rgba(0,0,0,0.18);
+  box-shadow: 0 6px 14px rgba(0,0,0,0.18);
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
   transition: none;
@@ -2838,14 +2838,14 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   content: "";
   width: 0;
   height: 0;
-  border-top: 0.38rem solid transparent;
-  border-bottom: 0.38rem solid transparent;
+  border-top: 0.22rem solid transparent;
+  border-bottom: 0.22rem solid transparent;
 }
 .spectrum-edge-shift-left::before {
-  border-right: 0.52rem solid currentColor;
+  border-right: 0.34rem solid currentColor;
 }
 .spectrum-edge-shift-right::before {
-  border-left: 0.52rem solid currentColor;
+  border-left: 0.34rem solid currentColor;
 }
 .spectrum-edge-shift:hover {
   background: color-mix(in srgb, var(--btn-bg) 84%, transparent);
@@ -2853,13 +2853,13 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   border-color: var(--accent-yellow);
 }
 .spectrum-edge-shift:active {
-  transform: translateY(-50%);
+  transform: none;
 }
 .spectrum-edge-shift-left {
-  left: -2.05rem;
+  left: 0.42rem;
 }
 .spectrum-edge-shift-right {
-  right: -2.05rem;
+  right: 0.42rem;
 }
 #spectrum-freq-axis {
   position: relative;
