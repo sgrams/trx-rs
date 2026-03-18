@@ -47,7 +47,7 @@ fn encode174(message: &[u8], codeword: &mut [u8]) {
             nsum ^= parity8(message[j] & FTX_LDPC_GENERATOR[i][j]);
         }
 
-        if nsum % 2 != 0 {
+        if !nsum.is_multiple_of(2) {
             codeword[col_idx] |= col_mask;
         }
 

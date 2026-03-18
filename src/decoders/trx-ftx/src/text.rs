@@ -92,7 +92,7 @@ pub fn nchar(c: char, table: CharTable) -> Option<i32> {
 
     // Digits
     if table != CharTable::LettersSpace {
-        if c >= '0' && c <= '9' {
+        if c.is_ascii_digit() {
             return Some(n + (c as i32 - '0' as i32));
         }
         n += 10;
@@ -100,7 +100,7 @@ pub fn nchar(c: char, table: CharTable) -> Option<i32> {
 
     // Letters
     if table != CharTable::Numeric {
-        if c >= 'A' && c <= 'Z' {
+        if c.is_ascii_uppercase() {
             return Some(n + (c as i32 - 'A' as i32));
         }
         n += 26;
@@ -132,7 +132,7 @@ pub fn nchar(c: char, table: CharTable) -> Option<i32> {
 /// Convert a character to uppercase ASCII. Non-letter characters are returned
 /// unchanged.
 pub fn to_upper(c: char) -> char {
-    if c >= 'a' && c <= 'z' {
+    if c.is_ascii_lowercase() {
         char::from(c as u8 - b'a' + b'A')
     } else {
         c

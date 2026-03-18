@@ -37,9 +37,7 @@ pub fn ftx_extract_crc(a91: &[u8]) -> u16 {
 /// `payload` contains 77 bits of payload data, `a91` receives 91 bits (payload + CRC).
 pub fn ftx_add_crc(payload: &[u8], a91: &mut [u8]) {
     // Copy 77 bits of payload data
-    for i in 0..10 {
-        a91[i] = payload[i];
-    }
+    a91[..10].copy_from_slice(&payload[..10]);
 
     // Clear 3 bits after the payload to make 82 bits
     a91[9] &= 0xF8;

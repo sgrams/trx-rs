@@ -69,7 +69,7 @@ fn platanh(x: f32) -> f32 {
 
 /// Pack bit array into bytes (MSB first).
 fn pack_bits91(bit_array: &[u8], num_bits: usize, packed: &mut [u8]) {
-    let num_bytes = (num_bits + 7) / 8;
+    let num_bytes = num_bits.div_ceil(8);
     for b in packed[..num_bytes].iter_mut() {
         *b = 0;
     }
@@ -364,9 +364,7 @@ pub fn osd174_91(
             // Swap columns id and col
             if col != id {
                 for row in 0..k {
-                    let a = genmrb[row * n + id];
-                    genmrb[row * n + id] = genmrb[row * n + col];
-                    genmrb[row * n + col] = a;
+                    genmrb.swap(row * n + id, row * n + col);
                 }
                 indices.swap(id, col);
             }

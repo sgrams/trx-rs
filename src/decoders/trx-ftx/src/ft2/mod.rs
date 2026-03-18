@@ -296,7 +296,7 @@ impl Ft2Pipeline {
             };
 
             let freq_hz = (bin as f32 + delta) * df + ft2_frequency_offset_hz();
-            if freq_hz < 200.0 || freq_hz > 4910.0 {
+            if !(200.0..=4910.0).contains(&freq_hz) {
                 bin += 1;
                 continue;
             }
@@ -368,7 +368,7 @@ impl Ft2Pipeline {
 
             // Fine refinement
             for idf in (best_idf - 4)..=(best_idf + 4) {
-                if idf < FT2_SYNC_TWEAK_MIN || idf > FT2_SYNC_TWEAK_MAX {
+                if !(FT2_SYNC_TWEAK_MIN..=FT2_SYNC_TWEAK_MAX).contains(&idf) {
                     continue;
                 }
                 for start in (best_start - 5)..=(best_start + 5) {
@@ -427,7 +427,7 @@ impl Ft2Pipeline {
         let mut best_idf = hit.idf;
 
         for idf in (hit.idf - 4)..=(hit.idf + 4) {
-            if idf < FT2_SYNC_TWEAK_MIN || idf > FT2_SYNC_TWEAK_MAX {
+            if !(FT2_SYNC_TWEAK_MIN..=FT2_SYNC_TWEAK_MAX).contains(&idf) {
                 continue;
             }
             for start in (hit.start - 5)..=(hit.start + 5) {
@@ -463,10 +463,7 @@ impl Ft2Pipeline {
         extract_signal_region(&cb[..produced2], best_start, &mut signal);
 
         // Extract bit metrics
-        let bitmetrics = match bitmetrics::extract_bitmetrics_raw(&signal) {
-            Some(bm) => bm,
-            None => return None,
-        };
+        let bitmetrics = bitmetrics::extract_bitmetrics_raw(&signal)?;
 
         // Sync quality check using known Costas bit patterns
         let sync_bits_a: [u8; 8] = [0, 0, 0, 1, 1, 0, 1, 1];

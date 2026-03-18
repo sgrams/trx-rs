@@ -152,7 +152,7 @@ pub fn refine_sync(
     let mut best_idf = center_idf;
 
     for idf in (center_idf - idf_range)..=(center_idf + idf_range) {
-        if idf < FT2_SYNC_TWEAK_MIN || idf > FT2_SYNC_TWEAK_MAX {
+        if !(FT2_SYNC_TWEAK_MIN..=FT2_SYNC_TWEAK_MAX).contains(&idf) {
             continue;
         }
         for start in (center_start - start_range)..=(center_start + start_range) {

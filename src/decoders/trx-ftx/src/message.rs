@@ -179,16 +179,11 @@ fn is_space(c: u8) -> bool {
 fn copy_token(input: &str) -> (&str, String) {
     let input = input.trim_start();
     let end = input
-        .find(|c: char| c == ' ')
+        .find(' ')
         .unwrap_or(input.len());
     let token = &input[..end];
     let rest = &input[end..].trim_start();
     (rest, token.to_string())
-}
-
-/// Trim leading and trailing whitespace.
-fn trim(s: &str) -> &str {
-    s.trim()
 }
 
 /// Trim leading occurrences of a specific character.
@@ -405,7 +400,7 @@ fn pack28(
         return Some(((NTOKENS + MAX22) as i32 + n28, ip));
     }
 
-    if length >= 3 && length <= 11 {
+    if (3..=11).contains(&length) {
         // Non-standard callsign: compute 22-bit hash
         let (n22, _, _) = save_callsign(hash_table, callsign)?;
         ip = 0;
@@ -616,11 +611,13 @@ fn packgrid(grid4: &str) -> u16 {
     if bytes[0] == b'R' {
         let dd = dd_to_int(&grid4[1..]);
         let irpt = (35 + dd) as u16;
-        return (MAXGRID4 + irpt) | 0x8000; // ir = 1
+        // ir = 1
+        (MAXGRID4 + irpt) | 0x8000
     } else {
         let dd = dd_to_int(grid4);
         let irpt = (35 + dd) as u16;
-        return MAXGRID4 + irpt; // ir = 0
+        // ir = 0
+        MAXGRID4 + irpt
     }
 }
 
@@ -688,9 +685,6 @@ pub fn ftx_message_encode(
     message_text: &str,
 ) -> FtxMessageRc {
     let mut call_to: String;
-    let call_de: String;
-    let extra: String;
-
     let mut parse_pos = message_text;
     let is_cq = starts_with(message_text, "CQ ");
 
@@ -715,11 +709,11 @@ pub fn ftx_message_encode(
     }
 
     let (rest, token) = copy_token(parse_pos);
-    call_de = token;
+    let call_de: String = token;
     parse_pos = rest;
 
     let (rest, token) = copy_token(parse_pos);
-    extra = token;
+    let extra: String = token;
     parse_pos = rest;
 
     // Check token lengths
@@ -1490,7 +1484,7 @@ mod tests {
         // i3 is in bits 74..76: payload[9] bits 5..3
         // For i3=0, n3=5 (binary 101): bit2=1, bit1=0, bit0=1
         msg.payload[8] = (msg.payload[8] & 0xFE) | 1; // n3 bit2 = 1
-        msg.payload[9] = (0b01 << 6); // n3 bits 1..0 = 01, i3 = 0
+        msg.payload[9] = 0b01 << 6; // n3 bits 1..0 = 01, i3 = 0
 
         assert_eq!(msg.get_type(), FtxMessageType::Telemetry);
 

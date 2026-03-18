@@ -252,7 +252,7 @@ pub fn ftx_find_candidates(wf: &Waterfall, max_candidates: usize, min_score: i32
                         ft8_sync_score(wf, &cand)
                     };
 
-                    if score >= min_score as i32 {
+                    if score >= min_score {
                         if heap_size == max_candidates && score > heap[0].score as i32 {
                             heap_size -= 1;
                             heap[0] = heap[heap_size];
@@ -469,7 +469,7 @@ fn ftx_normalize_logl(log174: &mut [f32; FTX_LDPC_N]) {
 
 /// Pack bits into bytes (MSB first).
 pub fn pack_bits(bit_array: &[u8], num_bits: usize, packed: &mut [u8]) {
-    let num_bytes = (num_bits + 7) / 8;
+    let num_bytes = num_bits.div_ceil(8);
     for b in packed[..num_bytes].iter_mut() { *b = 0; }
     let mut mask: u8 = 0x80;
     let mut byte_idx = 0;

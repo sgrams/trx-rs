@@ -266,10 +266,6 @@ mod tests {
     #[test]
     fn normalize_metric_nonzero() {
         let mut m: Vec<f32> = (0..100).map(|i| (i as f32 - 50.0) * 0.1).collect();
-        let orig_variance: f32 = {
-            let mean: f32 = m.iter().sum::<f32>() / m.len() as f32;
-            m.iter().map(|&v| (v - mean) * (v - mean)).sum::<f32>() / m.len() as f32
-        };
         normalize_metric(&mut m);
         // After normalization, standard deviation should be ~1.0
         let mean: f32 = m.iter().sum::<f32>() / m.len() as f32;

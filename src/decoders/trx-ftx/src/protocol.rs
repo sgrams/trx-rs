@@ -104,8 +104,8 @@ pub const FT2_SYNC_OFFSET: usize = FT4_SYNC_OFFSET;
 pub const FTX_LDPC_N: usize = 174;
 pub const FTX_LDPC_K: usize = 91;
 pub const FTX_LDPC_M: usize = 83;
-pub const FTX_LDPC_N_BYTES: usize = (FTX_LDPC_N + 7) / 8;
-pub const FTX_LDPC_K_BYTES: usize = (FTX_LDPC_K + 7) / 8;
+pub const FTX_LDPC_N_BYTES: usize = FTX_LDPC_N.div_ceil(8);
+pub const FTX_LDPC_K_BYTES: usize = FTX_LDPC_K.div_ceil(8);
 
 // CRC parameters
 pub const FT8_CRC_POLYNOMIAL: u16 = 0x2757;
