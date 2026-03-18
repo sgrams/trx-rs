@@ -4884,16 +4884,11 @@ function renderMapLocatorChipRow(container, items, selectedSet, kind) {
     return;
   }
   let helperText = "";
-  const isDefaultSourceState = kind === "source"
-    && items.every((item) => {
-      const def = Object.prototype.hasOwnProperty.call(DEFAULT_MAP_SOURCE_FILTER, item.key)
-        ? !!DEFAULT_MAP_SOURCE_FILTER[item.key]
-        : true;
-      return !!mapFilter[item.key] === def;
-    });
+  const sourceKeys = kind === "source" ? Object.keys(DEFAULT_MAP_SOURCE_FILTER) : [];
+  const noneSelected = kind === "source" && sourceKeys.every((k) => !mapFilter[k]);
   if (kind === "source") {
-    if (isDefaultSourceState) {
-      helperText = "Click a source to isolate it";
+    if (noneSelected) {
+      helperText = "All sources visible \u2014 click to filter";
     }
   } else if (!(selectedSet instanceof Set) || selectedSet.size === 0) {
     helperText = `All ${kind === "band" ? "bands" : "sources"} visible by default`;
@@ -4903,15 +4898,8 @@ function renderMapLocatorChipRow(container, items, selectedSet, kind) {
     btn.type = "button";
     btn.className = "map-locator-chip";
     const isActive = kind === "source" ? !!mapFilter[item.key] : selectedSet.has(item.key);
-    if (kind === "source" && isDefaultSourceState) {
-      const def = Object.prototype.hasOwnProperty.call(DEFAULT_MAP_SOURCE_FILTER, item.key)
-        ? !!DEFAULT_MAP_SOURCE_FILTER[item.key]
-        : true;
-      if (def) {
-        btn.classList.add("is-default");
-      } else {
-        btn.classList.add("is-inactive");
-      }
+    if (kind === "source" && noneSelected) {
+      btn.classList.add("is-default");
     } else if (!isActive) {
       btn.classList.add("is-inactive");
     }
@@ -5519,23 +5507,18 @@ function initAprsMap() {
       const key = String(chip.dataset.filterKey || "");
       if (!key) return;
       if (kind === "source" && Object.prototype.hasOwnProperty.call(mapFilter, key)) {
-        const sourceKeys = Object.keys(DEFAULT_MAP_SOURCE_FILTER);
-        const onlyThisSelected = mapFilter[key] && sourceKeys.every((k) => mapFilter[k] === (k === key));
-        if (onlyThisSelected) {
-          // clicking the sole active source restores defaults
-          for (const k of sourceKeys) mapFilter[k] = DEFAULT_MAP_SOURCE_FILTER[k];
-        } else {
-          // select only the clicked source
-          for (const k of sourceKeys) mapFilter[k] = (k === key);
-        }
-        if (!mapFilter.aprs && selectedAprsTrackCall) {
+        // toggle the clicked source; when none are selected everything is shown
+        mapFilter[key] = !mapFilter[key];
+        const srcKeys = Object.keys(DEFAULT_MAP_SOURCE_FILTER);
+        const anySelected = srcKeys.some((k) => mapFilter[k]);
+        if (anySelected && !mapFilter.aprs && selectedAprsTrackCall) {
           const entry = stationMarkers.get(String(selectedAprsTrackCall));
           if (entry && entry.track && aprsMap && aprsMap.hasLayer(entry.track)) {
             entry.track.removeFrom(aprsMap);
           }
           selectedAprsTrackCall = null;
         }
-        if (!mapFilter.ais && selectedAisTrackMmsi) {
+        if (anySelected && !mapFilter.ais && selectedAisTrackMmsi) {
           const entry = aisMarkers.get(String(selectedAisTrackMmsi));
           if (entry && entry.track && aprsMap && aprsMap.hasLayer(entry.track)) {
             entry.track.removeFrom(aprsMap);
@@ -6240,21 +6223,17 @@ function maidenheadToBounds(grid) {
 
 function applyMapFilter() {
   if (!aprsMap) return;
+  const sourceKeys = Object.keys(DEFAULT_MAP_SOURCE_FILTER);
+  const noneSelected = sourceKeys.every((k) => !mapFilter[k]);
   mapMarkers.forEach((marker) => {
     const type = marker.__trxType;
+    const sourceVisible = noneSelected
+      ? DEFAULT_MAP_SOURCE_FILTER[type] !== undefined ? DEFAULT_MAP_SOURCE_FILTER[type] : true
+      : !!mapFilter[type];
     const visible = marker.__trxHistoryVisible !== false
       && markerPassesSearchFilter(marker)
       && markerPassesLocatorFilters(marker)
-      && (
-      (type === "bookmark" && mapFilter.bookmark) ||
-      (type === "ais" && mapFilter.ais) ||
-      (type === "vdes" && mapFilter.vdes) ||
-      (type === "aprs" && mapFilter.aprs) ||
-      (type === "ft8" && mapFilter.ft8) ||
-      (type === "ft4" && mapFilter.ft4) ||
-      (type === "ft2" && mapFilter.ft2) ||
-      (type === "wspr" && mapFilter.wspr)
-    );
+      && sourceVisible;
     const onMap = aprsMap.hasLayer(marker);
     if (visible && !onMap) {
       marker.addTo(aprsMap);
