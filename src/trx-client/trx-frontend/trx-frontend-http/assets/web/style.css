@@ -34,7 +34,6 @@
   --card-base-max-width: 1280px;
   --card-max-width: 1600px;
   --card-bookmark-gutter: 4rem;
-  --signal-visual-max-width: 67.5rem;
   --spectrum-bookmark-side-width: 6.5rem;
   --spectrum-bookmark-side-offset: 8.85rem;
 }
@@ -632,8 +631,7 @@ small { color: var(--text-muted); }
   display: flex;
   flex-direction: column;
   gap: 0;
-  width: min(100%, var(--signal-visual-max-width));
-  margin: 0 auto 0.9rem;
+  margin-bottom: 0.9rem;
 }
 #signal-split-control {
   position: absolute;
