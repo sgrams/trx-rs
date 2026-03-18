@@ -36,7 +36,7 @@ use trx_core::decode::{
 use trx_core::rig::state::{RigMode, RigState};
 use trx_core::vchan::SharedVChanManager;
 use trx_cw::CwDecoder;
-use trx_ft8::Ft8Decoder;
+use trx_ftx::Ft8Decoder;
 use trx_vdes::VdesDecoder;
 use trx_wspr::WsprDecoder;
 use uuid::Uuid;
@@ -92,7 +92,7 @@ fn decode_ft2_window(
     decoder: &mut Ft8Decoder,
     samples: &[f32],
     max_results: usize,
-) -> Vec<trx_ft8::Ft8DecodeResult> {
+) -> Vec<trx_ftx::Ft8DecodeResult> {
     let window_samples = decoder.window_samples();
     if samples.len() < window_samples {
         return Vec::new();

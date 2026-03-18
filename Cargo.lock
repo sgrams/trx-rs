@@ -2643,14 +2643,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "trx-ft8"
-version = "0.1.0"
-dependencies = [
- "cc",
- "libc",
-]
-
-[[package]]
 name = "trx-ftx"
 version = "0.1.0"
 dependencies = [
@@ -2712,7 +2704,7 @@ dependencies = [
  "trx-core",
  "trx-cw",
  "trx-decode-log",
- "trx-ft8",
+ "trx-ftx",
  "trx-protocol",
  "trx-reporting",
  "trx-vdes",
