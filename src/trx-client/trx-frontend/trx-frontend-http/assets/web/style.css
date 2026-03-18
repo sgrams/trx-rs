@@ -2553,9 +2553,8 @@ button:focus-visible, input:focus-visible, select:focus-visible {
     padding-top: 0.45rem;
   }
   .spectrum-edge-shift {
-    top: 0.34rem;
-    width: 1.3rem;
-    height: 1.3rem;
+    width: 1.15rem;
+    height: 1.15rem;
   }
   /* Bookmark side panels need too much horizontal space on narrow screens */
   .spectrum-bookmark-side { display: none !important; }
@@ -2564,10 +2563,10 @@ button:focus-visible, input:focus-visible, select:focus-visible {
     padding: 2px 6px;
   }
   .spectrum-edge-shift-left {
-    left: 0.34rem;
+    left: 0.2rem;
   }
   .spectrum-edge-shift-right {
-    right: 0.34rem;
+    right: 0.2rem;
   }
   #spectrum-bw-row,
   #spectrum-level-row {
@@ -2815,14 +2814,15 @@ button:focus-visible, input:focus-visible, select:focus-visible {
 }
 .spectrum-edge-shift {
   position: absolute;
-  top: 0.42rem;
+  top: 50%;
+  transform: translateY(-50%);
   z-index: 8;
-  width: 1.45rem;
-  height: 1.45rem;
+  width: 1.2rem;
+  height: 1.2rem;
   border: 1px solid color-mix(in srgb, var(--border-light) 85%, transparent);
   background: color-mix(in srgb, var(--card-bg) 82%, transparent);
   color: var(--accent-yellow);
-  border-radius: 0.78rem;
+  border-radius: 999px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -2853,13 +2853,13 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   border-color: var(--accent-yellow);
 }
 .spectrum-edge-shift:active {
-  transform: none;
+  transform: translateY(-50%);
 }
 .spectrum-edge-shift-left {
-  left: 0.42rem;
+  left: 0.24rem;
 }
 .spectrum-edge-shift-right {
-  right: 0.42rem;
+  right: 0.24rem;
 }
 #spectrum-freq-axis {
   position: relative;

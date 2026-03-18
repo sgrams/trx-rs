@@ -8935,8 +8935,17 @@ function updateSpectrumFreqAxis(range) {
 
   const firstHz = Math.ceil(range.visLoHz / stepHz) * stepHz;
   spectrumFreqAxis.innerHTML = "";
+  const leftShiftBtn = document.getElementById("spectrum-center-left-btn");
+  const rightShiftBtn = document.getElementById("spectrum-center-right-btn");
+  if (leftShiftBtn) spectrumFreqAxis.appendChild(leftShiftBtn);
+  if (rightShiftBtn) spectrumFreqAxis.appendChild(rightShiftBtn);
   const axisWidth = spectrumFreqAxis.clientWidth || 0;
-  const edgePad = 6;
+  const buttonReserve = Math.max(
+    leftShiftBtn?.offsetWidth || 0,
+    rightShiftBtn?.offsetWidth || 0,
+    0,
+  );
+  const edgePad = Math.max(6, buttonReserve + 10);
   for (let hz = firstHz; hz <= range.visHiHz + stepHz * 0.01; hz += stepHz) {
     const frac = (hz - range.visLoHz) / range.visSpanHz;
     if (frac < 0 || frac > 1) continue;
