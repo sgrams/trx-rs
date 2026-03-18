@@ -54,7 +54,7 @@ src/
   decoders/
     trx-aprs/         # APRS packet decoder
     trx-cw/           # CW (Morse) decoder
-    trx-ft8/          # FT8 decoder (wraps external ft8_lib C library)
+    trx-ftx/          # Pure Rust FTx decoder (FT8/FT4/FT2)
     trx-wspr/         # WSPR decoder
     trx-decode-log/   # Shared decoder logging (JSON Lines, date-rotated files)
 ```
@@ -86,7 +86,7 @@ The rig controller (`src/trx-core/src/rig/controller/`) is the central state man
 
 ### Decoders
 
-Signal decoders run as background tasks in `trx-server`, consuming decoded audio. `trx-ft8` wraps a C library (`external/ft8_lib`). Decoded frames can be forwarded to PSKReporter and APRS-IS (IGate) uplinks, or logged via `trx-decode-log`.
+Signal decoders run as background tasks in `trx-server`, consuming decoded audio. `trx-ftx` provides the FT8/FT4/FT2 decoder in pure Rust. Decoded frames can be forwarded to PSKReporter and APRS-IS (IGate) uplinks, or logged via `trx-decode-log`.
 
 ### Plugin system
 

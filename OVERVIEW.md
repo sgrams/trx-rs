@@ -52,7 +52,7 @@ Target users are amateur radio operators who want networked, automated, or multi
 | CAT serial | tokio-serial |
 | CLI | clap |
 | Logging | tracing / tracing-subscriber |
-| FT8 decode | ft8_lib (external C library via FFI) |
+| FTx decode | trx-ftx (pure Rust) |
 
 ---
 
@@ -144,7 +144,7 @@ trx-rs/                          # Workspace root
     └── decoders/
         ├── trx-aprs/            # APRS packet decoder
         ├── trx-cw/              # CW / Morse decoder
-        ├── trx-ft8/             # FT8 decoder (wraps ft8_lib C library)
+        ├── trx-ftx/             # Pure Rust FTx decoder (FT8/FT4/FT2)
         ├── trx-wspr/            # WSPR beacon decoder
         ├── trx-rds/             # FM RDS decoder
         └── trx-decode-log/      # JSON Lines log rotation for decoded frames
@@ -704,7 +704,7 @@ All decoders run as background Tokio tasks inside `trx-server`. They subscribe t
 |-------|---------|-------|
 | `trx-aprs` | APRS (AX.25) | Forwards to APRS-IS if enabled |
 | `trx-cw` | CW / Morse | Auto WPM detection |
-| `trx-ft8` | FT8 | Wraps `external/ft8_lib` C library via FFI; posts to PSKReporter |
+| `trx-ftx` | FTx | Pure Rust FT8/FT4/FT2 decoder; posts to PSKReporter |
 | `trx-wspr` | WSPR beacons | Posts to PSKReporter |
 | `trx-rds` | FM RDS | Station name, radiotext, time |
 | `trx-decode-log` | Logging infrastructure | JSON Lines, date-rotated files |

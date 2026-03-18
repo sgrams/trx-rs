@@ -2,9 +2,9 @@
 
 ## Goal
 
-Replace `trx-ft8` (C FFI wrapper around ft8_lib + custom FT2 code) with a pure Rust
-implementation. The new `trx-ftx` crate provides the exact same public API
-(`Ft8Decoder`, `Ft8DecodeResult`) so it is a drop-in replacement.
+`trx-ftx` is the pure Rust replacement for the old `trx-ft8` C FFI wrapper.
+It provides the same public API (`Ft8Decoder`, `Ft8DecodeResult`) so it can
+serve as a drop-in decoder implementation.
 
 ## Why
 
@@ -85,21 +85,22 @@ hound = "3"             # WAV file reading for integration tests
 ### Phase 5: Migration
 14. Convert `trx-ft8` to thin re-export of `trx-ftx`
 15. Delete C sources: `ft8_wrapper.c`, `ft2_ldpc.c`, `build.rs`
+16. Remove the vendored `ft8_lib` checkout after the port is complete
 
-## C Sources Being Ported
+## Historical C Sources Ported
 
 | C Source | Rust Target | Lines |
 |----------|-------------|-------|
-| `external/ft8_lib/ft8/message.c` | `message.rs` | 1156 |
+| `ft8_lib/ft8/message.c` | `message.rs` | 1156 |
 | `src/decoders/trx-ft8/src/ft8_wrapper.c` | `decoder.rs` + `ft2/` | 1800 |
-| `external/ft8_lib/ft8/decode.c` | `decode.rs` | 773 |
-| `external/ft8_lib/ft8/constants.c` | `constants.rs` | 391 |
-| `external/ft8_lib/ft8/text.c` | `text.rs` | 303 |
-| `external/ft8_lib/common/monitor.c` | `monitor.rs` | 261 |
-| `external/ft8_lib/ft8/ldpc.c` | `ldpc.rs` | 251 |
-| `external/ft8_lib/ft8/encode.c` | `encode.rs` | 200 |
-| `external/ft8_lib/ft8/crc.c` | `crc.rs` | 63 |
-| `external/ft8_lib/fft/*.c` | replaced by `rustfft` | 555 |
+| `ft8_lib/ft8/decode.c` | `decode.rs` | 773 |
+| `ft8_lib/ft8/constants.c` | `constants.rs` | 391 |
+| `ft8_lib/ft8/text.c` | `text.rs` | 303 |
+| `ft8_lib/common/monitor.c` | `monitor.rs` | 261 |
+| `ft8_lib/ft8/ldpc.c` | `ldpc.rs` | 251 |
+| `ft8_lib/ft8/encode.c` | `encode.rs` | 200 |
+| `ft8_lib/ft8/crc.c` | `crc.rs` | 63 |
+| `ft8_lib/fft/*.c` | replaced by `rustfft` | 555 |
 
 ## Public API (matches trx-ft8 exactly)
 
@@ -129,5 +130,5 @@ impl Ft8Decoder {
 ## Testing Strategy
 
 - Unit tests per module: CRC round-trip, LDPC recovery, message pack/unpack
-- Integration tests: decode WAV files from `external/ft8_lib/test/wav/`
+- Integration tests: decode reference WAV fixtures when available
 - Compatibility test: `ft2_uses_distinct_block_size` (FT4=576, FT2=288, window=45000)

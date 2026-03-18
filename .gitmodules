@@ -5,6 +5,3 @@
 [submodule "docs"]
 	path = docs
 	url = http://github.com/sgrams/trx-rs.wiki.git
-[submodule "external/ft8_lib"]
-	path = external/ft8_lib
-	url = ssh://git@github.com/sgrams/ft8_lib.git
