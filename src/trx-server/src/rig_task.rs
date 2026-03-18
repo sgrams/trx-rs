@@ -946,13 +946,29 @@ fn invalidate_main_decoder_windows_on_freq_change(state: &mut RigState, prev_fre
     if state.status.freq.hz == prev_freq_hz {
         return;
     }
-    state.aprs_decode_reset_seq += 1;
-    state.hf_aprs_decode_reset_seq += 1;
-    state.cw_decode_reset_seq += 1;
-    state.ft8_decode_reset_seq += 1;
-    state.ft4_decode_reset_seq += 1;
-    state.ft2_decode_reset_seq += 1;
-    state.wspr_decode_reset_seq += 1;
+
+    match state.status.mode {
+        RigMode::PKT => {
+            state.aprs_decode_reset_seq += 1;
+        }
+        RigMode::DIG => {
+            state.hf_aprs_decode_reset_seq += 1;
+            state.ft8_decode_reset_seq += 1;
+            state.ft4_decode_reset_seq += 1;
+            state.ft2_decode_reset_seq += 1;
+            state.wspr_decode_reset_seq += 1;
+        }
+        RigMode::USB => {
+            state.ft8_decode_reset_seq += 1;
+            state.ft4_decode_reset_seq += 1;
+            state.ft2_decode_reset_seq += 1;
+            state.wspr_decode_reset_seq += 1;
+        }
+        RigMode::CW | RigMode::CWR => {
+            state.cw_decode_reset_seq += 1;
+        }
+        _ => {}
+    }
 }
 
 fn sync_machine_state(machine: &mut RigStateMachine, state: &RigState) {
@@ -1093,8 +1109,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn freq_change_invalidates_all_main_decoder_windows() {
+    fn pkt_freq_change_only_invalidates_aprs() {
         let mut state = RigState::new_uninitialized();
+        state.apply_mode(RigMode::PKT);
         let prev_freq_hz = state.status.freq.hz;
         state.apply_freq(Freq {
             hz: prev_freq_hz + 2_700,
@@ -1103,12 +1120,59 @@ mod tests {
         invalidate_main_decoder_windows_on_freq_change(&mut state, prev_freq_hz);
 
         assert_eq!(state.aprs_decode_reset_seq, 1);
+        assert_eq!(state.hf_aprs_decode_reset_seq, 0);
+        assert_eq!(state.cw_decode_reset_seq, 0);
+        assert_eq!(state.ft8_decode_reset_seq, 0);
+        assert_eq!(state.ft4_decode_reset_seq, 0);
+        assert_eq!(state.ft2_decode_reset_seq, 0);
+        assert_eq!(state.wspr_decode_reset_seq, 0);
+    }
+
+    #[test]
+    fn dig_freq_change_invalidates_digital_decoders() {
+        let mut state = RigState::new_uninitialized();
+        state.apply_mode(RigMode::DIG);
+        let prev_freq_hz = state.status.freq.hz;
+        state.apply_freq(Freq {
+            hz: prev_freq_hz + 2_700,
+        });
+
+        invalidate_main_decoder_windows_on_freq_change(&mut state, prev_freq_hz);
+
+        assert_eq!(state.aprs_decode_reset_seq, 0);
         assert_eq!(state.hf_aprs_decode_reset_seq, 1);
-        assert_eq!(state.cw_decode_reset_seq, 1);
+        assert_eq!(state.cw_decode_reset_seq, 0);
         assert_eq!(state.ft8_decode_reset_seq, 1);
         assert_eq!(state.ft4_decode_reset_seq, 1);
         assert_eq!(state.ft2_decode_reset_seq, 1);
         assert_eq!(state.wspr_decode_reset_seq, 1);
+    }
+
+    #[test]
+    fn wfm_freq_change_does_not_touch_main_decoders() {
+        let mut state = RigState::new_uninitialized();
+        state.apply_mode(RigMode::WFM);
+        state.aprs_decode_reset_seq = 2;
+        state.hf_aprs_decode_reset_seq = 3;
+        state.cw_decode_reset_seq = 4;
+        state.ft8_decode_reset_seq = 5;
+        state.ft4_decode_reset_seq = 6;
+        state.ft2_decode_reset_seq = 7;
+        state.wspr_decode_reset_seq = 8;
+        let prev_freq_hz = state.status.freq.hz;
+        state.apply_freq(Freq {
+            hz: prev_freq_hz + 200_000,
+        });
+
+        invalidate_main_decoder_windows_on_freq_change(&mut state, prev_freq_hz);
+
+        assert_eq!(state.aprs_decode_reset_seq, 2);
+        assert_eq!(state.hf_aprs_decode_reset_seq, 3);
+        assert_eq!(state.cw_decode_reset_seq, 4);
+        assert_eq!(state.ft8_decode_reset_seq, 5);
+        assert_eq!(state.ft4_decode_reset_seq, 6);
+        assert_eq!(state.ft2_decode_reset_seq, 7);
+        assert_eq!(state.wspr_decode_reset_seq, 8);
     }
 
     #[test]
