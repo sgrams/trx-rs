@@ -2553,8 +2553,7 @@ button:focus-visible, input:focus-visible, select:focus-visible {
     padding-top: 0.45rem;
   }
   .spectrum-edge-shift {
-    width: 1.15rem;
-    height: 1.15rem;
+    width: 0.95rem;
   }
   /* Bookmark side panels need too much horizontal space on narrow screens */
   .spectrum-bookmark-side { display: none !important; }
@@ -2817,43 +2816,43 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   top: 50%;
   transform: translateY(-50%);
   z-index: 8;
-  width: 1.2rem;
-  height: 1.2rem;
-  border: 1px solid color-mix(in srgb, var(--border-light) 85%, transparent);
-  background: color-mix(in srgb, var(--card-bg) 82%, transparent);
-  color: var(--accent-yellow);
-  border-radius: 999px;
+  width: 1rem;
+  height: 100%;
+  padding: 0;
+  border: none;
+  background: none;
+  color: color-mix(in srgb, var(--text-muted) 78%, var(--accent-yellow));
   display: inline-flex;
   align-items: center;
   justify-content: center;
   font-size: 0;
   line-height: 1;
   cursor: pointer;
-  box-shadow: 0 6px 14px rgba(0,0,0,0.18);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
-  transition: none;
+  appearance: none;
+  -webkit-appearance: none;
+  transition: color 120ms ease, opacity 120ms ease;
+  opacity: 0.92;
 }
 .spectrum-edge-shift::before {
   content: "";
   width: 0;
   height: 0;
-  border-top: 0.22rem solid transparent;
-  border-bottom: 0.22rem solid transparent;
+  border-top: 0.24rem solid transparent;
+  border-bottom: 0.24rem solid transparent;
 }
 .spectrum-edge-shift-left::before {
-  border-right: 0.34rem solid currentColor;
+  border-right: 0.38rem solid currentColor;
 }
 .spectrum-edge-shift-right::before {
-  border-left: 0.34rem solid currentColor;
+  border-left: 0.38rem solid currentColor;
 }
 .spectrum-edge-shift:hover {
-  background: color-mix(in srgb, var(--btn-bg) 84%, transparent);
-  color: var(--text-heading);
-  border-color: var(--accent-yellow);
+  color: var(--accent-yellow);
+  opacity: 1;
 }
 .spectrum-edge-shift:active {
   transform: translateY(-50%);
+  color: var(--text-heading);
 }
 .spectrum-edge-shift-left {
   left: 0.24rem;
