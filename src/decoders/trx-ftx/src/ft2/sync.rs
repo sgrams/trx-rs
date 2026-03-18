@@ -9,6 +9,7 @@
 //! reference across time and frequency offsets.
 
 use num_complex::Complex32;
+use std::sync::OnceLock;
 
 use crate::constants::FT4_COSTAS_PATTERN;
 
@@ -16,6 +17,12 @@ use super::{FT2_NDOWN, FT2_NSS, FT2_SYMBOL_PERIOD_F, FT2_SYNC_TWEAK_MAX, FT2_SYN
 
 /// Number of frequency tweak entries.
 const NUM_TWEAKS: usize = (FT2_SYNC_TWEAK_MAX - FT2_SYNC_TWEAK_MIN) as usize + 1;
+const SYNC_GROUP_COUNT: usize = 4;
+const SYNC_SAMPLES: usize = 64;
+const SAMPLE_STRIDE: usize = 2;
+const GROUP_STRIDE: i32 = 33 * FT2_NSS as i32;
+const GROUP_LAST_SAMPLE_OFFSET: i32 = SAMPLE_STRIDE as i32 * (SYNC_SAMPLES as i32 - 1);
+const FRAME_LAST_SAMPLE_OFFSET: i32 = 3 * GROUP_STRIDE + GROUP_LAST_SAMPLE_OFFSET;
 
 /// Precomputed sync and frequency-tweak waveforms.
 pub struct SyncWaveforms {
@@ -73,6 +80,74 @@ pub fn prepare_sync_waveforms() -> SyncWaveforms {
     }
 }
 
+type SyncReferenceBank = [[[Complex32; SYNC_SAMPLES]; SYNC_GROUP_COUNT]; NUM_TWEAKS];
+
+fn sync_reference_bank() -> &'static SyncReferenceBank {
+    static REFS: OnceLock<SyncReferenceBank> = OnceLock::new();
+
+    REFS.get_or_init(|| {
+        let waveforms = prepare_sync_waveforms();
+        let mut refs = [[[Complex32::new(0.0, 0.0); SYNC_SAMPLES]; SYNC_GROUP_COUNT]; NUM_TWEAKS];
+
+        for tw_idx in 0..NUM_TWEAKS {
+            for group in 0..SYNC_GROUP_COUNT {
+                for i in 0..SYNC_SAMPLES {
+                    refs[tw_idx][group][i] =
+                        (waveforms.sync_wave[group][i] * waveforms.tweak_wave[tw_idx][i]).conj();
+                }
+            }
+        }
+
+        refs
+    })
+}
+
+#[inline(always)]
+fn correlate_group_fast(
+    samples: &[Complex32],
+    pos: usize,
+    refs: &[Complex32; SYNC_SAMPLES],
+) -> f32 {
+    let mut sum_re = 0.0f32;
+    let mut sum_im = 0.0f32;
+
+    for i in 0..SYNC_SAMPLES {
+        let sample = samples[pos + i * SAMPLE_STRIDE];
+        let reference = refs[i];
+        sum_re += sample.re * reference.re - sample.im * reference.im;
+        sum_im += sample.re * reference.im + sample.im * reference.re;
+    }
+
+    (sum_re * sum_re + sum_im * sum_im).sqrt()
+}
+
+#[inline(always)]
+fn correlate_group_clipped(
+    samples: &[Complex32],
+    pos: i32,
+    refs: &[Complex32; SYNC_SAMPLES],
+) -> (f32, usize) {
+    let mut sum_re = 0.0f32;
+    let mut sum_im = 0.0f32;
+    let mut usable = 0usize;
+    let n_samples = samples.len() as i32;
+
+    for i in 0..SYNC_SAMPLES {
+        let sample_idx = pos + i as i32 * SAMPLE_STRIDE as i32;
+        if sample_idx < 0 || sample_idx >= n_samples {
+            continue;
+        }
+
+        let sample = samples[sample_idx as usize];
+        let reference = refs[i];
+        sum_re += sample.re * reference.re - sample.im * reference.im;
+        sum_im += sample.re * reference.im + sample.im * reference.re;
+        usable += 1;
+    }
+
+    ((sum_re * sum_re + sum_im * sum_im).sqrt(), usable)
+}
+
 /// Compute the 2D sync score for a given time offset and frequency tweak.
 ///
 /// Correlates the downsampled complex samples against the four Costas sync
@@ -88,46 +163,36 @@ pub fn sync2d_score(
     samples: &[Complex32],
     start: i32,
     idf: i32,
-    waveforms: &SyncWaveforms,
+    _waveforms: &SyncWaveforms,
 ) -> f32 {
-    let nss = FT2_NSS as i32;
     let n_samples = samples.len() as i32;
-
-    // The four sync groups are at symbol positions 0, 33, 66, 99 within the frame
-    let positions = [
-        start,
-        start + 33 * nss,
-        start + 66 * nss,
-        start + 99 * nss,
-    ];
-
     let tw_idx = (idf - FT2_SYNC_TWEAK_MIN) as usize;
-    if tw_idx >= waveforms.tweak_wave.len() {
+    if tw_idx >= NUM_TWEAKS {
         return 0.0;
     }
-    let tweak = &waveforms.tweak_wave[tw_idx];
+
+    let refs = &sync_reference_bank()[tw_idx];
+    let scale = 1.0 / (2.0 * FT2_NSS as f32);
 
     let mut score = 0.0f32;
 
-    for group in 0..4 {
-        let pos = positions[group];
-        let mut sum = Complex32::new(0.0, 0.0);
-        let mut usable = 0;
+    if start >= 0 && start + FRAME_LAST_SAMPLE_OFFSET < n_samples {
+        for (group, refs_group) in refs.iter().enumerate() {
+            let pos = (start + group as i32 * GROUP_STRIDE) as usize;
+            score += correlate_group_fast(samples, pos, refs_group) * scale;
+        }
+        return score;
+    }
 
-        for i in 0..64 {
-            let sample_idx = pos + 2 * i as i32;
-            if sample_idx < 0 || sample_idx >= n_samples {
-                continue;
-            }
-            // Correlate: multiply received sample by conjugate of
-            // (sync_reference * tweak_phasor)
-            let reference = waveforms.sync_wave[group][i] * tweak[i];
-            sum += samples[sample_idx as usize] * reference.conj();
-            usable += 1;
+    for (group, refs_group) in refs.iter().enumerate() {
+        let pos = start + group as i32 * GROUP_STRIDE;
+        if pos >= n_samples || pos + GROUP_LAST_SAMPLE_OFFSET < 0 {
+            continue;
         }
 
+        let (corr, usable) = correlate_group_clipped(samples, pos, refs_group);
         if usable > 16 {
-            score += sum.norm() / (2.0 * FT2_NSS as f32);
+            score += corr * scale;
         }
     }
 

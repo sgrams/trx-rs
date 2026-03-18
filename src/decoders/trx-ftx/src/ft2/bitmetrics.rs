@@ -15,6 +15,178 @@ use crate::constants::{FT4_COSTAS_PATTERN, FT4_GRAY_MAP};
 
 use super::{FT2_FRAME_SYMBOLS, FT2_NSS};
 
+const N_METRICS: usize = 2 * FT2_FRAME_SYMBOLS;
+
+/// Reusable FFT plans and scratch buffers for bit-metric extraction.
+pub struct BitMetricsWorkspace {
+    fft: std::sync::Arc<dyn rustfft::Fft<f32>>,
+    scratch: Vec<Complex32>,
+    symbols: [[Complex32; 4]; FT2_FRAME_SYMBOLS],
+    s4: [[f32; 4]; FT2_FRAME_SYMBOLS],
+    metric1: [f32; N_METRICS],
+    metric2: [f32; N_METRICS],
+    metric4: [f32; N_METRICS],
+    bitmetrics: [[f32; 3]; N_METRICS],
+    csymb: [Complex32; FT2_NSS],
+}
+
+impl BitMetricsWorkspace {
+    pub fn new() -> Self {
+        let mut planner = FftPlanner::<f32>::new();
+        let fft = planner.plan_fft_forward(FT2_NSS);
+        let scratch = vec![Complex32::new(0.0, 0.0); fft.get_inplace_scratch_len()];
+
+        Self {
+            fft,
+            scratch,
+            symbols: [[Complex32::new(0.0, 0.0); 4]; FT2_FRAME_SYMBOLS],
+            s4: [[0.0; 4]; FT2_FRAME_SYMBOLS],
+            metric1: [0.0; N_METRICS],
+            metric2: [0.0; N_METRICS],
+            metric4: [0.0; N_METRICS],
+            bitmetrics: [[0.0; 3]; N_METRICS],
+            csymb: [Complex32::new(0.0, 0.0); FT2_NSS],
+        }
+    }
+
+    /// Extract bit metrics into a reusable internal buffer.
+    pub fn extract<'a>(&'a mut self, signal: &[Complex32]) -> Option<&'a [[f32; 3]]> {
+        self.metric1.fill(0.0);
+        self.metric2.fill(0.0);
+        self.metric4.fill(0.0);
+
+        for sym in 0..FT2_FRAME_SYMBOLS {
+            let offset = sym * FT2_NSS;
+            if offset + FT2_NSS <= signal.len() {
+                self.csymb
+                    .copy_from_slice(&signal[offset..(offset + FT2_NSS)]);
+            } else {
+                self.csymb.fill(Complex32::new(0.0, 0.0));
+                let remaining = signal.len().saturating_sub(offset);
+                self.csymb[..remaining].copy_from_slice(&signal[offset..(offset + remaining)]);
+            }
+
+            self.fft
+                .process_with_scratch(&mut self.csymb, &mut self.scratch);
+
+            for tone in 0..4 {
+                let symbol = self.csymb[tone];
+                self.symbols[sym][tone] = symbol;
+                self.s4[sym][tone] = symbol.norm();
+            }
+        }
+
+        // Sync quality check: verify Costas patterns are detectable
+        let mut sync_ok = 0;
+        for group in 0..4 {
+            let base = group * 33;
+            for i in 0..4 {
+                if base + i >= FT2_FRAME_SYMBOLS {
+                    continue;
+                }
+                let mut best = 0;
+                for tone in 1..4 {
+                    if self.s4[base + i][tone] > self.s4[base + i][best] {
+                        best = tone;
+                    }
+                }
+                if best == FT4_COSTAS_PATTERN[group][i] as usize {
+                    sync_ok += 1;
+                }
+            }
+        }
+
+        if sync_ok < 4 {
+            return None;
+        }
+
+        for nseq in 0..3 {
+            let (nsym, metric): (usize, &mut [f32; N_METRICS]) = match nseq {
+                0 => (1, &mut self.metric1),
+                1 => (2, &mut self.metric2),
+                _ => (4, &mut self.metric4),
+            };
+            let nt = 1usize << (2 * nsym);
+            let ibmax = match nsym {
+                1 => 1,
+                2 => 3,
+                4 => 7,
+                _ => 0,
+            };
+
+            let mut ks = 0;
+            while ks + nsym <= FT2_FRAME_SYMBOLS {
+                let mut max_one = [f32::NEG_INFINITY; 8];
+                let mut max_zero = [f32::NEG_INFINITY; 8];
+
+                for i in 0..nt {
+                    let sum = match nsym {
+                        1 => self.symbols[ks][FT4_GRAY_MAP[i & 0x03] as usize],
+                        2 => {
+                            self.symbols[ks][FT4_GRAY_MAP[(i >> 2) & 0x03] as usize]
+                                + self.symbols[ks + 1][FT4_GRAY_MAP[i & 0x03] as usize]
+                        }
+                        4 => {
+                            self.symbols[ks][FT4_GRAY_MAP[(i >> 6) & 0x03] as usize]
+                                + self.symbols[ks + 1][FT4_GRAY_MAP[(i >> 4) & 0x03] as usize]
+                                + self.symbols[ks + 2][FT4_GRAY_MAP[(i >> 2) & 0x03] as usize]
+                                + self.symbols[ks + 3][FT4_GRAY_MAP[i & 0x03] as usize]
+                        }
+                        _ => Complex32::new(0.0, 0.0),
+                    };
+                    let coherent = sum.norm();
+
+                    for ib in 0..=ibmax {
+                        if ((i >> (ibmax - ib)) & 1) != 0 {
+                            max_one[ib] = max_one[ib].max(coherent);
+                        } else {
+                            max_zero[ib] = max_zero[ib].max(coherent);
+                        }
+                    }
+                }
+
+                let ipt = 2 * ks;
+                for ib in 0..=ibmax {
+                    let metric_idx = ipt + ib;
+                    if metric_idx < N_METRICS {
+                        metric[metric_idx] = max_one[ib] - max_zero[ib];
+                    }
+                }
+
+                ks += nsym;
+            }
+        }
+
+        // Patch boundary metrics where multi-symbol integration overruns
+        self.metric2[204] = self.metric1[204];
+        self.metric2[205] = self.metric1[205];
+        self.metric4[200] = self.metric2[200];
+        self.metric4[201] = self.metric2[201];
+        self.metric4[202] = self.metric2[202];
+        self.metric4[203] = self.metric2[203];
+        self.metric4[204] = self.metric1[204];
+        self.metric4[205] = self.metric1[205];
+
+        normalize_metric(&mut self.metric1);
+        normalize_metric(&mut self.metric2);
+        normalize_metric(&mut self.metric4);
+
+        for i in 0..N_METRICS {
+            self.bitmetrics[i][0] = self.metric1[i];
+            self.bitmetrics[i][1] = self.metric2[i];
+            self.bitmetrics[i][2] = self.metric4[i];
+        }
+
+        Some(&self.bitmetrics)
+    }
+}
+
+impl Default for BitMetricsWorkspace {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// Extract bit metrics from the downsampled signal region.
 ///
 /// Returns a 2D array of shape `[2 * FT2_FRAME_SYMBOLS][3]` where:
@@ -24,188 +196,11 @@ use super::{FT2_FRAME_SYMBOLS, FT2_NSS};
 ///
 /// Returns `None` if the sync quality is too poor (fewer than 4 of 16
 /// Costas sync tones decoded correctly).
-pub fn extract_bitmetrics_raw(
-    signal: &[Complex32],
-) -> Option<Vec<[f32; 3]>> {
-    let n_metrics = 2 * FT2_FRAME_SYMBOLS;
-    let mut bitmetrics = vec![[0.0f32; 3]; n_metrics];
-
-    // Per-symbol FFT to extract complex tone amplitudes
-    let mut planner = FftPlanner::<f32>::new();
-    let fft = planner.plan_fft_forward(FT2_NSS);
-    let fft_scratch_len = fft.get_inplace_scratch_len();
-    let mut scratch = vec![Complex32::new(0.0, 0.0); fft_scratch_len];
-
-    // Complex symbols for each of the 4 tones at each frame symbol
-    let mut symbols = vec![[Complex32::new(0.0, 0.0); 4]; FT2_FRAME_SYMBOLS];
-    // Magnitude for each tone at each symbol
-    let mut s4 = vec![[0.0f32; 4]; FT2_FRAME_SYMBOLS];
-
-    for sym in 0..FT2_FRAME_SYMBOLS {
-        let offset = sym * FT2_NSS;
-        let mut csymb: Vec<Complex32> = (0..FT2_NSS)
-            .map(|i| {
-                if offset + i < signal.len() {
-                    signal[offset + i]
-                } else {
-                    Complex32::new(0.0, 0.0)
-                }
-            })
-            .collect();
-
-        fft.process_with_scratch(&mut csymb, &mut scratch);
-
-        for tone in 0..4 {
-            if tone < csymb.len() {
-                symbols[sym][tone] = csymb[tone];
-                s4[sym][tone] = csymb[tone].norm();
-            }
-        }
-    }
-
-    // Sync quality check: verify Costas patterns are detectable
-    let mut sync_ok = 0;
-    for group in 0..4 {
-        let base = group * 33;
-        for i in 0..4 {
-            if base + i >= FT2_FRAME_SYMBOLS {
-                continue;
-            }
-            let mut best = 0;
-            for tone in 1..4 {
-                if s4[base + i][tone] > s4[base + i][best] {
-                    best = tone;
-                }
-            }
-            if best == FT4_COSTAS_PATTERN[group][i] as usize {
-                sync_ok += 1;
-            }
-        }
-    }
-
-    if sync_ok < 4 {
-        return None;
-    }
-
-    // Precompute one_mask: for each integer 0..255 and bit position 0..7,
-    // whether that bit is set.
-    let one_mask: Vec<[u8; 8]> = (0..256u16)
-        .map(|i| {
-            let mut m = [0u8; 8];
-            for j in 0..8 {
-                m[j] = if (i & (1 << j)) != 0 { 1 } else { 0 };
-            }
-            m
-        })
-        .collect();
-
-    // Compute metrics at three scales
-    let mut metric1 = vec![0.0f32; n_metrics];
-    let mut metric2 = vec![0.0f32; n_metrics];
-    let mut metric4 = vec![0.0f32; n_metrics];
-
-    for nseq in 0..3 {
-        let nsym = match nseq {
-            0 => 1,
-            1 => 2,
-            _ => 4,
-        };
-        let nt = 1 << (2 * nsym); // number of tone sequences to enumerate
-
-        let mut ks = 0;
-        while ks + nsym <= FT2_FRAME_SYMBOLS {
-            // Compute coherent magnitude for each possible tone sequence
-            let mut s2 = vec![0.0f32; nt];
-            for i in 0..nt {
-                let i1 = i / 64;
-                let i2 = (i & 63) / 16;
-                let i3 = (i & 15) / 4;
-                let i4 = i & 3;
-
-                let sum = match nsym {
-                    1 => symbols[ks][FT4_GRAY_MAP[i4] as usize],
-                    2 => {
-                        symbols[ks][FT4_GRAY_MAP[i3] as usize]
-                            + symbols[ks + 1][FT4_GRAY_MAP[i4] as usize]
-                    }
-                    4 => {
-                        symbols[ks][FT4_GRAY_MAP[i1] as usize]
-                            + symbols[ks + 1][FT4_GRAY_MAP[i2] as usize]
-                            + symbols[ks + 2][FT4_GRAY_MAP[i3] as usize]
-                            + symbols[ks + 3][FT4_GRAY_MAP[i4] as usize]
-                    }
-                    _ => Complex32::new(0.0, 0.0),
-                };
-                s2[i] = sum.norm();
-            }
-
-            // Extract bit metrics: for each bit position, find max coherent
-            // magnitude with that bit set vs unset
-            let ipt = 2 * ks;
-            let ibmax: usize = match nsym {
-                1 => 1,
-                2 => 3,
-                4 => 7,
-                _ => 0,
-            };
-
-            for ib in 0..=ibmax {
-                let mut max_one = f32::NEG_INFINITY;
-                let mut max_zero = f32::NEG_INFINITY;
-
-                for i in 0..nt {
-                    if i < 256 {
-                        if one_mask[i][ibmax - ib] != 0 {
-                            if s2[i] > max_one {
-                                max_one = s2[i];
-                            }
-                        } else if s2[i] > max_zero {
-                            max_zero = s2[i];
-                        }
-                    }
-                }
-
-                let metric_idx = ipt + ib;
-                if metric_idx >= n_metrics {
-                    continue;
-                }
-
-                match nseq {
-                    0 => metric1[metric_idx] = max_one - max_zero,
-                    1 => metric2[metric_idx] = max_one - max_zero,
-                    _ => metric4[metric_idx] = max_one - max_zero,
-                }
-            }
-
-            ks += nsym;
-        }
-    }
-
-    // Patch boundary metrics where multi-symbol integration overruns
-    if n_metrics >= 206 {
-        metric2[204] = metric1[204];
-        metric2[205] = metric1[205];
-        metric4[200] = metric2[200];
-        metric4[201] = metric2[201];
-        metric4[202] = metric2[202];
-        metric4[203] = metric2[203];
-        metric4[204] = metric1[204];
-        metric4[205] = metric1[205];
-    }
-
-    // Normalize each metric scale independently
-    normalize_metric(&mut metric1);
-    normalize_metric(&mut metric2);
-    normalize_metric(&mut metric4);
-
-    // Pack into output
-    for i in 0..n_metrics {
-        bitmetrics[i][0] = metric1[i];
-        bitmetrics[i][1] = metric2[i];
-        bitmetrics[i][2] = metric4[i];
-    }
-
-    Some(bitmetrics)
+pub fn extract_bitmetrics_raw(signal: &[Complex32]) -> Option<Vec<[f32; 3]>> {
+    let mut workspace = BitMetricsWorkspace::new();
+    workspace
+        .extract(signal)
+        .map(|bitmetrics| bitmetrics.to_vec())
 }
 
 /// Normalize a metric array by dividing by its standard deviation.

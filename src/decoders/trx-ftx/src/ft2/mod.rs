@@ -14,6 +14,7 @@ pub mod osd;
 pub mod sync;
 
 use num_complex::Complex32;
+use realfft::RealFftPlanner;
 
 use crate::constants::FT4_XOR_SEQUENCE;
 use crate::crc::{ftx_compute_crc, ftx_extract_crc};
@@ -21,8 +22,9 @@ use crate::decode::{pack_bits, FtxMessage};
 use crate::ldpc;
 use crate::protocol::*;
 
-use downsample::DownsampleContext;
-use sync::{prepare_sync_waveforms, sync2d_score};
+use bitmetrics::BitMetricsWorkspace;
+use downsample::{DownsampleContext, DownsampleWorkspace};
+use sync::{prepare_sync_waveforms, sync2d_score, SyncWaveforms};
 
 // FT2 DSP constants
 pub const FT2_NDOWN: usize = 9;
@@ -119,6 +121,62 @@ pub struct Ft2Pipeline {
     sample_rate: f32,
     raw_audio: Vec<f32>,
     raw_capacity: usize,
+    waveforms: SyncWaveforms,
+    peak_search: PeakSearchWorkspace,
+}
+
+struct Ft2DecodeWorkspace {
+    downsample: DownsampleWorkspace,
+    downsample_a: Vec<Complex32>,
+    downsample_b: Vec<Complex32>,
+    signal: Vec<Complex32>,
+    bitmetrics: BitMetricsWorkspace,
+}
+
+impl Ft2DecodeWorkspace {
+    fn new(ctx: &DownsampleContext) -> Self {
+        let nfft2 = ctx.nfft2();
+        Self {
+            downsample: ctx.workspace(),
+            downsample_a: vec![Complex32::new(0.0, 0.0); nfft2],
+            downsample_b: vec![Complex32::new(0.0, 0.0); nfft2],
+            signal: vec![Complex32::new(0.0, 0.0); FT2_FRAME_SAMPLES],
+            bitmetrics: BitMetricsWorkspace::new(),
+        }
+    }
+}
+
+struct PeakSearchWorkspace {
+    window: Vec<f32>,
+    fft: std::sync::Arc<dyn realfft::RealToComplex<f32>>,
+    fft_input: Vec<f32>,
+    fft_output: Vec<Complex32>,
+    fft_scratch: Vec<Complex32>,
+    avg: Vec<f32>,
+    smooth: Vec<f32>,
+    baseline: Vec<f32>,
+}
+
+impl PeakSearchWorkspace {
+    fn new() -> Self {
+        let window = nuttall_window(FT2_NFFT1);
+        let mut planner = RealFftPlanner::<f32>::new();
+        let fft = planner.plan_fft_forward(FT2_NFFT1);
+        let fft_input = fft.make_input_vec();
+        let fft_output = fft.make_output_vec();
+        let fft_scratch = fft.make_scratch_vec();
+
+        Self {
+            window,
+            fft,
+            fft_input,
+            fft_output,
+            fft_scratch,
+            avg: vec![0.0; FT2_NH1],
+            smooth: vec![0.0; FT2_NH1],
+            baseline: vec![0.0; FT2_NH1],
+        }
+    }
 }
 
 impl Ft2Pipeline {
@@ -128,6 +186,8 @@ impl Ft2Pipeline {
             sample_rate: sample_rate as f32,
             raw_audio: Vec::with_capacity(FT2_NMAX),
             raw_capacity: FT2_NMAX,
+            waveforms: prepare_sync_waveforms(),
+            peak_search: PeakSearchWorkspace::new(),
         }
     }
 
@@ -157,7 +217,7 @@ impl Ft2Pipeline {
     }
 
     /// Run the full FT2 decode pipeline. Returns decoded messages.
-    pub fn decode(&self, max_results: usize) -> Vec<Ft2DecodeResult> {
+    pub fn decode(&mut self, max_results: usize) -> Vec<Ft2DecodeResult> {
         if self.raw_audio.len() < FT2_NFFT1 {
             return Vec::new();
         }
@@ -167,7 +227,8 @@ impl Ft2Pipeline {
             None => return Vec::new(),
         };
 
-        let hits = self.find_scan_hits(&ctx);
+        let mut workspace = Ft2DecodeWorkspace::new(&ctx);
+        let hits = self.find_scan_hits(&ctx, &mut workspace);
         if hits.is_empty() {
             return Vec::new();
         }
@@ -179,11 +240,11 @@ impl Ft2Pipeline {
             if results.len() >= max_results {
                 break;
             }
-            if let Some(result) = self.decode_hit(&ctx, hit) {
+            if let Some(result) = self.decode_hit(&ctx, hit, &mut workspace) {
                 // Dedup
-                let dominated = seen_hashes.iter().any(|(h, p)| {
-                    *h == result.message.hash && *p == result.message.payload
-                });
+                let dominated = seen_hashes
+                    .iter()
+                    .any(|(h, p)| *h == result.message.hash && *p == result.message.payload);
                 if dominated {
                     continue;
                 }
@@ -196,7 +257,7 @@ impl Ft2Pipeline {
     }
 
     /// Find frequency peaks from averaged power spectrum.
-    fn find_frequency_peaks(&self) -> Vec<RawCandidate> {
+    fn find_frequency_peaks(&mut self) -> Vec<RawCandidate> {
         if self.raw_audio.len() < FT2_NFFT1 {
             return Vec::new();
         }
@@ -204,65 +265,68 @@ impl Ft2Pipeline {
         let fs = self.sample_rate;
         let df = fs / FT2_NFFT1 as f32;
         let n_frames = 1 + (self.raw_audio.len() - FT2_NFFT1) / FT2_NSTEP;
+        let PeakSearchWorkspace {
+            window,
+            fft,
+            fft_input,
+            fft_output,
+            fft_scratch,
+            avg,
+            smooth,
+            baseline,
+        } = &mut self.peak_search;
 
-        // Compute Nuttall window
-        let window = nuttall_window(FT2_NFFT1);
-
-        // Forward real FFT setup
-        let mut real_planner = realfft::RealFftPlanner::<f32>::new();
-        let fft = real_planner.plan_fft_forward(FT2_NFFT1);
-        let mut fft_input = fft.make_input_vec();
-        let mut fft_output = fft.make_output_vec();
-        let mut fft_scratch = fft.make_scratch_vec();
-
-        // Average power spectrum across frames
-        let mut avg = vec![0.0f32; FT2_NH1];
+        avg.fill(0.0);
+        smooth.fill(0.0);
+        baseline.fill(0.0);
 
         for frame in 0..n_frames {
             let start = frame * FT2_NSTEP;
-            for i in 0..FT2_NFFT1 {
-                fft_input[i] = self.raw_audio[start + i] * window[i];
+            let input = &self.raw_audio[start..(start + FT2_NFFT1)];
+            for (dst, (&sample, &coeff)) in
+                fft_input.iter_mut().zip(input.iter().zip(window.iter()))
+            {
+                *dst = sample * coeff;
             }
-            fft.process_with_scratch(&mut fft_input, &mut fft_output, &mut fft_scratch)
+            fft.process_with_scratch(fft_input, fft_output, fft_scratch)
                 .expect("FFT failed");
 
-            for bin in 1..FT2_NH1 {
-                if bin < fft_output.len() {
-                    let c = fft_output[bin];
-                    let power = c.re * c.re + c.im * c.im;
-                    avg[bin] += power;
+            for (bin, c) in fft_output.iter().enumerate().take(FT2_NH1).skip(1) {
+                avg[bin] += c.norm_sqr();
+            }
+        }
+
+        let inv_n_frames = 1.0 / n_frames as f32;
+        for bin in 1..FT2_NH1 {
+            avg[bin] *= inv_n_frames;
+        }
+
+        // Smooth with 15-point moving average
+        if FT2_NH1 > 16 {
+            let mut sum: f32 = avg[1..16].iter().sum();
+            for bin in 8..FT2_NH1.saturating_sub(8) {
+                smooth[bin] = sum / 15.0;
+                if bin + 8 < FT2_NH1 {
+                    sum += avg[bin + 8] - avg[bin - 7];
                 }
             }
         }
 
-        for bin in 1..FT2_NH1 {
-            avg[bin] /= n_frames as f32;
-        }
-
-        // Smooth with 15-point moving average
-        let mut smooth = vec![0.0f32; FT2_NH1];
-        for bin in 8..FT2_NH1.saturating_sub(8) {
-            let mut sum = 0.0f32;
-            for i in (bin.saturating_sub(7))..=(bin + 7).min(FT2_NH1 - 1) {
-                sum += avg[i];
-            }
-            smooth[bin] = sum / 15.0;
-        }
-
         // Baseline with 63-point moving average
-        let mut baseline = vec![0.0f32; FT2_NH1];
-        for bin in 32..FT2_NH1.saturating_sub(32) {
-            let mut sum = 0.0f32;
-            for i in (bin.saturating_sub(31))..=(bin + 31).min(FT2_NH1 - 1) {
-                sum += smooth[i];
+        if FT2_NH1 > 64 {
+            let mut sum: f32 = smooth[1..64].iter().sum();
+            for bin in 32..FT2_NH1.saturating_sub(32) {
+                baseline[bin] = sum / 63.0 + 1e-9;
+                if bin + 32 < FT2_NH1 {
+                    sum += smooth[bin + 32] - smooth[bin - 31];
+                }
             }
-            baseline[bin] = sum / 63.0 + 1e-9;
         }
 
         // Find peaks
         let min_bin = (200.0 / df).round() as usize;
         let max_bin = (4910.0 / df).round() as usize;
-        let mut candidates = Vec::new();
+        let mut candidates = Vec::with_capacity(FT2_MAX_RAW_CANDIDATES);
 
         let mut bin = min_bin + 1;
         while bin < max_bin.saturating_sub(1) && candidates.len() < FT2_MAX_RAW_CANDIDATES {
@@ -309,19 +373,24 @@ impl Ft2Pipeline {
         }
 
         // Sort by score descending
-        candidates.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+        candidates.sort_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         candidates
     }
 
     /// Find scan hits by downsampling each frequency peak and computing sync scores.
-    fn find_scan_hits(&self, ctx: &DownsampleContext) -> Vec<ScanHit> {
+    fn find_scan_hits(
+        &mut self,
+        ctx: &DownsampleContext,
+        workspace: &mut Ft2DecodeWorkspace,
+    ) -> Vec<ScanHit> {
         let peaks = self.find_frequency_peaks();
         if peaks.is_empty() {
             return Vec::new();
         }
-
-        let nfft2 = ctx.nfft2();
-        let waveforms = prepare_sync_waveforms();
 
         let mut hits = Vec::new();
 
@@ -330,12 +399,15 @@ impl Ft2Pipeline {
                 break;
             }
 
-            let mut down = vec![Complex32::new(0.0, 0.0); nfft2];
-            let produced = ctx.downsample(peak.freq_hz, &mut down);
+            let produced = ctx.downsample_with_workspace(
+                peak.freq_hz,
+                &mut workspace.downsample_a,
+                &mut workspace.downsample,
+            );
             if produced == 0 {
                 continue;
             }
-            normalize_downsampled(&mut down[..produced], produced);
+            normalize_downsampled(&mut workspace.downsample_a[..produced], produced);
 
             // Coarse search
             let mut best_score: f32 = -1.0;
@@ -347,10 +419,10 @@ impl Ft2Pipeline {
                 let mut start = -688i32;
                 while start <= 2024 {
                     let score = sync2d_score(
-                        &down[..produced],
+                        &workspace.downsample_a[..produced],
                         start,
                         idf,
-                        &waveforms,
+                        &self.waveforms,
                     );
                     if score > best_score {
                         best_score = score;
@@ -373,10 +445,10 @@ impl Ft2Pipeline {
                 }
                 for start in (best_start - 5)..=(best_start + 5) {
                     let score = sync2d_score(
-                        &down[..produced],
+                        &workspace.downsample_a[..produced],
                         start,
                         idf,
-                        &waveforms,
+                        &self.waveforms,
                     );
                     if score > best_score {
                         best_score = score;
@@ -409,17 +481,22 @@ impl Ft2Pipeline {
     }
 
     /// Attempt to decode a single scan hit through the full pipeline.
-    fn decode_hit(&self, ctx: &DownsampleContext, hit: &ScanHit) -> Option<Ft2DecodeResult> {
-        let nfft2 = ctx.nfft2();
-        let waveforms = prepare_sync_waveforms();
-
+    fn decode_hit(
+        &self,
+        ctx: &DownsampleContext,
+        hit: &ScanHit,
+        workspace: &mut Ft2DecodeWorkspace,
+    ) -> Option<Ft2DecodeResult> {
         // Initial downsample for sync refinement
-        let mut cd2 = vec![Complex32::new(0.0, 0.0); nfft2];
-        let produced = ctx.downsample(hit.freq_hz, &mut cd2);
+        let produced = ctx.downsample_with_workspace(
+            hit.freq_hz,
+            &mut workspace.downsample_a,
+            &mut workspace.downsample,
+        );
         if produced == 0 {
             return None;
         }
-        normalize_downsampled(&mut cd2[..produced], produced);
+        normalize_downsampled(&mut workspace.downsample_a[..produced], produced);
 
         // Refine sync
         let mut best_score: f32 = -1.0;
@@ -431,7 +508,12 @@ impl Ft2Pipeline {
                 continue;
             }
             for start in (hit.start - 5)..=(hit.start + 5) {
-                let score = sync2d_score(&cd2[..produced], start, idf, &waveforms);
+                let score = sync2d_score(
+                    &workspace.downsample_a[..produced],
+                    start,
+                    idf,
+                    &self.waveforms,
+                );
                 if score > best_score {
                     best_score = score;
                     best_start = start;
@@ -451,19 +533,25 @@ impl Ft2Pipeline {
         }
 
         // Final downsample at corrected frequency
-        let mut cb = vec![Complex32::new(0.0, 0.0); nfft2];
-        let produced2 = ctx.downsample(corrected_freq_hz, &mut cb);
+        let produced2 = ctx.downsample_with_workspace(
+            corrected_freq_hz,
+            &mut workspace.downsample_b,
+            &mut workspace.downsample,
+        );
         if produced2 == 0 {
             return None;
         }
-        normalize_downsampled(&mut cb[..produced2], FT2_FRAME_SAMPLES);
+        normalize_downsampled(&mut workspace.downsample_b[..produced2], FT2_FRAME_SAMPLES);
 
         // Extract signal region
-        let mut signal = vec![Complex32::new(0.0, 0.0); FT2_FRAME_SAMPLES];
-        extract_signal_region(&cb[..produced2], best_start, &mut signal);
+        extract_signal_region(
+            &workspace.downsample_b[..produced2],
+            best_start,
+            &mut workspace.signal,
+        );
 
         // Extract bit metrics
-        let bitmetrics = bitmetrics::extract_bitmetrics_raw(&signal)?;
+        let bitmetrics = workspace.bitmetrics.extract(&workspace.signal)?;
 
         // Sync quality check using known Costas bit patterns
         let sync_bits_a: [u8; 8] = [0, 0, 0, 1, 1, 0, 1, 1];
@@ -472,10 +560,26 @@ impl Ft2Pipeline {
         let sync_bits_d: [u8; 8] = [1, 0, 1, 1, 0, 0, 0, 1];
         let mut sync_qual = 0;
         for i in 0..8 {
-            sync_qual += if (bitmetrics[i][0] >= 0.0) as u8 == sync_bits_a[i] { 1 } else { 0 };
-            sync_qual += if (bitmetrics[66 + i][0] >= 0.0) as u8 == sync_bits_b[i] { 1 } else { 0 };
-            sync_qual += if (bitmetrics[132 + i][0] >= 0.0) as u8 == sync_bits_c[i] { 1 } else { 0 };
-            sync_qual += if (bitmetrics[198 + i][0] >= 0.0) as u8 == sync_bits_d[i] { 1 } else { 0 };
+            sync_qual += if (bitmetrics[i][0] >= 0.0) as u8 == sync_bits_a[i] {
+                1
+            } else {
+                0
+            };
+            sync_qual += if (bitmetrics[66 + i][0] >= 0.0) as u8 == sync_bits_b[i] {
+                1
+            } else {
+                0
+            };
+            sync_qual += if (bitmetrics[132 + i][0] >= 0.0) as u8 == sync_bits_c[i] {
+                1
+            } else {
+                0
+            };
+            sync_qual += if (bitmetrics[198 + i][0] >= 0.0) as u8 == sync_bits_d[i] {
+                1
+            } else {
+                0
+            };
         }
         if sync_qual < 10 {
             return None;
@@ -591,8 +695,18 @@ impl Ft2Pipeline {
         }
 
         // Compute refined timing via parabolic interpolation
-        let sm1 = sync2d_score(&cd2[..produced], best_start - 1, best_idf, &waveforms);
-        let sp1 = sync2d_score(&cd2[..produced], best_start + 1, best_idf, &waveforms);
+        let sm1 = sync2d_score(
+            &workspace.downsample_a[..produced],
+            best_start - 1,
+            best_idf,
+            &self.waveforms,
+        );
+        let sp1 = sync2d_score(
+            &workspace.downsample_a[..produced],
+            best_start + 1,
+            best_idf,
+            &self.waveforms,
+        );
         let mut xstart = best_start as f32;
         let den = sm1 - 2.0 * best_score + sp1;
         if den.abs() > 1e-6 {
@@ -635,7 +749,11 @@ fn normalize_downsampled(samples: &mut [Complex32], ref_count: usize) {
     if power <= 0.0 {
         return;
     }
-    let rc = if ref_count == 0 { samples.len() } else { ref_count };
+    let rc = if ref_count == 0 {
+        samples.len()
+    } else {
+        ref_count
+    };
     let scale = (rc as f32 / power).sqrt();
     for s in samples.iter_mut() {
         *s *= scale;
@@ -644,14 +762,17 @@ fn normalize_downsampled(samples: &mut [Complex32], ref_count: usize) {
 
 /// Extract a signal region starting at `start` into `out_signal`.
 fn extract_signal_region(input: &[Complex32], start: i32, out_signal: &mut [Complex32]) {
-    for i in 0..out_signal.len() {
-        let src = start + i as i32;
-        out_signal[i] = if src >= 0 && (src as usize) < input.len() {
-            input[src as usize]
-        } else {
-            Complex32::new(0.0, 0.0)
-        };
+    out_signal.fill(Complex32::new(0.0, 0.0));
+
+    let src_start = start.max(0) as usize;
+    let dst_start = (-start).max(0) as usize;
+    if dst_start >= out_signal.len() || src_start >= input.len() {
+        return;
     }
+
+    let copy_len = (input.len() - src_start).min(out_signal.len() - dst_start);
+    out_signal[dst_start..(dst_start + copy_len)]
+        .copy_from_slice(&input[src_start..(src_start + copy_len)]);
 }
 
 /// Normalize LLR array (divide by standard deviation).

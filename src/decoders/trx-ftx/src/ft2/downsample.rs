@@ -14,6 +14,34 @@ use rustfft::FftPlanner;
 
 use super::{FT2_NDOWN, FT2_SYMBOL_PERIOD_F};
 
+/// Reusable scratch buffers for frequency-domain downsampling.
+pub struct DownsampleWorkspace {
+    band: Vec<Complex32>,
+    ifft_scratch: Vec<Complex32>,
+}
+
+impl DownsampleWorkspace {
+    fn new(nfft2: usize, ifft_scratch_len: usize) -> Self {
+        Self {
+            band: vec![Complex32::new(0.0, 0.0); nfft2],
+            ifft_scratch: vec![Complex32::new(0.0, 0.0); ifft_scratch_len],
+        }
+    }
+
+    fn prepare(&mut self, nfft2: usize, ifft_scratch_len: usize) {
+        if self.band.len() != nfft2 {
+            self.band.resize(nfft2, Complex32::new(0.0, 0.0));
+        } else {
+            self.band.fill(Complex32::new(0.0, 0.0));
+        }
+
+        if self.ifft_scratch.len() != ifft_scratch_len {
+            self.ifft_scratch
+                .resize(ifft_scratch_len, Complex32::new(0.0, 0.0));
+        }
+    }
+}
+
 /// Downsample context holding precomputed FFT data and spectral window.
 pub struct DownsampleContext {
     /// Number of raw samples.
@@ -28,8 +56,8 @@ pub struct DownsampleContext {
     spectrum: Vec<Complex32>,
     /// IFFT plan for the downsampled length.
     ifft: std::sync::Arc<dyn rustfft::Fft<f32>>,
-    /// Scratch buffer for IFFT.
-    ifft_scratch: Vec<Complex32>,
+    /// Scratch length required by the IFFT plan.
+    ifft_scratch_len: usize,
 }
 
 impl DownsampleContext {
@@ -50,7 +78,11 @@ impl DownsampleContext {
         let df = sample_rate / nraw as f32;
 
         // Build spectral extraction window
-        let window = build_spectral_window(nfft2, df);
+        let mut window = build_spectral_window(nfft2, df);
+        let inv_nfft2 = 1.0 / nfft2 as f32;
+        for coeff in &mut window {
+            *coeff *= inv_nfft2;
+        }
 
         // Forward real FFT of raw audio
         let mut real_planner = realfft::RealFftPlanner::<f32>::new();
@@ -59,11 +91,7 @@ impl DownsampleContext {
         let mut output = fft.make_output_vec();
         let mut scratch = fft.make_scratch_vec();
 
-        for (i, s) in raw_audio.iter().enumerate() {
-            if i < input.len() {
-                input[i] = *s;
-            }
-        }
+        input.copy_from_slice(raw_audio);
         fft.process_with_scratch(&mut input, &mut output, &mut scratch)
             .ok()?;
 
@@ -72,7 +100,7 @@ impl DownsampleContext {
         // IFFT plan for downsampled length
         let mut planner = FftPlanner::<f32>::new();
         let ifft = planner.plan_fft_inverse(nfft2);
-        let ifft_scratch = vec![Complex32::new(0.0, 0.0); ifft.get_inplace_scratch_len()];
+        let ifft_scratch_len = ifft.get_inplace_scratch_len();
 
         Some(Self {
             nraw,
@@ -81,7 +109,7 @@ impl DownsampleContext {
             window,
             spectrum,
             ifft,
-            ifft_scratch,
+            ifft_scratch_len,
         })
     }
 
@@ -90,15 +118,31 @@ impl DownsampleContext {
         self.nfft2
     }
 
+    /// Create reusable buffers for repeated downsampling with this context.
+    pub fn workspace(&self) -> DownsampleWorkspace {
+        DownsampleWorkspace::new(self.nfft2, self.ifft_scratch_len)
+    }
+
     /// Downsample the raw audio around `freq_hz`, writing complex baseband
     /// samples into `out`. Returns the number of samples produced.
     pub fn downsample(&self, freq_hz: f32, out: &mut [Complex32]) -> usize {
+        let mut workspace = self.workspace();
+        self.downsample_with_workspace(freq_hz, out, &mut workspace)
+    }
+
+    /// Downsample the raw audio using reusable scratch buffers.
+    pub fn downsample_with_workspace(
+        &self,
+        freq_hz: f32,
+        out: &mut [Complex32],
+        workspace: &mut DownsampleWorkspace,
+    ) -> usize {
         if out.len() < self.nfft2 {
             return 0;
         }
 
-        // Working band buffer
-        let mut band = vec![Complex32::new(0.0, 0.0); self.nfft2];
+        workspace.prepare(self.nfft2, self.ifft_scratch_len);
+        let band = &mut workspace.band;
         let i0 = (freq_hz / self.df).round() as i32;
         let half_nraw = (self.nraw / 2) as i32;
 
@@ -119,21 +163,16 @@ impl DownsampleContext {
             }
         }
 
-        // Apply spectral window and scale
-        let inv_nfft2 = 1.0 / self.nfft2 as f32;
+        // Apply spectral window
         for i in 0..self.nfft2 {
-            band[i] = Complex32::new(
-                band[i].re * self.window[i] * inv_nfft2,
-                band[i].im * self.window[i] * inv_nfft2,
-            );
+            band[i] *= self.window[i];
         }
 
         // Inverse FFT (in-place)
-        let mut scratch = self.ifft_scratch.clone();
         self.ifft
-            .process_with_scratch(&mut band, &mut scratch);
+            .process_with_scratch(band, &mut workspace.ifft_scratch);
 
-        out[..self.nfft2].copy_from_slice(&band);
+        out[..self.nfft2].copy_from_slice(band);
         self.nfft2
     }
 }
@@ -167,13 +206,13 @@ fn build_spectral_window(nfft2: usize, df: f32) -> Vec<f32> {
 
     // Raised-cosine trailing edge
     for i in (iwt + iwf)..(2 * iwt + iwf).min(nfft2) {
-        window[i] = 0.5 * (1.0 + (std::f32::consts::PI * (i - (iwt + iwf)) as f32 / iwt as f32).cos());
+        window[i] =
+            0.5 * (1.0 + (std::f32::consts::PI * (i - (iwt + iwf)) as f32 / iwt as f32).cos());
     }
 
     // Circular shift by iws bins
     if iws > 0 && iws < nfft2 {
-        let shifted: Vec<f32> = (0..nfft2).map(|i| window[(i + iws) % nfft2]).collect();
-        window.copy_from_slice(&shifted);
+        window.rotate_left(iws);
     }
 
     window

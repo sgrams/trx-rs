@@ -176,8 +176,7 @@ impl Ft8Decoder {
 
     /// Waterfall-based decode for FT8/FT4.
     fn decode_waterfall(&mut self, max_results: usize) -> Vec<Ft8DecodeResult> {
-        let candidates =
-            ftx_find_candidates(&self.monitor.wf, MAX_CANDIDATES, MIN_CANDIDATE_SCORE);
+        let candidates = ftx_find_candidates(&self.monitor.wf, MAX_CANDIDATES, MIN_CANDIDATE_SCORE);
 
         let mut results = Vec::new();
         let mut seen: Vec<u16> = Vec::new();
@@ -209,13 +208,14 @@ impl Ft8Decoder {
 
             // Compute time offset
             let symbol_period = self.protocol.symbol_period();
-            let dt_s =
-                (cand.time_offset as f32 + cand.time_sub as f32 / self.monitor.wf.time_osr as f32)
-                    * symbol_period
-                    - 0.5;
+            let dt_s = (cand.time_offset as f32
+                + cand.time_sub as f32 / self.monitor.wf.time_osr as f32)
+                * symbol_period
+                - 0.5;
 
             // Compute frequency
-            let freq_hz = (self.monitor.min_bin as f32 + cand.freq_offset as f32
+            let freq_hz = (self.monitor.min_bin as f32
+                + cand.freq_offset as f32
                 + cand.freq_sub as f32 / self.monitor.wf.freq_osr as f32)
                 / symbol_period;
 
@@ -232,16 +232,18 @@ impl Ft8Decoder {
 
     /// FT2-specific decode pipeline.
     fn decode_ft2(&mut self, max_results: usize) -> Vec<Ft8DecodeResult> {
-        let pipe = match self.ft2_pipeline.as_ref() {
-            Some(p) => p,
-            None => return Vec::new(),
+        let ft2_results = {
+            let pipe = match self.ft2_pipeline.as_mut() {
+                Some(p) => p,
+                None => return Vec::new(),
+            };
+
+            if !pipe.is_ready() {
+                return Vec::new();
+            }
+
+            pipe.decode(max_results)
         };
-
-        if !pipe.is_ready() {
-            return Vec::new();
-        }
-
-        let ft2_results = pipe.decode(max_results);
         let mut results = Vec::new();
 
         for r in ft2_results {
@@ -267,8 +269,7 @@ impl Ft8Decoder {
             payload: msg.payload,
             hash: msg.hash as u32,
         };
-        let (text, _offsets, _rc) =
-            message::ftx_message_decode(&m, &mut self.callsign_hash);
+        let (text, _offsets, _rc) = message::ftx_message_decode(&m, &mut self.callsign_hash);
         if text.is_empty() {
             return None;
         }
