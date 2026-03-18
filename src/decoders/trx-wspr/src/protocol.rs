@@ -191,14 +191,8 @@ fn unpack_message(bits: &[u8; NBITS]) -> Option<String> {
     if callsign.len() < 3 || !callsign.chars().any(|c| c.is_alphabetic()) {
         return None;
     }
-    let has_digit_at_1_or_2 = callsign
-        .chars()
-        .nth(1)
-        .is_some_and(|c| c.is_ascii_digit())
-        || callsign
-            .chars()
-            .nth(2)
-            .is_some_and(|c| c.is_ascii_digit());
+    let has_digit_at_1_or_2 = callsign.chars().nth(1).is_some_and(|c| c.is_ascii_digit())
+        || callsign.chars().nth(2).is_some_and(|c| c.is_ascii_digit());
     if !has_digit_at_1_or_2 {
         return None;
     }
