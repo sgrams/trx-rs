@@ -8830,6 +8830,29 @@ function updateSideBookmarkStack(container, bookmarks, colorMap) {
       container.appendChild(createBookmarkChip(bm, colorMap, { sideStack: true }));
     }
   }
+
+  const wrapEl = container.parentElement;
+  const wrapRect = wrapEl?.getBoundingClientRect?.();
+  const viewportWidth = Math.max(
+    document.documentElement?.clientWidth || 0,
+    window.innerWidth || 0,
+  );
+  const style = getComputedStyle(container);
+  const sideOffset = Math.abs(
+    parseFloat(container.classList.contains("spectrum-bookmark-side-left") ? style.left : style.right) || 0,
+  );
+  const sideWidth = parseFloat(style.width) || 0;
+  const requiredSpace = Math.max(sideOffset, sideWidth) + 8;
+  const fitsLeft = !wrapRect || wrapRect.left >= requiredSpace;
+  const fitsRight = !wrapRect || (viewportWidth - wrapRect.right) >= requiredSpace;
+  const sideFits = container.classList.contains("spectrum-bookmark-side-left")
+    ? fitsLeft
+    : fitsRight;
+  if (!sideFits) {
+    container.classList.remove("bm-side-visible");
+    return;
+  }
+
   container.classList.add("bm-side-visible");
 }
 

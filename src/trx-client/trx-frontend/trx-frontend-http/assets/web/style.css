@@ -34,6 +34,9 @@
   --card-base-max-width: 1280px;
   --card-max-width: 1600px;
   --card-bookmark-gutter: 4rem;
+  --signal-visual-max-width: 67.5rem;
+  --spectrum-bookmark-side-width: 6.5rem;
+  --spectrum-bookmark-side-offset: 8.85rem;
 }
 
 [data-theme="light"] {
@@ -629,7 +632,8 @@ small { color: var(--text-muted); }
   display: flex;
   flex-direction: column;
   gap: 0;
-  margin-bottom: 0.9rem;
+  width: min(100%, var(--signal-visual-max-width));
+  margin: 0 auto 0.9rem;
 }
 #signal-split-control {
   position: absolute;
@@ -2949,7 +2953,7 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   top: calc(var(--spectrum-plot-height) / 2);
   transform: translateY(-50%);
   z-index: 7;
-  width: 7.25rem;
+  width: var(--spectrum-bookmark-side-width);
   display: none;
   flex-direction: column;
   gap: 0.28rem;
@@ -2958,11 +2962,11 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   display: flex;
 }
 .spectrum-bookmark-side-left {
-  left: -10.15rem;
+  left: calc(-1 * var(--spectrum-bookmark-side-offset));
   align-items: flex-end;
 }
 .spectrum-bookmark-side-right {
-  right: -10.15rem;
+  right: calc(-1 * var(--spectrum-bookmark-side-offset));
   align-items: flex-start;
 }
 .spectrum-bookmark-side .spectrum-bookmark-chip {
