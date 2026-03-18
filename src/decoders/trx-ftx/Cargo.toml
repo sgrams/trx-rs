@@ -1,0 +1,16 @@
+# SPDX-FileCopyrightText: 2026 Stanislaw Grams <stanislawgrams@gmail.com>
+#
+# SPDX-License-Identifier: BSD-2-Clause
+
+[package]
+name = "trx-ftx"
+version.workspace = true
+edition = "2021"
+
+[dependencies]
+rustfft = "6"
+realfft = "3"
+num-complex = "0.4"
+
+[dev-dependencies]
+hound = "3"

@@ -9,6 +9,7 @@ members = [
     "src/decoders/trx-cw",
     "src/decoders/trx-decode-log",
     "src/decoders/trx-ft8",
+    "src/decoders/trx-ftx",
     "src/decoders/trx-rds",
     "src/decoders/trx-vdes",
     "src/decoders/trx-wspr",
