@@ -1,5 +1,5 @@
 // --- FT4 Decoder Plugin (server-side decode) ---
-// SPDX-FileCopyrightText: 2026 Stanislaw Grams <stanislawgrams@gmail.com>
+// SPDX-FileCopyrightText: 2026 Stan Grams <sjg@haxx.space>
 // SPDX-License-Identifier: BSD-2-Clause
 
 function ft8RenderMessage(message) {
