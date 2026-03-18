@@ -226,6 +226,17 @@ fn unpack_message(bits: &[u8; NBITS]) -> Option<String> {
     Some(format!("{} {} {}", callsign, grid, power_dbm))
 }
 
+/// Attempt protocol-level decode from 162 4-FSK symbols.
+pub fn decode_symbols(symbols: &[u8]) -> Option<WsprProtocolMessage> {
+    if symbols.len() < NSYMS {
+        return None;
+    }
+    let coded = deinterleave(symbols);
+    let bits = fano_decode(&coded)?;
+    let message = unpack_message(&bits)?;
+    Some(WsprProtocolMessage { message })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -284,15 +295,4 @@ mod tests {
         assert!(msg.contains("FN20"), "grid not found in '{}'", msg);
         assert!(msg.contains("37"), "power not found in '{}'", msg);
     }
-}
-
-/// Attempt protocol-level decode from 162 4-FSK symbols.
-pub fn decode_symbols(symbols: &[u8]) -> Option<WsprProtocolMessage> {
-    if symbols.len() < NSYMS {
-        return None;
-    }
-    let coded = deinterleave(symbols);
-    let bits = fano_decode(&coded)?;
-    let message = unpack_message(&bits)?;
-    Some(WsprProtocolMessage { message })
 }
