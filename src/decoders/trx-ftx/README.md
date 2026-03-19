@@ -16,56 +16,92 @@ FT2 is an experimental protocol that doubles FT4's symbol rate
 
 ## Architecture
 
+```
+trx-ftx/src/
+├── lib.rs              # Module declarations
+├── decoder.rs          # Public API: Ft8Decoder, Ft8DecodeResult
+├── common/
+│   ├── protocol.rs     # FTx constants, timing, FtxProtocol enum
+│   ├── constants.rs    # LDPC tables, Costas patterns, Gray maps
+│   ├── crc.rs          # CRC-14 compute/extract
+│   ├── ldpc.rs         # Belief-propagation LDPC decoder
+│   ├── osd.rs          # OSD-1/OSD-2 CRC-guided bit-flip decoder
+│   ├── encode.rs       # LDPC(174,91) encoder
+│   ├── decode.rs       # Candidate search, CRC verify, SNR, dispatchers
+│   ├── monitor.rs      # Waterfall FFT spectrogram engine
+│   ├── message.rs      # 77-bit message pack/unpack
+│   ├── callsign_hash.rs # Callsign hash table for decode dedup
+│   └── text.rs         # Callsign & grid character encoding
+├── ft8/
+│   └── mod.rs          # FT8 sync scoring, likelihood extraction, tone encoding
+├── ft4/
+│   └── mod.rs          # FT4 sync scoring, likelihood extraction, tone encoding
+└── ft2/
+    ├── mod.rs          # FT2 pipeline orchestration (peak search, decode loop)
+    ├── decode.rs       # FT2 waterfall sync scoring & multi-scale likelihood
+    ├── bitmetrics.rs   # Per-symbol FFT, 1/2/4-symbol coherent bit metrics
+    ├── downsample.rs   # Frequency-domain shift & downsample via IFFT
+    └── sync.rs         # 2D Costas reference waveforms & correlation
+```
+
 ```mermaid
 graph TD
-    subgraph "Shared Modules"
+    subgraph "common/"
         protocol[protocol.rs<br/>FTx constants & timing]
         constants[constants.rs<br/>LDPC tables, Costas patterns]
         crc[crc.rs<br/>CRC-14]
-        ldpc[ldpc.rs<br/>Sum-product & BP decoders]
-        encode[encode.rs<br/>LDPC encoder, tone generation]
+        ldpc[ldpc.rs<br/>BP LDPC decoder]
+        osd[osd.rs<br/>BP + OSD-1/OSD-2 decoder]
+        encode[encode.rs<br/>LDPC encoder]
+        decode[decode.rs<br/>Candidate search & dispatchers]
+        monitor[monitor.rs<br/>Waterfall FFT]
         message[message.rs<br/>Pack/unpack 77-bit messages]
         text[text.rs<br/>Callsign & grid formatting]
         callsign_hash[callsign_hash.rs<br/>Hash table for callsign lookup]
     end
 
-    subgraph "FT8 / FT4 Pipeline"
-        monitor[monitor.rs<br/>Waterfall FFT & peak search]
-        decode[decode.rs<br/>Sync, bit metrics, LDPC decode]
-        decoder[decoder.rs<br/>Public API: Ft8Decoder]
+    subgraph "ft8/"
+        ft8[mod.rs<br/>Sync, likelihood, encode]
     end
 
-    subgraph "FT2 Pipeline"
-        ft2_mod[ft2/mod.rs<br/>Pipeline orchestration]
-        ft2_ds[ft2/downsample.rs<br/>Frequency-shift & downsample]
-        ft2_sync[ft2/sync.rs<br/>2D Costas correlation]
-        ft2_bm[ft2/bitmetrics.rs<br/>Multi-scale soft metrics]
-        ft2_osd[ft2/osd.rs<br/>BP + OSD-1/OSD-2 decoder]
+    subgraph "ft4/"
+        ft4[mod.rs<br/>Sync, likelihood, encode]
     end
 
-    decoder --> monitor --> decode
-    decode --> ldpc & crc & encode & message & constants
+    subgraph "ft2/"
+        ft2_mod[mod.rs<br/>Pipeline orchestration]
+        ft2_decode[decode.rs<br/>Waterfall sync & likelihood]
+        ft2_ds[downsample.rs<br/>Frequency-shift & downsample]
+        ft2_sync[sync.rs<br/>2D Costas correlation]
+        ft2_bm[bitmetrics.rs<br/>Multi-scale soft metrics]
+    end
 
-    ft2_mod --> ft2_ds & ft2_sync & ft2_bm & ft2_osd
-    ft2_osd --> constants & crc & encode
-    ft2_mod --> decode
-    decode --> protocol
-    ft2_mod --> protocol
+    decoder[decoder.rs<br/>Public API: Ft8Decoder] --> monitor & decode & message
+
+    decode --> ft8 & ft4 & ft2_decode
+    decode --> ldpc & crc & constants & protocol
+
+    ft8 --> constants & encode & crc
+    ft4 --> constants & encode & crc
+    ft2_mod --> ft2_ds & ft2_sync & ft2_bm & ft2_decode
+    ft2_mod --> osd & decode
+    ft2_bm --> constants
+    ft2_sync --> constants
 ```
 
 ### Signal flow
 
-**FT8/FT4:** Audio samples enter `monitor.rs` which accumulates a
-waterfall spectrogram. `decode.rs` finds sync candidates via Costas
-correlation, extracts log-likelihood ratios from tone amplitudes, and
-runs the LDPC decoder. Decoded 77-bit messages are unpacked by
-`message.rs`.
+**FT8/FT4:** Audio samples enter `common/monitor.rs` which accumulates
+a waterfall spectrogram. `common/decode.rs` finds sync candidates by
+dispatching to protocol-specific scoring in `ft8/` or `ft4/`, extracts
+log-likelihood ratios from tone amplitudes, and runs the BP LDPC
+decoder. Decoded 77-bit messages are unpacked by `common/message.rs`.
 
 **FT2:** Audio enters `ft2/mod.rs` which drives a dedicated pipeline:
 peak search in the averaged spectrum, frequency-shift downsampling
-(`downsample.rs`), 2D sync scoring against precomputed Costas
-reference waveforms (`sync.rs`), multi-scale coherent bit metric
-extraction at 1/2/4-symbol integration depths (`bitmetrics.rs`), and
-multi-pass LDPC decoding via iterative belief-propagation with OSD
-fallback (`osd.rs`). The shared `encode.rs`, `crc.rs`, and
-`constants.rs` modules are reused across all three protocols.
+(`ft2/downsample.rs`), 2D sync scoring against precomputed Costas
+reference waveforms (`ft2/sync.rs`), multi-scale coherent bit metric
+extraction at 1/2/4-symbol integration depths (`ft2/bitmetrics.rs`),
+and multi-pass LDPC decoding via iterative belief-propagation with OSD
+fallback (`common/osd.rs`). The shared `common/` modules (encode, crc,
+constants, protocol) are reused across all three protocols.
