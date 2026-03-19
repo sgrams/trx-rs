@@ -78,9 +78,9 @@ impl BitMetricsWorkspace {
 
         // Sync quality check: verify Costas patterns are detectable
         let mut sync_ok = 0;
-        for group in 0..4 {
+        for (group, costas_group) in FT4_COSTAS_PATTERN.iter().enumerate() {
             let base = group * 33;
-            for i in 0..4 {
+            for (i, &costas_tone) in costas_group.iter().enumerate() {
                 if base + i >= FT2_FRAME_SYMBOLS {
                     continue;
                 }
@@ -90,7 +90,7 @@ impl BitMetricsWorkspace {
                         best = tone;
                     }
                 }
-                if best == FT4_COSTAS_PATTERN[group][i] as usize {
+                if best == costas_tone as usize {
                     sync_ok += 1;
                 }
             }

@@ -17,10 +17,10 @@ pub(crate) fn ft2_sync_score(wf: &Waterfall, cand: &Candidate) -> i32 {
     let mut score_f: f32 = 0.0;
     let mut groups = 0;
 
-    for m in 0..FT2_NUM_SYNC {
+    for (m, costas_group) in FT4_COSTAS_PATTERN.iter().enumerate().take(FT2_NUM_SYNC) {
         let mut sum = Complex32::new(0.0, 0.0);
         let mut complete = true;
-        for k in 0..FT2_LENGTH_SYNC {
+        for (k, &costas_tone) in costas_group.iter().enumerate().take(FT2_LENGTH_SYNC) {
             let block = 1 + FT2_SYNC_OFFSET * m + k;
             let block_abs = cand.time_offset as i32 + block as i32;
             if block_abs < 0 || block_abs >= wf.num_blocks as i32 {
@@ -28,7 +28,7 @@ pub(crate) fn ft2_sync_score(wf: &Waterfall, cand: &Candidate) -> i32 {
                 break;
             }
             let sym_offset = base + block * wf.block_stride;
-            let tone = FT4_COSTAS_PATTERN[m][k] as usize;
+            let tone = costas_tone as usize;
             let elem = *wf_mag_safe(wf, sym_offset + tone);
             sum += wf_elem_to_complex(elem);
         }
@@ -63,9 +63,9 @@ pub(crate) fn ft2_extract_likelihood(
             continue;
         }
         let sym_offset = base + sym_idx * wf.block_stride;
-        for tone in 0..4 {
+        for (tone, symbol_row) in symbols.iter_mut().enumerate().take(4) {
             let elem = *wf_mag_safe(wf, sym_offset + tone);
-            symbols[tone][frame_sym] = wf_elem_to_complex(elem);
+            symbol_row[frame_sym] = wf_elem_to_complex(elem);
         }
     }
 

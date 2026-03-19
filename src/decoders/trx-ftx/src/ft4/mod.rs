@@ -17,8 +17,8 @@ pub(crate) fn ft4_sync_score(wf: &Waterfall, cand: &Candidate) -> i32 {
     let mut score: i32 = 0;
     let mut num_average: i32 = 0;
 
-    for m in 0..FT4_NUM_SYNC {
-        for k in 0..FT4_LENGTH_SYNC {
+    for (m, costas_group) in FT4_COSTAS_PATTERN.iter().enumerate().take(FT4_NUM_SYNC) {
+        for (k, &sm_val) in costas_group.iter().enumerate().take(FT4_LENGTH_SYNC) {
             let block = 1 + FT4_SYNC_OFFSET * m + k;
             let block_abs = cand.time_offset as i32 + block as i32;
             if block_abs < 0 {
@@ -29,7 +29,7 @@ pub(crate) fn ft4_sync_score(wf: &Waterfall, cand: &Candidate) -> i32 {
             }
 
             let p_offset = base + block * wf.block_stride;
-            let sm = FT4_COSTAS_PATTERN[m][k] as usize;
+            let sm = sm_val as usize;
 
             if sm > 0 {
                 let a = wf_mag_safe(wf, p_offset + sm).mag_int();
@@ -174,13 +174,6 @@ pub fn ft4_encode(payload: &[u8], tones: &mut [u8]) {
     }
 }
 
-/// Generate FT2 tone sequence from payload data.
-///
-/// FT2 uses the FT4 framing with a doubled symbol rate.
-pub fn ft2_encode(payload: &[u8], tones: &mut [u8]) {
-    ft4_encode(payload, tones);
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -243,15 +236,5 @@ mod tests {
         ft4_encode(&payload, &mut tones1);
         ft4_encode(&payload, &mut tones2);
         assert_eq!(tones1, tones2);
-    }
-
-    #[test]
-    fn ft2_encode_matches_ft4() {
-        let payload = [0x12, 0x34, 0x56, 0x78, 0x9A, 0xBC, 0xDE, 0xF0, 0x11, 0x20];
-        let mut tones_ft4 = [0u8; FT4_NN];
-        let mut tones_ft2 = [0u8; FT4_NN];
-        ft4_encode(&payload, &mut tones_ft4);
-        ft2_encode(&payload, &mut tones_ft2);
-        assert_eq!(tones_ft4, tones_ft2);
     }
 }

@@ -18,7 +18,7 @@ pub(crate) fn ft8_sync_score(wf: &Waterfall, cand: &Candidate) -> i32 {
     let mut num_average: i32 = 0;
 
     for m in 0..FT8_NUM_SYNC {
-        for k in 0..FT8_LENGTH_SYNC {
+        for (k, &sm_val) in FT8_COSTAS_PATTERN.iter().enumerate().take(FT8_LENGTH_SYNC) {
             let block = FT8_SYNC_OFFSET * m + k;
             let block_abs = cand.time_offset as i32 + block as i32;
             if block_abs < 0 {
@@ -29,7 +29,7 @@ pub(crate) fn ft8_sync_score(wf: &Waterfall, cand: &Candidate) -> i32 {
             }
 
             let p_offset = base + block * wf.block_stride;
-            let sm = FT8_COSTAS_PATTERN[k] as usize;
+            let sm = sm_val as usize;
 
             if sm > 0 {
                 let a = wf_mag_safe(wf, p_offset + sm).mag_int();

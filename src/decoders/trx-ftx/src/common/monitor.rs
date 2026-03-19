@@ -8,7 +8,6 @@
 
 use num_complex::Complex32;
 use realfft::RealFftPlanner;
-use rustfft::FftPlanner;
 
 use super::protocol::FtxProtocol;
 
@@ -94,10 +93,6 @@ pub struct Monitor {
     fft_output: Vec<Complex32>,
     fft_input: Vec<f32>,
     real_fft: std::sync::Arc<dyn realfft::RealToComplex<f32>>,
-    // iFFT for resynthesis
-    nifft: usize,
-    ifft: std::sync::Arc<dyn rustfft::Fft<f32>>,
-    ifft_scratch: Vec<Complex32>,
 }
 
 fn hann_i(i: usize, n: usize) -> f32 {
@@ -137,11 +132,6 @@ impl Monitor {
         let fft_output = real_fft.make_output_vec();
         let fft_input = real_fft.make_input_vec();
 
-        let nifft = 64;
-        let mut fft_planner = FftPlanner::<f32>::new();
-        let ifft = fft_planner.plan_fft_inverse(nifft);
-        let ifft_scratch = vec![Complex32::new(0.0, 0.0); ifft.get_inplace_scratch_len()];
-
         Self {
             symbol_period,
             min_bin,
@@ -158,9 +148,6 @@ impl Monitor {
             fft_output,
             fft_input,
             real_fft,
-            nifft,
-            ifft,
-            ifft_scratch,
         }
     }
 

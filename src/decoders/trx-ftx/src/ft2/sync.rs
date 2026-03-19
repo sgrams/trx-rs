@@ -50,8 +50,8 @@ pub fn prepare_sync_waveforms() -> SyncWaveforms {
     for group in 0..4 {
         let mut idx = 0usize;
         let mut phase = 0.0f32;
-        for tone_idx in 0..4 {
-            let tone = FT4_COSTAS_PATTERN[group][tone_idx] as f32;
+        for &costas_tone in FT4_COSTAS_PATTERN[group].iter() {
+            let tone = costas_tone as f32;
             let dphase = 4.0 * std::f32::consts::PI * tone / nss;
             let half_nss = (nss / 2.0) as usize;
             for _step in 0..half_nss {
@@ -68,9 +68,9 @@ pub fn prepare_sync_waveforms() -> SyncWaveforms {
     // Build frequency tweak phasors
     for idf in FT2_SYNC_TWEAK_MIN..=FT2_SYNC_TWEAK_MAX {
         let tw_idx = (idf - FT2_SYNC_TWEAK_MIN) as usize;
-        for n in 0..64 {
+        for (n, tw) in tweak_wave[tw_idx].iter_mut().enumerate() {
             let phase = 4.0 * std::f32::consts::PI * idf as f32 * n as f32 / fs_down;
-            tweak_wave[tw_idx][n] = Complex32::new(phase.cos(), phase.sin());
+            *tw = Complex32::new(phase.cos(), phase.sin());
         }
     }
 
@@ -89,11 +89,10 @@ fn sync_reference_bank() -> &'static SyncReferenceBank {
         let waveforms = prepare_sync_waveforms();
         let mut refs = [[[Complex32::new(0.0, 0.0); SYNC_SAMPLES]; SYNC_GROUP_COUNT]; NUM_TWEAKS];
 
-        for tw_idx in 0..NUM_TWEAKS {
-            for group in 0..SYNC_GROUP_COUNT {
-                for i in 0..SYNC_SAMPLES {
-                    refs[tw_idx][group][i] =
-                        (waveforms.sync_wave[group][i] * waveforms.tweak_wave[tw_idx][i]).conj();
+        for (tw_idx, refs_tw) in refs.iter_mut().enumerate() {
+            for (group, refs_group) in refs_tw.iter_mut().enumerate() {
+                for (i, r) in refs_group.iter_mut().enumerate() {
+                    *r = (waveforms.sync_wave[group][i] * waveforms.tweak_wave[tw_idx][i]).conj();
                 }
             }
         }
@@ -132,14 +131,13 @@ fn correlate_group_clipped(
     let mut usable = 0usize;
     let n_samples = samples.len() as i32;
 
-    for i in 0..SYNC_SAMPLES {
+    for (i, &reference) in refs.iter().enumerate() {
         let sample_idx = pos + i as i32 * SAMPLE_STRIDE as i32;
         if sample_idx < 0 || sample_idx >= n_samples {
             continue;
         }
 
         let sample = samples[sample_idx as usize];
-        let reference = refs[i];
         sum_re += sample.re * reference.re - sample.im * reference.im;
         sum_im += sample.re * reference.im + sample.im * reference.re;
         usable += 1;

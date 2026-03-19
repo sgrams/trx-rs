@@ -247,8 +247,7 @@ fn parse_cq_modifier(s: &str) -> Option<i32> {
     let mut nlet = 0;
     let mut m: i32 = 0;
 
-    for i in 3..8.min(bytes.len()) {
-        let c = bytes[i];
+    for &c in &bytes[3..8.min(bytes.len())] {
         if c == b' ' || c == 0 {
             break;
         } else if c.is_ascii_digit() {
@@ -511,16 +510,14 @@ fn pack58(hash_table: Option<&mut CallsignHashTable>, callsign: &str) -> Option<
 
     let mut result: u64 = 0;
     let mut c11 = String::with_capacity(12);
-    let mut length = 0;
 
-    for ch in src.chars() {
+    for (length, ch) in src.chars().enumerate() {
         if ch == '<' || length >= 11 {
             break;
         }
         c11.push(ch);
         let j = nchar(ch, CharTable::AlphanumSpaceSlash)?;
         result = result * 38 + j as u64;
-        length += 1;
     }
 
     save_callsign(hash_table, &c11)?;
@@ -1156,9 +1153,9 @@ pub fn ftx_message_decode_free(msg: &FtxMessage) -> String {
     for idx in (0..13).rev() {
         // Divide the long integer in b71 by 42
         let mut rem: u16 = 0;
-        for i in 0..9 {
-            rem = (rem << 8) | b71[i] as u16;
-            b71[i] = (rem / 42) as u8;
+        for b in &mut b71 {
+            rem = (rem << 8) | *b as u16;
+            *b = (rem / 42) as u8;
             rem %= 42;
         }
         c14[idx] = charn(rem as i32, CharTable::Full) as u8;
@@ -1183,9 +1180,9 @@ pub fn ftx_message_decode_telemetry_hex(msg: &FtxMessage) -> String {
 pub fn ftx_message_decode_telemetry(msg: &FtxMessage) -> [u8; 9] {
     let mut telemetry = [0u8; 9];
     let mut carry: u8 = 0;
-    for i in 0..9 {
-        telemetry[i] = (carry << 7) | (msg.payload[i] >> 1);
-        carry = msg.payload[i] & 0x01;
+    for (t, &p) in telemetry.iter_mut().zip(msg.payload.iter()) {
+        *t = (carry << 7) | (p >> 1);
+        carry = p & 0x01;
     }
     telemetry
 }

@@ -76,14 +76,6 @@ fn encode174_91_nocrc_bits(message91: &[u8], codeword: &mut [u8; FTX_LDPC_N]) {
     }
 }
 
-/// XOR two byte slices.
-fn xor_rows(dst: &mut [u8], src: &[u8], len: usize) {
-    dst[..len]
-        .iter_mut()
-        .zip(&src[..len])
-        .for_each(|(d, s)| *d ^= s);
-}
-
 /// Matrix-vector multiply for re-encoding in OSD.
 fn mrbencode91(me: &[u8], codeword: &mut [u8], g2: &[u8], n: usize, k: usize) {
     codeword[..n].fill(0);
@@ -114,24 +106,20 @@ fn nextpat91(mi: &mut [u8], k: usize, iorder: usize, iflag: &mut i32) {
 
     // Build new pattern in-place: zero out after ind, set the swap, pack remaining 1s at end
     let ind_u = ind as usize;
-    for i in (ind_u + 1)..k {
-        mi[i] = 0;
-    }
+    mi[(ind_u + 1)..k].fill(0);
     mi[ind_u] = 1;
 
     let mut nz = iorder as i32;
-    for i in 0..k {
-        nz -= mi[i] as i32;
+    for &v in mi.iter().take(k) {
+        nz -= v as i32;
     }
     if nz > 0 {
-        for i in (k - nz as usize)..k {
-            mi[i] = 1;
-        }
+        mi[(k - nz as usize)..k].fill(1);
     }
 
     *iflag = -1;
-    for i in 0..k {
-        if mi[i] == 1 {
+    for (i, &v) in mi.iter().enumerate().take(k) {
+        if v == 1 {
             *iflag = i as i32;
             break;
         }
@@ -145,7 +133,6 @@ struct OsdBox {
     pairs: Vec<[i32; 2]>,
     capacity: usize,
     count: usize,
-    size: usize,
     last_pattern: i32,
     next_index: i32,
 }
@@ -160,7 +147,6 @@ impl OsdBox {
             pairs: vec![[-1, -1]; capacity],
             capacity,
             count: 0,
-            size,
             last_pattern: -1,
             next_index: -1,
         })
@@ -214,8 +200,8 @@ impl OsdBox {
 /// Compute hash of a bit pattern for OSD-2 lookup.
 fn pattern_hash(e2: &[u8], ntau: usize) -> usize {
     let mut ipat = 0usize;
-    for i in 0..ntau {
-        if e2[i] != 0 {
+    for (i, &v) in e2.iter().enumerate().take(ntau) {
+        if v != 0 {
             ipat |= 1 << (ntau - i - 1);
         }
     }
@@ -232,6 +218,7 @@ fn pattern_hash(e2: &[u8], ntau: usize) -> usize {
 /// `cw`: output 174-bit codeword.
 /// `nhardmin`: output minimum hard errors.
 /// `dmin`: output minimum distance.
+#[allow(clippy::too_many_arguments)]
 pub fn osd174_91(
     llr: &mut [f32; FTX_LDPC_N],
     k: usize,
@@ -372,9 +359,7 @@ pub fn osd174_91(
     // OSD-1: exhaustive search over bit patterns of increasing order
     for iorder in 1..=nord {
         misub.iter_mut().for_each(|v| *v = 0);
-        for i in (k - iorder)..k {
-            misub[i] = 1;
-        }
+        misub[(k - iorder)..k].fill(1);
         let mut iflag = (k - iorder) as i32;
 
         while iflag >= 0 {
@@ -408,8 +393,8 @@ pub fn osd174_91(
                         e2[i] = e2sub[i];
                     }
                     let mut nd1kpt = 1;
-                    for i in 0..nt.min(n - k) {
-                        nd1kpt += e2sub[i] as i32;
+                    for &v in e2sub.iter().take(nt.min(n - k)) {
+                        nd1kpt += v as i32;
                     }
                     d1 = 0.0;
                     for i in 0..k {
@@ -438,8 +423,8 @@ pub fn osd174_91(
                         e2[i] = e2sub[i] ^ g2[(k + i) * k + n1 as usize];
                     }
                     let mut nd1kpt = 2;
-                    for i in 0..nt.min(n - k) {
-                        nd1kpt += e2[i] as i32;
+                    for &v in e2.iter().take(nt.min(n - k)) {
+                        nd1kpt += v as i32;
                     }
                     if nd1kpt <= ntheta {
                         mrbencode91(&me, &mut ce, &g2, n, k);
@@ -486,9 +471,7 @@ pub fn osd174_91(
 
             // Search using base patterns
             misub.iter_mut().for_each(|v| *v = 0);
-            for i in (k - nord)..k {
-                misub[i] = 1;
-            }
+            misub[(k - nord)..k].fill(1);
             let mut iflag = (k - nord) as i32;
 
             while iflag >= 0 {
@@ -594,9 +577,7 @@ fn generator_matrix() -> &'static [[u8; FTX_LDPC_N]; FTX_LDPC_K] {
             let mut msg = [0u8; FTX_LDPC_K];
             msg[i] = 1;
             if i < 77 {
-                for j in 77..FTX_LDPC_K {
-                    msg[j] = 0;
-                }
+                msg[77..FTX_LDPC_K].fill(0);
             }
             encode174_91_nocrc_bits(&msg, &mut gen[i]);
         }
@@ -620,6 +601,7 @@ fn generator_matrix() -> &'static [[u8; FTX_LDPC_N]; FTX_LDPC_K] {
 /// `ntype`: output decode type (0=fail, 1=BP, 2=OSD).
 /// `nharderror`: output number of hard errors.
 /// `dmin`: output minimum distance.
+#[allow(clippy::too_many_arguments)]
 pub fn ft2_decode174_91_osd(
     llr: &mut [f32; FTX_LDPC_N],
     keff: usize,
@@ -732,8 +714,8 @@ pub fn ft2_decode174_91_osd(
             for i in 0..num_rows.min(7) {
                 tanhtoc[i] = (-toc[m][i] / 2.0).tanh();
             }
-            for j in 0..num_rows {
-                let n = FTX_LDPC_NM[m][j] as usize - 1;
+            for &nm_val in FTX_LDPC_NM[m].iter().take(num_rows) {
+                let n = nm_val as usize - 1;
                 if n >= FTX_LDPC_N {
                     continue;
                 }

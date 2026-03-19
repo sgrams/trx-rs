@@ -8,12 +8,9 @@
 //! peaks in the averaged spectrum, downsample each candidate, compute 2D sync
 //! scores, extract bit metrics, and run multi-pass LDPC + OSD decode.
 
-#[allow(clippy::needless_range_loop)]
 pub mod bitmetrics;
 pub(crate) mod decode;
-#[allow(clippy::needless_range_loop)]
 pub mod downsample;
-#[allow(clippy::needless_range_loop)]
 pub mod sync;
 
 pub(crate) use self::decode::{ft2_extract_likelihood, ft2_sync_score};
@@ -48,6 +45,13 @@ pub const FT2_SYMBOL_PERIOD_F: f32 = FT2_SYMBOL_PERIOD;
 /// Frequency offset applied to FT2 candidates.
 pub fn ft2_frequency_offset_hz() -> f32 {
     -1.5 / FT2_SYMBOL_PERIOD_F
+}
+
+/// Generate FT2 tone sequence from payload data.
+///
+/// FT2 uses the FT4 framing with a doubled symbol rate.
+pub fn ft2_encode(payload: &[u8], tones: &mut [u8]) {
+    crate::ft4::ft4_encode(payload, tones);
 }
 
 /// Raw frequency peak candidate from the averaged power spectrum.
@@ -315,8 +319,8 @@ impl Ft2Pipeline {
         }
 
         let inv_n_frames = 1.0 / n_frames as f32;
-        for bin in 1..FT2_NH1 {
-            avg[bin] *= inv_n_frames;
+        for v in avg.iter_mut().take(FT2_NH1).skip(1) {
+            *v *= inv_n_frames;
         }
 
         // Smooth with 15-point moving average
@@ -620,17 +624,24 @@ impl Ft2Pipeline {
         }
 
         // Scale and derive combined passes
-        for i in 0..FTX_LDPC_N {
-            llr_passes[0][i] *= 2.83;
-            llr_passes[1][i] *= 2.83;
-            llr_passes[2][i] *= 2.83;
-
-            let a = llr_passes[0][i];
-            let b = llr_passes[1][i];
-            let c = llr_passes[2][i];
-
+        let [ref mut pass0, ref mut pass1, ref mut pass2, ref mut pass3, ref mut pass4] =
+            llr_passes;
+        for v in pass0.iter_mut() {
+            *v *= 2.83;
+        }
+        for v in pass1.iter_mut() {
+            *v *= 2.83;
+        }
+        for v in pass2.iter_mut() {
+            *v *= 2.83;
+        }
+        for ((&a, &b), (&c, (p3, p4))) in pass0
+            .iter()
+            .zip(pass1.iter())
+            .zip(pass2.iter().zip(pass3.iter_mut().zip(pass4.iter_mut())))
+        {
             // Pass 3: max-abs metric
-            llr_passes[3][i] = if a.abs() >= b.abs() && a.abs() >= c.abs() {
+            *p3 = if a.abs() >= b.abs() && a.abs() >= c.abs() {
                 a
             } else if b.abs() >= c.abs() {
                 b
@@ -639,7 +650,7 @@ impl Ft2Pipeline {
             };
 
             // Pass 4: average
-            llr_passes[4][i] = (a + b + c) / 3.0;
+            *p4 = (a + b + c) / 3.0;
         }
 
         // Multi-pass LDPC decode using full BP+OSD decoder
@@ -647,11 +658,11 @@ impl Ft2Pipeline {
         let mut message = FtxMessage::default();
         let mut apmask = [0u8; FTX_LDPC_N];
 
-        for pass in 0..5 {
+        for llr_pass in &llr_passes {
             if ok {
                 break;
             }
-            let mut log174 = llr_passes[pass];
+            let mut log174 = *llr_pass;
 
             let mut message91 = [0u8; FTX_LDPC_K];
             let mut cw = [0u8; FTX_LDPC_N];
@@ -821,5 +832,15 @@ mod tests {
         for &b in &cw {
             assert_eq!(b, 0);
         }
+    }
+
+    #[test]
+    fn ft2_encode_matches_ft4() {
+        let payload = [0x12, 0x34, 0x56, 0x78, 0x9A, 0xBC, 0xDE, 0xF0, 0x11, 0x20];
+        let mut tones_ft4 = [0u8; FT4_NN];
+        let mut tones_ft2 = [0u8; FT4_NN];
+        crate::ft4::ft4_encode(&payload, &mut tones_ft4);
+        ft2_encode(&payload, &mut tones_ft2);
+        assert_eq!(tones_ft4, tones_ft2);
     }
 }

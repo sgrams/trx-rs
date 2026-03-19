@@ -33,10 +33,10 @@ pub(crate) fn encode174(message: &[u8], codeword: &mut [u8]) {
     let mut col_idx: usize = FTX_LDPC_K_BYTES - 1;
 
     // Compute the LDPC checksum bits and store them in codeword
-    for i in 0..FTX_LDPC_M {
+    for gen_row in FTX_LDPC_GENERATOR.iter().take(FTX_LDPC_M) {
         let mut nsum: u8 = 0;
         for j in 0..FTX_LDPC_K_BYTES {
-            nsum ^= parity8(message[j] & FTX_LDPC_GENERATOR[i][j]);
+            nsum ^= parity8(message[j] & gen_row[j]);
         }
 
         if !nsum.is_multiple_of(2) {
@@ -55,7 +55,7 @@ pub(crate) fn encode174(message: &[u8], codeword: &mut [u8]) {
 ///
 /// Each element of the returned array is 0 or 1.
 /// Uses the same (174, 91) LDPC generator as `encode174`.
-#[allow(dead_code)]
+#[cfg(test)]
 pub(crate) fn encode174_to_bits(a91: &[u8; FTX_LDPC_K_BYTES]) -> [u8; super::protocol::FTX_LDPC_N] {
     use super::protocol::FTX_LDPC_N;
     let mut codeword_packed = [0u8; FTX_LDPC_N_BYTES];

@@ -190,8 +190,8 @@ impl DownsampleContext {
         }
 
         // Apply spectral window
-        for i in 0..self.nfft2 {
-            band[i] *= self.window[i];
+        for (b, &w) in band.iter_mut().zip(self.window.iter()) {
+            *b *= w;
         }
 
         // Inverse FFT (in-place)
@@ -221,19 +221,27 @@ fn build_spectral_window(nfft2: usize, df: f32) -> Vec<f32> {
     }
 
     // Raised-cosine leading edge
-    for i in 0..iwt.min(nfft2) {
-        window[i] = 0.5 * (1.0 + (std::f32::consts::PI * (iwt - 1 - i) as f32 / iwt as f32).cos());
+    for (i, w) in window.iter_mut().enumerate().take(iwt.min(nfft2)) {
+        *w = 0.5 * (1.0 + (std::f32::consts::PI * (iwt - 1 - i) as f32 / iwt as f32).cos());
     }
 
     // Flat passband
-    for i in iwt..(iwt + iwf).min(nfft2) {
-        window[i] = 1.0;
+    for w in window
+        .iter_mut()
+        .skip(iwt)
+        .take((iwt + iwf).min(nfft2) - iwt)
+    {
+        *w = 1.0;
     }
 
     // Raised-cosine trailing edge
-    for i in (iwt + iwf)..(2 * iwt + iwf).min(nfft2) {
-        window[i] =
-            0.5 * (1.0 + (std::f32::consts::PI * (i - (iwt + iwf)) as f32 / iwt as f32).cos());
+    for (i, w) in window
+        .iter_mut()
+        .enumerate()
+        .take((2 * iwt + iwf).min(nfft2))
+        .skip(iwt + iwf)
+    {
+        *w = 0.5 * (1.0 + (std::f32::consts::PI * (i - (iwt + iwf)) as f32 / iwt as f32).cos());
     }
 
     // Circular shift by iws bins

@@ -49,16 +49,7 @@ pub(crate) fn get_cand_offset(wf: &Waterfall, cand: &Candidate) -> usize {
     offset.max(0) as usize
 }
 
-pub(crate) fn wf_mag_at(wf: &Waterfall, base: usize, idx: isize) -> &WfElem {
-    let i = (base as isize + idx).max(0) as usize;
-    if i < wf.mag.len() {
-        &wf.mag[i]
-    } else {
-        &DEFAULT_WF_ELEM
-    }
-}
-
-// Leaked reference for out-of-bounds default
+// Default element for out-of-bounds waterfall access
 pub(crate) static DEFAULT_WF_ELEM: WfElem = WfElem {
     mag: -120.0,
     phase: 0.0,
@@ -256,8 +247,8 @@ pub fn pack_bits(bit_array: &[u8], num_bits: usize, packed: &mut [u8]) {
     }
     let mut mask: u8 = 0x80;
     let mut byte_idx = 0;
-    for i in 0..num_bits {
-        if bit_array[i] != 0 {
+    for &bit in bit_array.iter().take(num_bits) {
+        if bit != 0 {
             packed[byte_idx] |= mask;
         }
         mask >>= 1;
@@ -312,19 +303,19 @@ pub fn ftx_post_decode_snr(wf: &Waterfall, cand: &Candidate, message: &FtxMessag
     let mut sum_snr = 0.0f32;
     let mut n_valid = 0;
 
-    for sym in 0..nn {
+    for (sym, &tone) in tones.iter().enumerate().take(nn) {
         let block_abs = cand.time_offset as i32 + sym as i32;
         if block_abs < 0 || block_abs >= wf.num_blocks as i32 {
             continue;
         }
 
         let p_offset = base + sym * wf.block_stride;
-        let sig_db = wf_mag_safe(wf, p_offset + tones[sym] as usize).mag;
+        let sig_db = wf_mag_safe(wf, p_offset + tone as usize).mag;
 
         let mut noise_min = 0.0f32;
         let mut found_noise = false;
         for t in 0..num_tones {
-            if t == tones[sym] as usize {
+            if t == tone as usize {
                 continue;
             }
             let db = wf_mag_safe(wf, p_offset + t).mag;
