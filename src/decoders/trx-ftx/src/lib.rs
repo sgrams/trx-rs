@@ -10,14 +10,9 @@ pub mod decode;
 mod decoder;
 #[allow(clippy::needless_range_loop)]
 pub mod encode;
-#[allow(
-    dead_code,
-    clippy::manual_memcpy,
-    clippy::needless_range_loop,
-    clippy::too_many_arguments
-)]
+#[allow(dead_code, clippy::needless_range_loop, clippy::too_many_arguments)]
 pub mod ft2;
-#[allow(clippy::manual_memcpy, clippy::needless_range_loop)]
+#[allow(clippy::needless_range_loop)]
 pub mod ldpc;
 #[allow(clippy::explicit_counter_loop, clippy::needless_range_loop)]
 pub mod message;

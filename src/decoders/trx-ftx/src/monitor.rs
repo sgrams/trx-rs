@@ -12,11 +12,13 @@ use rustfft::FftPlanner;
 
 use crate::protocol::FtxProtocol;
 
-/// Waterfall element storing magnitude (dB) and phase (radians).
+/// Waterfall element storing magnitude (dB), phase (radians), and raw complex components.
 #[derive(Clone, Copy, Default)]
 pub struct WfElem {
     pub mag: f32,
     pub phase: f32,
+    pub re: f32,
+    pub im: f32,
 }
 
 impl WfElem {
@@ -192,9 +194,10 @@ impl Monitor {
             }
 
             // Windowed FFT
-            for pos in 0..self.nfft {
-                self.fft_input[pos] = self.window[pos] * self.last_frame[pos];
-            }
+            self.fft_input
+                .iter_mut()
+                .zip(self.window.iter().zip(self.last_frame.iter()))
+                .for_each(|(dst, (w, f))| *dst = w * f);
             self.real_fft
                 .process_with_scratch(
                     &mut self.fft_input,
@@ -214,7 +217,12 @@ impl Monitor {
                         let phase = c.im.atan2(c.re);
 
                         if offset < self.wf.mag.len() {
-                            self.wf.mag[offset] = WfElem { mag: db, phase };
+                            self.wf.mag[offset] = WfElem {
+                                mag: db,
+                                phase,
+                                re: c.re,
+                                im: c.im,
+                            };
                         }
                         offset += 1;
 
@@ -226,6 +234,8 @@ impl Monitor {
                             self.wf.mag[offset] = WfElem {
                                 mag: -120.0,
                                 phase: 0.0,
+                                re: 0.0,
+                                im: 0.0,
                             };
                         }
                         offset += 1;

@@ -13,8 +13,11 @@ pub mod downsample;
 pub mod osd;
 pub mod sync;
 
+use std::sync::Arc;
+
 use num_complex::Complex32;
 use realfft::RealFftPlanner;
+use rustfft::FftPlanner;
 
 use crate::decode::{verify_crc_and_build_message, FtxMessage};
 use crate::protocol::*;
@@ -117,6 +120,9 @@ pub struct Ft2Pipeline {
     raw_capacity: usize,
     waveforms: SyncWaveforms,
     peak_search: PeakSearchWorkspace,
+    // Cached FFT plans reused across decode cycles
+    ds_real_fft: Arc<dyn realfft::RealToComplex<f32>>,
+    ds_ifft: Arc<dyn rustfft::Fft<f32>>,
 }
 
 struct Ft2DecodeWorkspace {
@@ -176,12 +182,21 @@ impl PeakSearchWorkspace {
 impl Ft2Pipeline {
     /// Create a new FT2 pipeline for the given sample rate.
     pub fn new(sample_rate: i32) -> Self {
+        // Pre-build FFT plans for the downsample context (reused every decode cycle)
+        let nfft2 = FT2_NMAX / FT2_NDOWN;
+        let mut real_planner = RealFftPlanner::<f32>::new();
+        let ds_real_fft = real_planner.plan_fft_forward(FT2_NMAX);
+        let mut fft_planner = FftPlanner::<f32>::new();
+        let ds_ifft = fft_planner.plan_fft_inverse(nfft2);
+
         Self {
             sample_rate: sample_rate as f32,
             raw_audio: Vec::with_capacity(FT2_NMAX),
             raw_capacity: FT2_NMAX,
             waveforms: prepare_sync_waveforms(),
             peak_search: PeakSearchWorkspace::new(),
+            ds_real_fft,
+            ds_ifft,
         }
     }
 
@@ -216,7 +231,12 @@ impl Ft2Pipeline {
             return Vec::new();
         }
 
-        let ctx = match DownsampleContext::new(&self.raw_audio, self.sample_rate) {
+        let ctx = match DownsampleContext::new_with_plans(
+            &self.raw_audio,
+            self.sample_rate,
+            Some(Arc::clone(&self.ds_real_fft)),
+            Some(Arc::clone(&self.ds_ifft)),
+        ) {
             Some(ctx) => ctx,
             None => return Vec::new(),
         };

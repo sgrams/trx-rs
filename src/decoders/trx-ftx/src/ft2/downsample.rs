@@ -9,6 +9,8 @@
 //! around that frequency, applies a spectral window, and inverse-FFTs to produce
 //! a complex baseband signal at a reduced sample rate (12000/NDOWN = 1333.3 Hz).
 
+use std::sync::Arc;
+
 use num_complex::Complex32;
 use rustfft::FftPlanner;
 
@@ -64,8 +66,22 @@ impl DownsampleContext {
     /// Initialize the downsample context by computing the forward FFT of
     /// the raw audio and preparing the spectral window.
     ///
+    /// If `real_fft` and `ifft` are provided, they are reused instead of
+    /// creating fresh planners. The real FFT must be a forward plan of length
+    /// `nraw` and the IFFT must be an inverse plan of length `nraw / NDOWN`.
+    ///
     /// Returns `None` if the raw audio is too short or allocation fails.
     pub fn new(raw_audio: &[f32], sample_rate: f32) -> Option<Self> {
+        Self::new_with_plans(raw_audio, sample_rate, None, None)
+    }
+
+    /// Initialize with optional pre-built FFT plans for reuse across decode cycles.
+    pub fn new_with_plans(
+        raw_audio: &[f32],
+        sample_rate: f32,
+        real_fft: Option<Arc<dyn realfft::RealToComplex<f32>>>,
+        ifft: Option<Arc<dyn rustfft::Fft<f32>>>,
+    ) -> Option<Self> {
         let nraw = raw_audio.len();
         if nraw == 0 {
             return None;
@@ -85,8 +101,13 @@ impl DownsampleContext {
         }
 
         // Forward real FFT of raw audio
-        let mut real_planner = realfft::RealFftPlanner::<f32>::new();
-        let fft = real_planner.plan_fft_forward(nraw);
+        let fft = match real_fft {
+            Some(f) => f,
+            None => {
+                let mut real_planner = realfft::RealFftPlanner::<f32>::new();
+                real_planner.plan_fft_forward(nraw)
+            }
+        };
         let mut input = fft.make_input_vec();
         let mut output = fft.make_output_vec();
         let mut scratch = fft.make_scratch_vec();
@@ -98,8 +119,13 @@ impl DownsampleContext {
         let spectrum = output;
 
         // IFFT plan for downsampled length
-        let mut planner = FftPlanner::<f32>::new();
-        let ifft = planner.plan_fft_inverse(nfft2);
+        let ifft = match ifft {
+            Some(f) => f,
+            None => {
+                let mut planner = FftPlanner::<f32>::new();
+                planner.plan_fft_inverse(nfft2)
+            }
+        };
         let ifft_scratch_len = ifft.get_inplace_scratch_len();
 
         Some(Self {

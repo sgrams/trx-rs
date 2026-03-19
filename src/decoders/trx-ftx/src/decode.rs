@@ -38,8 +38,7 @@ pub struct FtxMessage {
 }
 
 fn wf_elem_to_complex(elem: WfElem) -> Complex32 {
-    let amplitude = 10.0_f32.powf(elem.mag / 20.0);
-    Complex32::from_polar(amplitude, elem.phase)
+    Complex32::new(elem.re, elem.im)
 }
 
 fn get_cand_offset(wf: &Waterfall, cand: &Candidate) -> usize {
@@ -55,10 +54,7 @@ fn wf_mag_at(wf: &Waterfall, base: usize, idx: isize) -> &WfElem {
     if i < wf.mag.len() {
         &wf.mag[i]
     } else {
-        &WfElem {
-            mag: -120.0,
-            phase: 0.0,
-        }
+        &DEFAULT_WF_ELEM
     }
 }
 
@@ -66,6 +62,8 @@ fn wf_mag_at(wf: &Waterfall, base: usize, idx: isize) -> &WfElem {
 static DEFAULT_WF_ELEM: WfElem = WfElem {
     mag: -120.0,
     phase: 0.0,
+    re: 0.0,
+    im: 0.0,
 };
 
 fn wf_mag_safe(wf: &Waterfall, idx: usize) -> &WfElem {
@@ -534,6 +532,7 @@ pub(crate) fn verify_crc_and_build_message(
     let mut a91 = [0u8; crate::protocol::FTX_LDPC_K_BYTES];
     pack_bits(plain174, crate::protocol::FTX_LDPC_K, &mut a91);
 
+    let a91_orig = a91;
     let crc_extracted = crate::crc::ftx_extract_crc(&a91);
     a91[9] &= 0xF8;
     a91[10] = 0x00;
@@ -543,8 +542,7 @@ pub(crate) fn verify_crc_and_build_message(
         return None;
     }
 
-    // Re-read a91 since we modified it for CRC check
-    pack_bits(plain174, crate::protocol::FTX_LDPC_K, &mut a91);
+    let a91 = a91_orig;
 
     let mut message = FtxMessage {
         hash: crc_calculated,

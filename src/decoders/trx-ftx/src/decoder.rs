@@ -45,9 +45,6 @@ pub struct Ft8Decoder {
     ft2_pipeline: Option<crate::ft2::Ft2Pipeline>,
 }
 
-// Ft8Decoder is not shared across threads, but may be moved between tasks.
-unsafe impl Send for Ft8Decoder {}
-
 impl Ft8Decoder {
     /// Create a new FT8 decoder.
     pub fn new(sample_rate: u32) -> Result<Self, String> {

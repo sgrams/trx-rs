@@ -16,38 +16,14 @@
 //! 3. Exhaustive search over bit-flip patterns of increasing weight
 //! 4. Pattern hashing (OSD-2) to efficiently search two-bit-flip corrections
 
+use std::sync::OnceLock;
+
 use crate::constants::{FTX_LDPC_GENERATOR, FTX_LDPC_MN, FTX_LDPC_NM, FTX_LDPC_NUM_ROWS};
 use crate::crc::{ftx_compute_crc, ftx_extract_crc};
 use crate::decode::pack_bits;
 use crate::encode::parity8;
+use crate::ldpc::ldpc_check;
 use crate::protocol::{FTX_LDPC_K, FTX_LDPC_K_BYTES, FTX_LDPC_M, FTX_LDPC_N};
-
-/// Check LDPC parity of a 174-bit codeword. Returns number of parity errors.
-pub fn ft2_ldpc_check(codeword: &[u8]) -> i32 {
-    let mut errors = 0i32;
-    for m in 0..FTX_LDPC_M {
-        let mut x: u8 = 0;
-        let num_rows = FTX_LDPC_NUM_ROWS[m] as usize;
-        for i in 0..num_rows {
-            let idx = FTX_LDPC_NM[m][i] as usize;
-            if idx > 0 && idx - 1 < codeword.len() {
-                x ^= codeword[idx - 1];
-            }
-        }
-        if x != 0 {
-            errors += 1;
-        }
-    }
-    errors
-}
-
-/// Fast rational approximation of `atanh(x)`.
-fn fast_atanh(x: f32) -> f32 {
-    let x2 = x * x;
-    let a = x * (945.0 + x2 * (-735.0 + x2 * 64.0));
-    let b = 945.0 + x2 * (-1050.0 + x2 * 225.0);
-    a / b
-}
 
 /// Piecewise linear approximation of `atanh(x)` used in BP message passing.
 fn platanh(x: f32) -> f32 {
@@ -102,23 +78,23 @@ fn encode174_91_nocrc_bits(message91: &[u8], codeword: &mut [u8; FTX_LDPC_N]) {
 
 /// XOR two byte slices.
 fn xor_rows(dst: &mut [u8], src: &[u8], len: usize) {
-    for i in 0..len {
-        dst[i] ^= src[i];
-    }
+    dst[..len]
+        .iter_mut()
+        .zip(&src[..len])
+        .for_each(|(d, s)| *d ^= s);
 }
 
 /// Matrix-vector multiply for re-encoding in OSD.
 fn mrbencode91(me: &[u8], codeword: &mut [u8], g2: &[u8], n: usize, k: usize) {
-    for c in codeword[..n].iter_mut() {
-        *c = 0;
-    }
+    codeword[..n].fill(0);
     for i in 0..k {
         if me[i] == 0 {
             continue;
         }
-        for j in 0..n {
-            codeword[j] ^= g2[j * k + i];
-        }
+        codeword[..n]
+            .iter_mut()
+            .enumerate()
+            .for_each(|(j, c)| *c ^= g2[j * k + i]);
     }
 }
 
@@ -269,9 +245,9 @@ pub fn osd174_91(
     let n = FTX_LDPC_N;
     let ndeep = ndeep.min(6);
 
-    // Build per-bit generator matrix (each row i generates codeword from
+    // Cached per-bit generator matrix (each row i generates codeword from
     // unit vector e_i)
-    let gen = build_generator_matrix();
+    let gen = generator_matrix();
 
     // Stack-allocated working buffers (k=91, n=174, n-k=83).
     let mut genmrb = [0u8; FTX_LDPC_K * FTX_LDPC_N];
@@ -608,22 +584,24 @@ fn reorder_result(
     }
 }
 
-/// Build the full per-bit generator matrix.
-/// Each row `i` contains the 174-bit codeword produced by encoding
-/// a unit vector with bit `i` set.
-fn build_generator_matrix() -> Box<[[u8; FTX_LDPC_N]; FTX_LDPC_K]> {
-    let mut gen = Box::new([[0u8; FTX_LDPC_N]; FTX_LDPC_K]);
-    for i in 0..FTX_LDPC_K {
-        let mut msg = [0u8; FTX_LDPC_K];
-        msg[i] = 1;
-        if i < 77 {
-            for j in 77..FTX_LDPC_K {
-                msg[j] = 0;
+/// Get a reference to the cached generator matrix.
+/// The matrix is computed once on first call and reused thereafter.
+fn generator_matrix() -> &'static [[u8; FTX_LDPC_N]; FTX_LDPC_K] {
+    static GEN: OnceLock<Box<[[u8; FTX_LDPC_N]; FTX_LDPC_K]>> = OnceLock::new();
+    GEN.get_or_init(|| {
+        let mut gen = Box::new([[0u8; FTX_LDPC_N]; FTX_LDPC_K]);
+        for i in 0..FTX_LDPC_K {
+            let mut msg = [0u8; FTX_LDPC_K];
+            msg[i] = 1;
+            if i < 77 {
+                for j in 77..FTX_LDPC_K {
+                    msg[j] = 0;
+                }
             }
+            encode174_91_nocrc_bits(&msg, &mut gen[i]);
         }
-        encode174_91_nocrc_bits(&msg, &mut gen[i]);
-    }
-    gen
+        gen
+    })
 }
 
 /// Full iterative BP decoder with OSD refinement.
@@ -698,7 +676,7 @@ pub fn ft2_decode174_91_osd(
         for i in 0..FTX_LDPC_N {
             best_cw[i] = if zn[i] > 0.0 { 1 } else { 0 };
         }
-        let ncheck = ft2_ldpc_check(&best_cw);
+        let ncheck = ldpc_check(&best_cw);
 
         if ncheck == 0 && check_crc91(&best_cw) {
             message91.copy_from_slice(&best_cw[..FTX_LDPC_K]);
@@ -815,18 +793,19 @@ pub fn ft2_decode174_91_osd(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ldpc::fast_atanh;
 
     #[test]
     fn ldpc_check_all_zeros() {
         let cw = [0u8; FTX_LDPC_N];
-        assert_eq!(ft2_ldpc_check(&cw), 0);
+        assert_eq!(ldpc_check(&cw), 0);
     }
 
     #[test]
     fn ldpc_check_single_bit_error() {
         let mut cw = [0u8; FTX_LDPC_N];
         cw[0] = 1;
-        assert!(ft2_ldpc_check(&cw) > 0);
+        assert!(ldpc_check(&cw) > 0);
     }
 
     #[test]
@@ -922,7 +901,7 @@ mod tests {
 
     #[test]
     fn generator_matrix_row_zero() {
-        let gen = build_generator_matrix();
+        let gen = generator_matrix();
         // Row 0 should encode unit vector e_0
         assert_eq!(gen[0][0], 1);
         // Some parity bits should be non-zero

@@ -13,7 +13,7 @@ use crate::constants::{FTX_LDPC_MN, FTX_LDPC_NM, FTX_LDPC_NUM_ROWS};
 use crate::protocol::{FTX_LDPC_M, FTX_LDPC_N};
 
 /// Fast rational approximation of `tanh(x)`, clamped at +/-4.97.
-fn fast_tanh(x: f32) -> f32 {
+pub(crate) fn fast_tanh(x: f32) -> f32 {
     if x < -4.97f32 {
         return -1.0f32;
     }
@@ -27,7 +27,7 @@ fn fast_tanh(x: f32) -> f32 {
 }
 
 /// Fast rational approximation of `atanh(x)`.
-fn fast_atanh(x: f32) -> f32 {
+pub(crate) fn fast_atanh(x: f32) -> f32 {
     let x2 = x * x;
     let a = x * (945.0f32 + x2 * (-735.0f32 + x2 * 64.0f32));
     let b = 945.0f32 + x2 * (-1050.0f32 + x2 * 225.0f32);
@@ -37,7 +37,7 @@ fn fast_atanh(x: f32) -> f32 {
 /// Count the number of LDPC parity errors in a 174-bit codeword.
 ///
 /// Returns 0 if all parity checks pass (valid codeword).
-pub fn ldpc_check(codeword: &[u8; FTX_LDPC_N]) -> i32 {
+pub(crate) fn ldpc_check(codeword: &[u8; FTX_LDPC_N]) -> i32 {
     let mut errors = 0i32;
     for m in 0..FTX_LDPC_M {
         let mut x: u8 = 0;
@@ -59,6 +59,7 @@ pub fn ldpc_check(codeword: &[u8; FTX_LDPC_N]) -> i32 {
 /// `max_iters` controls how many iterations to attempt.
 ///
 /// Returns the number of remaining parity errors (0 = success).
+#[cfg(test)]
 pub fn ldpc_decode(
     codeword: &mut [f32; FTX_LDPC_N],
     max_iters: usize,
