@@ -521,32 +521,6 @@ fn ft2_extract_logl_seq(
     }
 }
 
-/// Normalize LLR array by dividing by standard deviation, then optionally
-/// scaling to a target variance.
-///
-/// If `target_variance` is `Some(v)`, the output has variance ≈ v.
-/// If `None`, the output has unit variance (σ = 1).
-pub(crate) fn normalize_llr(log174: &mut [f32; FTX_LDPC_N], target_variance: Option<f32>) {
-    let mut sum = 0.0f32;
-    let mut sum2 = 0.0f32;
-    for &v in log174.iter() {
-        sum += v;
-        sum2 += v * v;
-    }
-    let inv_n = 1.0 / FTX_LDPC_N as f32;
-    let variance = (sum2 - sum * sum * inv_n) * inv_n;
-    if variance <= 1e-12 {
-        return;
-    }
-    let scale = match target_variance {
-        Some(tv) => (tv / variance).sqrt(),
-        None => 1.0 / variance.sqrt(),
-    };
-    for v in log174.iter_mut() {
-        *v *= scale;
-    }
-}
-
 /// Verify CRC of a 174-bit plaintext and build an FtxMessage.
 ///
 /// `plain174`: decoded LDPC codeword (174 bits, each 0 or 1).

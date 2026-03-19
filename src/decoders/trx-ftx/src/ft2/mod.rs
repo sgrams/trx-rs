@@ -16,7 +16,7 @@ pub mod sync;
 use num_complex::Complex32;
 use realfft::RealFftPlanner;
 
-use crate::decode::{normalize_llr, verify_crc_and_build_message, FtxMessage};
+use crate::decode::{verify_crc_and_build_message, FtxMessage};
 use crate::protocol::*;
 
 use bitmetrics::BitMetricsWorkspace;
@@ -428,7 +428,7 @@ impl Ft2Pipeline {
                 idf += 3;
             }
 
-            if best_score < 0.50 {
+            if best_score < 0.40 {
                 continue;
             }
 
@@ -452,7 +452,7 @@ impl Ft2Pipeline {
                 }
             }
 
-            if best_score < 0.50 {
+            if best_score < 0.40 {
                 continue;
             }
 
@@ -516,7 +516,7 @@ impl Ft2Pipeline {
             }
         }
 
-        if best_score < 0.65 {
+        if best_score < 0.55 {
             return None;
         }
 
@@ -575,7 +575,7 @@ impl Ft2Pipeline {
                 0
             };
         }
-        if sync_qual < 10 {
+        if sync_qual < 9 {
             return None;
         }
 
@@ -628,7 +628,6 @@ impl Ft2Pipeline {
                 break;
             }
             let mut log174 = llr_passes[pass];
-            normalize_llr(&mut log174, None);
 
             let mut message91 = [0u8; FTX_LDPC_K];
             let mut cw = [0u8; FTX_LDPC_N];
@@ -639,7 +638,7 @@ impl Ft2Pipeline {
             osd::ft2_decode174_91_osd(
                 &mut log174,
                 FTX_LDPC_K,
-                3,
+                4,
                 3,
                 &mut apmask,
                 &mut message91,

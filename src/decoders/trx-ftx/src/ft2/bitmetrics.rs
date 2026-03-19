@@ -134,7 +134,7 @@ impl BitMetricsWorkspace {
                         }
                         _ => Complex32::new(0.0, 0.0),
                     };
-                    let coherent = sum.norm_sqr();
+                    let coherent = sum.norm();
 
                     for ib in 0..=ibmax {
                         if ((i >> (ibmax - ib)) & 1) != 0 {
