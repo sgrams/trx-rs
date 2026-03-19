@@ -136,25 +136,22 @@ fn nextpat91(mi: &mut [u8], k: usize, iorder: usize, iflag: &mut i32) {
         return;
     }
 
-    let mut ms = vec![0u8; k];
-    for i in 0..ind as usize {
-        ms[i] = mi[i];
+    // Build new pattern in-place: zero out after ind, set the swap, pack remaining 1s at end
+    let ind_u = ind as usize;
+    for i in (ind_u + 1)..k {
+        mi[i] = 0;
     }
-    ms[ind as usize] = 1;
-    ms[ind as usize + 1] = 0;
+    mi[ind_u] = 1;
 
-    if (ind as usize + 1) < k {
-        let mut nz = iorder as i32;
-        for i in 0..k {
-            nz -= ms[i] as i32;
-        }
-        if nz > 0 {
-            for i in (k - nz as usize)..k {
-                ms[i] = 1;
-            }
+    let mut nz = iorder as i32;
+    for i in 0..k {
+        nz -= mi[i] as i32;
+    }
+    if nz > 0 {
+        for i in (k - nz as usize)..k {
+            mi[i] = 1;
         }
     }
-    mi[..k].copy_from_slice(&ms[..k]);
 
     *iflag = -1;
     for i in 0..k {
@@ -276,40 +273,36 @@ pub fn osd174_91(
     // unit vector e_i)
     let gen = build_generator_matrix();
 
-    // Allocate working buffers
-    let mut genmrb = vec![0u8; k * n];
-    let mut g2 = vec![0u8; n * k];
-    let mut m0 = vec![0u8; k];
-    let mut me = vec![0u8; k];
-    let mut mi = vec![0u8; k];
-    let mut misub = vec![0u8; k];
-    let mut e2sub = vec![0u8; n - k];
-    let mut e2 = vec![0u8; n - k];
-    let mut ui = vec![0u8; n - k];
-    let mut r2pat = vec![0u8; n - k];
-    let mut hdec = vec![0u8; n];
-    let mut c0 = vec![0u8; n];
-    let mut ce = vec![0u8; n];
-    let mut nxor = vec![0u8; n];
-    let mut apmaskr = vec![0u8; n];
-    let mut rx = vec![0.0f32; n];
-    let mut absrx = vec![0.0f32; n];
-    let mut indices = vec![0usize; n];
+    // Stack-allocated working buffers (k=91, n=174, n-k=83).
+    let mut genmrb = [0u8; FTX_LDPC_K * FTX_LDPC_N];
+    let mut g2 = [0u8; FTX_LDPC_N * FTX_LDPC_K];
+    let mut m0 = [0u8; FTX_LDPC_K];
+    let mut me = [0u8; FTX_LDPC_K];
+    let mut mi = [0u8; FTX_LDPC_K];
+    let mut misub = [0u8; FTX_LDPC_K];
+    let mut e2sub = [0u8; FTX_LDPC_M];
+    let mut e2 = [0u8; FTX_LDPC_M];
+    let mut ui = [0u8; FTX_LDPC_M];
+    let mut r2pat = [0u8; FTX_LDPC_M];
+    let mut hdec = [0u8; FTX_LDPC_N];
+    let mut c0 = [0u8; FTX_LDPC_N];
+    let mut ce = [0u8; FTX_LDPC_N];
+    let mut nxor = [0u8; FTX_LDPC_N];
+    let mut apmaskr = [0u8; FTX_LDPC_N];
+    let mut rx = [0.0f32; FTX_LDPC_N];
+    let mut absrx = [0.0f32; FTX_LDPC_N];
+    let mut indices = [0usize; FTX_LDPC_N];
 
     // Sort bits by reliability (descending)
-    struct RelEntry {
-        index: usize,
-        abs_llr: f32,
+    let mut rel_indices = [0usize; FTX_LDPC_N];
+    let mut rel_abs = [0.0f32; FTX_LDPC_N];
+    for i in 0..n {
+        rel_indices[i] = i;
+        rel_abs[i] = llr[i].abs();
     }
-    let mut rel: Vec<RelEntry> = (0..n)
-        .map(|i| RelEntry {
-            index: i,
-            abs_llr: llr[i].abs(),
-        })
-        .collect();
-    rel.sort_by(|a, b| {
-        b.abs_llr
-            .partial_cmp(&a.abs_llr)
+    rel_indices[..n].sort_by(|&a, &b| {
+        rel_abs[b]
+            .partial_cmp(&rel_abs[a])
             .unwrap_or(std::cmp::Ordering::Equal)
     });
 
@@ -322,7 +315,7 @@ pub fn osd174_91(
 
     // Reorder by reliability
     for i in 0..n {
-        indices[i] = rel[i].index;
+        indices[i] = rel_indices[i];
         for row in 0..k {
             genmrb[row * n + i] = gen[row][indices[i]];
         }
@@ -618,8 +611,8 @@ fn reorder_result(
 /// Build the full per-bit generator matrix.
 /// Each row `i` contains the 174-bit codeword produced by encoding
 /// a unit vector with bit `i` set.
-fn build_generator_matrix() -> Vec<[u8; FTX_LDPC_N]> {
-    let mut gen = vec![[0u8; FTX_LDPC_N]; FTX_LDPC_K];
+fn build_generator_matrix() -> Box<[[u8; FTX_LDPC_N]; FTX_LDPC_K]> {
+    let mut gen = Box::new([[0u8; FTX_LDPC_N]; FTX_LDPC_K]);
     for i in 0..FTX_LDPC_K {
         let mut msg = [0u8; FTX_LDPC_K];
         msg[i] = 1;
@@ -674,7 +667,7 @@ pub fn ft2_decode174_91_osd(
 
     let nosd = if maxosd == 0 { 1 } else { maxosd };
 
-    let mut zsave = vec![[0.0f32; FTX_LDPC_N]; 3];
+    let mut zsave = [[0.0f32; FTX_LDPC_N]; 3];
     if maxosd == 0 {
         zsave[0].copy_from_slice(llr);
     }

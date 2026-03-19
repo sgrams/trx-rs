@@ -64,15 +64,13 @@ pub fn ldpc_decode(
     max_iters: usize,
     plain: &mut [u8; FTX_LDPC_N],
 ) -> i32 {
-    // Allocate m[][] and e[][] on the heap (~60 kB each) to avoid stack overflow.
-    let mut m_matrix: Vec<Vec<f32>> = vec![vec![0.0f32; FTX_LDPC_N]; FTX_LDPC_M];
-    let mut e_matrix: Vec<Vec<f32>> = vec![vec![0.0f32; FTX_LDPC_N]; FTX_LDPC_M];
+    // Flat arrays for m[][] and e[][] (~57 kB each, ~114 kB total on stack).
+    let mut m_matrix = [0.0f32; FTX_LDPC_M * FTX_LDPC_N];
+    let mut e_matrix = [0.0f32; FTX_LDPC_M * FTX_LDPC_N];
 
     // Initialize m[][] with the channel LLRs.
     for j in 0..FTX_LDPC_M {
-        for i in 0..FTX_LDPC_N {
-            m_matrix[j][i] = codeword[i];
-        }
+        m_matrix[j * FTX_LDPC_N..][..FTX_LDPC_N].copy_from_slice(codeword);
     }
 
     let mut min_errors = FTX_LDPC_M as i32;
@@ -81,16 +79,17 @@ pub fn ldpc_decode(
         // Update e[][] from m[][]
         for j in 0..FTX_LDPC_M {
             let num_rows = FTX_LDPC_NUM_ROWS[j] as usize;
+            let m_row = j * FTX_LDPC_N;
             for ii1 in 0..num_rows {
                 let i1 = FTX_LDPC_NM[j][ii1] as usize - 1;
                 let mut a = 1.0f32;
                 for ii2 in 0..num_rows {
                     let i2 = FTX_LDPC_NM[j][ii2] as usize - 1;
                     if i2 != i1 {
-                        a *= fast_tanh(-m_matrix[j][i2] / 2.0f32);
+                        a *= fast_tanh(-m_matrix[m_row + i2] / 2.0f32);
                     }
                 }
-                e_matrix[j][i1] = -2.0f32 * fast_atanh(a);
+                e_matrix[j * FTX_LDPC_N + i1] = -2.0f32 * fast_atanh(a);
             }
         }
 
@@ -98,7 +97,7 @@ pub fn ldpc_decode(
         for i in 0..FTX_LDPC_N {
             let mut l = codeword[i];
             for j in 0..3 {
-                l += e_matrix[FTX_LDPC_MN[i][j] as usize - 1][i];
+                l += e_matrix[(FTX_LDPC_MN[i][j] as usize - 1) * FTX_LDPC_N + i];
             }
             plain[i] = if l > 0.0 { 1 } else { 0 };
         }
@@ -119,10 +118,10 @@ pub fn ldpc_decode(
                 for ji2 in 0..3 {
                     if ji1 != ji2 {
                         let j2 = FTX_LDPC_MN[i][ji2] as usize - 1;
-                        l += e_matrix[j2][i];
+                        l += e_matrix[j2 * FTX_LDPC_N + i];
                     }
                 }
-                m_matrix[j1][i] = l;
+                m_matrix[j1 * FTX_LDPC_N + i] = l;
             }
         }
     }
