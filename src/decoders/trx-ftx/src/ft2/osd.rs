@@ -18,6 +18,8 @@
 
 use crate::constants::{FTX_LDPC_GENERATOR, FTX_LDPC_MN, FTX_LDPC_NM, FTX_LDPC_NUM_ROWS};
 use crate::crc::{ftx_compute_crc, ftx_extract_crc};
+use crate::decode::pack_bits;
+use crate::encode::parity8;
 use crate::protocol::{FTX_LDPC_K, FTX_LDPC_K_BYTES, FTX_LDPC_M, FTX_LDPC_N};
 
 /// Check LDPC parity of a 174-bit codeword. Returns number of parity errors.
@@ -67,30 +69,10 @@ fn platanh(x: f32) -> f32 {
     isign * 7.0
 }
 
-/// Pack bit array into bytes (MSB first).
-fn pack_bits91(bit_array: &[u8], num_bits: usize, packed: &mut [u8]) {
-    let num_bytes = num_bits.div_ceil(8);
-    for b in packed[..num_bytes].iter_mut() {
-        *b = 0;
-    }
-    let mut mask: u8 = 0x80;
-    let mut byte_idx = 0;
-    for i in 0..num_bits {
-        if bit_array[i] != 0 {
-            packed[byte_idx] |= mask;
-        }
-        mask >>= 1;
-        if mask == 0 {
-            mask = 0x80;
-            byte_idx += 1;
-        }
-    }
-}
-
 /// Check CRC of a 91-bit message (in bit array form).
 fn check_crc91(plain91: &[u8]) -> bool {
     let mut a91 = [0u8; FTX_LDPC_K_BYTES];
-    pack_bits91(plain91, FTX_LDPC_K, &mut a91);
+    pack_bits(plain91, FTX_LDPC_K, &mut a91);
     let crc_extracted = ftx_extract_crc(&a91);
     a91[9] &= 0xF8;
     a91[10] = 0x00;
@@ -98,18 +80,10 @@ fn check_crc91(plain91: &[u8]) -> bool {
     crc_extracted == crc_calculated
 }
 
-/// Compute parity of a byte.
-fn parity8(x: u8) -> u8 {
-    let x = x ^ (x >> 4);
-    let x = x ^ (x >> 2);
-    let x = x ^ (x >> 1);
-    x & 1
-}
-
 /// Encode a 91-bit message (bit array) into a 174-bit codeword without CRC computation.
 fn encode174_91_nocrc_bits(message91: &[u8], codeword: &mut [u8; FTX_LDPC_N]) {
     let mut packed = [0u8; FTX_LDPC_K_BYTES];
-    pack_bits91(message91, FTX_LDPC_K, &mut packed);
+    pack_bits(message91, FTX_LDPC_K, &mut packed);
 
     // Systematic bits
     for i in 0..FTX_LDPC_K {
@@ -904,12 +878,12 @@ mod tests {
     }
 
     #[test]
-    fn pack_bits91_basic() {
+    fn shared_pack_bits_basic() {
         let mut bits = [0u8; FTX_LDPC_K];
         bits[0] = 1;
         bits[7] = 1;
         let mut packed = [0u8; FTX_LDPC_K_BYTES];
-        pack_bits91(&bits, FTX_LDPC_K, &mut packed);
+        pack_bits(&bits, FTX_LDPC_K, &mut packed);
         assert_eq!(packed[0], 0x81);
     }
 
@@ -923,7 +897,7 @@ mod tests {
     }
 
     #[test]
-    fn parity8_basic() {
+    fn shared_parity8_basic() {
         assert_eq!(parity8(0x00), 0);
         assert_eq!(parity8(0x01), 1);
         assert_eq!(parity8(0x03), 0);

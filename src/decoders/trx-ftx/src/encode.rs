@@ -10,11 +10,11 @@ use crate::crc::ftx_add_crc;
 use crate::protocol::{FT4_NN, FT8_NN, FTX_LDPC_K, FTX_LDPC_K_BYTES, FTX_LDPC_M, FTX_LDPC_N_BYTES};
 
 /// Returns 1 if an odd number of bits are set in `x`, zero otherwise.
-fn parity8(x: u8) -> u8 {
+pub(crate) fn parity8(x: u8) -> u8 {
     let x = x ^ (x >> 4);
     let x = x ^ (x >> 2);
     let x = x ^ (x >> 1);
-    x % 2
+    x & 1
 }
 
 /// Encode via LDPC a 91-bit message and return a 174-bit codeword.
@@ -24,7 +24,7 @@ fn parity8(x: u8) -> u8 {
 ///
 /// `message` must be at least `FTX_LDPC_K_BYTES` (12) bytes.
 /// `codeword` must be at least `FTX_LDPC_N_BYTES` (22) bytes.
-fn encode174(message: &[u8], codeword: &mut [u8]) {
+pub(crate) fn encode174(message: &[u8], codeword: &mut [u8]) {
     // Fill the codeword with message and zeros
     for j in 0..FTX_LDPC_N_BYTES {
         codeword[j] = if j < FTX_LDPC_K_BYTES { message[j] } else { 0 };
@@ -51,6 +51,23 @@ fn encode174(message: &[u8], codeword: &mut [u8]) {
             col_idx += 1;
         }
     }
+}
+
+/// Encode a packed 91-bit message into a 174-bit codeword (bit array).
+///
+/// Each element of the returned array is 0 or 1.
+/// Uses the same (174, 91) LDPC generator as `encode174`.
+#[allow(dead_code)]
+pub(crate) fn encode174_to_bits(a91: &[u8; FTX_LDPC_K_BYTES]) -> [u8; crate::protocol::FTX_LDPC_N] {
+    use crate::protocol::FTX_LDPC_N;
+    let mut codeword_packed = [0u8; FTX_LDPC_N_BYTES];
+    encode174(a91, &mut codeword_packed);
+
+    let mut bits = [0u8; FTX_LDPC_N];
+    for i in 0..FTX_LDPC_N {
+        bits[i] = (codeword_packed[i / 8] >> (7 - (i % 8))) & 0x01;
+    }
+    bits
 }
 
 /// Generate FT8 tone sequence from payload data.

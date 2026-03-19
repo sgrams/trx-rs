@@ -521,6 +521,73 @@ fn ft2_extract_logl_seq(
     }
 }
 
+/// Normalize LLR array by dividing by standard deviation, then optionally
+/// scaling to a target variance.
+///
+/// If `target_variance` is `Some(v)`, the output has variance ≈ v.
+/// If `None`, the output has unit variance (σ = 1).
+pub(crate) fn normalize_llr(log174: &mut [f32; FTX_LDPC_N], target_variance: Option<f32>) {
+    let mut sum = 0.0f32;
+    let mut sum2 = 0.0f32;
+    for &v in log174.iter() {
+        sum += v;
+        sum2 += v * v;
+    }
+    let inv_n = 1.0 / FTX_LDPC_N as f32;
+    let variance = (sum2 - sum * sum * inv_n) * inv_n;
+    if variance <= 1e-12 {
+        return;
+    }
+    let scale = match target_variance {
+        Some(tv) => (tv / variance).sqrt(),
+        None => 1.0 / variance.sqrt(),
+    };
+    for v in log174.iter_mut() {
+        *v *= scale;
+    }
+}
+
+/// Verify CRC of a 174-bit plaintext and build an FtxMessage.
+///
+/// `plain174`: decoded LDPC codeword (174 bits, each 0 or 1).
+/// `uses_xor`: true for FT4/FT2 (apply XOR sequence), false for FT8.
+///
+/// Returns `None` if CRC check fails.
+pub(crate) fn verify_crc_and_build_message(
+    plain174: &[u8; FTX_LDPC_N],
+    uses_xor: bool,
+) -> Option<FtxMessage> {
+    let mut a91 = [0u8; crate::protocol::FTX_LDPC_K_BYTES];
+    pack_bits(plain174, crate::protocol::FTX_LDPC_K, &mut a91);
+
+    let crc_extracted = crate::crc::ftx_extract_crc(&a91);
+    a91[9] &= 0xF8;
+    a91[10] = 0x00;
+    let crc_calculated = crate::crc::ftx_compute_crc(&a91, 96 - 14);
+
+    if crc_extracted != crc_calculated {
+        return None;
+    }
+
+    // Re-read a91 since we modified it for CRC check
+    pack_bits(plain174, crate::protocol::FTX_LDPC_K, &mut a91);
+
+    let mut message = FtxMessage {
+        hash: crc_calculated,
+        payload: [0; FTX_PAYLOAD_LENGTH_BYTES],
+    };
+
+    if uses_xor {
+        for i in 0..10 {
+            message.payload[i] = a91[i] ^ FT4_XOR_SEQUENCE[i];
+        }
+    } else {
+        message.payload[..10].copy_from_slice(&a91[..10]);
+    }
+
+    Some(message)
+}
+
 /// Normalize log-likelihoods.
 fn ftx_normalize_logl(log174: &mut [f32; FTX_LDPC_N]) {
     let mut sum = 0.0f32;
@@ -583,32 +650,7 @@ pub fn ftx_decode_candidate(
         return None;
     }
 
-    let mut a91 = [0u8; FTX_LDPC_K_BYTES];
-    pack_bits(&plain174, FTX_LDPC_K, &mut a91);
-
-    let crc_extracted = crate::crc::ftx_extract_crc(&a91);
-    a91[9] &= 0xF8;
-    a91[10] = 0x00;
-    let crc_calculated = crate::crc::ftx_compute_crc(&a91, 96 - 14);
-
-    if crc_extracted != crc_calculated {
-        return None;
-    }
-
-    let mut message = FtxMessage {
-        hash: crc_calculated,
-        payload: [0; FTX_PAYLOAD_LENGTH_BYTES],
-    };
-
-    if wf.protocol.uses_ft4_layout() {
-        for i in 0..10 {
-            message.payload[i] = a91[i] ^ FT4_XOR_SEQUENCE[i];
-        }
-    } else {
-        message.payload[..10].copy_from_slice(&a91[..10]);
-    }
-
-    Some(message)
+    verify_crc_and_build_message(&plain174, wf.protocol.uses_ft4_layout())
 }
 
 fn max4(a: f32, b: f32, c: f32, d: f32) -> f32 {

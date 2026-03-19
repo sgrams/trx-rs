@@ -16,10 +16,7 @@ pub mod sync;
 use num_complex::Complex32;
 use realfft::RealFftPlanner;
 
-use crate::constants::FT4_XOR_SEQUENCE;
-use crate::crc::{ftx_compute_crc, ftx_extract_crc};
-use crate::decode::{pack_bits, FtxMessage};
-use crate::ldpc;
+use crate::decode::{normalize_llr, verify_crc_and_build_message, FtxMessage};
 use crate::protocol::*;
 
 use bitmetrics::BitMetricsWorkspace;
@@ -40,9 +37,6 @@ pub const FT2_NSS: usize = FT2_NSTEP / FT2_NDOWN;
 pub const FT2_FRAME_SYMBOLS: usize = FT2_NN - FT2_NR;
 pub const FT2_FRAME_SAMPLES: usize = FT2_FRAME_SYMBOLS * FT2_NSS;
 pub const FT2_SYMBOL_PERIOD_F: f32 = FT2_SYMBOL_PERIOD;
-
-/// Maximum hard-error count for accepting an OSD result.
-const FT2_OSD_MAX_HARD_ERRORS: usize = 36;
 
 /// Frequency offset applied to FT2 candidates.
 pub fn ft2_frequency_offset_hz() -> f32 {
@@ -603,9 +597,9 @@ impl Ft2Pipeline {
 
         // Scale and derive combined passes
         for i in 0..FTX_LDPC_N {
-            llr_passes[0][i] *= 3.2;
-            llr_passes[1][i] *= 3.2;
-            llr_passes[2][i] *= 3.2;
+            llr_passes[0][i] *= 2.83;
+            llr_passes[1][i] *= 2.83;
+            llr_passes[2][i] *= 2.83;
 
             let a = llr_passes[0][i];
             let b = llr_passes[1][i];
@@ -624,66 +618,39 @@ impl Ft2Pipeline {
             llr_passes[4][i] = (a + b + c) / 3.0;
         }
 
-        // Multi-pass LDPC decode
+        // Multi-pass LDPC decode using full BP+OSD decoder
         let mut ok = false;
         let mut message = FtxMessage::default();
-        let mut global_best_errors = FTX_LDPC_M as i32;
+        let mut apmask = [0u8; FTX_LDPC_N];
 
         for pass in 0..5 {
             if ok {
                 break;
             }
             let mut log174 = llr_passes[pass];
-            normalize_log174(&mut log174);
+            normalize_llr(&mut log174, None);
 
-            let mut nharderror = FTX_LDPC_M as i32;
+            let mut message91 = [0u8; FTX_LDPC_K];
+            let mut cw = [0u8; FTX_LDPC_N];
+            let mut ntype = 0i32;
+            let mut nharderror = -1i32;
+            let mut dmin = 0.0f32;
 
-            // BP decode
-            let mut bp_plain = [0u8; FTX_LDPC_N];
-            let bp_errors = ldpc::bp_decode(&log174, 50, &mut bp_plain);
-            if bp_errors < nharderror {
-                nharderror = bp_errors;
-            }
-            if bp_errors == 0 {
-                if let Some(msg) = unpack_message(&bp_plain) {
-                    message = msg;
-                    ok = true;
-                    nharderror = 0;
-                }
-            }
+            osd::ft2_decode174_91_osd(
+                &mut log174,
+                FTX_LDPC_K,
+                3,
+                3,
+                &mut apmask,
+                &mut message91,
+                &mut cw,
+                &mut ntype,
+                &mut nharderror,
+                &mut dmin,
+            );
 
-            // Sum-product decode (fallback)
-            if !ok {
-                let mut sp_log174 = llr_passes[pass];
-                normalize_log174(&mut sp_log174);
-                let mut sp_plain = [0u8; FTX_LDPC_N];
-                let sp_errors = ldpc::ldpc_decode(&mut sp_log174, 50, &mut sp_plain);
-                if sp_errors < nharderror {
-                    nharderror = sp_errors;
-                }
-                if sp_errors == 0 {
-                    if let Some(msg) = unpack_message(&sp_plain) {
-                        message = msg;
-                        ok = true;
-                        nharderror = 0;
-                    }
-                }
-            }
-
-            if nharderror < global_best_errors {
-                global_best_errors = nharderror;
-            }
-        }
-
-        // CRC-based OSD-1/OSD-2 fallback when LDPC was close to converging
-        if !ok && global_best_errors <= 6 {
-            for pass in 0..5 {
-                if ok {
-                    break;
-                }
-                let mut osd_log174 = llr_passes[pass];
-                normalize_log174(&mut osd_log174);
-                if let Some(msg) = osd_lite_decode(&osd_log174) {
+            if ntype > 0 && nharderror >= 0 {
+                if let Some(msg) = verify_crc_and_build_message(&cw, true) {
                     message = msg;
                     ok = true;
                 }
@@ -775,177 +742,6 @@ fn extract_signal_region(input: &[Complex32], start: i32, out_signal: &mut [Comp
         .copy_from_slice(&input[src_start..(src_start + copy_len)]);
 }
 
-/// Normalize LLR array (divide by standard deviation).
-fn normalize_log174(log174: &mut [f32; FTX_LDPC_N]) {
-    let mut sum = 0.0f32;
-    let mut sum2 = 0.0f32;
-    for &v in log174.iter() {
-        sum += v;
-        sum2 += v * v;
-    }
-    let inv_n = 1.0 / FTX_LDPC_N as f32;
-    let variance = (sum2 - sum * sum * inv_n) * inv_n;
-    if variance <= 1e-12 {
-        return;
-    }
-    let sigma = variance.sqrt();
-    for v in log174.iter_mut() {
-        *v /= sigma;
-    }
-}
-
-/// Unpack a 174-bit plaintext into an FtxMessage, verifying CRC and applying XOR sequence.
-fn unpack_message(plain174: &[u8; FTX_LDPC_N]) -> Option<FtxMessage> {
-    let mut a91 = [0u8; FTX_LDPC_K_BYTES];
-    pack_bits(plain174, FTX_LDPC_K, &mut a91);
-
-    let crc_extracted = ftx_extract_crc(&a91);
-    a91[9] &= 0xF8;
-    a91[10] = 0x00;
-    let crc_calculated = ftx_compute_crc(&a91, 96 - 14);
-
-    if crc_extracted != crc_calculated {
-        return None;
-    }
-
-    // Re-read a91 since we modified it for CRC check
-    pack_bits(plain174, FTX_LDPC_K, &mut a91);
-
-    let mut msg = FtxMessage {
-        hash: crc_calculated,
-        payload: [0; FTX_PAYLOAD_LENGTH_BYTES],
-    };
-    for i in 0..10 {
-        msg.payload[i] = a91[i] ^ FT4_XOR_SEQUENCE[i];
-    }
-    Some(msg)
-}
-
-/// Encode a packed 91-bit message into a 174-bit codeword (bit array).
-fn encode_codeword_from_a91(a91: &[u8; FTX_LDPC_K_BYTES]) -> [u8; FTX_LDPC_N] {
-    let mut codeword = [0u8; FTX_LDPC_N];
-    // Systematic part
-    for i in 0..FTX_LDPC_K {
-        codeword[i] = (a91[i / 8] >> (7 - (i % 8))) & 0x01;
-    }
-    // Parity part using generator matrix
-    for i in 0..FTX_LDPC_M {
-        let mut nsum: u8 = 0;
-        for j in 0..FTX_LDPC_K_BYTES {
-            let x = a91[j] & crate::constants::FTX_LDPC_GENERATOR[i][j];
-            nsum ^= parity8(x);
-        }
-        codeword[FTX_LDPC_K + i] = nsum & 0x01;
-    }
-    codeword
-}
-
-/// Count parity of a byte.
-fn parity8(x: u8) -> u8 {
-    let x = x ^ (x >> 4);
-    let x = x ^ (x >> 2);
-    let x = x ^ (x >> 1);
-    x & 1
-}
-
-/// Count hard errors between LLR signs and a candidate codeword.
-fn count_hard_errors_vs_llr(log174: &[f32; FTX_LDPC_N], codeword: &[u8; FTX_LDPC_N]) -> usize {
-    let mut errors = 0;
-    for i in 0..FTX_LDPC_N {
-        let received = if log174[i] >= 0.0 { 1u8 } else { 0u8 };
-        if received != codeword[i] {
-            errors += 1;
-        }
-    }
-    errors
-}
-
-/// Try a CRC candidate: encode the packed message, verify CRC and hard-error count.
-fn try_crc_candidate(
-    a91: &[u8; FTX_LDPC_K_BYTES],
-    log174: &[f32; FTX_LDPC_N],
-) -> Option<FtxMessage> {
-    let codeword = encode_codeword_from_a91(a91);
-
-    // Check CRC via unpack
-    let mut plain174 = [0u8; FTX_LDPC_N];
-    plain174.copy_from_slice(&codeword);
-    let msg = unpack_message(&plain174)?;
-
-    // Verify consistency with received LLRs
-    if count_hard_errors_vs_llr(log174, &codeword) > FT2_OSD_MAX_HARD_ERRORS {
-        return None;
-    }
-
-    Some(msg)
-}
-
-/// Reliability entry for OSD-lite sorting.
-struct ReliabilityEntry {
-    index: usize,
-    reliability: f32,
-}
-
-/// CRC-guided OSD-1/OSD-2 lite decoder.
-///
-/// Tries flipping each of the 16 least-reliable systematic bits (OSD-1),
-/// then all pairs (OSD-2). Returns decoded message on CRC match.
-fn osd_lite_decode(log174: &[f32; FTX_LDPC_N]) -> Option<FtxMessage> {
-    // Build base hard decision from systematic bits
-    let mut base_a91 = [0u8; FTX_LDPC_K_BYTES];
-    for i in 0..FTX_LDPC_K {
-        if log174[i] >= 0.0 {
-            base_a91[i / 8] |= 0x80u8 >> (i % 8);
-        }
-    }
-
-    // Try base (zero flips)
-    if let Some(msg) = try_crc_candidate(&base_a91, log174) {
-        return Some(msg);
-    }
-
-    // Sort systematic bits by reliability (ascending = least reliable first)
-    let mut rel: Vec<ReliabilityEntry> = (0..FTX_LDPC_K)
-        .map(|i| ReliabilityEntry {
-            index: i,
-            reliability: log174[i].abs(),
-        })
-        .collect();
-    rel.sort_by(|a, b| {
-        a.reliability
-            .partial_cmp(&b.reliability)
-            .unwrap_or(std::cmp::Ordering::Equal)
-    });
-
-    let max_candidates = 16.min(FTX_LDPC_K);
-
-    // OSD-1: single bit flips
-    for i in 0..max_candidates {
-        let mut trial = base_a91;
-        let b0 = rel[i].index;
-        trial[b0 / 8] ^= 0x80u8 >> (b0 % 8);
-        if let Some(msg) = try_crc_candidate(&trial, log174) {
-            return Some(msg);
-        }
-    }
-
-    // OSD-2: all pairs
-    for i in 0..max_candidates {
-        for j in (i + 1)..max_candidates {
-            let mut trial = base_a91;
-            let b0 = rel[i].index;
-            let b1 = rel[j].index;
-            trial[b0 / 8] ^= 0x80u8 >> (b0 % 8);
-            trial[b1 / 8] ^= 0x80u8 >> (b1 % 8);
-            if let Some(msg) = try_crc_candidate(&trial, log174) {
-                return Some(msg);
-            }
-        }
-    }
-
-    None
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -996,17 +792,9 @@ mod tests {
     }
 
     #[test]
-    fn parity8_basic() {
-        assert_eq!(parity8(0x00), 0);
-        assert_eq!(parity8(0x01), 1);
-        assert_eq!(parity8(0x03), 0);
-        assert_eq!(parity8(0xFF), 0);
-    }
-
-    #[test]
-    fn encode_codeword_all_zeros() {
+    fn encode174_to_bits_all_zeros() {
         let a91 = [0u8; FTX_LDPC_K_BYTES];
-        let cw = encode_codeword_from_a91(&a91);
+        let cw = crate::encode::encode174_to_bits(&a91);
         for &b in &cw {
             assert_eq!(b, 0);
         }
