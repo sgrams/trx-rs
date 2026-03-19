@@ -106,10 +106,12 @@ impl CallsignHashTable {
     /// The `hash` parameter is the full 22-bit hash value. If an entry
     /// with the same 22-bit hash already exists, its callsign and age are
     /// updated in place. Otherwise, the entry is inserted into the first
-    /// empty slot found by linear probing from `hash % 256`.
+    /// empty slot found by linear probing from `hash % 256`. If the table
+    /// is full, the probe-start slot is evicted to make room.
     pub fn add(&mut self, callsign: &str, hash: u32) {
         let hash22 = hash & HASH22_MASK;
-        let mut idx = (hash22 as usize) % CALLSIGN_HASHTABLE_SIZE;
+        let start_idx = (hash22 as usize) % CALLSIGN_HASHTABLE_SIZE;
+        let mut idx = start_idx;
 
         loop {
             match &self.entries[idx] {
@@ -124,6 +126,14 @@ impl CallsignHashTable {
                 Some(_) => {
                     // Collision — linear probe to next slot.
                     idx = (idx + 1) % CALLSIGN_HASHTABLE_SIZE;
+                    if idx == start_idx {
+                        // Table is full; evict the start slot.
+                        self.entries[idx] = Some(CallsignEntry {
+                            hash: hash22,
+                            callsign: callsign.to_string(),
+                        });
+                        return;
+                    }
                 }
                 None => {
                     // Empty slot — insert here.
@@ -142,12 +152,12 @@ impl CallsignHashTable {
     /// determine which bits to compare.
     ///
     /// Returns `Some(callsign)` if a matching entry is found, or `None`
-    /// if the probe sequence reaches an empty slot without finding a
-    /// match.
+    /// if no match is found within a full probe cycle.
     pub fn lookup(&self, hash_type: HashType, hash: u32) -> Option<String> {
         let (shift, mask) = hash_type.shift_and_mask();
         let target = hash & mask;
-        let mut idx = (hash as usize) % CALLSIGN_HASHTABLE_SIZE;
+        let start_idx = (hash as usize) % CALLSIGN_HASHTABLE_SIZE;
+        let mut idx = start_idx;
 
         loop {
             match &self.entries[idx] {
@@ -157,6 +167,9 @@ impl CallsignHashTable {
                         return Some(entry.callsign.clone());
                     }
                     idx = (idx + 1) % CALLSIGN_HASHTABLE_SIZE;
+                    if idx == start_idx {
+                        return None;
+                    }
                 }
                 None => return None,
             }
@@ -389,6 +402,38 @@ mod tests {
     fn compute_hash_22bit_range() {
         let hash = compute_callsign_hash("W1AW").unwrap();
         assert!(hash <= 0x3F_FFFF, "hash should fit in 22 bits");
+    }
+
+    #[test]
+    fn add_full_table_does_not_hang() {
+        // Fill the table to capacity with distinct hashes, then add one more.
+        // This must terminate (no infinite loop) and must not panic.
+        let mut table = CallsignHashTable::new();
+        for i in 0..CALLSIGN_HASHTABLE_SIZE {
+            table.entries[i] = Some(CallsignEntry {
+                hash: i as u32,
+                callsign: format!("C{}", i),
+            });
+        }
+        table.size = CALLSIGN_HASHTABLE_SIZE;
+        // This hash won't match any existing entry — must not infinite-loop.
+        table.add("W1AW", 0x3F_FFFF);
+    }
+
+    #[test]
+    fn lookup_full_table_does_not_hang() {
+        // Fill the table with entries that won't match the target, then look
+        // up a hash that is absent. Must return None without looping forever.
+        let mut table = CallsignHashTable::new();
+        for i in 0..CALLSIGN_HASHTABLE_SIZE {
+            table.entries[i] = Some(CallsignEntry {
+                hash: i as u32,
+                callsign: format!("C{}", i),
+            });
+        }
+        table.size = CALLSIGN_HASHTABLE_SIZE;
+        let result = table.lookup(HashType::Hash22Bits, 0x3F_FFFF);
+        assert!(result.is_none());
     }
 
     #[test]

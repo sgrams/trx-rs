@@ -38,7 +38,13 @@ pub struct Waterfall {
 }
 
 impl Waterfall {
-    pub fn new(max_blocks: usize, num_bins: usize, time_osr: usize, freq_osr: usize, protocol: FtxProtocol) -> Self {
+    pub fn new(
+        max_blocks: usize,
+        num_bins: usize,
+        time_osr: usize,
+        freq_osr: usize,
+        protocol: FtxProtocol,
+    ) -> Self {
         let block_stride = time_osr * freq_osr * num_bins;
         let mag = vec![WfElem::default(); max_blocks * block_stride];
         Self {
@@ -115,7 +121,13 @@ impl Monitor {
         let num_bins = max_bin - min_bin;
         let max_blocks = (slot_time / symbol_period) as usize;
 
-        let wf = Waterfall::new(max_blocks, num_bins, cfg.time_osr as usize, cfg.freq_osr as usize, cfg.protocol);
+        let wf = Waterfall::new(
+            max_blocks,
+            num_bins,
+            cfg.time_osr as usize,
+            cfg.freq_osr as usize,
+            cfg.protocol,
+        );
 
         let mut real_planner = RealFftPlanner::<f32>::new();
         let real_fft = real_planner.plan_fft_forward(nfft);
@@ -168,7 +180,8 @@ impl Monitor {
         for _time_sub in 0..self.wf.time_osr {
             // Shift new data into analysis frame
             let shift = self.nfft - self.subblock_size;
-            self.last_frame.copy_within(self.subblock_size..self.nfft, 0);
+            self.last_frame
+                .copy_within(self.subblock_size..self.nfft, 0);
             for pos in shift..self.nfft {
                 self.last_frame[pos] = if frame_pos < frame.len() {
                     frame[frame_pos]
@@ -183,7 +196,11 @@ impl Monitor {
                 self.fft_input[pos] = self.window[pos] * self.last_frame[pos];
             }
             self.real_fft
-                .process_with_scratch(&mut self.fft_input, &mut self.fft_output, &mut self.fft_scratch)
+                .process_with_scratch(
+                    &mut self.fft_input,
+                    &mut self.fft_output,
+                    &mut self.fft_scratch,
+                )
                 .expect("FFT process failed");
 
             // Extract magnitude and phase for each frequency sub-bin
@@ -206,7 +223,10 @@ impl Monitor {
                         }
                     } else {
                         if offset < self.wf.mag.len() {
-                            self.wf.mag[offset] = WfElem { mag: -120.0, phase: 0.0 };
+                            self.wf.mag[offset] = WfElem {
+                                mag: -120.0,
+                                phase: 0.0,
+                            };
                         }
                         offset += 1;
                     }

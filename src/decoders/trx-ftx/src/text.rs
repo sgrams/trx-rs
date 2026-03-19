@@ -108,16 +108,14 @@ pub fn nchar(c: char, table: CharTable) -> Option<i32> {
 
     // Extra symbols
     match table {
-        CharTable::Full => {
-            match c {
-                '+' => return Some(n),
-                '-' => return Some(n + 1),
-                '.' => return Some(n + 2),
-                '/' => return Some(n + 3),
-                '?' => return Some(n + 4),
-                _ => {}
-            }
-        }
+        CharTable::Full => match c {
+            '+' => return Some(n),
+            '-' => return Some(n + 1),
+            '.' => return Some(n + 2),
+            '/' => return Some(n + 3),
+            '?' => return Some(n + 4),
+            _ => {}
+        },
         CharTable::AlphanumSpaceSlash => {
             if c == '/' {
                 return Some(n);
@@ -240,11 +238,7 @@ mod tests {
         let expected = " 0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ+-./?";
         for (i, ch) in expected.chars().enumerate() {
             assert_eq!(charn(i as i32, CharTable::Full), ch, "charn({i})");
-            assert_eq!(
-                nchar(ch, CharTable::Full),
-                Some(i as i32),
-                "nchar('{ch}')"
-            );
+            assert_eq!(nchar(ch, CharTable::Full), Some(i as i32), "nchar('{ch}')");
         }
     }
 
@@ -269,11 +263,7 @@ mod tests {
     fn alphanum_space_round_trip() {
         let expected = " 0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
         for (i, ch) in expected.chars().enumerate() {
-            assert_eq!(
-                charn(i as i32, CharTable::AlphanumSpace),
-                ch,
-                "charn({i})"
-            );
+            assert_eq!(charn(i as i32, CharTable::AlphanumSpace), ch, "charn({i})");
             assert_eq!(
                 nchar(ch, CharTable::AlphanumSpace),
                 Some(i as i32),
@@ -286,11 +276,7 @@ mod tests {
     fn letters_space_round_trip() {
         let expected = " ABCDEFGHIJKLMNOPQRSTUVWXYZ";
         for (i, ch) in expected.chars().enumerate() {
-            assert_eq!(
-                charn(i as i32, CharTable::LettersSpace),
-                ch,
-                "charn({i})"
-            );
+            assert_eq!(charn(i as i32, CharTable::LettersSpace), ch, "charn({i})");
             assert_eq!(
                 nchar(ch, CharTable::LettersSpace),
                 Some(i as i32),

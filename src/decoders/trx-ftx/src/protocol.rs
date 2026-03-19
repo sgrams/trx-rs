@@ -36,32 +36,56 @@ impl FtxProtocol {
 
     /// Number of data symbols.
     pub fn nd(self) -> usize {
-        if self.uses_ft4_layout() { FT4_ND } else { FT8_ND }
+        if self.uses_ft4_layout() {
+            FT4_ND
+        } else {
+            FT8_ND
+        }
     }
 
     /// Total channel symbols.
     pub fn nn(self) -> usize {
-        if self.uses_ft4_layout() { FT4_NN } else { FT8_NN }
+        if self.uses_ft4_layout() {
+            FT4_NN
+        } else {
+            FT8_NN
+        }
     }
 
     /// Length of each sync group.
     pub fn sync_length(self) -> usize {
-        if self.uses_ft4_layout() { FT4_LENGTH_SYNC } else { FT8_LENGTH_SYNC }
+        if self.uses_ft4_layout() {
+            FT4_LENGTH_SYNC
+        } else {
+            FT8_LENGTH_SYNC
+        }
     }
 
     /// Number of sync groups.
     pub fn num_sync(self) -> usize {
-        if self.uses_ft4_layout() { FT4_NUM_SYNC } else { FT8_NUM_SYNC }
+        if self.uses_ft4_layout() {
+            FT4_NUM_SYNC
+        } else {
+            FT8_NUM_SYNC
+        }
     }
 
     /// Offset between sync groups.
     pub fn sync_offset(self) -> usize {
-        if self.uses_ft4_layout() { FT4_SYNC_OFFSET } else { FT8_SYNC_OFFSET }
+        if self.uses_ft4_layout() {
+            FT4_SYNC_OFFSET
+        } else {
+            FT8_SYNC_OFFSET
+        }
     }
 
     /// Number of FSK tones.
     pub fn num_tones(self) -> usize {
-        if self.uses_ft4_layout() { 4 } else { 8 }
+        if self.uses_ft4_layout() {
+            4
+        } else {
+            8
+        }
     }
 }
 

@@ -65,10 +65,8 @@ pub fn ldpc_decode(
     plain: &mut [u8; FTX_LDPC_N],
 ) -> i32 {
     // Allocate m[][] and e[][] on the heap (~60 kB each) to avoid stack overflow.
-    let mut m_matrix: Vec<Vec<f32>> =
-        vec![vec![0.0f32; FTX_LDPC_N]; FTX_LDPC_M];
-    let mut e_matrix: Vec<Vec<f32>> =
-        vec![vec![0.0f32; FTX_LDPC_N]; FTX_LDPC_M];
+    let mut m_matrix: Vec<Vec<f32>> = vec![vec![0.0f32; FTX_LDPC_N]; FTX_LDPC_M];
+    let mut e_matrix: Vec<Vec<f32>> = vec![vec![0.0f32; FTX_LDPC_N]; FTX_LDPC_M];
 
     // Initialize m[][] with the channel LLRs.
     for j in 0..FTX_LDPC_M {

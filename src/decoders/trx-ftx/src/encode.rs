@@ -7,9 +7,7 @@ use crate::constants::{
     FTX_LDPC_GENERATOR,
 };
 use crate::crc::ftx_add_crc;
-use crate::protocol::{
-    FT4_NN, FT8_NN, FTX_LDPC_K, FTX_LDPC_K_BYTES, FTX_LDPC_M, FTX_LDPC_N_BYTES,
-};
+use crate::protocol::{FT4_NN, FT8_NN, FTX_LDPC_K, FTX_LDPC_K_BYTES, FTX_LDPC_M, FTX_LDPC_N_BYTES};
 
 /// Returns 1 if an odd number of bits are set in `x`, zero otherwise.
 fn parity8(x: u8) -> u8 {
@@ -29,11 +27,7 @@ fn parity8(x: u8) -> u8 {
 fn encode174(message: &[u8], codeword: &mut [u8]) {
     // Fill the codeword with message and zeros
     for j in 0..FTX_LDPC_N_BYTES {
-        codeword[j] = if j < FTX_LDPC_K_BYTES {
-            message[j]
-        } else {
-            0
-        };
+        codeword[j] = if j < FTX_LDPC_K_BYTES { message[j] } else { 0 };
     }
 
     // Compute the byte index and bit mask for the first checksum bit
@@ -230,8 +224,9 @@ mod tests {
         // The codeword should start with the message bytes (systematic code).
         // Byte 11 shares bits between the last 3 message bits and the first
         // parity bits, so only check bytes 0..10 for exact match.
-        let message: [u8; FTX_LDPC_K_BYTES] =
-            [0x12, 0x34, 0x56, 0x78, 0x9A, 0xBC, 0xDE, 0xF0, 0x11, 0x22, 0x33, 0x40];
+        let message: [u8; FTX_LDPC_K_BYTES] = [
+            0x12, 0x34, 0x56, 0x78, 0x9A, 0xBC, 0xDE, 0xF0, 0x11, 0x22, 0x33, 0x40,
+        ];
         let mut codeword = [0u8; FTX_LDPC_N_BYTES];
         encode174(&message, &mut codeword);
 
@@ -246,8 +241,9 @@ mod tests {
     #[test]
     fn encode174_nonzero_parity() {
         // A non-zero message should produce non-zero parity bits
-        let message: [u8; FTX_LDPC_K_BYTES] =
-            [0xFF, 0x00, 0xFF, 0x00, 0xFF, 0x00, 0xFF, 0x00, 0xFF, 0x00, 0xFF, 0xE0];
+        let message: [u8; FTX_LDPC_K_BYTES] = [
+            0xFF, 0x00, 0xFF, 0x00, 0xFF, 0x00, 0xFF, 0x00, 0xFF, 0x00, 0xFF, 0xE0,
+        ];
         let mut codeword = [0u8; FTX_LDPC_N_BYTES];
         encode174(&message, &mut codeword);
 
@@ -255,7 +251,10 @@ mod tests {
         let parity_nonzero = codeword[FTX_LDPC_K_BYTES..FTX_LDPC_N_BYTES]
             .iter()
             .any(|&b| b != 0);
-        assert!(parity_nonzero, "Parity bits should be non-zero for non-zero input");
+        assert!(
+            parity_nonzero,
+            "Parity bits should be non-zero for non-zero input"
+        );
     }
 
     #[test]

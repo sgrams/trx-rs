@@ -9,7 +9,7 @@
 use num_complex::Complex32;
 
 use crate::constants::*;
-use crate::monitor::{WfElem, Waterfall};
+use crate::monitor::{Waterfall, WfElem};
 use crate::protocol::*;
 
 /// Candidate position in time and frequency.
@@ -55,15 +55,25 @@ fn wf_mag_at(wf: &Waterfall, base: usize, idx: isize) -> &WfElem {
     if i < wf.mag.len() {
         &wf.mag[i]
     } else {
-        &WfElem { mag: -120.0, phase: 0.0 }
+        &WfElem {
+            mag: -120.0,
+            phase: 0.0,
+        }
     }
 }
 
 // Leaked reference for out-of-bounds default
-static DEFAULT_WF_ELEM: WfElem = WfElem { mag: -120.0, phase: 0.0 };
+static DEFAULT_WF_ELEM: WfElem = WfElem {
+    mag: -120.0,
+    phase: 0.0,
+};
 
 fn wf_mag_safe(wf: &Waterfall, idx: usize) -> &WfElem {
-    if idx < wf.mag.len() { &wf.mag[idx] } else { &DEFAULT_WF_ELEM }
+    if idx < wf.mag.len() {
+        &wf.mag[idx]
+    } else {
+        &DEFAULT_WF_ELEM
+    }
 }
 
 fn ft8_sync_score(wf: &Waterfall, cand: &Candidate) -> i32 {
@@ -75,8 +85,12 @@ fn ft8_sync_score(wf: &Waterfall, cand: &Candidate) -> i32 {
         for k in 0..FT8_LENGTH_SYNC {
             let block = FT8_SYNC_OFFSET * m + k;
             let block_abs = cand.time_offset as i32 + block as i32;
-            if block_abs < 0 { continue; }
-            if block_abs >= wf.num_blocks as i32 { break; }
+            if block_abs < 0 {
+                continue;
+            }
+            if block_abs >= wf.num_blocks as i32 {
+                break;
+            }
 
             let p_offset = base + block * wf.block_stride;
             let sm = FT8_COSTAS_PATTERN[k] as usize;
@@ -96,7 +110,11 @@ fn ft8_sync_score(wf: &Waterfall, cand: &Candidate) -> i32 {
             if k > 0 && block_abs > 0 {
                 let a = wf_mag_safe(wf, p_offset + sm).mag_int();
                 let b_idx = (p_offset + sm).wrapping_sub(wf.block_stride);
-                let b = if b_idx < wf.mag.len() { wf.mag[b_idx].mag_int() } else { 0 };
+                let b = if b_idx < wf.mag.len() {
+                    wf.mag[b_idx].mag_int()
+                } else {
+                    0
+                };
                 score += a - b;
                 num_average += 1;
             }
@@ -109,7 +127,11 @@ fn ft8_sync_score(wf: &Waterfall, cand: &Candidate) -> i32 {
         }
     }
 
-    if num_average > 0 { score / num_average } else { 0 }
+    if num_average > 0 {
+        score / num_average
+    } else {
+        0
+    }
 }
 
 fn ft4_sync_score(wf: &Waterfall, cand: &Candidate) -> i32 {
@@ -121,8 +143,12 @@ fn ft4_sync_score(wf: &Waterfall, cand: &Candidate) -> i32 {
         for k in 0..FT4_LENGTH_SYNC {
             let block = 1 + FT4_SYNC_OFFSET * m + k;
             let block_abs = cand.time_offset as i32 + block as i32;
-            if block_abs < 0 { continue; }
-            if block_abs >= wf.num_blocks as i32 { break; }
+            if block_abs < 0 {
+                continue;
+            }
+            if block_abs >= wf.num_blocks as i32 {
+                break;
+            }
 
             let p_offset = base + block * wf.block_stride;
             let sm = FT4_COSTAS_PATTERN[m][k] as usize;
@@ -142,7 +168,11 @@ fn ft4_sync_score(wf: &Waterfall, cand: &Candidate) -> i32 {
             if k > 0 && block_abs > 0 {
                 let a = wf_mag_safe(wf, p_offset + sm).mag_int();
                 let b_idx = (p_offset + sm).wrapping_sub(wf.block_stride);
-                let b = if b_idx < wf.mag.len() { wf.mag[b_idx].mag_int() } else { 0 };
+                let b = if b_idx < wf.mag.len() {
+                    wf.mag[b_idx].mag_int()
+                } else {
+                    0
+                };
                 score += a - b;
                 num_average += 1;
             }
@@ -155,7 +185,11 @@ fn ft4_sync_score(wf: &Waterfall, cand: &Candidate) -> i32 {
         }
     }
 
-    if num_average > 0 { score / num_average } else { 0 }
+    if num_average > 0 {
+        score / num_average
+    } else {
+        0
+    }
 }
 
 fn ft2_sync_score(wf: &Waterfall, cand: &Candidate) -> i32 {
@@ -178,12 +212,16 @@ fn ft2_sync_score(wf: &Waterfall, cand: &Candidate) -> i32 {
             let elem = *wf_mag_safe(wf, sym_offset + tone);
             sum += wf_elem_to_complex(elem);
         }
-        if !complete { continue; }
+        if !complete {
+            continue;
+        }
         score_f += sum.norm();
         groups += 1;
     }
 
-    if groups == 0 { return 0; }
+    if groups == 0 {
+        return 0;
+    }
     (score_f / groups as f32 * 8.0).round() as i32
 }
 
@@ -194,9 +232,15 @@ fn heapify_down(heap: &mut [Candidate], size: usize) {
         let left = 2 * current + 1;
         let right = left + 1;
         let mut smallest = current;
-        if left < size && heap[left].score < heap[smallest].score { smallest = left; }
-        if right < size && heap[right].score < heap[smallest].score { smallest = right; }
-        if smallest == current { break; }
+        if left < size && heap[left].score < heap[smallest].score {
+            smallest = left;
+        }
+        if right < size && heap[right].score < heap[smallest].score {
+            smallest = right;
+        }
+        if smallest == current {
+            break;
+        }
         heap.swap(current, smallest);
         current = smallest;
     }
@@ -206,14 +250,20 @@ fn heapify_up(heap: &mut [Candidate], size: usize) {
     let mut current = size - 1;
     while current > 0 {
         let parent = (current - 1) / 2;
-        if heap[current].score >= heap[parent].score { break; }
+        if heap[current].score >= heap[parent].score {
+            break;
+        }
         heap.swap(current, parent);
         current = parent;
     }
 }
 
 /// Find candidate signals in the waterfall. Returns sorted candidates (best first).
-pub fn ftx_find_candidates(wf: &Waterfall, max_candidates: usize, min_score: i32) -> Vec<Candidate> {
+pub fn ftx_find_candidates(
+    wf: &Waterfall,
+    max_candidates: usize,
+    min_score: i32,
+) -> Vec<Candidate> {
     let is_ft2 = wf.protocol == FtxProtocol::Ft2;
     let num_tones = if wf.protocol.uses_ft4_layout() { 4 } else { 8 };
 
@@ -325,7 +375,13 @@ fn ft4_extract_likelihood(wf: &Waterfall, cand: &Candidate, log174: &mut [f32; F
     let base = get_cand_offset(wf, cand);
 
     for k in 0..FT4_ND {
-        let sym_idx = k + if k < 29 { 5 } else if k < 58 { 9 } else { 13 };
+        let sym_idx = k + if k < 29 {
+            5
+        } else if k < 58 {
+            9
+        } else {
+            13
+        };
         let bit_idx = 2 * k;
         let block = cand.time_offset as i32 + sym_idx as i32;
 
@@ -358,7 +414,9 @@ fn ft2_extract_likelihood(wf: &Waterfall, cand: &Candidate, log174: &mut [f32; F
     for frame_sym in 0..frame_syms {
         let sym_idx = frame_sym + 1; // skip ramp-up
         let block = cand.time_offset as i32 + sym_idx as i32;
-        if block < 0 || block >= wf.num_blocks as i32 { continue; }
+        if block < 0 || block >= wf.num_blocks as i32 {
+            continue;
+        }
         let sym_offset = base + sym_idx * wf.block_stride;
         for tone in 0..4 {
             let elem = *wf_mag_safe(wf, sym_offset + tone);
@@ -399,7 +457,14 @@ fn ft2_extract_likelihood(wf: &Waterfall, cand: &Candidate, log174: &mut [f32; F
 
     // Map to 174 data bits, selecting max-magnitude metric
     for data_sym in 0..FT2_ND {
-        let frame_sym = data_sym + if data_sym < 29 { 4 } else if data_sym < 58 { 8 } else { 12 };
+        let frame_sym = data_sym
+            + if data_sym < 29 {
+                4
+            } else if data_sym < 58 {
+                8
+            } else {
+                12
+            };
         let src_bit = 2 * frame_sym;
         let dst_bit = 2 * data_sym;
 
@@ -418,7 +483,12 @@ fn ft2_extract_likelihood(wf: &Waterfall, cand: &Candidate, log174: &mut [f32; F
     }
 }
 
-fn ft2_extract_logl_seq(symbols: &[[Complex32; 103]; 4], start_sym: usize, n_syms: usize, metrics: &mut [f32]) {
+fn ft2_extract_logl_seq(
+    symbols: &[[Complex32; 103]; 4],
+    start_sym: usize,
+    n_syms: usize,
+    metrics: &mut [f32],
+) {
     let n_bits = 2 * n_syms;
     let n_sequences = 1 << n_bits;
 
@@ -438,7 +508,9 @@ fn ft2_extract_logl_seq(symbols: &[[Complex32; 103]; 4], start_sym: usize, n_sym
             let strength = sum.norm();
             let mask_bit = n_bits - bit - 1;
             if (seq >> mask_bit) & 1 != 0 {
-                if strength > max_one { max_one = strength; }
+                if strength > max_one {
+                    max_one = strength;
+                }
             } else if strength > max_zero {
                 max_zero = strength;
             }
@@ -470,7 +542,9 @@ fn ftx_normalize_logl(log174: &mut [f32; FTX_LDPC_N]) {
 /// Pack bits into bytes (MSB first).
 pub fn pack_bits(bit_array: &[u8], num_bits: usize, packed: &mut [u8]) {
     let num_bytes = num_bits.div_ceil(8);
-    for b in packed[..num_bytes].iter_mut() { *b = 0; }
+    for b in packed[..num_bytes].iter_mut() {
+        *b = 0;
+    }
     let mut mask: u8 = 0x80;
     let mut byte_idx = 0;
     for i in 0..num_bits {
@@ -560,7 +634,9 @@ pub fn ftx_post_decode_snr(wf: &Waterfall, cand: &Candidate, message: &FtxMessag
 
     for sym in 0..nn {
         let block_abs = cand.time_offset as i32 + sym as i32;
-        if block_abs < 0 || block_abs >= wf.num_blocks as i32 { continue; }
+        if block_abs < 0 || block_abs >= wf.num_blocks as i32 {
+            continue;
+        }
 
         let p_offset = base + sym * wf.block_stride;
         let sig_db = wf_mag_safe(wf, p_offset + tones[sym] as usize).mag;
@@ -568,7 +644,9 @@ pub fn ftx_post_decode_snr(wf: &Waterfall, cand: &Candidate, message: &FtxMessag
         let mut noise_min = 0.0f32;
         let mut found_noise = false;
         for t in 0..num_tones {
-            if t == tones[sym] as usize { continue; }
+            if t == tones[sym] as usize {
+                continue;
+            }
             let db = wf_mag_safe(wf, p_offset + t).mag;
             if !found_noise || db < noise_min {
                 noise_min = db;

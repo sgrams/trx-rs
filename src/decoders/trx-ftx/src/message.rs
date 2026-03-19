@@ -178,9 +178,7 @@ fn is_space(c: u8) -> bool {
 /// whitespace).
 fn copy_token(input: &str) -> (&str, String) {
     let input = input.trim_start();
-    let end = input
-        .find(' ')
-        .unwrap_or(input.len());
+    let end = input.find(' ').unwrap_or(input.len());
     let token = &input[..end];
     let rest = &input[end..].trim_start();
     (rest, token.to_string())
@@ -307,11 +305,7 @@ pub fn pack_basecall(callsign: &str) -> Option<i32> {
                 c6[i + 3] = b;
             }
         }
-    } else if starts_with(callsign, "3X")
-        && length > 2
-        && is_letter(bytes[2])
-        && length <= 7
-    {
+    } else if starts_with(callsign, "3X") && length > 2 && is_letter(bytes[2]) && length <= 7 {
         // Guinea prefix: 3XA0XYZ -> QA0XYZ
         c6[0] = b'Q';
         for (i, &b) in bytes[2..].iter().enumerate() {
@@ -361,10 +355,7 @@ pub fn pack_basecall(callsign: &str) -> Option<i32> {
 
 /// Pack a special token, a 22-bit hash code, or a valid base call into a
 /// 28-bit integer. Returns `(n28, ip)` on success, or `None` on error.
-fn pack28(
-    callsign: &str,
-    hash_table: Option<&mut CallsignHashTable>,
-) -> Option<(i32, u8)> {
+fn pack28(callsign: &str, hash_table: Option<&mut CallsignHashTable>) -> Option<(i32, u8)> {
     let mut ip: u8 = 0;
 
     // Check for special tokens
@@ -452,11 +443,7 @@ fn unpack28(
     let n28_adj = n28 - NTOKENS;
     if n28_adj < MAX22 {
         // 22-bit hashed callsign
-        let call = lookup_callsign(
-            hash_table.as_deref(),
-            HashType::Hash22Bits,
-            n28_adj,
-        );
+        let call = lookup_callsign(hash_table.as_deref(), HashType::Hash22Bits, n28_adj);
         return Some((call, FtxFieldType::Call));
     }
 
@@ -519,10 +506,7 @@ fn unpack28(
 // ---------------------------------------------------------------------------
 
 /// Pack a non-standard callsign into a 58-bit integer.
-fn pack58(
-    hash_table: Option<&mut CallsignHashTable>,
-    callsign: &str,
-) -> Option<u64> {
+fn pack58(hash_table: Option<&mut CallsignHashTable>, callsign: &str) -> Option<u64> {
     let src = callsign.trim_start_matches('<').trim_end_matches('>');
 
     let mut result: u64 = 0;
@@ -545,10 +529,7 @@ fn pack58(
 }
 
 /// Unpack a non-standard callsign from a 58-bit integer.
-fn unpack58(
-    n58: u64,
-    hash_table: Option<&mut CallsignHashTable>,
-) -> Option<String> {
+fn unpack58(n58: u64, hash_table: Option<&mut CallsignHashTable>) -> Option<String> {
     let mut c11 = [0u8; 11];
     let mut n = n58;
 
@@ -643,11 +624,7 @@ fn unpackgrid(igrid4: u16, ir: u8) -> Option<(String, FtxFieldType)> {
             (b'0' + d3) as char,
         );
 
-        let result = if ir > 0 {
-            format!("R {}", grid)
-        } else {
-            grid
-        };
+        let result = if ir > 0 { format!("R {}", grid) } else { grid };
 
         Some((result, FtxFieldType::Grid))
     } else {
@@ -776,10 +753,7 @@ pub fn ftx_message_encode_std(
 
     let icq = call_to == "CQ" || starts_with(call_to, "CQ ");
     if let Some(slash_pos) = call_de.find('/') {
-        if slash_pos >= 2
-            && icq
-            && !(call_de.ends_with("/P") || call_de.ends_with("/R"))
-        {
+        if slash_pos >= 2 && icq && !(call_de.ends_with("/P") || call_de.ends_with("/R")) {
             return FtxMessageRc::ErrorCallsign2;
         }
     }
@@ -952,30 +926,26 @@ pub fn ftx_message_decode(
     let msg_type = msg.get_type();
 
     let (field1, field2, field3, rc) = match msg_type {
-        FtxMessageType::Standard => {
-            match ftx_message_decode_std(msg, hash_table) {
-                (Some(f1), Some(f2), Some(f3), types, rc) => {
-                    offsets.types = types;
-                    (Some(f1), Some(f2), Some(f3), rc)
-                }
-                (f1, f2, f3, types, rc) => {
-                    offsets.types = types;
-                    (f1, f2, f3, rc)
-                }
+        FtxMessageType::Standard => match ftx_message_decode_std(msg, hash_table) {
+            (Some(f1), Some(f2), Some(f3), types, rc) => {
+                offsets.types = types;
+                (Some(f1), Some(f2), Some(f3), rc)
             }
-        }
-        FtxMessageType::NonstdCall => {
-            match ftx_message_decode_nonstd(msg, hash_table) {
-                (Some(f1), Some(f2), Some(f3), types, rc) => {
-                    offsets.types = types;
-                    (Some(f1), Some(f2), Some(f3), rc)
-                }
-                (f1, f2, f3, types, rc) => {
-                    offsets.types = types;
-                    (f1, f2, f3, rc)
-                }
+            (f1, f2, f3, types, rc) => {
+                offsets.types = types;
+                (f1, f2, f3, rc)
             }
-        }
+        },
+        FtxMessageType::NonstdCall => match ftx_message_decode_nonstd(msg, hash_table) {
+            (Some(f1), Some(f2), Some(f3), types, rc) => {
+                offsets.types = types;
+                (Some(f1), Some(f2), Some(f3), rc)
+            }
+            (f1, f2, f3, types, rc) => {
+                offsets.types = types;
+                (f1, f2, f3, rc)
+            }
+        },
         FtxMessageType::FreeText => {
             let text = ftx_message_decode_free(msg);
             (Some(text), None, None, FtxMessageRc::Ok)
@@ -1053,7 +1023,15 @@ pub fn ftx_message_decode_std(
 
     let (call_de, ft1) = match unpack28(n29b >> 1, (n29b & 1) as u8, i3, Some(hash_table)) {
         Some(v) => v,
-        None => return (Some(call_to), None, None, field_types, FtxMessageRc::ErrorCallsign2),
+        None => {
+            return (
+                Some(call_to),
+                None,
+                None,
+                field_types,
+                FtxMessageRc::ErrorCallsign2,
+            )
+        }
     };
     field_types[1] = ft1;
 
@@ -1479,10 +1457,10 @@ mod tests {
         ftx_message_encode_telemetry(&mut msg, &telemetry);
         // Set i3.n3 to 0.5 for telemetry type
         msg.payload[9] = (msg.payload[9] & 0xC0) | (5 << 3); // n3=5 requires special handling
-        // Actually, telemetry is i3=0 n3=5: need bits 71..73 = 5, bits 74..76 = 0
-        // n3 is in bits 71..73: payload[8] bit0 -> n3 bit2, payload[9] bits 7..6 -> n3 bits 1..0
-        // i3 is in bits 74..76: payload[9] bits 5..3
-        // For i3=0, n3=5 (binary 101): bit2=1, bit1=0, bit0=1
+                                                             // Actually, telemetry is i3=0 n3=5: need bits 71..73 = 5, bits 74..76 = 0
+                                                             // n3 is in bits 71..73: payload[8] bit0 -> n3 bit2, payload[9] bits 7..6 -> n3 bits 1..0
+                                                             // i3 is in bits 74..76: payload[9] bits 5..3
+                                                             // For i3=0, n3=5 (binary 101): bit2=1, bit1=0, bit0=1
         msg.payload[8] = (msg.payload[8] & 0xFE) | 1; // n3 bit2 = 1
         msg.payload[9] = 0b01 << 6; // n3 bits 1..0 = 01, i3 = 0
 

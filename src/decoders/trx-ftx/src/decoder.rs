@@ -138,6 +138,7 @@ impl Ft8Decoder {
     /// Reset the decoder state for a new decode cycle.
     pub fn reset(&mut self) {
         self.monitor.reset();
+        self.callsign_hash.cleanup(10);
         if let Some(ref mut pipe) = self.ft2_pipeline {
             pipe.reset();
         }

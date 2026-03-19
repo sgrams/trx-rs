@@ -290,7 +290,12 @@ mod tests {
         let base_hz = 1496.0_f32;
         let start = EXPECTED_SIGNAL_START_SAMPLES;
 
-        for (sym, sync_tone) in SYNC_VECTOR.iter().copied().enumerate().take(WSPR_SYMBOL_COUNT) {
+        for (sym, sync_tone) in SYNC_VECTOR
+            .iter()
+            .copied()
+            .enumerate()
+            .take(WSPR_SYMBOL_COUNT)
+        {
             let tone = sync_tone + 2 * ((sym % 2) as u8);
             let freq = base_hz + tone as f32 * TONE_SPACING_HZ;
             let begin = start + sym * WSPR_SYMBOL_SAMPLES;
@@ -347,7 +352,12 @@ mod tests {
 
         // Generate a synthetic WSPR-like signal using the sync vector
         let mut signal = vec![0.0_f32; WSPR_SIGNAL_SAMPLES];
-        for (sym, sync_tone) in SYNC_VECTOR.iter().copied().enumerate().take(WSPR_SYMBOL_COUNT) {
+        for (sym, sync_tone) in SYNC_VECTOR
+            .iter()
+            .copied()
+            .enumerate()
+            .take(WSPR_SYMBOL_COUNT)
+        {
             let freq = base_hz + sync_tone as f32 * TONE_SPACING_HZ;
             let begin = sym * WSPR_SYMBOL_SAMPLES;
             for i in 0..WSPR_SYMBOL_SAMPLES {
