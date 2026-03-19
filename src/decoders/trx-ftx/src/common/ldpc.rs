@@ -9,8 +9,8 @@
 //! log-likelihood ratios (log(P(x=0)/P(x=1))), returns a corrected 174-bit
 //! codeword. The last 87 bits are the systematic plain-text.
 
-use crate::constants::{FTX_LDPC_MN, FTX_LDPC_NM, FTX_LDPC_NUM_ROWS};
-use crate::protocol::{FTX_LDPC_M, FTX_LDPC_N};
+use super::constants::{FTX_LDPC_MN, FTX_LDPC_NM, FTX_LDPC_NUM_ROWS};
+use super::protocol::{FTX_LDPC_M, FTX_LDPC_N};
 
 /// Fast rational approximation of `tanh(x)`, clamped at +/-4.97.
 pub(crate) fn fast_tanh(x: f32) -> f32 {

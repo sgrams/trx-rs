@@ -4,11 +4,13 @@
 
 //! Top-level FTx decoder matching the `trx-ft8` public API.
 
-use crate::callsign_hash::CallsignHashTable;
-use crate::decode::{ftx_decode_candidate, ftx_find_candidates, ftx_post_decode_snr, FtxMessage};
-use crate::message;
-use crate::monitor::{Monitor, MonitorConfig};
-use crate::protocol::*;
+use crate::common::callsign_hash::CallsignHashTable;
+use crate::common::decode::{
+    ftx_decode_candidate, ftx_find_candidates, ftx_post_decode_snr, FtxMessage,
+};
+use crate::common::message;
+use crate::common::monitor::{Monitor, MonitorConfig};
+use crate::common::protocol::*;
 
 const DEFAULT_F_MIN_HZ: f32 = 200.0;
 const DEFAULT_F_MAX_HZ: f32 = 3000.0;

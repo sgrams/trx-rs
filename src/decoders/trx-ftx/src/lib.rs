@@ -2,31 +2,13 @@
 //
 // SPDX-License-Identifier: BSD-2-Clause
 
-#[allow(clippy::needless_range_loop)]
-pub mod bitmetrics;
-pub mod callsign_hash;
-pub mod constants;
-pub mod crc;
-#[allow(dead_code, clippy::needless_range_loop)]
-pub mod decode;
+pub mod common;
 mod decoder;
 #[allow(clippy::needless_range_loop)]
-pub mod downsample;
-#[allow(clippy::needless_range_loop)]
-pub mod encode;
-#[allow(dead_code, clippy::needless_range_loop, clippy::too_many_arguments)]
 pub mod ft2;
 #[allow(clippy::needless_range_loop)]
-pub mod ft2_sync;
+pub mod ft4;
 #[allow(clippy::needless_range_loop)]
-pub mod ldpc;
-#[allow(clippy::explicit_counter_loop, clippy::needless_range_loop)]
-pub mod message;
-#[allow(dead_code)]
-pub mod monitor;
-#[allow(dead_code, clippy::needless_range_loop, clippy::too_many_arguments)]
-pub mod osd;
-pub mod protocol;
-pub mod text;
+pub mod ft8;
 
 pub use decoder::{Ft8DecodeResult, Ft8Decoder};

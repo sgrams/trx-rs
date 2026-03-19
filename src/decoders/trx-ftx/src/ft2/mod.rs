@@ -8,17 +8,27 @@
 //! peaks in the averaged spectrum, downsample each candidate, compute 2D sync
 //! scores, extract bit metrics, and run multi-pass LDPC + OSD decode.
 
+#[allow(clippy::needless_range_loop)]
+pub mod bitmetrics;
+pub(crate) mod decode;
+#[allow(clippy::needless_range_loop)]
+pub mod downsample;
+#[allow(clippy::needless_range_loop)]
+pub mod sync;
+
+pub(crate) use self::decode::{ft2_extract_likelihood, ft2_sync_score};
+
 use std::sync::Arc;
 
 use num_complex::Complex32;
 use realfft::RealFftPlanner;
 use rustfft::FftPlanner;
 
-use crate::bitmetrics::BitMetricsWorkspace;
-use crate::decode::{verify_crc_and_build_message, FtxMessage};
-use crate::downsample::{DownsampleContext, DownsampleWorkspace};
-use crate::ft2_sync::{prepare_sync_waveforms, sync2d_score, SyncWaveforms};
-use crate::protocol::*;
+use self::bitmetrics::BitMetricsWorkspace;
+use self::downsample::{DownsampleContext, DownsampleWorkspace};
+use self::sync::{prepare_sync_waveforms, sync2d_score, SyncWaveforms};
+use crate::common::decode::{verify_crc_and_build_message, FtxMessage};
+use crate::common::protocol::*;
 
 // FT2 DSP constants
 pub const FT2_NDOWN: usize = 9;
@@ -649,7 +659,7 @@ impl Ft2Pipeline {
             let mut nharderror = -1i32;
             let mut dmin = 0.0f32;
 
-            crate::osd::ft2_decode174_91_osd(
+            crate::common::osd::ft2_decode174_91_osd(
                 &mut log174,
                 FTX_LDPC_K,
                 4,
@@ -807,7 +817,7 @@ mod tests {
     #[test]
     fn encode174_to_bits_all_zeros() {
         let a91 = [0u8; FTX_LDPC_K_BYTES];
-        let cw = crate::encode::encode174_to_bits(&a91);
+        let cw = crate::common::encode::encode174_to_bits(&a91);
         for &b in &cw {
             assert_eq!(b, 0);
         }

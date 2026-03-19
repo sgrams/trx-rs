@@ -18,12 +18,12 @@
 
 use std::sync::OnceLock;
 
-use crate::constants::{FTX_LDPC_GENERATOR, FTX_LDPC_MN, FTX_LDPC_NM, FTX_LDPC_NUM_ROWS};
-use crate::crc::{ftx_compute_crc, ftx_extract_crc};
-use crate::decode::pack_bits;
-use crate::encode::parity8;
-use crate::ldpc::ldpc_check;
-use crate::protocol::{FTX_LDPC_K, FTX_LDPC_K_BYTES, FTX_LDPC_M, FTX_LDPC_N};
+use super::constants::{FTX_LDPC_GENERATOR, FTX_LDPC_MN, FTX_LDPC_NM, FTX_LDPC_NUM_ROWS};
+use super::crc::{ftx_compute_crc, ftx_extract_crc};
+use super::decode::pack_bits;
+use super::encode::parity8;
+use super::ldpc::ldpc_check;
+use super::protocol::{FTX_LDPC_K, FTX_LDPC_K_BYTES, FTX_LDPC_M, FTX_LDPC_N};
 
 /// Piecewise linear approximation of `atanh(x)` used in BP message passing.
 fn platanh(x: f32) -> f32 {
@@ -793,7 +793,7 @@ pub fn ft2_decode174_91_osd(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ldpc::fast_atanh;
+    use crate::common::ldpc::fast_atanh;
 
     #[test]
     fn ldpc_check_all_zeros() {

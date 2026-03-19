@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: BSD-2-Clause
 
-use crate::protocol::{FTX_LDPC_K_BYTES, FTX_LDPC_M, FTX_LDPC_N};
+use super::protocol::{FTX_LDPC_K_BYTES, FTX_LDPC_M, FTX_LDPC_N};
 
 /// Costas sync tone pattern for FT8 (7 tones).
 pub const FT8_COSTAS_PATTERN: [u8; 7] = [3, 1, 4, 0, 6, 5, 2];

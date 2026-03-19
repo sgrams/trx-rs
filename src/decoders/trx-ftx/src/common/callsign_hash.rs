@@ -7,7 +7,7 @@
 //! This is a pure Rust port of the callsign hash table from
 //! `ft8_lib/ft8/ft8_wrapper.c`.
 
-use crate::text::{nchar, CharTable};
+use super::text::{nchar, CharTable};
 
 /// Size of the callsign hash table (number of slots).
 const CALLSIGN_HASHTABLE_SIZE: usize = 256;

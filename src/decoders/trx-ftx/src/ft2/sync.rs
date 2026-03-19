@@ -11,9 +11,9 @@
 use num_complex::Complex32;
 use std::sync::OnceLock;
 
-use crate::constants::FT4_COSTAS_PATTERN;
+use crate::common::constants::FT4_COSTAS_PATTERN;
 
-use crate::ft2::{FT2_NDOWN, FT2_NSS, FT2_SYMBOL_PERIOD_F, FT2_SYNC_TWEAK_MAX, FT2_SYNC_TWEAK_MIN};
+use super::{FT2_NDOWN, FT2_NSS, FT2_SYMBOL_PERIOD_F, FT2_SYNC_TWEAK_MAX, FT2_SYNC_TWEAK_MIN};
 
 /// Number of frequency tweak entries.
 const NUM_TWEAKS: usize = (FT2_SYNC_TWEAK_MAX - FT2_SYNC_TWEAK_MIN) as usize + 1;

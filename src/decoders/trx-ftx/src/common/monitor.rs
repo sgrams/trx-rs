@@ -10,7 +10,7 @@ use num_complex::Complex32;
 use realfft::RealFftPlanner;
 use rustfft::FftPlanner;
 
-use crate::protocol::FtxProtocol;
+use super::protocol::FtxProtocol;
 
 /// Waterfall element storing magnitude (dB), phase (radians), and raw complex components.
 #[derive(Clone, Copy, Default)]

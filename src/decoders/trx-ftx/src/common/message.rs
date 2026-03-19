@@ -6,9 +6,9 @@
 //!
 //! This is a pure Rust port of `ft8_lib/ft8/message.c`.
 
-use crate::callsign_hash::{compute_callsign_hash, CallsignHashTable, HashType};
-use crate::protocol::FTX_PAYLOAD_LENGTH_BYTES;
-use crate::text::{charn, dd_to_int, int_to_dd, nchar, CharTable};
+use super::callsign_hash::{compute_callsign_hash, CallsignHashTable, HashType};
+use super::protocol::FTX_PAYLOAD_LENGTH_BYTES;
+use super::text::{charn, dd_to_int, int_to_dd, nchar, CharTable};
 
 /// Maximum 22-bit hash value.
 const MAX22: u32 = 4_194_304;

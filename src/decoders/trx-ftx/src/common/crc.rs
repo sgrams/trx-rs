@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: BSD-2-Clause
 
-use crate::protocol::{FT8_CRC_POLYNOMIAL, FT8_CRC_WIDTH};
+use super::protocol::{FT8_CRC_POLYNOMIAL, FT8_CRC_WIDTH};
 
 const TOPBIT: u16 = 1 << (FT8_CRC_WIDTH - 1);
 
