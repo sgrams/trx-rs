@@ -13,7 +13,7 @@ use rustfft::FftPlanner;
 
 use crate::constants::{FT4_COSTAS_PATTERN, FT4_GRAY_MAP};
 
-use super::{FT2_FRAME_SYMBOLS, FT2_NSS};
+use crate::ft2::{FT2_FRAME_SYMBOLS, FT2_NSS};
 
 const N_METRICS: usize = 2 * FT2_FRAME_SYMBOLS;
 

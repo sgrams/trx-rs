@@ -8,23 +8,17 @@
 //! peaks in the averaged spectrum, downsample each candidate, compute 2D sync
 //! scores, extract bit metrics, and run multi-pass LDPC + OSD decode.
 
-pub mod bitmetrics;
-pub mod downsample;
-pub mod osd;
-pub mod sync;
-
 use std::sync::Arc;
 
 use num_complex::Complex32;
 use realfft::RealFftPlanner;
 use rustfft::FftPlanner;
 
+use crate::bitmetrics::BitMetricsWorkspace;
 use crate::decode::{verify_crc_and_build_message, FtxMessage};
+use crate::downsample::{DownsampleContext, DownsampleWorkspace};
+use crate::ft2_sync::{prepare_sync_waveforms, sync2d_score, SyncWaveforms};
 use crate::protocol::*;
-
-use bitmetrics::BitMetricsWorkspace;
-use downsample::{DownsampleContext, DownsampleWorkspace};
-use sync::{prepare_sync_waveforms, sync2d_score, SyncWaveforms};
 
 // FT2 DSP constants
 pub const FT2_NDOWN: usize = 9;
@@ -655,7 +649,7 @@ impl Ft2Pipeline {
             let mut nharderror = -1i32;
             let mut dmin = 0.0f32;
 
-            osd::ft2_decode174_91_osd(
+            crate::osd::ft2_decode174_91_osd(
                 &mut log174,
                 FTX_LDPC_K,
                 4,

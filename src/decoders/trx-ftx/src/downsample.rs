@@ -14,7 +14,7 @@ use std::sync::Arc;
 use num_complex::Complex32;
 use rustfft::FftPlanner;
 
-use super::{FT2_NDOWN, FT2_SYMBOL_PERIOD_F};
+use crate::ft2::{FT2_NDOWN, FT2_SYMBOL_PERIOD_F};
 
 /// Reusable scratch buffers for frequency-domain downsampling.
 pub struct DownsampleWorkspace {
