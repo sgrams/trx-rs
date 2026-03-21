@@ -2,7 +2,9 @@
 //
 // SPDX-License-Identifier: BSD-2-Clause
 
+use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::RwLock;
 use std::time::Duration;
 use std::{sync::Arc, sync::Mutex};
 
@@ -58,6 +60,7 @@ pub struct RemoteClientConfig {
     pub spectrum: Arc<watch::Sender<SharedSpectrum>>,
     /// Shared flag: `true` while a TCP connection to trx-server is active.
     pub server_connected: Arc<AtomicBool>,
+    pub rig_states: Arc<RwLock<HashMap<String, watch::Sender<RigState>>>>,
 }
 
 pub async fn run_remote_client(
@@ -420,6 +423,31 @@ async fn refresh_remote_snapshot(
             true
         }
     });
+
+    // Update per-rig watch channels so each SSE session can subscribe
+    // to a specific rig's state independently.
+    if let Ok(mut rig_map) = config.rig_states.write() {
+        for entry in &rigs {
+            let new_state = RigState::from_snapshot(entry.state.clone());
+            if let Some(tx) = rig_map.get(&entry.rig_id) {
+                tx.send_if_modified(|old| {
+                    if *old == new_state {
+                        false
+                    } else {
+                        *old = new_state;
+                        true
+                    }
+                });
+            } else {
+                let (tx, _rx) = watch::channel(new_state);
+                rig_map.insert(entry.rig_id.clone(), tx);
+            }
+        }
+        // Remove channels for rigs no longer reported by the server.
+        let active_ids: std::collections::HashSet<&str> =
+            rigs.iter().map(|e| e.rig_id.as_str()).collect();
+        rig_map.retain(|id, _| active_ids.contains(id.as_str()));
+    }
     Ok(())
 }
 
@@ -653,8 +681,9 @@ fn parse_port(port_str: &str) -> Result<u16, String> {
 #[cfg(test)]
 mod tests {
     use super::{parse_remote_url, RemoteClientConfig, RemoteEndpoint, SharedSpectrum};
+    use std::collections::HashMap;
     use std::sync::atomic::AtomicBool;
-    use std::sync::{Arc, Mutex};
+    use std::sync::{Arc, Mutex, RwLock};
     use std::time::Duration;
 
     use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
@@ -839,6 +868,7 @@ mod tests {
                 poll_interval: Duration::from_millis(100),
                 spectrum: Arc::new(spectrum_tx),
                 server_connected: Arc::new(AtomicBool::new(false)),
+                rig_states: Arc::new(RwLock::new(HashMap::new())),
             },
             req_rx,
             state_tx,
@@ -877,6 +907,7 @@ mod tests {
             poll_interval: Duration::from_millis(500),
             spectrum: Arc::new(spectrum_tx),
             server_connected: Arc::new(AtomicBool::new(false)),
+            rig_states: Arc::new(RwLock::new(HashMap::new())),
         };
         let envelope = super::build_envelope(&config, trx_protocol::ClientCommand::GetState, None);
         assert_eq!(envelope.token.as_deref(), Some("secret"));

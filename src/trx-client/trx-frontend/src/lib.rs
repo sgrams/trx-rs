@@ -252,6 +252,10 @@ pub struct FrontendRuntimeContext {
     pub remote_active_rig_id: Arc<Mutex<Option<String>>>,
     /// Cached remote rig list from GetRigs polling.
     pub remote_rigs: Arc<Mutex<Vec<RemoteRigEntry>>>,
+    /// Per-rig state watch channels, keyed by rig_id.
+    /// Populated by the remote client poll loop so each SSE session can
+    /// subscribe to a specific rig's state independently.
+    pub rig_states: Arc<RwLock<HashMap<String, watch::Sender<RigState>>>>,
     /// Owner callsign from trx-client config/CLI for frontend display.
     pub owner_callsign: Option<String>,
     /// Optional website URL for the web UI header title link.
@@ -281,6 +285,14 @@ pub struct FrontendRuntimeContext {
 }
 
 impl FrontendRuntimeContext {
+    /// Get a watch receiver for a specific rig's state.
+    pub fn rig_state_rx(&self, rig_id: &str) -> Option<watch::Receiver<RigState>> {
+        self.rig_states
+            .read()
+            .ok()
+            .and_then(|map| map.get(rig_id).map(|tx| tx.subscribe()))
+    }
+
     /// Create a new empty runtime context.
     pub fn new() -> Self {
         Self {
@@ -317,6 +329,7 @@ impl FrontendRuntimeContext {
             http_decode_history_retention_min_by_rig: HashMap::new(),
             remote_active_rig_id: Arc::new(Mutex::new(None)),
             remote_rigs: Arc::new(Mutex::new(Vec::new())),
+            rig_states: Arc::new(RwLock::new(HashMap::new())),
             owner_callsign: None,
             owner_website_url: None,
             owner_website_name: None,

@@ -335,9 +335,6 @@ pub async fn events(
     scheduler_control: web::Data<crate::server::scheduler::SharedSchedulerControlManager>,
     session_rig_mgr: web::Data<Arc<SessionRigManager>>,
 ) -> Result<HttpResponse, Error> {
-    let rx = state.get_ref().clone();
-    let initial = wait_for_view(rx.clone()).await?;
-
     let counter = clients.get_ref().clone();
     let count = counter.fetch_add(1, Ordering::Relaxed) + 1;
 
@@ -352,6 +349,14 @@ pub async fn events(
         .lock()
         .ok()
         .and_then(|g| g.clone());
+
+    // Subscribe to the per-rig watch channel for this session's rig,
+    // falling back to the global state watch when unavailable.
+    let rx = active_rig_id
+        .as_deref()
+        .and_then(|rid| context.rig_state_rx(rid))
+        .unwrap_or_else(|| state.get_ref().clone());
+    let initial = wait_for_view(rx.clone()).await?;
     if let Some(ref rid) = active_rig_id {
         session_rig_mgr.register(session_id, rid.clone());
         vchan_mgr.init_rig(

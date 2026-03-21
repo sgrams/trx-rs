@@ -280,6 +280,7 @@ async fn async_init() -> DynResult<AppState> {
         token: remote_token,
         selected_rig_id: frontend_runtime.remote_active_rig_id.clone(),
         known_rigs: frontend_runtime.remote_rigs.clone(),
+        rig_states: frontend_runtime.rig_states.clone(),
         poll_interval: Duration::from_millis(poll_interval_ms),
         spectrum: frontend_runtime.spectrum.clone(),
         server_connected: frontend_runtime.server_connected.clone(),

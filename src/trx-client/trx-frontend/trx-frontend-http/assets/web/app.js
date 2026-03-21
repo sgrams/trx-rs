@@ -3363,12 +3363,12 @@ async function switchRigFromSelect(selectEl) {
   updateRigSubtitle(lastActiveRigId);
   if (typeof setSchedulerRig === "function") setSchedulerRig(lastActiveRigId);
   if (typeof setBackgroundDecodeRig === "function") setBackgroundDecodeRig(lastActiveRigId);
-  // Also switch the server's active rig so the SSE stream and audio
-  // follow.  Commands already carry rig_id per-tab, but SSE is still
-  // global until per-session streams are implemented.
+  // Switch this session's rig and reconnect SSE to the new rig's
+  // state channel.
   try {
     const sidParam = sseSessionId ? `&session_id=${encodeURIComponent(sseSessionId)}` : "";
     await postPath(`/select_rig?rig_id=${encodeURIComponent(selectEl.value)}${sidParam}`);
+    connect();
   } catch (err) {
     console.error("select_rig failed:", err);
   }
