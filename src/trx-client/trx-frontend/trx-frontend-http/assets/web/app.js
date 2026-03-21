@@ -938,6 +938,26 @@ function applyRigList(activeRigId, rigIds, displayNames) {
   updateRigSubtitle(activeRigId);
   if (typeof setSchedulerRig === "function") setSchedulerRig(lastActiveRigId);
   if (typeof setBackgroundDecodeRig === "function") setBackgroundDecodeRig(lastActiveRigId);
+  updateMapRigFilter();
+}
+
+function updateMapRigFilter() {
+  const el = document.getElementById("map-rig-filter");
+  if (!el) return;
+  const prev = el.value;
+  while (el.options.length > 1) el.remove(1);
+  for (const id of lastRigIds) {
+    const opt = document.createElement("option");
+    opt.value = id;
+    opt.textContent = lastRigDisplayNames[id] || id;
+    el.appendChild(opt);
+  }
+  if (prev && lastRigIds.includes(prev)) {
+    el.value = prev;
+  } else {
+    el.value = "";
+    mapRigFilter = "";
+  }
 }
 
 async function refreshRigList() {
@@ -4095,6 +4115,7 @@ const DEFAULT_MAP_SOURCE_FILTER = { ais: true, vdes: true, aprs: true, bookmark:
 const mapFilter = { ...DEFAULT_MAP_SOURCE_FILTER };
 const mapLocatorFilter = { phase: "band", bands: new Set() };
 let mapSearchFilter = "";
+let mapRigFilter = ""; // "" = all rigs
 let mapHistoryPruneTimer = null;
 let mapHistoryLimitMinutes = normalizeMapHistoryLimitMinutes(
   Number(loadSetting("mapHistoryLimitMinutes", 1440))
@@ -4248,6 +4269,7 @@ function ensureAisMarker(key, entry) {
     .addTo(aprsMap)
     .bindPopup(buildAisPopupHtml(entry.msg));
   marker.__trxType = "ais";
+  marker.__trxRigIds = entry.rigIds || new Set();
   marker._aisMmsi = String(key);
   entry.marker = marker;
   mapMarkers.add(marker);
@@ -4262,6 +4284,7 @@ function ensureVdesMarker(key, entry) {
     fillOpacity: 0.82,
   }).addTo(aprsMap).bindPopup(buildVdesPopupHtml(entry.msg));
   marker.__trxType = "vdes";
+  marker.__trxRigIds = entry.rigIds || new Set();
   marker._vdesKey = String(key);
   entry.marker = marker;
   mapMarkers.add(marker);
@@ -4277,6 +4300,7 @@ function ensureDecodeLocatorMarker(entry) {
     .addTo(aprsMap)
     .bindPopup(tooltipHtml);
   marker.__trxType = entry.sourceType;
+  marker.__trxRigIds = entry.rigIds || new Set();
   sendLocatorOverlayToBack(marker);
   assignLocatorMarkerMeta(marker, entry.sourceType, entry.bandMeta);
   entry.marker = marker;
@@ -5575,6 +5599,13 @@ function initAprsMap() {
       applyMapFilter();
     });
   }
+  const mapRigFilterEl = document.getElementById("map-rig-filter");
+  if (mapRigFilterEl) {
+    mapRigFilterEl.addEventListener("change", () => {
+      mapRigFilter = mapRigFilterEl.value;
+      applyMapFilter();
+    });
+  }
   if (mapSearchEl) {
     mapSearchEl.value = mapSearchFilter;
     mapSearchEl.addEventListener("input", () => {
@@ -6018,6 +6049,7 @@ function _aprsAddMarkerToMap(call, entry) {
         radius: 6, color: "#00d17f", fillColor: "#00d17f", fillOpacity: 0.8
       }).addTo(aprsMap).bindPopup(popupContent);
   marker.__trxType = "aprs";
+  marker.__trxRigIds = entry.rigIds || new Set();
   marker._aprsCall = call;
   entry.marker = marker;
   mapMarkers.add(marker);
@@ -6034,6 +6066,10 @@ window.aprsMapAddStation = function(call, lat, lon, info, symbolTable, symbolCod
     existing.info = info;
     existing.symbolTable = symbolTable;
     existing.symbolCode = symbolCode;
+    if (lastActiveRigId) {
+      if (!existing.rigIds) existing.rigIds = new Set();
+      existing.rigIds.add(lastActiveRigId);
+    }
     if (!Array.isArray(existing.trackHistory)) existing.trackHistory = [];
     const prevPoint = existing.trackHistory[existing.trackHistory.length - 1];
     if (!aprsPositionsEqual(prevPoint, nextPoint)) {
@@ -6059,6 +6095,7 @@ window.aprsMapAddStation = function(call, lat, lon, info, symbolTable, symbolCod
       info,
       symbolTable,
       symbolCode,
+      rigIds: new Set(lastActiveRigId ? [lastActiveRigId] : []),
     };
     stationMarkers.set(call, entry);
     pruneAprsEntry(call, entry, mapHistoryCutoffMs());
@@ -6156,6 +6193,10 @@ window.aisMapAddVessel = function(msg) {
   const existing = aisMarkers.get(key);
   if (existing) {
     existing.msg = msg;
+    if (lastActiveRigId) {
+      if (!existing.rigIds) existing.rigIds = new Set();
+      existing.rigIds.add(lastActiveRigId);
+    }
     if (!Array.isArray(existing.trackHistory)) existing.trackHistory = [];
     const prevPoint = existing.trackHistory[existing.trackHistory.length - 1];
     if (!aisPositionsEqual(prevPoint, nextPoint)) {
@@ -6175,6 +6216,7 @@ window.aisMapAddVessel = function(msg) {
     trackHistory: [{ lat: msg.lat, lon: msg.lon, tsMs }],
     trackPoints: [nextPoint],
     msg,
+    rigIds: new Set(lastActiveRigId ? [lastActiveRigId] : []),
   });
   pruneAisEntry(key, aisMarkers.get(key), mapHistoryCutoffMs());
   if (aisMarkers.get(key)?.visibleInHistoryWindow) ensureAisMarker(key, aisMarkers.get(key));
@@ -6192,6 +6234,10 @@ window.vdesMapAddPoint = function(msg) {
   if (existing) {
     existing.msg = msg;
     existing.visibleInHistoryWindow = visible;
+    if (lastActiveRigId) {
+      if (!existing.rigIds) existing.rigIds = new Set();
+      existing.rigIds.add(lastActiveRigId);
+    }
     if (!visible) {
       if (!decodeHistoryMapRenderingDeferred()) {
         setRetainedMapMarkerVisible(existing.marker, false);
@@ -6216,6 +6262,7 @@ window.vdesMapAddPoint = function(msg) {
     marker: null,
     msg,
     visibleInHistoryWindow: visible,
+    rigIds: new Set(lastActiveRigId ? [lastActiveRigId] : []),
   };
   vdesMarkers.set(key, entry);
   if (!visible) return;
@@ -6305,10 +6352,14 @@ function applyMapFilter() {
     const sourceVisible = noneSelected
       ? DEFAULT_MAP_SOURCE_FILTER[type] !== undefined ? DEFAULT_MAP_SOURCE_FILTER[type] : true
       : !!mapFilter[type];
+    const rigVisible = !mapRigFilter
+      || marker.__trxType === "bookmark"
+      || (marker.__trxRigIds instanceof Set && marker.__trxRigIds.has(mapRigFilter));
     const visible = marker.__trxHistoryVisible !== false
       && markerPassesSearchFilter(marker)
       && markerPassesLocatorFilters(marker)
-      && sourceVisible;
+      && sourceVisible
+      && rigVisible;
     const onMap = aprsMap.hasLayer(marker);
     if (visible && !onMap) {
       marker.addTo(aprsMap);
@@ -6929,6 +6980,7 @@ window.mapAddLocator = function(message, grids, type = "ft8", station = null, de
       dt_s: Number.isFinite(details?.dt_s) ? Number(details.dt_s) : null,
       freq_hz: Number.isFinite(details?.freq_hz) ? Number(details.freq_hz) : null,
       message: String(details?.message || message || "").trim() || null,
+      rig_id: lastActiveRigId || null,
     };
     const detailKey = detailStationId || `${targetId || "decode"}:${detailEntry.message || "decode"}:${detailEntry.ts_ms || Date.now()}`;
     const key = `${markerType}:${grid}`;
@@ -6942,6 +6994,10 @@ window.mapAddLocator = function(message, grids, type = "ft8", station = null, de
       }
       existing.allStationDetails.set(detailKey, { ...detailEntry });
       existing.sourceType = markerType;
+      if (lastActiveRigId) {
+        if (!existing.rigIds) existing.rigIds = new Set();
+        existing.rigIds.add(lastActiveRigId);
+      }
       pruneLocatorEntry(key, existing, mapHistoryCutoffMs());
       if (existing.marker) sendLocatorOverlayToBack(existing.marker);
       scheduleDecodeMapMaintenance();
@@ -6958,6 +7014,7 @@ window.mapAddLocator = function(message, grids, type = "ft8", station = null, de
       allStationDetails,
       sourceType: markerType,
       bandMeta: new Map(),
+      rigIds: new Set(lastActiveRigId ? [lastActiveRigId] : []),
     };
     locatorMarkers.set(key, entry);
     pruneLocatorEntry(key, entry, mapHistoryCutoffMs());
