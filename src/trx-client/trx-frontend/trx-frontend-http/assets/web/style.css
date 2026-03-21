@@ -2819,7 +2819,7 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   top: 50%;
   transform: translateY(-50%);
   z-index: 8;
-  width: 1rem;
+  width: 1.4rem;
   height: 100%;
   padding: 0;
   border: none;
@@ -2904,6 +2904,7 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   white-space: nowrap;
   top: 2px;
   font-weight: 700;
+  pointer-events: none;
 }
 #spectrum-bookmark-axis {
   position: absolute;
