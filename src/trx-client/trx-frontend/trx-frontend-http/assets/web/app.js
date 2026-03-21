@@ -1608,6 +1608,32 @@ function resetRdsDisplay() {
   updateRdsPsOverlay(primaryRds);
 }
 
+function resetDecoderStateOnRigSwitch() {
+  // RDS
+  primaryRds = null;
+  vchanRdsById = new Map();
+  resetRdsDisplay();
+  resetWfmStereoIndicator();
+
+  // Spectrum — clear stale data from previous rig's SDR
+  lastSpectrumData = null;
+  window.lastSpectrumData = null;
+  lastSpectrumRenderData = null;
+
+  // Decoder status indicators
+  const decoderIds = ["ais-status", "vdes-status", "aprs-status", "cw-status", "ft8-status", "wspr-status"];
+  decoderIds.forEach((id) => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = "--";
+  });
+
+  // FT8/FT4/WSPR history tables
+  if (typeof window.ft8ClearHistory === "function") window.ft8ClearHistory();
+  if (typeof window.ft4ClearHistory === "function") window.ft4ClearHistory();
+  if (typeof window.ft2ClearHistory === "function") window.ft2ClearHistory();
+  if (typeof window.wsprClearHistory === "function") window.wsprClearHistory();
+}
+
 function resetWfmStereoIndicator() {
   if (!wfmStFlagEl) return;
   wfmStFlagEl.textContent = "MO";
@@ -2700,6 +2726,10 @@ function render(update) {
       serverSubtitle.innerHTML =
         `trx-server hosted by <a href="https://qrzcq.com/call/${encodedCallsign}" target="_blank" rel="noopener">${safeCallsign}</a>`;
     }
+  }
+  // Detect rig switch and reset stale decoder state from the previous rig.
+  if (typeof update.active_rig_id === "string" && update.active_rig_id.length > 0 && update.active_rig_id !== lastActiveRigId) {
+    resetDecoderStateOnRigSwitch();
   }
   updateRigSubtitle(update.active_rig_id);
   if (ownerSubtitle) {

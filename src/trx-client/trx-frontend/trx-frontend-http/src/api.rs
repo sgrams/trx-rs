@@ -1379,6 +1379,7 @@ pub struct SelectRigQuery {
 pub async fn select_rig(
     query: web::Query<SelectRigQuery>,
     context: web::Data<Arc<FrontendRuntimeContext>>,
+    vchan_mgr: web::Data<Arc<ClientChannelManager>>,
 ) -> Result<HttpResponse, Error> {
     let rig_id = query.rig_id.trim();
     if rig_id.is_empty() {
@@ -1401,6 +1402,13 @@ pub async fn select_rig(
 
     if let Ok(mut active) = context.remote_active_rig_id.lock() {
         *active = Some(rig_id.to_string());
+    }
+
+    // Broadcast the channel list for the newly selected rig so all SSE
+    // clients receive the correct virtual channels immediately.
+    let chans = vchan_mgr.channels(rig_id);
+    if let Ok(json) = serde_json::to_string(&chans) {
+        let _ = vchan_mgr.change_tx.send(format!("{rig_id}:{json}"));
     }
 
     Ok(HttpResponse::Ok().json(build_rig_list_payload(context.get_ref().as_ref())))
