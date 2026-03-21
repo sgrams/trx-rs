@@ -33,7 +33,7 @@
   --header-waterfall-overlap: 0rem;
   --card-base-max-width: 1280px;
   --card-max-width: 1600px;
-  --card-bookmark-gutter: 4rem;
+  --card-bookmark-gutter: 9.5rem;
   --spectrum-bookmark-side-width: 6.5rem;
   --spectrum-bookmark-side-offset: 8.85rem;
 }
@@ -92,7 +92,7 @@ body {
   overflow: visible;
 }
 
-@media (min-width: 1440px) {
+@media (min-width: 1100px) {
   .card {
     width: min(
       var(--card-max-width),
@@ -2325,6 +2325,10 @@ button:focus-visible, input:focus-visible, select:focus-visible {
 ::-webkit-scrollbar-thumb:hover { background: color-mix(in srgb, var(--accent-green) 55%, var(--border-light)); }
 * { scrollbar-width: thin; scrollbar-color: color-mix(in srgb, var(--border-light) 70%, transparent) transparent; }
 
+@media (max-width: 1099px) {
+  /* Side bookmark panels need the gutter; hide when card is full-width */
+  .spectrum-bookmark-side { display: none !important; }
+}
 @media (max-width: 900px) {
   .card { width: 100%; padding-left: 0.9rem; padding-right: 0.9rem; }
 }
@@ -2555,8 +2559,6 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   .spectrum-edge-shift {
     width: 0.95rem;
   }
-  /* Bookmark side panels need too much horizontal space on narrow screens */
-  .spectrum-bookmark-side { display: none !important; }
   .spectrum-bookmark-side .spectrum-bookmark-chip {
     font-size: 0.58rem;
     padding: 2px 6px;
