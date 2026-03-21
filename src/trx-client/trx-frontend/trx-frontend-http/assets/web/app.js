@@ -3116,8 +3116,8 @@ function render(update) {
   if (typeof update.clients === "number") {
     document.getElementById("about-clients").textContent = update.clients;
   }
-  if (typeof update.active_rig_id === "string" && update.active_rig_id.length > 0) {
-    document.getElementById("about-active-rig").textContent = update.active_rig_id;
+  if (lastActiveRigId) {
+    document.getElementById("about-active-rig").textContent = lastActiveRigId;
   }
   if (Array.isArray(update.rig_ids)) {
     applyRigList(update.active_rig_id, update.rig_ids);

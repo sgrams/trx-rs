@@ -1633,13 +1633,8 @@ pub async fn select_rig(
         )));
     }
 
-    // Always update the global active rig — the remote client uses it to
-    // route commands to the correct rig on the server.
-    if let Ok(mut active) = context.remote_active_rig_id.lock() {
-        *active = Some(rig_id.to_string());
-    }
-
-    // Update per-session rig selection if session_id is provided.
+    // Only update per-session rig selection — never mutate the global
+    // active rig so that other tabs/sessions are unaffected.
     if let Some(ref sid) = query.session_id {
         if let Ok(uuid) = Uuid::parse_str(sid) {
             session_rig_mgr.set_rig(uuid, rig_id.to_string());
