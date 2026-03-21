@@ -1619,14 +1619,17 @@ pub async fn select_rig(
         )));
     }
 
-    // Update per-session rig selection if session_id is provided, otherwise
-    // update the global default (for non-session-aware clients).
+    // Always update the global active rig — the remote client uses it to
+    // route commands to the correct rig on the server.
+    if let Ok(mut active) = context.remote_active_rig_id.lock() {
+        *active = Some(rig_id.to_string());
+    }
+
+    // Update per-session rig selection if session_id is provided.
     if let Some(ref sid) = query.session_id {
         if let Ok(uuid) = Uuid::parse_str(sid) {
             session_rig_mgr.set_rig(uuid, rig_id.to_string());
         }
-    } else if let Ok(mut active) = context.remote_active_rig_id.lock() {
-        *active = Some(rig_id.to_string());
     }
 
     // Broadcast the channel list for the newly selected rig so all SSE
