@@ -329,6 +329,7 @@ const contentEl = document.getElementById("content");
 const serverSubtitle = document.getElementById("server-subtitle");
 const rigSubtitle = document.getElementById("rig-subtitle");
 const ownerSubtitle = document.getElementById("owner-subtitle");
+const locationSubtitle = document.getElementById("location-subtitle");
 const loadingTitle = document.getElementById("loading-title");
 const loadingSub = document.getElementById("loading-sub");
 const decodeHistoryOverlayEl = document.getElementById("decode-history-overlay");
@@ -2616,6 +2617,12 @@ function render(update) {
   }
   if (update.server_latitude != null) serverLat = update.server_latitude;
   if (update.server_longitude != null) serverLon = update.server_longitude;
+  if (locationSubtitle && Number.isFinite(serverLat) && Number.isFinite(serverLon)) {
+    const grid = latLonToMaidenhead(serverLat, serverLon);
+    locationSubtitle.textContent = `Location: ${grid}`;
+    locationSubtitle.style.display = "";
+    reverseGeocodeLocation(serverLat, serverLon, grid);
+  }
   if (aprsMap) syncAprsReceiverMarker();
   if (typeof update.initial_map_zoom === "number" && Number.isFinite(update.initial_map_zoom)) {
     initialMapZoom = Math.max(1, Math.round(update.initial_map_zoom));
@@ -6192,6 +6199,42 @@ window.vdesMapAddPoint = function(msg) {
   }
   scheduleDecodeMapMaintenance();
 };
+
+let reverseGeocodeLastKey = null;
+function reverseGeocodeLocation(lat, lon, grid) {
+  const key = `${lat.toFixed(4)},${lon.toFixed(4)}`;
+  if (key === reverseGeocodeLastKey) return;
+  reverseGeocodeLastKey = key;
+  const url = `https://nominatim.openstreetmap.org/reverse?lat=${encodeURIComponent(lat)}&lon=${encodeURIComponent(lon)}&format=json&zoom=10&accept-language=en`;
+  fetch(url, { headers: { "User-Agent": "trx-rs" } })
+    .then((r) => r.ok ? r.json() : Promise.reject(r.status))
+    .then((data) => {
+      const addr = data?.address;
+      if (!addr) return;
+      const city = addr.city || addr.town || addr.village || addr.hamlet || addr.municipality || addr.county || "";
+      const country = addr.country || "";
+      if (!city && !country) return;
+      const label = city && country ? `${city}, ${country}` : (city || country);
+      if (locationSubtitle) {
+        locationSubtitle.textContent = `Location: ${grid} · ${label}`;
+      }
+    })
+    .catch(() => {});
+}
+
+function latLonToMaidenhead(lat, lon) {
+  const adjustedLon = lon + 180;
+  const adjustedLat = lat + 90;
+  const A = "A".charCodeAt(0);
+  const a = "a".charCodeAt(0);
+  const field1 = String.fromCharCode(A + Math.floor(adjustedLon / 20));
+  const field2 = String.fromCharCode(A + Math.floor(adjustedLat / 10));
+  const square1 = Math.floor((adjustedLon % 20) / 2);
+  const square2 = Math.floor(adjustedLat % 10);
+  const sub1 = String.fromCharCode(a + Math.floor((adjustedLon % 2) * 12));
+  const sub2 = String.fromCharCode(a + Math.floor((adjustedLat % 1) * 24));
+  return `${field1}${field2}${square1}${square2}${sub1}${sub2}`;
+}
 
 function maidenheadToBounds(grid) {
   if (!grid || grid.length < 4) return null;
