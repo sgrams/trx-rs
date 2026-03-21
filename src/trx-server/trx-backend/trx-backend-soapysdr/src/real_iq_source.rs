@@ -62,11 +62,21 @@ impl RealIqSource {
             // particular device and silently opening a different one would cause
             // incorrect behaviour (especially with multiple devices).
             Device::new(args).map_err(|e| {
+                // Enumerate all available devices to help diagnose the mismatch.
+                let available = match soapysdr::enumerate("") {
+                    Ok(devs) if !devs.is_empty() => {
+                        let list: Vec<String> = devs.iter().map(|d| format!("{}", d)).collect();
+                        format!("Available devices:\n    {}", list.join("\n    "))
+                    }
+                    Ok(_) => "No SoapySDR devices found.".to_string(),
+                    Err(enum_err) => format!("(could not enumerate devices: {})", enum_err),
+                };
                 format!(
                     "Failed to open SoapySDR device with args '{}': {}\n  \
-                     Troubleshooting: Verify the device is connected and the args are correct. \
+                     {}\n  \
+                     Hint: SoapySDR args are case-sensitive (e.g. 'driver=airspyhf' not 'driver=AirspyHF').\n  \
                      Run SoapySDRUtil --find to list available devices and their identifiers.",
-                    args, e
+                    args, e, available
                 )
             })?
         };
