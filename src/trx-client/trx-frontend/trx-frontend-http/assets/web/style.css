@@ -2750,6 +2750,8 @@ button:focus-visible, input:focus-visible, select:focus-visible {
     text-transform: uppercase;
     color: var(--text-muted);
   }
+  .bm-col-sel { grid-column: 1 / -1; display: flex; align-items: center; padding: 0; }
+  .bm-col-sel::before { display: none; }
   .bm-col-name { grid-column: 1 / -1; font-weight: 600; font-size: 0.9rem; }
   .bm-col-name::before  { content: "Bookmark"; }
   .bm-col-freq::before  { content: "Frequency"; }
@@ -3616,9 +3618,26 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   background: var(--border-light);
 }
 
-.bm-del-btn {
+.bm-col-sel {
+  width: 1.8rem;
+  text-align: center;
+  padding-left: 0.4rem;
+  padding-right: 0;
+}
+
+.bm-del-btn,
+#bm-del-selected-btn {
   color: var(--accent-red) !important;
   border-color: var(--accent-red) !important;
+}
+
+#bm-del-selected-btn {
+  font-size: 0.78rem;
+  padding: 0.25rem 0.6rem;
+  border-radius: 0.25rem;
+  border: 1px solid var(--accent-red);
+  background: var(--btn-bg);
+  cursor: pointer;
 }
 
 .bm-empty {

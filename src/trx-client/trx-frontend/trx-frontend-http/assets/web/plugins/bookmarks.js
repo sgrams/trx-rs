@@ -5,6 +5,7 @@ let bmFilteredList = [];
 let bmEditId = null;
 let bmCurrentPage = 1;
 const BM_PAGE_SIZE = 25;
+const bmSelected = new Set();
 
 function bmFmtFreq(hz) {
   if (!Number.isFinite(hz) || hz <= 0) return "--";
@@ -49,6 +50,8 @@ async function bmFetch(categoryFilter) {
   if (typeof window.syncBookmarkMapLocators === "function") {
     window.syncBookmarkMapLocators(bmList);
   }
+  bmSelected.clear();
+  bmUpdateSelectionUi();
   bmSyncAccess();
   bmApplyFilters();
   bmRefreshCategoryFilter(categoryFilter);
@@ -142,7 +145,9 @@ function bmRender(list) {
     const catCell = bm.category || "Uncategorised";
     const decoderCell = (bm.decoders || []).join(", ").toUpperCase() || "--";
     const commentCell = bm.comment || "";
+    const checked = bmSelected.has(bm.id) ? " checked" : "";
     tr.innerHTML =
+      `<td class="bm-col-sel"><input type="checkbox" class="bm-row-sel" data-bm-id="${bmEsc(bm.id)}"${checked} aria-label="Select ${bmEsc(bm.name)}" /></td>` +
       `<td class="bm-col-name">${bmEsc(bm.name)}</td>` +
       `<td class="bm-col-freq">${bmFmtFreq(bm.freq_hz)}</td>` +
       `<td class="bm-col-mode">${bmEsc(bm.mode)}</td>` +
@@ -160,6 +165,7 @@ function bmRender(list) {
       `</td>`;
     tbody.appendChild(tr);
   });
+  bmSyncSelectAllCheckbox();
 
   if (paginatorEl) paginatorEl.style.display = totalPages > 1 ? "flex" : "";
   if (pageSummaryEl) pageSummaryEl.textContent = `Showing ${startIndex + 1}-${endIndex} of ${list.length}`;
@@ -379,6 +385,48 @@ async function bmApply(bm) {
   }
 }
 
+function bmUpdateSelectionUi() {
+  const count = bmSelected.size;
+  const btn = document.getElementById("bm-del-selected-btn");
+  const countEl = document.getElementById("bm-del-selected-count");
+  if (btn) btn.style.display = count > 0 && bmCanControl() ? "" : "none";
+  if (countEl) countEl.textContent = count;
+}
+
+function bmSyncSelectAllCheckbox() {
+  const selectAll = document.getElementById("bm-select-all");
+  if (!selectAll) return;
+  const checkboxes = document.querySelectorAll(".bm-row-sel");
+  if (checkboxes.length === 0) {
+    selectAll.checked = false;
+    selectAll.indeterminate = false;
+    return;
+  }
+  const checkedCount = Array.from(checkboxes).filter((cb) => cb.checked).length;
+  selectAll.checked = checkedCount === checkboxes.length;
+  selectAll.indeterminate = checkedCount > 0 && checkedCount < checkboxes.length;
+}
+
+async function bmDeleteSelected() {
+  const ids = Array.from(bmSelected);
+  if (ids.length === 0) return;
+  if (!confirm(`Delete ${ids.length} selected bookmark${ids.length > 1 ? "s" : ""}?`)) return;
+  try {
+    const resp = await fetch("/bookmarks/batch_delete", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ids }),
+    });
+    if (!resp.ok) throw new Error("HTTP " + resp.status);
+    bmSelected.clear();
+    bmUpdateSelectionUi();
+    await bmFetch(document.getElementById("bm-category-filter").value);
+  } catch (err) {
+    console.error("Failed to delete bookmarks:", err);
+    alert("Failed to delete bookmarks: " + err.message);
+  }
+}
+
 // --- Event wiring ---
 (function initBookmarks() {
   // Set initial button visibility (auth may already be resolved by the time
@@ -440,8 +488,33 @@ async function bmApply(bm) {
     }
   });
 
-  // Table action buttons (event delegation)
+  // Select-all checkbox
+  document.getElementById("bm-select-all").addEventListener("change", (e) => {
+    const checked = e.target.checked;
+    document.querySelectorAll(".bm-row-sel").forEach((cb) => {
+      cb.checked = checked;
+      if (checked) bmSelected.add(cb.dataset.bmId);
+      else bmSelected.delete(cb.dataset.bmId);
+    });
+    bmUpdateSelectionUi();
+  });
+
+  // Delete Selected button
+  document.getElementById("bm-del-selected-btn").addEventListener("click", () => {
+    bmDeleteSelected();
+  });
+
+  // Table action buttons and row checkboxes (event delegation)
   document.getElementById("bm-tbody").addEventListener("click", async (e) => {
+    const checkbox = e.target.closest(".bm-row-sel");
+    if (checkbox) {
+      if (checkbox.checked) bmSelected.add(checkbox.dataset.bmId);
+      else bmSelected.delete(checkbox.dataset.bmId);
+      bmSyncSelectAllCheckbox();
+      bmUpdateSelectionUi();
+      return;
+    }
+
     const tuneBtn = e.target.closest(".bm-tune-btn");
     const editBtn = e.target.closest(".bm-edit-btn");
     const delBtn = e.target.closest(".bm-del-btn");

@@ -1324,6 +1324,28 @@ pub async fn delete_bookmark(
     }
 }
 
+#[derive(serde::Deserialize)]
+struct BatchDeleteRequest {
+    ids: Vec<String>,
+}
+
+#[post("/bookmarks/batch_delete")]
+pub async fn batch_delete_bookmarks(
+    req: HttpRequest,
+    body: web::Json<BatchDeleteRequest>,
+    store: web::Data<Arc<crate::server::bookmarks::BookmarkStore>>,
+    auth_state: web::Data<crate::server::auth::AuthState>,
+) -> Result<HttpResponse, Error> {
+    require_control(&req, &auth_state)?;
+    let mut deleted = 0usize;
+    for id in &body.ids {
+        if store.remove(id) {
+            deleted += 1;
+        }
+    }
+    Ok(HttpResponse::Ok().json(serde_json::json!({ "deleted": deleted })))
+}
+
 #[derive(serde::Serialize)]
 struct RigListItem {
     rig_id: String,
@@ -1612,6 +1634,7 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
         .service(create_bookmark)
         .service(update_bookmark)
         .service(delete_bookmark)
+        .service(batch_delete_bookmarks)
         // Scheduler
         .service(crate::server::scheduler::get_scheduler)
         .service(crate::server::scheduler::put_scheduler)

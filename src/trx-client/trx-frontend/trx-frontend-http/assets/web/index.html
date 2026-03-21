@@ -356,6 +356,7 @@
         </select>
         <input type="search" id="bm-text-filter" class="status-input" placeholder="Search bookmarks…" aria-label="Search bookmarks" />
         <button id="bm-add-btn" type="button" class="bm-add-btn" style="display:none;">+ Add Bookmark</button>
+        <button id="bm-del-selected-btn" type="button" class="bm-del-btn" style="display:none;">Delete Selected (<span id="bm-del-selected-count">0</span>)</button>
       </div>
       <div id="bm-form-wrap" style="display:none;">
         <form id="bm-form" class="bm-form">
@@ -415,6 +416,7 @@
         <table class="bm-table">
           <thead>
             <tr>
+              <th class="bm-col-sel"><input type="checkbox" id="bm-select-all" aria-label="Select all bookmarks" /></th>
               <th>Name</th>
               <th>Frequency</th>
               <th>Mode</th>
