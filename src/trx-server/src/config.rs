@@ -187,6 +187,9 @@ pub struct BehaviorConfig {
     pub max_retries: u32,
     /// Base delay for exponential backoff in milliseconds
     pub retry_base_delay_ms: u64,
+    /// Whether to prime both VFOs on startup by toggling and reading each.
+    /// Defaults to true for rigs with dual VFOs (e.g. FT-817).
+    pub vfo_prime: bool,
 }
 
 impl Default for BehaviorConfig {
@@ -196,6 +199,7 @@ impl Default for BehaviorConfig {
             poll_interval_tx_ms: 100,
             max_retries: 3,
             retry_base_delay_ms: 100,
+            vfo_prime: true,
         }
     }
 }

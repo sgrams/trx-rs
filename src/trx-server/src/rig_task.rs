@@ -50,6 +50,8 @@ pub struct RigTaskConfig {
     /// Per-rig decoder history store.  Used by Reset* commands to clear the
     /// history and by the audio listener to serve history on connection.
     pub histories: Arc<DecoderHistories>,
+    /// Whether to prime both VFOs on startup by toggling and reading each.
+    pub vfo_prime: bool,
     /// Pre-built rig backend.  When `Some`, the registry factory is skipped.
     /// Used by the SDR path in `main.rs` to pass a fully-configured
     /// `SoapySdrRig` (built with channel config) without duplicating the
@@ -81,6 +83,7 @@ impl Default for RigTaskConfig {
             pskreporter_status: None,
             aprs_is_status: None,
             histories: DecoderHistories::new(),
+            vfo_prime: true,
             prebuilt_rig: None,
         }
     }
@@ -190,10 +193,14 @@ pub async fn run_rig_task(
     }
 
     // Prime VFO state
-    if let Err(e) = prime_vfo_state(&mut rig, &mut state, retry).await {
-        warn!("VFO priming failed: {:?}", e);
+    if config.vfo_prime {
+        if let Err(e) = prime_vfo_state(&mut rig, &mut state, retry).await {
+            warn!("VFO priming failed: {:?}", e);
+        } else {
+            initial_status_read = true;
+        }
     } else {
-        initial_status_read = true;
+        info!("VFO priming disabled by config");
     }
 
     if initial_status_read {

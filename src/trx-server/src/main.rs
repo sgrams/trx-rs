@@ -445,6 +445,7 @@ fn build_rig_task_config(
         pskreporter_status,
         aprs_is_status,
         histories,
+        vfo_prime: rig_cfg.behavior.vfo_prime,
         prebuilt_rig: None,
     }
 }
