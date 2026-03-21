@@ -2573,6 +2573,7 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   }
   #spectrum-bw-label,
   #spectrum-floor-label,
+  #spectrum-gamma-label,
   #spectrum-peak-hold-label {
     width: 100%;
     justify-content: space-between;
@@ -3112,6 +3113,23 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   min-height: 0;
   padding: 0 8px;
   font-size: 0.73rem;
+}
+#spectrum-gamma-label {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+#spectrum-gamma-input {
+  width: 5rem;
+  height: 1.5rem;
+  cursor: pointer;
+}
+#spectrum-gamma-value {
+  font-size: 0.72rem;
+  min-width: 1.6rem;
+  text-align: right;
 }
 .spectrum-hint-mouse,
 .spectrum-hint-touch {

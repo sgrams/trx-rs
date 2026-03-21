@@ -1025,7 +1025,7 @@ function overviewWfResetTextureCache() {
 }
 
 function overviewWfPaletteKey(pal, viewKey = "") {
-  return `${pal.waterfallHue}|${pal.waterfallSat}|${pal.waterfallLight}|${pal.waterfallAlpha}|${spectrumFloor}|${spectrumRange}|${viewKey}`;
+  return `${pal.waterfallHue}|${pal.waterfallSat}|${pal.waterfallLight}|${pal.waterfallAlpha}|${spectrumFloor}|${spectrumRange}|${waterfallGamma}|${viewKey}`;
 }
 
 function resizeHeaderSignalCanvas() {
@@ -1401,7 +1401,8 @@ function waterfallColorRgba(db, pal, minDb, maxDb) {
   const safeDb = Number.isFinite(db) ? db : lo;
   const clamped = Math.max(lo, Math.min(hi, safeDb));
   const span = Math.max(1, hi - lo);
-  const t = (clamped - lo) / span;
+  const tLinear = (clamped - lo) / span;
+  const t = waterfallGamma === 1.0 ? tLinear : Math.pow(tLinear, waterfallGamma);
   const hue = pal.waterfallHue[0] + t * (pal.waterfallHue[1] - pal.waterfallHue[0]);
   const light = pal.waterfallLight[0] + t * (pal.waterfallLight[1] - pal.waterfallLight[0]);
   const alpha = pal.waterfallAlpha[0] + t * (pal.waterfallAlpha[1] - pal.waterfallAlpha[0]);
@@ -8137,6 +8138,7 @@ let spectrumPanFrac = 0.5;
 // Y-axis level: floor = bottom dB value shown; range = total dB span.
 let spectrumFloor = -115;
 let spectrumRange = 90;
+let waterfallGamma = 1.0;
 const SPECTRUM_HEADROOM_DB = 20;
 const SPECTRUM_SMOOTH_ALPHA = 0.42;
 
@@ -9784,6 +9786,19 @@ if (spectrumCenterRightBtn) {
       spectrumRange = Math.max(60, Math.ceil((peak - spectrumFloor) / 10) * 10 + SPECTRUM_HEADROOM_DB);
       if (floorInput) floorInput.value = spectrumFloor;
       scheduleSpectrumDraw();
+    });
+  }
+
+  const gammaInput = document.getElementById("spectrum-gamma-input");
+  const gammaValue = document.getElementById("spectrum-gamma-value");
+  if (gammaInput) {
+    gammaInput.addEventListener("input", () => {
+      const v = Number(gammaInput.value);
+      if (Number.isFinite(v) && v > 0) {
+        waterfallGamma = v;
+        if (gammaValue) gammaValue.textContent = v.toFixed(1);
+        if (lastSpectrumData) scheduleSpectrumDraw();
+      }
     });
   }
 })();
