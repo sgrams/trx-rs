@@ -929,13 +929,18 @@ function applyRigList(activeRigId, rigIds, displayNames) {
     aboutList.textContent = lastRigIds.length ? lastRigIds.join(", ") : "--";
   }
   if (typeof activeRigId === "string" && activeRigId.length > 0) {
-    lastActiveRigId = activeRigId;
+    // Only adopt the server's active rig when this tab has no selection yet
+    // (first load). Otherwise keep the per-tab choice so other tabs' switches
+    // do not override ours.
+    if (!lastActiveRigId) {
+      lastActiveRigId = activeRigId;
+    }
     const aboutActive = document.getElementById("about-active-rig");
-    if (aboutActive) aboutActive.textContent = activeRigId;
+    if (aboutActive) aboutActive.textContent = lastActiveRigId;
   }
   const disableSwitch = lastRigIds.length === 0 || !authRole || authRole === "rx";
-  populateRigPicker(headerRigSwitchSelect, lastRigIds, activeRigId, disableSwitch);
-  updateRigSubtitle(activeRigId);
+  populateRigPicker(headerRigSwitchSelect, lastRigIds, lastActiveRigId, disableSwitch);
+  updateRigSubtitle(lastActiveRigId);
   if (typeof setSchedulerRig === "function") setSchedulerRig(lastActiveRigId);
   if (typeof setBackgroundDecodeRig === "function") setBackgroundDecodeRig(lastActiveRigId);
   updateMapRigFilter();
@@ -2750,11 +2755,9 @@ function render(update) {
         `trx-server hosted by <a href="https://qrzcq.com/call/${encodedCallsign}" target="_blank" rel="noopener">${safeCallsign}</a>`;
     }
   }
-  // Detect rig switch and reset stale decoder state from the previous rig.
-  if (typeof update.active_rig_id === "string" && update.active_rig_id.length > 0 && update.active_rig_id !== lastActiveRigId) {
-    resetDecoderStateOnRigSwitch();
-  }
-  updateRigSubtitle(update.active_rig_id);
+  // Note: rig switch decoder reset is now handled in switchRigFromSelect()
+  // so that other tabs' switches don't reset our state.
+  updateRigSubtitle(lastActiveRigId);
   if (ownerSubtitle) {
     if (ownerCallsign) {
       const safeOwner = escapeMapHtml(ownerCallsign);
@@ -3298,6 +3301,11 @@ function scheduleUiFrameJob(key, job) {
 window.trxScheduleUiFrameJob = scheduleUiFrameJob;
 
 async function postPath(path) {
+  // Auto-append rig_id so each tab targets its own rig.
+  if (lastActiveRigId) {
+    const sep = path.includes("?") ? "&" : "?";
+    path = `${path}${sep}rig_id=${encodeURIComponent(lastActiveRigId)}`;
+  }
   const resp = await fetch(path, { method: "POST" });
   if (authEnabled && resp.status === 401) {
     // Not authenticated - return to login
@@ -3341,6 +3349,12 @@ async function switchRigFromSelect(selectEl) {
     return;
   }
   selectEl.disabled = true;
+  // Set per-tab rig immediately so subsequent commands target the new rig.
+  const prevRig = lastActiveRigId;
+  lastActiveRigId = selectEl.value;
+  if (prevRig && prevRig !== lastActiveRigId) {
+    resetDecoderStateOnRigSwitch();
+  }
   showHint("Switching rig…");
   try {
     await postPath(`/select_rig?rig_id=${encodeURIComponent(selectEl.value)}`);

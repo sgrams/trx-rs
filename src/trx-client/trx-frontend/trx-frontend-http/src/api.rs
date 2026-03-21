@@ -769,6 +769,7 @@ pub async fn spectrum(
 
 #[post("/toggle_power")]
 pub async fn toggle_power(
+    query: web::Query<RigIdQuery>,
     state: web::Data<watch::Receiver<RigState>>,
     rig_tx: web::Data<mpsc::Sender<RigRequest>>,
 ) -> Result<HttpResponse, Error> {
@@ -778,33 +779,37 @@ pub async fn toggle_power(
     } else {
         RigCommand::PowerOff
     };
-    send_command(&rig_tx, cmd).await
+    send_command(&rig_tx, cmd, query.into_inner().rig_id).await
 }
 
 #[post("/toggle_vfo")]
 pub async fn toggle_vfo(
+    query: web::Query<RigIdQuery>,
     rig_tx: web::Data<mpsc::Sender<RigRequest>>,
 ) -> Result<HttpResponse, Error> {
-    send_command(&rig_tx, RigCommand::ToggleVfo).await
+    send_command(&rig_tx, RigCommand::ToggleVfo, query.into_inner().rig_id).await
 }
 
 #[post("/lock")]
 pub async fn lock_panel(
+    query: web::Query<RigIdQuery>,
     rig_tx: web::Data<mpsc::Sender<RigRequest>>,
 ) -> Result<HttpResponse, Error> {
-    send_command(&rig_tx, RigCommand::Lock).await
+    send_command(&rig_tx, RigCommand::Lock, query.into_inner().rig_id).await
 }
 
 #[post("/unlock")]
 pub async fn unlock_panel(
+    query: web::Query<RigIdQuery>,
     rig_tx: web::Data<mpsc::Sender<RigRequest>>,
 ) -> Result<HttpResponse, Error> {
-    send_command(&rig_tx, RigCommand::Unlock).await
+    send_command(&rig_tx, RigCommand::Unlock, query.into_inner().rig_id).await
 }
 
 #[derive(serde::Deserialize)]
 pub struct FreqQuery {
     pub hz: u64,
+    pub rig_id: Option<String>,
 }
 
 #[post("/set_freq")]
@@ -812,7 +817,8 @@ pub async fn set_freq(
     query: web::Query<FreqQuery>,
     rig_tx: web::Data<mpsc::Sender<RigRequest>>,
 ) -> Result<HttpResponse, Error> {
-    send_command(&rig_tx, RigCommand::SetFreq(Freq { hz: query.hz })).await
+    let q = query.into_inner();
+    send_command(&rig_tx, RigCommand::SetFreq(Freq { hz: q.hz }), q.rig_id).await
 }
 
 #[post("/set_center_freq")]
@@ -820,12 +826,19 @@ pub async fn set_center_freq(
     query: web::Query<FreqQuery>,
     rig_tx: web::Data<mpsc::Sender<RigRequest>>,
 ) -> Result<HttpResponse, Error> {
-    send_command(&rig_tx, RigCommand::SetCenterFreq(Freq { hz: query.hz })).await
+    let q = query.into_inner();
+    send_command(
+        &rig_tx,
+        RigCommand::SetCenterFreq(Freq { hz: q.hz }),
+        q.rig_id,
+    )
+    .await
 }
 
 #[derive(serde::Deserialize)]
 pub struct ModeQuery {
     pub mode: String,
+    pub rig_id: Option<String>,
 }
 
 #[post("/set_mode")]
@@ -833,13 +846,15 @@ pub async fn set_mode(
     query: web::Query<ModeQuery>,
     rig_tx: web::Data<mpsc::Sender<RigRequest>>,
 ) -> Result<HttpResponse, Error> {
-    let mode = parse_mode(&query.mode);
-    send_command(&rig_tx, RigCommand::SetMode(mode)).await
+    let q = query.into_inner();
+    let mode = parse_mode(&q.mode);
+    send_command(&rig_tx, RigCommand::SetMode(mode), q.rig_id).await
 }
 
 #[derive(serde::Deserialize)]
 pub struct PttQuery {
     pub ptt: String,
+    pub rig_id: Option<String>,
 }
 
 #[post("/set_ptt")]
@@ -847,19 +862,21 @@ pub async fn set_ptt(
     query: web::Query<PttQuery>,
     rig_tx: web::Data<mpsc::Sender<RigRequest>>,
 ) -> Result<HttpResponse, Error> {
-    let ptt = match query.ptt.to_ascii_lowercase().as_str() {
+    let q = query.into_inner();
+    let ptt = match q.ptt.to_ascii_lowercase().as_str() {
         "1" | "true" | "on" => Ok(true),
         "0" | "false" | "off" => Ok(false),
         other => Err(actix_web::error::ErrorBadRequest(format!(
             "invalid ptt parameter: {other}"
         ))),
     }?;
-    send_command(&rig_tx, RigCommand::SetPtt(ptt)).await
+    send_command(&rig_tx, RigCommand::SetPtt(ptt), q.rig_id).await
 }
 
 #[derive(serde::Deserialize)]
 pub struct TxLimitQuery {
     pub limit: u8,
+    pub rig_id: Option<String>,
 }
 
 #[post("/set_tx_limit")]
@@ -867,12 +884,14 @@ pub async fn set_tx_limit(
     query: web::Query<TxLimitQuery>,
     rig_tx: web::Data<mpsc::Sender<RigRequest>>,
 ) -> Result<HttpResponse, Error> {
-    send_command(&rig_tx, RigCommand::SetTxLimit(query.limit)).await
+    let q = query.into_inner();
+    send_command(&rig_tx, RigCommand::SetTxLimit(q.limit), q.rig_id).await
 }
 
 #[derive(serde::Deserialize)]
 pub struct BandwidthQuery {
     pub hz: u32,
+    pub rig_id: Option<String>,
 }
 
 #[post("/set_bandwidth")]
@@ -880,12 +899,14 @@ pub async fn set_bandwidth(
     query: web::Query<BandwidthQuery>,
     rig_tx: web::Data<mpsc::Sender<RigRequest>>,
 ) -> Result<HttpResponse, Error> {
-    send_command(&rig_tx, RigCommand::SetBandwidth(query.hz)).await
+    let q = query.into_inner();
+    send_command(&rig_tx, RigCommand::SetBandwidth(q.hz), q.rig_id).await
 }
 
 #[derive(serde::Deserialize)]
 pub struct SdrGainQuery {
     pub db: f64,
+    pub rig_id: Option<String>,
 }
 
 #[post("/set_sdr_gain")]
@@ -893,12 +914,14 @@ pub async fn set_sdr_gain(
     query: web::Query<SdrGainQuery>,
     rig_tx: web::Data<mpsc::Sender<RigRequest>>,
 ) -> Result<HttpResponse, Error> {
-    send_command(&rig_tx, RigCommand::SetSdrGain(query.db)).await
+    let q = query.into_inner();
+    send_command(&rig_tx, RigCommand::SetSdrGain(q.db), q.rig_id).await
 }
 
 #[derive(serde::Deserialize)]
 pub struct SdrLnaGainQuery {
     pub db: f64,
+    pub rig_id: Option<String>,
 }
 
 #[post("/set_sdr_lna_gain")]
@@ -906,12 +929,14 @@ pub async fn set_sdr_lna_gain(
     query: web::Query<SdrLnaGainQuery>,
     rig_tx: web::Data<mpsc::Sender<RigRequest>>,
 ) -> Result<HttpResponse, Error> {
-    send_command(&rig_tx, RigCommand::SetSdrLnaGain(query.db)).await
+    let q = query.into_inner();
+    send_command(&rig_tx, RigCommand::SetSdrLnaGain(q.db), q.rig_id).await
 }
 
 #[derive(serde::Deserialize)]
 pub struct SdrAgcQuery {
     pub enabled: bool,
+    pub rig_id: Option<String>,
 }
 
 #[post("/set_sdr_agc")]
@@ -919,13 +944,15 @@ pub async fn set_sdr_agc(
     query: web::Query<SdrAgcQuery>,
     rig_tx: web::Data<mpsc::Sender<RigRequest>>,
 ) -> Result<HttpResponse, Error> {
-    send_command(&rig_tx, RigCommand::SetSdrAgc(query.enabled)).await
+    let q = query.into_inner();
+    send_command(&rig_tx, RigCommand::SetSdrAgc(q.enabled), q.rig_id).await
 }
 
 #[derive(serde::Deserialize)]
 pub struct SdrSquelchQuery {
     pub enabled: bool,
     pub threshold_db: f64,
+    pub rig_id: Option<String>,
 }
 
 #[post("/set_sdr_squelch")]
@@ -933,12 +960,14 @@ pub async fn set_sdr_squelch(
     query: web::Query<SdrSquelchQuery>,
     rig_tx: web::Data<mpsc::Sender<RigRequest>>,
 ) -> Result<HttpResponse, Error> {
+    let q = query.into_inner();
     send_command(
         &rig_tx,
         RigCommand::SetSdrSquelch {
-            enabled: query.enabled,
-            threshold_db: query.threshold_db,
+            enabled: q.enabled,
+            threshold_db: q.threshold_db,
         },
+        q.rig_id,
     )
     .await
 }
@@ -946,6 +975,7 @@ pub async fn set_sdr_squelch(
 #[derive(serde::Deserialize)]
 pub struct WfmDeemphasisQuery {
     pub us: u32,
+    pub rig_id: Option<String>,
 }
 
 #[post("/set_wfm_deemphasis")]
@@ -953,12 +983,14 @@ pub async fn set_wfm_deemphasis(
     query: web::Query<WfmDeemphasisQuery>,
     rig_tx: web::Data<mpsc::Sender<RigRequest>>,
 ) -> Result<HttpResponse, Error> {
-    send_command(&rig_tx, RigCommand::SetWfmDeemphasis(query.us)).await
+    let q = query.into_inner();
+    send_command(&rig_tx, RigCommand::SetWfmDeemphasis(q.us), q.rig_id).await
 }
 
 #[derive(serde::Deserialize)]
 pub struct WfmStereoQuery {
     pub enabled: bool,
+    pub rig_id: Option<String>,
 }
 
 #[post("/set_wfm_stereo")]
@@ -966,12 +998,14 @@ pub async fn set_wfm_stereo(
     query: web::Query<WfmStereoQuery>,
     rig_tx: web::Data<mpsc::Sender<RigRequest>>,
 ) -> Result<HttpResponse, Error> {
-    send_command(&rig_tx, RigCommand::SetWfmStereo(query.enabled)).await
+    let q = query.into_inner();
+    send_command(&rig_tx, RigCommand::SetWfmStereo(q.enabled), q.rig_id).await
 }
 
 #[derive(serde::Deserialize)]
 pub struct WfmDenoiseQuery {
     pub level: WfmDenoiseLevel,
+    pub rig_id: Option<String>,
 }
 
 #[post("/set_wfm_denoise")]
@@ -979,39 +1013,59 @@ pub async fn set_wfm_denoise(
     query: web::Query<WfmDenoiseQuery>,
     rig_tx: web::Data<mpsc::Sender<RigRequest>>,
 ) -> Result<HttpResponse, Error> {
-    send_command(&rig_tx, RigCommand::SetWfmDenoise(query.level)).await
+    let q = query.into_inner();
+    send_command(&rig_tx, RigCommand::SetWfmDenoise(q.level), q.rig_id).await
 }
 
 #[post("/toggle_aprs_decode")]
 pub async fn toggle_aprs_decode(
+    query: web::Query<RigIdQuery>,
     state: web::Data<watch::Receiver<RigState>>,
     rig_tx: web::Data<mpsc::Sender<RigRequest>>,
 ) -> Result<HttpResponse, Error> {
     let enabled = state.get_ref().borrow().aprs_decode_enabled;
-    send_command(&rig_tx, RigCommand::SetAprsDecodeEnabled(!enabled)).await
+    send_command(
+        &rig_tx,
+        RigCommand::SetAprsDecodeEnabled(!enabled),
+        query.into_inner().rig_id,
+    )
+    .await
 }
 
 #[post("/toggle_hf_aprs_decode")]
 pub async fn toggle_hf_aprs_decode(
+    query: web::Query<RigIdQuery>,
     state: web::Data<watch::Receiver<RigState>>,
     rig_tx: web::Data<mpsc::Sender<RigRequest>>,
 ) -> Result<HttpResponse, Error> {
     let enabled = state.get_ref().borrow().hf_aprs_decode_enabled;
-    send_command(&rig_tx, RigCommand::SetHfAprsDecodeEnabled(!enabled)).await
+    send_command(
+        &rig_tx,
+        RigCommand::SetHfAprsDecodeEnabled(!enabled),
+        query.into_inner().rig_id,
+    )
+    .await
 }
 
 #[post("/toggle_cw_decode")]
 pub async fn toggle_cw_decode(
+    query: web::Query<RigIdQuery>,
     state: web::Data<watch::Receiver<RigState>>,
     rig_tx: web::Data<mpsc::Sender<RigRequest>>,
 ) -> Result<HttpResponse, Error> {
     let enabled = state.get_ref().borrow().cw_decode_enabled;
-    send_command(&rig_tx, RigCommand::SetCwDecodeEnabled(!enabled)).await
+    send_command(
+        &rig_tx,
+        RigCommand::SetCwDecodeEnabled(!enabled),
+        query.into_inner().rig_id,
+    )
+    .await
 }
 
 #[derive(serde::Deserialize)]
 pub struct CwAutoQuery {
     pub enabled: bool,
+    pub rig_id: Option<String>,
 }
 
 #[post("/set_cw_auto")]
@@ -1019,12 +1073,14 @@ pub async fn set_cw_auto(
     query: web::Query<CwAutoQuery>,
     rig_tx: web::Data<mpsc::Sender<RigRequest>>,
 ) -> Result<HttpResponse, Error> {
-    send_command(&rig_tx, RigCommand::SetCwAuto(query.enabled)).await
+    let q = query.into_inner();
+    send_command(&rig_tx, RigCommand::SetCwAuto(q.enabled), q.rig_id).await
 }
 
 #[derive(serde::Deserialize)]
 pub struct CwWpmQuery {
     pub wpm: u32,
+    pub rig_id: Option<String>,
 }
 
 #[post("/set_cw_wpm")]
@@ -1032,12 +1088,14 @@ pub async fn set_cw_wpm(
     query: web::Query<CwWpmQuery>,
     rig_tx: web::Data<mpsc::Sender<RigRequest>>,
 ) -> Result<HttpResponse, Error> {
-    send_command(&rig_tx, RigCommand::SetCwWpm(query.wpm)).await
+    let q = query.into_inner();
+    send_command(&rig_tx, RigCommand::SetCwWpm(q.wpm), q.rig_id).await
 }
 
 #[derive(serde::Deserialize)]
 pub struct CwToneQuery {
     pub tone_hz: u32,
+    pub rig_id: Option<String>,
 }
 
 #[post("/set_cw_tone")]
@@ -1045,97 +1103,158 @@ pub async fn set_cw_tone(
     query: web::Query<CwToneQuery>,
     rig_tx: web::Data<mpsc::Sender<RigRequest>>,
 ) -> Result<HttpResponse, Error> {
-    send_command(&rig_tx, RigCommand::SetCwToneHz(query.tone_hz)).await
+    let q = query.into_inner();
+    send_command(&rig_tx, RigCommand::SetCwToneHz(q.tone_hz), q.rig_id).await
 }
 
 #[post("/toggle_ft8_decode")]
 pub async fn toggle_ft8_decode(
+    query: web::Query<RigIdQuery>,
     state: web::Data<watch::Receiver<RigState>>,
     rig_tx: web::Data<mpsc::Sender<RigRequest>>,
 ) -> Result<HttpResponse, Error> {
     let enabled = state.get_ref().borrow().ft8_decode_enabled;
-    send_command(&rig_tx, RigCommand::SetFt8DecodeEnabled(!enabled)).await
+    send_command(
+        &rig_tx,
+        RigCommand::SetFt8DecodeEnabled(!enabled),
+        query.into_inner().rig_id,
+    )
+    .await
 }
 
 #[post("/toggle_ft4_decode")]
 pub async fn toggle_ft4_decode(
+    query: web::Query<RigIdQuery>,
     state: web::Data<watch::Receiver<RigState>>,
     rig_tx: web::Data<mpsc::Sender<RigRequest>>,
 ) -> Result<HttpResponse, Error> {
     let enabled = state.get_ref().borrow().ft4_decode_enabled;
-    send_command(&rig_tx, RigCommand::SetFt4DecodeEnabled(!enabled)).await
+    send_command(
+        &rig_tx,
+        RigCommand::SetFt4DecodeEnabled(!enabled),
+        query.into_inner().rig_id,
+    )
+    .await
 }
 
 #[post("/toggle_ft2_decode")]
 pub async fn toggle_ft2_decode(
+    query: web::Query<RigIdQuery>,
     state: web::Data<watch::Receiver<RigState>>,
     rig_tx: web::Data<mpsc::Sender<RigRequest>>,
 ) -> Result<HttpResponse, Error> {
     let enabled = state.get_ref().borrow().ft2_decode_enabled;
-    send_command(&rig_tx, RigCommand::SetFt2DecodeEnabled(!enabled)).await
+    send_command(
+        &rig_tx,
+        RigCommand::SetFt2DecodeEnabled(!enabled),
+        query.into_inner().rig_id,
+    )
+    .await
 }
 
 #[post("/toggle_wspr_decode")]
 pub async fn toggle_wspr_decode(
+    query: web::Query<RigIdQuery>,
     state: web::Data<watch::Receiver<RigState>>,
     rig_tx: web::Data<mpsc::Sender<RigRequest>>,
 ) -> Result<HttpResponse, Error> {
     let enabled = state.get_ref().borrow().wspr_decode_enabled;
-    send_command(&rig_tx, RigCommand::SetWsprDecodeEnabled(!enabled)).await
+    send_command(
+        &rig_tx,
+        RigCommand::SetWsprDecodeEnabled(!enabled),
+        query.into_inner().rig_id,
+    )
+    .await
 }
 
 #[post("/clear_ft8_decode")]
 pub async fn clear_ft8_decode(
+    query: web::Query<RigIdQuery>,
     context: web::Data<Arc<FrontendRuntimeContext>>,
     rig_tx: web::Data<mpsc::Sender<RigRequest>>,
 ) -> Result<HttpResponse, Error> {
     crate::server::audio::clear_ft8_history(context.get_ref());
-    send_command(&rig_tx, RigCommand::ResetFt8Decoder).await
+    send_command(
+        &rig_tx,
+        RigCommand::ResetFt8Decoder,
+        query.into_inner().rig_id,
+    )
+    .await
 }
 
 #[post("/clear_ft4_decode")]
 pub async fn clear_ft4_decode(
+    query: web::Query<RigIdQuery>,
     context: web::Data<Arc<FrontendRuntimeContext>>,
     rig_tx: web::Data<mpsc::Sender<RigRequest>>,
 ) -> Result<HttpResponse, Error> {
     crate::server::audio::clear_ft4_history(context.get_ref());
-    send_command(&rig_tx, RigCommand::ResetFt4Decoder).await
+    send_command(
+        &rig_tx,
+        RigCommand::ResetFt4Decoder,
+        query.into_inner().rig_id,
+    )
+    .await
 }
 
 #[post("/clear_ft2_decode")]
 pub async fn clear_ft2_decode(
+    query: web::Query<RigIdQuery>,
     context: web::Data<Arc<FrontendRuntimeContext>>,
     rig_tx: web::Data<mpsc::Sender<RigRequest>>,
 ) -> Result<HttpResponse, Error> {
     crate::server::audio::clear_ft2_history(context.get_ref());
-    send_command(&rig_tx, RigCommand::ResetFt2Decoder).await
+    send_command(
+        &rig_tx,
+        RigCommand::ResetFt2Decoder,
+        query.into_inner().rig_id,
+    )
+    .await
 }
 
 #[post("/clear_wspr_decode")]
 pub async fn clear_wspr_decode(
+    query: web::Query<RigIdQuery>,
     context: web::Data<Arc<FrontendRuntimeContext>>,
     rig_tx: web::Data<mpsc::Sender<RigRequest>>,
 ) -> Result<HttpResponse, Error> {
     crate::server::audio::clear_wspr_history(context.get_ref());
-    send_command(&rig_tx, RigCommand::ResetWsprDecoder).await
+    send_command(
+        &rig_tx,
+        RigCommand::ResetWsprDecoder,
+        query.into_inner().rig_id,
+    )
+    .await
 }
 
 #[post("/clear_aprs_decode")]
 pub async fn clear_aprs_decode(
+    query: web::Query<RigIdQuery>,
     context: web::Data<Arc<FrontendRuntimeContext>>,
     rig_tx: web::Data<mpsc::Sender<RigRequest>>,
 ) -> Result<HttpResponse, Error> {
     crate::server::audio::clear_aprs_history(context.get_ref());
-    send_command(&rig_tx, RigCommand::ResetAprsDecoder).await
+    send_command(
+        &rig_tx,
+        RigCommand::ResetAprsDecoder,
+        query.into_inner().rig_id,
+    )
+    .await
 }
 
 #[post("/clear_hf_aprs_decode")]
 pub async fn clear_hf_aprs_decode(
+    query: web::Query<RigIdQuery>,
     context: web::Data<Arc<FrontendRuntimeContext>>,
     rig_tx: web::Data<mpsc::Sender<RigRequest>>,
 ) -> Result<HttpResponse, Error> {
     crate::server::audio::clear_hf_aprs_history(context.get_ref());
-    send_command(&rig_tx, RigCommand::ResetHfAprsDecoder).await
+    send_command(
+        &rig_tx,
+        RigCommand::ResetHfAprsDecoder,
+        query.into_inner().rig_id,
+    )
+    .await
 }
 
 #[post("/clear_ais_decode")]
@@ -1156,11 +1275,17 @@ pub async fn clear_vdes_decode(
 
 #[post("/clear_cw_decode")]
 pub async fn clear_cw_decode(
+    query: web::Query<RigIdQuery>,
     context: web::Data<Arc<FrontendRuntimeContext>>,
     rig_tx: web::Data<mpsc::Sender<RigRequest>>,
 ) -> Result<HttpResponse, Error> {
     crate::server::audio::clear_cw_history(context.get_ref());
-    send_command(&rig_tx, RigCommand::ResetCwDecoder).await
+    send_command(
+        &rig_tx,
+        RigCommand::ResetCwDecoder,
+        query.into_inner().rig_id,
+    )
+    .await
 }
 
 // ============================================================================
@@ -1916,16 +2041,23 @@ async fn vchan_js() -> impl Responder {
         .body(status::VCHAN_JS)
 }
 
+/// Generic query extractor for endpoints that only need the optional rig_id.
+#[derive(serde::Deserialize)]
+pub struct RigIdQuery {
+    pub rig_id: Option<String>,
+}
+
 async fn send_command(
     rig_tx: &mpsc::Sender<RigRequest>,
     cmd: RigCommand,
+    rig_id: Option<String>,
 ) -> Result<HttpResponse, Error> {
     let (resp_tx, resp_rx) = oneshot::channel();
     rig_tx
         .send(RigRequest {
             cmd,
             respond_to: resp_tx,
-            rig_id_override: None,
+            rig_id_override: rig_id,
         })
         .await
         .map_err(|e| {
