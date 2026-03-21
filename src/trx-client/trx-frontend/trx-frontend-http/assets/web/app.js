@@ -9857,5 +9857,11 @@ if (spectrumCenterRightBtn) {
         if (lastSpectrumData) scheduleSpectrumDraw();
       }
     });
+    gammaInput.addEventListener("dblclick", () => {
+      waterfallGamma = 1.0;
+      gammaInput.value = "1.0";
+      if (gammaValue) gammaValue.textContent = "1.0";
+      if (lastSpectrumData) scheduleSpectrumDraw();
+    });
   }
 })();
