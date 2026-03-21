@@ -1026,11 +1026,11 @@ small { color: var(--text-muted); }
   gap: 0.6rem;
   min-width: 0;
 }
-.header-audio-btn {
+.header-bar-btn.header-audio-btn {
   width: 2rem;
   height: 2rem;
   min-height: 0;
-  padding: 0;
+  padding: 2px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1042,8 +1042,8 @@ small { color: var(--text-muted); }
   flex-shrink: 0;
 }
 .header-audio-btn svg {
-  width: 1.5rem;
-  height: 1.5rem;
+  width: 100%;
+  height: 100%;
 }
 .header-audio-btn.audio-active {
   color: var(--accent-green);
