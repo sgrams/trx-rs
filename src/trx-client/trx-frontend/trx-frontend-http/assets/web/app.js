@@ -2662,9 +2662,11 @@ function render(update) {
   if (typeof update.ais_vessel_url_base === "string" && update.ais_vessel_url_base.length > 0) {
     aisVesselUrlBase = update.ais_vessel_url_base;
   }
+  const prevLat = serverLat, prevLon = serverLon;
   if (update.server_latitude != null) serverLat = update.server_latitude;
   if (update.server_longitude != null) serverLon = update.server_longitude;
-  if (locationSubtitle && Number.isFinite(serverLat) && Number.isFinite(serverLon)) {
+  if (locationSubtitle && Number.isFinite(serverLat) && Number.isFinite(serverLon)
+      && (serverLat !== prevLat || serverLon !== prevLon || !locationSubtitle.textContent)) {
     const grid = latLonToMaidenhead(serverLat, serverLon);
     locationSubtitle.textContent = `Location: ${grid}`;
     locationSubtitle.style.display = "";
