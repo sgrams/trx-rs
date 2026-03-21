@@ -3183,7 +3183,10 @@ function connect() {
     clearInterval(esHeartbeat);
   }
   pollFreshSnapshot();
-  es = new EventSource("/events");
+  const eventsUrl = lastActiveRigId
+    ? `/events?rig_id=${encodeURIComponent(lastActiveRigId)}`
+    : "/events";
+  es = new EventSource(eventsUrl);
   lastEventAt = Date.now();
   es.onopen = () => {
     setConnLostOverlay(false);

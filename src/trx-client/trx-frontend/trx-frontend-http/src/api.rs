@@ -323,9 +323,15 @@ fn decode_history_retention_min_from_context(context: &FrontendRuntimeContext) -
         .unwrap_or(default_minutes)
 }
 
+#[derive(serde::Deserialize)]
+pub struct EventsQuery {
+    pub rig_id: Option<String>,
+}
+
 #[get("/events")]
 #[allow(clippy::too_many_arguments)]
 pub async fn events(
+    query: web::Query<EventsQuery>,
     state: web::Data<watch::Receiver<RigState>>,
     clients: web::Data<Arc<AtomicUsize>>,
     context: web::Data<Arc<FrontendRuntimeContext>>,
@@ -342,13 +348,20 @@ pub async fn events(
     let session_id = Uuid::new_v4();
     scheduler_control.register_session(session_id);
 
-    // Seed the primary channel for the currently-selected rig (no-op if
-    // already initialised or if no rig is selected yet).
-    let active_rig_id = context
-        .remote_active_rig_id
-        .lock()
-        .ok()
-        .and_then(|g| g.clone());
+    // Use the client-requested rig_id if provided, otherwise fall back to
+    // the global default.  This allows each tab to reconnect SSE for the
+    // rig it has selected without mutating global state.
+    let active_rig_id = query
+        .rig_id
+        .clone()
+        .filter(|s| !s.is_empty())
+        .or_else(|| {
+            context
+                .remote_active_rig_id
+                .lock()
+                .ok()
+                .and_then(|g| g.clone())
+        });
 
     // Subscribe to the per-rig watch channel for this session's rig,
     // falling back to the global state watch when unavailable.
