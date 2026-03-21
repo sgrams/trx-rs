@@ -46,35 +46,29 @@ impl RealIqSource {
     ) -> Result<Self, String> {
         tracing::info!("Initializing SoapySDR device with args: {}", args);
 
-        let device = match Device::new(args) {
-            Ok(dev) => dev,
-            Err(e) => {
-                tracing::warn!(
-                    "Failed to open device with args '{}': {}. Attempting fallback...",
-                    args,
+        let device = if args.trim().is_empty() {
+            // No specific device requested — open the first available device.
+            Device::new("").map_err(|e| {
+                format!(
+                    "Failed to open SoapySDR device with empty args: {}\n  \
+                     Troubleshooting: Check that SoapySDR is installed and plugins are loaded. \
+                     Try running SoapySDRUtil --probe to verify device availability.",
                     e
-                );
-                match Device::new("") {
-                    Ok(dev) => {
-                        tracing::warn!(
-                            "Successfully opened a device with empty args (fallback). \
-                             Note: this may not be the intended device. \
-                             If this is incorrect, check SoapySDR environment variables and plugins."
-                        );
-                        dev
-                    }
-                    Err(fallback_err) => {
-                        return Err(format!(
-                            "Failed to open SoapySDR device:\n  \
-                             Original args '{}': {}\n  \
-                             Fallback (empty args): {}\n  \
-                             Troubleshooting: Check that SoapySDR is installed and plugins are loaded. \
-                             Try running SoapySDRUtil --probe to verify device availability.",
-                            args, e, fallback_err
-                        ));
-                    }
-                }
-            }
+                )
+            })?
+        } else {
+            // Specific device args provided (e.g. "driver=rtlsdr,serial=00000001").
+            // Do NOT fall back to empty args — the user explicitly requested a
+            // particular device and silently opening a different one would cause
+            // incorrect behaviour (especially with multiple devices).
+            Device::new(args).map_err(|e| {
+                format!(
+                    "Failed to open SoapySDR device with args '{}': {}\n  \
+                     Troubleshooting: Verify the device is connected and the args are correct. \
+                     Run SoapySDRUtil --find to list available devices and their identifiers.",
+                    args, e
+                )
+            })?
         };
 
         tracing::info!("SoapySDR device opened successfully");
