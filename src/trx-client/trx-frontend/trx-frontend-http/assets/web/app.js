@@ -3163,7 +3163,10 @@ function scheduleReconnect(delayMs = 1000) {
 
 async function pollFreshSnapshot() {
   try {
-    const resp = await fetch("/status", { cache: "no-store" });
+    const statusUrl = lastActiveRigId
+      ? `/status?rig_id=${encodeURIComponent(lastActiveRigId)}`
+      : "/status";
+    const resp = await fetch(statusUrl, { cache: "no-store" });
     if (!resp.ok) return;
     const data = await resp.json();
     render(data);

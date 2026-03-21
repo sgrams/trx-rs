@@ -135,13 +135,27 @@ impl SessionRigManager {
 
 pub type SharedSessionRigManager = Arc<SessionRigManager>;
 
+#[derive(serde::Deserialize)]
+pub struct StatusQuery {
+    pub rig_id: Option<String>,
+}
+
 #[get("/status")]
 pub async fn status_api(
+    query: web::Query<StatusQuery>,
     state: web::Data<watch::Receiver<RigState>>,
     clients: web::Data<Arc<AtomicUsize>>,
     context: web::Data<Arc<FrontendRuntimeContext>>,
 ) -> Result<impl Responder, Error> {
-    let state = wait_for_view(state.get_ref().clone()).await?;
+    // Prefer the per-rig watch channel when a rig_id is specified,
+    // falling back to the global state watch.
+    let rx = query
+        .rig_id
+        .as_deref()
+        .filter(|s| !s.is_empty())
+        .and_then(|rid| context.rig_state_rx(rid))
+        .unwrap_or_else(|| state.get_ref().clone());
+    let state = wait_for_view(rx).await?;
     let json = serde_json::to_string(&state).map_err(actix_web::error::ErrorInternalServerError)?;
     let json = inject_frontend_meta(
         &json,
