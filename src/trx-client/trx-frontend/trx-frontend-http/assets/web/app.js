@@ -3349,25 +3349,18 @@ async function switchRigFromSelect(selectEl) {
     showHint("Unknown rig", 1500);
     return;
   }
-  selectEl.disabled = true;
-  // Set per-tab rig immediately so subsequent commands target the new rig.
+  // Rig selection is purely client-side: set the per-tab rig_id so all
+  // subsequent commands target this rig.  No server call needed — postPath()
+  // auto-appends rig_id to every request.
   const prevRig = lastActiveRigId;
   lastActiveRigId = selectEl.value;
   if (prevRig && prevRig !== lastActiveRigId) {
     resetDecoderStateOnRigSwitch();
   }
-  showHint("Switching rig…");
-  try {
-    await postPath(`/select_rig?rig_id=${encodeURIComponent(selectEl.value)}`);
-    refreshRigList();
-    showHint("Rig switch requested", 1500);
-  } catch (err) {
-    showHint("Rig switch failed", 2000);
-    console.error(err);
-  } finally {
-    const disableSwitch = lastRigIds.length === 0 || !authRole || authRole === "rx";
-    selectEl.disabled = disableSwitch;
-  }
+  updateRigSubtitle(lastActiveRigId);
+  if (typeof setSchedulerRig === "function") setSchedulerRig(lastActiveRigId);
+  if (typeof setBackgroundDecodeRig === "function") setBackgroundDecodeRig(lastActiveRigId);
+  showHint(`Rig: ${lastActiveRigId}`, 1500);
 }
 
 if (headerRigSwitchSelect) {
