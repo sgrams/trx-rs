@@ -1046,8 +1046,8 @@ small { color: var(--text-muted); }
   height: 100%;
 }
 .header-audio-btn.audio-active {
-  color: var(--accent-green);
-  border-color: var(--accent-green);
+  color: #00d17f;
+  border-color: #00d17f;
 }
 .header-rig-switch {
   display: flex;
