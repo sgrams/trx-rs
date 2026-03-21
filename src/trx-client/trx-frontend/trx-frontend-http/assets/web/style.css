@@ -1026,6 +1026,25 @@ small { color: var(--text-muted); }
   gap: 0.6rem;
   min-width: 0;
 }
+.header-audio-btn {
+  width: 2rem;
+  height: 2rem;
+  min-height: 0;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border-light);
+  border-radius: 6px;
+  background: var(--input-bg);
+  color: var(--text-muted);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.header-audio-btn.audio-active {
+  color: var(--accent-green);
+  border-color: var(--accent-green);
+}
 .header-rig-switch {
   display: flex;
   align-items: center;

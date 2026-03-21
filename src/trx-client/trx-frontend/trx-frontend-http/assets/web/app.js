@@ -7435,6 +7435,7 @@ function configureRxStream(nextInfo) {
   rxAudioBtn.style.borderColor = "#00d17f";
   rxAudioBtn.style.color = "#00d17f";
   audioStatus.textContent = "RX";
+  syncHeaderAudioBtn();
 }
 
 function extractAudioFrameChannels(frame) {
@@ -7597,6 +7598,7 @@ function startRxAudio() {
       opusDecoder = null;
     }
     nextPlayTime = 0;
+    syncHeaderAudioBtn();
   };
 
   audioWs.onerror = () => {
@@ -7620,6 +7622,7 @@ function stopRxAudio() {
   rxAudioBtn.style.color = "";
   audioStatus.textContent = "Off";
   setAudioLevel(0);
+  syncHeaderAudioBtn();
 }
 
 function startTxAudio() {
@@ -7742,6 +7745,23 @@ async function stopTxAudio() {
 
 rxAudioBtn.addEventListener("click", startRxAudio);
 txAudioBtn.addEventListener("click", startTxAudio);
+
+// Header play button mirrors the RX audio toggle.
+const headerAudioToggle = document.getElementById("header-audio-toggle");
+const headerAudioIconPath = document.getElementById("header-audio-icon-path");
+const PLAY_ICON = "M5 3.5v9l7-4.5z";
+const STOP_ICON = "M4 3.5h8v9H4z";
+function syncHeaderAudioBtn() {
+  if (!headerAudioToggle) return;
+  headerAudioToggle.classList.toggle("audio-active", rxActive);
+  if (headerAudioIconPath) {
+    headerAudioIconPath.setAttribute("d", rxActive ? STOP_ICON : PLAY_ICON);
+  }
+  headerAudioToggle.title = rxActive ? "Stop audio" : "Play audio";
+}
+if (headerAudioToggle) {
+  headerAudioToggle.addEventListener("click", startRxAudio);
+}
 
 const rxVolPct = document.getElementById("rx-vol-pct");
 const txVolPct = document.getElementById("tx-vol-pct");
