@@ -3302,7 +3302,8 @@ window.trxScheduleUiFrameJob = scheduleUiFrameJob;
 
 async function postPath(path) {
   // Auto-append rig_id so each tab targets its own rig.
-  if (lastActiveRigId) {
+  // Skip when the caller already included rig_id (e.g. /select_rig).
+  if (lastActiveRigId && !path.includes("rig_id=")) {
     const sep = path.includes("?") ? "&" : "?";
     path = `${path}${sep}rig_id=${encodeURIComponent(lastActiveRigId)}`;
   }
