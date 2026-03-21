@@ -1041,6 +1041,10 @@ small { color: var(--text-muted); }
   cursor: pointer;
   flex-shrink: 0;
 }
+.header-audio-btn svg {
+  width: 1rem;
+  height: 1rem;
+}
 .header-audio-btn.audio-active {
   color: var(--accent-green);
   border-color: var(--accent-green);

@@ -3349,9 +3349,6 @@ async function switchRigFromSelect(selectEl) {
     showHint("Unknown rig", 1500);
     return;
   }
-  // Rig selection is purely client-side: set the per-tab rig_id so all
-  // subsequent commands target this rig.  No server call needed — postPath()
-  // auto-appends rig_id to every request.
   const prevRig = lastActiveRigId;
   lastActiveRigId = selectEl.value;
   if (prevRig && prevRig !== lastActiveRigId) {
@@ -3360,6 +3357,14 @@ async function switchRigFromSelect(selectEl) {
   updateRigSubtitle(lastActiveRigId);
   if (typeof setSchedulerRig === "function") setSchedulerRig(lastActiveRigId);
   if (typeof setBackgroundDecodeRig === "function") setBackgroundDecodeRig(lastActiveRigId);
+  // Also switch the server's active rig so the SSE stream and audio
+  // follow.  Commands already carry rig_id per-tab, but SSE is still
+  // global until per-session streams are implemented.
+  try {
+    await postPath(`/select_rig?rig_id=${encodeURIComponent(selectEl.value)}`);
+  } catch (err) {
+    console.error("select_rig failed:", err);
+  }
   showHint(`Rig: ${lastActiveRigId}`, 1500);
 }
 
@@ -7748,15 +7753,9 @@ txAudioBtn.addEventListener("click", startTxAudio);
 
 // Header play button mirrors the RX audio toggle.
 const headerAudioToggle = document.getElementById("header-audio-toggle");
-const headerAudioIconPath = document.getElementById("header-audio-icon-path");
-const PLAY_ICON = "M5 3.5v9l7-4.5z";
-const STOP_ICON = "M4 3.5h8v9H4z";
 function syncHeaderAudioBtn() {
   if (!headerAudioToggle) return;
   headerAudioToggle.classList.toggle("audio-active", rxActive);
-  if (headerAudioIconPath) {
-    headerAudioIconPath.setAttribute("d", rxActive ? STOP_ICON : PLAY_ICON);
-  }
   headerAudioToggle.title = rxActive ? "Stop audio" : "Play audio";
 }
 if (headerAudioToggle) {
