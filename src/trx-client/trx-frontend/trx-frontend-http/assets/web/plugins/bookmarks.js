@@ -1,6 +1,7 @@
 // --- Bookmarks Tab ---
 
 var bmList = [];
+var bmRevision = 0;
 let bmFilteredList = [];
 let bmEditId = null;
 let bmCurrentPage = 1;
@@ -47,6 +48,7 @@ async function bmFetch(categoryFilter) {
     console.error("Failed to fetch bookmarks:", e);
     bmList = [];
   }
+  bmRevision++;
   if (typeof window.syncBookmarkMapLocators === "function") {
     window.syncBookmarkMapLocators(bmList);
   }

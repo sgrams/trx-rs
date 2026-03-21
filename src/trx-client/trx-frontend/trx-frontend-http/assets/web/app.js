@@ -9070,7 +9070,8 @@ function createBookmarkChip(bm, colorMap, options = {}) {
 
 function updateSideBookmarkStack(container, bookmarks, colorMap) {
   if (!container) return;
-  const nextKey = Array.isArray(bookmarks) ? bookmarks.map((bm) => bm.id).join(",") : "";
+  const rev = typeof bmRevision !== "undefined" ? bmRevision : 0;
+  const nextKey = Array.isArray(bookmarks) ? `${rev}:${bookmarks.map((bm) => bm.id).join(",")}` : "";
   if (!Array.isArray(bookmarks) || bookmarks.length === 0) {
     if (container.dataset.bmKey) {
       container.innerHTML = "";
@@ -9145,7 +9146,8 @@ function updateBookmarkAxis(range) {
 
   // Only rebuild DOM when the set of visible bookmarks changes.
   // Positions are always updated to handle pan/zoom smoothly.
-  const newKey = visBookmarks.map((b) => b.id).join(",");
+  const rev = typeof bmRevision !== "undefined" ? bmRevision : 0;
+  const newKey = `${rev}:${visBookmarks.map((b) => b.id).join(",")}`;
   if (axisEl.dataset.bmKey !== newKey) {
     axisEl.dataset.bmKey = newKey;
     axisEl.innerHTML = "";
