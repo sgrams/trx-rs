@@ -2,6 +2,7 @@
 //
 // SPDX-License-Identifier: BSD-2-Clause
 
+use std::collections::HashMap;
 use std::io::Write;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
@@ -96,6 +97,43 @@ struct FrontendMeta {
     decode_history_retention_min: u64,
     server_connected: bool,
 }
+
+/// Tracks per-SSE-session rig selection so different browser tabs can
+/// independently view different rigs without interfering.
+#[derive(Default)]
+pub struct SessionRigManager {
+    /// Maps SSE session UUID → selected rig_id.
+    sessions: std::sync::RwLock<HashMap<Uuid, String>>,
+}
+
+impl SessionRigManager {
+    pub fn register(&self, session_id: Uuid, rig_id: String) {
+        if let Ok(mut sessions) = self.sessions.write() {
+            sessions.insert(session_id, rig_id);
+        }
+    }
+
+    pub fn unregister(&self, session_id: Uuid) {
+        if let Ok(mut sessions) = self.sessions.write() {
+            sessions.remove(&session_id);
+        }
+    }
+
+    pub fn get_rig(&self, session_id: Uuid) -> Option<String> {
+        self.sessions
+            .read()
+            .ok()
+            .and_then(|sessions| sessions.get(&session_id).cloned())
+    }
+
+    pub fn set_rig(&self, session_id: Uuid, rig_id: String) {
+        if let Ok(mut sessions) = self.sessions.write() {
+            sessions.insert(session_id, rig_id);
+        }
+    }
+}
+
+pub type SharedSessionRigManager = Arc<SessionRigManager>;
 
 #[get("/status")]
 pub async fn status_api(
@@ -286,6 +324,7 @@ fn decode_history_retention_min_from_context(context: &FrontendRuntimeContext) -
 }
 
 #[get("/events")]
+#[allow(clippy::too_many_arguments)]
 pub async fn events(
     state: web::Data<watch::Receiver<RigState>>,
     clients: web::Data<Arc<AtomicUsize>>,
@@ -294,6 +333,7 @@ pub async fn events(
     bookmark_store: web::Data<Arc<crate::server::bookmarks::BookmarkStore>>,
     scheduler_status: web::Data<crate::server::scheduler::SchedulerStatusMap>,
     scheduler_control: web::Data<crate::server::scheduler::SharedSchedulerControlManager>,
+    session_rig_mgr: web::Data<Arc<SessionRigManager>>,
 ) -> Result<HttpResponse, Error> {
     let rx = state.get_ref().clone();
     let initial = wait_for_view(rx.clone()).await?;
@@ -313,6 +353,7 @@ pub async fn events(
         .ok()
         .and_then(|g| g.clone());
     if let Some(ref rid) = active_rig_id {
+        session_rig_mgr.register(session_id, rid.clone());
         vchan_mgr.init_rig(
             rid,
             initial.status.freq.hz,
@@ -357,6 +398,7 @@ pub async fn events(
     let bookmark_store_updates = bookmark_store.get_ref().clone();
     let scheduler_status_updates = scheduler_status.get_ref().clone();
     let scheduler_control_updates = scheduler_control.get_ref().clone();
+    let session_rig_mgr_updates = session_rig_mgr.get_ref().clone();
     let updates = WatchStream::new(rx).filter_map(move |state| {
         let counter = counter_updates.clone();
         let context = context_updates.clone();
@@ -364,9 +406,17 @@ pub async fn events(
         let bookmark_store = bookmark_store_updates.clone();
         let scheduler_status = scheduler_status_updates.clone();
         let scheduler_control = scheduler_control_updates.clone();
+        let session_rig_mgr = session_rig_mgr_updates.clone();
         async move {
             state.snapshot().and_then(|v| {
-                if let Ok(Some(rig_id)) = context.remote_active_rig_id.lock().map(|g| g.clone()) {
+                let rig_id_opt = session_rig_mgr.get_rig(session_id).or_else(|| {
+                    context
+                        .remote_active_rig_id
+                        .lock()
+                        .ok()
+                        .and_then(|g| g.clone())
+                });
+                if let Some(rig_id) = rig_id_opt {
                     vchan.update_primary(
                         &rig_id,
                         v.status.freq.hz,
@@ -426,12 +476,14 @@ pub async fn events(
     let vchan_drop = vchan_mgr.get_ref().clone();
     let counter_drop = counter.clone();
     let scheduler_control_drop = scheduler_control.get_ref().clone();
+    let session_rig_mgr_drop = session_rig_mgr.get_ref().clone();
     let live = select(select(pings, updates), chan_updates);
     let stream = prefix_stream.chain(live);
     let stream = DropStream::new(Box::pin(stream), move || {
         counter_drop.fetch_sub(1, Ordering::Relaxed);
         vchan_drop.release_session(session_id);
         scheduler_control_drop.unregister_session(session_id);
+        session_rig_mgr_drop.unregister(session_id);
     });
 
     Ok(HttpResponse::Ok()
@@ -1520,6 +1572,7 @@ pub async fn list_rigs(
 #[derive(serde::Deserialize)]
 pub struct SelectRigQuery {
     pub rig_id: String,
+    pub session_id: Option<String>,
 }
 
 #[post("/select_rig")]
@@ -1527,6 +1580,7 @@ pub async fn select_rig(
     query: web::Query<SelectRigQuery>,
     context: web::Data<Arc<FrontendRuntimeContext>>,
     vchan_mgr: web::Data<Arc<ClientChannelManager>>,
+    session_rig_mgr: web::Data<Arc<SessionRigManager>>,
 ) -> Result<HttpResponse, Error> {
     let rig_id = query.rig_id.trim();
     if rig_id.is_empty() {
@@ -1549,6 +1603,13 @@ pub async fn select_rig(
 
     if let Ok(mut active) = context.remote_active_rig_id.lock() {
         *active = Some(rig_id.to_string());
+    }
+
+    // Update per-session rig selection if session_id is provided.
+    if let Some(ref sid) = query.session_id {
+        if let Ok(uuid) = Uuid::parse_str(sid) {
+            session_rig_mgr.set_rig(uuid, rig_id.to_string());
+        }
     }
 
     // Broadcast the channel list for the newly selected rig so all SSE

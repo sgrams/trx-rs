@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: BSD-2-Clause
 
 #[path = "api.rs"]
-mod api;
+pub mod api;
 #[path = "audio.rs"]
 pub mod audio;
 #[path = "auth.rs"]
@@ -90,6 +90,7 @@ async fn serve(
     let background_decode_path = BackgroundDecodeStore::default_path();
     let background_decode_store = Arc::new(BackgroundDecodeStore::open(&background_decode_path));
     let vchan_mgr = Arc::new(ClientChannelManager::new(4));
+    let session_rig_mgr = Arc::new(api::SessionRigManager::default());
     let background_decode_mgr = BackgroundDecodeManager::new(
         background_decode_store,
         bookmark_store.clone(),
@@ -137,6 +138,7 @@ async fn serve(
         scheduler_status,
         scheduler_control,
         vchan_mgr,
+        session_rig_mgr,
         background_decode_mgr,
     )?;
     let handle = server.handle();
@@ -162,6 +164,7 @@ fn build_server(
     scheduler_status: SchedulerStatusMap,
     scheduler_control: Arc<SchedulerControlManager>,
     vchan_mgr: Arc<ClientChannelManager>,
+    session_rig_mgr: Arc<api::SessionRigManager>,
     background_decode_mgr: Arc<BackgroundDecodeManager>,
 ) -> Result<Server, actix_web::Error> {
     let state_data = web::Data::new(state_rx);
@@ -176,6 +179,7 @@ fn build_server(
     let scheduler_status = web::Data::new(scheduler_status);
     let scheduler_control = web::Data::new(scheduler_control);
     let vchan_mgr = web::Data::new(vchan_mgr);
+    let session_rig_mgr = web::Data::new(session_rig_mgr);
     let background_decode_mgr = web::Data::new(background_decode_mgr);
 
     // Extract auth config values before moving context
@@ -221,6 +225,7 @@ fn build_server(
             .app_data(scheduler_status.clone())
             .app_data(scheduler_control.clone())
             .app_data(vchan_mgr.clone())
+            .app_data(session_rig_mgr.clone())
             .app_data(background_decode_mgr.clone())
             .wrap(Compress::default())
             .wrap(

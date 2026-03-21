@@ -599,6 +599,7 @@ let sdrSquelchSupported = false;
 let lastRigIds = [];
 let lastRigDisplayNames = {};
 let lastActiveRigId = null;
+let sseSessionId = null;
 const originalTitle = document.title;
 const savedTheme = loadSetting("theme", null);
 
@@ -3176,6 +3177,7 @@ async function pollFreshSnapshot() {
 function connect() {
   if (es) {
     es.close();
+    sseSessionId = null;
   }
   if (esHeartbeat) {
     clearInterval(esHeartbeat);
@@ -3210,6 +3212,10 @@ function connect() {
     lastEventAt = Date.now();
   });
   es.addEventListener("session", evt => {
+    try {
+      const d = JSON.parse(evt.data);
+      sseSessionId = d.session_id || null;
+    } catch (_) {}
     if (typeof vchanHandleSession === "function") vchanHandleSession(evt.data);
   });
   es.addEventListener("channels", evt => {
@@ -3361,7 +3367,8 @@ async function switchRigFromSelect(selectEl) {
   // follow.  Commands already carry rig_id per-tab, but SSE is still
   // global until per-session streams are implemented.
   try {
-    await postPath(`/select_rig?rig_id=${encodeURIComponent(selectEl.value)}`);
+    const sidParam = sseSessionId ? `&session_id=${encodeURIComponent(sseSessionId)}` : "";
+    await postPath(`/select_rig?rig_id=${encodeURIComponent(selectEl.value)}${sidParam}`);
   } catch (err) {
     console.error("select_rig failed:", err);
   }
