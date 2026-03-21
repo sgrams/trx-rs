@@ -4810,6 +4810,7 @@ function syncDecodeContactPathVisibility() {
   }
   renderMapQsoSummary();
   renderMapSignalSummary();
+  renderMapWeakSignalSummary();
   updateMapPathsAnimationClass();
 }
 
@@ -6437,6 +6438,9 @@ function renderMapQsoSummary() {
     card.addEventListener("click", () => {
       selectedMapQsoKey = selectedMapQsoKey === entry.pathKey ? null : entry.pathKey;
       syncDecodeContactPathVisibility();
+      if (selectedMapQsoKey && entry.sourceGrid) {
+        navigateToMapLocator(entry.sourceGrid, entry.sourceType);
+      }
     });
 
     const head = document.createElement("div");
@@ -6548,6 +6552,125 @@ function renderMapSignalSummary() {
     const card = document.createElement("button");
     card.type = "button";
     card.className = "map-qso-card";
+    if (entry.grid) {
+      card.addEventListener("click", () => {
+        navigateToMapLocator(entry.grid, entry.sourceType);
+      });
+    }
+
+    const head = document.createElement("div");
+    head.className = "map-qso-card-head";
+
+    const rank = document.createElement("span");
+    rank.className = "map-qso-card-rank";
+    rank.textContent = `#${index + 1}`;
+    head.appendChild(rank);
+
+    const snr = document.createElement("span");
+    snr.className = "map-qso-card-distance";
+    snr.textContent = `${entry.snrDb >= 0 ? "+" : ""}${entry.snrDb.toFixed(0)} dB`;
+    head.appendChild(snr);
+
+    const body = document.createElement("div");
+    body.className = "map-qso-card-body";
+
+    const pair = document.createElement("div");
+    pair.className = "map-qso-card-pair";
+    pair.textContent = entry.station;
+    body.appendChild(pair);
+
+    const meta = document.createElement("div");
+    meta.className = "map-qso-card-meta";
+
+    const sourceType = document.createElement("span");
+    sourceType.className = "map-qso-card-pill";
+    sourceType.textContent = String(entry.sourceType || "ft8").toUpperCase();
+    meta.appendChild(sourceType);
+
+    if (entry.bandLabel) {
+      const band = document.createElement("span");
+      band.className = "map-qso-card-pill map-qso-card-band";
+      band.style.setProperty("--band-color", locatorBandChipColor(entry.bandLabel));
+      band.textContent = entry.bandLabel;
+      meta.appendChild(band);
+    }
+
+    const ageText = formatTimeAgo(Number(entry.tsMs));
+    if (ageText) {
+      const age = document.createElement("span");
+      age.className = "map-qso-card-pill";
+      age.textContent = ageText;
+      meta.appendChild(age);
+    }
+
+    body.appendChild(meta);
+
+    const grids = document.createElement("div");
+    grids.className = "map-qso-card-grids";
+    grids.textContent = entry.grid || "--";
+    body.appendChild(grids);
+
+    card.appendChild(head);
+    card.appendChild(body);
+    fragment.appendChild(card);
+  });
+  listEl.replaceChildren(fragment);
+}
+
+function renderMapWeakSignalSummary() {
+  const listEl = document.getElementById("map-weak-signal-summary-list");
+  if (!listEl) return;
+
+  const worstByStation = new Map();
+  for (const entry of locatorMarkers.values()) {
+    if (!entry || (entry.sourceType !== "ft8" && entry.sourceType !== "ft4" && entry.sourceType !== "ft2" && entry.sourceType !== "wspr")) continue;
+    if (!(entry.stationDetails instanceof Map)) continue;
+    for (const detail of entry.stationDetails.values()) {
+      if (!Number.isFinite(detail?.snr_db)) continue;
+      const station = String(detail?.source || detail?.station || "").trim().toUpperCase();
+      if (!station) continue;
+      const snrDb = Number(detail.snr_db);
+      const tsMs = Number.isFinite(detail?.ts_ms) ? Number(detail.ts_ms) : 0;
+      const prev = worstByStation.get(station);
+      if (!prev || snrDb < prev.snrDb || (snrDb === prev.snrDb && tsMs > prev.tsMs)) {
+        worstByStation.set(station, {
+          station,
+          snrDb,
+          tsMs,
+          grid: entry.grid,
+          sourceType: entry.sourceType,
+          bandLabel: bandForHz(Number(detail?.freq_hz))?.label || null,
+        });
+      }
+    }
+  }
+
+  const entries = Array.from(worstByStation.values())
+    .sort((a, b) => {
+      const delta = a.snrDb - b.snrDb;
+      if (Math.abs(delta) > 0.001) return delta;
+      return b.tsMs - a.tsMs;
+    })
+    .slice(0, MAP_QSO_SUMMARY_LIMIT);
+
+  if (entries.length === 0) {
+    const empty = document.createElement("div");
+    empty.className = "map-qso-summary-empty";
+    empty.textContent = "No decoded signals with SNR data in the current map history.";
+    listEl.replaceChildren(empty);
+    return;
+  }
+
+  const fragment = document.createDocumentFragment();
+  entries.forEach((entry, index) => {
+    const card = document.createElement("button");
+    card.type = "button";
+    card.className = "map-qso-card";
+    if (entry.grid) {
+      card.addEventListener("click", () => {
+        navigateToMapLocator(entry.grid, entry.sourceType);
+      });
+    }
 
     const head = document.createElement("div");
     head.className = "map-qso-card-head";
