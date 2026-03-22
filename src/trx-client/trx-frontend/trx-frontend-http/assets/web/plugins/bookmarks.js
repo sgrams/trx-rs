@@ -338,6 +338,11 @@ async function bmApply(bm) {
       }
     }
     if (typeof applyLocalTunedFrequency === "function") {
+      // Set optimistic guard before applying so SSE cannot snap back.
+      if (typeof _freqOptimisticSeq !== "undefined") {
+        ++_freqOptimisticSeq;
+        _freqOptimisticHz = bm.freq_hz;
+      }
       applyLocalTunedFrequency(bm.freq_hz);
     }
     if (typeof scheduleSpectrumDraw === "function" && typeof lastSpectrumData !== "undefined" && lastSpectrumData) {

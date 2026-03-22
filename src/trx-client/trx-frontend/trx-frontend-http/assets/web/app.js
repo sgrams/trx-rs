@@ -1938,6 +1938,11 @@ async function ensureTunedBandwidthCoverage(freqHz, bandwidthHz = coverageGuardB
   }
 }
 
+// Guard: while a set_freq is in flight, SSE state updates must not overwrite
+// the optimistic local frequency with the stale server value.
+let _freqOptimisticHz = null;
+let _freqOptimisticSeq = 0;
+
 async function setRigFrequency(freqHz) {
   const targetHz = Math.round(freqHz);
   if (!freqAllowed(targetHz)) {
@@ -1946,6 +1951,8 @@ async function setRigFrequency(freqHz) {
   }
   // Optimistic local update before any network round-trip.
   const prevFreqHz = lastFreqHz;
+  const seq = ++_freqOptimisticSeq;
+  _freqOptimisticHz = targetHz;
   applyLocalTunedFrequency(targetHz);
   try {
     // set_freq and set_center_freq are independent server operations — run in parallel.
@@ -1958,6 +1965,9 @@ async function setRigFrequency(freqHz) {
     // actual server-side frequency (e.g. when the user loses control access).
     if (prevFreqHz != null) applyLocalTunedFrequency(prevFreqHz, true);
     throw err;
+  } finally {
+    // Only clear the guard if no newer optimistic call has superseded us.
+    if (_freqOptimisticSeq === seq) _freqOptimisticHz = null;
   }
 }
 
@@ -2919,7 +2929,17 @@ function render(update) {
     updateSdrGainInputState();
   }
   if (update.status && update.status.freq && typeof update.status.freq.hz === "number") {
-    applyLocalTunedFrequency(update.status.freq.hz, true);
+    const sseHz = update.status.freq.hz;
+    // While an optimistic set_freq is in flight, suppress SSE updates that
+    // would snap the marker back to the stale server frequency.
+    if (_freqOptimisticHz != null && Math.abs(sseHz - _freqOptimisticHz) > 1) {
+      // stale — skip
+    } else {
+      if (_freqOptimisticHz != null && Math.abs(sseHz - _freqOptimisticHz) <= 1) {
+        _freqOptimisticHz = null; // server confirmed — clear guard early
+      }
+      applyLocalTunedFrequency(sseHz, true);
+    }
   }
   if (update.status && update.status.mode) {
     const mode = normalizeMode(update.status.mode);
@@ -3608,6 +3628,9 @@ async function jogFreq(direction) {
   jogIndicator.style.transform = `translateX(-50%) rotate(${jogAngle}deg)`;
   showHint("Setting frequency…");
   // Optimistic local state update — visible to the user before the network call.
+  // Set the guard BEFORE yielding so SSE cannot snap back during the yield.
+  ++_freqOptimisticSeq;
+  _freqOptimisticHz = newHz;
   applyLocalTunedFrequency(newHz);
   // Yield so the browser paints the updated freq display before the network
   // round-trip begins. Chrome's INP tracking ends at the yield point.
