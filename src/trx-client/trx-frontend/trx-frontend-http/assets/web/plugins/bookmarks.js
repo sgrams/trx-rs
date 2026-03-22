@@ -324,62 +324,67 @@ async function bmDelete(id) {
 
 async function bmApply(bm) {
   try {
-    const onVirtual = typeof vchanInterceptMode === "function"
-      && await vchanInterceptMode(bm.mode);
-    if (!onVirtual) {
-      await postPath("/set_mode?mode=" + encodeURIComponent(bm.mode));
-    }
+    // --- Optimistic UI updates (instant, before any network round-trips) ---
     if (typeof modeEl !== "undefined" && modeEl) {
       modeEl.value = String(bm.mode || "").toUpperCase();
     }
     if (bm.bandwidth_hz) {
+      if (typeof currentBandwidthHz !== "undefined") {
+        currentBandwidthHz = bm.bandwidth_hz;
+      }
+      window.currentBandwidthHz = bm.bandwidth_hz;
+      if (typeof syncBandwidthInput === "function") {
+        syncBandwidthInput(bm.bandwidth_hz);
+      }
+    }
+    if (typeof applyLocalTunedFrequency === "function") {
+      applyLocalTunedFrequency(bm.freq_hz);
+    }
+    if (typeof scheduleSpectrumDraw === "function" && typeof lastSpectrumData !== "undefined" && lastSpectrumData) {
+      scheduleSpectrumDraw();
+    }
+
+    // --- Send mode, bandwidth, and frequency to server in parallel ---
+    const modePromise = (async () => {
+      const onVirtual = typeof vchanInterceptMode === "function"
+        && await vchanInterceptMode(bm.mode);
+      if (!onVirtual) {
+        await postPath("/set_mode?mode=" + encodeURIComponent(bm.mode));
+      }
+    })();
+    const bwPromise = bm.bandwidth_hz ? (async () => {
       const bwHandledByVchan = typeof vchanInterceptBandwidth === "function"
         && await vchanInterceptBandwidth(bm.bandwidth_hz);
       if (!bwHandledByVchan) {
         await postPath("/set_bandwidth?hz=" + bm.bandwidth_hz);
       }
-      if (typeof currentBandwidthHz !== "undefined") {
-        currentBandwidthHz = bm.bandwidth_hz;
-      }
-      if (typeof window !== "undefined") {
-        window.currentBandwidthHz = bm.bandwidth_hz;
-      }
-      if (typeof syncBandwidthInput === "function") {
-        syncBandwidthInput(bm.bandwidth_hz);
-      }
-    }
+    })() : Promise.resolve();
     // setRigFrequency is wrapped by vchan.js to redirect to the channel API
     // when on a virtual channel, so this call works correctly in both cases.
-    if (typeof setRigFrequency === "function") {
-      await setRigFrequency(bm.freq_hz);
-    } else {
-      await postPath("/set_freq?hz=" + bm.freq_hz);
-    }
-    // Toggle decoders when in DIG mode.
+    // It also does its own optimistic update (applyLocalTunedFrequency) but
+    // that's a no-op since we already set the same value above.
+    const freqPromise = (async () => {
+      if (typeof setRigFrequency === "function") {
+        await setRigFrequency(bm.freq_hz);
+      } else {
+        await postPath("/set_freq?hz=" + bm.freq_hz);
+      }
+    })();
+    await Promise.all([modePromise, bwPromise, freqPromise]);
+
+    // --- Toggle decoders when in DIG mode ---
     if (bm.mode === "DIG" && Array.isArray(bm.decoders)) {
       const statusResp = await fetch("/status");
       if (statusResp.ok) {
         const st = await statusResp.json();
-        const wantFt8 = bm.decoders.includes("ft8");
-        if (wantFt8 !== !!st.ft8_decode_enabled) {
-          await postPath("/toggle_ft8_decode");
-        }
-        const wantFt4 = bm.decoders.includes("ft4");
-        if (wantFt4 !== !!st.ft4_decode_enabled) {
-          await postPath("/toggle_ft4_decode");
-        }
-        const wantFt2 = bm.decoders.includes("ft2");
-        if (wantFt2 !== !!st.ft2_decode_enabled) {
-          await postPath("/toggle_ft2_decode");
-        }
-        const wantWspr = bm.decoders.includes("wspr");
-        if (wantWspr !== !!st.wspr_decode_enabled) {
-          await postPath("/toggle_wspr_decode");
-        }
-        const wantHfAprs = bm.decoders.includes("hf-aprs");
-        if (wantHfAprs !== !!st.hf_aprs_decode_enabled) {
-          await postPath("/toggle_hf_aprs_decode");
-        }
+        const toggles = [];
+        const check = (key) => {
+          if (bm.decoders.includes(key) !== !!st[key.replace(/-/g, "_") + "_decode_enabled"]) {
+            toggles.push(postPath("/toggle_" + key.replace(/-/g, "_") + "_decode"));
+          }
+        };
+        check("ft8"); check("ft4"); check("ft2"); check("wspr"); check("hf-aprs");
+        if (toggles.length) await Promise.all(toggles);
       }
     }
   } catch (err) {
