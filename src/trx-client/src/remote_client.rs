@@ -61,6 +61,8 @@ pub struct RemoteClientConfig {
     /// Shared flag: `true` while a TCP connection to trx-server is active.
     pub server_connected: Arc<AtomicBool>,
     pub rig_states: Arc<RwLock<HashMap<String, watch::Sender<RigState>>>>,
+    /// Per-rig spectrum watch senders, keyed by rig_id.
+    pub rig_spectrums: Arc<RwLock<HashMap<String, watch::Sender<SharedSpectrum>>>>,
 }
 
 pub async fn run_remote_client(
@@ -188,22 +190,44 @@ async fn handle_spectrum_connection(
                 }
             }
             _ = interval.tick() => {
-                if !should_poll_spectrum(config) {
+                // Collect rig IDs that have active spectrum subscribers.
+                let rig_ids = active_spectrum_rig_ids(config);
+
+                if rig_ids.is_empty() {
+                    // No subscribers at all — clear global and skip.
                     config.spectrum.send_modify(|s| s.set(None, None));
                     continue;
                 }
-                match send_command_no_state_update(
-                    config, &mut writer, &mut reader,
-                    ClientCommand::GetSpectrum,
-                ).await {
-                    Ok(snapshot) => config
-                        .spectrum
-                        .send_modify(|s| s.set(snapshot.spectrum, snapshot.vchan_rds)),
-                    Err(e) => {
-                        // A spectrum timeout desynchronises the TCP framing;
-                        // return so the caller reconnects and restores sync.
-                        config.spectrum.send_modify(|s| s.set(None, None));
-                        return Err(e);
+
+                // Determine the currently selected rig for backward compat.
+                let selected = selected_rig_id(config);
+
+                for rig_id in &rig_ids {
+                    let envelope = ClientEnvelope {
+                        token: config.token.clone(),
+                        rig_id: Some(rig_id.clone()),
+                        cmd: ClientCommand::GetSpectrum,
+                    };
+                    match send_envelope_no_state_update(&mut writer, &mut reader, envelope).await {
+                        Ok(snapshot) => {
+                            // Update per-rig channel.
+                            if let Ok(map) = config.rig_spectrums.read() {
+                                if let Some(tx) = map.get(rig_id) {
+                                    tx.send_modify(|s| s.set(snapshot.spectrum.clone(), snapshot.vchan_rds.clone()));
+                                }
+                            }
+                            // Update global channel if this is the selected rig.
+                            let is_selected = selected.as_deref() == Some(rig_id.as_str());
+                            if is_selected {
+                                config.spectrum.send_modify(|s| s.set(snapshot.spectrum, snapshot.vchan_rds));
+                            }
+                        }
+                        Err(e) => {
+                            // A spectrum timeout desynchronises the TCP framing;
+                            // return so the caller reconnects and restores sync.
+                            config.spectrum.send_modify(|s| s.set(None, None));
+                            return Err(e);
+                        }
                     }
                 }
             }
@@ -326,53 +350,6 @@ async fn send_command(
         return Err(RigError::communication("missing snapshot"));
     }
 
-    Err(RigError::communication(
-        resp.error.unwrap_or_else(|| "remote error".into()),
-    ))
-}
-
-/// Like `send_command` but does NOT update the main `state_tx` watch channel.
-/// Used for spectrum polling to avoid triggering spurious SSE updates.
-async fn send_command_no_state_update(
-    config: &RemoteClientConfig,
-    writer: &mut tokio::net::tcp::OwnedWriteHalf,
-    reader: &mut BufReader<tokio::net::tcp::OwnedReadHalf>,
-    cmd: ClientCommand,
-) -> RigResult<trx_core::RigSnapshot> {
-    let envelope = build_envelope(config, cmd, None);
-    let mut payload = serde_json::to_string(&envelope)
-        .map_err(|e| RigError::communication(format!("JSON serialize failed: {e}")))?;
-    payload.push('\n');
-    time::timeout(SPECTRUM_IO_TIMEOUT, writer.write_all(payload.as_bytes()))
-        .await
-        .map_err(|_| {
-            RigError::communication(format!("write timed out after {:?}", SPECTRUM_IO_TIMEOUT))
-        })?
-        .map_err(|e| RigError::communication(format!("write failed: {e}")))?;
-    time::timeout(SPECTRUM_IO_TIMEOUT, writer.flush())
-        .await
-        .map_err(|_| {
-            RigError::communication(format!("flush timed out after {:?}", SPECTRUM_IO_TIMEOUT))
-        })?
-        .map_err(|e| RigError::communication(format!("flush failed: {e}")))?;
-    let line = time::timeout(
-        SPECTRUM_IO_TIMEOUT,
-        read_limited_line(reader, MAX_JSON_LINE_BYTES),
-    )
-    .await
-    .map_err(|_| {
-        RigError::communication(format!("read timed out after {:?}", SPECTRUM_IO_TIMEOUT))
-    })?
-    .map_err(|e| RigError::communication(format!("read failed: {e}")))?;
-    let line = line.ok_or_else(|| RigError::communication("connection closed by remote"))?;
-    let resp: ClientResponse = serde_json::from_str(line.trim_end())
-        .map_err(|e| RigError::communication(format!("invalid response: {e}")))?;
-    if resp.success {
-        if let Some(snapshot) = resp.state {
-            return Ok(snapshot);
-        }
-        return Err(RigError::communication("missing snapshot"));
-    }
     Err(RigError::communication(
         resp.error.unwrap_or_else(|| "remote error".into()),
     ))
@@ -526,26 +503,92 @@ fn set_selected_rig_id(config: &RemoteClientConfig, value: Option<String>) {
     }
 }
 
-fn should_poll_spectrum(config: &RemoteClientConfig) -> bool {
-    if config.spectrum.receiver_count() == 0 {
-        return false;
+/// Send a pre-built envelope and return the snapshot without updating state.
+async fn send_envelope_no_state_update(
+    writer: &mut tokio::net::tcp::OwnedWriteHalf,
+    reader: &mut BufReader<tokio::net::tcp::OwnedReadHalf>,
+    envelope: ClientEnvelope,
+) -> RigResult<trx_core::RigSnapshot> {
+    let mut payload = serde_json::to_string(&envelope)
+        .map_err(|e| RigError::communication(format!("JSON serialize failed: {e}")))?;
+    payload.push('\n');
+    time::timeout(SPECTRUM_IO_TIMEOUT, writer.write_all(payload.as_bytes()))
+        .await
+        .map_err(|_| {
+            RigError::communication(format!("write timed out after {:?}", SPECTRUM_IO_TIMEOUT))
+        })?
+        .map_err(|e| RigError::communication(format!("write failed: {e}")))?;
+    time::timeout(SPECTRUM_IO_TIMEOUT, writer.flush())
+        .await
+        .map_err(|_| {
+            RigError::communication(format!("flush timed out after {:?}", SPECTRUM_IO_TIMEOUT))
+        })?
+        .map_err(|e| RigError::communication(format!("flush failed: {e}")))?;
+    let line = time::timeout(
+        SPECTRUM_IO_TIMEOUT,
+        read_limited_line(reader, MAX_JSON_LINE_BYTES),
+    )
+    .await
+    .map_err(|_| {
+        RigError::communication(format!("read timed out after {:?}", SPECTRUM_IO_TIMEOUT))
+    })?
+    .map_err(|e| RigError::communication(format!("read failed: {e}")))?;
+    let line = line.ok_or_else(|| RigError::communication("connection closed by remote"))?;
+    let resp: ClientResponse = serde_json::from_str(line.trim_end())
+        .map_err(|e| RigError::communication(format!("invalid response: {e}")))?;
+    if resp.success {
+        if let Some(snapshot) = resp.state {
+            return Ok(snapshot);
+        }
+        return Err(RigError::communication("missing snapshot"));
     }
-    let selected = selected_rig_id(config);
-    let Some(selected) = selected.as_deref() else {
-        return true;
-    };
-    config
-        .known_rigs
-        .lock()
-        .ok()
-        .and_then(|entries| {
+    Err(RigError::communication(
+        resp.error.unwrap_or_else(|| "remote error".into()),
+    ))
+}
+
+/// Collect rig IDs that have active per-rig spectrum subscribers or fall back
+/// to the selected rig when only the global channel has subscribers.
+fn active_spectrum_rig_ids(config: &RemoteClientConfig) -> Vec<String> {
+    let mut ids = Vec::new();
+    // Collect per-rig channels with active subscribers.
+    if let Ok(map) = config.rig_spectrums.read() {
+        for (rig_id, tx) in map.iter() {
+            if tx.receiver_count() > 0 {
+                ids.push(rig_id.clone());
+            }
+        }
+    }
+    // If global channel has subscribers but no per-rig subscriber covers the
+    // selected rig, add the selected rig so backward compat works.
+    if config.spectrum.receiver_count() > 0 {
+        if let Some(selected) = selected_rig_id(config) {
+            if !ids.contains(&selected) {
+                // Only add if the rig is initialized.
+                let initialized = config
+                    .known_rigs
+                    .lock()
+                    .ok()
+                    .and_then(|entries| entries.iter().find(|e| e.rig_id == selected).cloned())
+                    .map(|e| e.state.initialized)
+                    .unwrap_or(true);
+                if initialized {
+                    ids.push(selected);
+                }
+            }
+        }
+    }
+    // Filter to only initialized rigs.
+    if let Ok(entries) = config.known_rigs.lock() {
+        ids.retain(|id| {
             entries
                 .iter()
-                .find(|entry| entry.rig_id == selected)
-                .cloned()
-        })
-        .map(|entry| entry.state.initialized)
-        .unwrap_or(true)
+                .find(|e| &e.rig_id == id)
+                .map(|e| e.state.initialized)
+                .unwrap_or(true)
+        });
+    }
+    ids
 }
 
 fn choose_default_rig(rigs: &[RigEntry]) -> Option<&RigEntry> {
@@ -869,6 +912,7 @@ mod tests {
                 spectrum: Arc::new(spectrum_tx),
                 server_connected: Arc::new(AtomicBool::new(false)),
                 rig_states: Arc::new(RwLock::new(HashMap::new())),
+                rig_spectrums: Arc::new(RwLock::new(HashMap::new())),
             },
             req_rx,
             state_tx,
@@ -908,6 +952,7 @@ mod tests {
             spectrum: Arc::new(spectrum_tx),
             server_connected: Arc::new(AtomicBool::new(false)),
             rig_states: Arc::new(RwLock::new(HashMap::new())),
+            rig_spectrums: Arc::new(RwLock::new(HashMap::new())),
         };
         let envelope = super::build_envelope(&config, trx_protocol::ClientCommand::GetState, None);
         assert_eq!(envelope.token.as_deref(), Some("secret"));

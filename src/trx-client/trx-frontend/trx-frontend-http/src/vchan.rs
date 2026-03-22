@@ -16,10 +16,10 @@
 //! tunes a channel.
 
 use std::collections::HashMap;
-use std::sync::RwLock;
+use std::sync::{Arc, RwLock};
 
 use serde::{Deserialize, Serialize};
-use tokio::sync::broadcast;
+use tokio::sync::{broadcast, mpsc};
 use uuid::Uuid;
 
 use trx_frontend::VChanAudioCmd;
@@ -107,12 +107,18 @@ pub struct ClientChannelManager {
     /// `"<rig_id>:"` so subscribers can filter by rig.
     pub change_tx: broadcast::Sender<String>,
     pub max_channels: usize,
-    /// Optional sender to the audio-client task for virtual-channel audio commands.
-    pub audio_cmd: std::sync::Mutex<Option<tokio::sync::mpsc::UnboundedSender<VChanAudioCmd>>>,
+    /// Global fallback sender to the audio-client task for virtual-channel audio commands.
+    pub audio_cmd: std::sync::Mutex<Option<mpsc::UnboundedSender<VChanAudioCmd>>>,
+    /// Per-rig vchan command senders. Commands are routed to the per-rig sender
+    /// when available, falling back to the global `audio_cmd`.
+    pub rig_vchan_audio_cmd: Arc<RwLock<HashMap<String, mpsc::UnboundedSender<VChanAudioCmd>>>>,
 }
 
 impl ClientChannelManager {
-    pub fn new(max_channels: usize) -> Self {
+    pub fn new(
+        max_channels: usize,
+        rig_vchan_audio_cmd: Arc<RwLock<HashMap<String, mpsc::UnboundedSender<VChanAudioCmd>>>>,
+    ) -> Self {
         let (change_tx, _) = broadcast::channel(64);
         Self {
             rigs: RwLock::new(HashMap::new()),
@@ -120,17 +126,26 @@ impl ClientChannelManager {
             change_tx,
             max_channels: max_channels.max(1),
             audio_cmd: std::sync::Mutex::new(None),
+            rig_vchan_audio_cmd,
         }
     }
 
-    /// Wire the audio-command sender so the manager can dispatch
-    /// `VChanAudioCmd` messages when channels are allocated/deleted/changed.
-    pub fn set_audio_cmd(&self, tx: tokio::sync::mpsc::UnboundedSender<VChanAudioCmd>) {
+    /// Wire the global audio-command sender as fallback.
+    pub fn set_audio_cmd(&self, tx: mpsc::UnboundedSender<VChanAudioCmd>) {
         *self.audio_cmd.lock().unwrap() = Some(tx);
     }
 
-    /// Fire-and-forget: send a `VChanAudioCmd` to the audio-client task.
-    fn send_audio_cmd(&self, cmd: VChanAudioCmd) {
+    /// Fire-and-forget: send a `VChanAudioCmd`, routing to the per-rig sender
+    /// when available or falling back to the global sender.
+    fn send_audio_cmd_for_rig(&self, rig_id: &str, cmd: VChanAudioCmd) {
+        // Try per-rig sender first.
+        if let Ok(map) = self.rig_vchan_audio_cmd.read() {
+            if let Some(tx) = map.get(rig_id) {
+                let _ = tx.send(cmd);
+                return;
+            }
+        }
+        // Fall back to global sender.
         if let Some(tx) = self.audio_cmd.lock().unwrap().as_ref() {
             let _ = tx.send(cmd);
         }
@@ -265,13 +280,16 @@ impl ClientChannelManager {
             .insert(session_id, (rig_id.to_string(), id));
 
         // Request server-side DSP channel + audio subscription.
-        self.send_audio_cmd(VChanAudioCmd::Subscribe {
-            uuid: id,
-            freq_hz,
-            mode: mode.to_string(),
-            bandwidth_hz: 0,
-            decoder_kinds: Vec::new(),
-        });
+        self.send_audio_cmd_for_rig(
+            rig_id,
+            VChanAudioCmd::Subscribe {
+                uuid: id,
+                freq_hz,
+                mode: mode.to_string(),
+                bandwidth_hz: 0,
+                decoder_kinds: Vec::new(),
+            },
+        );
 
         Ok(snapshot)
     }
@@ -362,7 +380,7 @@ impl ClientChannelManager {
         drop(rigs);
 
         for channel_id in removed_channel_ids {
-            self.send_audio_cmd(VChanAudioCmd::Remove(channel_id));
+            self.send_audio_cmd_for_rig(rig_id, VChanAudioCmd::Remove(channel_id));
         }
     }
 
@@ -389,7 +407,7 @@ impl ClientChannelManager {
         }
 
         // Remove server-side DSP channel and stop audio encoding.
-        self.send_audio_cmd(VChanAudioCmd::Remove(channel_id));
+        self.send_audio_cmd_for_rig(rig_id, VChanAudioCmd::Remove(channel_id));
 
         Ok(())
     }
@@ -446,10 +464,13 @@ impl ClientChannelManager {
         ch.freq_hz = freq_hz;
         self.broadcast_change(rig_id, channels);
         drop(rigs);
-        self.send_audio_cmd(VChanAudioCmd::SetFreq {
-            uuid: channel_id,
-            freq_hz,
-        });
+        self.send_audio_cmd_for_rig(
+            rig_id,
+            VChanAudioCmd::SetFreq {
+                uuid: channel_id,
+                freq_hz,
+            },
+        );
         Ok(())
     }
 
@@ -468,10 +489,13 @@ impl ClientChannelManager {
         ch.mode = mode.to_string();
         self.broadcast_change(rig_id, channels);
         drop(rigs);
-        self.send_audio_cmd(VChanAudioCmd::SetMode {
-            uuid: channel_id,
-            mode: mode.to_string(),
-        });
+        self.send_audio_cmd_for_rig(
+            rig_id,
+            VChanAudioCmd::SetMode {
+                uuid: channel_id,
+                mode: mode.to_string(),
+            },
+        );
         Ok(())
     }
 
@@ -490,10 +514,13 @@ impl ClientChannelManager {
         ch.bandwidth_hz = bandwidth_hz;
         self.broadcast_change(rig_id, channels);
         drop(rigs);
-        self.send_audio_cmd(VChanAudioCmd::SetBandwidth {
-            uuid: channel_id,
-            bandwidth_hz,
-        });
+        self.send_audio_cmd_for_rig(
+            rig_id,
+            VChanAudioCmd::SetBandwidth {
+                uuid: channel_id,
+                bandwidth_hz,
+            },
+        );
         Ok(())
     }
 
@@ -557,7 +584,7 @@ impl ClientChannelManager {
             if remove {
                 let channel_id = channels[idx].id;
                 channels.remove(idx);
-                self.send_audio_cmd(VChanAudioCmd::Remove(channel_id));
+                self.send_audio_cmd_for_rig(rig_id, VChanAudioCmd::Remove(channel_id));
                 changed = true;
                 continue;
             }
@@ -574,37 +601,49 @@ impl ClientChannelManager {
             };
             if channel.freq_hz != *freq_hz {
                 channel.freq_hz = *freq_hz;
-                self.send_audio_cmd(VChanAudioCmd::SetFreq {
-                    uuid: channel.id,
-                    freq_hz: *freq_hz,
-                });
+                self.send_audio_cmd_for_rig(
+                    rig_id,
+                    VChanAudioCmd::SetFreq {
+                        uuid: channel.id,
+                        freq_hz: *freq_hz,
+                    },
+                );
                 changed = true;
             }
             if channel.mode != *mode {
                 channel.mode = mode.clone();
-                self.send_audio_cmd(VChanAudioCmd::SetMode {
-                    uuid: channel.id,
-                    mode: mode.clone(),
-                });
+                self.send_audio_cmd_for_rig(
+                    rig_id,
+                    VChanAudioCmd::SetMode {
+                        uuid: channel.id,
+                        mode: mode.clone(),
+                    },
+                );
                 changed = true;
             }
             if channel.bandwidth_hz != *bandwidth_hz {
                 channel.bandwidth_hz = *bandwidth_hz;
-                self.send_audio_cmd(VChanAudioCmd::SetBandwidth {
-                    uuid: channel.id,
-                    bandwidth_hz: *bandwidth_hz,
-                });
+                self.send_audio_cmd_for_rig(
+                    rig_id,
+                    VChanAudioCmd::SetBandwidth {
+                        uuid: channel.id,
+                        bandwidth_hz: *bandwidth_hz,
+                    },
+                );
                 changed = true;
             }
             if channel.decoder_kinds != *decoder_kinds {
                 channel.decoder_kinds = decoder_kinds.clone();
-                self.send_audio_cmd(VChanAudioCmd::Subscribe {
-                    uuid: channel.id,
-                    freq_hz: channel.freq_hz,
-                    mode: channel.mode.clone(),
-                    bandwidth_hz: channel.bandwidth_hz,
-                    decoder_kinds: channel.decoder_kinds.clone(),
-                });
+                self.send_audio_cmd_for_rig(
+                    rig_id,
+                    VChanAudioCmd::Subscribe {
+                        uuid: channel.id,
+                        freq_hz: channel.freq_hz,
+                        mode: channel.mode.clone(),
+                        bandwidth_hz: channel.bandwidth_hz,
+                        decoder_kinds: channel.decoder_kinds.clone(),
+                    },
+                );
                 changed = true;
             }
         }
@@ -630,13 +669,16 @@ impl ClientChannelManager {
                 scheduler_bookmark_id: Some(bookmark_id.clone()),
                 session_ids: Vec::new(),
             });
-            self.send_audio_cmd(VChanAudioCmd::Subscribe {
-                uuid: channel_id,
-                freq_hz: *freq_hz,
-                mode: mode.clone(),
-                bandwidth_hz: *bandwidth_hz,
-                decoder_kinds: decoder_kinds.clone(),
-            });
+            self.send_audio_cmd_for_rig(
+                rig_id,
+                VChanAudioCmd::Subscribe {
+                    uuid: channel_id,
+                    freq_hz: *freq_hz,
+                    mode: mode.clone(),
+                    bandwidth_hz: *bandwidth_hz,
+                    decoder_kinds: decoder_kinds.clone(),
+                },
+            );
             changed = true;
         }
 
@@ -652,7 +694,7 @@ mod tests {
 
     #[test]
     fn release_session_removes_last_non_permanent_channel() {
-        let mgr = ClientChannelManager::new(4);
+        let mgr = ClientChannelManager::new(4, Arc::new(RwLock::new(HashMap::new())));
         let rig_id = "rig-a";
         let session_id = Uuid::new_v4();
 
@@ -673,7 +715,7 @@ mod tests {
 
     #[test]
     fn sync_scheduler_channels_materializes_visible_scheduler_channels() {
-        let mgr = ClientChannelManager::new(4);
+        let mgr = ClientChannelManager::new(4, Arc::new(RwLock::new(HashMap::new())));
         let rig_id = "rig-a";
 
         mgr.init_rig(rig_id, 14_074_000, "USB");
@@ -699,7 +741,7 @@ mod tests {
 
     #[test]
     fn release_session_keeps_scheduler_managed_channels() {
-        let mgr = ClientChannelManager::new(4);
+        let mgr = ClientChannelManager::new(4, Arc::new(RwLock::new(HashMap::new())));
         let rig_id = "rig-a";
         let session_id = Uuid::new_v4();
 
@@ -728,7 +770,7 @@ mod tests {
 
     #[test]
     fn subscribed_scheduler_channel_survives_scheduler_clear_until_released() {
-        let mgr = ClientChannelManager::new(4);
+        let mgr = ClientChannelManager::new(4, Arc::new(RwLock::new(HashMap::new())));
         let rig_id = "rig-a";
         let session_id = Uuid::new_v4();
 

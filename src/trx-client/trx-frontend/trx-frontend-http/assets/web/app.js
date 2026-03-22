@@ -3378,6 +3378,14 @@ async function switchRigFromSelect(selectEl) {
   } catch (err) {
     console.error("select_rig failed:", err);
   }
+  // Reconnect spectrum SSE to the new rig's spectrum channel.
+  stopSpectrumStreaming();
+  startSpectrumStreaming();
+  // Reconnect audio to the new rig if audio is active.
+  if (rxActive) {
+    stopRxAudio();
+    startRxAudio();
+  }
   showHint(`Rig: ${lastActiveRigId}`, 1500);
 }
 
@@ -7497,9 +7505,14 @@ function startRxAudio() {
     return;
   }
   const proto = location.protocol === "https:" ? "wss:" : "ws:";
-  const audioPath = _audioChannelOverride
-    ? `/audio?channel_id=${encodeURIComponent(_audioChannelOverride)}`
-    : "/audio";
+  let audioPath;
+  if (_audioChannelOverride) {
+    audioPath = `/audio?channel_id=${encodeURIComponent(_audioChannelOverride)}`;
+  } else if (lastActiveRigId) {
+    audioPath = `/audio?rig_id=${encodeURIComponent(lastActiveRigId)}`;
+  } else {
+    audioPath = "/audio";
+  }
   audioWs = new WebSocket(`${proto}//${location.host}${audioPath}`);
   audioWs.binaryType = "arraybuffer";
   audioStatus.textContent = "Connecting…";
@@ -8533,7 +8546,10 @@ function scheduleSpectrumReconnect() {
 
 function startSpectrumStreaming() {
   if (spectrumSource !== null) return;
-  spectrumSource = new EventSource("/spectrum");
+  const spectrumUrl = lastActiveRigId
+    ? `/spectrum?rig_id=${encodeURIComponent(lastActiveRigId)}`
+    : "/spectrum";
+  spectrumSource = new EventSource(spectrumUrl);
   // Unnamed event = reset signal.
   spectrumSource.onmessage = (evt) => {
     if (evt.data === "null") {

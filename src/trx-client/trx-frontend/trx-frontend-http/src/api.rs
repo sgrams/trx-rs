@@ -365,17 +365,13 @@ pub async fn events(
     // Use the client-requested rig_id if provided, otherwise fall back to
     // the global default.  This allows each tab to reconnect SSE for the
     // rig it has selected without mutating global state.
-    let active_rig_id = query
-        .rig_id
-        .clone()
-        .filter(|s| !s.is_empty())
-        .or_else(|| {
-            context
-                .remote_active_rig_id
-                .lock()
-                .ok()
-                .and_then(|g| g.clone())
-        });
+    let active_rig_id = query.rig_id.clone().filter(|s| !s.is_empty()).or_else(|| {
+        context
+            .remote_active_rig_id
+            .lock()
+            .ok()
+            .and_then(|g| g.clone())
+    });
 
     // Subscribe to the per-rig watch channel for this session's rig,
     // falling back to the global state watch when unavailable.
@@ -804,11 +800,16 @@ impl<I> futures_util::Stream for DropStream<I> {
 /// Emits an unnamed `data: null` event when spectrum data becomes unavailable.
 #[get("/spectrum")]
 pub async fn spectrum(
+    query: web::Query<RigIdQuery>,
     context: web::Data<Arc<FrontendRuntimeContext>>,
 ) -> Result<HttpResponse, Error> {
-    // Subscribe to the watch channel: each client gets its own receiver and is
-    // woken exactly when new spectrum data is pushed (no 40 ms polling needed).
-    let rx = context.spectrum.subscribe();
+    // Subscribe to a per-rig spectrum channel when rig_id is specified,
+    // otherwise fall back to the global channel for backward compat.
+    let rx = if let Some(ref rig_id) = query.rig_id {
+        context.rig_spectrum_rx(rig_id)
+    } else {
+        context.spectrum.subscribe()
+    };
     let mut last_rds_json: Option<String> = None;
     let mut last_vchan_rds_json: Option<String> = None;
     let mut last_had_frame = false;

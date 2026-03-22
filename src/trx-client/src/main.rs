@@ -283,6 +283,7 @@ async fn async_init() -> DynResult<AppState> {
         rig_states: frontend_runtime.rig_states.clone(),
         poll_interval: Duration::from_millis(poll_interval_ms),
         spectrum: frontend_runtime.spectrum.clone(),
+        rig_spectrums: frontend_runtime.rig_spectrums.clone(),
         server_connected: frontend_runtime.server_connected.clone(),
     };
     let remote_shutdown_rx = shutdown_rx.clone();
@@ -388,7 +389,10 @@ async fn async_init() -> DynResult<AppState> {
         let audio_rig_ports: HashMap<String, u16> = cfg.frontends.audio.rig_ports.clone();
         let audio_shutdown_rx = shutdown_rx.clone();
         let vchan_audio_map = frontend_runtime.vchan_audio.clone();
-        pending_audio_client = Some(tokio::spawn(audio_client::run_audio_client(
+        let rig_audio_rx_map = frontend_runtime.rig_audio_rx.clone();
+        let rig_audio_info_map = frontend_runtime.rig_audio_info.clone();
+        let rig_vchan_cmd_map = frontend_runtime.rig_vchan_audio_cmd.clone();
+        pending_audio_client = Some(tokio::spawn(audio_client::run_multi_rig_audio_manager(
             remote_host,
             cfg.frontends.audio.server_port,
             audio_rig_ports,
@@ -403,6 +407,9 @@ async fn async_init() -> DynResult<AppState> {
             vchan_audio_map,
             vchan_cmd_rx,
             Some(vchan_destroyed_tx),
+            rig_audio_rx_map,
+            rig_audio_info_map,
+            rig_vchan_cmd_map,
         )));
 
         if cfg.frontends.audio.bridge.enabled {

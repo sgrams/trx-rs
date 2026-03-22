@@ -89,7 +89,10 @@ async fn serve(
 
     let background_decode_path = BackgroundDecodeStore::default_path();
     let background_decode_store = Arc::new(BackgroundDecodeStore::open(&background_decode_path));
-    let vchan_mgr = Arc::new(ClientChannelManager::new(4));
+    let vchan_mgr = Arc::new(ClientChannelManager::new(
+        4,
+        context.rig_vchan_audio_cmd.clone(),
+    ));
     let session_rig_mgr = Arc::new(api::SessionRigManager::default());
     let background_decode_mgr = BackgroundDecodeManager::new(
         background_decode_store,

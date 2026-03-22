@@ -475,6 +475,7 @@ pub fn start_decode_history_collector(context: Arc<FrontendRuntimeContext>) {
 #[derive(Deserialize)]
 pub struct AudioQuery {
     pub channel_id: Option<Uuid>,
+    pub rig_id: Option<String>,
 }
 
 #[get("/audio")]
@@ -516,6 +517,18 @@ pub async fn audio_ws(
             }
             tokio::time::sleep(Duration::from_millis(50)).await;
         }
+    } else if let Some(ref rig_id) = query.rig_id {
+        // Per-rig audio: subscribe to the specific rig's broadcast.
+        match context.rig_audio_subscribe(rig_id) {
+            Some(rx) => rx,
+            None => {
+                // Rig not yet connected; fall back to global.
+                let Some(rx) = context.audio_rx.as_ref() else {
+                    return Ok(HttpResponse::NotFound().body("audio not enabled"));
+                };
+                rx.subscribe()
+            }
+        }
     } else {
         let Some(rx) = context.audio_rx.as_ref() else {
             return Ok(HttpResponse::NotFound().body("audio not enabled"));
@@ -523,6 +536,13 @@ pub async fn audio_ws(
         rx.subscribe()
     };
     let mut rx_sub = rx_sub;
+
+    // Use per-rig audio info if available and rig_id was specified.
+    if let Some(ref rig_id) = query.rig_id {
+        if let Some(rig_info_rx) = context.rig_audio_info_rx(rig_id) {
+            info_rx = rig_info_rx;
+        }
+    }
 
     let (response, mut session, mut msg_stream) = actix_ws::handle(&req, body)?;
 

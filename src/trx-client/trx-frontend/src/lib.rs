@@ -266,6 +266,17 @@ pub struct FrontendRuntimeContext {
     pub ais_vessel_url_base: Option<String>,
     /// Spectrum sender; SSE clients subscribe via `spectrum.subscribe()`.
     pub spectrum: Arc<watch::Sender<SharedSpectrum>>,
+    /// Per-rig spectrum watch channels, keyed by rig_id.
+    /// Populated by the remote client spectrum polling task so each SSE
+    /// session can subscribe to a specific rig's spectrum independently.
+    pub rig_spectrums: Arc<RwLock<HashMap<String, watch::Sender<SharedSpectrum>>>>,
+    /// Per-rig RX audio broadcast senders, keyed by rig_id.
+    /// Each rig's audio client task publishes Opus frames here.
+    pub rig_audio_rx: Arc<RwLock<HashMap<String, broadcast::Sender<Bytes>>>>,
+    /// Per-rig audio stream info watch channels, keyed by rig_id.
+    pub rig_audio_info: Arc<RwLock<HashMap<String, watch::Sender<Option<AudioStreamInfo>>>>>,
+    /// Per-rig virtual-channel command senders, keyed by rig_id.
+    pub rig_vchan_audio_cmd: Arc<RwLock<HashMap<String, mpsc::UnboundedSender<VChanAudioCmd>>>>,
     /// Per-virtual-channel Opus audio senders.
     /// Key: server-side virtual channel UUID.
     /// Value: `broadcast::Sender<Bytes>` that receives per-channel Opus packets
@@ -288,6 +299,44 @@ impl FrontendRuntimeContext {
     /// Get a watch receiver for a specific rig's state.
     pub fn rig_state_rx(&self, rig_id: &str) -> Option<watch::Receiver<RigState>> {
         self.rig_states
+            .read()
+            .ok()
+            .and_then(|map| map.get(rig_id).map(|tx| tx.subscribe()))
+    }
+
+    /// Get a watch receiver for a specific rig's spectrum.
+    /// Lazily inserts a new channel if the rig_id is not yet present.
+    pub fn rig_spectrum_rx(&self, rig_id: &str) -> watch::Receiver<SharedSpectrum> {
+        if let Ok(map) = self.rig_spectrums.read() {
+            if let Some(tx) = map.get(rig_id) {
+                return tx.subscribe();
+            }
+        }
+        // Insert on miss.
+        if let Ok(mut map) = self.rig_spectrums.write() {
+            map.entry(rig_id.to_string())
+                .or_insert_with(|| watch::channel(SharedSpectrum::default()).0)
+                .subscribe()
+        } else {
+            // Poisoned lock fallback: return a dummy receiver.
+            watch::channel(SharedSpectrum::default()).1
+        }
+    }
+
+    /// Subscribe to a specific rig's RX audio broadcast.
+    pub fn rig_audio_subscribe(&self, rig_id: &str) -> Option<broadcast::Receiver<Bytes>> {
+        self.rig_audio_rx
+            .read()
+            .ok()
+            .and_then(|map| map.get(rig_id).map(|tx| tx.subscribe()))
+    }
+
+    /// Get a watch receiver for a specific rig's audio stream info.
+    pub fn rig_audio_info_rx(
+        &self,
+        rig_id: &str,
+    ) -> Option<watch::Receiver<Option<AudioStreamInfo>>> {
+        self.rig_audio_info
             .read()
             .ok()
             .and_then(|map| map.get(rig_id).map(|tx| tx.subscribe()))
@@ -338,6 +387,10 @@ impl FrontendRuntimeContext {
                 let (tx, _rx) = watch::channel(SharedSpectrum::default());
                 Arc::new(tx)
             },
+            rig_spectrums: Arc::new(RwLock::new(HashMap::new())),
+            rig_audio_rx: Arc::new(RwLock::new(HashMap::new())),
+            rig_audio_info: Arc::new(RwLock::new(HashMap::new())),
+            rig_vchan_audio_cmd: Arc::new(RwLock::new(HashMap::new())),
             vchan_audio: Arc::new(RwLock::new(HashMap::new())),
             vchan_audio_cmd: Arc::new(Mutex::new(None)),
             vchan_destroyed: None,
