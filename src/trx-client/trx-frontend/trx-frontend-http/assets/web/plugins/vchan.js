@@ -130,9 +130,15 @@ function vchanHandleChannels(data) {
     const d = JSON.parse(data);
     vchanRigId = d.rig_id || null;
     vchanChannels = d.channels || [];
-    // If the active channel was evicted, fall back to channel 0 and reconnect audio.
     const ids = new Set(vchanChannels.map(c => c.id));
-    if (vchanActiveId && !ids.has(vchanActiveId)) {
+    if (!vchanActiveId && vchanChannels.length > 0 && vchanSessionId) {
+      // First channels event for this session — auto-subscribe to channel 0
+      // so we join the same tuned channel as other users on this rig.
+      // Use a direct subscribe (no scheduler control takeover) to avoid
+      // side-effects on initial connect.
+      vchanAutoJoinPrimary(vchanChannels[0].id);
+    } else if (vchanActiveId && !ids.has(vchanActiveId)) {
+      // Active channel was evicted — fall back to channel 0 and reconnect audio.
       vchanActiveId = vchanChannels.length > 0 ? vchanChannels[0].id : null;
       vchanReconnectAudio();
     }
@@ -240,6 +246,31 @@ async function vchanDelete(channelId) {
     // Channel list updates via SSE `channels` event.
   } catch (e) {
     console.error("vchan: delete error", e);
+  }
+}
+
+// Lightweight auto-join for initial connect: registers the session on
+// channel 0 without taking scheduler control or reconnecting audio
+// (audio isn't started yet at this point).
+async function vchanAutoJoinPrimary(channelId) {
+  if (!vchanSessionId || !vchanRigId) return;
+  try {
+    const resp = await fetch(
+      `/channels/${encodeURIComponent(vchanRigId)}/${encodeURIComponent(channelId)}/subscribe`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ session_id: vchanSessionId }),
+      }
+    );
+    if (!resp.ok) {
+      console.warn("vchan: auto-join primary failed", resp.status);
+      return;
+    }
+    vchanActiveId = channelId;
+    vchanRender();
+  } catch (e) {
+    console.error("vchan: auto-join error", e);
   }
 }
 
