@@ -433,7 +433,7 @@ function vchanSyncAccentUI() {
 // Saved reference to the original refreshFreqDisplay from app.js.
 let _origRefreshFreqDisplay = null;
 
-async function vchanSetChannelFreq(freqHz) {
+function vchanSetChannelFreq(freqHz) {
   if (!vchanRigId || !vchanActiveId) return;
   // Validate against current SDR capture window.
   if (typeof lastSpectrumData !== "undefined" && lastSpectrumData &&
@@ -450,20 +450,16 @@ async function vchanSetChannelFreq(freqHz) {
       return;
     }
   }
-  try {
-    await vchanTakeSchedulerControl();
-    const resp = await fetch(
-      `/channels/${encodeURIComponent(vchanRigId)}/${encodeURIComponent(vchanActiveId)}/freq`,
-      {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ freq_hz: Math.round(freqHz) }),
-      }
-    );
-    if (!resp.ok) console.warn("vchan: set freq failed", resp.status);
-  } catch (e) {
-    console.error("vchan: set freq error", e);
-  }
+  // Fire-and-forget: scheduler control + channel freq PUT run in background.
+  vchanTakeSchedulerControl();
+  fetch(
+    `/channels/${encodeURIComponent(vchanRigId)}/${encodeURIComponent(vchanActiveId)}/freq`,
+    {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ freq_hz: Math.round(freqHz) }),
+    }
+  ).catch(e => console.error("vchan: set freq error", e));
 }
 
 async function vchanSetChannelBandwidth(bwHz) {
@@ -524,13 +520,22 @@ window.vchanInterceptBandwidth = async function(bwHz) {
 // the server when on a non-primary channel.
 (function() {
   const _orig = window.setRigFrequency;
-  window.setRigFrequency = async function(freqHz) {
+  window.setRigFrequency = function(freqHz) {
     if (vchanIsOnVirtual()) {
-      await vchanSetChannelFreq(freqHz);
+      // Optimistic local update first, then fire-and-forget channel API.
+      if (typeof applyLocalTunedFrequency === "function") {
+        if (typeof _freqOptimisticSeq !== "undefined") {
+          ++_freqOptimisticSeq;
+          _freqOptimisticHz = Math.round(freqHz);
+        }
+        applyLocalTunedFrequency(Math.round(freqHz));
+      }
+      vchanSetChannelFreq(freqHz);
       return;
     }
-    await vchanTakeSchedulerControl();
-    if (typeof _orig === "function") return _orig(freqHz);
+    // Scheduler control is fire-and-forget — don't block the freq change.
+    vchanTakeSchedulerControl();
+    if (typeof _orig === "function") _orig(freqHz);
   };
 })();
 
