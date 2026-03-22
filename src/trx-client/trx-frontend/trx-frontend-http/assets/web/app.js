@@ -1943,32 +1943,32 @@ async function ensureTunedBandwidthCoverage(freqHz, bandwidthHz = coverageGuardB
 let _freqOptimisticHz = null;
 let _freqOptimisticSeq = 0;
 
-async function setRigFrequency(freqHz) {
+function setRigFrequency(freqHz) {
   const targetHz = Math.round(freqHz);
   if (!freqAllowed(targetHz)) {
     showUnsupportedFreqPopup(targetHz);
     throw new Error(`Unsupported frequency: ${targetHz}`);
   }
-  // Optimistic local update before any network round-trip.
+  // Optimistic local update — visual is instant via CSS overlay + guard.
   const prevFreqHz = lastFreqHz;
   const seq = ++_freqOptimisticSeq;
   _freqOptimisticHz = targetHz;
   applyLocalTunedFrequency(targetHz);
-  try {
-    // set_freq and set_center_freq are independent server operations — run in parallel.
-    await Promise.all([
-      postPath(`/set_freq?hz=${targetHz}`),
-      ensureTunedBandwidthCoverage(targetHz),
-    ]);
-  } catch (err) {
-    // Roll back the optimistic update so the spectrum view stays on the
-    // actual server-side frequency (e.g. when the user loses control access).
-    if (prevFreqHz != null) applyLocalTunedFrequency(prevFreqHz, true);
-    throw err;
-  } finally {
-    // Only clear the guard if no newer optimistic call has superseded us.
+  // Fire-and-forget: network calls run in background. The SSE stream will
+  // push the confirmed frequency; the optimistic guard prevents snap-back.
+  Promise.all([
+    postPath(`/set_freq?hz=${targetHz}`),
+    ensureTunedBandwidthCoverage(targetHz),
+  ]).catch((err) => {
+    // Roll back only if no newer optimistic call has superseded this one.
+    if (_freqOptimisticSeq === seq && prevFreqHz != null) {
+      _freqOptimisticHz = null;
+      applyLocalTunedFrequency(prevFreqHz, true);
+    }
+    console.warn("setRigFrequency failed:", err);
+  }).finally(() => {
     if (_freqOptimisticSeq === seq) _freqOptimisticHz = null;
-  }
+  });
 }
 
 function spectrumBinIndexForHz(data, hz) {
@@ -3509,7 +3509,7 @@ pttBtn.addEventListener("click", async () => {
   }
 });
 
-async function applyFreqFromInput() {
+function applyFreqFromInput() {
   const parsedRaw = parseFreqInput(freqEl.value, jogUnit);
   const parsed = alignFreqToRigStep(parsedRaw);
   if (parsed === null) {
@@ -3521,17 +3521,8 @@ async function applyFreqFromInput() {
     return;
   }
   freqDirty = false;
-  freqEl.disabled = true;
-  showHint("Setting frequency…");
-  try {
-    await setRigFrequency(parsed);
-    showHint("Freq set", 1500);
-  } catch (err) {
-    showHint("Set freq failed", 2000);
-    console.error(err);
-  } finally {
-    freqEl.disabled = false;
-  }
+  // setRigFrequency is fire-and-forget; visual update is instant.
+  setRigFrequency(parsed);
 }
 
 async function applyCenterFreqFromInput() {
@@ -3616,7 +3607,7 @@ function setJogDivisor(divisor) {
   applyJogStep();
 }
 
-async function jogFreq(direction) {
+function jogFreq(direction) {
   if (lastLocked) { showHint("Locked", 1500); return; }
   if (lastFreqHz === null) return;
   const newHz = alignFreqToRigStep(lastFreqHz + direction * jogStep);
@@ -3626,22 +3617,8 @@ async function jogFreq(direction) {
   }
   jogAngle = (jogAngle + direction * 15) % 360;
   jogIndicator.style.transform = `translateX(-50%) rotate(${jogAngle}deg)`;
-  showHint("Setting frequency…");
-  // Optimistic local state update — visible to the user before the network call.
-  // Set the guard BEFORE yielding so SSE cannot snap back during the yield.
-  ++_freqOptimisticSeq;
-  _freqOptimisticHz = newHz;
-  applyLocalTunedFrequency(newHz);
-  // Yield so the browser paints the updated freq display before the network
-  // round-trip begins. Chrome's INP tracking ends at the yield point.
-  await yieldToMain();
-  try {
-    await setRigFrequency(newHz);
-    showHint("Freq set", 1000);
-  } catch (err) {
-    showHint("Set freq failed", 2000);
-    console.error(err);
-  }
+  // setRigFrequency is fire-and-forget; visual update is instant.
+  setRigFrequency(newHz);
 }
 
 jogDownBtn.addEventListener("click", () => jogFreq(-1));
@@ -8837,15 +8814,11 @@ function formatRdsAfMHz(hz) {
   return `${(hz / 1_000_000).toFixed(1)} MHz`;
 }
 
-async function tuneRdsAlternativeFrequency(hz) {
+function tuneRdsAlternativeFrequency(hz) {
   if (!Number.isFinite(hz) || hz <= 0) return;
   const targetHz = Math.round(hz);
-  try {
-    await setRigFrequency(targetHz);
-    showHint(`Tuned ${formatRdsAfMHz(targetHz)}`, 1200);
-  } catch (_) {
-    showHint("Set freq failed", 1500);
-  }
+  setRigFrequency(targetHz);
+  showHint(`Tuned ${formatRdsAfMHz(targetHz)}`, 1200);
 }
 
 function renderRdsAlternativeFrequencies(list) {
@@ -9688,7 +9661,7 @@ function handleSpectrumClick(e, canvasEl) {
   const cssX = e.clientX - rect.left;
   const targetHz = spectrumTargetHzAt(cssX, rect.width, lastSpectrumData);
   if (!Number.isFinite(targetHz)) return;
-  setRigFrequency(targetHz).catch(() => {});
+  setRigFrequency(targetHz);
 }
 
 if (spectrumCanvas) {
