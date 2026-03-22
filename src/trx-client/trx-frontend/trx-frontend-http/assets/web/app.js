@@ -599,6 +599,7 @@ let sdrSquelchSupported = false;
 let lastRigIds = [];
 let lastRigDisplayNames = {};
 let lastActiveRigId = null;
+let lastCityLabel = "";
 let sseSessionId = null;
 const originalTitle = document.title;
 const savedTheme = loadSetting("theme", null);
@@ -618,6 +619,9 @@ function updateDocumentTitle(rds = null) {
   if (ps && ps.length > 0) {
     parts.push(ps);
   }
+  const rigName = (lastActiveRigId && lastRigDisplayNames[lastActiveRigId]) || lastActiveRigId || "";
+  if (rigName) parts.push(rigName);
+  if (lastCityLabel) parts.push(lastCityLabel);
   parts.push(originalTitle);
   document.title = parts.join(" - ");
 }
@@ -941,6 +945,7 @@ function updateRigSubtitle(activeRigId) {
   if (!rigSubtitle) return;
   const name = (activeRigId && lastRigDisplayNames[activeRigId]) || activeRigId || "--";
   rigSubtitle.textContent = `Rig: ${name}`;
+  updateDocumentTitle(activeChannelRds());
 }
 
 function applyRigList(activeRigId, rigIds, displayNames) {
@@ -6443,9 +6448,11 @@ function reverseGeocodeLocation(lat, lon, grid) {
       const country = addr.country || "";
       if (!city && !country) return;
       const label = city && country ? `${city}, ${country}` : (city || country);
+      lastCityLabel = label;
       if (locationSubtitle) {
         locationSubtitle.textContent = `Location: ${grid} · ${label}`;
       }
+      updateDocumentTitle(activeChannelRds());
     })
     .catch(() => {});
 }
