@@ -630,6 +630,9 @@ function setTheme(theme) {
     themeToggleBtn.textContent = next === "dark" ? "☀️ Light" : "🌙 Dark";
     themeToggleBtn.title = next === "dark" ? "Switch to light mode" : "Switch to dark mode";
   }
+  // Invalidate cached bookmark chip colours so they pick up the new theme palette.
+  if (typeof bmRevision !== "undefined") bmRevision++;
+  if (typeof scheduleSpectrumDraw === "function") scheduleSpectrumDraw();
 }
 
 // ── Style / palette system ────────────────────────────────────────────────────
