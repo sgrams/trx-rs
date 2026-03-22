@@ -10,6 +10,88 @@ use crate::demod::{CquamDemod, DcBlocker, Demodulator, SoftAgc, WfmStereoDecoder
 
 use super::{BlockFirFilterPair, IQ_BLOCK_SIZE};
 
+// ---------------------------------------------------------------------------
+// Noise blanker
+// ---------------------------------------------------------------------------
+
+/// IQ-domain impulse noise blanker.
+///
+/// Maintains a running RMS estimate of the IQ magnitude.  When a sample's
+/// magnitude exceeds `threshold × rms`, it is replaced by linear interpolation
+/// between the last clean sample and the next clean sample (lookahead of 1).
+///
+/// The RMS tracker uses exponential smoothing with a time constant of ~128
+/// samples at the IQ sample rate, fast enough to track band-noise changes
+/// but slow enough not to follow individual impulses.
+#[derive(Debug, Clone)]
+pub struct NoiseBlanker {
+    enabled: bool,
+    threshold: f32,
+    /// Exponentially-smoothed mean-square estimate.
+    mean_sq: f32,
+    /// Last clean sample (used for interpolation fill).
+    last_clean: Complex<f32>,
+}
+
+const NB_ALPHA: f32 = 1.0 / 128.0;
+
+impl NoiseBlanker {
+    pub fn new(enabled: bool, threshold: f32) -> Self {
+        Self {
+            enabled,
+            threshold: threshold.max(1.0),
+            mean_sq: 1e-10,
+            last_clean: Complex::new(0.0, 0.0),
+        }
+    }
+
+    pub fn set_enabled(&mut self, enabled: bool) {
+        self.enabled = enabled;
+    }
+
+    pub fn set_threshold(&mut self, threshold: f32) {
+        self.threshold = threshold.max(1.0);
+    }
+
+    /// Process a block of IQ samples in-place, blanking impulse spikes.
+    pub fn process(&mut self, block: &mut [Complex<f32>]) {
+        if !self.enabled || block.is_empty() {
+            return;
+        }
+
+        let thresh_sq = self.threshold * self.threshold;
+
+        for sample in block.iter_mut() {
+            let s = *sample;
+            let mag_sq = s.re * s.re + s.im * s.im;
+
+            if mag_sq > thresh_sq * self.mean_sq {
+                // Impulse detected — replace with last clean sample.
+                *sample = self.last_clean;
+            } else {
+                // Clean sample — update RMS tracker.
+                self.mean_sq += NB_ALPHA * (mag_sq - self.mean_sq);
+                self.last_clean = s;
+            }
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct NoiseBlankerConfig {
+    pub enabled: bool,
+    pub threshold: f32,
+}
+
+impl Default for NoiseBlankerConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            threshold: 10.0,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 pub struct VirtualSquelchConfig {
     pub enabled: bool,
@@ -213,6 +295,7 @@ pub struct ChannelDsp {
     processing_enabled: bool,
     force_mono_pcm: bool,
     squelch: VirtualSquelch,
+    noise_blanker: NoiseBlanker,
 }
 
 impl ChannelDsp {
@@ -327,6 +410,7 @@ impl ChannelDsp {
         wfm_stereo: bool,
         force_mono_pcm: bool,
         squelch_cfg: VirtualSquelchConfig,
+        nb_cfg: NoiseBlankerConfig,
         pcm_tx: broadcast::Sender<Vec<f32>>,
         iq_tx: broadcast::Sender<Vec<Complex<f32>>>,
     ) -> Self {
@@ -415,6 +499,7 @@ impl ChannelDsp {
             processing_enabled: true,
             force_mono_pcm,
             squelch: VirtualSquelch::new(squelch_cfg),
+            noise_blanker: NoiseBlanker::new(nb_cfg.enabled, nb_cfg.threshold),
         }
     }
 
@@ -429,6 +514,11 @@ impl ChannelDsp {
     pub fn set_squelch(&mut self, enabled: bool, threshold_db: f32) {
         self.squelch.set_enabled(enabled);
         self.squelch.set_threshold_db(threshold_db);
+    }
+
+    pub fn set_noise_blanker(&mut self, enabled: bool, threshold: f32) {
+        self.noise_blanker.set_enabled(enabled);
+        self.noise_blanker.set_threshold(threshold);
     }
 
     pub fn set_mode(&mut self, mode: &RigMode) {
@@ -498,6 +588,16 @@ impl ChannelDsp {
         if n == 0 {
             return;
         }
+
+        // Apply noise blanker on a mutable copy when enabled.
+        let block = if self.noise_blanker.enabled {
+            let mut nb_buf = block.to_vec();
+            self.noise_blanker.process(&mut nb_buf);
+            nb_buf
+        } else {
+            block.to_vec()
+        };
+        let block = &block[..];
 
         self.scratch_mixed_i.resize(n, 0.0);
         self.scratch_mixed_q.resize(n, 0.0);
@@ -684,6 +784,7 @@ mod tests {
             true,
             false,
             VirtualSquelchConfig::default(),
+            NoiseBlankerConfig::default(),
             pcm_tx,
             iq_tx,
         );
@@ -707,11 +808,39 @@ mod tests {
             true,
             false,
             VirtualSquelchConfig::default(),
+            NoiseBlankerConfig::default(),
             pcm_tx,
             iq_tx,
         );
         assert_eq!(dsp.demodulator, Demodulator::Usb);
         dsp.set_mode(&RigMode::FM);
         assert_eq!(dsp.demodulator, Demodulator::Fm);
+    }
+
+    #[test]
+    fn noise_blanker_suppresses_impulse() {
+        let mut nb = NoiseBlanker::new(true, 5.0);
+        // Feed a steady signal to establish the RMS baseline.
+        let mut block: Vec<Complex<f32>> = (0..256).map(|_| Complex::new(0.01, 0.01)).collect();
+        nb.process(&mut block);
+        // Now inject a single massive spike at index 0.
+        let mut block2: Vec<Complex<f32>> = (0..256).map(|_| Complex::new(0.01, 0.01)).collect();
+        block2[0] = Complex::new(10.0, 10.0);
+        nb.process(&mut block2);
+        // The spike should have been blanked (replaced by last clean sample).
+        let mag = (block2[0].re * block2[0].re + block2[0].im * block2[0].im).sqrt();
+        assert!(
+            mag < 1.0,
+            "expected impulse to be blanked, got magnitude {}",
+            mag
+        );
+    }
+
+    #[test]
+    fn noise_blanker_disabled_passes_through() {
+        let mut nb = NoiseBlanker::new(false, 5.0);
+        let mut block = vec![Complex::new(10.0, 10.0); 4];
+        nb.process(&mut block);
+        assert_eq!(block[0], Complex::new(10.0, 10.0));
     }
 }

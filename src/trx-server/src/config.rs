@@ -298,6 +298,8 @@ pub struct SdrConfig {
     pub gain: SdrGainConfig,
     /// Virtual software squelch applied to demodulated audio except WFM.
     pub squelch: SdrSquelchConfig,
+    /// Noise blanker for impulse noise suppression on IQ samples.
+    pub noise_blanker: SdrNoiseBlankerConfig,
     /// Virtual receiver channels (at least one required when SDR backend is active).
     pub channels: Vec<SdrChannelConfig>,
     /// Maximum number of simultaneous virtual channels (including the primary).
@@ -319,6 +321,7 @@ impl Default for SdrConfig {
             center_offset_hz: 100_000,
             gain: SdrGainConfig::default(),
             squelch: SdrSquelchConfig::default(),
+            noise_blanker: SdrNoiseBlankerConfig::default(),
             channels: Vec::new(),
             max_virtual_channels: default_max_virtual_channels(),
         }
@@ -346,6 +349,26 @@ impl Default for SdrSquelchConfig {
             threshold_db: -65.0,
             hysteresis_db: 3.0,
             tail_ms: 180,
+        }
+    }
+}
+
+/// Noise blanker settings for impulse noise suppression on IQ samples.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct SdrNoiseBlankerConfig {
+    /// Enables the noise blanker.
+    pub enabled: bool,
+    /// Threshold multiplier for impulse detection (typical range: 1..100).
+    /// A sample whose magnitude exceeds threshold × running RMS is blanked.
+    pub threshold: f64,
+}
+
+impl Default for SdrNoiseBlankerConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            threshold: 10.0,
         }
     }
 }
@@ -507,6 +530,7 @@ impl ServerConfig {
             }
         }
         validate_sdr_squelch_config("[sdr.squelch]", &self.sdr.squelch)?;
+        validate_sdr_nb_config("[sdr.noise_blanker]", &self.sdr.noise_blanker)?;
 
         // Multi-rig uniqueness checks.
         if !self.rigs.is_empty() {
@@ -545,6 +569,10 @@ impl ServerConfig {
                 validate_sdr_squelch_config(
                     &format!("[[rigs]] [sdr.squelch] (rig id: \"{}\")", rig.id),
                     &rig.sdr.squelch,
+                )?;
+                validate_sdr_nb_config(
+                    &format!("[[rigs]] [sdr.noise_blanker] (rig id: \"{}\")", rig.id),
+                    &rig.sdr.noise_blanker,
                 )?;
             }
             if enabled_count == 0 {
@@ -834,6 +862,16 @@ fn validate_sdr_squelch_config(path: &str, squelch: &SdrSquelchConfig) -> Result
     }
     if squelch.tail_ms > 10_000 {
         return Err(format!("{path}.tail_ms must be <= 10000"));
+    }
+    Ok(())
+}
+
+fn validate_sdr_nb_config(path: &str, nb: &SdrNoiseBlankerConfig) -> Result<(), String> {
+    if !nb.threshold.is_finite() {
+        return Err(format!("{path}.threshold must be finite"));
+    }
+    if !(1.0..=100.0).contains(&nb.threshold) {
+        return Err(format!("{path}.threshold must be in range 1..=100"));
     }
     Ok(())
 }

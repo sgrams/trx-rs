@@ -48,6 +48,7 @@ pub enum ClientCommand {
     SetSdrLnaGain { gain_db: f64 },
     SetSdrAgc { enabled: bool },
     SetSdrSquelch { enabled: bool, threshold_db: f64 },
+    SetSdrNoiseBlanker { enabled: bool, threshold: f64 },
     SetWfmDeemphasis { deemphasis_us: u32 },
     SetWfmStereo { enabled: bool },
     SetWfmDenoise { level: WfmDenoiseLevel },

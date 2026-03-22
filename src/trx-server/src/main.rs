@@ -346,6 +346,8 @@ fn build_sdr_rig_from_instance(rig_cfg: &RigInstanceConfig) -> SdrRigBuildResult
         rig_cfg.sdr.squelch.hysteresis_db,
         rig_cfg.sdr.squelch.tail_ms,
         rig_cfg.sdr.max_virtual_channels,
+        rig_cfg.sdr.noise_blanker.enabled,
+        rig_cfg.sdr.noise_blanker.threshold,
     )?;
 
     let pcm_rx = sdr_rig.subscribe_pcm();

@@ -60,6 +60,10 @@ pub struct SoapySdrRig {
     squelch_enabled: bool,
     /// Software squelch threshold (dBFS) on primary channel.
     squelch_threshold_db: f32,
+    /// Whether the noise blanker is enabled on the primary channel.
+    nb_enabled: bool,
+    /// Noise blanker impulse threshold multiplier.
+    nb_threshold: f64,
     /// Hidden AIS decoder channels (A and B) when available.
     ais_channel_indices: Option<(usize, usize)>,
     /// Virtual channel manager shared with external consumers (e.g. RigHandle).
@@ -126,6 +130,8 @@ impl SoapySdrRig {
         squelch_hysteresis_db: f32,
         squelch_tail_ms: u32,
         max_virtual_channels: usize,
+        nb_enabled: bool,
+        nb_threshold: f64,
     ) -> DynResult<Self> {
         tracing::info!(
             "initialising SoapySDR backend (args={:?}, gain_mode={:?}, gain_db={}, max_gain_db={:?})",
@@ -221,6 +227,10 @@ impl SoapySdrRig {
                 hysteresis_db: squelch_hysteresis_db,
                 tail_blocks: squelch_tail_blocks,
             },
+            dsp::NoiseBlankerConfig {
+                enabled: nb_enabled,
+                threshold: nb_threshold as f32,
+            },
             &all_channels,
         ));
 
@@ -307,6 +317,8 @@ impl SoapySdrRig {
             agc_enabled,
             squelch_enabled,
             squelch_threshold_db,
+            nb_enabled,
+            nb_threshold,
             ais_channel_indices: Some((primary_channel_count, primary_channel_count + 1)),
             channel_manager,
         };
@@ -338,6 +350,8 @@ impl SoapySdrRig {
             3.0,       // squelch_hysteresis_db
             180,       // squelch_tail_ms
             4,         // max_virtual_channels
+            false,     // nb_enabled
+            10.0,      // nb_threshold
         )
     }
 
@@ -654,6 +668,33 @@ impl RigCat for SoapySdrRig {
         })
     }
 
+    fn set_sdr_noise_blanker<'a>(
+        &'a mut self,
+        enabled: bool,
+        threshold: f64,
+    ) -> Pin<Box<dyn std::future::Future<Output = DynResult<()>> + Send + 'a>> {
+        Box::pin(async move {
+            if !threshold.is_finite() {
+                return Err("noise blanker threshold must be finite".into());
+            }
+            if !(1.0..=100.0).contains(&threshold) {
+                return Err("noise blanker threshold must be in range 1..=100".into());
+            }
+            self.nb_enabled = enabled;
+            self.nb_threshold = threshold;
+            {
+                let dsps = self.pipeline.channel_dsps.read().unwrap();
+                if let Some(dsp_arc) = dsps.get(self.primary_channel_idx) {
+                    dsp_arc
+                        .lock()
+                        .unwrap()
+                        .set_noise_blanker(enabled, threshold as f32);
+                }
+            }
+            Ok(())
+        })
+    }
+
     fn get_signal_strength<'a>(
         &'a mut self,
     ) -> Pin<Box<dyn std::future::Future<Output = DynResult<u8>> + Send + 'a>> {
@@ -817,6 +858,8 @@ impl RigCat for SoapySdrRig {
             sdr_agc_enabled: Some(self.agc_enabled),
             sdr_squelch_enabled: Some(self.squelch_enabled),
             sdr_squelch_threshold_db: Some(self.squelch_threshold_db as f64),
+            sdr_nb_enabled: Some(self.nb_enabled),
+            sdr_nb_threshold: Some(self.nb_threshold),
             wfm_deemphasis_us: self.wfm_deemphasis_us,
             wfm_stereo: self.wfm_stereo,
             wfm_stereo_detected,

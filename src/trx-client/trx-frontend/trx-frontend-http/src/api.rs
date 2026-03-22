@@ -1070,6 +1070,30 @@ pub async fn set_sdr_squelch(
 }
 
 #[derive(serde::Deserialize)]
+pub struct SdrNoiseBlankerQuery {
+    pub enabled: bool,
+    pub threshold: f64,
+    pub rig_id: Option<String>,
+}
+
+#[post("/set_sdr_noise_blanker")]
+pub async fn set_sdr_noise_blanker(
+    query: web::Query<SdrNoiseBlankerQuery>,
+    rig_tx: web::Data<mpsc::Sender<RigRequest>>,
+) -> Result<HttpResponse, Error> {
+    let q = query.into_inner();
+    send_command(
+        &rig_tx,
+        RigCommand::SetSdrNoiseBlanker {
+            enabled: q.enabled,
+            threshold: q.threshold,
+        },
+        q.rig_id,
+    )
+    .await
+}
+
+#[derive(serde::Deserialize)]
 pub struct WfmDeemphasisQuery {
     pub us: u32,
     pub rig_id: Option<String>,
@@ -1834,6 +1858,7 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
         .service(set_sdr_lna_gain)
         .service(set_sdr_agc)
         .service(set_sdr_squelch)
+        .service(set_sdr_noise_blanker)
         .service(set_wfm_deemphasis)
         .service(set_wfm_stereo)
         .service(set_wfm_denoise)

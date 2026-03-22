@@ -326,6 +326,10 @@ pub struct RigFilterState {
     pub sdr_squelch_enabled: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sdr_squelch_threshold_db: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sdr_nb_enabled: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sdr_nb_threshold: Option<f64>,
     #[serde(default = "default_wfm_deemphasis_us")]
     pub wfm_deemphasis_us: u32,
     #[serde(default = "default_wfm_stereo")]

@@ -43,6 +43,7 @@ pub enum RigCommand {
     SetSdrLnaGain(f64),
     SetSdrAgc(bool),
     SetSdrSquelch { enabled: bool, threshold_db: f64 },
+    SetSdrNoiseBlanker { enabled: bool, threshold: f64 },
     SetWfmDeemphasis(u32),
     SetWfmStereo(bool),
     SetWfmDenoise(WfmDenoiseLevel),

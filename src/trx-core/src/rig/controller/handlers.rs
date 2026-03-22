@@ -525,6 +525,7 @@ pub fn command_from_rig_command(cmd: RigCommand) -> Box<dyn RigCommandHandler> {
         | RigCommand::SetSdrLnaGain(_)
         | RigCommand::SetSdrAgc(_)
         | RigCommand::SetSdrSquelch { .. }
+        | RigCommand::SetSdrNoiseBlanker { .. }
         | RigCommand::SetWfmDeemphasis(_)
         | RigCommand::SetWfmStereo(_)
         | RigCommand::SetWfmDenoise(_)

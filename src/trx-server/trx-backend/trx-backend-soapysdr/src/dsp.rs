@@ -24,7 +24,7 @@ use tokio::sync::broadcast;
 use tracing::warn;
 use trx_core::rig::state::RigMode;
 
-pub use self::channel::{ChannelDsp, VirtualSquelchConfig};
+pub use self::channel::{ChannelDsp, NoiseBlankerConfig, VirtualSquelchConfig};
 pub use self::filter::{BlockFirFilter, BlockFirFilterPair, FirFilter};
 use self::spectrum::SpectrumSnapshotter;
 
@@ -152,6 +152,7 @@ impl SdrPipeline {
         wfm_deemphasis_us: u32,
         wfm_stereo: bool,
         squelch_cfg: VirtualSquelchConfig,
+        nb_cfg: NoiseBlankerConfig,
         channels: &[(f64, RigMode, u32)],
     ) -> Self {
         const IQ_BROADCAST_CAPACITY: usize = 64;
@@ -173,6 +174,11 @@ impl SdrPipeline {
             } else {
                 VirtualSquelchConfig::default()
             };
+            let channel_nb_cfg = if channel_idx == 0 {
+                nb_cfg
+            } else {
+                NoiseBlankerConfig::default()
+            };
             let dsp = ChannelDsp::new(
                 channel_if_hz,
                 mode,
@@ -185,6 +191,7 @@ impl SdrPipeline {
                 wfm_stereo,
                 false,
                 channel_squelch_cfg,
+                channel_nb_cfg,
                 pcm_tx.clone(),
                 iq_tx.clone(),
             );
@@ -274,6 +281,7 @@ impl SdrPipeline {
             self.wfm_stereo,
             false,
             VirtualSquelchConfig::default(),
+            NoiseBlankerConfig::default(),
             pcm_tx.clone(),
             iq_tx.clone(),
         );
@@ -562,6 +570,7 @@ mod tests {
             75,
             true,
             VirtualSquelchConfig::default(),
+            NoiseBlankerConfig::default(),
             &[(200_000.0, RigMode::USB, 3000)],
         );
         assert_eq!(pipeline.pcm_senders.len(), 1);
@@ -579,6 +588,7 @@ mod tests {
             75,
             true,
             VirtualSquelchConfig::default(),
+            NoiseBlankerConfig::default(),
             &[],
         );
         assert_eq!(pipeline.pcm_senders.len(), 0);

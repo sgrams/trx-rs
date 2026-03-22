@@ -590,6 +590,16 @@ async fn process_command(
             let _ = ctx.state_tx.send(ctx.state.clone());
             return snapshot_from(ctx.state);
         }
+        RigCommand::SetSdrNoiseBlanker { enabled, threshold } => {
+            if let Err(e) = ctx.rig.set_sdr_noise_blanker(enabled, threshold).await {
+                return Err(RigError::communication(format!(
+                    "set_sdr_noise_blanker: {e}"
+                )));
+            }
+            ctx.state.filter = ctx.rig.filter_state();
+            let _ = ctx.state_tx.send(ctx.state.clone());
+            return snapshot_from(ctx.state);
+        }
         RigCommand::SetWfmDeemphasis(deemphasis_us) => {
             if let Err(e) = ctx.rig.set_wfm_deemphasis(deemphasis_us).await {
                 return Err(RigError::communication(format!("set_wfm_deemphasis: {e}")));

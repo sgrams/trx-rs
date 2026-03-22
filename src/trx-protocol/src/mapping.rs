@@ -65,6 +65,9 @@ pub fn client_command_to_rig(cmd: ClientCommand) -> RigCommand {
             enabled,
             threshold_db,
         },
+        ClientCommand::SetSdrNoiseBlanker { enabled, threshold } => {
+            RigCommand::SetSdrNoiseBlanker { enabled, threshold }
+        }
         ClientCommand::SetWfmDeemphasis { deemphasis_us } => {
             RigCommand::SetWfmDeemphasis(deemphasis_us)
         }
@@ -128,6 +131,9 @@ pub fn rig_command_to_client(cmd: RigCommand) -> ClientCommand {
             enabled,
             threshold_db,
         },
+        RigCommand::SetSdrNoiseBlanker { enabled, threshold } => {
+            ClientCommand::SetSdrNoiseBlanker { enabled, threshold }
+        }
         RigCommand::SetWfmDeemphasis(deemphasis_us) => {
             ClientCommand::SetWfmDeemphasis { deemphasis_us }
         }

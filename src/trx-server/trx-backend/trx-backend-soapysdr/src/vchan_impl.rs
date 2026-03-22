@@ -418,7 +418,7 @@ impl VirtualChannelManager for SdrVirtualChannelManager {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::dsp::{MockIqSource, SdrPipeline};
+    use crate::dsp::{MockIqSource, NoiseBlankerConfig, SdrPipeline};
 
     fn make_pipeline() -> Arc<SdrPipeline> {
         Arc::new(SdrPipeline::start(
@@ -430,6 +430,7 @@ mod tests {
             75,
             true,
             VirtualSquelchConfig::default(),
+            NoiseBlankerConfig::default(),
             &[(0.0, RigMode::USB, 3_000)],
         ))
     }
