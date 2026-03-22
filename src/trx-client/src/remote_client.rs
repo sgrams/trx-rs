@@ -344,7 +344,26 @@ async fn send_command(
 
     if resp.success {
         if let Some(snapshot) = resp.state {
-            let _ = state_tx.send(RigState::from_snapshot(snapshot.clone()));
+            let new_state = RigState::from_snapshot(snapshot.clone());
+            let _ = state_tx.send(new_state.clone());
+            // Also update the per-rig watch channel so SSE sessions
+            // subscribed to a specific rig see the change immediately
+            // instead of waiting for the next poll cycle.
+            let rig_id = envelope.rig_id.as_deref();
+            if let Some(rid) = rig_id {
+                if let Ok(map) = config.rig_states.read() {
+                    if let Some(tx) = map.get(rid) {
+                        tx.send_if_modified(|old| {
+                            if *old == new_state {
+                                false
+                            } else {
+                                *old = new_state.clone();
+                                true
+                            }
+                        });
+                    }
+                }
+            }
             return Ok(snapshot);
         }
         return Err(RigError::communication("missing snapshot"));
