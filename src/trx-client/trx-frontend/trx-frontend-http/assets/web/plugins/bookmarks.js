@@ -344,7 +344,9 @@ async function bmApply(bm) {
       scheduleSpectrumDraw();
     }
 
-    // --- Send mode, bandwidth, and frequency to server in parallel ---
+    // --- Fire-and-forget: send mode, bandwidth, and frequency in parallel ---
+    // The UI is already updated optimistically above; don't block on the
+    // network round-trips so the bookmark click feels instant.
     const modePromise = (async () => {
       const onVirtual = typeof vchanInterceptMode === "function"
         && await vchanInterceptMode(bm.mode);
@@ -370,10 +372,8 @@ async function bmApply(bm) {
         await postPath("/set_freq?hz=" + bm.freq_hz);
       }
     })();
-    await Promise.all([modePromise, bwPromise, freqPromise]);
-
-    // --- Toggle decoders when in DIG mode ---
-    if (bm.mode === "DIG" && Array.isArray(bm.decoders)) {
+    // Decoder toggles (DIG mode) — also fire-and-forget.
+    const decoderPromise = (bm.mode === "DIG" && Array.isArray(bm.decoders)) ? (async () => {
       const statusResp = await fetch("/status");
       if (statusResp.ok) {
         const st = await statusResp.json();
@@ -386,7 +386,12 @@ async function bmApply(bm) {
         check("ft8"); check("ft4"); check("ft2"); check("wspr"); check("hf-aprs");
         if (toggles.length) await Promise.all(toggles);
       }
-    }
+    })() : Promise.resolve();
+    // Don't await — let the network calls settle in the background.
+    // Errors are logged but don't block the UI.
+    Promise.all([modePromise, bwPromise, freqPromise, decoderPromise]).catch(
+      (err) => console.error("Bookmark apply background error:", err)
+    );
   } catch (err) {
     console.error("Failed to apply bookmark:", err);
   }

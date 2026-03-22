@@ -1694,6 +1694,10 @@ function applyLocalTunedFrequency(hz, forceDisplay = false) {
     window.refreshCwTonePicker();
   }
   if (lastSpectrumData) {
+    // Redraw the signal/BW overlay immediately so the frequency marker and
+    // bandwidth picker move without waiting for the next spectrum frame or
+    // requestAnimationFrame callback.
+    drawSignalOverlay();
     scheduleSpectrumDraw();
   }
   positionRdsPsOverlay();
@@ -3784,6 +3788,10 @@ async function applyBwDefaultForMode(mode, sendToServer) {
   currentBandwidthHz = def;
   window.currentBandwidthHz = currentBandwidthHz;
   syncBandwidthInput(def);
+  if (lastSpectrumData) {
+    drawSignalOverlay();
+    scheduleSpectrumDraw();
+  }
   if (sendToServer) {
     try { await postPath(`/set_bandwidth?hz=${def}`); } catch (_) {}
   }
@@ -3802,7 +3810,10 @@ async function applyBandwidthFromInput() {
   currentBandwidthHz = clamped;
   window.currentBandwidthHz = currentBandwidthHz;
   syncBandwidthInput(clamped);
-  if (lastSpectrumData) scheduleSpectrumDraw();
+  if (lastSpectrumData) {
+    drawSignalOverlay();
+    scheduleSpectrumDraw();
+  }
   try {
     if (typeof vchanInterceptBandwidth === "function" && await vchanInterceptBandwidth(clamped)) return;
     await postPath(`/set_bandwidth?hz=${clamped}`);
@@ -3877,7 +3888,10 @@ async function applyAutoBandwidth() {
   currentBandwidthHz = estimated;
   window.currentBandwidthHz = currentBandwidthHz;
   syncBandwidthInput(estimated);
-  if (lastSpectrumData) scheduleSpectrumDraw();
+  if (lastSpectrumData) {
+    drawSignalOverlay();
+    scheduleSpectrumDraw();
+  }
   try {
     if (typeof vchanInterceptBandwidth === "function" && await vchanInterceptBandwidth(estimated)) return;
     await postPath(`/set_bandwidth?hz=${estimated}`);
@@ -9711,6 +9725,7 @@ if (spectrumCanvas || overviewCanvas) {
       currentBandwidthHz = newBw;
       window.currentBandwidthHz = currentBandwidthHz;
       syncBandwidthInput(newBw);
+      drawSignalOverlay();
       scheduleSpectrumDraw();
       scheduleOverviewDraw();
       return;
