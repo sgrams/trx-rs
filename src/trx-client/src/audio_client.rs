@@ -570,35 +570,35 @@ pub async fn run_multi_rig_audio_manager(
     //
     // On each audio connection, register the connected rig's per-rig channels
     // so per-rig /audio?rig_id= subscribers get data.
-    let selected_clone = selected_rig_id.clone();
     let rig_audio_rx_clone = rig_audio_rx.clone();
     let rig_audio_info_clone = rig_audio_info.clone();
 
-    // Spawn a task that keeps per-rig maps in sync with the selected rig.
+    // Spawn a task that keeps per-rig audio/info maps populated for ALL
+    // known rigs (not just the selected one).  Non-connected rigs get valid
+    // but silent channels so `/audio?rig_id=X` can subscribe instantly
+    // instead of timing out.
+    let known_rigs_for_sync = known_rigs.clone();
     let mut sync_shutdown = shutdown_rx.clone();
     tokio::spawn(async move {
-        let mut last_rig: Option<String> = None;
         let mut interval = time::interval(Duration::from_millis(500));
         loop {
             tokio::select! {
                 _ = interval.tick() => {
-                    let current = selected_clone.lock().ok().and_then(|v| v.clone());
-                    if current != last_rig {
-                        // Ensure per-rig broadcast exists for new rig.
-                        if let Some(ref rig_id) = current {
-                            if let Ok(mut map) = rig_audio_rx_clone.write() {
-                                map.entry(rig_id.clone())
-                                    .or_insert_with(|| broadcast::channel::<Bytes>(256).0);
-                            }
-                            if let Ok(mut map) = rig_audio_info_clone.write() {
-                                map.entry(rig_id.clone())
-                                    .or_insert_with(|| watch::channel(None).0);
-                            }
+                    let rig_ids: Vec<String> = known_rigs_for_sync
+                        .lock()
+                        .ok()
+                        .map(|entries| entries.iter().map(|e| e.rig_id.clone()).collect())
+                        .unwrap_or_default();
+                    for rig_id in &rig_ids {
+                        if let Ok(mut map) = rig_audio_rx_clone.write() {
+                            map.entry(rig_id.clone())
+                                .or_insert_with(|| broadcast::channel::<Bytes>(256).0);
                         }
-                        last_rig = current;
+                        if let Ok(mut map) = rig_audio_info_clone.write() {
+                            map.entry(rig_id.clone())
+                                .or_insert_with(|| watch::channel(None).0);
+                        }
                     }
-                    // Mirror global audio data to the current rig's per-rig channel.
-                    // (The actual mirroring happens in the RX read task below.)
                 }
                 changed = sync_shutdown.changed() => {
                     if matches!(changed, Ok(()) | Err(_)) && *sync_shutdown.borrow() {

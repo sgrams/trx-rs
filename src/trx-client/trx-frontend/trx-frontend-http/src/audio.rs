@@ -519,15 +519,20 @@ pub async fn audio_ws(
         }
     } else if let Some(ref rig_id) = query.rig_id {
         // Per-rig audio: subscribe to the specific rig's broadcast.
-        match context.rig_audio_subscribe(rig_id) {
-            Some(rx) => rx,
-            None => {
-                // Rig not yet connected; fall back to global.
-                let Some(rx) = context.audio_rx.as_ref() else {
-                    return Ok(HttpResponse::NotFound().body("audio not enabled"));
-                };
-                rx.subscribe()
+        // Do NOT fall back to global — that would silently deliver the wrong
+        // rig's audio. Wait briefly for the per-rig channel to appear (it is
+        // lazily created by the audio relay sync task every 500ms).
+        let deadline = Instant::now() + Duration::from_secs(3);
+        loop {
+            if let Some(rx) = context.rig_audio_subscribe(rig_id) {
+                break rx;
             }
+            if Instant::now() >= deadline {
+                return Ok(
+                    HttpResponse::NotFound().body(format!("audio not available for rig {rig_id}"))
+                );
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
         }
     } else {
         let Some(rx) = context.audio_rx.as_ref() else {
