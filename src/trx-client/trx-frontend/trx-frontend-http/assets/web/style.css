@@ -675,6 +675,35 @@ small { color: var(--text-muted); }
   pointer-events: none;
   z-index: 4;
 }
+#fast-freq-marker {
+  display: none;
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 2px;
+  height: 100%;
+  background: #ff1744;
+  opacity: 0.85;
+  pointer-events: none;
+  z-index: 5;
+  will-change: transform;
+}
+#fast-bw-left, #fast-bw-right {
+  display: none;
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 100%;
+  pointer-events: none;
+  z-index: 3;
+  will-change: transform, width;
+}
+#fast-bw-left {
+  background: linear-gradient(to right, transparent, rgba(255,23,68,0.10));
+}
+#fast-bw-right {
+  background: linear-gradient(to left, transparent, rgba(255,23,68,0.10));
+}
 #rds-ps-overlay {
   display: none;
   position: absolute;

@@ -1668,6 +1668,71 @@ function resetWfmStereoIndicator() {
   wfmStFlagEl.classList.add("wfm-st-flag-mono");
 }
 
+// ── Fast CSS-based frequency/BW marker positioning ──────────────────────────
+// These lightweight DOM elements reposition via `transform: translateX()`
+// which is GPU-composited — zero layout/paint cost.  The full WebGL overlay
+// (drawSignalOverlay) catches up on the next rAF.
+const _fastFreqMarker = document.getElementById("fast-freq-marker");
+const _fastBwLeft     = document.getElementById("fast-bw-left");
+const _fastBwRight    = document.getElementById("fast-bw-right");
+
+function positionFastOverlay(freqHz, bwHz) {
+  if (!lastSpectrumData || !signalVisualBlockEl) {
+    if (_fastFreqMarker) _fastFreqMarker.style.display = "none";
+    if (_fastBwLeft) _fastBwLeft.style.display = "none";
+    if (_fastBwRight) _fastBwRight.style.display = "none";
+    return;
+  }
+  const cssW = signalVisualBlockEl.clientWidth;
+  if (cssW <= 0) return;
+  const range = spectrumVisibleRange(lastSpectrumData);
+  const hzToFrac = (hz) => (hz - range.visLoHz) / range.visSpanHz;
+
+  if (_fastFreqMarker && Number.isFinite(freqHz)) {
+    const frac = hzToFrac(freqHz);
+    if (frac >= 0 && frac <= 1) {
+      _fastFreqMarker.style.display = "";
+      _fastFreqMarker.style.transform = `translateX(${frac * cssW}px)`;
+    } else {
+      _fastFreqMarker.style.display = "none";
+    }
+  }
+  if (_fastBwLeft && _fastBwRight && Number.isFinite(freqHz) && Number.isFinite(bwHz) && bwHz > 0) {
+    const side = sidebandDirectionForMode(modeEl ? modeEl.value : "USB");
+    let loHz, hiHz;
+    if (side < 0) {
+      loHz = freqHz - bwHz; hiHz = freqHz;
+    } else if (side > 0) {
+      loHz = freqHz; hiHz = freqHz + bwHz;
+    } else {
+      loHz = freqHz - bwHz / 2; hiHz = freqHz + bwHz / 2;
+    }
+    const lFrac = hzToFrac(loHz);
+    const rFrac = hzToFrac(hiHz);
+    const cFrac = hzToFrac(freqHz);
+    // Left side of BW
+    if (lFrac < cFrac && cFrac >= 0 && lFrac <= 1) {
+      const x = Math.max(0, lFrac) * cssW;
+      const w = (Math.min(1, cFrac) - Math.max(0, lFrac)) * cssW;
+      _fastBwLeft.style.display = "";
+      _fastBwLeft.style.transform = `translateX(${x}px)`;
+      _fastBwLeft.style.width = `${w}px`;
+    } else {
+      _fastBwLeft.style.display = "none";
+    }
+    // Right side of BW
+    if (rFrac > cFrac && rFrac >= 0 && cFrac <= 1) {
+      const x = Math.max(0, cFrac) * cssW;
+      const w = (Math.min(1, rFrac) - Math.max(0, cFrac)) * cssW;
+      _fastBwRight.style.display = "";
+      _fastBwRight.style.transform = `translateX(${x}px)`;
+      _fastBwRight.style.width = `${w}px`;
+    } else {
+      _fastBwRight.style.display = "none";
+    }
+  }
+}
+
 function applyLocalTunedFrequency(hz, forceDisplay = false) {
   if (!Number.isFinite(hz)) return;
   const freqChanged = lastFreqHz !== hz;
@@ -1693,11 +1758,9 @@ function applyLocalTunedFrequency(hz, forceDisplay = false) {
   if (window.refreshCwTonePicker) {
     window.refreshCwTonePicker();
   }
+  // Instant CSS marker repositioning (GPU-composited, no WebGL).
+  positionFastOverlay(lastFreqHz, currentBandwidthHz);
   if (lastSpectrumData) {
-    // Redraw the signal/BW overlay immediately so the frequency marker and
-    // bandwidth picker move without waiting for the next spectrum frame or
-    // requestAnimationFrame callback.
-    drawSignalOverlay();
     scheduleSpectrumDraw();
   }
   positionRdsPsOverlay();
@@ -3788,8 +3851,8 @@ async function applyBwDefaultForMode(mode, sendToServer) {
   currentBandwidthHz = def;
   window.currentBandwidthHz = currentBandwidthHz;
   syncBandwidthInput(def);
+  positionFastOverlay(lastFreqHz, def);
   if (lastSpectrumData) {
-    drawSignalOverlay();
     scheduleSpectrumDraw();
   }
   if (sendToServer) {
@@ -3810,8 +3873,8 @@ async function applyBandwidthFromInput() {
   currentBandwidthHz = clamped;
   window.currentBandwidthHz = currentBandwidthHz;
   syncBandwidthInput(clamped);
+  positionFastOverlay(lastFreqHz, clamped);
   if (lastSpectrumData) {
-    drawSignalOverlay();
     scheduleSpectrumDraw();
   }
   try {
@@ -3888,8 +3951,8 @@ async function applyAutoBandwidth() {
   currentBandwidthHz = estimated;
   window.currentBandwidthHz = currentBandwidthHz;
   syncBandwidthInput(estimated);
+  positionFastOverlay(lastFreqHz, estimated);
   if (lastSpectrumData) {
-    drawSignalOverlay();
     scheduleSpectrumDraw();
   }
   try {
@@ -9725,7 +9788,7 @@ if (spectrumCanvas || overviewCanvas) {
       currentBandwidthHz = newBw;
       window.currentBandwidthHz = currentBandwidthHz;
       syncBandwidthInput(newBw);
-      drawSignalOverlay();
+      positionFastOverlay(lastFreqHz, newBw);
       scheduleSpectrumDraw();
       scheduleOverviewDraw();
       return;
