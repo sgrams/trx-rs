@@ -630,31 +630,28 @@ function setTheme(theme) {
     themeToggleBtn.textContent = next === "dark" ? "☀️ Light" : "🌙 Dark";
     themeToggleBtn.title = next === "dark" ? "Switch to light mode" : "Switch to dark mode";
   }
-  // Invalidate cached bookmark chip colours so they pick up the new theme palette.
-  // Guard: bmRevision (var in bookmarks.js) may not exist during the initial
-  // setTheme() call at load time (bookmarks.js loads after app.js).
-  if (typeof bmRevision !== "undefined") {
-    bmRevision++;
-    // Force the browser to recalculate styles after the data-theme attribute
-    // change so that getComputedStyle returns the new CSS variable values.
-    void getComputedStyle(document.documentElement).getPropertyValue("--bg");
-    const colorMap = bmCategoryColorMap();
-    const ref = typeof bmList !== "undefined" ? bmList : [];
-    const fallback = "#66d9ef";
-    document.querySelectorAll(".spectrum-bookmark-chip").forEach((chip) => {
-      const bm = ref.find((b) => b.id === chip.dataset.bmId);
-      if (!bm) return;
-      const col = colorMap[bm.category || ""] || fallback;
-      chip.style.setProperty("--bm-cat-bg", col);
-      chip.style.setProperty("--bm-cat-fg", bmContrastFg(col));
-    });
-    // Also clear cached DOM keys so the next spectrum draw rebuilds chips fresh.
-    const axisEl = document.getElementById("spectrum-bookmark-axis");
-    const leftEl = document.getElementById("spectrum-bookmark-side-left");
-    const rightEl = document.getElementById("spectrum-bookmark-side-right");
-    if (axisEl) axisEl.dataset.bmKey = "";
-    if (leftEl) leftEl.dataset.bmKey = "";
-    if (rightEl) rightEl.dataset.bmKey = "";
+  invalidateBookmarkColors();
+}
+
+// Recolour bookmark chips after any palette/theme change (setTheme or setStyle).
+function invalidateBookmarkColors() {
+  if (typeof bmRevision === "undefined") return;
+  bmRevision++;
+  // Force the browser to recalculate styles so getComputedStyle reads new values.
+  void getComputedStyle(document.documentElement).getPropertyValue("--bg");
+  const colorMap = bmCategoryColorMap();
+  const ref = typeof bmList !== "undefined" ? bmList : [];
+  document.querySelectorAll(".spectrum-bookmark-chip").forEach((chip) => {
+    const bm = ref.find((b) => b.id === chip.dataset.bmId);
+    if (!bm) return;
+    const col = colorMap[bm.category || ""] || "#66d9ef";
+    chip.style.setProperty("--bm-cat-bg", col);
+    chip.style.setProperty("--bm-cat-fg", bmContrastFg(col));
+  });
+  // Clear cached DOM keys so the next spectrum draw rebuilds chips fresh.
+  for (const id of ["spectrum-bookmark-axis", "spectrum-bookmark-side-left", "spectrum-bookmark-side-right"]) {
+    const el = document.getElementById(id);
+    if (el) el.dataset.bmKey = "";
   }
   try { if (typeof scheduleSpectrumDraw === "function") scheduleSpectrumDraw(); } catch (_) {}
 }
@@ -850,8 +847,8 @@ function setStyle(style) {
   }
   saveSetting("style", next);
   if (headerStylePickSelect) headerStylePickSelect.value = next;
+  invalidateBookmarkColors();
   scheduleOverviewDraw();
-  if (typeof scheduleSpectrumDraw === "function" && lastSpectrumData) scheduleSpectrumDraw();
 }
 
 if (overviewPeakHoldEl) {
