@@ -632,7 +632,7 @@ function setTheme(theme) {
   }
   // Invalidate cached bookmark chip colours so they pick up the new theme palette.
   if (typeof bmRevision !== "undefined") bmRevision++;
-  if (typeof scheduleSpectrumDraw === "function") scheduleSpectrumDraw();
+  try { if (typeof scheduleSpectrumDraw === "function") scheduleSpectrumDraw(); } catch (_) {}
 }
 
 // ── Style / palette system ────────────────────────────────────────────────────
