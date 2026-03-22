@@ -631,7 +631,21 @@ function setTheme(theme) {
     themeToggleBtn.title = next === "dark" ? "Switch to light mode" : "Switch to dark mode";
   }
   // Invalidate cached bookmark chip colours so they pick up the new theme palette.
-  if (typeof bmRevision !== "undefined") bmRevision++;
+  if (typeof bmRevision !== "undefined") {
+    bmRevision++;
+    // Re-apply colours to existing bookmark chips using the new palette.
+    try {
+      const colorMap = bmCategoryColorMap();
+      const ref = typeof bmList !== "undefined" ? bmList : [];
+      document.querySelectorAll(".spectrum-bookmark-chip").forEach((chip) => {
+        const bm = ref.find((b) => b.id === chip.dataset.bmId);
+        if (!bm) return;
+        const col = colorMap[bm.category || ""] || BOOKMARK_MARKER_FALLBACK;
+        chip.style.setProperty("--bm-cat-bg", col);
+        chip.style.setProperty("--bm-cat-fg", bmContrastFg(col));
+      });
+    } catch (_) {}
+  }
   try { if (typeof scheduleSpectrumDraw === "function") scheduleSpectrumDraw(); } catch (_) {}
 }
 
