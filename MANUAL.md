@@ -9,12 +9,27 @@ magnitude exceeds **threshold x RMS** with the last known clean sample.
 
 ### Configuration (server-side)
 
-Add a `[sdr.noise_blanker]` section to your `trx-server.toml`:
+The noise blanker is configured per rig.  In a multi-rig setup each
+`[[rigs]]` entry has its own `[rigs.sdr.noise_blanker]` section:
+
+```toml
+[[rigs]]
+id = "hf"
+
+[rigs.rig]
+type = "sdr"
+
+[rigs.sdr.noise_blanker]
+enabled = true
+threshold = 10.0     # 1 – 100; lower = more aggressive blanking
+```
+
+For the legacy single-rig (flat) config the path is `[sdr.noise_blanker]`:
 
 ```toml
 [sdr.noise_blanker]
 enabled = true
-threshold = 10.0     # 1 – 100; lower = more aggressive blanking
+threshold = 10.0
 ```
 
 | Field       | Type  | Default | Range   | Description |
@@ -22,9 +37,30 @@ threshold = 10.0     # 1 – 100; lower = more aggressive blanking
 | `enabled`   | bool  | false   | —       | Turn the noise blanker on or off. |
 | `threshold` | float | 10.0    | 1 – 100 | Multiplier applied to the running RMS. A sample whose magnitude exceeds this multiple is replaced. Lower values blank more aggressively; higher values only catch strong impulses. |
 
-The noise blanker is off by default.  A threshold of **10** is a good starting
-point for typical HF impulse noise.  Reduce toward **3–5** for heavy QRM;
-increase toward **20–30** if weak signals are being clipped.
+The noise blanker is off by default.
+
+### Choosing a threshold
+
+The threshold controls how aggressively the blanker suppresses impulses.
+A value of **N** means: blank any sample whose magnitude exceeds **N times**
+the running average signal level.
+
+| Threshold | Behavior | Use case |
+|-----------|----------|----------|
+| 3 – 5    | Very aggressive — blanks frequently | Dense impulse noise (motors, power lines, LED drivers nearby) |
+| 8 – 12   | Moderate — catches clear spikes without touching normal signals | Typical HF conditions with occasional ignition or switching noise |
+| 15 – 25  | Conservative — only blanks strong impulses well above the noise floor | Light interference, or when you want minimal artifacts on weak signals |
+| 30 – 100 | Very light — rarely triggers | Faint, infrequent clicks; mostly a safety net |
+
+**Start at 10** (the default) and adjust while listening:
+
+- If impulse noise is still audible, lower the threshold.
+- If weak signals sound choppy or distorted, raise it — the blanker may be
+  mistaking signal peaks for noise.
+- On bands with steady atmospheric noise (e.g. 160 m / 80 m), a threshold of
+  **5 – 8** usually works well.
+- On quieter VHF/UHF bands where the noise floor is low, values of **15 – 25**
+  avoid false triggers from strong signals.
 
 ### Web UI
 
