@@ -537,13 +537,6 @@ pub async fn audio_ws(
     };
     let mut rx_sub = rx_sub;
 
-    // Use per-rig audio info if available and rig_id was specified.
-    if let Some(ref rig_id) = query.rig_id {
-        if let Some(rig_info_rx) = context.rig_audio_info_rx(rig_id) {
-            info_rx = rig_info_rx;
-        }
-    }
-
     let (response, mut session, mut msg_stream) = actix_ws::handle(&req, body)?;
 
     actix_web::rt::spawn(async move {

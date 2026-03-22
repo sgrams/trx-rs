@@ -473,29 +473,41 @@ pub async fn events(
     });
 
     // Channel-list change events from the virtual channel manager.
+    // Only forward events for this SSE session's rig so tabs viewing
+    // different rigs don't see each other's channel lists.
     let vchan_change_rx = vchan_mgr.change_tx.subscribe();
-    let chan_updates = futures_util::stream::unfold(vchan_change_rx, |mut rx| async move {
-        loop {
-            match rx.recv().await {
-                Ok(msg) => {
-                    if let Some(colon) = msg.find(':') {
-                        let rig_id = &msg[..colon];
-                        let channels_json = &msg[colon + 1..];
-                        let payload =
-                            format!("{{\"rig_id\":\"{rig_id}\",\"channels\":{channels_json}}}");
-                        return Some((
-                            Ok::<Bytes, Error>(Bytes::from(format!(
-                                "event: channels\ndata: {payload}\n\n"
-                            ))),
-                            rx,
-                        ));
+    let session_rig_for_chan = active_rig_id.clone();
+    let chan_updates = futures_util::stream::unfold(
+        (vchan_change_rx, session_rig_for_chan),
+        |(mut rx, srig)| async move {
+            loop {
+                match rx.recv().await {
+                    Ok(msg) => {
+                        if let Some(colon) = msg.find(':') {
+                            let rig_id = &msg[..colon];
+                            // Skip channel events that belong to a different rig.
+                            if let Some(ref expected) = srig {
+                                if rig_id != expected.as_str() {
+                                    continue;
+                                }
+                            }
+                            let channels_json = &msg[colon + 1..];
+                            let payload =
+                                format!("{{\"rig_id\":\"{rig_id}\",\"channels\":{channels_json}}}");
+                            return Some((
+                                Ok::<Bytes, Error>(Bytes::from(format!(
+                                    "event: channels\ndata: {payload}\n\n"
+                                ))),
+                                (rx, srig),
+                            ));
+                        }
                     }
+                    Err(broadcast::error::RecvError::Lagged(_)) => continue,
+                    Err(broadcast::error::RecvError::Closed) => return None,
                 }
-                Err(broadcast::error::RecvError::Lagged(_)) => continue,
-                Err(broadcast::error::RecvError::Closed) => return None,
             }
-        }
-    });
+        },
+    );
 
     // Send a named "ping" event so the JS heartbeat can observe it.
     let pings = IntervalStream::new(time::interval(Duration::from_secs(5)))
