@@ -284,6 +284,19 @@
                   </label>
                   <button id="sdr-lna-gain-set" type="button" class="wfm-inline-btn">Set</button>
                 </div>
+                <label class="wfm-control" id="sdr-nb-wrap" style="display:none;">
+                  <span class="wfm-control-label">Noise Blanker</span>
+                  <div style="height:2.1rem; display:flex; align-items:center;">
+                    <input type="checkbox" id="sdr-nb-enabled">
+                  </div>
+                </label>
+                <div class="wfm-gain-group" id="sdr-nb-threshold-controls" style="display:none;">
+                  <label class="wfm-control">
+                    <span class="wfm-control-label">NB Threshold</span>
+                    <input id="sdr-nb-threshold" class="status-input" type="number" min="1" max="100" step="1" inputmode="decimal">
+                  </label>
+                  <button id="sdr-nb-threshold-set" type="button" class="wfm-inline-btn">Set</button>
+                </div>
               </div>
             </div>
             <div class="full-row label-below-row" id="vchan-row">

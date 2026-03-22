@@ -2944,6 +2944,19 @@ function render(update) {
       );
     }
     updateSdrSquelchControlVisibility();
+    const hasSdrNbEnabled = typeof update.filter.sdr_nb_enabled === "boolean";
+    const hasSdrNbThreshold = typeof update.filter.sdr_nb_threshold === "number";
+    if (hasSdrNbEnabled || hasSdrNbThreshold) {
+      sdrNbSupported = true;
+      if (sdrNbWrapEl) sdrNbWrapEl.style.display = "";
+      if (sdrNbThresholdControlsEl) sdrNbThresholdControlsEl.style.display = "";
+      if (hasSdrNbEnabled && sdrNbEnabledEl) {
+        sdrNbEnabledEl.checked = update.filter.sdr_nb_enabled;
+      }
+      if (hasSdrNbThreshold && sdrNbThresholdEl && document.activeElement !== sdrNbThresholdEl) {
+        sdrNbThresholdEl.value = String(Math.round(update.filter.sdr_nb_threshold));
+      }
+    }
   }
   if (typeof update.show_sdr_gain_control === "boolean") {
     if (sdrSettingsRowEl) sdrSettingsRowEl.style.display = update.show_sdr_gain_control ? "" : "none";
@@ -7281,6 +7294,12 @@ const sdrSquelchPctEl = document.getElementById("sdr-squelch-pct");
 const SDR_SQUELCH_MIN_DB = -120;
 const SDR_SQUELCH_MAX_DB = -30;
 let syncFromServerSdrSquelch = false;
+const sdrNbWrapEl = document.getElementById("sdr-nb-wrap");
+const sdrNbEnabledEl = document.getElementById("sdr-nb-enabled");
+const sdrNbThresholdControlsEl = document.getElementById("sdr-nb-threshold-controls");
+const sdrNbThresholdEl = document.getElementById("sdr-nb-threshold");
+const sdrNbThresholdSetBtn = document.getElementById("sdr-nb-threshold-set");
+let sdrNbSupported = false;
 
 // Hide audio row if audio is not configured on the server
 fetch("/audio", { method: "GET" }).then((r) => {
@@ -7487,6 +7506,37 @@ if (sdrLnaGainEl) {
     if (ev.key === "Enter") {
       ev.preventDefault();
       submitSdrLnaGain();
+    }
+  });
+}
+function submitSdrNbState() {
+  if (!sdrNbSupported) return;
+  const enabled = sdrNbEnabledEl ? sdrNbEnabledEl.checked : false;
+  const threshold = sdrNbThresholdEl ? Number.parseFloat(sdrNbThresholdEl.value) : 10;
+  if (!Number.isFinite(threshold) || threshold < 1 || threshold > 100) return;
+  postPath(
+    `/set_sdr_noise_blanker?enabled=${enabled ? "true" : "false"}&threshold=${encodeURIComponent(threshold)}`,
+  ).catch(() => {});
+}
+if (sdrNbEnabledEl) {
+  sdrNbEnabledEl.addEventListener("change", () => {
+    submitSdrNbState();
+  });
+}
+function submitSdrNbThreshold() {
+  if (!sdrNbThresholdEl) return;
+  const parsed = Number.parseFloat(sdrNbThresholdEl.value);
+  if (!Number.isFinite(parsed) || parsed < 1 || parsed > 100) return;
+  submitSdrNbState();
+}
+if (sdrNbThresholdSetBtn) {
+  sdrNbThresholdSetBtn.addEventListener("click", submitSdrNbThreshold);
+}
+if (sdrNbThresholdEl) {
+  sdrNbThresholdEl.addEventListener("keydown", (ev) => {
+    if (ev.key === "Enter") {
+      ev.preventDefault();
+      submitSdrNbThreshold();
     }
   });
 }
