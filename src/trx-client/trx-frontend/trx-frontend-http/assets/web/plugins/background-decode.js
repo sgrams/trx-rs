@@ -74,7 +74,7 @@
     if (!rigId) return;
     Promise.all([apiGetConfig(rigId), apiGetBookmarks()])
       .then(function ([config, bookmarks]) {
-        currentConfig = config || { rig_id: rigId, enabled: false, bookmark_ids: [] };
+        currentConfig = config || { remote: rigId, enabled: false, bookmark_ids: [] };
         bookmarkList = Array.isArray(bookmarks) ? bookmarks : [];
         renderBookmarkPick();
         renderBackgroundDecode();
@@ -121,7 +121,7 @@
 
   function renderBackgroundDecode() {
     if (!currentConfig) {
-      currentConfig = { rig_id: currentRigId, enabled: false, bookmark_ids: [] };
+      currentConfig = { remote: currentRigId, enabled: false, bookmark_ids: [] };
     }
     setCheckbox("background-decode-enabled", !!currentConfig.enabled);
     renderBookmarkList();
@@ -178,7 +178,7 @@
     const sel = document.getElementById("background-decode-bookmark-pick");
     if (!sel || !sel.value) return;
     if (!currentConfig) {
-      currentConfig = { rig_id: currentRigId, enabled: false, bookmark_ids: [] };
+      currentConfig = { remote: currentRigId, enabled: false, bookmark_ids: [] };
     }
     if (!Array.isArray(currentConfig.bookmark_ids)) currentConfig.bookmark_ids = [];
     if (!currentConfig.bookmark_ids.includes(sel.value)) currentConfig.bookmark_ids.push(sel.value);
@@ -191,7 +191,7 @@
     const rigId = currentRigId;
     if (!rigId) return;
     const payload = {
-      rig_id: rigId,
+      remote: rigId,
       enabled: !!document.getElementById("background-decode-enabled").checked,
       bookmark_ids: Array.isArray(currentConfig && currentConfig.bookmark_ids) ? currentConfig.bookmark_ids.slice() : [],
     };

@@ -511,7 +511,7 @@
     const extraBmIds = pendingExtraBmIds.slice();
 
     if (!currentConfig) {
-      currentConfig = { rig_id: currentRigId, mode: "time_span", entries: [] };
+      currentConfig = { remote: currentRigId, mode: "time_span", entries: [] };
     }
     if (!currentConfig.entries) currentConfig.entries = [];
 
@@ -666,7 +666,7 @@
     const mode = modeEl ? modeEl.value : "disabled";
 
     const config = {
-      rig_id: rig,
+      remote: rig,
       mode,
       grayline: null,
       entries: [],
@@ -722,7 +722,7 @@
     apiDeleteScheduler(rig)
       .then(function () {
         currentConfig = {
-          rig_id: rig,
+          remote: rig,
           mode: "disabled",
           grayline: null,
           entries: [],
@@ -756,7 +756,7 @@
     const modeEl = document.getElementById("scheduler-mode-select");
     if (modeEl) {
       modeEl.addEventListener("change", function () {
-        if (!currentConfig) currentConfig = { rig_id: currentRigId, mode: modeEl.value, entries: [] };
+        if (!currentConfig) currentConfig = { remote: currentRigId, mode: modeEl.value, entries: [] };
         currentConfig.mode = modeEl.value;
         renderScheduler();
       });

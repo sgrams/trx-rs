@@ -90,7 +90,8 @@ pub struct ScheduleEntry {
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct SchedulerConfig {
-    pub rig_id: String,
+    #[serde(alias = "rig_id")]
+    pub remote: String,
     #[serde(default)]
     pub mode: SchedulerMode,
     pub grayline: Option<GraylineConfig>,
@@ -147,19 +148,19 @@ impl SchedulerStore {
             .unwrap_or_else(|| PathBuf::from("scheduler.db"))
     }
 
-    pub fn get(&self, rig_id: &str) -> Option<SchedulerConfig> {
+    pub fn get(&self, remote: &str) -> Option<SchedulerConfig> {
         let db = self.db.read().unwrap_or_else(|e| e.into_inner());
-        db.get::<SchedulerConfig>(&format!("sch:{rig_id}"))
+        db.get::<SchedulerConfig>(&format!("sch:{remote}"))
     }
 
     pub fn upsert(&self, config: &SchedulerConfig) -> bool {
         let mut db = self.db.write().unwrap_or_else(|e| e.into_inner());
-        db.set(&format!("sch:{}", config.rig_id), config).is_ok()
+        db.set(&format!("sch:{}", config.remote), config).is_ok()
     }
 
-    pub fn remove(&self, rig_id: &str) -> bool {
+    pub fn remove(&self, remote: &str) -> bool {
         let mut db = self.db.write().unwrap_or_else(|e| e.into_inner());
-        db.rem(&format!("sch:{rig_id}")).unwrap_or(false)
+        db.rem(&format!("sch:{remote}")).unwrap_or(false)
     }
 
     pub fn list_all(&self) -> Vec<SchedulerConfig> {
@@ -422,7 +423,7 @@ pub struct SchedulerStatus {
 #[allow(clippy::too_many_arguments)]
 async fn apply_scheduler_target(
     rig_tx: &mpsc::Sender<RigRequest>,
-    rig_id: &str,
+    remote: &str,
     status_map: &SchedulerStatusMap,
     bookmarks: &BookmarkStore,
     entry_id: Option<&str>,
@@ -432,7 +433,7 @@ async fn apply_scheduler_target(
 ) -> Result<SchedulerStatus, String> {
     let bookmark = bookmarks
         .get(bookmark_id)
-        .ok_or_else(|| format!("bookmark '{bookmark_id}' not found for rig '{rig_id}'"))?;
+        .ok_or_else(|| format!("bookmark '{bookmark_id}' not found for remote '{remote}'"))?;
 
     let extra_bookmarks: Vec<_> = extra_bm_ids
         .iter()
@@ -443,7 +444,7 @@ async fn apply_scheduler_target(
         scheduler_send(
             rig_tx,
             RigCommand::SetCenterFreq(Freq { hz: chz }),
-            rig_id.to_string(),
+            remote.to_string(),
         )
         .await?;
     }
@@ -453,18 +454,18 @@ async fn apply_scheduler_target(
         RigCommand::SetFreq(Freq {
             hz: bookmark.freq_hz,
         }),
-        rig_id.to_string(),
+        remote.to_string(),
     )
     .await?;
 
     scheduler_send(
         rig_tx,
         RigCommand::SetMode(trx_protocol::parse_mode(&bookmark.mode)),
-        rig_id.to_string(),
+        remote.to_string(),
     )
     .await?;
 
-    apply_scheduler_decoders(rig_tx, rig_id, &bookmark, &extra_bookmarks).await;
+    apply_scheduler_decoders(rig_tx, remote, &bookmark, &extra_bookmarks).await;
 
     let status = SchedulerStatus {
         active: true,
@@ -483,7 +484,7 @@ async fn apply_scheduler_target(
 
     {
         let mut map = status_map.write().unwrap_or_else(|e| e.into_inner());
-        map.insert(rig_id.to_string(), status.clone());
+        map.insert(remote.to_string(), status.clone());
     }
 
     Ok(status)
@@ -633,26 +634,26 @@ pub fn spawn_scheduler_task(
                 };
 
                 // Already at this exact scheduled target — skip.
-                if last_applied.get(&config.rig_id) == Some(&target) {
+                if last_applied.get(&config.remote) == Some(&target) {
                     continue;
                 }
 
                 let Some(bm) = bookmarks.get(&bm_id) else {
                     warn!(
-                        "scheduler: bookmark '{}' not found for rig '{}'",
-                        bm_id, config.rig_id
+                        "scheduler: bookmark '{}' not found for remote '{}'",
+                        bm_id, config.remote
                     );
                     continue;
                 };
 
                 info!(
-                    "scheduler: rig '{}' → bookmark '{}' ({} Hz {})",
-                    config.rig_id, bm.name, bm.freq_hz, bm.mode
+                    "scheduler: remote '{}' → bookmark '{}' ({} Hz {})",
+                    config.remote, bm.name, bm.freq_hz, bm.mode
                 );
 
                 if let Err(e) = apply_scheduler_target(
                     &rig_tx,
-                    &config.rig_id,
+                    &config.remote,
                     &status_map,
                     &bookmarks,
                     entry_id.as_deref(),
@@ -664,12 +665,12 @@ pub fn spawn_scheduler_task(
                 {
                     warn!(
                         "scheduler: failed to apply target for '{}': {e}",
-                        config.rig_id
+                        config.remote
                     );
                     continue;
                 }
 
-                last_applied.insert(config.rig_id.clone(), target);
+                last_applied.insert(config.remote.clone(), target);
             }
         }
     });
@@ -677,7 +678,7 @@ pub fn spawn_scheduler_task(
 
 async fn apply_scheduler_decoders(
     rig_tx: &mpsc::Sender<RigRequest>,
-    rig_id: &str,
+    remote: &str,
     bookmark: &crate::server::bookmarks::Bookmark,
     extra_bookmarks: &[crate::server::bookmarks::Bookmark],
 ) {
@@ -721,10 +722,10 @@ async fn apply_scheduler_decoders(
     ];
 
     for (label, cmd) in desired {
-        if let Err(e) = scheduler_send(rig_tx, cmd, rig_id.to_string()).await {
+        if let Err(e) = scheduler_send(rig_tx, cmd, remote.to_string()).await {
             warn!(
                 "scheduler: Set{label}DecodeEnabled failed for '{}': {:?}",
-                rig_id, e
+                remote, e
             );
         }
     }
@@ -732,7 +733,7 @@ async fn apply_scheduler_decoders(
 
 async fn apply_last_scheduler_cycle(
     rig_tx: &mpsc::Sender<RigRequest>,
-    rig_id: &str,
+    remote: &str,
     status_map: &SchedulerStatusMap,
     bookmarks: &BookmarkStore,
 ) {
@@ -740,7 +741,7 @@ async fn apply_last_scheduler_cycle(
         let Ok(map) = status_map.read() else {
             return;
         };
-        map.get(rig_id).cloned()
+        map.get(remote).cloned()
     };
 
     let Some(status) = status else {
@@ -751,15 +752,15 @@ async fn apply_last_scheduler_cycle(
     };
     if bookmarks.get(&bookmark_id).is_none() {
         warn!(
-            "scheduler: last bookmark '{}' not found for rig '{}'",
-            bookmark_id, rig_id
+            "scheduler: last bookmark '{}' not found for remote '{}'",
+            bookmark_id, remote
         );
         return;
     }
 
     if let Err(e) = apply_scheduler_target(
         rig_tx,
-        rig_id,
+        remote,
         status_map,
         bookmarks,
         status.last_entry_id.as_deref(),
@@ -769,7 +770,7 @@ async fn apply_last_scheduler_cycle(
     )
     .await
     {
-        warn!("scheduler: restore failed for '{}': {e}", rig_id);
+        warn!("scheduler: restore failed for '{}': {e}", remote);
     }
 }
 
@@ -777,14 +778,14 @@ async fn apply_last_scheduler_cycle(
 async fn scheduler_send(
     rig_tx: &mpsc::Sender<RigRequest>,
     cmd: RigCommand,
-    rig_id: String,
+    remote: String,
 ) -> Result<(), String> {
     let (resp_tx, resp_rx) = oneshot::channel();
     rig_tx
         .send(RigRequest {
             cmd,
             respond_to: resp_tx,
-            rig_id_override: Some(rig_id),
+            rig_id_override: Some(remote),
         })
         .await
         .map_err(|e| format!("send error: {e:?}"))?;
@@ -797,15 +798,15 @@ async fn scheduler_send(
 // HTTP handlers
 // ============================================================================
 
-/// GET /scheduler/{rig_id}
-#[get("/scheduler/{rig_id}")]
+/// GET /scheduler/{remote}
+#[get("/scheduler/{remote}")]
 pub async fn get_scheduler(
     path: web::Path<String>,
     store: web::Data<Arc<SchedulerStore>>,
 ) -> impl Responder {
-    let rig_id = path.into_inner();
-    let config = store.get(&rig_id).unwrap_or(SchedulerConfig {
-        rig_id: rig_id.clone(),
+    let remote = path.into_inner();
+    let config = store.get(&remote).unwrap_or(SchedulerConfig {
+        remote: remote.clone(),
         mode: SchedulerMode::Disabled,
         grayline: None,
         entries: vec![],
@@ -814,16 +815,16 @@ pub async fn get_scheduler(
     HttpResponse::Ok().json(config)
 }
 
-/// PUT /scheduler/{rig_id}
-#[put("/scheduler/{rig_id}")]
+/// PUT /scheduler/{remote}
+#[put("/scheduler/{remote}")]
 pub async fn put_scheduler(
     path: web::Path<String>,
     body: web::Json<SchedulerConfig>,
     store: web::Data<Arc<SchedulerStore>>,
 ) -> impl Responder {
-    let rig_id = path.into_inner();
+    let remote = path.into_inner();
     let mut config = body.into_inner();
-    config.rig_id = rig_id;
+    config.remote = remote;
     if store.upsert(&config) {
         HttpResponse::Ok().json(config)
     } else {
@@ -831,26 +832,26 @@ pub async fn put_scheduler(
     }
 }
 
-/// DELETE /scheduler/{rig_id}
-#[delete("/scheduler/{rig_id}")]
+/// DELETE /scheduler/{remote}
+#[delete("/scheduler/{remote}")]
 pub async fn delete_scheduler(
     path: web::Path<String>,
     store: web::Data<Arc<SchedulerStore>>,
 ) -> impl Responder {
-    let rig_id = path.into_inner();
-    store.remove(&rig_id);
+    let remote = path.into_inner();
+    store.remove(&remote);
     HttpResponse::Ok().json(serde_json::json!({ "deleted": true }))
 }
 
-/// GET /scheduler/{rig_id}/status
-#[get("/scheduler/{rig_id}/status")]
+/// GET /scheduler/{remote}/status
+#[get("/scheduler/{remote}/status")]
 pub async fn get_scheduler_status(
     path: web::Path<String>,
     status_map: web::Data<SchedulerStatusMap>,
 ) -> impl Responder {
-    let rig_id = path.into_inner();
+    let remote = path.into_inner();
     let map = status_map.read().unwrap_or_else(|e| e.into_inner());
-    let status = map.get(&rig_id).cloned().unwrap_or_default();
+    let status = map.get(&remote).cloned().unwrap_or_default();
     HttpResponse::Ok().json(status)
 }
 
@@ -860,7 +861,7 @@ pub struct SchedulerActivateEntryRequest {
 }
 
 /// PUT /scheduler/{rig_id}/activate
-#[put("/scheduler/{rig_id}/activate")]
+#[put("/scheduler/{remote}/activate")]
 pub async fn put_scheduler_activate_entry(
     path: web::Path<String>,
     body: web::Json<SchedulerActivateEntryRequest>,

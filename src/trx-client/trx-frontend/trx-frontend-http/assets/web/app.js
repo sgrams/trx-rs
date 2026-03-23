@@ -1001,19 +1001,19 @@ async function refreshRigList() {
     if (!resp.ok) return;
     const data = await resp.json();
     const rigs = Array.isArray(data.rigs) ? data.rigs : [];
-    const rigIds = rigs.map((r) => r && r.rig_id).filter(Boolean);
+    const rigIds = rigs.map((r) => r && r.remote).filter(Boolean);
     const displayNames = {};
     rigs.forEach((r) => {
-      if (!r || !r.rig_id) return;
+      if (!r || !r.remote) return;
       if (typeof r.display_name === "string" && r.display_name.length > 0) {
-        displayNames[r.rig_id] = r.display_name;
+        displayNames[r.remote] = r.display_name;
       } else {
-        displayNames[r.rig_id] = r.rig_id;
+        displayNames[r.remote] = r.remote;
       }
     });
     serverRigs = rigs;
-    serverActiveRigId = data.active_rig_id || null;
-    applyRigList(data.active_rig_id, rigIds, displayNames);
+    serverActiveRigId = data.active_remote || null;
+    applyRigList(data.active_remote, rigIds, displayNames);
   } catch (e) {
     // Non-fatal: SSE/status path still drives main UI.
   }
@@ -3248,8 +3248,8 @@ function render(update) {
   if (lastActiveRigId) {
     document.getElementById("about-active-rig").textContent = lastActiveRigId;
   }
-  if (Array.isArray(update.rig_ids)) {
-    applyRigList(update.active_rig_id, update.rig_ids);
+  if (Array.isArray(update.remotes)) {
+    applyRigList(update.active_remote, update.remotes);
   }
   if (typeof update.rigctl_clients === "number") {
     document.getElementById("about-rigctl-clients").textContent = update.rigctl_clients;
@@ -3293,7 +3293,7 @@ function scheduleReconnect(delayMs = 1000) {
 async function pollFreshSnapshot() {
   try {
     const statusUrl = lastActiveRigId
-      ? `/status?rig_id=${encodeURIComponent(lastActiveRigId)}`
+      ? `/status?remote=${encodeURIComponent(lastActiveRigId)}`
       : "/status";
     const resp = await fetch(statusUrl, { cache: "no-store" });
     if (!resp.ok) return;
@@ -3316,7 +3316,7 @@ function connect() {
   }
   pollFreshSnapshot();
   const eventsUrl = lastActiveRigId
-    ? `/events?rig_id=${encodeURIComponent(lastActiveRigId)}`
+    ? `/events?remote=${encodeURIComponent(lastActiveRigId)}`
     : "/events";
   es = new EventSource(eventsUrl);
   lastEventAt = Date.now();
@@ -3442,11 +3442,11 @@ function scheduleUiFrameJob(key, job) {
 window.trxScheduleUiFrameJob = scheduleUiFrameJob;
 
 async function postPath(path) {
-  // Auto-append rig_id so each tab targets its own rig.
-  // Skip when the caller already included rig_id (e.g. /select_rig).
-  if (lastActiveRigId && !path.includes("rig_id=")) {
+  // Auto-append remote so each tab targets its own rig.
+  // Skip when the caller already included remote (e.g. /select_rig).
+  if (lastActiveRigId && !path.includes("remote=")) {
     const sep = path.includes("?") ? "&" : "?";
-    path = `${path}${sep}rig_id=${encodeURIComponent(lastActiveRigId)}`;
+    path = `${path}${sep}remote=${encodeURIComponent(lastActiveRigId)}`;
   }
   const resp = await fetch(path, { method: "POST" });
   if (authEnabled && resp.status === 401) {
@@ -3502,7 +3502,7 @@ async function switchRigFromSelect(selectEl) {
   // state channel.
   try {
     const sidParam = sseSessionId ? `&session_id=${encodeURIComponent(sseSessionId)}` : "";
-    await postPath(`/select_rig?rig_id=${encodeURIComponent(selectEl.value)}${sidParam}`);
+    await postPath(`/select_rig?remote=${encodeURIComponent(selectEl.value)}${sidParam}`);
     connect();
   } catch (err) {
     console.error("select_rig failed:", err);
@@ -6061,7 +6061,7 @@ function buildReceiverPopupHtml() {
   }
   for (const rig of serverRigs) {
     const name = rig.display_name || `${rig.manufacturer} ${rig.model}`.trim();
-    const active = rig.rig_id === serverActiveRigId
+    const active = rig.remote === serverActiveRigId
       ? ` <span class="receiver-popup-active">active</span>` : "";
     rows += `<tr><td class="aprs-popup-label">Rig</td><td>${escapeMapHtml(name)}${active}</td></tr>`;
   }
@@ -7137,7 +7137,7 @@ window.mapAddLocator = function(message, grids, type = "ft8", station = null, de
       dt_s: Number.isFinite(details?.dt_s) ? Number(details.dt_s) : null,
       freq_hz: Number.isFinite(details?.freq_hz) ? Number(details.freq_hz) : null,
       message: String(details?.message || message || "").trim() || null,
-      rig_id: lastActiveRigId || null,
+      remote: lastActiveRigId || null,
     };
     const detailKey = detailStationId || `${targetId || "decode"}:${detailEntry.message || "decode"}:${detailEntry.ts_ms || Date.now()}`;
     const key = `${markerType}:${grid}`;
@@ -7667,7 +7667,7 @@ function startRxAudio() {
   if (_audioChannelOverride) {
     audioPath = `/audio?channel_id=${encodeURIComponent(_audioChannelOverride)}`;
   } else if (lastActiveRigId) {
-    audioPath = `/audio?rig_id=${encodeURIComponent(lastActiveRigId)}`;
+    audioPath = `/audio?remote=${encodeURIComponent(lastActiveRigId)}`;
   } else {
     audioPath = "/audio";
   }
@@ -8705,7 +8705,7 @@ function scheduleSpectrumReconnect() {
 function startSpectrumStreaming() {
   if (spectrumSource !== null) return;
   const spectrumUrl = lastActiveRigId
-    ? `/spectrum?rig_id=${encodeURIComponent(lastActiveRigId)}`
+    ? `/spectrum?remote=${encodeURIComponent(lastActiveRigId)}`
     : "/spectrum";
   spectrumSource = new EventSource(spectrumUrl);
   // Unnamed event = reset signal.

@@ -85,7 +85,7 @@ async function vchanToggleSchedulerRelease() {
     const resp = await fetch("/scheduler-control", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ session_id: vchanSessionId, released: true, rig_id: rigId }),
+      body: JSON.stringify({ session_id: vchanSessionId, released: true, remote: rigId }),
     });
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
     schedulerReleaseState = await resp.json();
@@ -128,7 +128,7 @@ function vchanHandleSession(data) {
 function vchanHandleChannels(data) {
   try {
     const d = JSON.parse(data);
-    vchanRigId = d.rig_id || null;
+    vchanRigId = d.remote || null;
     vchanChannels = d.channels || [];
     const ids = new Set(vchanChannels.map(c => c.id));
     if (!vchanActiveId && vchanChannels.length > 0 && vchanSessionId) {

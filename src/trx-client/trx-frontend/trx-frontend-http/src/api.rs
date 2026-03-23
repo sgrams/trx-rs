@@ -84,8 +84,8 @@ struct FrontendMeta {
     http_clients: usize,
     rigctl_clients: usize,
     rigctl_addr: Option<String>,
-    active_rig_id: Option<String>,
-    rig_ids: Vec<String>,
+    active_remote: Option<String>,
+    remotes: Vec<String>,
     owner_callsign: Option<String>,
     owner_website_url: Option<String>,
     owner_website_name: Option<String>,
@@ -137,7 +137,8 @@ pub type SharedSessionRigManager = Arc<SessionRigManager>;
 
 #[derive(serde::Deserialize)]
 pub struct StatusQuery {
-    pub rig_id: Option<String>,
+    #[serde(alias = "rig_id")]
+    pub remote: Option<String>,
 }
 
 #[get("/status")]
@@ -147,10 +148,10 @@ pub async fn status_api(
     clients: web::Data<Arc<AtomicUsize>>,
     context: web::Data<Arc<FrontendRuntimeContext>>,
 ) -> Result<impl Responder, Error> {
-    // Prefer the per-rig watch channel when a rig_id is specified,
+    // Prefer the per-rig watch channel when a remote is specified,
     // falling back to the global state watch.
     let rx = query
-        .rig_id
+        .remote
         .as_deref()
         .filter(|s| !s.is_empty())
         .and_then(|rid| context.rig_state_rx(rid))
@@ -187,10 +188,10 @@ fn inject_frontend_meta(json: &str, meta: FrontendMeta) -> String {
     if let Some(v) = meta.rigctl_addr {
         extra.insert("rigctl_addr".into(), serde_json::json!(v));
     }
-    if let Some(v) = meta.active_rig_id {
-        extra.insert("active_rig_id".into(), serde_json::json!(v));
+    if let Some(v) = meta.active_remote {
+        extra.insert("active_remote".into(), serde_json::json!(v));
     }
-    extra.insert("rig_ids".into(), serde_json::json!(meta.rig_ids));
+    extra.insert("remotes".into(), serde_json::json!(meta.remotes));
     if let Some(v) = meta.owner_callsign {
         extra.insert("owner_callsign".into(), serde_json::json!(v));
     }
@@ -246,8 +247,8 @@ fn frontend_meta_from_context(
         http_clients,
         rigctl_clients: context.rigctl_clients.load(Ordering::Relaxed),
         rigctl_addr: rigctl_addr_from_context(context),
-        active_rig_id: active_rig_id_from_context(context),
-        rig_ids: rig_ids_from_context(context),
+        active_remote: active_rig_id_from_context(context),
+        remotes: rig_ids_from_context(context),
         owner_callsign: owner_callsign_from_context(context),
         owner_website_url: owner_website_url_from_context(context),
         owner_website_name: owner_website_name_from_context(context),
@@ -339,7 +340,8 @@ fn decode_history_retention_min_from_context(context: &FrontendRuntimeContext) -
 
 #[derive(serde::Deserialize)]
 pub struct EventsQuery {
-    pub rig_id: Option<String>,
+    #[serde(alias = "rig_id")]
+    pub remote: Option<String>,
 }
 
 #[get("/events")]
@@ -362,10 +364,10 @@ pub async fn events(
     let session_id = Uuid::new_v4();
     scheduler_control.register_session(session_id);
 
-    // Use the client-requested rig_id if provided, otherwise fall back to
+    // Use the client-requested remote if provided, otherwise fall back to
     // the global default.  This allows each tab to reconnect SSE for the
     // rig it has selected without mutating global state.
-    let active_rig_id = query.rig_id.clone().filter(|s| !s.is_empty()).or_else(|| {
+    let active_rig_id = query.remote.clone().filter(|s| !s.is_empty()).or_else(|| {
         context
             .remote_active_rig_id
             .lock()
@@ -413,7 +415,7 @@ pub async fn events(
         let chans = vchan_mgr.channels(rid);
         if let Ok(json) = serde_json::to_string(&chans) {
             prefix.push(Ok(Bytes::from(format!(
-                "event: channels\ndata: {{\"rig_id\":\"{rid}\",\"channels\":{json}}}\n\n"
+                "event: channels\ndata: {{\"remote\":\"{rid}\",\"channels\":{json}}}\n\n"
             ))));
         }
     }
@@ -493,7 +495,7 @@ pub async fn events(
                             }
                             let channels_json = &msg[colon + 1..];
                             let payload =
-                                format!("{{\"rig_id\":\"{rig_id}\",\"channels\":{channels_json}}}");
+                                format!("{{\"remote\":\"{rig_id}\",\"channels\":{channels_json}}}");
                             return Some((
                                 Ok::<Bytes, Error>(Bytes::from(format!(
                                     "event: channels\ndata: {payload}\n\n"
@@ -812,13 +814,13 @@ impl<I> futures_util::Stream for DropStream<I> {
 /// Emits an unnamed `data: null` event when spectrum data becomes unavailable.
 #[get("/spectrum")]
 pub async fn spectrum(
-    query: web::Query<RigIdQuery>,
+    query: web::Query<RemoteQuery>,
     context: web::Data<Arc<FrontendRuntimeContext>>,
 ) -> Result<HttpResponse, Error> {
-    // Subscribe to a per-rig spectrum channel when rig_id is specified,
+    // Subscribe to a per-rig spectrum channel when remote is specified,
     // otherwise fall back to the global channel for backward compat.
-    let rx = if let Some(ref rig_id) = query.rig_id {
-        context.rig_spectrum_rx(rig_id)
+    let rx = if let Some(ref remote) = query.remote {
+        context.rig_spectrum_rx(remote)
     } else {
         context.spectrum.subscribe()
     };
@@ -866,7 +868,7 @@ pub async fn spectrum(
 
 #[post("/toggle_power")]
 pub async fn toggle_power(
-    query: web::Query<RigIdQuery>,
+    query: web::Query<RemoteQuery>,
     state: web::Data<watch::Receiver<RigState>>,
     rig_tx: web::Data<mpsc::Sender<RigRequest>>,
 ) -> Result<HttpResponse, Error> {
@@ -876,37 +878,38 @@ pub async fn toggle_power(
     } else {
         RigCommand::PowerOff
     };
-    send_command(&rig_tx, cmd, query.into_inner().rig_id).await
+    send_command(&rig_tx, cmd, query.into_inner().remote).await
 }
 
 #[post("/toggle_vfo")]
 pub async fn toggle_vfo(
-    query: web::Query<RigIdQuery>,
+    query: web::Query<RemoteQuery>,
     rig_tx: web::Data<mpsc::Sender<RigRequest>>,
 ) -> Result<HttpResponse, Error> {
-    send_command(&rig_tx, RigCommand::ToggleVfo, query.into_inner().rig_id).await
+    send_command(&rig_tx, RigCommand::ToggleVfo, query.into_inner().remote).await
 }
 
 #[post("/lock")]
 pub async fn lock_panel(
-    query: web::Query<RigIdQuery>,
+    query: web::Query<RemoteQuery>,
     rig_tx: web::Data<mpsc::Sender<RigRequest>>,
 ) -> Result<HttpResponse, Error> {
-    send_command(&rig_tx, RigCommand::Lock, query.into_inner().rig_id).await
+    send_command(&rig_tx, RigCommand::Lock, query.into_inner().remote).await
 }
 
 #[post("/unlock")]
 pub async fn unlock_panel(
-    query: web::Query<RigIdQuery>,
+    query: web::Query<RemoteQuery>,
     rig_tx: web::Data<mpsc::Sender<RigRequest>>,
 ) -> Result<HttpResponse, Error> {
-    send_command(&rig_tx, RigCommand::Unlock, query.into_inner().rig_id).await
+    send_command(&rig_tx, RigCommand::Unlock, query.into_inner().remote).await
 }
 
 #[derive(serde::Deserialize)]
 pub struct FreqQuery {
     pub hz: u64,
-    pub rig_id: Option<String>,
+    #[serde(alias = "rig_id")]
+    pub remote: Option<String>,
 }
 
 #[post("/set_freq")]
@@ -915,7 +918,7 @@ pub async fn set_freq(
     rig_tx: web::Data<mpsc::Sender<RigRequest>>,
 ) -> Result<HttpResponse, Error> {
     let q = query.into_inner();
-    send_command(&rig_tx, RigCommand::SetFreq(Freq { hz: q.hz }), q.rig_id).await
+    send_command(&rig_tx, RigCommand::SetFreq(Freq { hz: q.hz }), q.remote).await
 }
 
 #[post("/set_center_freq")]
@@ -927,7 +930,7 @@ pub async fn set_center_freq(
     send_command(
         &rig_tx,
         RigCommand::SetCenterFreq(Freq { hz: q.hz }),
-        q.rig_id,
+        q.remote,
     )
     .await
 }
@@ -935,7 +938,8 @@ pub async fn set_center_freq(
 #[derive(serde::Deserialize)]
 pub struct ModeQuery {
     pub mode: String,
-    pub rig_id: Option<String>,
+    #[serde(alias = "rig_id")]
+    pub remote: Option<String>,
 }
 
 #[post("/set_mode")]
@@ -945,13 +949,14 @@ pub async fn set_mode(
 ) -> Result<HttpResponse, Error> {
     let q = query.into_inner();
     let mode = parse_mode(&q.mode);
-    send_command(&rig_tx, RigCommand::SetMode(mode), q.rig_id).await
+    send_command(&rig_tx, RigCommand::SetMode(mode), q.remote).await
 }
 
 #[derive(serde::Deserialize)]
 pub struct PttQuery {
     pub ptt: String,
-    pub rig_id: Option<String>,
+    #[serde(alias = "rig_id")]
+    pub remote: Option<String>,
 }
 
 #[post("/set_ptt")]
@@ -967,13 +972,14 @@ pub async fn set_ptt(
             "invalid ptt parameter: {other}"
         ))),
     }?;
-    send_command(&rig_tx, RigCommand::SetPtt(ptt), q.rig_id).await
+    send_command(&rig_tx, RigCommand::SetPtt(ptt), q.remote).await
 }
 
 #[derive(serde::Deserialize)]
 pub struct TxLimitQuery {
     pub limit: u8,
-    pub rig_id: Option<String>,
+    #[serde(alias = "rig_id")]
+    pub remote: Option<String>,
 }
 
 #[post("/set_tx_limit")]
@@ -982,13 +988,14 @@ pub async fn set_tx_limit(
     rig_tx: web::Data<mpsc::Sender<RigRequest>>,
 ) -> Result<HttpResponse, Error> {
     let q = query.into_inner();
-    send_command(&rig_tx, RigCommand::SetTxLimit(q.limit), q.rig_id).await
+    send_command(&rig_tx, RigCommand::SetTxLimit(q.limit), q.remote).await
 }
 
 #[derive(serde::Deserialize)]
 pub struct BandwidthQuery {
     pub hz: u32,
-    pub rig_id: Option<String>,
+    #[serde(alias = "rig_id")]
+    pub remote: Option<String>,
 }
 
 #[post("/set_bandwidth")]
@@ -997,13 +1004,14 @@ pub async fn set_bandwidth(
     rig_tx: web::Data<mpsc::Sender<RigRequest>>,
 ) -> Result<HttpResponse, Error> {
     let q = query.into_inner();
-    send_command(&rig_tx, RigCommand::SetBandwidth(q.hz), q.rig_id).await
+    send_command(&rig_tx, RigCommand::SetBandwidth(q.hz), q.remote).await
 }
 
 #[derive(serde::Deserialize)]
 pub struct SdrGainQuery {
     pub db: f64,
-    pub rig_id: Option<String>,
+    #[serde(alias = "rig_id")]
+    pub remote: Option<String>,
 }
 
 #[post("/set_sdr_gain")]
@@ -1012,13 +1020,14 @@ pub async fn set_sdr_gain(
     rig_tx: web::Data<mpsc::Sender<RigRequest>>,
 ) -> Result<HttpResponse, Error> {
     let q = query.into_inner();
-    send_command(&rig_tx, RigCommand::SetSdrGain(q.db), q.rig_id).await
+    send_command(&rig_tx, RigCommand::SetSdrGain(q.db), q.remote).await
 }
 
 #[derive(serde::Deserialize)]
 pub struct SdrLnaGainQuery {
     pub db: f64,
-    pub rig_id: Option<String>,
+    #[serde(alias = "rig_id")]
+    pub remote: Option<String>,
 }
 
 #[post("/set_sdr_lna_gain")]
@@ -1027,13 +1036,14 @@ pub async fn set_sdr_lna_gain(
     rig_tx: web::Data<mpsc::Sender<RigRequest>>,
 ) -> Result<HttpResponse, Error> {
     let q = query.into_inner();
-    send_command(&rig_tx, RigCommand::SetSdrLnaGain(q.db), q.rig_id).await
+    send_command(&rig_tx, RigCommand::SetSdrLnaGain(q.db), q.remote).await
 }
 
 #[derive(serde::Deserialize)]
 pub struct SdrAgcQuery {
     pub enabled: bool,
-    pub rig_id: Option<String>,
+    #[serde(alias = "rig_id")]
+    pub remote: Option<String>,
 }
 
 #[post("/set_sdr_agc")]
@@ -1042,14 +1052,15 @@ pub async fn set_sdr_agc(
     rig_tx: web::Data<mpsc::Sender<RigRequest>>,
 ) -> Result<HttpResponse, Error> {
     let q = query.into_inner();
-    send_command(&rig_tx, RigCommand::SetSdrAgc(q.enabled), q.rig_id).await
+    send_command(&rig_tx, RigCommand::SetSdrAgc(q.enabled), q.remote).await
 }
 
 #[derive(serde::Deserialize)]
 pub struct SdrSquelchQuery {
     pub enabled: bool,
     pub threshold_db: f64,
-    pub rig_id: Option<String>,
+    #[serde(alias = "rig_id")]
+    pub remote: Option<String>,
 }
 
 #[post("/set_sdr_squelch")]
@@ -1064,7 +1075,7 @@ pub async fn set_sdr_squelch(
             enabled: q.enabled,
             threshold_db: q.threshold_db,
         },
-        q.rig_id,
+        q.remote,
     )
     .await
 }
@@ -1073,7 +1084,8 @@ pub async fn set_sdr_squelch(
 pub struct SdrNoiseBlankerQuery {
     pub enabled: bool,
     pub threshold: f64,
-    pub rig_id: Option<String>,
+    #[serde(alias = "rig_id")]
+    pub remote: Option<String>,
 }
 
 #[post("/set_sdr_noise_blanker")]
@@ -1088,7 +1100,7 @@ pub async fn set_sdr_noise_blanker(
             enabled: q.enabled,
             threshold: q.threshold,
         },
-        q.rig_id,
+        q.remote,
     )
     .await
 }
@@ -1096,7 +1108,8 @@ pub async fn set_sdr_noise_blanker(
 #[derive(serde::Deserialize)]
 pub struct WfmDeemphasisQuery {
     pub us: u32,
-    pub rig_id: Option<String>,
+    #[serde(alias = "rig_id")]
+    pub remote: Option<String>,
 }
 
 #[post("/set_wfm_deemphasis")]
@@ -1105,13 +1118,14 @@ pub async fn set_wfm_deemphasis(
     rig_tx: web::Data<mpsc::Sender<RigRequest>>,
 ) -> Result<HttpResponse, Error> {
     let q = query.into_inner();
-    send_command(&rig_tx, RigCommand::SetWfmDeemphasis(q.us), q.rig_id).await
+    send_command(&rig_tx, RigCommand::SetWfmDeemphasis(q.us), q.remote).await
 }
 
 #[derive(serde::Deserialize)]
 pub struct WfmStereoQuery {
     pub enabled: bool,
-    pub rig_id: Option<String>,
+    #[serde(alias = "rig_id")]
+    pub remote: Option<String>,
 }
 
 #[post("/set_wfm_stereo")]
@@ -1120,13 +1134,14 @@ pub async fn set_wfm_stereo(
     rig_tx: web::Data<mpsc::Sender<RigRequest>>,
 ) -> Result<HttpResponse, Error> {
     let q = query.into_inner();
-    send_command(&rig_tx, RigCommand::SetWfmStereo(q.enabled), q.rig_id).await
+    send_command(&rig_tx, RigCommand::SetWfmStereo(q.enabled), q.remote).await
 }
 
 #[derive(serde::Deserialize)]
 pub struct WfmDenoiseQuery {
     pub level: WfmDenoiseLevel,
-    pub rig_id: Option<String>,
+    #[serde(alias = "rig_id")]
+    pub remote: Option<String>,
 }
 
 #[post("/set_wfm_denoise")]
@@ -1135,12 +1150,12 @@ pub async fn set_wfm_denoise(
     rig_tx: web::Data<mpsc::Sender<RigRequest>>,
 ) -> Result<HttpResponse, Error> {
     let q = query.into_inner();
-    send_command(&rig_tx, RigCommand::SetWfmDenoise(q.level), q.rig_id).await
+    send_command(&rig_tx, RigCommand::SetWfmDenoise(q.level), q.remote).await
 }
 
 #[post("/toggle_aprs_decode")]
 pub async fn toggle_aprs_decode(
-    query: web::Query<RigIdQuery>,
+    query: web::Query<RemoteQuery>,
     state: web::Data<watch::Receiver<RigState>>,
     rig_tx: web::Data<mpsc::Sender<RigRequest>>,
 ) -> Result<HttpResponse, Error> {
@@ -1148,14 +1163,14 @@ pub async fn toggle_aprs_decode(
     send_command(
         &rig_tx,
         RigCommand::SetAprsDecodeEnabled(!enabled),
-        query.into_inner().rig_id,
+        query.into_inner().remote,
     )
     .await
 }
 
 #[post("/toggle_hf_aprs_decode")]
 pub async fn toggle_hf_aprs_decode(
-    query: web::Query<RigIdQuery>,
+    query: web::Query<RemoteQuery>,
     state: web::Data<watch::Receiver<RigState>>,
     rig_tx: web::Data<mpsc::Sender<RigRequest>>,
 ) -> Result<HttpResponse, Error> {
@@ -1163,14 +1178,14 @@ pub async fn toggle_hf_aprs_decode(
     send_command(
         &rig_tx,
         RigCommand::SetHfAprsDecodeEnabled(!enabled),
-        query.into_inner().rig_id,
+        query.into_inner().remote,
     )
     .await
 }
 
 #[post("/toggle_cw_decode")]
 pub async fn toggle_cw_decode(
-    query: web::Query<RigIdQuery>,
+    query: web::Query<RemoteQuery>,
     state: web::Data<watch::Receiver<RigState>>,
     rig_tx: web::Data<mpsc::Sender<RigRequest>>,
 ) -> Result<HttpResponse, Error> {
@@ -1178,7 +1193,7 @@ pub async fn toggle_cw_decode(
     send_command(
         &rig_tx,
         RigCommand::SetCwDecodeEnabled(!enabled),
-        query.into_inner().rig_id,
+        query.into_inner().remote,
     )
     .await
 }
@@ -1186,7 +1201,8 @@ pub async fn toggle_cw_decode(
 #[derive(serde::Deserialize)]
 pub struct CwAutoQuery {
     pub enabled: bool,
-    pub rig_id: Option<String>,
+    #[serde(alias = "rig_id")]
+    pub remote: Option<String>,
 }
 
 #[post("/set_cw_auto")]
@@ -1195,13 +1211,14 @@ pub async fn set_cw_auto(
     rig_tx: web::Data<mpsc::Sender<RigRequest>>,
 ) -> Result<HttpResponse, Error> {
     let q = query.into_inner();
-    send_command(&rig_tx, RigCommand::SetCwAuto(q.enabled), q.rig_id).await
+    send_command(&rig_tx, RigCommand::SetCwAuto(q.enabled), q.remote).await
 }
 
 #[derive(serde::Deserialize)]
 pub struct CwWpmQuery {
     pub wpm: u32,
-    pub rig_id: Option<String>,
+    #[serde(alias = "rig_id")]
+    pub remote: Option<String>,
 }
 
 #[post("/set_cw_wpm")]
@@ -1210,13 +1227,14 @@ pub async fn set_cw_wpm(
     rig_tx: web::Data<mpsc::Sender<RigRequest>>,
 ) -> Result<HttpResponse, Error> {
     let q = query.into_inner();
-    send_command(&rig_tx, RigCommand::SetCwWpm(q.wpm), q.rig_id).await
+    send_command(&rig_tx, RigCommand::SetCwWpm(q.wpm), q.remote).await
 }
 
 #[derive(serde::Deserialize)]
 pub struct CwToneQuery {
     pub tone_hz: u32,
-    pub rig_id: Option<String>,
+    #[serde(alias = "rig_id")]
+    pub remote: Option<String>,
 }
 
 #[post("/set_cw_tone")]
@@ -1225,12 +1243,12 @@ pub async fn set_cw_tone(
     rig_tx: web::Data<mpsc::Sender<RigRequest>>,
 ) -> Result<HttpResponse, Error> {
     let q = query.into_inner();
-    send_command(&rig_tx, RigCommand::SetCwToneHz(q.tone_hz), q.rig_id).await
+    send_command(&rig_tx, RigCommand::SetCwToneHz(q.tone_hz), q.remote).await
 }
 
 #[post("/toggle_ft8_decode")]
 pub async fn toggle_ft8_decode(
-    query: web::Query<RigIdQuery>,
+    query: web::Query<RemoteQuery>,
     state: web::Data<watch::Receiver<RigState>>,
     rig_tx: web::Data<mpsc::Sender<RigRequest>>,
 ) -> Result<HttpResponse, Error> {
@@ -1238,14 +1256,14 @@ pub async fn toggle_ft8_decode(
     send_command(
         &rig_tx,
         RigCommand::SetFt8DecodeEnabled(!enabled),
-        query.into_inner().rig_id,
+        query.into_inner().remote,
     )
     .await
 }
 
 #[post("/toggle_ft4_decode")]
 pub async fn toggle_ft4_decode(
-    query: web::Query<RigIdQuery>,
+    query: web::Query<RemoteQuery>,
     state: web::Data<watch::Receiver<RigState>>,
     rig_tx: web::Data<mpsc::Sender<RigRequest>>,
 ) -> Result<HttpResponse, Error> {
@@ -1253,14 +1271,14 @@ pub async fn toggle_ft4_decode(
     send_command(
         &rig_tx,
         RigCommand::SetFt4DecodeEnabled(!enabled),
-        query.into_inner().rig_id,
+        query.into_inner().remote,
     )
     .await
 }
 
 #[post("/toggle_ft2_decode")]
 pub async fn toggle_ft2_decode(
-    query: web::Query<RigIdQuery>,
+    query: web::Query<RemoteQuery>,
     state: web::Data<watch::Receiver<RigState>>,
     rig_tx: web::Data<mpsc::Sender<RigRequest>>,
 ) -> Result<HttpResponse, Error> {
@@ -1268,14 +1286,14 @@ pub async fn toggle_ft2_decode(
     send_command(
         &rig_tx,
         RigCommand::SetFt2DecodeEnabled(!enabled),
-        query.into_inner().rig_id,
+        query.into_inner().remote,
     )
     .await
 }
 
 #[post("/toggle_wspr_decode")]
 pub async fn toggle_wspr_decode(
-    query: web::Query<RigIdQuery>,
+    query: web::Query<RemoteQuery>,
     state: web::Data<watch::Receiver<RigState>>,
     rig_tx: web::Data<mpsc::Sender<RigRequest>>,
 ) -> Result<HttpResponse, Error> {
@@ -1283,14 +1301,14 @@ pub async fn toggle_wspr_decode(
     send_command(
         &rig_tx,
         RigCommand::SetWsprDecodeEnabled(!enabled),
-        query.into_inner().rig_id,
+        query.into_inner().remote,
     )
     .await
 }
 
 #[post("/clear_ft8_decode")]
 pub async fn clear_ft8_decode(
-    query: web::Query<RigIdQuery>,
+    query: web::Query<RemoteQuery>,
     context: web::Data<Arc<FrontendRuntimeContext>>,
     rig_tx: web::Data<mpsc::Sender<RigRequest>>,
 ) -> Result<HttpResponse, Error> {
@@ -1298,14 +1316,14 @@ pub async fn clear_ft8_decode(
     send_command(
         &rig_tx,
         RigCommand::ResetFt8Decoder,
-        query.into_inner().rig_id,
+        query.into_inner().remote,
     )
     .await
 }
 
 #[post("/clear_ft4_decode")]
 pub async fn clear_ft4_decode(
-    query: web::Query<RigIdQuery>,
+    query: web::Query<RemoteQuery>,
     context: web::Data<Arc<FrontendRuntimeContext>>,
     rig_tx: web::Data<mpsc::Sender<RigRequest>>,
 ) -> Result<HttpResponse, Error> {
@@ -1313,14 +1331,14 @@ pub async fn clear_ft4_decode(
     send_command(
         &rig_tx,
         RigCommand::ResetFt4Decoder,
-        query.into_inner().rig_id,
+        query.into_inner().remote,
     )
     .await
 }
 
 #[post("/clear_ft2_decode")]
 pub async fn clear_ft2_decode(
-    query: web::Query<RigIdQuery>,
+    query: web::Query<RemoteQuery>,
     context: web::Data<Arc<FrontendRuntimeContext>>,
     rig_tx: web::Data<mpsc::Sender<RigRequest>>,
 ) -> Result<HttpResponse, Error> {
@@ -1328,14 +1346,14 @@ pub async fn clear_ft2_decode(
     send_command(
         &rig_tx,
         RigCommand::ResetFt2Decoder,
-        query.into_inner().rig_id,
+        query.into_inner().remote,
     )
     .await
 }
 
 #[post("/clear_wspr_decode")]
 pub async fn clear_wspr_decode(
-    query: web::Query<RigIdQuery>,
+    query: web::Query<RemoteQuery>,
     context: web::Data<Arc<FrontendRuntimeContext>>,
     rig_tx: web::Data<mpsc::Sender<RigRequest>>,
 ) -> Result<HttpResponse, Error> {
@@ -1343,14 +1361,14 @@ pub async fn clear_wspr_decode(
     send_command(
         &rig_tx,
         RigCommand::ResetWsprDecoder,
-        query.into_inner().rig_id,
+        query.into_inner().remote,
     )
     .await
 }
 
 #[post("/clear_aprs_decode")]
 pub async fn clear_aprs_decode(
-    query: web::Query<RigIdQuery>,
+    query: web::Query<RemoteQuery>,
     context: web::Data<Arc<FrontendRuntimeContext>>,
     rig_tx: web::Data<mpsc::Sender<RigRequest>>,
 ) -> Result<HttpResponse, Error> {
@@ -1358,14 +1376,14 @@ pub async fn clear_aprs_decode(
     send_command(
         &rig_tx,
         RigCommand::ResetAprsDecoder,
-        query.into_inner().rig_id,
+        query.into_inner().remote,
     )
     .await
 }
 
 #[post("/clear_hf_aprs_decode")]
 pub async fn clear_hf_aprs_decode(
-    query: web::Query<RigIdQuery>,
+    query: web::Query<RemoteQuery>,
     context: web::Data<Arc<FrontendRuntimeContext>>,
     rig_tx: web::Data<mpsc::Sender<RigRequest>>,
 ) -> Result<HttpResponse, Error> {
@@ -1373,7 +1391,7 @@ pub async fn clear_hf_aprs_decode(
     send_command(
         &rig_tx,
         RigCommand::ResetHfAprsDecoder,
-        query.into_inner().rig_id,
+        query.into_inner().remote,
     )
     .await
 }
@@ -1396,7 +1414,7 @@ pub async fn clear_vdes_decode(
 
 #[post("/clear_cw_decode")]
 pub async fn clear_cw_decode(
-    query: web::Query<RigIdQuery>,
+    query: web::Query<RemoteQuery>,
     context: web::Data<Arc<FrontendRuntimeContext>>,
     rig_tx: web::Data<mpsc::Sender<RigRequest>>,
 ) -> Result<HttpResponse, Error> {
@@ -1404,7 +1422,7 @@ pub async fn clear_cw_decode(
     send_command(
         &rig_tx,
         RigCommand::ResetCwDecoder,
-        query.into_inner().rig_id,
+        query.into_inner().remote,
     )
     .await
 }
@@ -1594,7 +1612,7 @@ pub async fn batch_delete_bookmarks(
 
 #[derive(serde::Serialize)]
 struct RigListItem {
-    rig_id: String,
+    remote: String,
     display_name: Option<String>,
     manufacturer: String,
     model: String,
@@ -1603,12 +1621,12 @@ struct RigListItem {
 
 #[derive(serde::Serialize)]
 struct RigListResponse {
-    active_rig_id: Option<String>,
+    active_remote: Option<String>,
     rigs: Vec<RigListItem>,
 }
 
 fn build_rig_list_payload(context: &FrontendRuntimeContext) -> RigListResponse {
-    let active_rig_id = active_rig_id_from_context(context);
+    let active_remote = active_rig_id_from_context(context);
     let rigs = context
         .remote_rigs
         .lock()
@@ -1616,14 +1634,14 @@ fn build_rig_list_payload(context: &FrontendRuntimeContext) -> RigListResponse {
         .map(|entries| entries.iter().map(map_rig_entry).collect())
         .unwrap_or_default();
     RigListResponse {
-        active_rig_id,
+        active_remote,
         rigs,
     }
 }
 
 fn map_rig_entry(entry: &RemoteRigEntry) -> RigListItem {
     RigListItem {
-        rig_id: entry.rig_id.clone(),
+        remote: entry.rig_id.clone(),
         display_name: entry.display_name.clone(),
         manufacturer: entry.state.info.manufacturer.clone(),
         model: entry.state.info.model.clone(),
@@ -1640,7 +1658,8 @@ pub async fn list_rigs(
 
 #[derive(serde::Deserialize)]
 pub struct SelectRigQuery {
-    pub rig_id: String,
+    #[serde(alias = "rig_id")]
+    pub remote: String,
     pub session_id: Option<String>,
 }
 
@@ -1651,10 +1670,10 @@ pub async fn select_rig(
     vchan_mgr: web::Data<Arc<ClientChannelManager>>,
     session_rig_mgr: web::Data<Arc<SessionRigManager>>,
 ) -> Result<HttpResponse, Error> {
-    let rig_id = query.rig_id.trim();
-    if rig_id.is_empty() {
+    let remote = query.remote.trim();
+    if remote.is_empty() {
         return Err(actix_web::error::ErrorBadRequest(
-            "rig_id must not be empty",
+            "remote must not be empty",
         ));
     }
 
@@ -1662,11 +1681,11 @@ pub async fn select_rig(
         .remote_rigs
         .lock()
         .ok()
-        .map(|entries| entries.iter().any(|entry| entry.rig_id == rig_id))
+        .map(|entries| entries.iter().any(|entry| entry.rig_id == remote))
         .unwrap_or(false);
     if !known {
         return Err(actix_web::error::ErrorBadRequest(format!(
-            "unknown rig_id: {rig_id}"
+            "unknown remote: {remote}"
         )));
     }
 
@@ -1674,15 +1693,15 @@ pub async fn select_rig(
     // active rig so that other tabs/sessions are unaffected.
     if let Some(ref sid) = query.session_id {
         if let Ok(uuid) = Uuid::parse_str(sid) {
-            session_rig_mgr.set_rig(uuid, rig_id.to_string());
+            session_rig_mgr.set_rig(uuid, remote.to_string());
         }
     }
 
     // Broadcast the channel list for the newly selected rig so all SSE
     // clients receive the correct virtual channels immediately.
-    let chans = vchan_mgr.channels(rig_id);
+    let chans = vchan_mgr.channels(remote);
     if let Ok(json) = serde_json::to_string(&chans) {
-        let _ = vchan_mgr.change_tx.send(format!("{rig_id}:{json}"));
+        let _ = vchan_mgr.change_tx.send(format!("{remote}:{json}"));
     }
 
     Ok(HttpResponse::Ok().json(build_rig_list_payload(context.get_ref().as_ref())))
@@ -1692,13 +1711,13 @@ pub async fn select_rig(
 // Virtual channel CRUD
 // ---------------------------------------------------------------------------
 
-#[get("/channels/{rig_id}")]
+#[get("/channels/{remote}")]
 pub async fn list_channels(
     path: web::Path<String>,
     vchan_mgr: web::Data<Arc<ClientChannelManager>>,
 ) -> impl Responder {
-    let rig_id = path.into_inner();
-    HttpResponse::Ok().json(vchan_mgr.channels(&rig_id))
+    let remote = path.into_inner();
+    HttpResponse::Ok().json(vchan_mgr.channels(&remote))
 }
 
 #[derive(serde::Deserialize)]
@@ -1708,26 +1727,26 @@ struct AllocateChannelBody {
     mode: String,
 }
 
-#[post("/channels/{rig_id}")]
+#[post("/channels/{remote}")]
 pub async fn allocate_channel(
     path: web::Path<String>,
     body: web::Json<AllocateChannelBody>,
     vchan_mgr: web::Data<Arc<ClientChannelManager>>,
 ) -> impl Responder {
-    let rig_id = path.into_inner();
-    match vchan_mgr.allocate(body.session_id, &rig_id, body.freq_hz, &body.mode) {
+    let remote = path.into_inner();
+    match vchan_mgr.allocate(body.session_id, &remote, body.freq_hz, &body.mode) {
         Ok(ch) => HttpResponse::Ok().json(ch),
         Err(e) => HttpResponse::BadRequest().body(e.to_string()),
     }
 }
 
-#[delete("/channels/{rig_id}/{channel_id}")]
+#[delete("/channels/{remote}/{channel_id}")]
 pub async fn delete_channel_route(
     path: web::Path<(String, Uuid)>,
     vchan_mgr: web::Data<Arc<ClientChannelManager>>,
 ) -> impl Responder {
-    let (rig_id, channel_id) = path.into_inner();
-    match vchan_mgr.delete_channel(&rig_id, channel_id) {
+    let (remote, channel_id) = path.into_inner();
+    match vchan_mgr.delete_channel(&remote, channel_id) {
         Ok(()) => HttpResponse::Ok().finish(),
         Err(crate::server::vchan::VChanClientError::NotFound) => HttpResponse::NotFound().finish(),
         Err(crate::server::vchan::VChanClientError::Permanent) => {
@@ -1742,7 +1761,7 @@ struct SubscribeBody {
     session_id: Uuid,
 }
 
-#[post("/channels/{rig_id}/{channel_id}/subscribe")]
+#[post("/channels/{remote}/{channel_id}/subscribe")]
 pub async fn subscribe_channel(
     path: web::Path<(String, Uuid)>,
     body: web::Json<SubscribeBody>,
@@ -1752,16 +1771,16 @@ pub async fn subscribe_channel(
     scheduler_control: web::Data<crate::server::scheduler::SharedSchedulerControlManager>,
 ) -> impl Responder {
     let body = body.into_inner();
-    let (rig_id, channel_id) = path.into_inner();
-    match vchan_mgr.subscribe_session(body.session_id, &rig_id, channel_id) {
+    let (remote, channel_id) = path.into_inner();
+    match vchan_mgr.subscribe_session(body.session_id, &remote, channel_id) {
         Some(ch) => {
             scheduler_control.set_released(body.session_id, false);
-            let Some(selected) = vchan_mgr.selected_channel(&rig_id, channel_id) else {
+            let Some(selected) = vchan_mgr.selected_channel(&remote, channel_id) else {
                 return HttpResponse::InternalServerError().body("subscribed channel missing");
             };
             if let Err(err) = apply_selected_channel(
                 rig_tx.get_ref(),
-                &rig_id,
+                &remote,
                 &selected,
                 bookmark_store.get_ref().as_ref(),
             )
@@ -1780,14 +1799,14 @@ struct SetChanFreqBody {
     freq_hz: u64,
 }
 
-#[put("/channels/{rig_id}/{channel_id}/freq")]
+#[put("/channels/{remote}/{channel_id}/freq")]
 pub async fn set_vchan_freq(
     path: web::Path<(String, Uuid)>,
     body: web::Json<SetChanFreqBody>,
     vchan_mgr: web::Data<Arc<ClientChannelManager>>,
 ) -> impl Responder {
-    let (rig_id, channel_id) = path.into_inner();
-    match vchan_mgr.set_channel_freq(&rig_id, channel_id, body.freq_hz) {
+    let (remote, channel_id) = path.into_inner();
+    match vchan_mgr.set_channel_freq(&remote, channel_id, body.freq_hz) {
         Ok(()) => HttpResponse::Ok().finish(),
         Err(crate::server::vchan::VChanClientError::NotFound) => HttpResponse::NotFound().finish(),
         Err(e) => HttpResponse::BadRequest().body(e.to_string()),
@@ -1799,14 +1818,14 @@ struct SetChanBwBody {
     bandwidth_hz: u32,
 }
 
-#[put("/channels/{rig_id}/{channel_id}/bw")]
+#[put("/channels/{remote}/{channel_id}/bw")]
 pub async fn set_vchan_bw(
     path: web::Path<(String, Uuid)>,
     body: web::Json<SetChanBwBody>,
     vchan_mgr: web::Data<Arc<ClientChannelManager>>,
 ) -> impl Responder {
-    let (rig_id, channel_id) = path.into_inner();
-    match vchan_mgr.set_channel_bandwidth(&rig_id, channel_id, body.bandwidth_hz) {
+    let (remote, channel_id) = path.into_inner();
+    match vchan_mgr.set_channel_bandwidth(&remote, channel_id, body.bandwidth_hz) {
         Ok(()) => HttpResponse::Ok().finish(),
         Err(crate::server::vchan::VChanClientError::NotFound) => HttpResponse::NotFound().finish(),
         Err(e) => HttpResponse::BadRequest().body(e.to_string()),
@@ -1818,14 +1837,14 @@ struct SetChanModeBody {
     mode: String,
 }
 
-#[put("/channels/{rig_id}/{channel_id}/mode")]
+#[put("/channels/{remote}/{channel_id}/mode")]
 pub async fn set_vchan_mode(
     path: web::Path<(String, Uuid)>,
     body: web::Json<SetChanModeBody>,
     vchan_mgr: web::Data<Arc<ClientChannelManager>>,
 ) -> impl Responder {
-    let (rig_id, channel_id) = path.into_inner();
-    match vchan_mgr.set_channel_mode(&rig_id, channel_id, &body.mode) {
+    let (remote, channel_id) = path.into_inner();
+    match vchan_mgr.set_channel_mode(&remote, channel_id, &body.mode) {
         Ok(()) => HttpResponse::Ok().finish(),
         Err(crate::server::vchan::VChanClientError::NotFound) => HttpResponse::NotFound().finish(),
         Err(e) => HttpResponse::BadRequest().body(e.to_string()),
@@ -2169,23 +2188,24 @@ async fn vchan_js() -> impl Responder {
         .body(status::VCHAN_JS)
 }
 
-/// Generic query extractor for endpoints that only need the optional rig_id.
+/// Generic query extractor for endpoints that only need the optional remote.
 #[derive(serde::Deserialize)]
-pub struct RigIdQuery {
-    pub rig_id: Option<String>,
+pub struct RemoteQuery {
+    #[serde(alias = "rig_id")]
+    pub remote: Option<String>,
 }
 
 async fn send_command(
     rig_tx: &mpsc::Sender<RigRequest>,
     cmd: RigCommand,
-    rig_id: Option<String>,
+    remote: Option<String>,
 ) -> Result<HttpResponse, Error> {
     let (resp_tx, resp_rx) = oneshot::channel();
     rig_tx
         .send(RigRequest {
             cmd,
             respond_to: resp_tx,
-            rig_id_override: rig_id,
+            rig_id_override: remote,
         })
         .await
         .map_err(|e| {
@@ -2219,7 +2239,7 @@ async fn send_command(
 
 async fn send_command_to_rig(
     rig_tx: &mpsc::Sender<RigRequest>,
-    rig_id: &str,
+    remote: &str,
     cmd: RigCommand,
 ) -> Result<(), Error> {
     let (resp_tx, resp_rx) = oneshot::channel();
@@ -2227,7 +2247,7 @@ async fn send_command_to_rig(
         .send(RigRequest {
             cmd,
             respond_to: resp_tx,
-            rig_id_override: Some(rig_id.to_string()),
+            rig_id_override: Some(remote.to_string()),
         })
         .await
         .map_err(|e| {
@@ -2312,13 +2332,13 @@ fn bookmark_decoder_kinds(bookmark: &crate::server::bookmarks::Bookmark) -> Vec<
 
 async fn apply_selected_channel(
     rig_tx: &mpsc::Sender<RigRequest>,
-    rig_id: &str,
+    remote: &str,
     channel: &crate::server::vchan::SelectedChannel,
     bookmark_store: &crate::server::bookmarks::BookmarkStore,
 ) -> Result<(), Error> {
     send_command_to_rig(
         rig_tx,
-        rig_id,
+        remote,
         RigCommand::SetMode(parse_mode(&channel.mode)),
     )
     .await?;
@@ -2326,7 +2346,7 @@ async fn apply_selected_channel(
     if channel.bandwidth_hz > 0 {
         send_command_to_rig(
             rig_tx,
-            rig_id,
+            remote,
             RigCommand::SetBandwidth(channel.bandwidth_hz),
         )
         .await?;
@@ -2334,7 +2354,7 @@ async fn apply_selected_channel(
 
     send_command_to_rig(
         rig_tx,
-        rig_id,
+        remote,
         RigCommand::SetFreq(Freq {
             hz: channel.freq_hz,
         }),
@@ -2358,7 +2378,7 @@ async fn apply_selected_channel(
         RigCommand::SetWsprDecodeEnabled(want_wspr),
     ];
     for cmd in desired {
-        send_command_to_rig(rig_tx, rig_id, cmd).await?;
+        send_command_to_rig(rig_tx, remote, cmd).await?;
     }
 
     Ok(())
