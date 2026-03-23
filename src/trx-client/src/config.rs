@@ -143,9 +143,18 @@ pub struct FrontendsConfig {
 pub struct AudioClientConfig {
     /// Whether audio streaming is enabled
     pub enabled: bool,
-    /// Audio TCP port on the remote server
+    /// Optional exact audio TCP URL override applied to all remotes.
+    /// When set, this takes precedence over `server_port`.
+    pub server_url: Option<String>,
+    /// Optional per-rig audio URL overrides keyed by remote short name.
+    /// These take precedence over `server_url`, server-advertised ports, and
+    /// the legacy `rig_ports` map.
+    pub rig_urls: HashMap<String, String>,
+    /// Legacy audio TCP port fallback on the remote server when no URL override
+    /// is configured and the server does not advertise a per-rig audio port.
     pub server_port: u16,
-    /// Optional per-rig audio port overrides for multi-rig servers.
+    /// Legacy per-rig audio port overrides for multi-rig servers.
+    /// Prefer `rig_urls` when the audio endpoint differs by host as well.
     pub rig_ports: HashMap<String, u16>,
     /// Local audio bridge (virtual device integration)
     pub bridge: AudioBridgeConfig,
@@ -155,6 +164,8 @@ impl Default for AudioClientConfig {
     fn default() -> Self {
         Self {
             enabled: true,
+            server_url: None,
+            rig_urls: HashMap::new(),
             server_port: 4531,
             rig_ports: HashMap::new(),
             bridge: AudioBridgeConfig::default(),
@@ -406,10 +417,7 @@ impl ClientConfig {
                     return Err(format!("[[remotes]][{}].name must not be empty", i));
                 }
                 if !seen_names.insert(&entry.name) {
-                    return Err(format!(
-                        "[[remotes]] duplicate name \"{}\"",
-                        entry.name
-                    ));
+                    return Err(format!("[[remotes]] duplicate name \"{}\"", entry.name));
                 }
                 if entry.url.trim().is_empty() {
                     return Err(format!(
@@ -483,7 +491,7 @@ impl ClientConfig {
         if let Some(rig_id) = &self.frontends.http.default_rig_name {
             if rig_id.trim().is_empty() {
                 return Err(
-                    "[frontends.http].default_rig_name must not be empty when set".to_string()
+                    "[frontends.http].default_rig_name must not be empty when set".to_string(),
                 );
             }
         }
@@ -534,8 +542,22 @@ impl ClientConfig {
                 ));
             }
         }
-        if self.frontends.audio.enabled && self.frontends.audio.server_port == 0 {
+        if let Some(url) = &self.frontends.audio.server_url {
+            crate::remote_client::parse_audio_url(url)
+                .map_err(|e| format!("[frontends.audio].server_url {e}"))?;
+        }
+        if self.frontends.audio.enabled
+            && self.frontends.audio.server_url.is_none()
+            && self.frontends.audio.server_port == 0
+        {
             return Err("[frontends.audio].server_port must be > 0 when enabled".to_string());
+        }
+        for (rig_id, url) in &self.frontends.audio.rig_urls {
+            if rig_id.trim().is_empty() {
+                return Err("[frontends.audio].rig_urls keys must not be empty".to_string());
+            }
+            crate::remote_client::parse_audio_url(url)
+                .map_err(|e| format!("[frontends.audio].rig_urls[\"{rig_id}\"] {e}"))?;
         }
         for (rig_id, port) in &self.frontends.audio.rig_ports {
             if rig_id.trim().is_empty() {
@@ -750,6 +772,8 @@ mod tests {
         );
         assert_eq!(config.remote.poll_interval_ms, 750);
         assert!(config.frontends.audio.enabled);
+        assert!(config.frontends.audio.server_url.is_none());
+        assert!(config.frontends.audio.rig_urls.is_empty());
         assert_eq!(config.frontends.audio.server_port, 4531);
         assert!(config.frontends.audio.rig_ports.is_empty());
         assert!(!config.frontends.audio.bridge.enabled);
@@ -826,6 +850,28 @@ uhf = 60
     }
 
     #[test]
+    fn test_parse_client_toml_with_audio_urls() {
+        let toml_str = r#"
+[frontends.audio]
+enabled = true
+server_url = "tcp://audio.example.com"
+
+[frontends.audio.rig_urls]
+home-hf = "audio://10.0.0.5:4600"
+"#;
+
+        let config: ClientConfig = toml::from_str(toml_str).unwrap();
+        assert_eq!(
+            config.frontends.audio.server_url,
+            Some("tcp://audio.example.com".to_string())
+        );
+        assert_eq!(
+            config.frontends.audio.rig_urls.get("home-hf"),
+            Some(&"audio://10.0.0.5:4600".to_string())
+        );
+    }
+
+    #[test]
     fn test_example_combined_toml_parses() {
         let example = ClientConfig::example_combined_toml();
         let table: toml::Table = toml::from_str(&example).unwrap();
@@ -863,6 +909,21 @@ uhf = 60
             .rig_ports
             .insert("ft817".to_string(), 0);
         assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn test_validate_rejects_invalid_audio_url() {
+        let mut config = ClientConfig::default();
+        config.frontends.audio.server_url = Some("tcp://:4531".to_string());
+        assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn test_validate_accepts_audio_url_without_server_port() {
+        let mut config = ClientConfig::default();
+        config.frontends.audio.server_url = Some("audio.example.com".to_string());
+        config.frontends.audio.server_port = 0;
+        assert!(config.validate().is_ok());
     }
 
     #[test]
@@ -1080,7 +1141,10 @@ url = "remote.example.com:4530"
             auth: RemoteAuthConfig::default(),
             poll_interval_ms: 750,
         }];
-        assert!(config.validate().unwrap_err().contains("name must not be empty"));
+        assert!(config
+            .validate()
+            .unwrap_err()
+            .contains("name must not be empty"));
     }
 
     #[test]
@@ -1093,7 +1157,10 @@ url = "remote.example.com:4530"
             auth: RemoteAuthConfig::default(),
             poll_interval_ms: 750,
         }];
-        assert!(config.validate().unwrap_err().contains("url must not be empty"));
+        assert!(config
+            .validate()
+            .unwrap_err()
+            .contains("url must not be empty"));
     }
 
     #[test]
@@ -1106,6 +1173,9 @@ url = "remote.example.com:4530"
             auth: RemoteAuthConfig::default(),
             poll_interval_ms: 0,
         }];
-        assert!(config.validate().unwrap_err().contains("poll_interval_ms must be > 0"));
+        assert!(config
+            .validate()
+            .unwrap_err()
+            .contains("poll_interval_ms must be > 0"));
     }
 }

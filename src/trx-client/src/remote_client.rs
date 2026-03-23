@@ -23,6 +23,7 @@ use trx_protocol::types::RigEntry;
 use trx_protocol::{ClientCommand, ClientEnvelope, ClientResponse};
 
 const DEFAULT_REMOTE_PORT: u16 = 4530;
+const DEFAULT_AUDIO_PORT: u16 = 4531;
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
 const IO_TIMEOUT: Duration = Duration::from_secs(15);
 const SPECTRUM_IO_TIMEOUT: Duration = Duration::from_secs(3);
@@ -426,10 +427,7 @@ async fn refresh_remote_snapshot(
         // Track which wildcard (None-key) entry we've already resolved.
         let mut wildcard_resolved = false;
         for entry in &rigs {
-            if let Some(short_name) = config
-                .rig_id_to_short_name
-                .get(&Some(entry.rig_id.clone()))
-            {
+            if let Some(short_name) = config.rig_id_to_short_name.get(&Some(entry.rig_id.clone())) {
                 // Update reverse map.
                 if let Ok(mut rev) = config.short_name_to_rig_id.write() {
                     rev.insert(short_name.clone(), entry.rig_id.clone());
@@ -456,9 +454,7 @@ async fn refresh_remote_snapshot(
         }
         mapped
     } else {
-        rigs.iter()
-            .map(|e| (e.rig_id.clone(), e))
-            .collect()
+        rigs.iter().map(|e| (e.rig_id.clone(), e)).collect()
     };
 
     cache_remote_rigs(config, &rigs, &mapped_rigs);
@@ -602,7 +598,10 @@ fn resolve_short_name(config: &RemoteClientConfig, server_rig_id: &str) -> Optio
         return Some(server_rig_id.to_string());
     }
     // Try explicit rig_id mapping first.
-    if let Some(name) = config.rig_id_to_short_name.get(&Some(server_rig_id.to_string())) {
+    if let Some(name) = config
+        .rig_id_to_short_name
+        .get(&Some(server_rig_id.to_string()))
+    {
         return Some(name.clone());
     }
     // Try wildcard (None key = "default rig on this server").
@@ -777,35 +776,44 @@ async fn read_limited_line<R: AsyncBufRead + Unpin>(
 }
 
 pub fn parse_remote_url(url: &str) -> Result<RemoteEndpoint, String> {
+    parse_endpoint_url(url, DEFAULT_REMOTE_PORT, "remote")
+}
+
+pub fn parse_audio_url(url: &str) -> Result<RemoteEndpoint, String> {
+    parse_endpoint_url(url, DEFAULT_AUDIO_PORT, "audio")
+}
+
+fn parse_endpoint_url(url: &str, default_port: u16, kind: &str) -> Result<RemoteEndpoint, String> {
     let trimmed = url.trim();
     if trimmed.is_empty() {
-        return Err("remote url is empty".into());
+        return Err(format!("{kind} url is empty"));
     }
 
     let addr = trimmed
         .strip_prefix("tcp://")
         .or_else(|| trimmed.strip_prefix("http-json://"))
+        .or_else(|| trimmed.strip_prefix("audio://"))
         .unwrap_or(trimmed);
 
-    parse_host_port(addr)
+    parse_host_port(addr, default_port, kind)
 }
 
-fn parse_host_port(input: &str) -> Result<RemoteEndpoint, String> {
+fn parse_host_port(input: &str, default_port: u16, kind: &str) -> Result<RemoteEndpoint, String> {
     if let Some(rest) = input.strip_prefix('[') {
         let closing = rest
             .find(']')
-            .ok_or("invalid remote url: missing closing ']' for IPv6 host")?;
+            .ok_or_else(|| format!("invalid {kind} url: missing closing ']' for IPv6 host"))?;
         let host = &rest[..closing];
         let remainder = &rest[closing + 1..];
         if host.is_empty() {
-            return Err("invalid remote url: host is empty".into());
+            return Err(format!("invalid {kind} url: host is empty"));
         }
         let port = if remainder.is_empty() {
-            DEFAULT_REMOTE_PORT
+            default_port
         } else if let Some(port_str) = remainder.strip_prefix(':') {
-            parse_port(port_str)?
+            parse_port(port_str, kind)?
         } else {
-            return Err("invalid remote url: expected ':<port>' after ']'".into());
+            return Err(format!("invalid {kind} url: expected ':<port>' after ']'"));
         };
         return Ok(RemoteEndpoint {
             host: host.to_string(),
@@ -815,41 +823,45 @@ fn parse_host_port(input: &str) -> Result<RemoteEndpoint, String> {
 
     if input.contains(':') {
         if input.matches(':').count() > 1 {
-            return Err("invalid remote url: IPv6 host must be bracketed like [::1]:4532".into());
+            return Err(format!(
+                "invalid {kind} url: IPv6 host must be bracketed like [::1]:4532"
+            ));
         }
         let (host, port_str) = input
             .rsplit_once(':')
-            .ok_or("invalid remote url: expected host:port")?;
+            .ok_or_else(|| format!("invalid {kind} url: expected host:port"))?;
         if host.is_empty() {
-            return Err("invalid remote url: host is empty".into());
+            return Err(format!("invalid {kind} url: host is empty"));
         }
         return Ok(RemoteEndpoint {
             host: host.to_string(),
-            port: parse_port(port_str)?,
+            port: parse_port(port_str, kind)?,
         });
     }
 
     Ok(RemoteEndpoint {
         host: input.to_string(),
-        port: DEFAULT_REMOTE_PORT,
+        port: default_port,
     })
 }
 
-fn parse_port(port_str: &str) -> Result<u16, String> {
+fn parse_port(port_str: &str, kind: &str) -> Result<u16, String> {
     let port: u16 = port_str
         .parse()
-        .map_err(|_| format!("invalid remote port: '{port_str}'"))?;
+        .map_err(|_| format!("invalid {kind} port: '{port_str}'"))?;
     if port == 0 {
-        return Err("invalid remote port: 0".into());
+        return Err(format!("invalid {kind} port: 0"));
     }
     Ok(port)
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_remote_url, RemoteClientConfig, RemoteEndpoint, SharedSpectrum};
     #[allow(unused_imports)]
     use super::{has_short_names, resolve_server_rig_id, resolve_short_name};
+    use super::{
+        parse_audio_url, parse_remote_url, RemoteClientConfig, RemoteEndpoint, SharedSpectrum,
+    };
     use std::collections::HashMap;
     use std::sync::atomic::AtomicBool;
     use std::sync::{Arc, Mutex, RwLock};
@@ -874,6 +886,18 @@ mod tests {
             RemoteEndpoint {
                 host: "example.local".to_string(),
                 port: 4530
+            }
+        );
+    }
+
+    #[test]
+    fn parse_audio_host_default_port() {
+        let parsed = parse_audio_url("audio.example.local").expect("must parse");
+        assert_eq!(
+            parsed,
+            RemoteEndpoint {
+                host: "audio.example.local".to_string(),
+                port: 4531
             }
         );
     }
@@ -1092,9 +1116,10 @@ mod tests {
     #[test]
     fn build_envelope_translates_short_name_to_server_rig_id() {
         let (spectrum_tx, _spectrum_rx) = watch::channel(SharedSpectrum::default());
-        let short_name_to_rig_id = Arc::new(RwLock::new(HashMap::from([
-            ("home-hf".to_string(), "hf".to_string()),
-        ])));
+        let short_name_to_rig_id = Arc::new(RwLock::new(HashMap::from([(
+            "home-hf".to_string(),
+            "hf".to_string(),
+        )])));
         let config = RemoteClientConfig {
             addr: "127.0.0.1:4530".to_string(),
             token: None,
@@ -1105,9 +1130,7 @@ mod tests {
             server_connected: Arc::new(AtomicBool::new(false)),
             rig_states: Arc::new(RwLock::new(HashMap::new())),
             rig_spectrums: Arc::new(RwLock::new(HashMap::new())),
-            rig_id_to_short_name: HashMap::from([
-                (Some("hf".to_string()), "home-hf".to_string()),
-            ]),
+            rig_id_to_short_name: HashMap::from([(Some("hf".to_string()), "home-hf".to_string())]),
             short_name_to_rig_id,
         };
         // selected_rig_id is "home-hf" (short name), envelope should translate to "hf"
@@ -1164,8 +1187,14 @@ mod tests {
             short_name_to_rig_id: Arc::new(RwLock::new(HashMap::new())),
         };
         assert!(has_short_names(&config));
-        assert_eq!(resolve_short_name(&config, "hf"), Some("home-hf".to_string()));
+        assert_eq!(
+            resolve_short_name(&config, "hf"),
+            Some("home-hf".to_string())
+        );
         // Unknown rig_id falls through to wildcard
-        assert_eq!(resolve_short_name(&config, "unknown"), Some("default-rig".to_string()));
+        assert_eq!(
+            resolve_short_name(&config, "unknown"),
+            Some("default-rig".to_string())
+        );
     }
 }

@@ -32,8 +32,9 @@ use trx_frontend_http::register_frontend_on as register_http_frontend;
 use trx_frontend_http_json::register_frontend_on as register_http_json_frontend;
 use trx_frontend_rigctl::register_frontend_on as register_rigctl_frontend;
 
+use audio_client::AudioConnectConfig;
 use config::{ClientConfig, RemoteEntry};
-use remote_client::{parse_remote_url, RemoteClientConfig};
+use remote_client::{parse_audio_url, parse_remote_url, RemoteClientConfig};
 
 const PKG_DESCRIPTION: &str = concat!(env!("CARGO_PKG_NAME"), " - remote rig client");
 const RIG_TASK_CHANNEL_BUFFER: usize = 32;
@@ -194,10 +195,7 @@ async fn async_init() -> DynResult<AppState> {
     // Resolve remote entries: CLI --url > [[remotes]] > legacy [remote] > error
     let resolved_remotes: Vec<RemoteEntry> = if let Some(ref url) = cli.url {
         // CLI --url creates a single implicit remote entry
-        let rig_id = cli
-            .rig_id
-            .clone()
-            .or_else(|| cfg.remote.rig_id.clone());
+        let rig_id = cli.rig_id.clone().or_else(|| cfg.remote.rig_id.clone());
         let name = rig_id.clone().unwrap_or_else(|| "default".to_string());
         let token = cli.token.clone().or_else(|| cfg.remote.auth.token.clone());
         let poll_interval_ms = cli.poll_interval_ms.unwrap_or(cfg.remote.poll_interval_ms);
@@ -304,17 +302,44 @@ async fn async_init() -> DynResult<AppState> {
         })
         .collect::<Result<Vec<_>, String>>()?;
 
-    // Build per-short-name server host map for audio routing.
-    let mut audio_server_hosts: HashMap<String, (String, u16)> = HashMap::new();
+    let global_audio_addr = cfg
+        .frontends
+        .audio
+        .server_url
+        .as_deref()
+        .map(|url| {
+            parse_audio_url(url)
+                .map(|endpoint| endpoint.connect_addr())
+                .map_err(|e| format!("Invalid audio URL override '{}': {}", url, e))
+        })
+        .transpose()?;
+
+    // Build per-short-name audio connection defaults.
+    let mut audio_connect: HashMap<String, AudioConnectConfig> = HashMap::new();
     for (entry, ep) in &parsed_remotes {
-        let audio_port = cfg
-            .frontends
-            .audio
-            .rig_ports
-            .get(&entry.name)
-            .copied()
-            .unwrap_or(cfg.frontends.audio.server_port);
-        audio_server_hosts.insert(entry.name.clone(), (ep.host.clone(), audio_port));
+        let connect = if let Some(url) = cfg.frontends.audio.rig_urls.get(&entry.name) {
+            let addr = parse_audio_url(url)
+                .map(|endpoint| endpoint.connect_addr())
+                .map_err(|e| {
+                    format!(
+                        "Invalid audio URL override for remote '{}': {}",
+                        entry.name, e
+                    )
+                })?;
+            AudioConnectConfig::fixed(addr)
+        } else if let Some(addr) = global_audio_addr.clone() {
+            AudioConnectConfig::fixed(addr)
+        } else {
+            let audio_port = cfg
+                .frontends
+                .audio
+                .rig_ports
+                .get(&entry.name)
+                .copied()
+                .unwrap_or(cfg.frontends.audio.server_port);
+            AudioConnectConfig::from_host_port(ep.host.clone(), audio_port)
+        };
+        audio_connect.insert(entry.name.clone(), connect);
     }
 
     // Group by (connect_addr, token).
@@ -365,9 +390,13 @@ async fn async_init() -> DynResult<AppState> {
         let state_tx = state_tx.clone();
         let remote_shutdown_rx = shutdown_rx.clone();
         task_handles.push(tokio::spawn(async move {
-            if let Err(e) =
-                remote_client::run_remote_client(remote_cfg, server_rx, state_tx, remote_shutdown_rx)
-                    .await
+            if let Err(e) = remote_client::run_remote_client(
+                remote_cfg,
+                server_rx,
+                state_tx,
+                remote_shutdown_rx,
+            )
+            .await
             {
                 error!("Remote client error: {}", e);
             }
@@ -388,12 +417,7 @@ async fn async_init() -> DynResult<AppState> {
                     .rig_id_override
                     .as_deref()
                     .map(String::from)
-                    .or_else(|| {
-                        default_rig_for_router
-                            .lock()
-                            .ok()
-                            .and_then(|g| g.clone())
-                    });
+                    .or_else(|| default_rig_for_router.lock().ok().and_then(|g| g.clone()));
                 let sender = target
                     .as_deref()
                     .and_then(|name| route_map.get(name))
@@ -501,26 +525,21 @@ async fn async_init() -> DynResult<AppState> {
             }
         });
 
-        info!(
-            "Audio enabled: default port {}, decode channel set",
-            cfg.frontends.audio.server_port
-        );
+        info!("Audio enabled: decode channel set");
 
-        let audio_rig_ports: HashMap<String, u16> = cfg.frontends.audio.rig_ports.clone();
         let audio_shutdown_rx = shutdown_rx.clone();
         let vchan_audio_map = frontend_runtime.vchan_audio.clone();
         let rig_audio_rx_map = frontend_runtime.rig_audio_rx.clone();
         let rig_audio_info_map = frontend_runtime.rig_audio_info.clone();
         let rig_vchan_cmd_map = frontend_runtime.rig_vchan_audio_cmd.clone();
-        let audio_rig_server_hosts: HashMap<String, String> = audio_server_hosts
-            .iter()
-            .map(|(name, (host, _))| (name.clone(), host.clone()))
-            .collect();
+        let default_audio_connect = if let Some(addr) = global_audio_addr {
+            AudioConnectConfig::fixed(addr)
+        } else {
+            AudioConnectConfig::from_host_port(remote_host.clone(), cfg.frontends.audio.server_port)
+        };
         pending_audio_client = Some(tokio::spawn(audio_client::run_multi_rig_audio_manager(
-            remote_host,
-            cfg.frontends.audio.server_port,
-            audio_rig_ports,
-            audio_rig_server_hosts,
+            default_audio_connect,
+            audio_connect,
             frontend_runtime.remote_active_rig_id.clone(),
             frontend_runtime.remote_rigs.clone(),
             rx_audio_tx,

@@ -21,6 +21,7 @@ use trx_frontend::RemoteRigEntry;
 
 use uuid::Uuid;
 
+use crate::remote_client::RemoteEndpoint;
 use trx_core::audio::{
     parse_vchan_audio_frame, parse_vchan_uuid_msg, read_audio_msg, write_audio_msg,
     write_vchan_uuid_msg, AudioStreamInfo, AUDIO_MSG_AIS_DECODE, AUDIO_MSG_APRS_DECODE,
@@ -43,11 +44,36 @@ struct ActiveVChanSub {
     decoder_kinds: Vec<String>,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct AudioConnectConfig {
+    pub server_host: String,
+    pub default_port: u16,
+    pub fixed_addr: Option<String>,
+}
+
+impl AudioConnectConfig {
+    pub fn from_host_port(server_host: String, default_port: u16) -> Self {
+        Self {
+            server_host,
+            default_port,
+            fixed_addr: None,
+        }
+    }
+
+    pub fn fixed(addr: String) -> Self {
+        Self {
+            server_host: String::new(),
+            default_port: 0,
+            fixed_addr: Some(addr),
+        }
+    }
+}
+
 /// Per-rig audio task state, tracked by the multi-rig manager.
 struct PerRigAudioTask {
     handle: tokio::task::JoinHandle<()>,
     shutdown_tx: watch::Sender<bool>,
-    port: u16,
+    addr: String,
 }
 
 /// Multi-rig audio manager: spawns/tears down per-rig audio client tasks on
@@ -55,11 +81,8 @@ struct PerRigAudioTask {
 /// an `audio_port` gets its own TCP connection.
 #[allow(clippy::too_many_arguments)]
 pub async fn run_multi_rig_audio_manager(
-    server_host: String,
-    default_port: u16,
-    rig_ports: HashMap<String, u16>,
-    // Per-rig server host overrides (short_name -> host) for multi-server mode.
-    rig_server_hosts: HashMap<String, String>,
+    default_connect: AudioConnectConfig,
+    rig_connect: HashMap<String, AudioConnectConfig>,
     selected_rig_id: Arc<Mutex<Option<String>>>,
     known_rigs: Arc<Mutex<Vec<RemoteRigEntry>>>,
     global_rx_tx: broadcast::Sender<Bytes>,
@@ -86,28 +109,31 @@ pub async fn run_multi_rig_audio_manager(
     loop {
         tokio::select! {
             _ = poll_interval.tick() => {
-                // Collect current known rigs and their audio ports.
-                let current_rigs: HashMap<String, u16> = known_rigs
+                // Collect current known rigs and their audio endpoints.
+                let current_rigs: HashMap<String, String> = known_rigs
                     .lock()
                     .ok()
                     .map(|entries| {
                         entries.iter().map(|e| {
-                            let port = rig_ports.get(&e.rig_id).copied()
-                                .or(e.audio_port)
-                                .unwrap_or(default_port);
-                            (e.rig_id.clone(), port)
+                            let addr = resolve_audio_addr(
+                                &e.rig_id,
+                                e.audio_port,
+                                &rig_connect,
+                                &default_connect,
+                            );
+                            (e.rig_id.clone(), addr)
                         }).collect()
                     })
                     .unwrap_or_default();
 
                 // Tear down tasks for rigs that are no longer present or
-                // whose port has changed.
+                // whose audio endpoint has changed.
                 let to_remove: Vec<String> = active_tasks.keys()
                     .filter(|id| {
                         match current_rigs.get(*id) {
                             None => true,
-                            Some(port) => active_tasks.get(*id)
-                                .is_none_or(|t| t.port != *port),
+                            Some(addr) => active_tasks.get(*id)
+                                .is_none_or(|t| t.addr != *addr),
                         }
                     })
                     .cloned()
@@ -121,7 +147,7 @@ pub async fn run_multi_rig_audio_manager(
                 }
 
                 // Spawn tasks for new rigs.
-                for (rig_id, port) in &current_rigs {
+                for (rig_id, addr) in &current_rigs {
                     if active_tasks.contains_key(rig_id) {
                         continue;
                     }
@@ -149,10 +175,6 @@ pub async fn run_multi_rig_audio_manager(
                         map.insert(rig_id.clone(), per_rig_vchan_tx);
                     }
 
-                    let host = rig_server_hosts
-                        .get(rig_id)
-                        .unwrap_or(&server_host);
-                    let addr = format!("{}:{}", host, port);
                     let rig_id_clone = rig_id.clone();
                     let global_rx_tx_clone = global_rx_tx.clone();
                     let global_info_tx_clone = global_stream_info_tx.clone();
@@ -162,10 +184,12 @@ pub async fn run_multi_rig_audio_manager(
                     let vchan_audio_clone = vchan_audio.clone();
                     let vchan_destroyed_clone = vchan_destroyed_tx.clone();
                     let tx_rx_clone = tx_rx.clone();
+                    let addr = addr.clone();
+                    let task_addr = addr.clone();
 
                     let handle = tokio::spawn(async move {
                         run_single_rig_audio_client(
-                            addr,
+                            task_addr,
                             rig_id_clone,
                             selected_clone,
                             per_rig_rx_tx,
@@ -183,11 +207,11 @@ pub async fn run_multi_rig_audio_manager(
                         .await;
                     });
 
-                    info!("Audio client: started task for rig {} ({}:{})", rig_id, host, port);
+                    info!("Audio client: started task for rig {} ({})", rig_id, addr);
                     active_tasks.insert(rig_id.clone(), PerRigAudioTask {
                         handle,
                         shutdown_tx: per_rig_shutdown_tx,
-                        port: *port,
+                        addr: addr.clone(),
                     });
                 }
             }
@@ -204,6 +228,24 @@ pub async fn run_multi_rig_audio_manager(
             }
         }
     }
+}
+
+fn resolve_audio_addr(
+    rig_id: &str,
+    advertised_port: Option<u16>,
+    rig_connect: &HashMap<String, AudioConnectConfig>,
+    default_connect: &AudioConnectConfig,
+) -> String {
+    let connect = rig_connect.get(rig_id).unwrap_or(default_connect);
+    if let Some(addr) = &connect.fixed_addr {
+        return addr.clone();
+    }
+
+    RemoteEndpoint {
+        host: connect.server_host.clone(),
+        port: advertised_port.unwrap_or(connect.default_port),
+    }
+    .connect_addr()
 }
 
 /// Audio client for a single rig.  Maintains its own TCP connection with
@@ -292,6 +334,59 @@ async fn run_single_rig_audio_client(
             }
         }
         reconnect_delay = (reconnect_delay * 2).min(Duration::from_secs(10));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{resolve_audio_addr, AudioConnectConfig};
+    use std::collections::HashMap;
+
+    #[test]
+    fn resolve_audio_addr_prefers_fixed_url() {
+        let mut rig_connect = HashMap::new();
+        rig_connect.insert(
+            "home-hf".to_string(),
+            AudioConnectConfig::fixed("audio.example.com:4700".to_string()),
+        );
+
+        let addr = resolve_audio_addr(
+            "home-hf",
+            Some(4531),
+            &rig_connect,
+            &AudioConnectConfig::from_host_port("control.example.com".to_string(), 4531),
+        );
+        assert_eq!(addr, "audio.example.com:4700");
+    }
+
+    #[test]
+    fn resolve_audio_addr_uses_advertised_port_with_remote_host() {
+        let mut rig_connect = HashMap::new();
+        rig_connect.insert(
+            "home-hf".to_string(),
+            AudioConnectConfig::from_host_port("control.example.com".to_string(), 4531),
+        );
+
+        let addr = resolve_audio_addr(
+            "home-hf",
+            Some(4600),
+            &rig_connect,
+            &AudioConnectConfig::from_host_port("fallback.example.com".to_string(), 4531),
+        );
+        assert_eq!(addr, "control.example.com:4600");
+    }
+
+    #[test]
+    fn resolve_audio_addr_falls_back_to_default_port() {
+        let rig_connect = HashMap::new();
+
+        let addr = resolve_audio_addr(
+            "home-hf",
+            None,
+            &rig_connect,
+            &AudioConnectConfig::from_host_port("fallback.example.com".to_string(), 4531),
+        );
+        assert_eq!(addr, "fallback.example.com:4531");
     }
 }
 
