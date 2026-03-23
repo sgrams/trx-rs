@@ -137,7 +137,6 @@ pub type SharedSessionRigManager = Arc<SessionRigManager>;
 
 #[derive(serde::Deserialize)]
 pub struct StatusQuery {
-    #[serde(alias = "rig_id")]
     pub remote: Option<String>,
 }
 
@@ -340,7 +339,6 @@ fn decode_history_retention_min_from_context(context: &FrontendRuntimeContext) -
 
 #[derive(serde::Deserialize)]
 pub struct EventsQuery {
-    #[serde(alias = "rig_id")]
     pub remote: Option<String>,
 }
 
@@ -908,7 +906,6 @@ pub async fn unlock_panel(
 #[derive(serde::Deserialize)]
 pub struct FreqQuery {
     pub hz: u64,
-    #[serde(alias = "rig_id")]
     pub remote: Option<String>,
 }
 
@@ -938,7 +935,6 @@ pub async fn set_center_freq(
 #[derive(serde::Deserialize)]
 pub struct ModeQuery {
     pub mode: String,
-    #[serde(alias = "rig_id")]
     pub remote: Option<String>,
 }
 
@@ -955,7 +951,6 @@ pub async fn set_mode(
 #[derive(serde::Deserialize)]
 pub struct PttQuery {
     pub ptt: String,
-    #[serde(alias = "rig_id")]
     pub remote: Option<String>,
 }
 
@@ -978,7 +973,6 @@ pub async fn set_ptt(
 #[derive(serde::Deserialize)]
 pub struct TxLimitQuery {
     pub limit: u8,
-    #[serde(alias = "rig_id")]
     pub remote: Option<String>,
 }
 
@@ -994,7 +988,6 @@ pub async fn set_tx_limit(
 #[derive(serde::Deserialize)]
 pub struct BandwidthQuery {
     pub hz: u32,
-    #[serde(alias = "rig_id")]
     pub remote: Option<String>,
 }
 
@@ -1010,7 +1003,6 @@ pub async fn set_bandwidth(
 #[derive(serde::Deserialize)]
 pub struct SdrGainQuery {
     pub db: f64,
-    #[serde(alias = "rig_id")]
     pub remote: Option<String>,
 }
 
@@ -1026,7 +1018,6 @@ pub async fn set_sdr_gain(
 #[derive(serde::Deserialize)]
 pub struct SdrLnaGainQuery {
     pub db: f64,
-    #[serde(alias = "rig_id")]
     pub remote: Option<String>,
 }
 
@@ -1042,7 +1033,6 @@ pub async fn set_sdr_lna_gain(
 #[derive(serde::Deserialize)]
 pub struct SdrAgcQuery {
     pub enabled: bool,
-    #[serde(alias = "rig_id")]
     pub remote: Option<String>,
 }
 
@@ -1059,7 +1049,6 @@ pub async fn set_sdr_agc(
 pub struct SdrSquelchQuery {
     pub enabled: bool,
     pub threshold_db: f64,
-    #[serde(alias = "rig_id")]
     pub remote: Option<String>,
 }
 
@@ -1084,7 +1073,6 @@ pub async fn set_sdr_squelch(
 pub struct SdrNoiseBlankerQuery {
     pub enabled: bool,
     pub threshold: f64,
-    #[serde(alias = "rig_id")]
     pub remote: Option<String>,
 }
 
@@ -1108,7 +1096,6 @@ pub async fn set_sdr_noise_blanker(
 #[derive(serde::Deserialize)]
 pub struct WfmDeemphasisQuery {
     pub us: u32,
-    #[serde(alias = "rig_id")]
     pub remote: Option<String>,
 }
 
@@ -1124,7 +1111,6 @@ pub async fn set_wfm_deemphasis(
 #[derive(serde::Deserialize)]
 pub struct WfmStereoQuery {
     pub enabled: bool,
-    #[serde(alias = "rig_id")]
     pub remote: Option<String>,
 }
 
@@ -1140,7 +1126,6 @@ pub async fn set_wfm_stereo(
 #[derive(serde::Deserialize)]
 pub struct WfmDenoiseQuery {
     pub level: WfmDenoiseLevel,
-    #[serde(alias = "rig_id")]
     pub remote: Option<String>,
 }
 
@@ -1201,7 +1186,6 @@ pub async fn toggle_cw_decode(
 #[derive(serde::Deserialize)]
 pub struct CwAutoQuery {
     pub enabled: bool,
-    #[serde(alias = "rig_id")]
     pub remote: Option<String>,
 }
 
@@ -1217,7 +1201,6 @@ pub async fn set_cw_auto(
 #[derive(serde::Deserialize)]
 pub struct CwWpmQuery {
     pub wpm: u32,
-    #[serde(alias = "rig_id")]
     pub remote: Option<String>,
 }
 
@@ -1233,7 +1216,6 @@ pub async fn set_cw_wpm(
 #[derive(serde::Deserialize)]
 pub struct CwToneQuery {
     pub tone_hz: u32,
-    #[serde(alias = "rig_id")]
     pub remote: Option<String>,
 }
 
@@ -1484,6 +1466,18 @@ fn request_accepts_html(req: &HttpRequest) -> bool {
         .unwrap_or(false)
 }
 
+fn no_cache_response<B>(content_type: &'static str, body: B) -> HttpResponse
+where
+    B: actix_web::body::MessageBody + 'static,
+{
+    HttpResponse::Ok()
+        .insert_header((header::CONTENT_TYPE, content_type))
+        .insert_header((header::CACHE_CONTROL, "no-cache, no-store, must-revalidate"))
+        .insert_header((header::PRAGMA, "no-cache"))
+        .insert_header((header::EXPIRES, "0"))
+        .body(body)
+}
+
 #[get("/bookmarks")]
 pub async fn list_bookmarks(
     req: HttpRequest,
@@ -1491,9 +1485,10 @@ pub async fn list_bookmarks(
     query: web::Query<BookmarkQuery>,
 ) -> Result<HttpResponse, Error> {
     if request_accepts_html(&req) {
-        return Ok(HttpResponse::Ok()
-            .insert_header((header::CONTENT_TYPE, "text/html; charset=utf-8"))
-            .body(status::index_html()));
+        return Ok(no_cache_response(
+            "text/html; charset=utf-8",
+            status::index_html(),
+        ));
     }
     let mut list = store.list();
     if let Some(ref cat) = query.category {
@@ -1658,7 +1653,6 @@ pub async fn list_rigs(
 
 #[derive(serde::Deserialize)]
 pub struct SelectRigQuery {
-    #[serde(alias = "rig_id")]
     pub remote: String,
     pub session_id: Option<String>,
 }
@@ -1957,37 +1951,27 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
 
 #[get("/")]
 async fn index() -> impl Responder {
-    HttpResponse::Ok()
-        .insert_header((header::CONTENT_TYPE, "text/html; charset=utf-8"))
-        .body(status::index_html())
+    no_cache_response("text/html; charset=utf-8", status::index_html())
 }
 
 #[get("/map")]
 async fn map_index() -> impl Responder {
-    HttpResponse::Ok()
-        .insert_header((header::CONTENT_TYPE, "text/html; charset=utf-8"))
-        .body(status::index_html())
+    no_cache_response("text/html; charset=utf-8", status::index_html())
 }
 
 #[get("/decoders")]
 async fn decoders_index() -> impl Responder {
-    HttpResponse::Ok()
-        .insert_header((header::CONTENT_TYPE, "text/html; charset=utf-8"))
-        .body(status::index_html())
+    no_cache_response("text/html; charset=utf-8", status::index_html())
 }
 
 #[get("/settings")]
 async fn settings_index() -> impl Responder {
-    HttpResponse::Ok()
-        .insert_header((header::CONTENT_TYPE, "text/html; charset=utf-8"))
-        .body(status::index_html())
+    no_cache_response("text/html; charset=utf-8", status::index_html())
 }
 
 #[get("/about")]
 async fn about_index() -> impl Responder {
-    HttpResponse::Ok()
-        .insert_header((header::CONTENT_TYPE, "text/html; charset=utf-8"))
-        .body(status::index_html())
+    no_cache_response("text/html; charset=utf-8", status::index_html())
 }
 
 #[get("/favicon.ico")]
@@ -2013,185 +1997,115 @@ async fn logo() -> impl Responder {
 
 #[get("/style.css")]
 async fn style_css() -> impl Responder {
-    HttpResponse::Ok()
-        .insert_header((header::CONTENT_TYPE, "text/css; charset=utf-8"))
-        .body(status::STYLE_CSS)
+    no_cache_response("text/css; charset=utf-8", status::STYLE_CSS)
 }
 
 #[get("/app.js")]
 async fn app_js() -> impl Responder {
-    HttpResponse::Ok()
-        .insert_header((
-            header::CONTENT_TYPE,
-            "application/javascript; charset=utf-8",
-        ))
-        .body(status::APP_JS)
+    no_cache_response("application/javascript; charset=utf-8", status::APP_JS)
 }
 
 #[get("/decode-history-worker.js")]
 async fn decode_history_worker_js() -> impl Responder {
-    HttpResponse::Ok()
-        .insert_header((
-            header::CONTENT_TYPE,
-            "application/javascript; charset=utf-8",
-        ))
-        .body(status::DECODE_HISTORY_WORKER_JS)
+    no_cache_response(
+        "application/javascript; charset=utf-8",
+        status::DECODE_HISTORY_WORKER_JS,
+    )
 }
 
 #[get("/webgl-renderer.js")]
 async fn webgl_renderer_js() -> impl Responder {
-    HttpResponse::Ok()
-        .insert_header((
-            header::CONTENT_TYPE,
-            "application/javascript; charset=utf-8",
-        ))
-        .body(status::WEBGL_RENDERER_JS)
+    no_cache_response(
+        "application/javascript; charset=utf-8",
+        status::WEBGL_RENDERER_JS,
+    )
 }
 
 #[get("/leaflet-ais-tracksymbol.js")]
 async fn leaflet_ais_tracksymbol_js() -> impl Responder {
-    HttpResponse::Ok()
-        .insert_header((
-            header::CONTENT_TYPE,
-            "application/javascript; charset=utf-8",
-        ))
-        .body(status::LEAFLET_AIS_TRACKSYMBOL_JS)
+    no_cache_response(
+        "application/javascript; charset=utf-8",
+        status::LEAFLET_AIS_TRACKSYMBOL_JS,
+    )
 }
 
 #[get("/aprs.js")]
 async fn aprs_js() -> impl Responder {
-    HttpResponse::Ok()
-        .insert_header((
-            header::CONTENT_TYPE,
-            "application/javascript; charset=utf-8",
-        ))
-        .body(status::APRS_JS)
+    no_cache_response("application/javascript; charset=utf-8", status::APRS_JS)
 }
 
 #[get("/hf-aprs.js")]
 async fn hf_aprs_js() -> impl Responder {
-    HttpResponse::Ok()
-        .insert_header((
-            header::CONTENT_TYPE,
-            "application/javascript; charset=utf-8",
-        ))
-        .body(status::HF_APRS_JS)
+    no_cache_response("application/javascript; charset=utf-8", status::HF_APRS_JS)
 }
 
 #[get("/ais.js")]
 async fn ais_js() -> impl Responder {
-    HttpResponse::Ok()
-        .insert_header((
-            header::CONTENT_TYPE,
-            "application/javascript; charset=utf-8",
-        ))
-        .body(status::AIS_JS)
+    no_cache_response("application/javascript; charset=utf-8", status::AIS_JS)
 }
 
 #[get("/vdes.js")]
 async fn vdes_js() -> impl Responder {
-    HttpResponse::Ok()
-        .insert_header((
-            header::CONTENT_TYPE,
-            "application/javascript; charset=utf-8",
-        ))
-        .body(status::VDES_JS)
+    no_cache_response("application/javascript; charset=utf-8", status::VDES_JS)
 }
 
 #[get("/ft8.js")]
 async fn ft8_js() -> impl Responder {
-    HttpResponse::Ok()
-        .insert_header((
-            header::CONTENT_TYPE,
-            "application/javascript; charset=utf-8",
-        ))
-        .body(status::FT8_JS)
+    no_cache_response("application/javascript; charset=utf-8", status::FT8_JS)
 }
 
 #[get("/ft4.js")]
 async fn ft4_js() -> impl Responder {
-    HttpResponse::Ok()
-        .insert_header((
-            header::CONTENT_TYPE,
-            "application/javascript; charset=utf-8",
-        ))
-        .body(status::FT4_JS)
+    no_cache_response("application/javascript; charset=utf-8", status::FT4_JS)
 }
 
 #[get("/ft2.js")]
 async fn ft2_js() -> impl Responder {
-    HttpResponse::Ok()
-        .insert_header((
-            header::CONTENT_TYPE,
-            "application/javascript; charset=utf-8",
-        ))
-        .body(status::FT2_JS)
+    no_cache_response("application/javascript; charset=utf-8", status::FT2_JS)
 }
 
 #[get("/wspr.js")]
 async fn wspr_js() -> impl Responder {
-    HttpResponse::Ok()
-        .content_type("application/javascript; charset=utf-8")
-        .insert_header((header::CACHE_CONTROL, "no-cache, no-store, must-revalidate"))
-        .insert_header((header::PRAGMA, "no-cache"))
-        .insert_header((header::EXPIRES, "0"))
-        .body(status::WSPR_JS)
+    no_cache_response("application/javascript; charset=utf-8", status::WSPR_JS)
 }
 
 #[get("/cw.js")]
 async fn cw_js() -> impl Responder {
-    HttpResponse::Ok()
-        .insert_header((
-            header::CONTENT_TYPE,
-            "application/javascript; charset=utf-8",
-        ))
-        .body(status::CW_JS)
+    no_cache_response("application/javascript; charset=utf-8", status::CW_JS)
 }
 
 #[get("/bookmarks.js")]
 async fn bookmarks_js() -> impl Responder {
-    HttpResponse::Ok()
-        .insert_header((
-            header::CONTENT_TYPE,
-            "application/javascript; charset=utf-8",
-        ))
-        .body(status::BOOKMARKS_JS)
+    no_cache_response(
+        "application/javascript; charset=utf-8",
+        status::BOOKMARKS_JS,
+    )
 }
 
 #[get("/scheduler.js")]
 async fn scheduler_js() -> impl Responder {
-    HttpResponse::Ok()
-        .insert_header((
-            header::CONTENT_TYPE,
-            "application/javascript; charset=utf-8",
-        ))
-        .body(status::SCHEDULER_JS)
+    no_cache_response(
+        "application/javascript; charset=utf-8",
+        status::SCHEDULER_JS,
+    )
 }
 
 #[get("/background-decode.js")]
 async fn background_decode_js() -> impl Responder {
-    HttpResponse::Ok()
-        .insert_header((
-            header::CONTENT_TYPE,
-            "application/javascript; charset=utf-8",
-        ))
-        .body(status::BACKGROUND_DECODE_JS)
+    no_cache_response(
+        "application/javascript; charset=utf-8",
+        status::BACKGROUND_DECODE_JS,
+    )
 }
 
 #[get("/vchan.js")]
 async fn vchan_js() -> impl Responder {
-    HttpResponse::Ok()
-        .insert_header((
-            header::CONTENT_TYPE,
-            "application/javascript; charset=utf-8",
-        ))
-        .body(status::VCHAN_JS)
+    no_cache_response("application/javascript; charset=utf-8", status::VCHAN_JS)
 }
 
 /// Generic query extractor for endpoints that only need the optional remote.
 #[derive(serde::Deserialize)]
 pub struct RemoteQuery {
-    #[serde(alias = "rig_id")]
     pub remote: Option<String>,
 }
 

@@ -475,7 +475,6 @@ pub fn start_decode_history_collector(context: Arc<FrontendRuntimeContext>) {
 #[derive(Deserialize)]
 pub struct AudioQuery {
     pub channel_id: Option<Uuid>,
-    #[serde(alias = "rig_id")]
     pub remote: Option<String>,
 }
 
@@ -643,12 +642,5 @@ mod tests {
         let query: AudioQuery =
             serde_json::from_str(r#"{"remote":"lidzbark-vhf"}"#).expect("query parse");
         assert_eq!(query.remote.as_deref(), Some("lidzbark-vhf"));
-    }
-
-    #[test]
-    fn audio_query_accepts_legacy_rig_id_alias() {
-        let query: AudioQuery =
-            serde_json::from_str(r#"{"rig_id":"gdansk"}"#).expect("query parse");
-        assert_eq!(query.remote.as_deref(), Some("gdansk"));
     }
 }

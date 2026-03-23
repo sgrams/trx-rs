@@ -90,7 +90,6 @@ pub struct ScheduleEntry {
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct SchedulerConfig {
-    #[serde(alias = "rig_id")]
     pub remote: String,
     #[serde(default)]
     pub mode: SchedulerMode,
@@ -913,7 +912,7 @@ pub struct SchedulerControlUpdate {
     pub session_id: Uuid,
     pub released: bool,
     #[serde(default)]
-    pub rig_id: Option<String>,
+    pub remote: Option<String>,
 }
 
 #[get("/scheduler-control")]
@@ -935,10 +934,10 @@ pub async fn put_scheduler_control(
     let body = body.into_inner();
     let summary = control.set_released(body.session_id, body.released);
     if body.released && summary.all_released {
-        if let Some(rig_id) = body.rig_id.as_deref() {
+        if let Some(remote) = body.remote.as_deref() {
             apply_last_scheduler_cycle(
                 rig_tx.get_ref(),
-                rig_id,
+                remote,
                 status_map.get_ref(),
                 bookmarks.get_ref().as_ref(),
             )
