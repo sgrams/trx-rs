@@ -223,7 +223,7 @@ async fn async_init() -> DynResult<AppState> {
     let default_rig = cli
         .rig_id
         .clone()
-        .or_else(|| cfg.frontends.http.default_rig_id.clone())
+        .or_else(|| cfg.frontends.http.default_rig_name.clone())
         .or_else(|| resolved_remotes.first().map(|e| e.name.clone()));
     if let Ok(mut guard) = frontend_runtime.remote_active_rig_id.lock() {
         *guard = default_rig.clone();

@@ -269,7 +269,8 @@ pub struct HttpFrontendConfig {
     /// Listen port
     pub port: u16,
     /// Default rig selected in the web UI on startup.
-    pub default_rig_id: Option<String>,
+    #[serde(alias = "default_rig_id")]
+    pub default_rig_name: Option<String>,
     /// Initial zoom level for the APRS map when receiver coordinates are known.
     pub initial_map_zoom: u8,
     /// Spectrum center-retune guard margin on each side of the selected bandwidth.
@@ -292,7 +293,7 @@ impl Default for HttpFrontendConfig {
             enabled: true,
             listen: IpAddr::from([127, 0, 0, 1]),
             port: 8080,
-            default_rig_id: None,
+            default_rig_name: None,
             initial_map_zoom: 10,
             spectrum_coverage_margin_hz: 50_000,
             spectrum_usable_span_ratio: 0.92,
@@ -479,10 +480,10 @@ impl ClientConfig {
         if self.frontends.http.enabled && self.frontends.http.port == 0 {
             return Err("[frontends.http].port must be > 0 when enabled".to_string());
         }
-        if let Some(rig_id) = &self.frontends.http.default_rig_id {
+        if let Some(rig_id) = &self.frontends.http.default_rig_name {
             if rig_id.trim().is_empty() {
                 return Err(
-                    "[frontends.http].default_rig_id must not be empty when set".to_string()
+                    "[frontends.http].default_rig_name must not be empty when set".to_string()
                 );
             }
         }
@@ -623,7 +624,7 @@ impl ClientConfig {
                     enabled: true,
                     listen: IpAddr::from([127, 0, 0, 1]),
                     port: 8080,
-                    default_rig_id: Some("home-hf".to_string()),
+                    default_rig_name: Some("home-hf".to_string()),
                     initial_map_zoom: 10,
                     spectrum_coverage_margin_hz: 50_000,
                     spectrum_usable_span_ratio: 0.92,
