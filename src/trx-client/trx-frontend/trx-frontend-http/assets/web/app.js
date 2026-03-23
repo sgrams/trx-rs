@@ -7352,6 +7352,25 @@ function setAudioLevel(levelPct) {
   audioLevelFill.style.width = `${clamped}%`;
 }
 
+// Create/resume the output context from a direct user gesture so Chromium
+// does not leave playback suspended until a later click.
+function ensureRxAudioContext(preferredSampleRate) {
+  if (!audioCtx) {
+    try {
+      audioCtx = Number.isFinite(preferredSampleRate) && preferredSampleRate > 0
+        ? new AudioContext({ sampleRate: preferredSampleRate })
+        : new AudioContext();
+    } catch (e) {
+      audioCtx = new AudioContext();
+    }
+  }
+  audioCtx.resume().catch(() => {});
+  if (!rxGainNode) {
+    rxGainNode = audioCtx.createGain();
+    rxGainNode.connect(audioCtx.destination);
+  }
+}
+
 function levelFromChannels(channels, frameCount) {
   if (!Array.isArray(channels) || channels.length === 0 || !Number.isFinite(frameCount) || frameCount <= 0) {
     return 0;
@@ -7596,23 +7615,10 @@ function resetRxDecoder() {
 
 function configureRxStream(nextInfo) {
   const nextSampleRate = (nextInfo && nextInfo.sample_rate) || 48000;
-  const sampleRateChanged = !audioCtx || audioCtx.sampleRate !== nextSampleRate;
   streamInfo = nextInfo;
   updateWfmControls();
   resetRxDecoder();
-  if (sampleRateChanged && audioCtx) {
-    audioCtx.close().catch(() => {});
-    audioCtx = null;
-    rxGainNode = null;
-  }
-  if (!audioCtx) {
-    audioCtx = new AudioContext({ sampleRate: nextSampleRate });
-    audioCtx.resume().catch(() => {});
-  }
-  if (!rxGainNode) {
-    rxGainNode = audioCtx.createGain();
-    rxGainNode.connect(audioCtx.destination);
-  }
+  ensureRxAudioContext(nextSampleRate);
   rxGainNode.gain.value = rxVolSlider.value / 100;
   rxActive = true;
   setAudioLevel(0);
@@ -7662,6 +7668,7 @@ function startRxAudio() {
     audioStatus.textContent = "Audio requires Chrome/Edge";
     return;
   }
+  ensureRxAudioContext((streamInfo && streamInfo.sample_rate) || 48000);
   const proto = location.protocol === "https:" ? "wss:" : "ws:";
   let audioPath;
   if (_audioChannelOverride) {
