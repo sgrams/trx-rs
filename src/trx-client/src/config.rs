@@ -25,8 +25,12 @@ use trx_app::{ConfigError, ConfigFile};
 pub struct ClientConfig {
     /// General settings
     pub general: GeneralConfig,
-    /// Remote connection settings
+    /// Legacy single remote connection settings.
+    /// Kept for backward compatibility; prefer `[[remotes]]`.
     pub remote: RemoteConfig,
+    /// Named remote connections (one per short-name / rig).
+    /// Each entry maps a user-chosen short name to a (server, rig_id) pair.
+    pub remotes: Vec<RemoteEntry>,
     /// Frontend configurations
     pub frontends: FrontendsConfig,
 }
@@ -90,6 +94,33 @@ impl Default for RemoteConfig {
 pub struct RemoteAuthConfig {
     /// Bearer token to send with JSON commands.
     pub token: Option<String>,
+}
+
+/// A named remote connection entry.
+///
+/// Each entry maps a user-chosen **short name** to a `(server, rig_id)` pair.
+/// The short name is used as the identifier throughout frontends (HTTP rig
+/// picker, rigctl ports, audio routing, etc.) instead of the server-scoped
+/// `rig_id`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RemoteEntry {
+    /// Short name used to identify this remote in frontends and config.
+    pub name: String,
+    /// Remote server URL (`host:port` or `tcp://host:port`).
+    pub url: String,
+    /// Optional target rig ID on a multi-rig server.
+    /// When omitted, the server's default (or only) rig is used.
+    pub rig_id: Option<String>,
+    /// Authentication settings.
+    #[serde(default)]
+    pub auth: RemoteAuthConfig,
+    /// Poll interval in milliseconds. Defaults to 750.
+    #[serde(default = "default_poll_interval_ms")]
+    pub poll_interval_ms: u64,
+}
+
+fn default_poll_interval_ms() -> u64 {
+    750
 }
 
 /// Frontend configurations.
@@ -334,9 +365,83 @@ pub struct HttpJsonAuthConfig {
 }
 
 impl ClientConfig {
+    /// Return the effective list of remote entries.
+    ///
+    /// If `[[remotes]]` is non-empty, return it directly.  Otherwise,
+    /// synthesize a single entry from the legacy `[remote]` section (if it
+    /// has a `url`).  Returns an empty `Vec` when neither is configured
+    /// (caller should check CLI overrides).
+    pub fn resolved_remotes(&self) -> Vec<RemoteEntry> {
+        if !self.remotes.is_empty() {
+            return self.remotes.clone();
+        }
+        // Legacy fallback
+        if let Some(url) = &self.remote.url {
+            let name = self
+                .remote
+                .rig_id
+                .clone()
+                .unwrap_or_else(|| "default".to_string());
+            vec![RemoteEntry {
+                name,
+                url: url.clone(),
+                rig_id: self.remote.rig_id.clone(),
+                auth: self.remote.auth.clone(),
+                poll_interval_ms: self.remote.poll_interval_ms,
+            }]
+        } else {
+            Vec::new()
+        }
+    }
+
     pub fn validate(&self) -> Result<(), String> {
         validate_log_level(self.general.log_level.as_deref())?;
 
+        // Validate [[remotes]] entries
+        {
+            let mut seen_names = std::collections::HashSet::new();
+            for (i, entry) in self.remotes.iter().enumerate() {
+                if entry.name.trim().is_empty() {
+                    return Err(format!("[[remotes]][{}].name must not be empty", i));
+                }
+                if !seen_names.insert(&entry.name) {
+                    return Err(format!(
+                        "[[remotes]] duplicate name \"{}\"",
+                        entry.name
+                    ));
+                }
+                if entry.url.trim().is_empty() {
+                    return Err(format!(
+                        "[[remotes]][{}].url must not be empty (name \"{}\")",
+                        i, entry.name
+                    ));
+                }
+                if let Some(rig_id) = &entry.rig_id {
+                    if rig_id.trim().is_empty() {
+                        return Err(format!(
+                            "[[remotes]][{}].rig_id must not be empty when set (name \"{}\")",
+                            i, entry.name
+                        ));
+                    }
+                }
+                if let Some(token) = &entry.auth.token {
+                    if token.trim().is_empty() {
+                        return Err(format!(
+                            "[[remotes]][{}].auth.token must not be empty when set (name \"{}\")",
+                            i, entry.name
+                        ));
+                    }
+                }
+                if entry.poll_interval_ms == 0 {
+                    return Err(format!(
+                        "[[remotes]][{}].poll_interval_ms must be > 0 (name \"{}\")",
+                        i, entry.name
+                    ));
+                }
+            }
+        }
+
+        // Validate legacy [remote] (kept for backward compat)
         if self.remote.poll_interval_ms == 0 {
             return Err("[remote].poll_interval_ms must be > 0".to_string());
         }
@@ -492,20 +597,33 @@ impl ClientConfig {
                 ais_vessel_url_base: Some("https://www.vesselfinder.com/?mmsi=".to_string()),
                 log_level: Some("info".to_string()),
             },
-            remote: RemoteConfig {
-                url: Some("192.168.1.100:9000".to_string()),
-                rig_id: Some("hf".to_string()),
-                auth: RemoteAuthConfig {
-                    token: Some("my-token".to_string()),
+            remote: RemoteConfig::default(),
+            remotes: vec![
+                RemoteEntry {
+                    name: "home-hf".to_string(),
+                    url: "192.168.1.100:4530".to_string(),
+                    rig_id: Some("hf".to_string()),
+                    auth: RemoteAuthConfig {
+                        token: Some("my-token".to_string()),
+                    },
+                    poll_interval_ms: 750,
                 },
-                poll_interval_ms: 750,
-            },
+                RemoteEntry {
+                    name: "home-vhf".to_string(),
+                    url: "192.168.1.100:4530".to_string(),
+                    rig_id: Some("vhf".to_string()),
+                    auth: RemoteAuthConfig {
+                        token: Some("my-token".to_string()),
+                    },
+                    poll_interval_ms: 750,
+                },
+            ],
             frontends: FrontendsConfig {
                 http: HttpFrontendConfig {
                     enabled: true,
                     listen: IpAddr::from([127, 0, 0, 1]),
                     port: 8080,
-                    default_rig_id: Some("hf".to_string()),
+                    default_rig_id: Some("home-hf".to_string()),
                     initial_map_zoom: 10,
                     spectrum_coverage_margin_hz: 50_000,
                     spectrum_usable_span_ratio: 0.92,
@@ -822,5 +940,171 @@ uhf = 60
             ..Default::default()
         };
         assert_eq!(auth.session_ttl().as_secs(), 3600);
+    }
+
+    #[test]
+    fn test_parse_remotes_toml() {
+        let toml_str = r#"
+[[remotes]]
+name = "home-hf"
+url = "192.168.1.10:4530"
+rig_id = "hf"
+poll_interval_ms = 500
+
+[remotes.auth]
+token = "secret"
+
+[[remotes]]
+name = "remote"
+url = "remote.example.com:4530"
+"#;
+
+        let config: ClientConfig = toml::from_str(toml_str).unwrap();
+        assert_eq!(config.remotes.len(), 2);
+        assert_eq!(config.remotes[0].name, "home-hf");
+        assert_eq!(config.remotes[0].url, "192.168.1.10:4530");
+        assert_eq!(config.remotes[0].rig_id, Some("hf".to_string()));
+        assert_eq!(config.remotes[0].auth.token, Some("secret".to_string()));
+        assert_eq!(config.remotes[0].poll_interval_ms, 500);
+        assert_eq!(config.remotes[1].name, "remote");
+        assert_eq!(config.remotes[1].url, "remote.example.com:4530");
+        assert!(config.remotes[1].rig_id.is_none());
+        assert!(config.remotes[1].auth.token.is_none());
+        assert_eq!(config.remotes[1].poll_interval_ms, 750); // default
+        assert!(config.validate().is_ok());
+    }
+
+    #[test]
+    fn test_resolved_remotes_from_remotes() {
+        let config = ClientConfig {
+            remotes: vec![RemoteEntry {
+                name: "hf".to_string(),
+                url: "host:4530".to_string(),
+                rig_id: None,
+                auth: RemoteAuthConfig::default(),
+                poll_interval_ms: 750,
+            }],
+            ..Default::default()
+        };
+        let resolved = config.resolved_remotes();
+        assert_eq!(resolved.len(), 1);
+        assert_eq!(resolved[0].name, "hf");
+    }
+
+    #[test]
+    fn test_resolved_remotes_legacy_fallback() {
+        let config = ClientConfig {
+            remote: RemoteConfig {
+                url: Some("host:4530".to_string()),
+                rig_id: Some("hf".to_string()),
+                auth: RemoteAuthConfig {
+                    token: Some("tok".to_string()),
+                },
+                poll_interval_ms: 750,
+            },
+            ..Default::default()
+        };
+        let resolved = config.resolved_remotes();
+        assert_eq!(resolved.len(), 1);
+        assert_eq!(resolved[0].name, "hf");
+        assert_eq!(resolved[0].url, "host:4530");
+        assert_eq!(resolved[0].rig_id, Some("hf".to_string()));
+        assert_eq!(resolved[0].auth.token, Some("tok".to_string()));
+    }
+
+    #[test]
+    fn test_resolved_remotes_legacy_default_name() {
+        let config = ClientConfig {
+            remote: RemoteConfig {
+                url: Some("host:4530".to_string()),
+                rig_id: None,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let resolved = config.resolved_remotes();
+        assert_eq!(resolved[0].name, "default");
+    }
+
+    #[test]
+    fn test_resolved_remotes_prefers_remotes_over_legacy() {
+        let config = ClientConfig {
+            remote: RemoteConfig {
+                url: Some("old:4530".to_string()),
+                ..Default::default()
+            },
+            remotes: vec![RemoteEntry {
+                name: "new".to_string(),
+                url: "new:4530".to_string(),
+                rig_id: None,
+                auth: RemoteAuthConfig::default(),
+                poll_interval_ms: 750,
+            }],
+            ..Default::default()
+        };
+        let resolved = config.resolved_remotes();
+        assert_eq!(resolved.len(), 1);
+        assert_eq!(resolved[0].name, "new");
+    }
+
+    #[test]
+    fn test_validate_rejects_duplicate_remote_names() {
+        let mut config = ClientConfig::default();
+        config.remotes = vec![
+            RemoteEntry {
+                name: "dup".to_string(),
+                url: "a:4530".to_string(),
+                rig_id: None,
+                auth: RemoteAuthConfig::default(),
+                poll_interval_ms: 750,
+            },
+            RemoteEntry {
+                name: "dup".to_string(),
+                url: "b:4530".to_string(),
+                rig_id: None,
+                auth: RemoteAuthConfig::default(),
+                poll_interval_ms: 750,
+            },
+        ];
+        assert!(config.validate().unwrap_err().contains("duplicate name"));
+    }
+
+    #[test]
+    fn test_validate_rejects_empty_remote_name() {
+        let mut config = ClientConfig::default();
+        config.remotes = vec![RemoteEntry {
+            name: "".to_string(),
+            url: "a:4530".to_string(),
+            rig_id: None,
+            auth: RemoteAuthConfig::default(),
+            poll_interval_ms: 750,
+        }];
+        assert!(config.validate().unwrap_err().contains("name must not be empty"));
+    }
+
+    #[test]
+    fn test_validate_rejects_empty_remote_url() {
+        let mut config = ClientConfig::default();
+        config.remotes = vec![RemoteEntry {
+            name: "hf".to_string(),
+            url: "  ".to_string(),
+            rig_id: None,
+            auth: RemoteAuthConfig::default(),
+            poll_interval_ms: 750,
+        }];
+        assert!(config.validate().unwrap_err().contains("url must not be empty"));
+    }
+
+    #[test]
+    fn test_validate_rejects_zero_remote_poll_interval() {
+        let mut config = ClientConfig::default();
+        config.remotes = vec![RemoteEntry {
+            name: "hf".to_string(),
+            url: "a:4530".to_string(),
+            rig_id: None,
+            auth: RemoteAuthConfig::default(),
+            poll_interval_ms: 0,
+        }];
+        assert!(config.validate().unwrap_err().contains("poll_interval_ms must be > 0"));
     }
 }

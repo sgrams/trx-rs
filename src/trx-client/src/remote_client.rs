@@ -61,8 +61,14 @@ pub struct RemoteClientConfig {
     /// Shared flag: `true` while a TCP connection to trx-server is active.
     pub server_connected: Arc<AtomicBool>,
     pub rig_states: Arc<RwLock<HashMap<String, watch::Sender<RigState>>>>,
-    /// Per-rig spectrum watch senders, keyed by rig_id.
+    /// Per-rig spectrum watch senders, keyed by short name (or rig_id in legacy mode).
     pub rig_spectrums: Arc<RwLock<HashMap<String, watch::Sender<SharedSpectrum>>>>,
+    /// Maps configured server rig_id (`Some`) or default/wildcard (`None`) to
+    /// a client-side short name.  Empty in legacy single-remote mode.
+    pub rig_id_to_short_name: HashMap<Option<String>, String>,
+    /// Dynamically resolved reverse mapping: short_name → server rig_id.
+    /// Populated during `refresh_remote_snapshot` when short-name mode is active.
+    pub short_name_to_rig_id: Arc<RwLock<HashMap<String, String>>>,
 }
 
 pub async fn run_remote_client(
@@ -202,29 +208,33 @@ async fn handle_spectrum_connection(
                 // Determine the currently selected rig for backward compat.
                 let selected = selected_rig_id(config);
 
-                for rig_id in &rig_ids {
+                for short_name in &rig_ids {
+                    // Resolve the server rig_id for the wire envelope.
+                    let wire_rig_id = if has_short_names(config) {
+                        resolve_server_rig_id(config, short_name)
+                    } else {
+                        Some(short_name.clone())
+                    };
                     let envelope = ClientEnvelope {
                         token: config.token.clone(),
-                        rig_id: Some(rig_id.clone()),
+                        rig_id: wire_rig_id,
                         cmd: ClientCommand::GetSpectrum,
                     };
                     match send_envelope_no_state_update(&mut writer, &mut reader, envelope).await {
                         Ok(snapshot) => {
-                            // Update per-rig channel.
+                            // Update per-rig channel (keyed by short name).
                             if let Ok(map) = config.rig_spectrums.read() {
-                                if let Some(tx) = map.get(rig_id) {
+                                if let Some(tx) = map.get(short_name) {
                                     tx.send_modify(|s| s.set(snapshot.spectrum.clone(), snapshot.vchan_rds.clone()));
                                 }
                             }
                             // Update global channel if this is the selected rig.
-                            let is_selected = selected.as_deref() == Some(rig_id.as_str());
+                            let is_selected = selected.as_deref() == Some(short_name.as_str());
                             if is_selected {
                                 config.spectrum.send_modify(|s| s.set(snapshot.spectrum, snapshot.vchan_rds));
                             }
                         }
                         Err(e) => {
-                            // A spectrum timeout desynchronises the TCP framing;
-                            // return so the caller reconnects and restores sync.
                             config.spectrum.send_modify(|s| s.set(None, None));
                             return Err(e);
                         }
@@ -318,6 +328,8 @@ async fn send_command(
     rig_id_override: Option<String>,
     state_tx: &watch::Sender<RigState>,
 ) -> RigResult<trx_core::RigSnapshot> {
+    // Keep the original short name for per-rig channel update after response.
+    let channel_key_override = rig_id_override.clone();
     let envelope = build_envelope(config, cmd, rig_id_override);
 
     let mut payload = serde_json::to_string(&envelope)
@@ -349,10 +361,15 @@ async fn send_command(
             // Also update the per-rig watch channel so SSE sessions
             // subscribed to a specific rig see the change immediately
             // instead of waiting for the next poll cycle.
-            let rig_id = envelope.rig_id.as_deref();
-            if let Some(rid) = rig_id {
+            // The rig_id_override is a short name in multi-server mode;
+            // resolve accordingly for the per-rig channel key.
+            let channel_key = channel_key_override
+                .as_deref()
+                .map(String::from)
+                .or_else(|| selected_rig_id(config));
+            if let Some(key) = channel_key {
                 if let Ok(map) = config.rig_states.read() {
-                    if let Some(tx) = map.get(rid) {
+                    if let Some(tx) = map.get(&key) {
                         tx.send_if_modified(|old| {
                             if *old == new_state {
                                 false
@@ -379,9 +396,17 @@ fn build_envelope(
     cmd: ClientCommand,
     rig_id_override: Option<String>,
 ) -> ClientEnvelope {
+    let rig_id = rig_id_override.or_else(|| selected_rig_id(config));
+    // In multi-server mode, the rig_id is actually a short name that needs to
+    // be translated back to the server-side rig_id for the wire envelope.
+    let wire_rig_id = if has_short_names(config) {
+        rig_id.and_then(|name| resolve_server_rig_id(config, &name))
+    } else {
+        rig_id
+    };
     ClientEnvelope {
         token: config.token.clone(),
-        rig_id: rig_id_override.or_else(|| selected_rig_id(config)),
+        rig_id: wire_rig_id,
         cmd,
     }
 }
@@ -393,39 +418,82 @@ async fn refresh_remote_snapshot(
     state_tx: &watch::Sender<RigState>,
 ) -> RigResult<()> {
     let rigs = send_get_rigs(config, writer, reader).await?;
-    cache_remote_rigs(config, &rigs);
-    if rigs.is_empty() {
-        return Err(RigError::communication("GetRigs returned no rigs"));
-    }
 
-    let selected = selected_rig_id(config);
-    let target = selected
-        .as_deref()
-        .and_then(|id| rigs.iter().find(|entry| entry.rig_id == id))
-        .or_else(|| choose_default_rig(rigs.as_slice()))
-        .ok_or_else(|| RigError::communication("GetRigs returned no selectable rig"))?;
-
-    if selected.as_deref() != Some(target.rig_id.as_str()) {
-        set_selected_rig_id(config, Some(target.rig_id.clone()));
-    }
-
-    let new_state = RigState::from_snapshot(target.state.clone());
-    // Only wake SSE subscribers when something actually changed.
-    state_tx.send_if_modified(|old| {
-        if *old == new_state {
-            false
-        } else {
-            *old = new_state;
-            true
-        }
-    });
-
-    // Update per-rig watch channels so each SSE session can subscribe
-    // to a specific rig's state independently.
-    if let Ok(mut rig_map) = config.rig_states.write() {
+    // In multi-server mode, filter rigs to only those that have a short name
+    // mapping, and populate the reverse mapping (short_name → server rig_id).
+    let mapped_rigs: Vec<(String, &RigEntry)> = if has_short_names(config) {
+        let mut mapped = Vec::new();
+        // Track which wildcard (None-key) entry we've already resolved.
+        let mut wildcard_resolved = false;
         for entry in &rigs {
+            if let Some(short_name) = config
+                .rig_id_to_short_name
+                .get(&Some(entry.rig_id.clone()))
+            {
+                // Update reverse map.
+                if let Ok(mut rev) = config.short_name_to_rig_id.write() {
+                    rev.insert(short_name.clone(), entry.rig_id.clone());
+                }
+                mapped.push((short_name.clone(), entry));
+            } else if !wildcard_resolved {
+                if let Some(short_name) = config.rig_id_to_short_name.get(&None) {
+                    // Wildcard: first unmatched rig gets the default short name.
+                    // Prefer an initialized, TX-capable rig when possible.
+                    let candidate = choose_default_rig(&rigs)
+                        .filter(|r| {
+                            !config
+                                .rig_id_to_short_name
+                                .contains_key(&Some(r.rig_id.clone()))
+                        })
+                        .unwrap_or(entry);
+                    if let Ok(mut rev) = config.short_name_to_rig_id.write() {
+                        rev.insert(short_name.clone(), candidate.rig_id.clone());
+                    }
+                    mapped.push((short_name.clone(), candidate));
+                    wildcard_resolved = true;
+                }
+            }
+        }
+        mapped
+    } else {
+        rigs.iter()
+            .map(|e| (e.rig_id.clone(), e))
+            .collect()
+    };
+
+    cache_remote_rigs(config, &rigs, &mapped_rigs);
+
+    if mapped_rigs.is_empty() {
+        return Err(RigError::communication("GetRigs returned no mapped rigs"));
+    }
+
+    // Determine target for global state_tx (backward compat).
+    let selected = selected_rig_id(config);
+    let target_key = selected
+        .as_deref()
+        .and_then(|id| mapped_rigs.iter().find(|(key, _)| key == id))
+        .or_else(|| mapped_rigs.first());
+
+    if let Some((key, entry)) = target_key {
+        if selected.as_deref() != Some(key.as_str()) {
+            set_selected_rig_id(config, Some(key.clone()));
+        }
+        let new_state = RigState::from_snapshot(entry.state.clone());
+        state_tx.send_if_modified(|old| {
+            if *old == new_state {
+                false
+            } else {
+                *old = new_state;
+                true
+            }
+        });
+    }
+
+    // Update per-rig watch channels keyed by short name (or rig_id in legacy mode).
+    if let Ok(mut rig_map) = config.rig_states.write() {
+        for (key, entry) in &mapped_rigs {
             let new_state = RigState::from_snapshot(entry.state.clone());
-            if let Some(tx) = rig_map.get(&entry.rig_id) {
+            if let Some(tx) = rig_map.get(key) {
                 tx.send_if_modified(|old| {
                     if *old == new_state {
                         false
@@ -436,13 +504,13 @@ async fn refresh_remote_snapshot(
                 });
             } else {
                 let (tx, _rx) = watch::channel(new_state);
-                rig_map.insert(entry.rig_id.clone(), tx);
+                rig_map.insert(key.clone(), tx);
             }
         }
-        // Remove channels for rigs no longer reported by the server.
-        let active_ids: std::collections::HashSet<&str> =
-            rigs.iter().map(|e| e.rig_id.as_str()).collect();
-        rig_map.retain(|id, _| active_ids.contains(id.as_str()));
+        // Remove channels for keys no longer present.
+        let active_keys: std::collections::HashSet<&str> =
+            mapped_rigs.iter().map(|(k, _)| k.as_str()).collect();
+        rig_map.retain(|id, _| active_keys.contains(id.as_str()));
     }
     Ok(())
 }
@@ -485,25 +553,30 @@ async fn send_get_rigs(
     ))
 }
 
-fn cache_remote_rigs(config: &RemoteClientConfig, rigs: &[RigEntry]) {
+fn cache_remote_rigs(
+    config: &RemoteClientConfig,
+    _raw_rigs: &[RigEntry],
+    mapped_rigs: &[(String, &RigEntry)],
+) {
     if let Ok(mut guard) = config.known_rigs.lock() {
         // Skip the Vec rebuild when the rig list is structurally unchanged.
-        // We compare the fields surfaced in the UI rig picker; full state
-        // changes are propagated via the watch channel, not this cache.
-        let unchanged = guard.len() == rigs.len()
-            && guard.iter().zip(rigs.iter()).all(|(cached, new)| {
-                cached.rig_id == new.rig_id
-                    && cached.display_name == new.display_name
-                    && cached.state.initialized == new.state.initialized
-                    && cached.audio_port == new.audio_port
-            });
+        let unchanged = guard.len() == mapped_rigs.len()
+            && guard
+                .iter()
+                .zip(mapped_rigs.iter())
+                .all(|(cached, (key, new))| {
+                    cached.rig_id == *key
+                        && cached.display_name == new.display_name
+                        && cached.state.initialized == new.state.initialized
+                        && cached.audio_port == new.audio_port
+                });
         if unchanged {
             return;
         }
-        *guard = rigs
+        *guard = mapped_rigs
             .iter()
-            .map(|entry| RemoteRigEntry {
-                rig_id: entry.rig_id.clone(),
+            .map(|(key, entry)| RemoteRigEntry {
+                rig_id: key.clone(),
                 display_name: entry.display_name.clone(),
                 state: entry.state.clone(),
                 audio_port: entry.audio_port,
@@ -514,6 +587,38 @@ fn cache_remote_rigs(config: &RemoteClientConfig, rigs: &[RigEntry]) {
 
 fn selected_rig_id(config: &RemoteClientConfig) -> Option<String> {
     config.selected_rig_id.lock().ok().and_then(|g| g.clone())
+}
+
+/// Returns `true` when the config has short-name mappings (multi-server mode).
+fn has_short_names(config: &RemoteClientConfig) -> bool {
+    !config.rig_id_to_short_name.is_empty()
+}
+
+/// Resolve a server rig_id to the client-side short name.
+/// In legacy mode (no mappings), returns the rig_id unchanged.
+#[cfg(test)]
+fn resolve_short_name(config: &RemoteClientConfig, server_rig_id: &str) -> Option<String> {
+    if !has_short_names(config) {
+        return Some(server_rig_id.to_string());
+    }
+    // Try explicit rig_id mapping first.
+    if let Some(name) = config.rig_id_to_short_name.get(&Some(server_rig_id.to_string())) {
+        return Some(name.clone());
+    }
+    // Try wildcard (None key = "default rig on this server").
+    config.rig_id_to_short_name.get(&None).cloned()
+}
+
+/// Resolve a client-side short name back to a server rig_id for building envelopes.
+fn resolve_server_rig_id(config: &RemoteClientConfig, short_name: &str) -> Option<String> {
+    if !has_short_names(config) {
+        return Some(short_name.to_string());
+    }
+    config
+        .short_name_to_rig_id
+        .read()
+        .ok()
+        .and_then(|map| map.get(short_name).cloned())
 }
 
 fn set_selected_rig_id(config: &RemoteClientConfig, value: Option<String>) {
@@ -743,6 +848,8 @@ fn parse_port(port_str: &str) -> Result<u16, String> {
 #[cfg(test)]
 mod tests {
     use super::{parse_remote_url, RemoteClientConfig, RemoteEndpoint, SharedSpectrum};
+    #[allow(unused_imports)]
+    use super::{has_short_names, resolve_server_rig_id, resolve_short_name};
     use std::collections::HashMap;
     use std::sync::atomic::AtomicBool;
     use std::sync::{Arc, Mutex, RwLock};
@@ -932,6 +1039,8 @@ mod tests {
                 server_connected: Arc::new(AtomicBool::new(false)),
                 rig_states: Arc::new(RwLock::new(HashMap::new())),
                 rig_spectrums: Arc::new(RwLock::new(HashMap::new())),
+                rig_id_to_short_name: HashMap::new(),
+                short_name_to_rig_id: Arc::new(RwLock::new(HashMap::new())),
             },
             req_rx,
             state_tx,
@@ -972,9 +1081,91 @@ mod tests {
             server_connected: Arc::new(AtomicBool::new(false)),
             rig_states: Arc::new(RwLock::new(HashMap::new())),
             rig_spectrums: Arc::new(RwLock::new(HashMap::new())),
+            rig_id_to_short_name: HashMap::new(),
+            short_name_to_rig_id: Arc::new(RwLock::new(HashMap::new())),
         };
         let envelope = super::build_envelope(&config, trx_protocol::ClientCommand::GetState, None);
         assert_eq!(envelope.token.as_deref(), Some("secret"));
         assert_eq!(envelope.rig_id.as_deref(), Some("sdr"));
+    }
+
+    #[test]
+    fn build_envelope_translates_short_name_to_server_rig_id() {
+        let (spectrum_tx, _spectrum_rx) = watch::channel(SharedSpectrum::default());
+        let short_name_to_rig_id = Arc::new(RwLock::new(HashMap::from([
+            ("home-hf".to_string(), "hf".to_string()),
+        ])));
+        let config = RemoteClientConfig {
+            addr: "127.0.0.1:4530".to_string(),
+            token: None,
+            selected_rig_id: Arc::new(Mutex::new(Some("home-hf".to_string()))),
+            known_rigs: Arc::new(Mutex::new(Vec::new())),
+            poll_interval: Duration::from_millis(500),
+            spectrum: Arc::new(spectrum_tx),
+            server_connected: Arc::new(AtomicBool::new(false)),
+            rig_states: Arc::new(RwLock::new(HashMap::new())),
+            rig_spectrums: Arc::new(RwLock::new(HashMap::new())),
+            rig_id_to_short_name: HashMap::from([
+                (Some("hf".to_string()), "home-hf".to_string()),
+            ]),
+            short_name_to_rig_id,
+        };
+        // selected_rig_id is "home-hf" (short name), envelope should translate to "hf"
+        let envelope = super::build_envelope(&config, trx_protocol::ClientCommand::GetState, None);
+        assert_eq!(envelope.rig_id.as_deref(), Some("hf"));
+
+        // Override with short name should also translate
+        let envelope = super::build_envelope(
+            &config,
+            trx_protocol::ClientCommand::GetState,
+            Some("home-hf".to_string()),
+        );
+        assert_eq!(envelope.rig_id.as_deref(), Some("hf"));
+    }
+
+    #[test]
+    fn resolve_short_name_legacy_passthrough() {
+        let (spectrum_tx, _spectrum_rx) = watch::channel(SharedSpectrum::default());
+        let config = RemoteClientConfig {
+            addr: "127.0.0.1:4530".to_string(),
+            token: None,
+            selected_rig_id: Arc::new(Mutex::new(None)),
+            known_rigs: Arc::new(Mutex::new(Vec::new())),
+            poll_interval: Duration::from_millis(500),
+            spectrum: Arc::new(spectrum_tx),
+            server_connected: Arc::new(AtomicBool::new(false)),
+            rig_states: Arc::new(RwLock::new(HashMap::new())),
+            rig_spectrums: Arc::new(RwLock::new(HashMap::new())),
+            rig_id_to_short_name: HashMap::new(),
+            short_name_to_rig_id: Arc::new(RwLock::new(HashMap::new())),
+        };
+        // Legacy mode: rig_id passes through unchanged
+        assert!(!has_short_names(&config));
+        assert_eq!(resolve_short_name(&config, "hf"), Some("hf".to_string()));
+    }
+
+    #[test]
+    fn resolve_short_name_with_mapping() {
+        let (spectrum_tx, _spectrum_rx) = watch::channel(SharedSpectrum::default());
+        let config = RemoteClientConfig {
+            addr: "127.0.0.1:4530".to_string(),
+            token: None,
+            selected_rig_id: Arc::new(Mutex::new(None)),
+            known_rigs: Arc::new(Mutex::new(Vec::new())),
+            poll_interval: Duration::from_millis(500),
+            spectrum: Arc::new(spectrum_tx),
+            server_connected: Arc::new(AtomicBool::new(false)),
+            rig_states: Arc::new(RwLock::new(HashMap::new())),
+            rig_spectrums: Arc::new(RwLock::new(HashMap::new())),
+            rig_id_to_short_name: HashMap::from([
+                (Some("hf".to_string()), "home-hf".to_string()),
+                (None, "default-rig".to_string()),
+            ]),
+            short_name_to_rig_id: Arc::new(RwLock::new(HashMap::new())),
+        };
+        assert!(has_short_names(&config));
+        assert_eq!(resolve_short_name(&config, "hf"), Some("home-hf".to_string()));
+        // Unknown rig_id falls through to wildcard
+        assert_eq!(resolve_short_name(&config, "unknown"), Some("default-rig".to_string()));
     }
 }

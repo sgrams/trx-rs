@@ -32,7 +32,7 @@ use trx_frontend_http::register_frontend_on as register_http_frontend;
 use trx_frontend_http_json::register_frontend_on as register_http_json_frontend;
 use trx_frontend_rigctl::register_frontend_on as register_rigctl_frontend;
 
-use config::ClientConfig;
+use config::{ClientConfig, RemoteEntry};
 use remote_client::{parse_remote_url, RemoteClientConfig};
 
 const PKG_DESCRIPTION: &str = concat!(env!("CARGO_PKG_NAME"), " - remote rig client");
@@ -191,27 +191,43 @@ async fn async_init() -> DynResult<AppState> {
         .decode_history_retention_min_by_rig
         .clone();
 
-    // Resolve remote URL: CLI > config [remote] section > error
-    let remote_url = cli
-        .url
-        .clone()
-        .or_else(|| cfg.remote.url.clone())
-        .ok_or("Remote URL not specified. Use --url or set [remote].url in config.")?;
+    // Resolve remote entries: CLI --url > [[remotes]] > legacy [remote] > error
+    let resolved_remotes: Vec<RemoteEntry> = if let Some(ref url) = cli.url {
+        // CLI --url creates a single implicit remote entry
+        let rig_id = cli
+            .rig_id
+            .clone()
+            .or_else(|| cfg.remote.rig_id.clone());
+        let name = rig_id.clone().unwrap_or_else(|| "default".to_string());
+        let token = cli.token.clone().or_else(|| cfg.remote.auth.token.clone());
+        let poll_interval_ms = cli.poll_interval_ms.unwrap_or(cfg.remote.poll_interval_ms);
+        vec![RemoteEntry {
+            name,
+            url: url.clone(),
+            rig_id,
+            auth: config::RemoteAuthConfig { token },
+            poll_interval_ms,
+        }]
+    } else {
+        let entries = cfg.resolved_remotes();
+        if entries.is_empty() {
+            return Err(
+                "No remote servers configured. Use --url or add [[remotes]] entries in config."
+                    .into(),
+            );
+        }
+        entries
+    };
 
-    let remote_endpoint =
-        parse_remote_url(&remote_url).map_err(|e| format!("Invalid remote URL: {}", e))?;
-
-    let remote_token = cli.token.clone().or_else(|| cfg.remote.auth.token.clone());
-    let remote_rig_id = cli
+    // Set initial active rig to the configured default or first remote entry.
+    let default_rig = cli
         .rig_id
         .clone()
         .or_else(|| cfg.frontends.http.default_rig_id.clone())
-        .or_else(|| cfg.remote.rig_id.clone());
+        .or_else(|| resolved_remotes.first().map(|e| e.name.clone()));
     if let Ok(mut guard) = frontend_runtime.remote_active_rig_id.lock() {
-        *guard = remote_rig_id.clone();
+        *guard = default_rig.clone();
     }
-
-    let poll_interval_ms = cli.poll_interval_ms.unwrap_or(cfg.remote.poll_interval_ms);
 
     // Resolve frontends: CLI > config > default to http
     let frontends: Vec<String> = if let Some(ref fes) = cli.frontends {
@@ -259,9 +275,10 @@ async fn async_init() -> DynResult<AppState> {
     frontend_runtime.owner_website_name = cfg.general.website_name.clone();
     frontend_runtime.ais_vessel_url_base = cfg.general.ais_vessel_url_base.clone();
 
+    let remote_names: Vec<&str> = resolved_remotes.iter().map(|e| e.name.as_str()).collect();
     info!(
-        "Starting trx-client (remote: {}, frontends: {})",
-        remote_endpoint.connect_addr(),
+        "Starting trx-client (remotes: [{}], frontends: {})",
+        remote_names.join(", "),
         frontends.join(", ")
     );
 
@@ -272,28 +289,131 @@ async fn async_init() -> DynResult<AppState> {
     let initial_state = RigState::new_uninitialized();
     let (state_tx, state_rx) = watch::channel(initial_state);
 
-    // Extract host for audio before moving remote_addr
-    let remote_host = remote_endpoint.host.clone();
+    // Group remote entries by (addr, token) so entries sharing a server share
+    // one TCP connection.  Each group gets its own run_remote_client task.
+    use std::collections::BTreeMap;
+    use std::sync::RwLock;
 
-    let remote_cfg = RemoteClientConfig {
-        addr: remote_endpoint.connect_addr(),
-        token: remote_token,
-        selected_rig_id: frontend_runtime.remote_active_rig_id.clone(),
-        known_rigs: frontend_runtime.remote_rigs.clone(),
-        rig_states: frontend_runtime.rig_states.clone(),
-        poll_interval: Duration::from_millis(poll_interval_ms),
-        spectrum: frontend_runtime.spectrum.clone(),
-        rig_spectrums: frontend_runtime.rig_spectrums.clone(),
-        server_connected: frontend_runtime.server_connected.clone(),
-    };
-    let remote_shutdown_rx = shutdown_rx.clone();
-    task_handles.push(tokio::spawn(async move {
-        if let Err(e) =
-            remote_client::run_remote_client(remote_cfg, rx, state_tx, remote_shutdown_rx).await
-        {
-            error!("Remote client error: {}", e);
+    // Parse all endpoints upfront.
+    let parsed_remotes: Vec<(RemoteEntry, remote_client::RemoteEndpoint)> = resolved_remotes
+        .iter()
+        .map(|entry| {
+            let ep = parse_remote_url(&entry.url)
+                .map_err(|e| format!("Invalid URL for remote '{}': {}", entry.name, e))?;
+            Ok((entry.clone(), ep))
+        })
+        .collect::<Result<Vec<_>, String>>()?;
+
+    // Build per-short-name server host map for audio routing.
+    let mut audio_server_hosts: HashMap<String, (String, u16)> = HashMap::new();
+    for (entry, ep) in &parsed_remotes {
+        let audio_port = cfg
+            .frontends
+            .audio
+            .rig_ports
+            .get(&entry.name)
+            .copied()
+            .unwrap_or(cfg.frontends.audio.server_port);
+        audio_server_hosts.insert(entry.name.clone(), (ep.host.clone(), audio_port));
+    }
+
+    // Group by (connect_addr, token).
+    let mut server_groups: BTreeMap<(String, Option<String>), Vec<&RemoteEntry>> = BTreeMap::new();
+    let mut endpoint_by_addr: HashMap<String, remote_client::RemoteEndpoint> = HashMap::new();
+    for (entry, ep) in &parsed_remotes {
+        let key = (ep.connect_addr(), entry.auth.token.clone());
+        endpoint_by_addr
+            .entry(ep.connect_addr())
+            .or_insert_with(|| ep.clone());
+        server_groups.entry(key).or_default().push(entry);
+    }
+
+    // Per-server request senders for the routing dispatcher.
+    let mut route_map: HashMap<String, mpsc::Sender<RigRequest>> = HashMap::new();
+
+    for ((addr, token), entries) in &server_groups {
+        // Build the rig_id → short_name mapping for this server group.
+        let mut rig_id_to_short_name: HashMap<Option<String>, String> = HashMap::new();
+        for entry in entries {
+            rig_id_to_short_name.insert(entry.rig_id.clone(), entry.name.clone());
         }
-    }));
+
+        let poll_interval = entries
+            .iter()
+            .map(|e| e.poll_interval_ms)
+            .min()
+            .unwrap_or(750);
+
+        let (server_tx, server_rx) = mpsc::channel::<RigRequest>(RIG_TASK_CHANNEL_BUFFER);
+        for entry in entries {
+            route_map.insert(entry.name.clone(), server_tx.clone());
+        }
+
+        let remote_cfg = RemoteClientConfig {
+            addr: addr.clone(),
+            token: token.clone(),
+            selected_rig_id: frontend_runtime.remote_active_rig_id.clone(),
+            known_rigs: frontend_runtime.remote_rigs.clone(),
+            rig_states: frontend_runtime.rig_states.clone(),
+            poll_interval: Duration::from_millis(poll_interval),
+            spectrum: frontend_runtime.spectrum.clone(),
+            rig_spectrums: frontend_runtime.rig_spectrums.clone(),
+            server_connected: frontend_runtime.server_connected.clone(),
+            rig_id_to_short_name,
+            short_name_to_rig_id: Arc::new(RwLock::new(HashMap::new())),
+        };
+        let state_tx = state_tx.clone();
+        let remote_shutdown_rx = shutdown_rx.clone();
+        task_handles.push(tokio::spawn(async move {
+            if let Err(e) =
+                remote_client::run_remote_client(remote_cfg, server_rx, state_tx, remote_shutdown_rx)
+                    .await
+            {
+                error!("Remote client error: {}", e);
+            }
+        }));
+    }
+
+    // Request routing dispatcher: receives from the single frontend-facing
+    // channel and dispatches to the per-server channel based on rig_id_override
+    // (short name).
+    let route_map = Arc::new(route_map);
+    let default_rig_for_router = frontend_runtime.remote_active_rig_id.clone();
+    {
+        let route_map = route_map.clone();
+        let mut frontend_rx = rx;
+        task_handles.push(tokio::spawn(async move {
+            while let Some(req) = frontend_rx.recv().await {
+                let target = req
+                    .rig_id_override
+                    .as_deref()
+                    .map(String::from)
+                    .or_else(|| {
+                        default_rig_for_router
+                            .lock()
+                            .ok()
+                            .and_then(|g| g.clone())
+                    });
+                let sender = target
+                    .as_deref()
+                    .and_then(|name| route_map.get(name))
+                    .or_else(|| route_map.values().next());
+                if let Some(sender) = sender {
+                    let _ = sender.send(req).await;
+                } else {
+                    let _ = req.respond_to.send(Err(trx_core::RigError::communication(
+                        "no remote server available for this rig",
+                    )));
+                }
+            }
+        }));
+    }
+
+    // Extract first remote host for audio backward-compat fallback.
+    let remote_host = parsed_remotes
+        .first()
+        .map(|(_, ep)| ep.host.clone())
+        .unwrap_or_else(|| "127.0.0.1".to_string());
 
     // Audio streaming setup
     let mut pending_audio_client = None;
@@ -392,10 +512,15 @@ async fn async_init() -> DynResult<AppState> {
         let rig_audio_rx_map = frontend_runtime.rig_audio_rx.clone();
         let rig_audio_info_map = frontend_runtime.rig_audio_info.clone();
         let rig_vchan_cmd_map = frontend_runtime.rig_vchan_audio_cmd.clone();
+        let audio_rig_server_hosts: HashMap<String, String> = audio_server_hosts
+            .iter()
+            .map(|(name, (host, _))| (name.clone(), host.clone()))
+            .collect();
         pending_audio_client = Some(tokio::spawn(audio_client::run_multi_rig_audio_manager(
             remote_host,
             cfg.frontends.audio.server_port,
             audio_rig_ports,
+            audio_rig_server_hosts,
             frontend_runtime.remote_active_rig_id.clone(),
             frontend_runtime.remote_rigs.clone(),
             rx_audio_tx,

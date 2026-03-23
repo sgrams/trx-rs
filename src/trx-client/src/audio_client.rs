@@ -58,6 +58,8 @@ pub async fn run_multi_rig_audio_manager(
     server_host: String,
     default_port: u16,
     rig_ports: HashMap<String, u16>,
+    // Per-rig server host overrides (short_name -> host) for multi-server mode.
+    rig_server_hosts: HashMap<String, String>,
     selected_rig_id: Arc<Mutex<Option<String>>>,
     known_rigs: Arc<Mutex<Vec<RemoteRigEntry>>>,
     global_rx_tx: broadcast::Sender<Bytes>,
@@ -147,7 +149,10 @@ pub async fn run_multi_rig_audio_manager(
                         map.insert(rig_id.clone(), per_rig_vchan_tx);
                     }
 
-                    let addr = format!("{}:{}", server_host, port);
+                    let host = rig_server_hosts
+                        .get(rig_id)
+                        .unwrap_or(&server_host);
+                    let addr = format!("{}:{}", host, port);
                     let rig_id_clone = rig_id.clone();
                     let global_rx_tx_clone = global_rx_tx.clone();
                     let global_info_tx_clone = global_stream_info_tx.clone();
@@ -178,7 +183,7 @@ pub async fn run_multi_rig_audio_manager(
                         .await;
                     });
 
-                    info!("Audio client: started task for rig {} ({}:{})", rig_id, server_host, port);
+                    info!("Audio client: started task for rig {} ({}:{})", rig_id, host, port);
                     active_tasks.insert(rig_id.clone(), PerRigAudioTask {
                         handle,
                         shutdown_tx: per_rig_shutdown_tx,
