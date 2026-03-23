@@ -555,30 +555,76 @@ fn cache_remote_rigs(
     mapped_rigs: &[(String, &RigEntry)],
 ) {
     if let Ok(mut guard) = config.known_rigs.lock() {
+        let next = if has_short_names(config) {
+            merge_known_rigs(config, &guard, mapped_rigs)
+        } else {
+            mapped_rigs
+                .iter()
+                .map(|(key, entry)| remote_rig_entry_from_snapshot(key, entry))
+                .collect()
+        };
+
         // Skip the Vec rebuild when the rig list is structurally unchanged.
-        let unchanged = guard.len() == mapped_rigs.len()
+        let unchanged = guard.len() == next.len()
             && guard
                 .iter()
-                .zip(mapped_rigs.iter())
-                .all(|(cached, (key, new))| {
-                    cached.rig_id == *key
-                        && cached.display_name == new.display_name
-                        && cached.state.initialized == new.state.initialized
-                        && cached.audio_port == new.audio_port
-                });
+                .zip(next.iter())
+                .all(|(cached, new)| same_remote_rig_entry(cached, new));
         if unchanged {
             return;
         }
-        *guard = mapped_rigs
-            .iter()
-            .map(|(key, entry)| RemoteRigEntry {
-                rig_id: key.clone(),
-                display_name: entry.display_name.clone(),
-                state: entry.state.clone(),
-                audio_port: entry.audio_port,
-            })
-            .collect();
+        *guard = next;
     }
+}
+
+fn merge_known_rigs(
+    config: &RemoteClientConfig,
+    current: &[RemoteRigEntry],
+    mapped_rigs: &[(String, &RigEntry)],
+) -> Vec<RemoteRigEntry> {
+    let owned_keys: std::collections::HashSet<String> =
+        config.rig_id_to_short_name.values().cloned().collect();
+    let mapped_by_key: std::collections::HashMap<&str, &RigEntry> = mapped_rigs
+        .iter()
+        .map(|(key, entry)| (key.as_str(), *entry))
+        .collect();
+    let mut merged = Vec::with_capacity(current.len().max(mapped_rigs.len()));
+    let mut inserted: std::collections::HashSet<&str> = std::collections::HashSet::new();
+
+    for existing in current {
+        if owned_keys.contains(&existing.rig_id) {
+            if let Some(entry) = mapped_by_key.get(existing.rig_id.as_str()) {
+                merged.push(remote_rig_entry_from_snapshot(&existing.rig_id, entry));
+                inserted.insert(existing.rig_id.as_str());
+            }
+        } else {
+            merged.push(existing.clone());
+        }
+    }
+
+    for (key, entry) in mapped_rigs {
+        if !inserted.contains(key.as_str()) {
+            merged.push(remote_rig_entry_from_snapshot(key, entry));
+        }
+    }
+
+    merged
+}
+
+fn remote_rig_entry_from_snapshot(key: &str, entry: &RigEntry) -> RemoteRigEntry {
+    RemoteRigEntry {
+        rig_id: key.to_string(),
+        display_name: entry.display_name.clone(),
+        state: entry.state.clone(),
+        audio_port: entry.audio_port,
+    }
+}
+
+fn same_remote_rig_entry(left: &RemoteRigEntry, right: &RemoteRigEntry) -> bool {
+    left.rig_id == right.rig_id
+        && left.display_name == right.display_name
+        && left.state.initialized == right.state.initialized
+        && left.audio_port == right.audio_port
 }
 
 fn selected_rig_id(config: &RemoteClientConfig) -> Option<String> {
@@ -1196,5 +1242,48 @@ mod tests {
             resolve_short_name(&config, "unknown"),
             Some("default-rig".to_string())
         );
+    }
+
+    #[test]
+    fn cache_remote_rigs_keeps_other_server_entries() {
+        let (spectrum_tx, _spectrum_rx) = watch::channel(SharedSpectrum::default());
+        let known_rigs = Arc::new(Mutex::new(vec![trx_frontend::RemoteRigEntry {
+            rig_id: "lidzbark-vhf".to_string(),
+            display_name: Some("Lidzbark VHF".to_string()),
+            state: sample_snapshot(),
+            audio_port: Some(4531),
+        }]));
+        let config = RemoteClientConfig {
+            addr: "127.0.0.1:4530".to_string(),
+            token: None,
+            selected_rig_id: Arc::new(Mutex::new(None)),
+            known_rigs: known_rigs.clone(),
+            poll_interval: Duration::from_millis(500),
+            spectrum: Arc::new(spectrum_tx),
+            server_connected: Arc::new(AtomicBool::new(false)),
+            rig_states: Arc::new(RwLock::new(HashMap::new())),
+            rig_spectrums: Arc::new(RwLock::new(HashMap::new())),
+            rig_id_to_short_name: HashMap::from([(Some("hf".to_string()), "gdansk".to_string())]),
+            short_name_to_rig_id: Arc::new(RwLock::new(HashMap::new())),
+        };
+        let snapshot = sample_snapshot();
+        let rigs = vec![RigEntry {
+            rig_id: "hf".to_string(),
+            display_name: Some("Gdansk HF".to_string()),
+            state: snapshot,
+            audio_port: Some(4532),
+        }];
+        let mapped = vec![("gdansk".to_string(), &rigs[0])];
+
+        super::cache_remote_rigs(&config, &rigs, &mapped);
+
+        let cached = known_rigs.lock().expect("known rigs lock");
+        assert_eq!(cached.len(), 2);
+        assert!(cached.iter().any(|entry| entry.rig_id == "lidzbark-vhf"));
+        assert!(cached.iter().any(|entry| {
+            entry.rig_id == "gdansk"
+                && entry.display_name.as_deref() == Some("Gdansk HF")
+                && entry.audio_port == Some(4532)
+        }));
     }
 }
