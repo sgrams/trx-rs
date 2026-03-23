@@ -201,8 +201,7 @@ async fn handle_spectrum_connection(
                 let rig_ids = active_spectrum_rig_ids(config);
 
                 if rig_ids.is_empty() {
-                    // No subscribers at all — clear global and skip.
-                    config.spectrum.send_modify(|s| s.set(None, None));
+                    // This server currently has no owned spectrum subscribers.
                     continue;
                 }
 
@@ -236,7 +235,12 @@ async fn handle_spectrum_connection(
                             }
                         }
                         Err(e) => {
-                            config.spectrum.send_modify(|s| s.set(None, None));
+                            if selected
+                                .as_deref()
+                                .is_some_and(|rid| rid == short_name && config_owns_short_name(config, rid))
+                            {
+                                config.spectrum.send_modify(|s| s.set(None, None));
+                            }
                             return Err(e);
                         }
                     }
@@ -465,13 +469,10 @@ async fn refresh_remote_snapshot(
 
     // Determine target for global state_tx (backward compat).
     let selected = selected_rig_id(config);
-    let target_key = selected
-        .as_deref()
-        .and_then(|id| mapped_rigs.iter().find(|(key, _)| key == id))
-        .or_else(|| mapped_rigs.first());
+    let target_key = global_target_for_snapshot(selected.as_deref(), &mapped_rigs);
 
     if let Some((key, entry)) = target_key {
-        if selected.as_deref() != Some(key.as_str()) {
+        if selected.is_none() {
             set_selected_rig_id(config, Some(key.clone()));
         }
         let new_state = RigState::from_snapshot(entry.state.clone());
@@ -503,10 +504,13 @@ async fn refresh_remote_snapshot(
                 rig_map.insert(key.clone(), tx);
             }
         }
-        // Remove channels for keys no longer present.
+        // Remove channels for keys no longer present on this server while
+        // keeping watch channels owned by other server groups intact.
         let active_keys: std::collections::HashSet<&str> =
             mapped_rigs.iter().map(|(k, _)| k.as_str()).collect();
-        rig_map.retain(|id, _| active_keys.contains(id.as_str()));
+        rig_map.retain(|id, _| {
+            !config_owns_short_name(config, id) || active_keys.contains(id.as_str())
+        });
     }
     Ok(())
 }
@@ -631,6 +635,31 @@ fn selected_rig_id(config: &RemoteClientConfig) -> Option<String> {
     config.selected_rig_id.lock().ok().and_then(|g| g.clone())
 }
 
+fn global_target_for_snapshot<'a>(
+    selected: Option<&str>,
+    mapped_rigs: &'a [(String, &RigEntry)],
+) -> Option<&'a (String, &'a RigEntry)> {
+    selected
+        .and_then(|id| mapped_rigs.iter().find(|(key, _)| key == id))
+        .or_else(|| {
+            if selected.is_none() {
+                mapped_rigs.first()
+            } else {
+                None
+            }
+        })
+}
+
+fn config_owns_short_name(config: &RemoteClientConfig, short_name: &str) -> bool {
+    if !has_short_names(config) {
+        return true;
+    }
+    config
+        .rig_id_to_short_name
+        .values()
+        .any(|name| name == short_name)
+}
+
 /// Returns `true` when the config has short-name mappings (multi-server mode).
 fn has_short_names(config: &RemoteClientConfig) -> bool {
     !config.rig_id_to_short_name.is_empty()
@@ -723,7 +752,7 @@ fn active_spectrum_rig_ids(config: &RemoteClientConfig) -> Vec<String> {
     // Collect per-rig channels with active subscribers.
     if let Ok(map) = config.rig_spectrums.read() {
         for (rig_id, tx) in map.iter() {
-            if tx.receiver_count() > 0 {
+            if tx.receiver_count() > 0 && config_owns_short_name(config, rig_id) {
                 ids.push(rig_id.clone());
             }
         }
@@ -732,7 +761,7 @@ fn active_spectrum_rig_ids(config: &RemoteClientConfig) -> Vec<String> {
     // selected rig, add the selected rig so backward compat works.
     if config.spectrum.receiver_count() > 0 {
         if let Some(selected) = selected_rig_id(config) {
-            if !ids.contains(&selected) {
+            if config_owns_short_name(config, &selected) && !ids.contains(&selected) {
                 // Only add if the rig is initialized.
                 let initialized = config
                     .known_rigs
@@ -1285,5 +1314,59 @@ mod tests {
                 && entry.display_name.as_deref() == Some("Gdansk HF")
                 && entry.audio_port == Some(4532)
         }));
+    }
+
+    #[test]
+    fn global_target_for_snapshot_skips_other_server_selection() {
+        let snapshot = sample_snapshot();
+        let rigs = vec![RigEntry {
+            rig_id: "hf".to_string(),
+            display_name: Some("Gdansk HF".to_string()),
+            state: snapshot,
+            audio_port: Some(4532),
+        }];
+        let mapped = vec![("gdansk".to_string(), &rigs[0])];
+
+        let target = super::global_target_for_snapshot(Some("lidzbark-vhf"), &mapped);
+        assert!(target.is_none());
+
+        let target = super::global_target_for_snapshot(None, &mapped);
+        assert_eq!(target.map(|(key, _)| key.as_str()), Some("gdansk"));
+    }
+
+    #[test]
+    fn active_spectrum_rig_ids_only_returns_owned_selected_rig() {
+        let (spectrum_tx, _spectrum_rx) = watch::channel(SharedSpectrum::default());
+        let selected_rig_id = Arc::new(Mutex::new(Some("lidzbark-vhf".to_string())));
+        let known_rigs = Arc::new(Mutex::new(vec![
+            trx_frontend::RemoteRigEntry {
+                rig_id: "gdansk".to_string(),
+                display_name: Some("Gdansk".to_string()),
+                state: sample_snapshot(),
+                audio_port: Some(4532),
+            },
+            trx_frontend::RemoteRigEntry {
+                rig_id: "lidzbark-vhf".to_string(),
+                display_name: Some("Lidzbark VHF".to_string()),
+                state: sample_snapshot(),
+                audio_port: Some(4531),
+            },
+        ]));
+        let config = RemoteClientConfig {
+            addr: "127.0.0.1:4530".to_string(),
+            token: None,
+            selected_rig_id,
+            known_rigs,
+            poll_interval: Duration::from_millis(500),
+            spectrum: Arc::new(spectrum_tx),
+            server_connected: Arc::new(AtomicBool::new(false)),
+            rig_states: Arc::new(RwLock::new(HashMap::new())),
+            rig_spectrums: Arc::new(RwLock::new(HashMap::new())),
+            rig_id_to_short_name: HashMap::from([(Some("hf".to_string()), "gdansk".to_string())]),
+            short_name_to_rig_id: Arc::new(RwLock::new(HashMap::new())),
+        };
+
+        let ids = super::active_spectrum_rig_ids(&config);
+        assert!(ids.is_empty());
     }
 }
