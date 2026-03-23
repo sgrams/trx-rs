@@ -475,7 +475,8 @@ pub fn start_decode_history_collector(context: Arc<FrontendRuntimeContext>) {
 #[derive(Deserialize)]
 pub struct AudioQuery {
     pub channel_id: Option<Uuid>,
-    pub rig_id: Option<String>,
+    #[serde(alias = "rig_id")]
+    pub remote: Option<String>,
 }
 
 #[get("/audio")]
@@ -488,9 +489,6 @@ pub async fn audio_ws(
     let Some(tx_sender) = context.audio_tx.as_ref().cloned() else {
         return Ok(HttpResponse::NotFound().body("audio not enabled"));
     };
-    let Some(mut info_rx) = context.audio_info.as_ref().cloned() else {
-        return Ok(HttpResponse::NotFound().body("audio not enabled"));
-    };
 
     // Plain GET probe (no WebSocket upgrade) - return 204 to signal audio is available.
     if !req.headers().contains_key("upgrade") {
@@ -501,9 +499,15 @@ pub async fn audio_ws(
     // The entry is created asynchronously when AUDIO_MSG_VCHAN_ALLOCATED arrives
     // from the server, which may lag the HTTP allocation by up to ~100 ms.
     // Poll for up to 2 s so a tight JS timer doesn't race and get a 404.
-    let rx_sub: broadcast::Receiver<Bytes> = if let Some(ch_id) = query.channel_id {
+    let (rx_sub, mut info_rx): (
+        broadcast::Receiver<Bytes>,
+        tokio::sync::watch::Receiver<Option<trx_core::audio::AudioStreamInfo>>,
+    ) = if let Some(ch_id) = query.channel_id {
+        let Some(info_rx) = context.audio_info.as_ref().cloned() else {
+            return Ok(HttpResponse::NotFound().body("audio not enabled"));
+        };
         let deadline = Instant::now() + Duration::from_secs(2);
-        loop {
+        let rx_sub = loop {
             match context.vchan_audio.read() {
                 Ok(map) => {
                     if let Some(tx) = map.get(&ch_id) {
@@ -516,29 +520,37 @@ pub async fn audio_ws(
                 return Ok(HttpResponse::NotFound().body("channel not found"));
             }
             tokio::time::sleep(Duration::from_millis(50)).await;
-        }
-    } else if let Some(ref rig_id) = query.rig_id {
+        };
+        (rx_sub, info_rx)
+    } else if let Some(ref remote) = query.remote {
         // Per-rig audio: subscribe to the specific rig's broadcast.
         // Do NOT fall back to global — that would silently deliver the wrong
         // rig's audio. Wait briefly for the per-rig channel to appear (it is
         // lazily created by the audio relay sync task every 500ms).
         let deadline = Instant::now() + Duration::from_secs(3);
-        loop {
-            if let Some(rx) = context.rig_audio_subscribe(rig_id) {
-                break rx;
+        let (rx_sub, info_rx) = loop {
+            if let (Some(rx), Some(info_rx)) = (
+                context.rig_audio_subscribe(remote),
+                context.rig_audio_info_rx(remote),
+            ) {
+                break (rx, info_rx);
             }
             if Instant::now() >= deadline {
                 return Ok(
-                    HttpResponse::NotFound().body(format!("audio not available for rig {rig_id}"))
+                    HttpResponse::NotFound().body(format!("audio not available for rig {remote}"))
                 );
             }
             tokio::time::sleep(Duration::from_millis(100)).await;
-        }
+        };
+        (rx_sub, info_rx)
     } else {
+        let Some(info_rx) = context.audio_info.as_ref().cloned() else {
+            return Ok(HttpResponse::NotFound().body("audio not enabled"));
+        };
         let Some(rx) = context.audio_rx.as_ref() else {
             return Ok(HttpResponse::NotFound().body("audio not enabled"));
         };
-        rx.subscribe()
+        (rx.subscribe(), info_rx)
     };
     let mut rx_sub = rx_sub;
 
@@ -620,4 +632,23 @@ pub async fn audio_ws(
     });
 
     Ok(response)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::AudioQuery;
+
+    #[test]
+    fn audio_query_accepts_remote() {
+        let query: AudioQuery =
+            serde_json::from_str(r#"{"remote":"lidzbark-vhf"}"#).expect("query parse");
+        assert_eq!(query.remote.as_deref(), Some("lidzbark-vhf"));
+    }
+
+    #[test]
+    fn audio_query_accepts_legacy_rig_id_alias() {
+        let query: AudioQuery =
+            serde_json::from_str(r#"{"rig_id":"gdansk"}"#).expect("query parse");
+        assert_eq!(query.remote.as_deref(), Some("gdansk"));
+    }
 }
