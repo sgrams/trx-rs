@@ -7312,6 +7312,7 @@ let txStream = null;
 let txProcessor = null;
 let streamInfo = null;
 let opusDecoder = null;
+let wasmOpusDecoder = null;
 let txEncoder = null;
 let nextPlayTime = 0;
 let lastLevelUpdate = 0;
@@ -7324,6 +7325,7 @@ let txTimeoutTimer = null;
 let txTimeoutRemaining = 0;
 let txTimeoutInterval = null;
 const hasWebCodecs = typeof AudioDecoder !== "undefined" && typeof AudioEncoder !== "undefined";
+const hasWasmOpus = typeof window["opus-decoder"] !== "undefined" && typeof window["opus-decoder"].OpusDecoder !== "undefined";
 const MAX_RX_BUFFER_SECS = 0.25;
 const TARGET_RX_BUFFER_SECS = 0.04;
 const MIN_RX_JITTER_SAMPLES = 512;
@@ -7601,6 +7603,10 @@ function resetRxDecoder() {
     try { opusDecoder.close(); } catch (e) {}
     opusDecoder = null;
   }
+  if (wasmOpusDecoder) {
+    try { wasmOpusDecoder.free(); } catch (e) {}
+    wasmOpusDecoder = null;
+  }
   nextPlayTime = 0;
 }
 
@@ -7653,10 +7659,57 @@ function extractAudioFrameChannels(frame) {
 // Optional channel_id injected by vchan.js when connecting to a virtual channel.
 let _audioChannelOverride = null;
 
+/** Schedule decoded PCM channels for playback via Web Audio API. */
+function scheduleDecodedAudio(channelData, frameCount, sampleRate) {
+  if (!audioCtx || !rxGainNode) return;
+  const levelNow = Date.now();
+  if (levelNow - lastLevelUpdate >= 50) {
+    setAudioLevel(levelFromChannels(channelData, frameCount));
+    lastLevelUpdate = levelNow;
+  }
+  const forceMono = channelData.length >= 2
+    && wfmAudioModeEl
+    && wfmAudioModeEl.value === "mono"
+    && modeEl
+    && (modeEl.value || "").toUpperCase() === "WFM";
+  const outChannels = forceMono ? 1 : channelData.length;
+  const ab = audioCtx.createBuffer(outChannels, frameCount, sampleRate);
+  if (forceMono) {
+    const monoData = new Float32Array(frameCount);
+    for (let ch = 0; ch < channelData.length; ch++) {
+      const plane = channelData[ch];
+      for (let i = 0; i < frameCount; i++) monoData[i] += plane[i];
+    }
+    const inv = 1 / Math.max(1, channelData.length);
+    for (let i = 0; i < frameCount; i++) monoData[i] *= inv;
+    ab.copyToChannel(monoData, 0);
+  } else {
+    for (let ch = 0; ch < channelData.length; ch++) {
+      ab.copyToChannel(channelData[ch], ch);
+    }
+  }
+  const src = audioCtx.createBufferSource();
+  src.buffer = ab;
+  src.connect(rxGainNode);
+  const now = audioCtx.currentTime;
+  const sr = (streamInfo && streamInfo.sample_rate) || sampleRate || 48000;
+  const minLeadSecs = Math.max(0, MIN_RX_JITTER_SAMPLES / Math.max(1, sr));
+  const targetLeadSecs = Math.max(TARGET_RX_BUFFER_SECS, minLeadSecs);
+  if (nextPlayTime && nextPlayTime - now > MAX_RX_BUFFER_SECS) {
+    nextPlayTime = now + targetLeadSecs;
+  }
+  if (!nextPlayTime || nextPlayTime < now + minLeadSecs) {
+    nextPlayTime = now + targetLeadSecs;
+  }
+  const schedTime = nextPlayTime || (now + targetLeadSecs);
+  src.start(schedTime);
+  nextPlayTime = schedTime + ab.duration;
+}
+
 function startRxAudio() {
   if (rxActive) { stopRxAudio(); return; }
-  if (!hasWebCodecs) {
-    audioStatus.textContent = "Audio requires Chrome/Edge";
+  if (!hasWebCodecs && !hasWasmOpus) {
+    audioStatus.textContent = "Audio not supported in this browser";
     return;
   }
   ensureRxAudioContext((streamInfo && streamInfo.sample_rate) || 48000);
@@ -7691,74 +7744,59 @@ function startRxAudio() {
       return;
     }
 
-    // Binary Opus data — decode via WebCodecs AudioDecoder if available
+    // Binary Opus data
     if (!audioCtx) return;
     const data = new Uint8Array(evt.data);
 
-    // Use WebCodecs AudioDecoder for Opus if available
-    if (typeof AudioDecoder !== "undefined" && !opusDecoder) {
-      try {
-        const channels = (streamInfo && streamInfo.channels) || 1;
-        const sampleRate = (streamInfo && streamInfo.sample_rate) || 48000;
-        opusDecoder = new AudioDecoder({
-          output: (frame) => {
-            const frameChannels = extractAudioFrameChannels(frame);
-            const levelNow = Date.now();
-            if (levelNow - lastLevelUpdate >= 50) {
-              setAudioLevel(levelFromChannels(frameChannels, frame.numberOfFrames));
-              lastLevelUpdate = levelNow;
-            }
-            const forceMono = frame.numberOfChannels >= 2
-              && wfmAudioModeEl
-              && wfmAudioModeEl.value === "mono"
-              && modeEl
-              && (modeEl.value || "").toUpperCase() === "WFM";
-            const outChannels = forceMono ? 1 : frameChannels.length;
-            const ab = audioCtx.createBuffer(outChannels, frame.numberOfFrames, frame.sampleRate);
-            if (forceMono) {
-              const monoData = new Float32Array(frame.numberOfFrames);
-              for (let ch = 0; ch < frameChannels.length; ch++) {
-                const plane = frameChannels[ch];
-                for (let i = 0; i < frame.numberOfFrames; i++) monoData[i] += plane[i];
-              }
-              const inv = 1 / Math.max(1, frameChannels.length);
-              for (let i = 0; i < frame.numberOfFrames; i++) monoData[i] *= inv;
-              ab.copyToChannel(monoData, 0);
-            } else {
-              for (let ch = 0; ch < frameChannels.length; ch++) {
-                ab.copyToChannel(frameChannels[ch], ch);
-              }
-            }
-            const src = audioCtx.createBufferSource();
-            src.buffer = ab;
-            src.connect(rxGainNode);
-            const now = audioCtx.currentTime;
-            const sampleRate = (streamInfo && streamInfo.sample_rate) || frame.sampleRate || 48000;
-            const minLeadSecs = Math.max(0, MIN_RX_JITTER_SAMPLES / Math.max(1, sampleRate));
-            const targetLeadSecs = Math.max(TARGET_RX_BUFFER_SECS, minLeadSecs);
-            if (nextPlayTime && nextPlayTime - now > MAX_RX_BUFFER_SECS) {
-              nextPlayTime = now + targetLeadSecs;
-            }
-            if (!nextPlayTime || nextPlayTime < now + minLeadSecs) {
-              nextPlayTime = now + targetLeadSecs;
-            }
-            const schedTime = nextPlayTime || (now + targetLeadSecs);
-            src.start(schedTime);
-            nextPlayTime = schedTime + ab.duration;
-            frame.close();
-          },
-          error: (e) => { console.error("AudioDecoder error", e); }
-        });
-        opusDecoder.configure({
-          codec: "opus",
-          sampleRate: sampleRate,
-          numberOfChannels: channels,
-        });
-      } catch (e) {
-        console.warn("WebCodecs AudioDecoder not available for Opus", e);
-        opusDecoder = null;
+    // Lazily initialise a decoder: prefer WebCodecs, fall back to WASM.
+    if (!opusDecoder && !wasmOpusDecoder) {
+      const channels = (streamInfo && streamInfo.channels) || 1;
+      const sampleRate = (streamInfo && streamInfo.sample_rate) || 48000;
+      // Try WebCodecs AudioDecoder first (Chrome/Edge).
+      if (hasWebCodecs) {
+        try {
+          opusDecoder = new AudioDecoder({
+            output: (frame) => {
+              const ch = extractAudioFrameChannels(frame);
+              scheduleDecodedAudio(ch, frame.numberOfFrames, frame.sampleRate);
+              frame.close();
+            },
+            error: (e) => { console.error("AudioDecoder error", e); }
+          });
+          opusDecoder.configure({ codec: "opus", sampleRate, numberOfChannels: channels });
+        } catch (e) {
+          console.warn("WebCodecs Opus not supported, trying WASM fallback", e);
+          opusDecoder = null;
+        }
+      }
+      // WASM fallback (Safari/Firefox).
+      if (!opusDecoder && hasWasmOpus) {
+        try {
+          const coupledStreamCount = channels >= 2 ? 1 : 0;
+          const mapping = channels >= 2 ? [0, 1] : [0];
+          wasmOpusDecoder = new window["opus-decoder"].OpusDecoder({
+            sampleRate,
+            channels,
+            streamCount: 1,
+            coupledStreamCount,
+            channelMappingTable: mapping,
+            preSkip: 0,
+          });
+          // .ready is a Promise that resolves when WASM is compiled.
+          wasmOpusDecoder.ready.then(() => {
+            audioStatus.textContent = "RX";
+          }).catch((e) => {
+            console.error("WASM Opus init failed", e);
+            wasmOpusDecoder = null;
+          });
+        } catch (e) {
+          console.warn("WASM Opus decoder init failed", e);
+          wasmOpusDecoder = null;
+        }
       }
     }
+
+    // Decode with whichever decoder is available.
     if (opusDecoder) {
       try {
         opusDecoder.decode(new EncodedAudioChunk({
@@ -7766,9 +7804,14 @@ function startRxAudio() {
           timestamp: performance.now() * 1000,
           data: data,
         }));
-      } catch (e) {
-        // Ignore decode errors for individual frames
-      }
+      } catch (e) { /* ignore per-frame errors */ }
+    } else if (wasmOpusDecoder) {
+      try {
+        const result = wasmOpusDecoder.decodeFrame(data);
+        if (result && result.samplesDecoded > 0) {
+          scheduleDecodedAudio(result.channelData, result.samplesDecoded, result.sampleRate);
+        }
+      } catch (e) { /* ignore per-frame errors */ }
     }
   };
 
@@ -7786,6 +7829,10 @@ function startRxAudio() {
     if (opusDecoder) {
       try { opusDecoder.close(); } catch(e) {}
       opusDecoder = null;
+    }
+    if (wasmOpusDecoder) {
+      try { wasmOpusDecoder.free(); } catch(e) {}
+      wasmOpusDecoder = null;
     }
     nextPlayTime = 0;
     syncHeaderAudioBtn();
@@ -7806,6 +7853,10 @@ function stopRxAudio() {
   if (opusDecoder) {
     try { opusDecoder.close(); } catch(e) {}
     opusDecoder = null;
+  }
+  if (wasmOpusDecoder) {
+    try { wasmOpusDecoder.free(); } catch(e) {}
+    wasmOpusDecoder = null;
   }
   nextPlayTime = 0;
   rxAudioBtn.style.borderColor = "";
