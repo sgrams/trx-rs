@@ -503,9 +503,7 @@ pub async fn audio_ws(
         tokio::sync::watch::Receiver<Option<trx_core::audio::AudioStreamInfo>>,
     ) = if let Some(ch_id) = query.channel_id {
         let info_rx = if let Some(ref remote) = query.remote {
-            context
-                .rig_audio_info_rx(remote)
-                .or_else(|| context.audio_info.as_ref().cloned())
+            context.rig_audio_info_rx(remote)
         } else {
             context.audio_info.as_ref().cloned()
         };
