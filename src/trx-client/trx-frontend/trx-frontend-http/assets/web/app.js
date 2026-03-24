@@ -1011,7 +1011,10 @@ async function refreshRigList() {
       if (typeof r.display_name === "string" && r.display_name.length > 0) {
         displayNames[r.remote] = r.display_name;
       } else {
-        displayNames[r.remote] = r.remote;
+        const mfg = (r.manufacturer || "").trim();
+        const mdl = (r.model || "").trim();
+        const hw = [mfg, mdl].filter(Boolean).join(" ");
+        displayNames[r.remote] = hw || r.remote;
       }
     });
     serverRigs = rigs;

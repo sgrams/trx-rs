@@ -1505,6 +1505,14 @@ where
         .body(body)
 }
 
+/// A bookmark with its owning scope tag for the list response.
+#[derive(serde::Serialize)]
+struct BookmarkWithScope {
+    #[serde(flatten)]
+    bm: crate::server::bookmarks::Bookmark,
+    scope: String,
+}
+
 #[get("/bookmarks")]
 pub async fn list_bookmarks(
     req: HttpRequest,
@@ -1517,15 +1525,38 @@ pub async fn list_bookmarks(
             status::index_html(),
         ));
     }
-    let store = resolve_bookmark_store(query.scope.as_deref(), store_map.get_ref());
-    let mut list = store.list();
+    let scope = query.scope.as_deref().filter(|s| !s.is_empty() && *s != "general");
+    let mut list: Vec<BookmarkWithScope> = match scope {
+        Some(remote) => {
+            // Rig selected: merge general + rig-specific (rig wins on duplicate IDs).
+            let mut map: std::collections::HashMap<String, BookmarkWithScope> = store_map
+                .general()
+                .list()
+                .into_iter()
+                .map(|bm| {
+                    let id = bm.id.clone();
+                    (id, BookmarkWithScope { bm, scope: "general".into() })
+                })
+                .collect();
+            for bm in store_map.store_for(remote).list() {
+                let id = bm.id.clone();
+                map.insert(id, BookmarkWithScope { bm, scope: remote.to_owned() });
+            }
+            map.into_values().collect()
+        }
+        None => {
+            store_map.general().list().into_iter()
+                .map(|bm| BookmarkWithScope { bm, scope: "general".into() })
+                .collect()
+        }
+    };
     if let Some(ref cat) = query.category {
         if !cat.is_empty() {
             let cat_lower = cat.to_lowercase();
-            list.retain(|bm| bm.category.to_lowercase() == cat_lower);
+            list.retain(|item| item.bm.category.to_lowercase() == cat_lower);
         }
     }
-    list.sort_by_key(|bm| bm.freq_hz);
+    list.sort_by_key(|item| item.bm.freq_hz);
     Ok(HttpResponse::Ok().json(list))
 }
 

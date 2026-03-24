@@ -3,16 +3,17 @@
 /** Current bookmark scope: "general" or a rig remote name. */
 let bmScope = "general";
 
-/** Build the ?scope= query string for the current bookmark scope. */
-function bmScopeParam(prefix) {
+/** Build the ?scope= query string for a given or current bookmark scope. */
+function bmScopeParam(prefix, scope) {
   const sep = prefix ? "&" : "?";
-  return sep + "scope=" + encodeURIComponent(bmScope);
+  return sep + "scope=" + encodeURIComponent(scope != null ? scope : bmScope);
 }
 
 var bmList = [];
 var bmRevision = 0;
 let bmFilteredList = [];
 let bmEditId = null;
+let bmEditScope = null;
 let bmCurrentPage = 1;
 const BM_PAGE_SIZE = 25;
 const bmSelected = new Set();
@@ -154,6 +155,7 @@ function bmRender(list) {
   const endIndex = Math.min(startIndex + BM_PAGE_SIZE, list.length);
   const pageItems = list.slice(startIndex, endIndex);
 
+  const showScope = bmScope !== "general";
   pageItems.forEach((bm) => {
     const tr = document.createElement("tr");
     tr.dataset.bmId = bm.id;
@@ -163,9 +165,10 @@ function bmRender(list) {
     const decoderCell = (bm.decoders || []).join(", ").toUpperCase() || "--";
     const commentCell = bm.comment || "";
     const checked = bmSelected.has(bm.id) ? " checked" : "";
+    const scopeBadge = showScope && bm.scope === "general" ? ' <span class="bm-scope-badge">G</span>' : "";
     tr.innerHTML =
       `<td class="bm-col-sel"><input type="checkbox" class="bm-row-sel" data-bm-id="${bmEsc(bm.id)}"${checked} aria-label="Select ${bmEsc(bm.name)}" /></td>` +
-      `<td class="bm-col-name">${bmEsc(bm.name)}</td>` +
+      `<td class="bm-col-name">${bmEsc(bm.name)}${scopeBadge}</td>` +
       `<td class="bm-col-freq">${bmFmtFreq(bm.freq_hz)}</td>` +
       `<td class="bm-col-mode">${bmEsc(bm.mode)}</td>` +
       `<td class="bm-col-bw">${bwCell}</td>` +
@@ -228,6 +231,7 @@ function bmOpenForm(bm) {
   const wrap = document.getElementById("bm-form-wrap");
   if (!wrap) return;
   bmEditId = bm ? bm.id : null;
+  bmEditScope = bm ? (bm.scope || bmScope) : null;
 
   document.getElementById("bm-id").value = bm ? bm.id : "";
   document.getElementById("bm-name").value = bm ? bm.name : "";
@@ -296,7 +300,7 @@ async function bmSave(e) {
   try {
     let resp;
     if (id) {
-      resp = await fetch("/bookmarks/" + encodeURIComponent(id) + bmScopeParam(false), {
+      resp = await fetch("/bookmarks/" + encodeURIComponent(id) + bmScopeParam(false, bmEditScope), {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
@@ -325,8 +329,10 @@ async function bmSave(e) {
 
 async function bmDelete(id) {
   if (!confirm("Delete this bookmark?")) return;
+  const bm = bmList.find((b) => b.id === id);
+  const scope = bm ? bm.scope : undefined;
   try {
-    const resp = await fetch("/bookmarks/" + encodeURIComponent(id) + bmScopeParam(false), {
+    const resp = await fetch("/bookmarks/" + encodeURIComponent(id) + bmScopeParam(false, scope), {
       method: "DELETE",
     });
     if (!resp.ok) throw new Error("HTTP " + resp.status);
@@ -471,12 +477,21 @@ async function bmMoveSelected() {
   const targetLabel = document.getElementById("bm-move-target")?.selectedOptions[0]?.textContent || target;
   if (!confirm(`Move ${ids.length} bookmark${ids.length > 1 ? "s" : ""} to "${targetLabel}"?`)) return;
   try {
-    const resp = await fetch("/bookmarks/batch_move" + bmScopeParam(false), {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ids, to: target }),
-    });
-    if (!resp.ok) throw new Error("HTTP " + resp.status);
+    // Group selected IDs by their owning scope (skip if already in target).
+    const byScope = {};
+    for (const id of ids) {
+      const bm = bmList.find((b) => b.id === id);
+      const scope = bm?.scope || bmScope;
+      if (scope === target) continue;
+      (byScope[scope] ||= []).push(id);
+    }
+    await Promise.all(Object.entries(byScope).map(([scope, scopeIds]) =>
+      fetch("/bookmarks/batch_move" + bmScopeParam(false, scope), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids: scopeIds, to: target }),
+      }).then((r) => { if (!r.ok) throw new Error("HTTP " + r.status); })
+    ));
     bmSelected.clear();
     bmUpdateSelectionUi();
     await bmFetch(document.getElementById("bm-category-filter").value);
@@ -505,12 +520,20 @@ async function bmDeleteSelected() {
   if (ids.length === 0) return;
   if (!confirm(`Delete ${ids.length} selected bookmark${ids.length > 1 ? "s" : ""}?`)) return;
   try {
-    const resp = await fetch("/bookmarks/batch_delete" + bmScopeParam(false), {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ids }),
-    });
-    if (!resp.ok) throw new Error("HTTP " + resp.status);
+    // Group selected IDs by their owning scope.
+    const byScope = {};
+    for (const id of ids) {
+      const bm = bmList.find((b) => b.id === id);
+      const scope = bm?.scope || bmScope;
+      (byScope[scope] ||= []).push(id);
+    }
+    await Promise.all(Object.entries(byScope).map(([scope, scopeIds]) =>
+      fetch("/bookmarks/batch_delete" + bmScopeParam(false, scope), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids: scopeIds }),
+      }).then((r) => { if (!r.ok) throw new Error("HTTP " + r.status); })
+    ));
     bmSelected.clear();
     bmUpdateSelectionUi();
     await bmFetch(document.getElementById("bm-category-filter").value);

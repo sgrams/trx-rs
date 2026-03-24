@@ -3725,17 +3725,19 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   align-items: center;
   gap: 0.35rem;
 }
-.bm-toolbar-btn {
-  white-space: nowrap;
-  font-size: 0.78rem;
-  padding: 0.25rem 0.6rem;
-  border-radius: 0.25rem;
-  border: 1px solid var(--border-light);
-  background: var(--btn-bg);
-  color: var(--text-heading);
-  cursor: pointer;
-}
 
+.bm-scope-badge {
+  display: inline-block;
+  font-size: 0.65rem;
+  font-weight: 700;
+  padding: 0.05rem 0.3rem;
+  border-radius: 0.2rem;
+  background: var(--btn-bg);
+  border: 1px solid var(--border-light);
+  color: var(--text-muted);
+  vertical-align: middle;
+  margin-left: 0.3rem;
+}
 .bm-empty {
   padding: 2rem 1rem;
   text-align: center;
