@@ -1020,6 +1020,7 @@ async function refreshRigList() {
     serverRigs = rigs;
     serverActiveRigId = data.active_remote || null;
     applyRigList(data.active_remote, rigIds, displayNames);
+    if (aprsMap) syncAprsReceiverMarker();
   } catch (e) {
     // Non-fatal: SSE/status path still drives main UI.
   }
@@ -4245,6 +4246,7 @@ window.addEventListener("resize", resizeHeaderSignalCanvas);
 let aprsMap = null;
 let aprsMapBaseLayer = null;
 let aprsMapReceiverMarker = null;
+let aprsMapReceiverMarkers = {}; // keyed by rig remote id
 let aprsRadioPath = null;
 let selectedLocatorMarker = null;
 let selectedLocatorPulseRaf = null;
@@ -5342,32 +5344,69 @@ function markerPassesSearchFilter(marker) {
   return terms.every((term) => haystack.includes(term));
 }
 
+function _receiverLocationKey(lat, lon) {
+  return lat.toFixed(6) + "," + lon.toFixed(6);
+}
+
 function syncAprsReceiverMarker() {
   if (!aprsMap) return;
-  const hasLocation = serverLat != null && serverLon != null;
-  if (!hasLocation) {
-    if (aprsMapReceiverMarker && aprsMap.hasLayer(aprsMapReceiverMarker)) {
-      aprsMapReceiverMarker.removeFrom(aprsMap);
+  // Build unique locations from all rigs
+  const locGroups = {}; // key -> { lat, lon, rigs: [...] }
+  const activeId = lastActiveRigId || serverActiveRigId || null;
+  for (const rig of serverRigs) {
+    if (!rig || !rig.remote) continue;
+    const lat = rig.latitude, lon = rig.longitude;
+    if (lat == null || lon == null || !Number.isFinite(lat) || !Number.isFinite(lon)) continue;
+    const key = _receiverLocationKey(lat, lon);
+    if (!locGroups[key]) locGroups[key] = { lat, lon, rigs: [], hasActive: false };
+    locGroups[key].rigs.push(rig.remote);
+    if (rig.remote === activeId) locGroups[key].hasActive = true;
+  }
+  // Fallback: if active rig has SSE location but isn't in serverRigs yet
+  if (serverLat != null && serverLon != null) {
+    const key = _receiverLocationKey(serverLat, serverLon);
+    if (!locGroups[key]) locGroups[key] = { lat: serverLat, lon: serverLon, rigs: [], hasActive: true };
+    if (!locGroups[key].hasActive) locGroups[key].hasActive = true;
+  }
+
+  const seen = new Set();
+  let didInitialView = false;
+  for (const [key, group] of Object.entries(locGroups)) {
+    seen.add(key);
+    const latLng = [group.lat, group.lon];
+    const isActive = group.hasActive;
+    let m = aprsMapReceiverMarkers[key];
+    if (!m) {
+      m = L.circleMarker(latLng, {
+        radius: isActive ? 8 : 6,
+        className: "trx-receiver-marker" + (isActive ? "" : " trx-receiver-marker-secondary"),
+        fillOpacity: isActive ? 0.8 : 0.6,
+      }).addTo(aprsMap).bindPopup("");
+      m._receiverLocKey = key;
+      m._receiverRigs = group.rigs;
+      aprsMapReceiverMarkers[key] = m;
+      if (isActive && !didInitialView) {
+        aprsMap.setView(latLng, Math.max(1, initialMapZoom));
+        didInitialView = true;
+      }
+    } else {
+      m.setLatLng(latLng);
+      m._receiverRigs = group.rigs;
+      m.setRadius(isActive ? 8 : 6);
+      if (!aprsMap.hasLayer(m)) m.addTo(aprsMap);
     }
-    aprsMapReceiverMarker = null;
-    return;
+    // Keep legacy reference for the active-rig location marker
+    if (isActive) aprsMapReceiverMarker = m;
   }
-  const latLng = [serverLat, serverLon];
-  if (!aprsMapReceiverMarker) {
-    aprsMapReceiverMarker = L.circleMarker(latLng, {
-      radius: 8,
-      className: "trx-receiver-marker",
-      fillOpacity: 0.8,
-    }).addTo(aprsMap).bindPopup("");
-    if (typeof aprsMap.setView === "function") {
-      aprsMap.setView(latLng, Math.max(1, initialMapZoom));
+  // Remove markers for locations no longer present
+  for (const key of Object.keys(aprsMapReceiverMarkers)) {
+    if (!seen.has(key)) {
+      const m = aprsMapReceiverMarkers[key];
+      if (m && aprsMap.hasLayer(m)) m.removeFrom(aprsMap);
+      delete aprsMapReceiverMarkers[key];
     }
-    return;
   }
-  aprsMapReceiverMarker.setLatLng(latLng);
-  if (!aprsMap.hasLayer(aprsMapReceiverMarker)) {
-    aprsMapReceiverMarker.addTo(aprsMap);
-  }
+  if (!seen.size) aprsMapReceiverMarker = null;
 }
 
 window.clearMapMarkersByType = function(type) {
@@ -5618,8 +5657,8 @@ function initAprsMap() {
       syncSelectedAisTrackVisibility();
     }
 
-    if (marker === aprsMapReceiverMarker) {
-      e.popup.setContent(buildReceiverPopupHtml());
+    if (marker._receiverLocKey) {
+      e.popup.setContent(buildReceiverPopupHtml(marker._receiverRigs || []));
       return;
     }
 
@@ -6038,7 +6077,7 @@ function formatTimeAgo(tsMs) {
   return remMins > 0 ? `${hrs}h ${remMins}min ago` : `${hrs}h ago`;
 }
 
-function buildReceiverPopupHtml() {
+function buildReceiverPopupHtml(rigIds) {
   const call = serverCallsign || ownerCallsign || "Receiver";
   let meta = "";
   if (serverVersion) {
@@ -6049,10 +6088,20 @@ function buildReceiverPopupHtml() {
   if (ownerCallsign && ownerCallsign !== serverCallsign) {
     rows += `<tr><td class="aprs-popup-label">Owner</td><td>${escapeMapHtml(ownerCallsign)}</td></tr>`;
   }
-  if (serverLat != null && serverLon != null) {
-    rows += `<tr><td class="aprs-popup-label">QTH</td><td>${serverLat.toFixed(5)}, ${serverLon.toFixed(5)}</td></tr>`;
+  // Show location from first matching rig or active rig
+  const rigSet = rigIds && rigIds.length ? new Set(rigIds) : null;
+  const firstRig = rigSet ? serverRigs.find(r => rigSet.has(r.remote)) : null;
+  const popupLat = firstRig ? firstRig.latitude : serverLat;
+  const popupLon = firstRig ? firstRig.longitude : serverLon;
+  if (popupLat != null && popupLon != null) {
+    const grid = latLonToMaidenhead(popupLat, popupLon);
+    rows += `<tr><td class="aprs-popup-label">QTH</td><td>${popupLat.toFixed(5)}, ${popupLon.toFixed(5)} (${escapeMapHtml(grid)})</td></tr>`;
   }
-  for (const rig of serverRigs) {
+  // Show rigs at this location
+  const rigsToShow = rigSet
+    ? serverRigs.filter(r => rigSet.has(r.remote))
+    : serverRigs;
+  for (const rig of rigsToShow) {
     const name = rig.display_name || `${rig.manufacturer} ${rig.model}`.trim();
     const active = rig.remote === serverActiveRigId
       ? ` <span class="receiver-popup-active">active</span>` : "";
@@ -8149,9 +8198,7 @@ function scheduleDecodeHistoryDrainStep(callback) {
 }
 
 function decodeHistoryUrl() {
-  let url = "/decode/history";
-  if (lastActiveRigId) url += "?remote=" + encodeURIComponent(lastActiveRigId);
-  return url;
+  return "/decode/history";
 }
 
 function loadDecodeHistoryOnMainThread(onReady, onError) {

@@ -1707,6 +1707,10 @@ struct RigListItem {
     manufacturer: String,
     model: String,
     initialized: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    latitude: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    longitude: Option<f64>,
 }
 
 #[derive(serde::Serialize)]
@@ -1736,6 +1740,8 @@ fn map_rig_entry(entry: &RemoteRigEntry) -> RigListItem {
         manufacturer: entry.state.info.manufacturer.clone(),
         model: entry.state.info.model.clone(),
         initialized: entry.state.initialized,
+        latitude: entry.state.server_latitude,
+        longitude: entry.state.server_longitude,
     }
 }
 
