@@ -3490,8 +3490,7 @@ async function switchRigFromSelect(selectEl) {
   if (typeof setSchedulerRig === "function") setSchedulerRig(lastActiveRigId);
   if (typeof setBackgroundDecodeRig === "function") setBackgroundDecodeRig(lastActiveRigId);
   if (typeof bmFetch === "function") bmFetch(document.getElementById("bm-category-filter")?.value || "");
-  // Reconnect decode SSE so history is re-fetched with the new rig filter.
-  connectDecode();
+  // Decode SSE and history are rig-independent — no reconnect needed.
   // Switch this session's rig and reconnect SSE to the new rig's
   // state channel.
   try {
@@ -5026,13 +5025,30 @@ function syncDecodeContactPathVisibility() {
   updateMapPathsAnimationClass();
 }
 
-function setMapRadioPathTo(lat, lon, color, className = "aprs-radio-path") {
+function _resolveReceiverLocation(rigIds) {
+  // Try to find location from the specific rig(s) that decoded this message
+  if (rigIds && rigIds.size) {
+    for (const rid of rigIds) {
+      const rig = serverRigs.find(r => r.remote === rid);
+      if (rig && rig.latitude != null && rig.longitude != null) {
+        return [rig.latitude, rig.longitude];
+      }
+    }
+  }
+  // Fall back to active rig location
+  if (serverLat != null && serverLon != null) return [serverLat, serverLon];
+  return null;
+}
+
+function setMapRadioPathTo(lat, lon, color, className = "aprs-radio-path", rigIds) {
   clearMapRadioPath();
-  if (!mapP2pRadioPathsEnabled || serverLat == null || serverLon == null || !Number.isFinite(lat) || !Number.isFinite(lon) || !aprsMap) {
+  if (!mapP2pRadioPathsEnabled || !Number.isFinite(lat) || !Number.isFinite(lon) || !aprsMap) {
     return;
   }
+  const src = _resolveReceiverLocation(rigIds);
+  if (!src) return;
   aprsRadioPath = L.polyline(
-    [[serverLat, serverLon], [lat, lon]],
+    [src, [lat, lon]],
     { color, opacity: 0.85, weight: 2, interactive: false, className }
   ).addTo(aprsMap);
 }
@@ -5675,7 +5691,7 @@ function initAprsMap() {
         entry.track.addTo(aprsMap);
       }
       selectedAprsTrackCall = String(marker._aprsCall);
-      setMapRadioPathTo(ll.lat, ll.lng, mapSourceColor("aprs"), "aprs-radio-path");
+      setMapRadioPathTo(ll.lat, ll.lng, mapSourceColor("aprs"), "aprs-radio-path", marker.__trxRigIds);
       return;
     }
 
@@ -5687,7 +5703,7 @@ function initAprsMap() {
       refreshAisTrack(String(marker._aisMmsi), entry);
       selectedAisTrackMmsi = String(marker._aisMmsi);
       syncSelectedAisTrackVisibility();
-      setMapRadioPathTo(ll.lat, ll.lng, mapSourceColor("ais"), "aprs-radio-path");
+      setMapRadioPathTo(ll.lat, ll.lng, mapSourceColor("ais"), "aprs-radio-path", marker.__trxRigIds);
       return;
     }
 
@@ -5696,18 +5712,20 @@ function initAprsMap() {
       const entry = vdesMarkers.get(String(marker._vdesKey));
       if (!entry || !entry.msg) return;
       e.popup.setContent(buildVdesPopupHtml(entry.msg));
-      setMapRadioPathTo(ll.lat, ll.lng, mapSourceColor("vdes"), "aprs-radio-path");
+      setMapRadioPathTo(ll.lat, ll.lng, mapSourceColor("vdes"), "aprs-radio-path", marker.__trxRigIds);
       return;
     }
 
-    if (marker.__trxType === "bookmark" || marker.__trxType === "ft8" || marker.__trxType === "ft4" || marker.__trxType === "ft2" || marker.__trxType === "wspr") {
+    if (marker.__trxType === "ft8" || marker.__trxType === "ft4" || marker.__trxType === "ft2" || marker.__trxType === "wspr") {
       const center = locatorMarkerCenter(marker);
       if (center) {
         setSelectedLocatorMarker(marker);
         const lEntry = locatorEntryForMarker(marker);
         const lColor = lEntry ? locatorStyleForEntry(lEntry, locatorEntryCount(lEntry)).color : locatorFilterColor(marker.__trxType);
-        setMapRadioPathTo(center.lat, center.lon, lColor, "locator-radio-path");
+        setMapRadioPathTo(center.lat, center.lon, lColor, "locator-radio-path", marker.__trxRigIds);
       }
+    } else if (marker.__trxType === "bookmark") {
+      setSelectedLocatorMarker(marker);
     }
   });
 
@@ -5978,9 +5996,11 @@ window.navigateToMapLocator = function(grid, preferredType = null) {
     if (center) {
       const targetZoom = Math.max(aprsMap.getZoom() || 0, 7);
       aprsMap.setView([center.lat, center.lon], targetZoom);
-      const fEntry = locatorEntryForMarker(marker);
-      const fColor = fEntry ? locatorStyleForEntry(fEntry, locatorEntryCount(fEntry)).color : locatorFilterColor(marker?.__trxType);
-      setMapRadioPathTo(center.lat, center.lon, fColor, "locator-radio-path");
+      if (marker.__trxType !== "bookmark") {
+        const fEntry = locatorEntryForMarker(marker);
+        const fColor = fEntry ? locatorStyleForEntry(fEntry, locatorEntryCount(fEntry)).color : locatorFilterColor(marker?.__trxType);
+        setMapRadioPathTo(center.lat, center.lon, fColor, "locator-radio-path", marker.__trxRigIds);
+      }
     }
     setSelectedLocatorMarker(marker);
     if (typeof marker.openPopup === "function") marker.openPopup();

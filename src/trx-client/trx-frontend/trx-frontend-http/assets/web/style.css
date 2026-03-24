@@ -2606,16 +2606,44 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   .signal-measure #sig-result {
     width: 100%;
   }
-  #spectrum-controls,
+  #spectrum-controls {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.45rem;
+    padding-top: 0.45rem;
+  }
   #spectrum-bw-row,
   #spectrum-level-row {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr);
-    justify-content: stretch;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem 0.4rem;
   }
-  #spectrum-controls {
-    gap: 0.5rem;
-    padding-top: 0.45rem;
+  #spectrum-bw-label,
+  #spectrum-floor-label,
+  #spectrum-peak-hold-label {
+    flex: 1 1 100%;
+    justify-content: space-between;
+  }
+  #spectrum-gamma-label {
+    flex: 1 1 100%;
+    justify-content: space-between;
+  }
+  #spectrum-gamma-input {
+    flex: 1 1 auto;
+    min-width: 3rem;
+  }
+  #spectrum-bw-input,
+  #spectrum-floor-input,
+  #overview-peak-hold {
+    flex: 1 1 auto;
+    min-width: 3rem;
+    box-sizing: border-box;
+  }
+  #spectrum-bw-set-btn,
+  #spectrum-bw-auto-btn,
+  #spectrum-bw-sweet-btn,
+  #spectrum-auto-btn {
+    flex: 1 1 auto;
   }
   .spectrum-edge-shift {
     width: 0.95rem;
@@ -2629,24 +2657,6 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   }
   .spectrum-edge-shift-right {
     right: 0.2rem;
-  }
-  #spectrum-bw-row,
-  #spectrum-level-row {
-    gap: 0.4rem;
-  }
-  #spectrum-bw-label,
-  #spectrum-floor-label,
-  #spectrum-gamma-label,
-  #spectrum-peak-hold-label {
-    width: 100%;
-    justify-content: space-between;
-  }
-  #spectrum-bw-input,
-  #spectrum-floor-input,
-  #overview-peak-hold {
-    width: 100%;
-    min-width: 0;
-    box-sizing: border-box;
   }
   .aprs-controls,
   .ft8-controls,
