@@ -2522,13 +2522,6 @@ let signalSplitPercent = clampSignalSplitPercent(
   Number(loadSetting("signalSplitPercent", DEFAULT_SIGNAL_SPLIT_PERCENT)),
 );
 
-function updateFooterBuildInfo() {
-  const serverEl = document.getElementById("footer-server-build");
-  if (!serverEl) return;
-  const ver = serverVersion || "--";
-  const build = serverBuildDate || "--";
-  serverEl.textContent = `trx-server v${ver} ${build}`;
-}
 
 function scheduleSpectrumLayout() {
   if (spectrumLayoutPending) return;
@@ -2821,7 +2814,6 @@ function render(update) {
   }
   scheduleSpectrumLayout();
   updateTitle();
-  updateFooterBuildInfo();
 
   initialized = !!update.initialized;
   const hasUsableSnapshot =
@@ -2852,21 +2844,13 @@ function render(update) {
     loadingEl.style.display = "none";
     if (contentEl) contentEl.style.display = "";
   }
-  // Server subtitle: "trx-server vX.Y.Z hosted by CALL"
-  if (serverSubtitle) {
-    if (update.server_version && update.server_callsign) {
-      const safeCallsign = escapeMapHtml(update.server_callsign);
-      const encodedCallsign = encodeURIComponent(update.server_callsign);
-      serverSubtitle.innerHTML =
-        `trx-server v${update.server_version} hosted by <a href="https://qrzcq.com/call/${encodedCallsign}" target="_blank" rel="noopener">${safeCallsign}</a>`;
-    } else if (update.server_version) {
-      serverSubtitle.textContent = `trx-server v${update.server_version}`;
-    } else if (update.server_callsign) {
-      const safeCallsign = escapeMapHtml(update.server_callsign);
-      const encodedCallsign = encodeURIComponent(update.server_callsign);
-      serverSubtitle.innerHTML =
-        `trx-server hosted by <a href="https://qrzcq.com/call/${encodedCallsign}" target="_blank" rel="noopener">${safeCallsign}</a>`;
-    }
+  // Server subtitle: keep the static "trx-client vX.Y.Z" and append callsign if available.
+  if (serverSubtitle && update.server_callsign) {
+    const base = serverSubtitle.textContent.split(" hosted by")[0];
+    const safeCallsign = escapeMapHtml(update.server_callsign);
+    const encodedCallsign = encodeURIComponent(update.server_callsign);
+    serverSubtitle.innerHTML =
+      `${escapeMapHtml(base)} hosted by <a href="https://qrzcq.com/call/${encodedCallsign}" target="_blank" rel="noopener">${safeCallsign}</a>`;
   }
   // Note: rig switch decoder reset is now handled in switchRigFromSelect()
   // so that other tabs' switches don't reset our state.
