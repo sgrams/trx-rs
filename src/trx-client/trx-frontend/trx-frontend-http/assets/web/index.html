@@ -1036,17 +1036,17 @@
       </div>
       <div class="hint" id="power-hint">Connecting…</div>
     </div>
+    <div id="conn-lost-overlay" class="decode-history-overlay content-overlay is-hidden" aria-live="assertive" aria-atomic="true">
+      <div class="decode-history-overlay-card">
+        <div id="conn-lost-overlay-title" class="decode-history-overlay-title">Connection lost</div>
+        <div id="conn-lost-overlay-sub" class="decode-history-overlay-sub">Retrying…</div>
+      </div>
+    </div>
   </div>
   <div id="decode-history-overlay" class="decode-history-overlay is-hidden" aria-live="polite" aria-atomic="true">
     <div class="decode-history-overlay-card">
       <div id="decode-history-overlay-title" class="decode-history-overlay-title">Loading decode history…</div>
       <div id="decode-history-overlay-sub" class="decode-history-overlay-sub">Preparing recent decodes for the UI</div>
-    </div>
-  </div>
-  <div id="conn-lost-overlay" class="decode-history-overlay is-hidden" aria-live="assertive" aria-atomic="true">
-    <div class="decode-history-overlay-card">
-      <div id="conn-lost-overlay-title" class="decode-history-overlay-title">Connection lost</div>
-      <div id="conn-lost-overlay-sub" class="decode-history-overlay-sub">Retrying…</div>
     </div>
   </div>
   <script src="/webgl-renderer.js"></script>

@@ -408,10 +408,11 @@ function setDecodeHistoryOverlayVisible(visible, title = "", sub = "") {
   decodeHistoryOverlayEl.classList.toggle("is-hidden", !visible);
 }
 
-function setConnLostOverlay(visible, title = "Connection lost", sub = "Retrying\u2026") {
+function setConnLostOverlay(visible, title = "Connection lost", sub = "Retrying\u2026", fullscreen = false) {
   if (!connLostOverlayEl) return;
   if (connLostOverlayTitleEl) connLostOverlayTitleEl.textContent = title;
   if (connLostOverlaySubEl) connLostOverlaySubEl.textContent = sub;
+  connLostOverlayEl.classList.toggle("conn-lost-fullscreen", fullscreen);
   connLostOverlayEl.classList.toggle("is-hidden", !visible);
 }
 const decodeHistoryTextDecoder = typeof TextDecoder === "function" ? new TextDecoder() : null;
@@ -3362,7 +3363,7 @@ function connect() {
     // Check if this is an auth error by looking at readyState
     if (es.readyState === EventSource.CLOSED) {
       powerHint.textContent = "trx-client connection lost, retrying\u2026";
-      setConnLostOverlay(true, "trx-client connection lost", "Retrying\u2026");
+      setConnLostOverlay(true, "trx-client connection lost", "Retrying\u2026", true);
       es.close();
       pollFreshSnapshot();
       scheduleReconnect(1000);
@@ -3373,7 +3374,7 @@ function connect() {
     const now = Date.now();
     if (now - lastEventAt > 15000) {
       powerHint.textContent = "trx-client connection lost, retrying\u2026";
-      setConnLostOverlay(true, "trx-client connection lost", "Retrying\u2026");
+      setConnLostOverlay(true, "trx-client connection lost", "Retrying\u2026", true);
       es.close();
       pollFreshSnapshot();
       scheduleReconnect(250);

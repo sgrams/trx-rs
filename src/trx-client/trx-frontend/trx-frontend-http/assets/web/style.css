@@ -1142,7 +1142,7 @@ small { color: var(--text-muted); }
 .meter-bar { flex: 1 1 auto; height: 12px; border-radius: 999px; background: var(--btn-bg); border: 1px solid var(--border-light); overflow: hidden; }
 .meter-fill { height: 100%; width: 0%; background: linear-gradient(90deg, var(--accent-green), var(--accent-yellow), var(--accent-red)); transition: width 150ms ease; }
 .meter-value { font-size: 0.95rem; color: var(--text-heading); min-width: 64px; text-align: right; }
-#content { display: flex; flex-direction: column; gap: 1.1rem; min-height: 0; flex: 1 1 auto; overflow: visible; }
+#content { display: flex; flex-direction: column; gap: 1.1rem; min-height: 0; flex: 1 1 auto; overflow: visible; position: relative; }
 .tab-panel { flex: 1 1 auto; min-height: 0; overflow: visible; display: flex; flex-direction: column; }
 .sub-tab-panel { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
 .tab-bar {
@@ -1339,6 +1339,14 @@ small { color: var(--text-muted); }
 .decode-history-overlay.is-hidden {
   opacity: 0;
   visibility: hidden;
+}
+.decode-history-overlay.content-overlay {
+  position: absolute;
+  border-radius: 0 0 0.9rem 0.9rem;
+}
+.decode-history-overlay.content-overlay.conn-lost-fullscreen {
+  position: fixed;
+  border-radius: 0;
 }
 .decode-history-overlay-card {
   min-width: min(26rem, calc(100vw - 2.4rem));
