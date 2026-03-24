@@ -325,7 +325,7 @@ async fn run_single_rig_audio_client(
                 match changed {
                     Ok(()) if *shutdown_rx.borrow() => {
                         info!("Audio client [{}]: shutting down", rig_id);
-                        let _ = per_rig_info_tx.send(None);
+                        let _ = per_rig_info_tx.send_replace(None);
                         if is_selected(&selected_rig_id, &rig_id) {
                             let _ = global_info_tx.send(None);
                         }
@@ -431,7 +431,7 @@ async fn handle_single_rig_connection(
         "Audio stream info [{}]: {}Hz, {} ch, {}ms",
         rig_id, info.sample_rate, info.channels, info.frame_duration_ms
     );
-    let _ = per_rig_info_tx.send(Some(info.clone()));
+    let _ = per_rig_info_tx.send_replace(Some(info.clone()));
 
     // Mirror to global if this is the selected rig.
     let is_selected = selected_rig_id
