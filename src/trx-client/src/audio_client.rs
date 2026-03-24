@@ -315,10 +315,9 @@ async fn run_single_rig_audio_client(
             }
         }
 
-        let _ = per_rig_info_tx.send(None);
-        if is_selected(&selected_rig_id, &rig_id) {
-            let _ = global_info_tx.send(None);
-        }
+        // Do NOT clear per_rig_info_tx here — the last-known stream info
+        // remains valid for this rig and clearing it would stall WebSocket
+        // clients that subscribe while the TCP connection is reconnecting.
 
         tokio::select! {
             _ = time::sleep(reconnect_delay) => {}
@@ -326,6 +325,10 @@ async fn run_single_rig_audio_client(
                 match changed {
                     Ok(()) if *shutdown_rx.borrow() => {
                         info!("Audio client [{}]: shutting down", rig_id);
+                        let _ = per_rig_info_tx.send(None);
+                        if is_selected(&selected_rig_id, &rig_id) {
+                            let _ = global_info_tx.send(None);
+                        }
                         return;
                     }
                     Ok(()) => {}

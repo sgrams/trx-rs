@@ -505,7 +505,6 @@ pub async fn audio_ws(
         let info_rx = if let Some(ref remote) = query.remote {
             context
                 .rig_audio_info_rx(remote)
-                .filter(|rx| rx.borrow().is_some())
                 .or_else(|| context.audio_info.as_ref().cloned())
         } else {
             context.audio_info.as_ref().cloned()
@@ -535,9 +534,12 @@ pub async fn audio_ws(
         // rig's audio. Wait briefly for the per-rig channel to appear (it is
         // lazily created by the audio relay sync task every 500ms).
         let deadline = Instant::now() + Duration::from_secs(3);
-        let rx_sub = loop {
-            if let Some(rx) = context.rig_audio_subscribe(remote) {
-                break rx;
+        let (rx_sub, info_rx) = loop {
+            if let (Some(rx), Some(info_rx)) = (
+                context.rig_audio_subscribe(remote),
+                context.rig_audio_info_rx(remote),
+            ) {
+                break (rx, info_rx);
             }
             if Instant::now() >= deadline {
                 return Ok(
@@ -545,16 +547,6 @@ pub async fn audio_ws(
                 );
             }
             tokio::time::sleep(Duration::from_millis(100)).await;
-        };
-        // Prefer per-rig stream info when available; fall back to the global
-        // info channel so the WebSocket does not stall when the per-rig audio
-        // TCP connection is between reconnect cycles (value transiently None).
-        let info_rx = context
-            .rig_audio_info_rx(remote)
-            .filter(|rx| rx.borrow().is_some())
-            .or_else(|| context.audio_info.as_ref().cloned());
-        let Some(info_rx) = info_rx else {
-            return Ok(HttpResponse::NotFound().body("audio not enabled"));
         };
         (rx_sub, info_rx)
     } else {
