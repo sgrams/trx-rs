@@ -7940,10 +7940,13 @@ txAudioBtn.addEventListener("click", startTxAudio);
 
 // Header play button mirrors the RX audio toggle.
 const headerAudioToggle = document.getElementById("header-audio-toggle");
+const _audioIconPlay = '<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M5 3v10l8-5z"/></svg>';
+const _audioIconPause = '<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><rect x="3" y="3" width="3.5" height="10" rx="0.8"/><rect x="9.5" y="3" width="3.5" height="10" rx="0.8"/></svg>';
 function syncHeaderAudioBtn() {
   if (!headerAudioToggle) return;
   headerAudioToggle.classList.toggle("audio-active", rxActive);
   headerAudioToggle.title = rxActive ? "Stop audio" : "Play audio";
+  headerAudioToggle.innerHTML = rxActive ? _audioIconPause : _audioIconPlay;
 }
 if (headerAudioToggle) {
   headerAudioToggle.addEventListener("click", startRxAudio);
