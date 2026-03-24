@@ -19,7 +19,7 @@ use actix_ws::Message;
 use bytes::Bytes;
 use serde::Deserialize;
 use tokio::sync::broadcast;
-use tracing::warn;
+use tracing::{info, warn};
 use uuid::Uuid;
 
 use trx_core::decode::{
@@ -533,15 +533,22 @@ pub async fn audio_ws(
         // Do NOT fall back to global — that would silently deliver the wrong
         // rig's audio. Wait briefly for the per-rig channel to appear (it is
         // lazily created by the audio relay sync task every 500ms).
+        info!("Audio WS: per-rig request for remote={}", remote);
         let deadline = Instant::now() + Duration::from_secs(3);
         let (rx_sub, info_rx) = loop {
+            let has_audio = context.rig_audio_subscribe(remote).is_some();
+            let has_info = context.rig_audio_info_rx(remote).is_some();
+            info!("Audio WS: remote={} has_audio={} has_info={}", remote, has_audio, has_info);
             if let (Some(rx), Some(info_rx)) = (
                 context.rig_audio_subscribe(remote),
                 context.rig_audio_info_rx(remote),
             ) {
+                let current = info_rx.borrow().clone();
+                info!("Audio WS: remote={} info_rx current value is_some={}", remote, current.is_some());
                 break (rx, info_rx);
             }
             if Instant::now() >= deadline {
+                info!("Audio WS: timeout waiting for rig {}", remote);
                 return Ok(
                     HttpResponse::NotFound().body(format!("audio not available for rig {remote}"))
                 );
@@ -563,11 +570,15 @@ pub async fn audio_ws(
     let (response, mut session, mut msg_stream) = actix_ws::handle(&req, body)?;
 
     actix_web::rt::spawn(async move {
+        info!("Audio WS: session started, waiting for stream info");
         let mut current_info = loop {
             if let Some(info) = info_rx.borrow().clone() {
+                info!("Audio WS: got stream info: {}Hz {}ch", info.sample_rate, info.channels);
                 break info;
             }
+            info!("Audio WS: info_rx is None, waiting for changed()");
             if info_rx.changed().await.is_err() {
+                info!("Audio WS: info_rx sender dropped, closing");
                 let _ = session.close(None).await;
                 return;
             }
@@ -580,7 +591,9 @@ pub async fn audio_ws(
                 return;
             }
         };
+        info!("Audio WS: sending stream info JSON to browser");
         if session.text(info_json).await.is_err() {
+            info!("Audio WS: failed to send stream info, closing");
             return;
         }
 
