@@ -930,7 +930,7 @@ function populateRigPicker(selectEl, rigIds, activeRigId, disabled) {
   rigIds.forEach((id) => {
     const opt = document.createElement("option");
     opt.value = id;
-    opt.textContent = id;
+    opt.textContent = lastRigDisplayNames[id] || id;
     selectEl.appendChild(opt);
   });
   const preferred = (typeof activeRigId === "string" && rigIds.includes(activeRigId))
