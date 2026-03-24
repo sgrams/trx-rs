@@ -502,7 +502,14 @@ pub async fn audio_ws(
         broadcast::Receiver<Bytes>,
         tokio::sync::watch::Receiver<Option<trx_core::audio::AudioStreamInfo>>,
     ) = if let Some(ch_id) = query.channel_id {
-        let Some(info_rx) = context.audio_info.as_ref().cloned() else {
+        let info_rx = if let Some(ref remote) = query.remote {
+            context
+                .rig_audio_info_rx(remote)
+                .or_else(|| context.audio_info.as_ref().cloned())
+        } else {
+            context.audio_info.as_ref().cloned()
+        };
+        let Some(info_rx) = info_rx else {
             return Ok(HttpResponse::NotFound().body("audio not enabled"));
         };
         let deadline = Instant::now() + Duration::from_secs(2);
@@ -636,11 +643,23 @@ pub async fn audio_ws(
 #[cfg(test)]
 mod tests {
     use super::AudioQuery;
+    use uuid::Uuid;
 
     #[test]
     fn audio_query_accepts_remote() {
         let query: AudioQuery =
             serde_json::from_str(r#"{"remote":"lidzbark-vhf"}"#).expect("query parse");
+        assert_eq!(query.remote.as_deref(), Some("lidzbark-vhf"));
+    }
+
+    #[test]
+    fn audio_query_accepts_channel_id_with_remote() {
+        let channel_id = Uuid::new_v4();
+        let query: AudioQuery = serde_json::from_str(&format!(
+            r#"{{"channel_id":"{channel_id}","remote":"lidzbark-vhf"}}"#
+        ))
+        .expect("query parse");
+        assert_eq!(query.channel_id, Some(channel_id));
         assert_eq!(query.remote.as_deref(), Some("lidzbark-vhf"));
     }
 }

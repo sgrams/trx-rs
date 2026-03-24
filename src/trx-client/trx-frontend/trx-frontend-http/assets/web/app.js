@@ -7672,7 +7672,10 @@ function startRxAudio() {
   const proto = location.protocol === "https:" ? "wss:" : "ws:";
   let audioPath;
   if (_audioChannelOverride) {
-    audioPath = `/audio?channel_id=${encodeURIComponent(_audioChannelOverride)}`;
+    const remoteParam = lastActiveRigId
+      ? `&remote=${encodeURIComponent(lastActiveRigId)}`
+      : "";
+    audioPath = `/audio?channel_id=${encodeURIComponent(_audioChannelOverride)}${remoteParam}`;
   } else if (lastActiveRigId) {
     audioPath = `/audio?remote=${encodeURIComponent(lastActiveRigId)}`;
   } else {
