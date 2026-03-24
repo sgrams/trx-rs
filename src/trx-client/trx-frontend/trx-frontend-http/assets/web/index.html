@@ -380,6 +380,10 @@
         <input type="search" id="bm-text-filter" class="status-input" placeholder="Search bookmarks…" aria-label="Search bookmarks" />
         <button id="bm-add-btn" type="button" class="bm-add-btn" style="display:none;">+ Add Bookmark</button>
         <button id="bm-del-selected-btn" type="button" class="bm-del-btn" style="display:none;">Delete Selected (<span id="bm-del-selected-count">0</span>)</button>
+        <span id="bm-move-selected-wrap" style="display:none;">
+          <select id="bm-move-target" class="status-input" aria-label="Move destination"></select>
+          <button id="bm-move-selected-btn" type="button" class="bm-add-btn">Move (<span id="bm-move-selected-count">0</span>)</button>
+        </span>
       </div>
       <div id="bm-form-wrap" style="display:none;">
         <form id="bm-form" class="bm-form">

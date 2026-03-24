@@ -1641,6 +1641,34 @@ pub async fn batch_delete_bookmarks(
     Ok(HttpResponse::Ok().json(serde_json::json!({ "deleted": deleted })))
 }
 
+#[derive(serde::Deserialize)]
+struct BatchMoveRequest {
+    ids: Vec<String>,
+    to: String,
+}
+
+#[post("/bookmarks/batch_move")]
+pub async fn batch_move_bookmarks(
+    req: HttpRequest,
+    body: web::Json<BatchMoveRequest>,
+    store_map: web::Data<Arc<crate::server::bookmarks::BookmarkStoreMap>>,
+    query: web::Query<BookmarkScopeQuery>,
+    auth_state: web::Data<crate::server::auth::AuthState>,
+) -> Result<HttpResponse, Error> {
+    require_control(&req, &auth_state)?;
+    let from_store = resolve_bookmark_store(query.scope.as_deref(), store_map.get_ref());
+    let to_store = resolve_bookmark_store(Some(body.to.as_str()), store_map.get_ref());
+    let mut moved = 0usize;
+    for id in &body.ids {
+        if let Some(bm) = from_store.get(id) {
+            if to_store.insert(&bm) && from_store.remove(id) {
+                moved += 1;
+            }
+        }
+    }
+    Ok(HttpResponse::Ok().json(serde_json::json!({ "moved": moved })))
+}
+
 #[derive(serde::Serialize)]
 struct RigListItem {
     remote: String,
@@ -1937,6 +1965,7 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
         .service(update_bookmark)
         .service(delete_bookmark)
         .service(batch_delete_bookmarks)
+        .service(batch_move_bookmarks)
         // Scheduler
         .service(crate::server::scheduler::get_scheduler)
         .service(crate::server::scheduler::put_scheduler)

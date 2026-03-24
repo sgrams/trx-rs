@@ -416,10 +416,66 @@ async function bmApply(bm) {
 
 function bmUpdateSelectionUi() {
   const count = bmSelected.size;
+  const canCtrl = bmCanControl();
+  const visible = count > 0 && canCtrl;
   const btn = document.getElementById("bm-del-selected-btn");
   const countEl = document.getElementById("bm-del-selected-count");
-  if (btn) btn.style.display = count > 0 && bmCanControl() ? "" : "none";
+  if (btn) btn.style.display = visible ? "" : "none";
   if (countEl) countEl.textContent = count;
+  const moveWrap = document.getElementById("bm-move-selected-wrap");
+  const moveCountEl = document.getElementById("bm-move-selected-count");
+  if (moveWrap) moveWrap.style.display = visible ? "" : "none";
+  if (moveCountEl) moveCountEl.textContent = count;
+  if (visible) bmPopulateMoveTarget();
+}
+
+/** Populate the move-target dropdown with all scopes except the current one. */
+function bmPopulateMoveTarget() {
+  const sel = document.getElementById("bm-move-target");
+  if (!sel) return;
+  const rigIds = (typeof lastRigIds !== "undefined" && Array.isArray(lastRigIds)) ? lastRigIds : [];
+  const displayNames = (typeof lastRigDisplayNames !== "undefined") ? lastRigDisplayNames : {};
+  const prev = sel.value;
+  sel.innerHTML = "";
+  if (bmScope !== "general") {
+    const opt = document.createElement("option");
+    opt.value = "general";
+    opt.textContent = "General";
+    sel.appendChild(opt);
+  }
+  rigIds.forEach((id) => {
+    if (id === bmScope) return;
+    const opt = document.createElement("option");
+    opt.value = id;
+    opt.textContent = displayNames[id] || id;
+    sel.appendChild(opt);
+  });
+  if (prev && sel.querySelector(`option[value="${CSS.escape(prev)}"]`)) {
+    sel.value = prev;
+  }
+}
+
+async function bmMoveSelected() {
+  const ids = Array.from(bmSelected);
+  if (ids.length === 0) return;
+  const target = document.getElementById("bm-move-target")?.value;
+  if (!target) return;
+  const targetLabel = document.getElementById("bm-move-target")?.selectedOptions[0]?.textContent || target;
+  if (!confirm(`Move ${ids.length} bookmark${ids.length > 1 ? "s" : ""} to "${targetLabel}"?`)) return;
+  try {
+    const resp = await fetch("/bookmarks/batch_move" + bmScopeParam(false), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ids, to: target }),
+    });
+    if (!resp.ok) throw new Error("HTTP " + resp.status);
+    bmSelected.clear();
+    bmUpdateSelectionUi();
+    await bmFetch(document.getElementById("bm-category-filter").value);
+  } catch (err) {
+    console.error("Failed to move bookmarks:", err);
+    alert("Failed to move bookmarks: " + err.message);
+  }
 }
 
 function bmSyncSelectAllCheckbox() {
@@ -564,6 +620,11 @@ function bmPopulateScopePicker() {
   // Delete Selected button
   document.getElementById("bm-del-selected-btn").addEventListener("click", () => {
     bmDeleteSelected();
+  });
+
+  // Move Selected button
+  document.getElementById("bm-move-selected-btn").addEventListener("click", () => {
+    bmMoveSelected();
   });
 
   // Table action buttons and row checkboxes (event delegation)
