@@ -106,9 +106,18 @@
   }
 
   function apiGetBookmarks() {
-    return fetch("/bookmarks").then(function (r) {
-      if (!r.ok) throw new Error("HTTP " + r.status);
-      return r.json();
+    // Fetch general bookmarks and rig-specific bookmarks, then merge.
+    // Rig-specific entries win on duplicate IDs.
+    var urls = ["/bookmarks"];
+    if (currentRigId) urls.push("/bookmarks?scope=" + encodeURIComponent(currentRigId));
+    return Promise.all(urls.map(function (u) {
+      return fetch(u).then(function (r) { return r.ok ? r.json() : []; });
+    })).then(function (results) {
+      var byId = {};
+      results.forEach(function (list) {
+        (Array.isArray(list) ? list : []).forEach(function (bm) { byId[bm.id] = bm; });
+      });
+      return Object.values(byId);
     });
   }
 

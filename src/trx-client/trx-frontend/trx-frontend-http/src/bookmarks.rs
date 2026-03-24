@@ -128,6 +128,12 @@ pub struct BookmarkStoreMap {
     rig_stores: Mutex<HashMap<String, Arc<BookmarkStore>>>,
 }
 
+impl Default for BookmarkStoreMap {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl BookmarkStoreMap {
     pub fn new() -> Self {
         let general_path = BookmarkStore::general_path();
