@@ -27,7 +27,7 @@ use trx_core::rig::command::RigCommand;
 use trx_core::RigRequest;
 use trx_frontend::FrontendRuntimeContext;
 
-use crate::server::bookmarks::BookmarkStore;
+use crate::server::bookmarks::BookmarkStoreMap;
 
 // ============================================================================
 // Data model
@@ -141,30 +141,91 @@ impl SchedulerStore {
         }
     }
 
-    pub fn default_path() -> PathBuf {
+    /// Per-rig path: `~/.config/trx-rs/scheduler.{remote}.db`.
+    pub fn default_path_for(remote: &str) -> PathBuf {
+        dirs::config_dir()
+            .map(|p| p.join("trx-rs").join(format!("scheduler.{remote}.db")))
+            .unwrap_or_else(|| PathBuf::from(format!("scheduler.{remote}.db")))
+    }
+
+    /// Legacy (pre-per-rig) path.
+    pub fn legacy_path() -> PathBuf {
         dirs::config_dir()
             .map(|p| p.join("trx-rs").join("scheduler.db"))
             .unwrap_or_else(|| PathBuf::from("scheduler.db"))
     }
 
-    pub fn get(&self, remote: &str) -> Option<SchedulerConfig> {
+    pub fn get_config(&self) -> Option<SchedulerConfig> {
         let db = self.db.read().unwrap_or_else(|e| e.into_inner());
-        db.get::<SchedulerConfig>(&format!("sch:{remote}"))
+        db.get::<SchedulerConfig>("config")
     }
 
-    pub fn upsert(&self, config: &SchedulerConfig) -> bool {
+    pub fn upsert_config(&self, config: &SchedulerConfig) -> bool {
         let mut db = self.db.write().unwrap_or_else(|e| e.into_inner());
-        db.set(&format!("sch:{}", config.remote), config).is_ok()
+        db.set("config", config).is_ok()
     }
 
-    pub fn remove(&self, remote: &str) -> bool {
+    pub fn remove_config(&self) -> bool {
         let mut db = self.db.write().unwrap_or_else(|e| e.into_inner());
-        db.rem(&format!("sch:{remote}")).unwrap_or(false)
+        db.rem("config").unwrap_or(false)
+    }
+}
+
+/// Manages per-rig scheduler stores, lazily opening them on first access.
+pub struct SchedulerStoreMap {
+    stores: std::sync::Mutex<HashMap<String, Arc<SchedulerStore>>>,
+}
+
+impl SchedulerStoreMap {
+    /// Create a new map and run one-time migration from the legacy shared
+    /// `scheduler.db` if per-rig files do not yet exist.
+    pub fn new(rig_ids: &[&str]) -> Self {
+        let map = Self {
+            stores: std::sync::Mutex::new(HashMap::new()),
+        };
+        map.migrate_legacy(rig_ids);
+        map
     }
 
+    /// Return the store for `remote`, opening it on first access.
+    pub fn store_for(&self, remote: &str) -> Arc<SchedulerStore> {
+        let mut stores = self.stores.lock().unwrap_or_else(|e| e.into_inner());
+        stores
+            .entry(remote.to_owned())
+            .or_insert_with(|| {
+                let path = SchedulerStore::default_path_for(remote);
+                Arc::new(SchedulerStore::open(&path))
+            })
+            .clone()
+    }
+
+    /// List configs from all known per-rig stores.
     pub fn list_all(&self) -> Vec<SchedulerConfig> {
-        let db = self.db.read().unwrap_or_else(|e| e.into_inner());
-        db.iter()
+        let stores = self.stores.lock().unwrap_or_else(|e| e.into_inner());
+        stores
+            .values()
+            .filter_map(|s| s.get_config())
+            .collect()
+    }
+
+    /// One-time migration: extract `sch:{remote}` entries from legacy
+    /// `scheduler.db` into per-rig files.
+    fn migrate_legacy(&self, rig_ids: &[&str]) {
+        let legacy = SchedulerStore::legacy_path();
+        if !legacy.exists() || rig_ids.is_empty() {
+            return;
+        }
+        let any_exists = rig_ids
+            .iter()
+            .any(|id| SchedulerStore::default_path_for(id).exists());
+        if any_exists {
+            return;
+        }
+        info!("migrating legacy scheduler.db to per-rig files");
+        let legacy_store = SchedulerStore::open(&legacy);
+        let db = legacy_store.db.read().unwrap_or_else(|e| e.into_inner());
+        let configs: Vec<SchedulerConfig> = db
+            .iter()
             .filter_map(|kv| {
                 if kv.get_key().starts_with("sch:") {
                     kv.get_value::<SchedulerConfig>()
@@ -172,7 +233,16 @@ impl SchedulerStore {
                     None
                 }
             })
-            .collect()
+            .collect();
+        drop(db);
+        for config in &configs {
+            let store = self.store_for(&config.remote);
+            store.upsert_config(config);
+            info!("  migrated scheduler config for '{}'", config.remote);
+        }
+        let mut migrated = legacy.clone();
+        migrated.set_extension("db.migrated");
+        let _ = std::fs::rename(&legacy, &migrated);
     }
 }
 
@@ -424,19 +494,19 @@ async fn apply_scheduler_target(
     rig_tx: &mpsc::Sender<RigRequest>,
     remote: &str,
     status_map: &SchedulerStatusMap,
-    bookmarks: &BookmarkStore,
+    bookmarks: &BookmarkStoreMap,
     entry_id: Option<&str>,
     bookmark_id: &str,
     center_hz: Option<u64>,
     extra_bm_ids: &[String],
 ) -> Result<SchedulerStatus, String> {
     let bookmark = bookmarks
-        .get(bookmark_id)
+        .get_for_rig(remote, bookmark_id)
         .ok_or_else(|| format!("bookmark '{bookmark_id}' not found for remote '{remote}'"))?;
 
     let extra_bookmarks: Vec<_> = extra_bm_ids
         .iter()
-        .filter_map(|id| bookmarks.get(id))
+        .filter_map(|id| bookmarks.get_for_rig(remote, id))
         .collect();
 
     if let Some(chz) = center_hz {
@@ -566,8 +636,8 @@ pub type SharedSchedulerControlManager = Arc<SchedulerControlManager>;
 pub fn spawn_scheduler_task(
     _context: Arc<FrontendRuntimeContext>,
     rig_tx: mpsc::Sender<RigRequest>,
-    store: Arc<SchedulerStore>,
-    bookmarks: Arc<BookmarkStore>,
+    store: Arc<SchedulerStoreMap>,
+    bookmarks: Arc<BookmarkStoreMap>,
     status_map: SchedulerStatusMap,
     control: SharedSchedulerControlManager,
 ) {
@@ -637,7 +707,7 @@ pub fn spawn_scheduler_task(
                     continue;
                 }
 
-                let Some(bm) = bookmarks.get(&bm_id) else {
+                let Some(bm) = bookmarks.get_for_rig(&config.remote, &bm_id) else {
                     warn!(
                         "scheduler: bookmark '{}' not found for remote '{}'",
                         bm_id, config.remote
@@ -734,7 +804,7 @@ async fn apply_last_scheduler_cycle(
     rig_tx: &mpsc::Sender<RigRequest>,
     remote: &str,
     status_map: &SchedulerStatusMap,
-    bookmarks: &BookmarkStore,
+    bookmarks: &BookmarkStoreMap,
 ) {
     let status = {
         let Ok(map) = status_map.read() else {
@@ -749,7 +819,7 @@ async fn apply_last_scheduler_cycle(
     let Some(bookmark_id) = status.last_bookmark_id else {
         return;
     };
-    if bookmarks.get(&bookmark_id).is_none() {
+    if bookmarks.get_for_rig(remote, &bookmark_id).is_none() {
         warn!(
             "scheduler: last bookmark '{}' not found for remote '{}'",
             bookmark_id, remote
@@ -801,10 +871,10 @@ async fn scheduler_send(
 #[get("/scheduler/{remote}")]
 pub async fn get_scheduler(
     path: web::Path<String>,
-    store: web::Data<Arc<SchedulerStore>>,
+    store_map: web::Data<Arc<SchedulerStoreMap>>,
 ) -> impl Responder {
     let remote = path.into_inner();
-    let config = store.get(&remote).unwrap_or(SchedulerConfig {
+    let config = store_map.store_for(&remote).get_config().unwrap_or(SchedulerConfig {
         remote: remote.clone(),
         mode: SchedulerMode::Disabled,
         grayline: None,
@@ -819,12 +889,12 @@ pub async fn get_scheduler(
 pub async fn put_scheduler(
     path: web::Path<String>,
     body: web::Json<SchedulerConfig>,
-    store: web::Data<Arc<SchedulerStore>>,
+    store_map: web::Data<Arc<SchedulerStoreMap>>,
 ) -> impl Responder {
     let remote = path.into_inner();
     let mut config = body.into_inner();
-    config.remote = remote;
-    if store.upsert(&config) {
+    config.remote = remote.clone();
+    if store_map.store_for(&remote).upsert_config(&config) {
         HttpResponse::Ok().json(config)
     } else {
         HttpResponse::InternalServerError().body("failed to save scheduler config")
@@ -835,10 +905,10 @@ pub async fn put_scheduler(
 #[delete("/scheduler/{remote}")]
 pub async fn delete_scheduler(
     path: web::Path<String>,
-    store: web::Data<Arc<SchedulerStore>>,
+    store_map: web::Data<Arc<SchedulerStoreMap>>,
 ) -> impl Responder {
     let remote = path.into_inner();
-    store.remove(&remote);
+    store_map.store_for(&remote).remove_config();
     HttpResponse::Ok().json(serde_json::json!({ "deleted": true }))
 }
 
@@ -864,13 +934,13 @@ pub struct SchedulerActivateEntryRequest {
 pub async fn put_scheduler_activate_entry(
     path: web::Path<String>,
     body: web::Json<SchedulerActivateEntryRequest>,
-    store: web::Data<Arc<SchedulerStore>>,
+    store_map: web::Data<Arc<SchedulerStoreMap>>,
     status_map: web::Data<SchedulerStatusMap>,
-    bookmarks: web::Data<Arc<BookmarkStore>>,
+    bookmarks: web::Data<Arc<BookmarkStoreMap>>,
     rig_tx: web::Data<mpsc::Sender<RigRequest>>,
 ) -> impl Responder {
     let rig_id = path.into_inner();
-    let Some(config) = store.get(&rig_id) else {
+    let Some(config) = store_map.store_for(&rig_id).get_config() else {
         return HttpResponse::NotFound().body("scheduler config not found");
     };
     if config.mode != SchedulerMode::TimeSpan {
@@ -929,7 +999,7 @@ pub async fn put_scheduler_control(
     control: web::Data<SharedSchedulerControlManager>,
     rig_tx: web::Data<mpsc::Sender<RigRequest>>,
     status_map: web::Data<SchedulerStatusMap>,
-    bookmarks: web::Data<Arc<BookmarkStore>>,
+    bookmarks: web::Data<Arc<BookmarkStoreMap>>,
 ) -> impl Responder {
     let body = body.into_inner();
     let summary = control.set_released(body.session_id, body.released);

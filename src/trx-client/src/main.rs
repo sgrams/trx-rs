@@ -474,7 +474,7 @@ async fn async_init() -> DynResult<AppState> {
                         message.ts_ms = Some(current_timestamp_ms());
                     }
                     if let Ok(mut history) = ais_history.lock() {
-                        history.push_back((now, message));
+                        history.push_back((now, None, message));
                     }
                 }
                 DecodedMessage::Vdes(mut message) => {
@@ -482,7 +482,7 @@ async fn async_init() -> DynResult<AppState> {
                         message.ts_ms = Some(current_timestamp_ms());
                     }
                     if let Ok(mut history) = vdes_history.lock() {
-                        history.push_back((now, message));
+                        history.push_back((now, None, message));
                     }
                 }
                 DecodedMessage::Aprs(mut packet) => {
@@ -490,7 +490,7 @@ async fn async_init() -> DynResult<AppState> {
                         packet.ts_ms = Some(current_timestamp_ms());
                     }
                     if let Ok(mut history) = aprs_history.lock() {
-                        history.push_back((now, packet));
+                        history.push_back((now, None, packet));
                     }
                 }
                 DecodedMessage::HfAprs(mut packet) => {
@@ -498,17 +498,17 @@ async fn async_init() -> DynResult<AppState> {
                         packet.ts_ms = Some(current_timestamp_ms());
                     }
                     if let Ok(mut history) = hf_aprs_history.lock() {
-                        history.push_back((now, packet));
+                        history.push_back((now, None, packet));
                     }
                 }
                 DecodedMessage::Cw(event) => {
                     if let Ok(mut history) = cw_history.lock() {
-                        history.push_back((now, event));
+                        history.push_back((now, None, event));
                     }
                 }
                 DecodedMessage::Ft8(message) => {
                     if let Ok(mut history) = ft8_history.lock() {
-                        history.push_back((now, message));
+                        history.push_back((now, None, message));
                     }
                 }
                 DecodedMessage::Ft4(_) => {
@@ -519,7 +519,7 @@ async fn async_init() -> DynResult<AppState> {
                 }
                 DecodedMessage::Wspr(message) => {
                     if let Ok(mut history) = wspr_history.lock() {
-                        history.push_back((now, message));
+                        history.push_back((now, None, message));
                     }
                 }
             }

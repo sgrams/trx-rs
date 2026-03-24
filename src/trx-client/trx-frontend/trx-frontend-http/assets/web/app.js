@@ -973,6 +973,8 @@ function applyRigList(activeRigId, rigIds, displayNames) {
   updateRigSubtitle(lastActiveRigId);
   if (typeof setSchedulerRig === "function") setSchedulerRig(lastActiveRigId);
   if (typeof setBackgroundDecodeRig === "function") setBackgroundDecodeRig(lastActiveRigId);
+  if (typeof bmPopulateScopePicker === "function") bmPopulateScopePicker();
+  if (typeof bmFetch === "function") bmFetch(document.getElementById("bm-category-filter")?.value || "");
   updateMapRigFilter();
 }
 
@@ -3498,6 +3500,9 @@ async function switchRigFromSelect(selectEl) {
   updateRigSubtitle(lastActiveRigId);
   if (typeof setSchedulerRig === "function") setSchedulerRig(lastActiveRigId);
   if (typeof setBackgroundDecodeRig === "function") setBackgroundDecodeRig(lastActiveRigId);
+  if (typeof bmFetch === "function") bmFetch(document.getElementById("bm-category-filter")?.value || "");
+  // Reconnect decode SSE so history is re-fetched with the new rig filter.
+  connectDecode();
   // Switch this session's rig and reconnect SSE to the new rig's
   // state channel.
   try {
@@ -8101,8 +8106,14 @@ function scheduleDecodeHistoryDrainStep(callback) {
   }
 }
 
+function decodeHistoryUrl() {
+  let url = "/decode/history";
+  if (lastActiveRigId) url += "?remote=" + encodeURIComponent(lastActiveRigId);
+  return url;
+}
+
 function loadDecodeHistoryOnMainThread(onReady, onError) {
-  fetch("/decode/history").then(async (resp) => {
+  fetch(decodeHistoryUrl()).then(async (resp) => {
     if (!resp.ok) return null;
     setDecodeHistoryOverlayVisible(true, "Loading decode history…", "Receiving compressed history payload");
     const payload = await resp.arrayBuffer();
@@ -8328,7 +8339,7 @@ function connectDecode() {
     };
     worker.postMessage({
       type: "fetch-history",
-      url: "/decode/history",
+      url: decodeHistoryUrl(),
       batchLimit: DECODE_HISTORY_WORKER_GROUP_LIMIT,
     });
     return true;

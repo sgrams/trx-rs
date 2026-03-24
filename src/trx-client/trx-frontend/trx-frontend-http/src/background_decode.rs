@@ -17,7 +17,7 @@ use tracing::warn;
 use trx_frontend::{FrontendRuntimeContext, SharedSpectrum, VChanAudioCmd};
 use uuid::Uuid;
 
-use crate::server::bookmarks::{Bookmark, BookmarkStore};
+use crate::server::bookmarks::{Bookmark, BookmarkStoreMap};
 use crate::server::scheduler::{SchedulerStatusMap, SharedSchedulerControlManager};
 use crate::server::vchan::{ClientChannel, ClientChannelManager};
 
@@ -133,7 +133,7 @@ impl BackgroundDecodeStore {
 
 pub struct BackgroundDecodeManager {
     store: Arc<BackgroundDecodeStore>,
-    bookmarks: Arc<BookmarkStore>,
+    bookmarks: Arc<BookmarkStoreMap>,
     context: Arc<FrontendRuntimeContext>,
     scheduler_status: SchedulerStatusMap,
     scheduler_control: SharedSchedulerControlManager,
@@ -145,7 +145,7 @@ pub struct BackgroundDecodeManager {
 impl BackgroundDecodeManager {
     pub fn new(
         store: Arc<BackgroundDecodeStore>,
-        bookmarks: Arc<BookmarkStore>,
+        bookmarks: Arc<BookmarkStoreMap>,
         context: Arc<FrontendRuntimeContext>,
         scheduler_status: SchedulerStatusMap,
         scheduler_control: SharedSchedulerControlManager,
@@ -206,7 +206,7 @@ impl BackgroundDecodeManager {
         let cfg = self.get_config(rig_id);
         let bookmarks: HashMap<String, Bookmark> = self
             .bookmarks
-            .list()
+            .list_for_rig(rig_id)
             .into_iter()
             .map(|bookmark| (bookmark.id.clone(), bookmark))
             .collect();
@@ -346,7 +346,7 @@ impl BackgroundDecodeManager {
         };
         let selected_bookmarks: HashMap<String, Bookmark> = self
             .bookmarks
-            .list()
+            .list_for_rig(&rig_id)
             .into_iter()
             .filter(|bookmark| selected.iter().any(|id| id == &bookmark.id))
             .map(|bookmark| (bookmark.id.clone(), bookmark))

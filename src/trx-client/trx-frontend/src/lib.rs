@@ -194,24 +194,25 @@ pub struct FrontendRuntimeContext {
     pub audio_info: Option<watch::Receiver<Option<AudioStreamInfo>>>,
     /// Decode message broadcast channel
     pub decode_rx: Option<broadcast::Sender<DecodedMessage>>,
-    /// AIS decode history (timestamp, message)
-    pub ais_history: Arc<Mutex<VecDeque<(Instant, AisMessage)>>>,
-    /// VDES decode history (timestamp, message)
-    pub vdes_history: Arc<Mutex<VecDeque<(Instant, VdesMessage)>>>,
-    /// APRS decode history (timestamp, packet)
-    pub aprs_history: Arc<Mutex<VecDeque<(Instant, AprsPacket)>>>,
-    /// HF APRS decode history (timestamp, packet)
-    pub hf_aprs_history: Arc<Mutex<VecDeque<(Instant, AprsPacket)>>>,
-    /// CW decode history (timestamp, event)
-    pub cw_history: Arc<Mutex<VecDeque<(Instant, CwEvent)>>>,
-    /// FT8 decode history (timestamp, message)
-    pub ft8_history: Arc<Mutex<VecDeque<(Instant, Ft8Message)>>>,
-    /// FT4 decode history (timestamp, message)
-    pub ft4_history: Arc<Mutex<VecDeque<(Instant, Ft8Message)>>>,
-    /// FT2 decode history (timestamp, message)
-    pub ft2_history: Arc<Mutex<VecDeque<(Instant, Ft8Message)>>>,
-    /// WSPR decode history (timestamp, message)
-    pub wspr_history: Arc<Mutex<VecDeque<(Instant, WsprMessage)>>>,
+    /// Decode history entry: (record_time, rig_id, message).
+    /// AIS decode history
+    pub ais_history: Arc<Mutex<VecDeque<(Instant, Option<String>, AisMessage)>>>,
+    /// VDES decode history
+    pub vdes_history: Arc<Mutex<VecDeque<(Instant, Option<String>, VdesMessage)>>>,
+    /// APRS decode history
+    pub aprs_history: Arc<Mutex<VecDeque<(Instant, Option<String>, AprsPacket)>>>,
+    /// HF APRS decode history
+    pub hf_aprs_history: Arc<Mutex<VecDeque<(Instant, Option<String>, AprsPacket)>>>,
+    /// CW decode history
+    pub cw_history: Arc<Mutex<VecDeque<(Instant, Option<String>, CwEvent)>>>,
+    /// FT8 decode history
+    pub ft8_history: Arc<Mutex<VecDeque<(Instant, Option<String>, Ft8Message)>>>,
+    /// FT4 decode history
+    pub ft4_history: Arc<Mutex<VecDeque<(Instant, Option<String>, Ft8Message)>>>,
+    /// FT2 decode history
+    pub ft2_history: Arc<Mutex<VecDeque<(Instant, Option<String>, Ft8Message)>>>,
+    /// WSPR decode history
+    pub wspr_history: Arc<Mutex<VecDeque<(Instant, Option<String>, WsprMessage)>>>,
     /// Authentication tokens for HTTP-JSON frontend
     pub auth_tokens: HashSet<String>,
     /// Active HTTP SSE clients (incremented on /events connect, decremented on disconnect).

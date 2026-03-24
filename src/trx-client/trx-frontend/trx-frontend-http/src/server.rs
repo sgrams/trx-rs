@@ -40,7 +40,7 @@ use trx_frontend::{FrontendRuntimeContext, FrontendSpawner};
 
 use auth::{AuthConfig, AuthState, SameSite};
 use background_decode::{BackgroundDecodeManager, BackgroundDecodeStore};
-use scheduler::{SchedulerControlManager, SchedulerStatusMap, SchedulerStore};
+use scheduler::{SchedulerControlManager, SchedulerStatusMap, SchedulerStoreMap};
 use vchan::ClientChannelManager;
 
 /// HTTP frontend implementation.
@@ -71,10 +71,17 @@ async fn serve(
 ) -> Result<(), actix_web::Error> {
     audio::start_decode_history_collector(context.clone());
 
-    let scheduler_path = SchedulerStore::default_path();
-    let scheduler_store = Arc::new(SchedulerStore::open(&scheduler_path));
-    let bookmark_path = bookmarks::BookmarkStore::default_path();
-    let bookmark_store = Arc::new(bookmarks::BookmarkStore::open(&bookmark_path));
+    // Collect rig IDs for per-rig store initialisation / migration.
+    let rig_ids: Vec<String> = context
+        .remote_rigs
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .iter()
+        .map(|r| r.rig_id.clone())
+        .collect();
+    let rig_id_refs: Vec<&str> = rig_ids.iter().map(String::as_str).collect();
+    let scheduler_store = Arc::new(SchedulerStoreMap::new(&rig_id_refs));
+    let bookmark_store_map = Arc::new(bookmarks::BookmarkStoreMap::new());
     let scheduler_status: SchedulerStatusMap = Arc::new(RwLock::new(HashMap::new()));
     let scheduler_control = Arc::new(SchedulerControlManager::default());
 
@@ -82,7 +89,7 @@ async fn serve(
         context.clone(),
         rig_tx.clone(),
         scheduler_store.clone(),
-        bookmark_store.clone(),
+        bookmark_store_map.clone(),
         scheduler_status.clone(),
         scheduler_control.clone(),
     );
@@ -96,7 +103,7 @@ async fn serve(
     let session_rig_mgr = Arc::new(api::SessionRigManager::default());
     let background_decode_mgr = BackgroundDecodeManager::new(
         background_decode_store,
-        bookmark_store.clone(),
+        bookmark_store_map.clone(),
         context.clone(),
         scheduler_status.clone(),
         scheduler_control.clone(),
@@ -136,7 +143,7 @@ async fn serve(
         rig_tx,
         callsign,
         context,
-        bookmark_store,
+        bookmark_store_map,
         scheduler_store,
         scheduler_status,
         scheduler_control,
@@ -162,8 +169,8 @@ fn build_server(
     rig_tx: mpsc::Sender<RigRequest>,
     _callsign: Option<String>,
     context: Arc<FrontendRuntimeContext>,
-    bookmark_store: Arc<bookmarks::BookmarkStore>,
-    scheduler_store: Arc<SchedulerStore>,
+    bookmark_store_map: Arc<bookmarks::BookmarkStoreMap>,
+    scheduler_store: Arc<SchedulerStoreMap>,
     scheduler_status: SchedulerStatusMap,
     scheduler_control: Arc<SchedulerControlManager>,
     vchan_mgr: Arc<ClientChannelManager>,
@@ -176,7 +183,7 @@ fn build_server(
     // scheduler task can observe the connected-client count.
     let clients = web::Data::new(context.sse_clients.clone());
 
-    let bookmark_store = web::Data::new(bookmark_store);
+    let bookmark_store = web::Data::new(bookmark_store_map);
 
     let scheduler_store = web::Data::new(scheduler_store);
     let scheduler_status = web::Data::new(scheduler_status);

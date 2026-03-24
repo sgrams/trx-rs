@@ -2,8 +2,9 @@
 //
 // SPDX-License-Identifier: BSD-2-Clause
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, Mutex, RwLock};
 
 use pickledb::{PickleDb, PickleDbDumpPolicy, SerializationMethod};
 use serde::{Deserialize, Serialize};
@@ -57,12 +58,18 @@ impl BookmarkStore {
         }
     }
 
-    /// Returns the platform default path: `~/.config/trx-rs/bookmarks.db`.
-    /// Falls back to `./bookmarks.db` when the config dir is unavailable.
-    pub fn default_path() -> PathBuf {
+    /// General (shared) bookmarks path: `~/.config/trx-rs/bookmarks.db`.
+    pub fn general_path() -> PathBuf {
         dirs::config_dir()
             .map(|p| p.join("trx-rs").join("bookmarks.db"))
             .unwrap_or_else(|| PathBuf::from("bookmarks.db"))
+    }
+
+    /// Per-rig bookmarks path: `~/.config/trx-rs/bookmark.{remote}.db`.
+    pub fn rig_path(remote: &str) -> PathBuf {
+        dirs::config_dir()
+            .map(|p| p.join("trx-rs").join(format!("bookmark.{remote}.db")))
+            .unwrap_or_else(|| PathBuf::from(format!("bookmark.{remote}.db")))
     }
 
     pub fn list(&self) -> Vec<Bookmark> {
@@ -111,5 +118,62 @@ impl BookmarkStore {
         self.list()
             .into_iter()
             .any(|bm| bm.freq_hz == freq_hz && exclude_id.is_none_or(|ex| bm.id != ex))
+    }
+}
+
+/// Two-tier bookmark storage: a shared **general** store (`bookmarks.db`)
+/// and lazily-opened per-rig stores (`bookmark.{remote}.db`).
+pub struct BookmarkStoreMap {
+    general: Arc<BookmarkStore>,
+    rig_stores: Mutex<HashMap<String, Arc<BookmarkStore>>>,
+}
+
+impl BookmarkStoreMap {
+    pub fn new() -> Self {
+        let general_path = BookmarkStore::general_path();
+        Self {
+            general: Arc::new(BookmarkStore::open(&general_path)),
+            rig_stores: Mutex::new(HashMap::new()),
+        }
+    }
+
+    /// The shared general bookmark store.
+    pub fn general(&self) -> &Arc<BookmarkStore> {
+        &self.general
+    }
+
+    /// Return the per-rig store for `remote`, opening it on first access.
+    pub fn store_for(&self, remote: &str) -> Arc<BookmarkStore> {
+        let mut stores = self.rig_stores.lock().unwrap_or_else(|e| e.into_inner());
+        stores
+            .entry(remote.to_owned())
+            .or_insert_with(|| {
+                let path = BookmarkStore::rig_path(remote);
+                Arc::new(BookmarkStore::open(&path))
+            })
+            .clone()
+    }
+
+    /// Look up a bookmark by id, checking the rig-specific store first,
+    /// then falling back to the general store.
+    pub fn get_for_rig(&self, remote: &str, id: &str) -> Option<Bookmark> {
+        self.store_for(remote)
+            .get(id)
+            .or_else(|| self.general.get(id))
+    }
+
+    /// List all bookmarks visible to `remote`: rig-specific bookmarks merged
+    /// with general bookmarks (rig-specific wins on duplicate IDs).
+    pub fn list_for_rig(&self, remote: &str) -> Vec<Bookmark> {
+        let mut map: HashMap<String, Bookmark> = self
+            .general
+            .list()
+            .into_iter()
+            .map(|bm| (bm.id.clone(), bm))
+            .collect();
+        for bm in self.store_for(remote).list() {
+            map.insert(bm.id.clone(), bm);
+        }
+        map.into_values().collect()
     }
 }

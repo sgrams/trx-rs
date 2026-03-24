@@ -350,7 +350,7 @@ pub async fn events(
     clients: web::Data<Arc<AtomicUsize>>,
     context: web::Data<Arc<FrontendRuntimeContext>>,
     vchan_mgr: web::Data<Arc<ClientChannelManager>>,
-    bookmark_store: web::Data<Arc<crate::server::bookmarks::BookmarkStore>>,
+    bookmark_store_map: web::Data<Arc<crate::server::bookmarks::BookmarkStoreMap>>,
     scheduler_status: web::Data<crate::server::scheduler::SchedulerStatusMap>,
     scheduler_control: web::Data<crate::server::scheduler::SharedSchedulerControlManager>,
     session_rig_mgr: web::Data<Arc<SessionRigManager>>,
@@ -389,7 +389,7 @@ pub async fn events(
         );
         sync_scheduler_vchannels(
             vchan_mgr.get_ref().as_ref(),
-            bookmark_store.get_ref().as_ref(),
+            bookmark_store_map.get_ref().as_ref(),
             scheduler_status.get_ref(),
             scheduler_control.get_ref().as_ref(),
             rid,
@@ -423,7 +423,7 @@ pub async fn events(
     let counter_updates = counter.clone();
     let context_updates = context.get_ref().clone();
     let vchan_updates = vchan_mgr.get_ref().clone();
-    let bookmark_store_updates = bookmark_store.get_ref().clone();
+    let bookmark_store_map_updates = bookmark_store_map.get_ref().clone();
     let scheduler_status_updates = scheduler_status.get_ref().clone();
     let scheduler_control_updates = scheduler_control.get_ref().clone();
     let session_rig_mgr_updates = session_rig_mgr.get_ref().clone();
@@ -431,7 +431,7 @@ pub async fn events(
         let counter = counter_updates.clone();
         let context = context_updates.clone();
         let vchan = vchan_updates.clone();
-        let bookmark_store = bookmark_store_updates.clone();
+        let bookmark_store_map = bookmark_store_map_updates.clone();
         let scheduler_status = scheduler_status_updates.clone();
         let scheduler_control = scheduler_control_updates.clone();
         let session_rig_mgr = session_rig_mgr_updates.clone();
@@ -452,7 +452,7 @@ pub async fn events(
                     );
                     sync_scheduler_vchannels(
                         vchan.as_ref(),
-                        bookmark_store.as_ref(),
+                        bookmark_store_map.as_ref(),
                         &scheduler_status,
                         scheduler_control.as_ref(),
                         &rig_id,
@@ -536,7 +536,7 @@ pub async fn events(
 
 fn sync_scheduler_vchannels(
     vchan_mgr: &ClientChannelManager,
-    bookmark_store: &crate::server::bookmarks::BookmarkStore,
+    bookmark_store_map: &crate::server::bookmarks::BookmarkStoreMap,
     scheduler_status: &crate::server::scheduler::SchedulerStatusMap,
     scheduler_control: &crate::server::scheduler::SchedulerControlManager,
     rig_id: &str,
@@ -555,7 +555,7 @@ fn sync_scheduler_vchannels(
                     .last_bookmark_ids
                     .iter()
                     .filter_map(|bookmark_id| {
-                        bookmark_store.get(bookmark_id).map(|bookmark| {
+                        bookmark_store_map.get_for_rig(rig_id, bookmark_id).map(|bookmark| {
                             (
                                 bookmark_id.clone(),
                                 bookmark.freq_hz,
@@ -600,17 +600,18 @@ impl DecodeHistoryPayload {
 }
 
 /// Build the grouped decode history payload from all per-decoder ring-buffers.
-fn collect_decode_history(context: &FrontendRuntimeContext) -> DecodeHistoryPayload {
+/// When `rig_filter` is `Some`, only entries recorded for that rig are included.
+fn collect_decode_history(context: &FrontendRuntimeContext, rig_filter: Option<&str>) -> DecodeHistoryPayload {
     DecodeHistoryPayload {
-        ais: crate::server::audio::snapshot_ais_history(context),
-        vdes: crate::server::audio::snapshot_vdes_history(context),
-        aprs: crate::server::audio::snapshot_aprs_history(context),
-        hf_aprs: crate::server::audio::snapshot_hf_aprs_history(context),
-        cw: crate::server::audio::snapshot_cw_history(context),
-        ft8: crate::server::audio::snapshot_ft8_history(context),
-        ft4: crate::server::audio::snapshot_ft4_history(context),
-        ft2: crate::server::audio::snapshot_ft2_history(context),
-        wspr: crate::server::audio::snapshot_wspr_history(context),
+        ais: crate::server::audio::snapshot_ais_history(context, rig_filter),
+        vdes: crate::server::audio::snapshot_vdes_history(context, rig_filter),
+        aprs: crate::server::audio::snapshot_aprs_history(context, rig_filter),
+        hf_aprs: crate::server::audio::snapshot_hf_aprs_history(context, rig_filter),
+        cw: crate::server::audio::snapshot_cw_history(context, rig_filter),
+        ft8: crate::server::audio::snapshot_ft8_history(context, rig_filter),
+        ft4: crate::server::audio::snapshot_ft4_history(context, rig_filter),
+        ft2: crate::server::audio::snapshot_ft2_history(context, rig_filter),
+        wspr: crate::server::audio::snapshot_wspr_history(context, rig_filter),
     }
 }
 
@@ -700,11 +701,15 @@ fn gzip_bytes(payload: &[u8]) -> std::io::Result<Vec<u8>> {
 /// not block real-time messages: the client fetches this endpoint in parallel
 /// with opening the SSE connection and drains it in the background.
 #[get("/decode/history")]
-pub async fn decode_history(context: web::Data<Arc<FrontendRuntimeContext>>) -> impl Responder {
+pub async fn decode_history(
+    context: web::Data<Arc<FrontendRuntimeContext>>,
+    query: web::Query<RemoteQuery>,
+) -> impl Responder {
     if context.decode_rx.is_none() {
         return HttpResponse::NotFound().body("decode not enabled");
     }
-    let history = collect_decode_history(context.get_ref());
+    let rig_filter = query.remote.as_deref().filter(|s| !s.is_empty());
+    let history = collect_decode_history(context.get_ref(), rig_filter);
     let cbor = match encode_decode_history_cbor(&history) {
         Ok(cbor) => cbor,
         Err(err) => {
@@ -1416,6 +1421,28 @@ pub async fn clear_cw_decode(
 #[derive(serde::Deserialize)]
 pub struct BookmarkQuery {
     pub category: Option<String>,
+    /// `"general"` for the shared store, or a rig remote name for
+    /// the per-rig store.  Omitting defaults to the general store.
+    pub scope: Option<String>,
+}
+
+/// Resolve which `BookmarkStore` to use based on the `scope` parameter.
+///
+/// - `scope` absent or `"general"` → general store
+/// - `scope` = `"{remote}"` → per-rig store for that remote
+fn resolve_bookmark_store(
+    scope: Option<&str>,
+    store_map: &crate::server::bookmarks::BookmarkStoreMap,
+) -> std::sync::Arc<crate::server::bookmarks::BookmarkStore> {
+    match scope.filter(|s| !s.is_empty() && *s != "general") {
+        Some(remote) => store_map.store_for(remote),
+        None => store_map.general().clone(),
+    }
+}
+
+#[derive(serde::Deserialize)]
+pub struct BookmarkScopeQuery {
+    pub scope: Option<String>,
 }
 
 #[derive(serde::Deserialize)]
@@ -1481,7 +1508,7 @@ where
 #[get("/bookmarks")]
 pub async fn list_bookmarks(
     req: HttpRequest,
-    store: web::Data<Arc<crate::server::bookmarks::BookmarkStore>>,
+    store_map: web::Data<Arc<crate::server::bookmarks::BookmarkStoreMap>>,
     query: web::Query<BookmarkQuery>,
 ) -> Result<HttpResponse, Error> {
     if request_accepts_html(&req) {
@@ -1490,6 +1517,7 @@ pub async fn list_bookmarks(
             status::index_html(),
         ));
     }
+    let store = resolve_bookmark_store(query.scope.as_deref(), store_map.get_ref());
     let mut list = store.list();
     if let Some(ref cat) = query.category {
         if !cat.is_empty() {
@@ -1504,11 +1532,13 @@ pub async fn list_bookmarks(
 #[post("/bookmarks")]
 pub async fn create_bookmark(
     req: HttpRequest,
-    store: web::Data<Arc<crate::server::bookmarks::BookmarkStore>>,
+    store_map: web::Data<Arc<crate::server::bookmarks::BookmarkStoreMap>>,
+    query: web::Query<BookmarkScopeQuery>,
     body: web::Json<BookmarkInput>,
     auth_state: web::Data<crate::server::auth::AuthState>,
 ) -> Result<HttpResponse, Error> {
     require_control(&req, &auth_state)?;
+    let store = resolve_bookmark_store(query.scope.as_deref(), store_map.get_ref());
     if store.freq_taken(body.freq_hz, None) {
         return Err(actix_web::error::ErrorConflict(
             "a bookmark for that frequency already exists",
@@ -1538,11 +1568,13 @@ pub async fn create_bookmark(
 pub async fn update_bookmark(
     req: HttpRequest,
     path: web::Path<String>,
-    store: web::Data<Arc<crate::server::bookmarks::BookmarkStore>>,
+    store_map: web::Data<Arc<crate::server::bookmarks::BookmarkStoreMap>>,
+    query: web::Query<BookmarkScopeQuery>,
     body: web::Json<BookmarkInput>,
     auth_state: web::Data<crate::server::auth::AuthState>,
 ) -> Result<HttpResponse, Error> {
     require_control(&req, &auth_state)?;
+    let store = resolve_bookmark_store(query.scope.as_deref(), store_map.get_ref());
     let id = path.into_inner();
     if store.freq_taken(body.freq_hz, Some(&id)) {
         return Err(actix_web::error::ErrorConflict(
@@ -1571,10 +1603,12 @@ pub async fn update_bookmark(
 pub async fn delete_bookmark(
     req: HttpRequest,
     path: web::Path<String>,
-    store: web::Data<Arc<crate::server::bookmarks::BookmarkStore>>,
+    store_map: web::Data<Arc<crate::server::bookmarks::BookmarkStoreMap>>,
+    query: web::Query<BookmarkScopeQuery>,
     auth_state: web::Data<crate::server::auth::AuthState>,
 ) -> Result<HttpResponse, Error> {
     require_control(&req, &auth_state)?;
+    let store = resolve_bookmark_store(query.scope.as_deref(), store_map.get_ref());
     let id = path.into_inner();
     if store.remove(&id) {
         Ok(HttpResponse::Ok().json(serde_json::json!({ "deleted": true })))
@@ -1592,10 +1626,12 @@ struct BatchDeleteRequest {
 pub async fn batch_delete_bookmarks(
     req: HttpRequest,
     body: web::Json<BatchDeleteRequest>,
-    store: web::Data<Arc<crate::server::bookmarks::BookmarkStore>>,
+    store_map: web::Data<Arc<crate::server::bookmarks::BookmarkStoreMap>>,
+    query: web::Query<BookmarkScopeQuery>,
     auth_state: web::Data<crate::server::auth::AuthState>,
 ) -> Result<HttpResponse, Error> {
     require_control(&req, &auth_state)?;
+    let store = resolve_bookmark_store(query.scope.as_deref(), store_map.get_ref());
     let mut deleted = 0usize;
     for id in &body.ids {
         if store.remove(id) {
@@ -1761,7 +1797,7 @@ pub async fn subscribe_channel(
     body: web::Json<SubscribeBody>,
     vchan_mgr: web::Data<Arc<ClientChannelManager>>,
     rig_tx: web::Data<mpsc::Sender<RigRequest>>,
-    bookmark_store: web::Data<Arc<crate::server::bookmarks::BookmarkStore>>,
+    bookmark_store_map: web::Data<Arc<crate::server::bookmarks::BookmarkStoreMap>>,
     scheduler_control: web::Data<crate::server::scheduler::SharedSchedulerControlManager>,
 ) -> impl Responder {
     let body = body.into_inner();
@@ -1776,7 +1812,7 @@ pub async fn subscribe_channel(
                 rig_tx.get_ref(),
                 &remote,
                 &selected,
-                bookmark_store.get_ref().as_ref(),
+                bookmark_store_map.get_ref().as_ref(),
             )
             .await
             {
@@ -2248,7 +2284,7 @@ async fn apply_selected_channel(
     rig_tx: &mpsc::Sender<RigRequest>,
     remote: &str,
     channel: &crate::server::vchan::SelectedChannel,
-    bookmark_store: &crate::server::bookmarks::BookmarkStore,
+    bookmark_store_map: &crate::server::bookmarks::BookmarkStoreMap,
 ) -> Result<(), Error> {
     send_command_to_rig(
         rig_tx,
@@ -2278,7 +2314,7 @@ async fn apply_selected_channel(
     let Some(bookmark_id) = channel.scheduler_bookmark_id.as_deref() else {
         return Ok(());
     };
-    let Some(bookmark) = bookmark_store.get(bookmark_id) else {
+    let Some(bookmark) = bookmark_store_map.get_for_rig(remote, bookmark_id) else {
         return Ok(());
     };
     let (want_aprs, want_hf_aprs, want_ft8, want_ft4, want_ft2, want_wspr) =

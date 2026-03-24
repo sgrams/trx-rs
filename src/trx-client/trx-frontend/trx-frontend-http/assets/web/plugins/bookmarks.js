@@ -1,5 +1,14 @@
 // --- Bookmarks Tab ---
 
+/** Current bookmark scope: "general" or a rig remote name. */
+let bmScope = "general";
+
+/** Build the ?scope= query string for the current bookmark scope. */
+function bmScopeParam(prefix) {
+  const sep = prefix ? "&" : "?";
+  return sep + "scope=" + encodeURIComponent(bmScope);
+}
+
 var bmList = [];
 var bmRevision = 0;
 let bmFilteredList = [];
@@ -37,9 +46,12 @@ function bmSyncAccess() {
 
 async function bmFetch(categoryFilter) {
   let url = "/bookmarks";
+  let hasQuery = false;
   if (categoryFilter && categoryFilter !== "") {
     url += "?category=" + encodeURIComponent(categoryFilter);
+    hasQuery = true;
   }
+  url += bmScopeParam(hasQuery);
   try {
     const resp = await fetch(url);
     if (!resp.ok) throw new Error("HTTP " + resp.status);
@@ -84,7 +96,7 @@ async function bmRefreshCategoryFilter(keepValue) {
   const modeSel = document.getElementById("bm-mode-filter");
   if (!sel && !modeSel) return;
   try {
-    const resp = await fetch("/bookmarks");
+    const resp = await fetch("/bookmarks" + bmScopeParam(false));
     if (!resp.ok) return;
     const all = await resp.json();
     if (sel) {
@@ -281,13 +293,13 @@ async function bmSave(e) {
   try {
     let resp;
     if (id) {
-      resp = await fetch("/bookmarks/" + encodeURIComponent(id), {
+      resp = await fetch("/bookmarks/" + encodeURIComponent(id) + bmScopeParam(false), {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
     } else {
-      resp = await fetch("/bookmarks", {
+      resp = await fetch("/bookmarks" + bmScopeParam(false), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
@@ -311,7 +323,7 @@ async function bmSave(e) {
 async function bmDelete(id) {
   if (!confirm("Delete this bookmark?")) return;
   try {
-    const resp = await fetch("/bookmarks/" + encodeURIComponent(id), {
+    const resp = await fetch("/bookmarks/" + encodeURIComponent(id) + bmScopeParam(false), {
       method: "DELETE",
     });
     if (!resp.ok) throw new Error("HTTP " + resp.status);
@@ -429,7 +441,7 @@ async function bmDeleteSelected() {
   if (ids.length === 0) return;
   if (!confirm(`Delete ${ids.length} selected bookmark${ids.length > 1 ? "s" : ""}?`)) return;
   try {
-    const resp = await fetch("/bookmarks/batch_delete", {
+    const resp = await fetch("/bookmarks/batch_delete" + bmScopeParam(false), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ ids }),
@@ -444,11 +456,44 @@ async function bmDeleteSelected() {
   }
 }
 
+/** Populate the scope picker with "General" + one option per rig. */
+function bmPopulateScopePicker() {
+  const picker = document.getElementById("bm-scope-picker");
+  if (!picker) return;
+  const rigIds = (typeof lastRigIds !== "undefined" && Array.isArray(lastRigIds)) ? lastRigIds : [];
+  const displayNames = (typeof lastRigDisplayNames !== "undefined") ? lastRigDisplayNames : {};
+  // Preserve current selection if still valid.
+  const prev = picker.value;
+  while (picker.options.length > 1) picker.remove(1);
+  rigIds.forEach((id) => {
+    const opt = document.createElement("option");
+    opt.value = id;
+    opt.textContent = displayNames[id] || id;
+    picker.appendChild(opt);
+  });
+  if (prev && (prev === "general" || rigIds.includes(prev))) {
+    picker.value = prev;
+  } else {
+    picker.value = "general";
+  }
+  bmScope = picker.value;
+}
+
 // --- Event wiring ---
 (function initBookmarks() {
   // Set initial button visibility (auth may already be resolved by the time
   // scripts run if auth is disabled; otherwise bmFetch() will sync it).
   bmSyncAccess();
+
+  // Scope picker
+  bmPopulateScopePicker();
+  const scopePicker = document.getElementById("bm-scope-picker");
+  if (scopePicker) {
+    scopePicker.addEventListener("change", (e) => {
+      bmScope = e.target.value;
+      bmFetch(document.getElementById("bm-category-filter")?.value || "");
+    });
+  }
 
   // Refresh list and sync access when the Bookmarks tab is activated
   document.querySelector(".tab-bar").addEventListener("click", (e) => {
