@@ -534,6 +534,19 @@ async fn apply_scheduler_target(
     )
     .await?;
 
+    if let Some(bandwidth_hz) = bookmark
+        .bandwidth_hz
+        .filter(|bw| *bw > 0 && *bw <= u32::MAX as u64)
+        .map(|bw| bw as u32)
+    {
+        scheduler_send(
+            rig_tx,
+            RigCommand::SetBandwidth(bandwidth_hz),
+            remote.to_string(),
+        )
+        .await?;
+    }
+
     apply_scheduler_decoders(rig_tx, remote, &bookmark, &extra_bookmarks).await;
 
     let status = SchedulerStatus {

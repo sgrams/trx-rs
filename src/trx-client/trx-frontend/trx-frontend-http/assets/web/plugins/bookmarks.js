@@ -394,28 +394,31 @@ async function bmApply(bm) {
       scheduleSpectrumDraw();
     }
 
-    // --- Fire-and-forget: send mode, bandwidth, and frequency in parallel ---
-    // The UI is already updated optimistically above; don't block on the
-    // network round-trips so the bookmark click feels instant.
-    const modePromise = (async () => {
+    // Take scheduler control up front, then apply mode before bandwidth so a
+    // late SetMode cannot revert a saved WFM bookmark bandwidth to 180 kHz.
+    const tunePromise = (async () => {
+      if (typeof vchanTakeSchedulerControl === "function") {
+        await vchanTakeSchedulerControl();
+      }
+
       const onVirtual = typeof vchanInterceptMode === "function"
         && await vchanInterceptMode(bm.mode);
       if (!onVirtual) {
         await postPath("/set_mode?mode=" + encodeURIComponent(bm.mode));
       }
-    })();
-    const bwPromise = bm.bandwidth_hz ? (async () => {
-      const bwHandledByVchan = typeof vchanInterceptBandwidth === "function"
-        && await vchanInterceptBandwidth(bm.bandwidth_hz);
-      if (!bwHandledByVchan) {
-        await postPath("/set_bandwidth?hz=" + bm.bandwidth_hz);
+
+      if (bm.bandwidth_hz) {
+        const bwHandledByVchan = typeof vchanInterceptBandwidth === "function"
+          && await vchanInterceptBandwidth(bm.bandwidth_hz);
+        if (!bwHandledByVchan) {
+          await postPath("/set_bandwidth?hz=" + bm.bandwidth_hz);
+        }
       }
-    })() : Promise.resolve();
-    // setRigFrequency is wrapped by vchan.js to redirect to the channel API
-    // when on a virtual channel, so this call works correctly in both cases.
-    // It also does its own optimistic update (applyLocalTunedFrequency) but
-    // that's a no-op since we already set the same value above.
-    const freqPromise = (async () => {
+
+      // setRigFrequency is wrapped by vchan.js to redirect to the channel API
+      // when on a virtual channel, so this call works correctly in both cases.
+      // It also does its own optimistic update (applyLocalTunedFrequency) but
+      // that's a no-op since we already set the same value above.
       if (typeof setRigFrequency === "function") {
         await setRigFrequency(bm.freq_hz);
       } else {
@@ -439,7 +442,7 @@ async function bmApply(bm) {
     })() : Promise.resolve();
     // Don't await — let the network calls settle in the background.
     // Errors are logged but don't block the UI.
-    Promise.all([modePromise, bwPromise, freqPromise, decoderPromise]).catch(
+    Promise.all([tunePromise, decoderPromise]).catch(
       (err) => console.error("Bookmark apply background error:", err)
     );
   } catch (err) {
