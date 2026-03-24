@@ -640,12 +640,12 @@ function setTheme(theme) {
 
 // Recolour bookmark chips after any palette/theme change (setTheme or setStyle).
 function invalidateBookmarkColors() {
-  if (typeof bmRevision === "undefined") return;
-  bmRevision++;
+  if (typeof bmOverlayRevision === "undefined") return;
+  bmOverlayRevision++;
   // Force the browser to recalculate styles so getComputedStyle reads new values.
   void getComputedStyle(document.documentElement).getPropertyValue("--bg");
   const colorMap = bmCategoryColorMap();
-  const ref = typeof bmList !== "undefined" ? bmList : [];
+  const ref = typeof bmOverlayList !== "undefined" ? bmOverlayList : [];
   document.querySelectorAll(".spectrum-bookmark-chip").forEach((chip) => {
     const bm = ref.find((b) => b.id === chip.dataset.bmId);
     if (!bm) return;
@@ -1156,7 +1156,7 @@ function drawSignalOverlay() {
   const bwEdge = BW_OVERLAY_COLORS.edge;
   const bwStroke = BW_OVERLAY_COLORS.stroke;
   const bwHard = BW_OVERLAY_COLORS.hard;
-  const bmRef = typeof bmList !== "undefined" ? bmList : null;
+  const bmRef = typeof bmOverlayList !== "undefined" ? bmOverlayList : null;
   if (Array.isArray(bmRef) && bmRef.length > 0) {
     const colorMap = bmCategoryColorMap();
     const grouped = new Map();
@@ -6010,7 +6010,7 @@ function buildBookmarkTooltipText(bm) {
 }
 
 function nearestBookmarkForHz(hz, widthPx, range) {
-  const ref = typeof bmList !== "undefined" ? bmList : null;
+  const ref = typeof bmOverlayList !== "undefined" ? bmOverlayList : null;
   if (!Array.isArray(ref) || !Number.isFinite(hz) || !widthPx || !range || !Number.isFinite(range.visSpanHz) || range.visSpanHz <= 0) {
     return null;
   }
@@ -9237,7 +9237,7 @@ function bmThemePalette() {
 
 // Returns a map of category → hex colour, including "" for uncategorised.
 function bmCategoryColorMap() {
-  const ref = typeof bmList !== "undefined" ? bmList : [];
+  const ref = typeof bmOverlayList !== "undefined" ? bmOverlayList : [];
   const cats = [...new Set(ref.map((b) => b.category).filter(Boolean))].sort();
   const palette = bmThemePalette();
   const map = { "": palette[0] };
@@ -9289,7 +9289,7 @@ function createBookmarkChip(bm, colorMap, options = {}) {
 
 function updateSideBookmarkStack(container, bookmarks, colorMap) {
   if (!container) return;
-  const rev = typeof bmRevision !== "undefined" ? bmRevision : 0;
+  const rev = typeof bmOverlayRevision !== "undefined" ? bmOverlayRevision : 0;
   const nextKey = Array.isArray(bookmarks) ? `${rev}:${bookmarks.map((bm) => bm.id).join(",")}` : "";
   if (!Array.isArray(bookmarks) || bookmarks.length === 0) {
     if (container.dataset.bmKey) {
@@ -9317,7 +9317,7 @@ function updateBookmarkAxis(range) {
   const rightSideEl = document.getElementById("spectrum-bookmark-side-right");
   if (!axisEl) return;
 
-  const _bmRef = typeof bmList !== "undefined" ? bmList : null;
+  const _bmRef = typeof bmOverlayList !== "undefined" ? bmOverlayList : null;
   const allBookmarks = Array.isArray(_bmRef) ? _bmRef : [];
   const visBookmarks = allBookmarks.filter((bm) => bm.freq_hz >= range.visLoHz && bm.freq_hz <= range.visHiHz);
   const leftBookmarks = allBookmarks
@@ -9343,7 +9343,7 @@ function updateBookmarkAxis(range) {
 
   // Only rebuild DOM when the set of visible bookmarks changes.
   // Positions are always updated to handle pan/zoom smoothly.
-  const rev = typeof bmRevision !== "undefined" ? bmRevision : 0;
+  const rev = typeof bmOverlayRevision !== "undefined" ? bmOverlayRevision : 0;
   const newKey = `${rev}:${visBookmarks.map((b) => b.id).join(",")}`;
   if (axisEl.dataset.bmKey !== newKey) {
     axisEl.dataset.bmKey = newKey;

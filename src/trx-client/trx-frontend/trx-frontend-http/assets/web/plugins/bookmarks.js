@@ -11,6 +11,9 @@ function bmScopeParam(prefix, scope) {
 
 var bmList = [];
 var bmRevision = 0;
+/** Overlay list: always merged general + active rig bookmarks (for spectrum/map). */
+var bmOverlayList = [];
+var bmOverlayRevision = 0;
 let bmFilteredList = [];
 let bmEditId = null;
 let bmEditScope = null;
@@ -54,6 +57,23 @@ function bmListScope() {
   return rig || "general";
 }
 
+async function bmFetchOverlay() {
+  const overlayScope = bmListScope();
+  try {
+    const resp = await fetch("/bookmarks" + bmScopeParam(false, overlayScope));
+    if (!resp.ok) throw new Error("HTTP " + resp.status);
+    bmOverlayList = await resp.json();
+  } catch (e) {
+    console.error("Failed to fetch overlay bookmarks:", e);
+    bmOverlayList = [];
+  }
+  bmOverlayRevision++;
+  if (typeof window.syncBookmarkMapLocators === "function") {
+    window.syncBookmarkMapLocators(bmOverlayList);
+  }
+  if (typeof scheduleSpectrumDraw === "function") scheduleSpectrumDraw();
+}
+
 async function bmFetch(categoryFilter) {
   let url = "/bookmarks";
   let hasQuery = false;
@@ -61,7 +81,8 @@ async function bmFetch(categoryFilter) {
     url += "?category=" + encodeURIComponent(categoryFilter);
     hasQuery = true;
   }
-  url += bmScopeParam(hasQuery, bmListScope());
+  url += bmScopeParam(hasQuery);
+  const overlayPromise = bmFetchOverlay();
   try {
     const resp = await fetch(url);
     if (!resp.ok) throw new Error("HTTP " + resp.status);
@@ -71,15 +92,12 @@ async function bmFetch(categoryFilter) {
     bmList = [];
   }
   bmRevision++;
-  if (typeof window.syncBookmarkMapLocators === "function") {
-    window.syncBookmarkMapLocators(bmList);
-  }
   bmSelected.clear();
   bmUpdateSelectionUi();
   bmSyncAccess();
   bmApplyFilters();
   bmRefreshCategoryFilter(categoryFilter);
-  if (typeof scheduleSpectrumDraw === "function") scheduleSpectrumDraw();
+  await overlayPromise;
 }
 
 function bmApplyFilters() {
@@ -106,7 +124,7 @@ async function bmRefreshCategoryFilter(keepValue) {
   const modeSel = document.getElementById("bm-mode-filter");
   if (!sel && !modeSel) return;
   try {
-    const resp = await fetch("/bookmarks" + bmScopeParam(false, bmListScope()));
+    const resp = await fetch("/bookmarks" + bmScopeParam(false));
     if (!resp.ok) return;
     const all = await resp.json();
     if (sel) {
