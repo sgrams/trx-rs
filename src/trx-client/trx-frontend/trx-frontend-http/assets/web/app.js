@@ -6502,9 +6502,7 @@ function applyMapFilter() {
     const sourceVisible = noneSelected
       ? DEFAULT_MAP_SOURCE_FILTER[type] !== undefined ? DEFAULT_MAP_SOURCE_FILTER[type] : true
       : !!mapFilter[type];
-    const rigVisible = !mapRigFilter
-      || marker.__trxType === "bookmark"
-      || (marker.__trxRigIds instanceof Set && marker.__trxRigIds.has(mapRigFilter));
+    const rigVisible = true;
     const visible = marker.__trxHistoryVisible !== false
       && markerPassesSearchFilter(marker)
       && markerPassesLocatorFilters(marker)
