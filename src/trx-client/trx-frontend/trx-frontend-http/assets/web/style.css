@@ -3720,6 +3720,21 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   background: var(--btn-bg);
   cursor: pointer;
 }
+.bm-move-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+.bm-toolbar-btn {
+  white-space: nowrap;
+  font-size: 0.78rem;
+  padding: 0.25rem 0.6rem;
+  border-radius: 0.25rem;
+  border: 1px solid var(--border-light);
+  background: var(--btn-bg);
+  color: var(--text-heading);
+  cursor: pointer;
+}
 
 .bm-empty {
   padding: 2rem 1rem;

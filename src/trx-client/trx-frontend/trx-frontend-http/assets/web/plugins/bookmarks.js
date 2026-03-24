@@ -38,10 +38,13 @@ function bmCanControl() {
   );
 }
 
-// Show/hide the Add Bookmark button based on the current auth role.
+// Show/hide the Add Bookmark / Select All buttons based on the current auth role.
 function bmSyncAccess() {
+  const canCtrl = bmCanControl();
   const addBtn = document.getElementById("bm-add-btn");
-  if (addBtn) addBtn.style.display = bmCanControl() ? "" : "none";
+  const selectAllBtn = document.getElementById("bm-select-all-btn");
+  if (addBtn) addBtn.style.display = canCtrl ? "" : "none";
+  if (selectAllBtn) selectAllBtn.style.display = canCtrl ? "" : "none";
 }
 
 async function bmFetch(categoryFilter) {
@@ -427,6 +430,11 @@ function bmUpdateSelectionUi() {
   if (moveWrap) moveWrap.style.display = visible ? "" : "none";
   if (moveCountEl) moveCountEl.textContent = count;
   if (visible) bmPopulateMoveTarget();
+  const selectAllBtn = document.getElementById("bm-select-all-btn");
+  if (selectAllBtn && bmCanControl()) {
+    const allSelected = bmFilteredList.length > 0 && bmFilteredList.every((bm) => bmSelected.has(bm.id));
+    selectAllBtn.textContent = allSelected ? "Deselect All" : "Select All";
+  }
 }
 
 /** Populate the move-target dropdown with all scopes except the current one. */
@@ -614,6 +622,22 @@ function bmPopulateScopePicker() {
       if (checked) bmSelected.add(cb.dataset.bmId);
       else bmSelected.delete(cb.dataset.bmId);
     });
+    bmUpdateSelectionUi();
+  });
+
+  // Select All (across all pages) button
+  document.getElementById("bm-select-all-btn").addEventListener("click", () => {
+    const allSelected = bmFilteredList.length > 0 && bmFilteredList.every((bm) => bmSelected.has(bm.id));
+    if (allSelected) {
+      bmSelected.clear();
+    } else {
+      bmFilteredList.forEach((bm) => bmSelected.add(bm.id));
+    }
+    // Sync visible page checkboxes
+    document.querySelectorAll(".bm-row-sel").forEach((cb) => {
+      cb.checked = bmSelected.has(cb.dataset.bmId);
+    });
+    bmSyncSelectAllCheckbox();
     bmUpdateSelectionUi();
   });
 
