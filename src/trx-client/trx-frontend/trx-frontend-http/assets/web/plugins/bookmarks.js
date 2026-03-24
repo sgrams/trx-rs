@@ -48,6 +48,12 @@ function bmSyncAccess() {
   if (selectAllBtn) selectAllBtn.style.display = canCtrl ? "" : "none";
 }
 
+/** The listing scope: always the active rig (to merge general + rig bookmarks). */
+function bmListScope() {
+  const rig = (typeof lastActiveRigId !== "undefined") ? lastActiveRigId : null;
+  return rig || "general";
+}
+
 async function bmFetch(categoryFilter) {
   let url = "/bookmarks";
   let hasQuery = false;
@@ -55,7 +61,7 @@ async function bmFetch(categoryFilter) {
     url += "?category=" + encodeURIComponent(categoryFilter);
     hasQuery = true;
   }
-  url += bmScopeParam(hasQuery);
+  url += bmScopeParam(hasQuery, bmListScope());
   try {
     const resp = await fetch(url);
     if (!resp.ok) throw new Error("HTTP " + resp.status);
@@ -100,7 +106,7 @@ async function bmRefreshCategoryFilter(keepValue) {
   const modeSel = document.getElementById("bm-mode-filter");
   if (!sel && !modeSel) return;
   try {
-    const resp = await fetch("/bookmarks" + bmScopeParam(false));
+    const resp = await fetch("/bookmarks" + bmScopeParam(false, bmListScope()));
     if (!resp.ok) return;
     const all = await resp.json();
     if (sel) {
