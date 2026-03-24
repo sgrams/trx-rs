@@ -3712,14 +3712,6 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   border-color: var(--accent-red) !important;
 }
 
-#bm-del-selected-btn {
-  font-size: 0.78rem;
-  padding: 0.25rem 0.6rem;
-  border-radius: 0.25rem;
-  border: 1px solid var(--accent-red);
-  background: var(--btn-bg);
-  cursor: pointer;
-}
 .bm-move-wrap {
   display: inline-flex;
   align-items: center;
