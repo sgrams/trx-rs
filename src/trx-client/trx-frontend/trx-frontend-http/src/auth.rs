@@ -16,8 +16,8 @@ use actix_web::{
 use futures_util::future::LocalBoxFuture;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::sync::{Arc, RwLock};
-use std::time::{Duration, SystemTime};
+use std::sync::{Arc, Mutex, RwLock};
+use std::time::{Duration, Instant, SystemTime};
 
 /// Unique session identifier (hex-encoded 128-bit random)
 pub type SessionId = String;
@@ -201,10 +201,70 @@ impl AuthConfig {
     }
 }
 
+/// Simple per-IP rate limiter for login attempts.
+///
+/// Tracks failed attempts per IP and enforces a cooldown window after
+/// exceeding the maximum number of attempts.
+pub struct LoginRateLimiter {
+    /// Maps IP → (attempt_count, window_start).
+    attempts: Mutex<HashMap<String, (u32, Instant)>>,
+    /// Maximum allowed attempts within the window.
+    max_attempts: u32,
+    /// Duration of the rate-limit window.
+    window: Duration,
+}
+
+impl LoginRateLimiter {
+    pub fn new(max_attempts: u32, window: Duration) -> Self {
+        Self {
+            attempts: Mutex::new(HashMap::new()),
+            max_attempts,
+            window,
+        }
+    }
+
+    /// Check whether an IP is rate-limited. Returns `true` if the request
+    /// should be allowed, `false` if rate-limited.
+    pub fn check(&self, ip: &str) -> bool {
+        let mut map = self.attempts.lock().unwrap();
+        let now = Instant::now();
+        if let Some((count, window_start)) = map.get_mut(ip) {
+            if now.duration_since(*window_start) > self.window {
+                // Window expired, reset.
+                *count = 1;
+                *window_start = now;
+                true
+            } else if *count >= self.max_attempts {
+                false
+            } else {
+                *count += 1;
+                true
+            }
+        } else {
+            map.insert(ip.to_string(), (1, now));
+            true
+        }
+    }
+
+    /// Record a successful login — clears the rate-limit counter for the IP.
+    pub fn reset(&self, ip: &str) {
+        let mut map = self.attempts.lock().unwrap();
+        map.remove(ip);
+    }
+}
+
+impl Default for LoginRateLimiter {
+    fn default() -> Self {
+        // 10 attempts per 60-second window.
+        Self::new(10, Duration::from_secs(60))
+    }
+}
+
 /// Application data for authentication
 pub struct AuthState {
     pub config: AuthConfig,
     pub store: SessionStore,
+    pub rate_limiter: LoginRateLimiter,
 }
 
 impl AuthState {
@@ -212,6 +272,7 @@ impl AuthState {
         Self {
             config,
             store: SessionStore::new(),
+            rate_limiter: LoginRateLimiter::default(),
         }
     }
 }
@@ -272,12 +333,23 @@ pub fn get_session_role(req: &HttpRequest, auth_state: &AuthState) -> Option<Aut
 /// POST /auth/login
 #[post("/auth/login")]
 pub async fn login(
-    _req: HttpRequest,
+    req: HttpRequest,
     body: web::Json<LoginRequest>,
     auth_state: web::Data<AuthState>,
 ) -> Result<impl Responder, Error> {
     if !auth_state.config.enabled {
         return Ok(HttpResponse::NotFound().finish());
+    }
+
+    // Per-IP rate limiting to mitigate brute-force attacks.
+    let peer_ip = req
+        .peer_addr()
+        .map(|a| a.ip().to_string())
+        .unwrap_or_default();
+    if !auth_state.rate_limiter.check(&peer_ip) {
+        return Ok(HttpResponse::TooManyRequests().json(serde_json::json!({
+            "error": "Too many login attempts, please try again later"
+        })));
     }
 
     // Check passphrase
@@ -289,6 +361,9 @@ pub async fn login(
             })));
         }
     };
+
+    // Successful login — clear rate limit counter.
+    auth_state.rate_limiter.reset(&peer_ip);
 
     // Create session
     let session_id = auth_state.store.create(role, auth_state.config.session_ttl);
