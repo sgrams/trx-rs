@@ -9823,13 +9823,55 @@ function shouldIgnoreGlobalShortcut(target) {
   return !!target.closest("[contenteditable='true']");
 }
 
+// ── Shortcut help overlay ─────────────────────────────────────────────────────
+function toggleShortcutOverlay() {
+  const el = document.getElementById("shortcut-overlay");
+  if (!el) return;
+  el.classList.toggle("is-hidden");
+}
+function hideShortcutOverlay() {
+  const el = document.getElementById("shortcut-overlay");
+  if (el) el.classList.add("is-hidden");
+}
+function isShortcutOverlayVisible() {
+  const el = document.getElementById("shortcut-overlay");
+  return el && !el.classList.contains("is-hidden");
+}
+document.addEventListener("DOMContentLoaded", () => {
+  const overlay = document.getElementById("shortcut-overlay");
+  if (overlay) overlay.addEventListener("click", (e) => {
+    if (e.target === overlay) hideShortcutOverlay();
+  });
+});
+
 window.addEventListener("keydown", (event) => {
   if (event.defaultPrevented || event.repeat || event.isComposing) return;
+
+  const key = (event.key || "").toLowerCase();
+
+  // F1 — toggle shortcut help
+  if (event.key === "F1") {
+    event.preventDefault();
+    toggleShortcutOverlay();
+    return;
+  }
+
+  // Escape — close shortcut overlay if open
+  if (event.key === "Escape" && isShortcutOverlayVisible()) {
+    event.preventDefault();
+    hideShortcutOverlay();
+    return;
+  }
+
   if (event.ctrlKey || event.metaKey || event.altKey) return;
   if (shouldIgnoreGlobalShortcut(event.target)) return;
-  if ((event.key || "").toLowerCase() !== "s") return;
-  event.preventDefault();
-  void captureSpectrumScreenshot();
+
+  // S — spectrum screenshot
+  if (key === "s") {
+    event.preventDefault();
+    void captureSpectrumScreenshot();
+    return;
+  }
 }, { capture: true });
 
 // ── Zoom helpers ──────────────────────────────────────────────────────────────

@@ -1320,6 +1320,83 @@ small { color: var(--text-muted); }
 .sub-tab { flex-shrink: 0; background: transparent; border: none; border-bottom: 2px solid transparent; border-radius: 0; padding: 0.35rem 0.75rem; color: var(--text-muted); cursor: pointer; font-size: 0.85rem; height: auto; }
 .sub-tab.active { border-bottom-color: var(--accent-green); color: var(--accent-green); font-weight: 600; }
 .sub-tab:hover:not(.active) { color: var(--text); }
+/* ── Shortcut help overlay (F1) ─────────────────────────────────────── */
+.shortcut-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.2rem;
+  background: color-mix(in srgb, var(--bg) 36%, transparent);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  opacity: 1;
+  visibility: visible;
+  transition: opacity 140ms ease, visibility 140ms ease;
+}
+.shortcut-overlay.is-hidden {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+.shortcut-overlay-card {
+  min-width: min(22rem, calc(100vw - 2.4rem));
+  max-width: min(28rem, calc(100vw - 2.4rem));
+  padding: 1.2rem 1.4rem;
+  border-radius: 0.9rem;
+  border: 1px solid color-mix(in srgb, var(--border-light) 72%, transparent);
+  background: color-mix(in srgb, var(--card-bg) 92%, transparent);
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.22);
+}
+.shortcut-overlay-title {
+  font-size: 1.05rem;
+  font-weight: 800;
+  color: var(--text-heading);
+  margin-bottom: 0.8rem;
+  text-align: center;
+}
+.shortcut-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+.shortcut-table td {
+  padding: 0.32rem 0.4rem;
+  font-size: 0.88rem;
+  color: var(--text);
+  border-bottom: 1px solid color-mix(in srgb, var(--border-light) 40%, transparent);
+}
+.shortcut-table tr:last-child td {
+  border-bottom: none;
+}
+.shortcut-key {
+  width: 5rem;
+  text-align: right;
+  padding-right: 0.9rem !important;
+}
+.shortcut-key kbd,
+.shortcut-overlay-hint kbd {
+  display: inline-block;
+  min-width: 1.6em;
+  padding: 0.12em 0.45em;
+  border: 1px solid var(--border);
+  border-radius: 0.3rem;
+  background: var(--bg);
+  font-family: inherit;
+  font-size: 0.82rem;
+  font-weight: 600;
+  text-align: center;
+  color: var(--text);
+  box-shadow: 0 1px 0 color-mix(in srgb, var(--border) 60%, transparent);
+}
+.shortcut-overlay-hint {
+  margin-top: 0.7rem;
+  text-align: center;
+  font-size: 0.76rem;
+  color: var(--text-muted);
+}
+
 .decode-history-overlay {
   position: fixed;
   inset: 0;
