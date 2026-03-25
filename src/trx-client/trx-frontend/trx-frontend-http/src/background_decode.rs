@@ -254,7 +254,7 @@ impl BackgroundDecodeManager {
         if let Some(rig_id) = self.active_rig_id() {
             if let Ok(map) = self.context.rig_vchan_audio_cmd.read() {
                 if let Some(tx) = map.get(&rig_id) {
-                    let _ = tx.send(cmd);
+                    let _ = tx.try_send(cmd);
                     return;
                 }
             }
@@ -262,7 +262,7 @@ impl BackgroundDecodeManager {
         // Fall back to global sender.
         if let Ok(guard) = self.context.vchan_audio_cmd.lock() {
             if let Some(tx) = guard.as_ref() {
-                let _ = tx.send(cmd);
+                let _ = tx.try_send(cmd);
             }
         }
     }
