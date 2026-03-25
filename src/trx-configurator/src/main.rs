@@ -2,6 +2,7 @@
 //
 // SPDX-License-Identifier: BSD-2-Clause
 
+mod check;
 mod detect;
 mod prompts;
 mod writer;
@@ -24,6 +25,10 @@ struct Cli {
     /// Output file path (default: based on config type)
     #[arg(short, long)]
     output: Option<PathBuf>,
+
+    /// Check an existing config file for syntax and structure errors
+    #[arg(long, value_name = "FILE")]
+    check: Option<PathBuf>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -45,6 +50,19 @@ impl ConfigType {
 
 fn main() {
     let cli = Cli::parse();
+
+    if let Some(path) = &cli.check {
+        match check::check_file(path) {
+            Ok(report) => {
+                println!("{}", report);
+                std::process::exit(0);
+            }
+            Err(e) => {
+                eprintln!("{}", e);
+                std::process::exit(1);
+            }
+        }
+    }
 
     let config_type = if let Some(t) = &cli.r#type {
         match t.as_str() {
