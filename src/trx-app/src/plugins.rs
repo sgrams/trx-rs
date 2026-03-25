@@ -9,6 +9,9 @@ use std::ptr::NonNull;
 use libloading::{Library, Symbol};
 use tracing::{info, warn};
 
+/// Environment variable to disable plugin loading entirely.
+const PLUGIN_DISABLE_ENV: &str = "TRX_PLUGINS_DISABLED";
+
 const PLUGIN_ENV: &str = "TRX_PLUGIN_DIRS";
 const BACKEND_ENTRYPOINT: &str = "trx_register_backend";
 const FRONTEND_ENTRYPOINT: &str = "trx_register_frontend";
@@ -37,6 +40,12 @@ fn load_plugins_for_entrypoint(
     entrypoint: &str,
     context: NonNull<std::ffi::c_void>,
 ) -> Vec<Library> {
+    // Allow disabling plugin loading entirely via environment variable.
+    if std::env::var(PLUGIN_DISABLE_ENV).is_ok() {
+        info!("Plugin loading disabled via {}", PLUGIN_DISABLE_ENV);
+        return Vec::new();
+    }
+
     let mut libraries = Vec::new();
     let search_paths = plugin_search_paths();
 
@@ -72,6 +81,11 @@ fn load_plugins_from_dir(
             continue;
         }
         if !is_plugin_file(&path) {
+            continue;
+        }
+
+        // Validate file permissions before loading.
+        if !validate_plugin_file(&path) {
             continue;
         }
 
@@ -128,6 +142,39 @@ fn plugin_search_paths() -> Vec<PathBuf> {
     }
 
     paths
+}
+
+/// Validate plugin file before loading: check ownership and permissions.
+///
+/// On Unix, reject files that are world-writable (mode & 0o002) to prevent
+/// loading tampered libraries.  On non-Unix platforms, always accept.
+fn validate_plugin_file(path: &Path) -> bool {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        match std::fs::metadata(path) {
+            Ok(meta) => {
+                let mode = meta.mode();
+                if mode & 0o002 != 0 {
+                    warn!(
+                        "Skipping world-writable plugin {:?} (mode {:o})",
+                        path, mode
+                    );
+                    return false;
+                }
+                true
+            }
+            Err(e) => {
+                warn!("Cannot stat plugin {:?}: {}", path, e);
+                false
+            }
+        }
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = path;
+        true
+    }
 }
 
 fn is_plugin_file(path: &Path) -> bool {
