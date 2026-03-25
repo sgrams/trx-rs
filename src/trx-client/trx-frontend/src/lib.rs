@@ -22,6 +22,11 @@ use trx_core::decode::{
 use trx_core::rig::state::{RigSnapshot, SpectrumData};
 use trx_core::{DynResult, RigRequest, RigState};
 
+/// Shared, timestamped decode history for a single decoder type.
+///
+/// Each entry is `(record_time, optional_rig_id, decoded_message)`.
+pub type DecodeHistory<T> = Arc<Mutex<VecDeque<(Instant, Option<String>, T)>>>;
+
 /// Command sent by the HTTP frontend to the audio-client task to manage a
 /// virtual channel's audio stream over the server's audio TCP connection.
 #[derive(Debug)]
@@ -196,23 +201,23 @@ pub struct FrontendRuntimeContext {
     pub decode_rx: Option<broadcast::Sender<DecodedMessage>>,
     /// Decode history entry: (record_time, rig_id, message).
     /// AIS decode history
-    pub ais_history: Arc<Mutex<VecDeque<(Instant, Option<String>, AisMessage)>>>,
+    pub ais_history: DecodeHistory<AisMessage>,
     /// VDES decode history
-    pub vdes_history: Arc<Mutex<VecDeque<(Instant, Option<String>, VdesMessage)>>>,
+    pub vdes_history: DecodeHistory<VdesMessage>,
     /// APRS decode history
-    pub aprs_history: Arc<Mutex<VecDeque<(Instant, Option<String>, AprsPacket)>>>,
+    pub aprs_history: DecodeHistory<AprsPacket>,
     /// HF APRS decode history
-    pub hf_aprs_history: Arc<Mutex<VecDeque<(Instant, Option<String>, AprsPacket)>>>,
+    pub hf_aprs_history: DecodeHistory<AprsPacket>,
     /// CW decode history
-    pub cw_history: Arc<Mutex<VecDeque<(Instant, Option<String>, CwEvent)>>>,
+    pub cw_history: DecodeHistory<CwEvent>,
     /// FT8 decode history
-    pub ft8_history: Arc<Mutex<VecDeque<(Instant, Option<String>, Ft8Message)>>>,
+    pub ft8_history: DecodeHistory<Ft8Message>,
     /// FT4 decode history
-    pub ft4_history: Arc<Mutex<VecDeque<(Instant, Option<String>, Ft8Message)>>>,
+    pub ft4_history: DecodeHistory<Ft8Message>,
     /// FT2 decode history
-    pub ft2_history: Arc<Mutex<VecDeque<(Instant, Option<String>, Ft8Message)>>>,
+    pub ft2_history: DecodeHistory<Ft8Message>,
     /// WSPR decode history
-    pub wspr_history: Arc<Mutex<VecDeque<(Instant, Option<String>, WsprMessage)>>>,
+    pub wspr_history: DecodeHistory<WsprMessage>,
     /// Authentication tokens for HTTP-JSON frontend
     pub auth_tokens: HashSet<String>,
     /// Active HTTP SSE clients (incremented on /events connect, decremented on disconnect).
@@ -277,7 +282,7 @@ pub struct FrontendRuntimeContext {
     /// Per-rig audio stream info watch channels, keyed by rig_id.
     pub rig_audio_info: Arc<RwLock<HashMap<String, watch::Sender<Option<AudioStreamInfo>>>>>,
     /// Per-rig virtual-channel command senders, keyed by rig_id.
-    pub rig_vchan_audio_cmd: Arc<RwLock<HashMap<String, mpsc::UnboundedSender<VChanAudioCmd>>>>,
+    pub rig_vchan_audio_cmd: Arc<RwLock<HashMap<String, mpsc::Sender<VChanAudioCmd>>>>,
     /// Per-virtual-channel Opus audio senders.
     /// Key: server-side virtual channel UUID.
     /// Value: `broadcast::Sender<Bytes>` that receives per-channel Opus packets
@@ -286,7 +291,7 @@ pub struct FrontendRuntimeContext {
     /// Channel to send `VChanAudioCmd` to the audio-client task, which in turn
     /// forwards `VCHAN_SUB` / `VCHAN_UNSUB` frames over the audio TCP connection.
     /// `None` when no audio connection is active.
-    pub vchan_audio_cmd: Arc<Mutex<Option<mpsc::UnboundedSender<VChanAudioCmd>>>>,
+    pub vchan_audio_cmd: Arc<Mutex<Option<mpsc::Sender<VChanAudioCmd>>>>,
     /// Broadcast sender that fires whenever the server destroys a virtual
     /// channel (e.g. out-of-bandwidth after center-frequency retune).
     /// The HTTP frontend subscribes to clean up `ClientChannelManager`.
