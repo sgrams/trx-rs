@@ -4,6 +4,8 @@
 
 //! Codec utilities for parsing and formatting modes and envelopes.
 
+use std::borrow::Cow;
+
 use serde_json;
 
 use crate::types::{ClientCommand, ClientEnvelope};
@@ -33,23 +35,24 @@ pub fn parse_mode(s: &str) -> RigMode {
 
 /// Convert a RigMode back to its string representation.
 ///
-/// This is the inverse of parse_mode. Standard modes return their uppercase names,
-/// and Other variants return their inner string.
-pub fn mode_to_string(mode: &RigMode) -> String {
+/// This is the inverse of parse_mode. Standard modes return a borrowed
+/// `&'static str` (zero allocation), while `Other` variants return the
+/// owned inner string.
+pub fn mode_to_string(mode: &RigMode) -> Cow<'static, str> {
     match mode {
-        RigMode::LSB => "LSB".to_string(),
-        RigMode::USB => "USB".to_string(),
-        RigMode::CW => "CW".to_string(),
-        RigMode::CWR => "CWR".to_string(),
-        RigMode::AM => "AM".to_string(),
-        RigMode::AMC => "AMC-QUAM".to_string(),
-        RigMode::FM => "FM".to_string(),
-        RigMode::WFM => "WFM".to_string(),
-        RigMode::AIS => "AIS".to_string(),
-        RigMode::VDES => "VDES".to_string(),
-        RigMode::DIG => "DIG".to_string(),
-        RigMode::PKT => "PKT".to_string(),
-        RigMode::Other(s) => s.clone(),
+        RigMode::LSB => Cow::Borrowed("LSB"),
+        RigMode::USB => Cow::Borrowed("USB"),
+        RigMode::CW => Cow::Borrowed("CW"),
+        RigMode::CWR => Cow::Borrowed("CWR"),
+        RigMode::AM => Cow::Borrowed("AM"),
+        RigMode::AMC => Cow::Borrowed("AMC-QUAM"),
+        RigMode::FM => Cow::Borrowed("FM"),
+        RigMode::WFM => Cow::Borrowed("WFM"),
+        RigMode::AIS => Cow::Borrowed("AIS"),
+        RigMode::VDES => Cow::Borrowed("VDES"),
+        RigMode::DIG => Cow::Borrowed("DIG"),
+        RigMode::PKT => Cow::Borrowed("PKT"),
+        RigMode::Other(s) => Cow::Owned(s.clone()),
     }
 }
 
