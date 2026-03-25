@@ -9600,7 +9600,7 @@ function drawRoundedRectPath(ctx, x, y, w, h, r) {
   ctx.closePath();
 }
 
-function drawElementChrome(ctx, el, rootRect) {
+function drawElementChrome(ctx, el, rootRect, maxAlpha = 1) {
   if (!isVisibleForSnapshot(el)) return null;
   const rect = el.getBoundingClientRect();
   const style = getComputedStyle(el);
@@ -9613,15 +9613,17 @@ function drawElementChrome(ctx, el, rootRect) {
   const borderWidth = Math.max(0, parseFloat(style.borderTopWidth) || 0);
   const border = cssColorToRgba(style.borderTopColor || "rgba(0,0,0,0)");
 
-  if (bg[3] > 0.01) {
+  const bgAlpha = Math.min(bg[3], maxAlpha);
+  if (bgAlpha > 0.01) {
     drawRoundedRectPath(ctx, x, y, w, h, radius);
-    ctx.fillStyle = `rgba(${Math.round(bg[0])}, ${Math.round(bg[1])}, ${Math.round(bg[2])}, ${bg[3]})`;
+    ctx.fillStyle = `rgba(${Math.round(bg[0])}, ${Math.round(bg[1])}, ${Math.round(bg[2])}, ${bgAlpha})`;
     ctx.fill();
   }
-  if (borderWidth > 0 && border[3] > 0.01) {
+  const borderAlpha = Math.min(border[3], maxAlpha);
+  if (borderWidth > 0 && borderAlpha > 0.01) {
     drawRoundedRectPath(ctx, x + borderWidth * 0.5, y + borderWidth * 0.5, w - borderWidth, h - borderWidth, Math.max(0, radius - borderWidth * 0.5));
     ctx.lineWidth = borderWidth;
-    ctx.strokeStyle = `rgba(${Math.round(border[0])}, ${Math.round(border[1])}, ${Math.round(border[2])}, ${border[3]})`;
+    ctx.strokeStyle = `rgba(${Math.round(border[0])}, ${Math.round(border[1])}, ${Math.round(border[2])}, ${borderAlpha})`;
     ctx.stroke();
   }
   return { x, y, w, h, style };
@@ -9648,8 +9650,8 @@ function drawWrappedText(ctx, text, x, y, maxWidth, lineHeight, maxLines) {
   }
 }
 
-function drawElementTextBlock(ctx, el, rootRect, fallbackText = null) {
-  const chrome = drawElementChrome(ctx, el, rootRect);
+function drawElementTextBlock(ctx, el, rootRect, fallbackText = null, maxAlpha = 1) {
+  const chrome = drawElementChrome(ctx, el, rootRect, maxAlpha);
   if (!chrome) return;
   const text = (fallbackText == null ? el.innerText : fallbackText) || "";
   const clean = text.replace(/\s+\n/g, "\n").replace(/\n\s+/g, "\n").trim();
@@ -9741,6 +9743,9 @@ function buildSpectrumSnapshotCanvas() {
   }
 
   // Decoder overlays over the signal view.
+  // Cap background alpha to avoid opaque blocks (backdrop-filter can't be
+  // replicated on canvas, so frosted-glass overlays would otherwise obscure
+  // the spectrum).
   const decoderOverlayIds = [
     "ais-bar-overlay",
     "vdes-bar-overlay",
@@ -9751,7 +9756,7 @@ function buildSpectrumSnapshotCanvas() {
   for (const id of decoderOverlayIds) {
     const overlayEl = document.getElementById(id);
     if (!overlayEl || !isVisibleForSnapshot(overlayEl)) continue;
-    drawElementTextBlock(ctx, overlayEl, rootRect);
+    drawElementTextBlock(ctx, overlayEl, rootRect, null, 0.35);
   }
 
   // Spectrum axis labels and bookmark chips (includes freq bar).
