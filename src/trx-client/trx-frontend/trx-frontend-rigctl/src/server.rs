@@ -376,7 +376,7 @@ fn current_snapshot(state_rx: &watch::Receiver<RigState>) -> Option<RigSnapshot>
 }
 
 fn rig_mode_to_str(mode: &RigMode) -> String {
-    mode_to_string(mode)
+    mode_to_string(mode).into_owned()
 }
 
 fn dump_state_lines(snapshot: &RigSnapshot) -> Vec<String> {
