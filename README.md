@@ -173,7 +173,8 @@ See [`examples/trx-plugin-example/README.md`](examples/trx-plugin-example/README
 
 ## Documentation
 
-- [`OVERVIEW.md`](OVERVIEW.md): architecture and design overview
+- [User Manual](docs/MANUAL.md): configuration, features, and usage
+- [Architecture](docs/ARCHITECTURE.md): system design, crate layout, data flow, and internals
 - [`CONTRIBUTING.md`](CONTRIBUTING.md): contribution and commit rules
 
 ## Project Status
