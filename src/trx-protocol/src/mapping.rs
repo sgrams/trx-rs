@@ -87,7 +87,7 @@ pub fn rig_command_to_client(cmd: RigCommand) -> ClientCommand {
         RigCommand::SetFreq(freq) => ClientCommand::SetFreq { freq_hz: freq.hz },
         RigCommand::SetCenterFreq(freq) => ClientCommand::SetCenterFreq { freq_hz: freq.hz },
         RigCommand::SetMode(mode) => ClientCommand::SetMode {
-            mode: mode_to_string(&mode),
+            mode: mode_to_string(&mode).into_owned(),
         },
         RigCommand::SetPtt(ptt) => ClientCommand::SetPtt { ptt },
         RigCommand::PowerOn => ClientCommand::PowerOn,
