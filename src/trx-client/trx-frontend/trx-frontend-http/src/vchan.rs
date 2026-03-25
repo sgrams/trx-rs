@@ -108,16 +108,16 @@ pub struct ClientChannelManager {
     pub change_tx: broadcast::Sender<String>,
     pub max_channels: usize,
     /// Global fallback sender to the audio-client task for virtual-channel audio commands.
-    pub audio_cmd: std::sync::Mutex<Option<mpsc::UnboundedSender<VChanAudioCmd>>>,
+    pub audio_cmd: std::sync::Mutex<Option<mpsc::Sender<VChanAudioCmd>>>,
     /// Per-rig vchan command senders. Commands are routed to the per-rig sender
     /// when available, falling back to the global `audio_cmd`.
-    pub rig_vchan_audio_cmd: Arc<RwLock<HashMap<String, mpsc::UnboundedSender<VChanAudioCmd>>>>,
+    pub rig_vchan_audio_cmd: Arc<RwLock<HashMap<String, mpsc::Sender<VChanAudioCmd>>>>,
 }
 
 impl ClientChannelManager {
     pub fn new(
         max_channels: usize,
-        rig_vchan_audio_cmd: Arc<RwLock<HashMap<String, mpsc::UnboundedSender<VChanAudioCmd>>>>,
+        rig_vchan_audio_cmd: Arc<RwLock<HashMap<String, mpsc::Sender<VChanAudioCmd>>>>,
     ) -> Self {
         let (change_tx, _) = broadcast::channel(64);
         Self {
@@ -131,7 +131,7 @@ impl ClientChannelManager {
     }
 
     /// Wire the global audio-command sender as fallback.
-    pub fn set_audio_cmd(&self, tx: mpsc::UnboundedSender<VChanAudioCmd>) {
+    pub fn set_audio_cmd(&self, tx: mpsc::Sender<VChanAudioCmd>) {
         *self.audio_cmd.lock().unwrap() = Some(tx);
     }
 
@@ -141,13 +141,13 @@ impl ClientChannelManager {
         // Try per-rig sender first.
         if let Ok(map) = self.rig_vchan_audio_cmd.read() {
             if let Some(tx) = map.get(rig_id) {
-                let _ = tx.send(cmd);
+                let _ = tx.try_send(cmd);
                 return;
             }
         }
         // Fall back to global sender.
         if let Some(tx) = self.audio_cmd.lock().unwrap().as_ref() {
-            let _ = tx.send(cmd);
+            let _ = tx.try_send(cmd);
         }
     }
 

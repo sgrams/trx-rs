@@ -92,11 +92,11 @@ pub async fn run_multi_rig_audio_manager(
     replay_history_sink: Option<Arc<dyn Fn(DecodedMessage) + Send + Sync>>,
     mut shutdown_rx: watch::Receiver<bool>,
     vchan_audio: Arc<RwLock<HashMap<Uuid, broadcast::Sender<Bytes>>>>,
-    _vchan_cmd_rx: mpsc::UnboundedReceiver<VChanAudioCmd>,
+    _vchan_cmd_rx: mpsc::Receiver<VChanAudioCmd>,
     vchan_destroyed_tx: Option<broadcast::Sender<Uuid>>,
     rig_audio_rx: Arc<RwLock<HashMap<String, broadcast::Sender<Bytes>>>>,
     rig_audio_info: Arc<RwLock<HashMap<String, watch::Sender<Option<AudioStreamInfo>>>>>,
-    rig_vchan_audio_cmd: Arc<RwLock<HashMap<String, mpsc::UnboundedSender<VChanAudioCmd>>>>,
+    rig_vchan_audio_cmd: Arc<RwLock<HashMap<String, mpsc::Sender<VChanAudioCmd>>>>,
 ) {
     // TX frames from the microphone go to the selected rig only.
     // We wrap the single tx_rx receiver so the per-rig task for the selected
@@ -168,9 +168,10 @@ pub async fn run_multi_rig_audio_manager(
                             .clone()
                     };
 
-                    // Create per-rig vchan cmd channel.
+                    // Create per-rig vchan cmd channel (bounded to prevent
+                    // unbounded memory growth under backpressure).
                     let (per_rig_vchan_tx, per_rig_vchan_rx) =
-                        mpsc::unbounded_channel::<VChanAudioCmd>();
+                        mpsc::channel::<VChanAudioCmd>(256);
                     if let Ok(mut map) = rig_vchan_audio_cmd.write() {
                         map.insert(rig_id.clone(), per_rig_vchan_tx);
                     }
@@ -265,7 +266,7 @@ async fn run_single_rig_audio_client(
     replay_history_sink: Option<Arc<dyn Fn(DecodedMessage) + Send + Sync>>,
     mut shutdown_rx: watch::Receiver<bool>,
     vchan_audio: Arc<RwLock<HashMap<Uuid, broadcast::Sender<Bytes>>>>,
-    mut vchan_cmd_rx: mpsc::UnboundedReceiver<VChanAudioCmd>,
+    mut vchan_cmd_rx: mpsc::Receiver<VChanAudioCmd>,
     vchan_destroyed_tx: Option<broadcast::Sender<Uuid>>,
 ) {
     let mut reconnect_delay = Duration::from_secs(1);
@@ -409,7 +410,7 @@ async fn handle_single_rig_connection(
     replay_history_sink: Option<Arc<dyn Fn(DecodedMessage) + Send + Sync>>,
     shutdown_rx: &mut watch::Receiver<bool>,
     vchan_audio: &Arc<RwLock<HashMap<Uuid, broadcast::Sender<Bytes>>>>,
-    vchan_cmd_rx: &mut mpsc::UnboundedReceiver<VChanAudioCmd>,
+    vchan_cmd_rx: &mut mpsc::Receiver<VChanAudioCmd>,
     active_subs: &mut HashMap<Uuid, ActiveVChanSub>,
     vchan_destroyed_tx: &Option<broadcast::Sender<Uuid>>,
 ) -> std::io::Result<()> {
