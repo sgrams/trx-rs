@@ -2645,6 +2645,7 @@ version = "0.1.0"
 dependencies = [
  "clap",
  "dialoguer",
+ "tempfile",
  "toml_edit 0.22.27",
 ]
 
