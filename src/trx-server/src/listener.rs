@@ -201,7 +201,13 @@ async fn handle_client(
         let envelope = match parse_envelope(trimmed) {
             Ok(envelope) => envelope,
             Err(e) => {
-                error!("Invalid JSON from {}: {} / {:?}", addr, trimmed, e);
+                // Truncate raw input in logs to prevent information disclosure.
+                let preview = if trimmed.len() > 128 {
+                    format!("{}...", &trimmed[..128])
+                } else {
+                    trimmed.to_string()
+                };
+                error!("Invalid JSON from {}: {} / {:?}", addr, preview, e);
                 let resp = ClientResponse {
                     success: false,
                     rig_id: None,
