@@ -4,6 +4,8 @@
 
 //! Top-level FTx decoder matching the `trx-ft8` public API.
 
+use std::collections::HashSet;
+
 use crate::common::callsign_hash::CallsignHashTable;
 use crate::common::decode::{
     ftx_decode_candidate, ftx_find_candidates, ftx_post_decode_snr, FtxMessage,
@@ -179,7 +181,7 @@ impl Ft8Decoder {
         let candidates = ftx_find_candidates(&self.monitor.wf, MAX_CANDIDATES, MIN_CANDIDATE_SCORE);
 
         let mut results = Vec::new();
-        let mut seen: Vec<u16> = Vec::new();
+        let mut seen = HashSet::with_capacity(max_results);
 
         for cand in &candidates {
             if results.len() >= max_results {
@@ -191,11 +193,10 @@ impl Ft8Decoder {
                 None => continue,
             };
 
-            // Dedup by hash
-            if seen.contains(&msg.hash) {
+            // Dedup by hash (O(1) lookup via HashSet)
+            if !seen.insert(msg.hash) {
                 continue;
             }
-            seen.push(msg.hash);
 
             // Unpack message text
             let text = match self.unpack_message(&msg) {
