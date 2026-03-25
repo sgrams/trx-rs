@@ -11,6 +11,7 @@ use std::fmt;
 use std::time::{Duration, Instant};
 
 use serde::Serialize;
+use tracing::debug;
 
 use crate::radio::freq::Freq;
 use crate::rig::state::RigMode;
@@ -267,13 +268,17 @@ impl RigStateMachine {
     /// Process an event and potentially transition to a new state.
     /// Returns true if a transition occurred.
     pub fn process_event(&mut self, event: RigEvent) -> bool {
-        let new_state = self.next_state(event);
+        let new_state = self.next_state(event.clone());
         if let Some(state) = new_state {
             self.state = state;
             self.transition_count += 1;
             self.last_transition = Some(Instant::now());
             true
         } else {
+            debug!(
+                "Invalid state transition: {:?} + {:?} (ignored)",
+                self.state, event
+            );
             false
         }
     }
