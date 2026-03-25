@@ -134,26 +134,41 @@ pub fn load_all(db: &PickleDb, rig_id: &str, histories: &Arc<DecoderHistories>) 
 }
 
 /// Flush `histories` to the database under `rig_id`-prefixed keys and sync.
+///
+/// Each history's mutex is held only long enough to clone the data out,
+/// so serialization (which may be slow) never blocks concurrent readers.
 pub fn flush_all(db: &mut PickleDb, rig_id: &str, histories: &Arc<DecoderHistories>) {
     let k = |suffix: &str| format!("{}.{}", rig_id, suffix);
 
     if let Ok(h) = histories.ais.lock() {
-        save_key(db, &k("ais"), &h);
+        let snapshot = h.clone();
+        drop(h);
+        save_key(db, &k("ais"), &snapshot);
     }
     if let Ok(h) = histories.vdes.lock() {
-        save_key(db, &k("vdes"), &h);
+        let snapshot = h.clone();
+        drop(h);
+        save_key(db, &k("vdes"), &snapshot);
     }
     if let Ok(h) = histories.aprs.lock() {
-        save_key(db, &k("aprs"), &h);
+        let snapshot = h.clone();
+        drop(h);
+        save_key(db, &k("aprs"), &snapshot);
     }
     if let Ok(h) = histories.cw.lock() {
-        save_key(db, &k("cw"), &h);
+        let snapshot = h.clone();
+        drop(h);
+        save_key(db, &k("cw"), &snapshot);
     }
     if let Ok(h) = histories.ft8.lock() {
-        save_key(db, &k("ft8"), &h);
+        let snapshot = h.clone();
+        drop(h);
+        save_key(db, &k("ft8"), &snapshot);
     }
     if let Ok(h) = histories.wspr.lock() {
-        save_key(db, &k("wspr"), &h);
+        let snapshot = h.clone();
+        drop(h);
+        save_key(db, &k("wspr"), &snapshot);
     }
     let _ = db.dump();
 }
