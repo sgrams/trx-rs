@@ -26,6 +26,7 @@ members = [
     "src/trx-client/trx-frontend/trx-frontend-http",
     "src/trx-client/trx-frontend/trx-frontend-http-json",
     "src/trx-client/trx-frontend/trx-frontend-rigctl",
+    "src/trx-configurator",
 ]
 resolver = "2"
 

@@ -1,0 +1,17 @@
+# SPDX-FileCopyrightText: 2026 Stan Grams <sjg@haxx.space>
+#
+# SPDX-License-Identifier: BSD-2-Clause
+
+[package]
+name = "trx-configurator"
+version.workspace = true
+edition = "2021"
+
+[[bin]]
+name = "trx-configurator"
+path = "src/main.rs"
+
+[dependencies]
+clap = { workspace = true, features = ["derive"] }
+dialoguer = "0.11"
+toml_edit = "0.22"
