@@ -80,15 +80,23 @@ fn encode_spectrum_frame(frame: &trx_core::rig::state::SpectrumData) -> String {
     format!("{},{},{b64}", frame.center_hz, frame.sample_rate)
 }
 
+#[derive(serde::Serialize)]
 struct FrontendMeta {
+    #[serde(rename = "clients")]
     http_clients: usize,
     rigctl_clients: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
     rigctl_addr: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     active_remote: Option<String>,
     remotes: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     owner_callsign: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     owner_website_url: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     owner_website_name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     ais_vessel_url_base: Option<String>,
     show_sdr_gain_control: bool,
     initial_map_zoom: u8,
@@ -96,6 +104,16 @@ struct FrontendMeta {
     spectrum_usable_span_ratio: f32,
     decode_history_retention_min: u64,
     server_connected: bool,
+}
+
+/// Wrapper that flattens a rig state with frontend meta into a single JSON
+/// object, replacing the old string-level splice approach.
+#[derive(serde::Serialize)]
+struct StateWithMeta<'a> {
+    #[serde(flatten)]
+    state: &'a serde_json::Value,
+    #[serde(flatten)]
+    meta: &'a FrontendMeta,
 }
 
 /// Tracks per-SSE-session rig selection so different browser tabs can
@@ -166,76 +184,21 @@ pub async fn status_api(
         .body(json))
 }
 
-/// Append frontend meta fields to an already-serialised JSON object string.
+/// Merge a rig state JSON string with frontend meta via `#[serde(flatten)]`.
 ///
-/// Avoids a full parse→modify→reserialise cycle (two serde round-trips per
-/// event) by working directly at the string level: strip the closing `}`,
-/// serialize only the extra fields once, and re-close the object.
+/// Parses the state once into a `serde_json::Value`, then serializes the
+/// combined `StateWithMeta` wrapper in a single pass — cleaner and faster
+/// than the old string-level splice approach.
 fn inject_frontend_meta(json: &str, meta: FrontendMeta) -> String {
-    let trimmed = json.trim_end();
-    let Some(base) = trimmed.strip_suffix('}') else {
-        return json.to_string();
-    };
-
-    // Build only the extra key-value pairs as a JSON fragment.
-    let mut extra = serde_json::Map::new();
-    extra.insert("clients".into(), serde_json::json!(meta.http_clients));
-    extra.insert(
-        "rigctl_clients".into(),
-        serde_json::json!(meta.rigctl_clients),
-    );
-    if let Some(v) = meta.rigctl_addr {
-        extra.insert("rigctl_addr".into(), serde_json::json!(v));
-    }
-    if let Some(v) = meta.active_remote {
-        extra.insert("active_remote".into(), serde_json::json!(v));
-    }
-    extra.insert("remotes".into(), serde_json::json!(meta.remotes));
-    if let Some(v) = meta.owner_callsign {
-        extra.insert("owner_callsign".into(), serde_json::json!(v));
-    }
-    if let Some(v) = meta.owner_website_url {
-        extra.insert("owner_website_url".into(), serde_json::json!(v));
-    }
-    if let Some(v) = meta.owner_website_name {
-        extra.insert("owner_website_name".into(), serde_json::json!(v));
-    }
-    if let Some(v) = meta.ais_vessel_url_base {
-        extra.insert("ais_vessel_url_base".into(), serde_json::json!(v));
-    }
-    extra.insert(
-        "show_sdr_gain_control".into(),
-        serde_json::json!(meta.show_sdr_gain_control),
-    );
-    extra.insert(
-        "initial_map_zoom".into(),
-        serde_json::json!(meta.initial_map_zoom),
-    );
-    extra.insert(
-        "spectrum_coverage_margin_hz".into(),
-        serde_json::json!(meta.spectrum_coverage_margin_hz),
-    );
-    extra.insert(
-        "spectrum_usable_span_ratio".into(),
-        serde_json::json!(meta.spectrum_usable_span_ratio),
-    );
-    extra.insert(
-        "decode_history_retention_min".into(),
-        serde_json::json!(meta.decode_history_retention_min),
-    );
-    extra.insert(
-        "server_connected".into(),
-        serde_json::json!(meta.server_connected),
-    );
-
-    // Serialize the extra map, strip its outer braces, and splice in.
-    let extra_json = match serde_json::to_string(&extra) {
-        Ok(s) => s,
+    let state: serde_json::Value = match serde_json::from_str(json) {
+        Ok(v) => v,
         Err(_) => return json.to_string(),
     };
-    // extra_json = {"k":v,...}  →  strip { and }
-    let inner = &extra_json[1..extra_json.len() - 1];
-    format!("{base},{inner}}}")
+    let combined = StateWithMeta {
+        state: &state,
+        meta: &meta,
+    };
+    serde_json::to_string(&combined).unwrap_or_else(|_| json.to_string())
 }
 
 fn frontend_meta_from_context(
