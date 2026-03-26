@@ -71,13 +71,22 @@ fn base64_encode(data: &[u8]) -> String {
 /// RDS is intentionally excluded — it changes rarely and is sent via the
 /// `/events` state stream instead.
 fn encode_spectrum_frame(frame: &trx_core::rig::state::SpectrumData) -> String {
-    let bytes: Vec<u8> = frame
+    // Encode directly from the iterator to avoid an intermediate Vec<u8>.
+    let clamped: Vec<u8> = frame
         .bins
         .iter()
         .map(|&v| v.round().clamp(-128.0, 127.0) as i8 as u8)
         .collect();
-    let b64 = base64_encode(&bytes);
-    format!("{},{},{b64}", frame.center_hz, frame.sample_rate)
+    let b64 = base64_encode(&clamped);
+
+    // Pre-allocate: header digits + 2 commas + base64 body.
+    let mut out = String::with_capacity(40 + b64.len());
+    out.push_str(&frame.center_hz.to_string());
+    out.push(',');
+    out.push_str(&frame.sample_rate.to_string());
+    out.push(',');
+    out.push_str(&b64);
+    out
 }
 
 #[derive(serde::Serialize)]
