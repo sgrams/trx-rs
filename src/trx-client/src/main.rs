@@ -10,7 +10,6 @@ mod remote_client;
 use std::collections::HashMap;
 use std::net::{IpAddr, SocketAddr};
 use std::path::PathBuf;
-use std::ptr::NonNull;
 use std::time::Duration;
 
 use bytes::Bytes;
@@ -20,7 +19,7 @@ use tokio::sync::{broadcast, mpsc, watch};
 use tokio::task::JoinHandle;
 use tracing::{error, info};
 
-use trx_app::{init_logging, load_frontend_plugins, normalize_name};
+use trx_app::{init_logging, normalize_name};
 use trx_core::audio::AudioStreamInfo;
 
 use trx_core::decode::DecodedMessage;
@@ -146,9 +145,6 @@ async fn async_init() -> DynResult<AppState> {
         .map_err(|e| format!("Invalid client configuration: {}", e))?;
 
     init_logging(cfg.general.log_level.as_deref());
-
-    let frontend_ctx_ptr = NonNull::from(&mut frontend_reg_ctx).cast();
-    let _plugin_libs = load_frontend_plugins(frontend_ctx_ptr);
 
     if let Some(ref path) = config_path {
         info!("Loaded configuration from {}", path.display());

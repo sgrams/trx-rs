@@ -2546,7 +2546,6 @@ name = "trx-app"
 version = "0.1.0"
 dependencies = [
  "dirs",
- "libloading",
  "serde",
  "thiserror 2.0.17",
  "toml",
