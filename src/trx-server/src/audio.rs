@@ -229,13 +229,29 @@ impl DecoderHistories {
     }
 
     /// Adjust the atomic total count after a record/prune/clear operation.
+    ///
+    /// Uses a CAS loop for decrements to prevent underflow wrapping the
+    /// counter to `usize::MAX` (which would cause a capacity-overflow panic
+    /// when pre-allocating the history replay blob).
     fn adjust_total_count(&self, old_len: usize, new_len: usize) {
         if new_len > old_len {
             self.total_count
                 .fetch_add(new_len - old_len, Ordering::Relaxed);
         } else if old_len > new_len {
-            self.total_count
-                .fetch_sub(old_len - new_len, Ordering::Relaxed);
+            let delta = old_len - new_len;
+            let mut current = self.total_count.load(Ordering::Relaxed);
+            loop {
+                let next = current.saturating_sub(delta);
+                match self.total_count.compare_exchange_weak(
+                    current,
+                    next,
+                    Ordering::Relaxed,
+                    Ordering::Relaxed,
+                ) {
+                    Ok(_) => break,
+                    Err(actual) => current = actual,
+                }
+            }
         }
     }
 
@@ -2872,7 +2888,7 @@ async fn handle_audio_client(
     let history_blob = {
         // Estimate ~256 bytes per message; pre-allocate to avoid repeated
         // reallocation for large histories.
-        let estimated_msgs = histories.estimated_total_count();
+        let estimated_msgs = histories.estimated_total_count().min(500_000);
         let mut blob: Vec<u8> = Vec::with_capacity(estimated_msgs.saturating_mul(256));
         let mut count = 0usize;
 
