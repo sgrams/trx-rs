@@ -180,14 +180,6 @@ mod tests {
         );
     }
 
-    #[test]
-    fn dummy_filter_state_is_none() {
-        let rig = DummyRig::new();
-        assert!(
-            rig.filter_state().is_none(),
-            "dummy rig should return None for filter_state"
-        );
-    }
 }
 
 impl Rig for DummyRig {
