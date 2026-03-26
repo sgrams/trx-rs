@@ -154,7 +154,7 @@ impl RigState {
             aprs_is_status: None,
             aprs_decode_enabled: false,
             hf_aprs_decode_enabled: false,
-            cw_decode_enabled: true,
+            cw_decode_enabled: false,
             ft8_decode_enabled: false,
             ft4_decode_enabled: false,
             ft2_decode_enabled: false,
