@@ -4246,7 +4246,7 @@ let aprsMap = null;
 let aprsMapBaseLayer = null;
 let aprsMapReceiverMarker = null;
 let aprsMapReceiverMarkers = {}; // keyed by rig remote id
-let aprsRadioPath = null;
+let aprsRadioPaths = [];
 let selectedLocatorMarker = null;
 let selectedLocatorPulseRaf = null;
 let mapFullscreenListenerBound = false;
@@ -4880,10 +4880,8 @@ function startSelectedLocatorPulse(marker) {
 }
 
 function clearMapRadioPath() {
-  if (aprsRadioPath) {
-    aprsRadioPath.remove();
-    aprsRadioPath = null;
-  }
+  for (const p of aprsRadioPaths) p.remove();
+  aprsRadioPaths = [];
 }
 
 function clearDecodeContactPathRender(entry) {
@@ -5025,19 +5023,27 @@ function syncDecodeContactPathVisibility() {
   updateMapPathsAnimationClass();
 }
 
-function _resolveReceiverLocation(rigIds) {
-  // Try to find location from the specific rig(s) that decoded this message
+function _resolveReceiverLocations(rigIds) {
+  // Return all unique receiver locations for the given rig(s)
+  const seen = new Set();
+  const locations = [];
   if (rigIds && rigIds.size) {
     for (const rid of rigIds) {
       const rig = serverRigs.find(r => r.remote === rid);
       if (rig && rig.latitude != null && rig.longitude != null) {
-        return [rig.latitude, rig.longitude];
+        const key = _receiverLocationKey(rig.latitude, rig.longitude);
+        if (!seen.has(key)) {
+          seen.add(key);
+          locations.push([rig.latitude, rig.longitude]);
+        }
       }
     }
   }
-  // Fall back to active rig location
-  if (serverLat != null && serverLon != null) return [serverLat, serverLon];
-  return null;
+  // Fall back to active rig location if no specific locations found
+  if (locations.length === 0 && serverLat != null && serverLon != null) {
+    locations.push([serverLat, serverLon]);
+  }
+  return locations;
 }
 
 function setMapRadioPathTo(lat, lon, color, className = "aprs-radio-path", rigIds) {
@@ -5045,12 +5051,15 @@ function setMapRadioPathTo(lat, lon, color, className = "aprs-radio-path", rigId
   if (!mapP2pRadioPathsEnabled || !Number.isFinite(lat) || !Number.isFinite(lon) || !aprsMap) {
     return;
   }
-  const src = _resolveReceiverLocation(rigIds);
-  if (!src) return;
-  aprsRadioPath = L.polyline(
-    [src, [lat, lon]],
-    { color, opacity: 0.85, weight: 2, interactive: false, className }
-  ).addTo(aprsMap);
+  const sources = _resolveReceiverLocations(rigIds);
+  for (const src of sources) {
+    aprsRadioPaths.push(
+      L.polyline(
+        [src, [lat, lon]],
+        { color, opacity: 0.85, weight: 2, interactive: false, className }
+      ).addTo(aprsMap)
+    );
+  }
 }
 
 function locatorMarkerCenter(marker) {
