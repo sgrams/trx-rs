@@ -1623,6 +1623,13 @@ button.map-qso-card:focus-visible {
   border-color: color-mix(in srgb, var(--band-color, var(--accent-green)) 40%, transparent);
   background: color-mix(in srgb, var(--band-color, var(--accent-green)) 14%, transparent);
 }
+.map-qso-card-rx {
+  text-transform: none;
+  font-weight: 600;
+  color: var(--text-muted);
+  border-color: color-mix(in srgb, var(--accent-blue, #5b9bd5) 35%, transparent);
+  background: color-mix(in srgb, var(--accent-blue, #5b9bd5) 10%, transparent);
+}
 .map-overlay-panel {
   position: absolute;
   right: 0.7rem;

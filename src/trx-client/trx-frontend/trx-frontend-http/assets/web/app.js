@@ -6713,6 +6713,7 @@ function rebuildDecodeContactPaths() {
           sourceType: entry.sourceType,
           tsMs,
           bandLabel: band?.label || null,
+          remote: detail?.remote || null,
         });
       }
     }
@@ -6743,9 +6744,21 @@ function rebuildDecodeContactPaths() {
       distanceText: formatDecodeContactDistance(distanceKm),
       line: null,
       labelMarker: null,
+      remote: msg.remote,
     });
   }
   syncDecodeContactPathVisibility();
+}
+
+function _receiverLabel(rigId) {
+  if (!rigId) return null;
+  const rig = serverRigs.find(r => r.remote === rigId);
+  const name = lastRigDisplayNames[rigId] || rigId;
+  if (rig && rig.latitude != null && rig.longitude != null) {
+    const grid = latLonToMaidenhead(rig.latitude, rig.longitude);
+    return `${name} (${grid})`;
+  }
+  return name;
 }
 
 function renderMapQsoSummary() {
@@ -6835,6 +6848,14 @@ function renderMapQsoSummary() {
       meta.appendChild(age);
     }
 
+    const rxLabel = _receiverLabel(entry.remote);
+    if (rxLabel) {
+      const rx = document.createElement("span");
+      rx.className = "map-qso-card-pill map-qso-card-rx";
+      rx.textContent = rxLabel;
+      meta.appendChild(rx);
+    }
+
     body.appendChild(meta);
 
     const grids = document.createElement("div");
@@ -6873,6 +6894,7 @@ function renderMapSignalSummary() {
           grid: entry.grid,
           sourceType: entry.sourceType,
           bandLabel: bandForHz(Number(detail?.freq_hz))?.label || null,
+          remote: detail?.remote || null,
         });
       }
     }
@@ -6950,6 +6972,14 @@ function renderMapSignalSummary() {
       meta.appendChild(age);
     }
 
+    const rxLabel = _receiverLabel(entry.remote);
+    if (rxLabel) {
+      const rx = document.createElement("span");
+      rx.className = "map-qso-card-pill map-qso-card-rx";
+      rx.textContent = rxLabel;
+      meta.appendChild(rx);
+    }
+
     body.appendChild(meta);
 
     const grids = document.createElement("div");
@@ -6987,6 +7017,7 @@ function renderMapWeakSignalSummary() {
           grid: entry.grid,
           sourceType: entry.sourceType,
           bandLabel: bandForHz(Number(detail?.freq_hz))?.label || null,
+          remote: detail?.remote || null,
         });
       }
     }
@@ -7062,6 +7093,14 @@ function renderMapWeakSignalSummary() {
       age.className = "map-qso-card-pill";
       age.textContent = ageText;
       meta.appendChild(age);
+    }
+
+    const rxLabel = _receiverLabel(entry.remote);
+    if (rxLabel) {
+      const rx = document.createElement("span");
+      rx.className = "map-qso-card-pill map-qso-card-rx";
+      rx.textContent = rxLabel;
+      meta.appendChild(rx);
     }
 
     body.appendChild(meta);
