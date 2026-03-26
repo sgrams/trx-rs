@@ -226,6 +226,7 @@ impl VdesDecoder {
         });
 
         Some(VdesMessage {
+            rig_id: None,
             ts_ms: None,
             channel: channel.to_string(),
             message_type: parsed.message_id.unwrap_or(mode.message_type),
@@ -421,6 +422,7 @@ fn build_unsynced_message(
     let raw_bytes = pack_dibits_msb(raw_symbols);
     let sync_pct = framed.sync_score * 100.0;
     VdesMessage {
+        rig_id: None,
         ts_ms: None,
         channel: channel.to_string(),
         message_type: mode.message_type,

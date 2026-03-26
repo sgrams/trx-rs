@@ -30,8 +30,36 @@ pub enum DecodedMessage {
     Wspr(WsprMessage),
 }
 
+impl DecodedMessage {
+    /// Attach a rig identifier to the inner message variant.
+    pub fn set_rig_id(&mut self, id: String) {
+        match self {
+            Self::Ais(m) => m.rig_id = Some(id),
+            Self::Vdes(m) => m.rig_id = Some(id),
+            Self::Aprs(m) | Self::HfAprs(m) => m.rig_id = Some(id),
+            Self::Cw(m) => m.rig_id = Some(id),
+            Self::Ft8(m) | Self::Ft4(m) | Self::Ft2(m) => m.rig_id = Some(id),
+            Self::Wspr(m) => m.rig_id = Some(id),
+        }
+    }
+
+    /// Return the rig identifier from the inner message variant, if set.
+    pub fn rig_id(&self) -> Option<&str> {
+        match self {
+            Self::Ais(m) => m.rig_id.as_deref(),
+            Self::Vdes(m) => m.rig_id.as_deref(),
+            Self::Aprs(m) | Self::HfAprs(m) => m.rig_id.as_deref(),
+            Self::Cw(m) => m.rig_id.as_deref(),
+            Self::Ft8(m) | Self::Ft4(m) | Self::Ft2(m) => m.rig_id.as_deref(),
+            Self::Wspr(m) => m.rig_id.as_deref(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AisMessage {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rig_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ts_ms: Option<i64>,
     pub channel: String,
@@ -63,6 +91,8 @@ pub struct AisMessage {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VdesMessage {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rig_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ts_ms: Option<i64>,
     pub channel: String,
@@ -123,6 +153,8 @@ pub struct VdesMessage {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AprsPacket {
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub rig_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub ts_ms: Option<i64>,
     pub src_call: String,
     pub dest_call: String,
@@ -143,6 +175,8 @@ pub struct AprsPacket {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CwEvent {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rig_id: Option<String>,
     /// Decoded text fragment (one or more characters)
     pub text: String,
     /// Current detected WPM
@@ -155,6 +189,8 @@ pub struct CwEvent {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Ft8Message {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rig_id: Option<String>,
     /// UTC timestamp (milliseconds since epoch)
     pub ts_ms: i64,
     /// Approximate SNR (dB)
@@ -169,6 +205,8 @@ pub struct Ft8Message {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WsprMessage {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rig_id: Option<String>,
     /// UTC timestamp (milliseconds since epoch)
     pub ts_ms: i64,
     /// Approximate SNR (dB)

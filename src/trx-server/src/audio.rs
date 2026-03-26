@@ -1806,6 +1806,7 @@ pub async fn run_ft8_decoder(
                                     let base_freq_hz = state_rx.borrow().status.freq.hz as f64;
                                     let abs_freq_hz = base_freq_hz + res.freq_hz as f64;
                                     let msg = Ft8Message {
+                                        rig_id: None,
                                         ts_ms,
                                         snr_db: res.snr_db,
                                         dt_s: res.dt_s,
@@ -1961,6 +1962,7 @@ pub async fn run_ft4_decoder(
                                     let base_freq_hz = state_rx.borrow().status.freq.hz as f64;
                                     let abs_freq_hz = base_freq_hz + res.freq_hz as f64;
                                     let msg = Ft8Message {
+                                        rig_id: None,
                                         ts_ms,
                                         snr_db: res.snr_db,
                                         dt_s: res.dt_s,
@@ -2110,6 +2112,7 @@ pub async fn run_ft2_decoder(
                                     let base_freq_hz = state_rx.borrow().status.freq.hz as f64;
                                     let abs_freq_hz = base_freq_hz + res.freq_hz as f64;
                                     let msg = Ft8Message {
+                                        rig_id: None,
                                         ts_ms,
                                         snr_db: res.snr_db,
                                         dt_s: res.dt_s,
@@ -2260,6 +2263,7 @@ pub async fn run_wspr_decoder(
                                             Err(_) => 0,
                                         };
                                         let msg = WsprMessage {
+                                            rig_id: None,
                                             ts_ms,
                                             snr_db: res.snr_db,
                                             dt_s: res.dt_s,
@@ -2514,6 +2518,7 @@ async fn run_background_ft8_decoder(
                     for res in results {
                         let abs_freq_hz = base_freq_hz as f64 + res.freq_hz as f64;
                         let msg = Ft8Message {
+                            rig_id: None,
                             ts_ms: current_timestamp_ms(),
                             snr_db: res.snr_db,
                             dt_s: res.dt_s,
@@ -2593,6 +2598,7 @@ async fn run_background_ft4_decoder(
                     for res in results {
                         let abs_freq_hz = base_freq_hz as f64 + res.freq_hz as f64;
                         let msg = Ft8Message {
+                            rig_id: None,
                             ts_ms: current_timestamp_ms(),
                             snr_db: res.snr_db,
                             dt_s: res.dt_s,
@@ -2663,6 +2669,7 @@ async fn run_background_ft2_decoder(
                     for res in results {
                         let abs_freq_hz = base_freq_hz as f64 + res.freq_hz as f64;
                         let msg = Ft8Message {
+                            rig_id: None,
                             ts_ms: current_timestamp_ms(),
                             snr_db: res.snr_db,
                             dt_s: res.dt_s,
@@ -2727,6 +2734,7 @@ async fn run_background_wspr_decoder(
                         Ok(results) => {
                             for res in results {
                                 let msg = WsprMessage {
+                                    rig_id: None,
                                     ts_ms: current_timestamp_ms(),
                                     snr_db: res.snr_db,
                                     dt_s: res.dt_s,

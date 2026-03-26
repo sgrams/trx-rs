@@ -399,6 +399,7 @@ impl CwDecoder {
 
     fn emit_event(&mut self, text: &str) {
         self.events.push(CwEvent {
+            rig_id: None,
             text: text.to_string(),
             wpm: self.wpm,
             tone_hz: self.tone_freq,

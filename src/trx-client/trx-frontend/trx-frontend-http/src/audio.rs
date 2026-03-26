@@ -121,11 +121,12 @@ fn record_ais(context: &FrontendRuntimeContext, mut msg: AisMessage) {
     if msg.ts_ms.is_none() {
         msg.ts_ms = Some(current_timestamp_ms());
     }
+    let rig_id = msg.rig_id.clone().or_else(|| active_rig_id(context));
     let mut history = context
         .ais_history
         .lock()
         .expect("ais history mutex poisoned");
-    history.push_back((Instant::now(), active_rig_id(context), msg));
+    history.push_back((Instant::now(), rig_id, msg));
     prune_ais_history(context, &mut history);
 }
 
@@ -133,11 +134,12 @@ fn record_vdes(context: &FrontendRuntimeContext, mut msg: VdesMessage) {
     if msg.ts_ms.is_none() {
         msg.ts_ms = Some(current_timestamp_ms());
     }
+    let rig_id = msg.rig_id.clone().or_else(|| active_rig_id(context));
     let mut history = context
         .vdes_history
         .lock()
         .expect("vdes history mutex poisoned");
-    history.push_back((Instant::now(), active_rig_id(context), msg));
+    history.push_back((Instant::now(), rig_id, msg));
     prune_vdes_history(context, &mut history);
 }
 
@@ -210,11 +212,12 @@ fn record_aprs(context: &FrontendRuntimeContext, mut pkt: AprsPacket) {
     if pkt.ts_ms.is_none() {
         pkt.ts_ms = Some(current_timestamp_ms());
     }
+    let rig_id = pkt.rig_id.clone().or_else(|| active_rig_id(context));
     let mut history = context
         .aprs_history
         .lock()
         .expect("aprs history mutex poisoned");
-    history.push_back((Instant::now(), active_rig_id(context), pkt));
+    history.push_back((Instant::now(), rig_id, pkt));
     prune_aprs_history(context, &mut history);
 }
 
@@ -222,56 +225,62 @@ fn record_hf_aprs(context: &FrontendRuntimeContext, mut pkt: AprsPacket) {
     if pkt.ts_ms.is_none() {
         pkt.ts_ms = Some(current_timestamp_ms());
     }
+    let rig_id = pkt.rig_id.clone().or_else(|| active_rig_id(context));
     let mut history = context
         .hf_aprs_history
         .lock()
         .expect("hf_aprs history mutex poisoned");
-    history.push_back((Instant::now(), active_rig_id(context), pkt));
+    history.push_back((Instant::now(), rig_id, pkt));
     prune_hf_aprs_history(context, &mut history);
 }
 
 fn record_cw(context: &FrontendRuntimeContext, event: CwEvent) {
+    let rig_id = event.rig_id.clone().or_else(|| active_rig_id(context));
     let mut history = context
         .cw_history
         .lock()
         .expect("cw history mutex poisoned");
-    history.push_back((Instant::now(), active_rig_id(context), event));
+    history.push_back((Instant::now(), rig_id, event));
     prune_cw_history(context, &mut history);
 }
 
 fn record_ft8(context: &FrontendRuntimeContext, msg: Ft8Message) {
+    let rig_id = msg.rig_id.clone().or_else(|| active_rig_id(context));
     let mut history = context
         .ft8_history
         .lock()
         .expect("ft8 history mutex poisoned");
-    history.push_back((Instant::now(), active_rig_id(context), msg));
+    history.push_back((Instant::now(), rig_id, msg));
     prune_ft8_history(context, &mut history);
 }
 
 fn record_ft4(context: &FrontendRuntimeContext, msg: Ft8Message) {
+    let rig_id = msg.rig_id.clone().or_else(|| active_rig_id(context));
     let mut history = context
         .ft4_history
         .lock()
         .expect("ft4 history mutex poisoned");
-    history.push_back((Instant::now(), active_rig_id(context), msg));
+    history.push_back((Instant::now(), rig_id, msg));
     prune_ft4_history(context, &mut history);
 }
 
 fn record_ft2(context: &FrontendRuntimeContext, msg: Ft8Message) {
+    let rig_id = msg.rig_id.clone().or_else(|| active_rig_id(context));
     let mut history = context
         .ft2_history
         .lock()
         .expect("ft2 history mutex poisoned");
-    history.push_back((Instant::now(), active_rig_id(context), msg));
+    history.push_back((Instant::now(), rig_id, msg));
     prune_ft2_history(context, &mut history);
 }
 
 fn record_wspr(context: &FrontendRuntimeContext, msg: WsprMessage) {
+    let rig_id = msg.rig_id.clone().or_else(|| active_rig_id(context));
     let mut history = context
         .wspr_history
         .lock()
         .expect("wspr history mutex poisoned");
-    history.push_back((Instant::now(), active_rig_id(context), msg));
+    history.push_back((Instant::now(), rig_id, msg));
     prune_wspr_history(context, &mut history);
 }
 

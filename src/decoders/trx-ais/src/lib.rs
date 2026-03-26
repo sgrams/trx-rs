@@ -230,6 +230,7 @@ fn parse_frame(frame: RawFrame, channel: &str) -> Option<AisMessage> {
     let mmsi = get_uint(&bits, 8, 30)? as u32;
 
     let mut msg = AisMessage {
+        rig_id: None,
         ts_ms: None,
         channel: channel.to_string(),
         message_type,

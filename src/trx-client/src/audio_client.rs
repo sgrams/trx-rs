@@ -548,7 +548,8 @@ async fn handle_single_rig_connection(
                                 break;
                             }
                             let json = &decompressed[pos..pos + len];
-                            if let Ok(msg) = serde_json::from_slice::<DecodedMessage>(json) {
+                            if let Ok(mut msg) = serde_json::from_slice::<DecodedMessage>(json) {
+                                msg.set_rig_id(rig_id_for_rx.clone());
                                 if let Some(ref sink) = replay_history_sink {
                                     sink(msg);
                                 }
@@ -569,7 +570,8 @@ async fn handle_single_rig_connection(
                     | AUDIO_MSG_WSPR_DECODE,
                     payload,
                 )) => {
-                    if let Ok(msg) = serde_json::from_slice::<DecodedMessage>(&payload) {
+                    if let Ok(mut msg) = serde_json::from_slice::<DecodedMessage>(&payload) {
+                        msg.set_rig_id(rig_id_for_rx.clone());
                         let _ = decode_tx_clone.send(msg);
                     }
                 }
