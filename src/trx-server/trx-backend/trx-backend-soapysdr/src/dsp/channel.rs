@@ -328,7 +328,11 @@ impl ChannelDsp {
         }
 
         let target_rate = match mode {
-            RigMode::WFM => audio_bandwidth_hz.max(audio_sample_rate.saturating_mul(4)),
+            // Ensure composite rate is at least 120 kHz so the IQ filter can
+            // pass the 57 kHz RDS subcarrier regardless of the user's audio BW.
+            RigMode::WFM => audio_bandwidth_hz
+                .max(audio_sample_rate.saturating_mul(4))
+                .max(120_000),
             RigMode::VDES => audio_sample_rate.max(96_000),
             _ => audio_sample_rate.max(1),
         };
@@ -346,10 +350,20 @@ impl ChannelDsp {
             self.audio_sample_rate,
             self.audio_bandwidth_hz,
         );
-        let cutoff_hz = self
-            .audio_bandwidth_hz
-            .min(channel_sample_rate.saturating_sub(1)) as f32
-            / 2.0;
+        let cutoff_hz = {
+            let raw = self
+                .audio_bandwidth_hz
+                .min(channel_sample_rate.saturating_sub(1)) as f32
+                / 2.0;
+            // For WFM, always pass at least the 57 kHz RDS subcarrier.
+            // Audio bandwidth is handled inside WfmStereoDecoder, so widening
+            // the IQ prefilter here does not affect output audio quality.
+            if self.mode == RigMode::WFM {
+                raw.max(60_000.0)
+            } else {
+                raw
+            }
+        };
         let cutoff_norm = if self.sdr_sample_rate == 0 {
             0.1
         } else {
@@ -424,7 +438,14 @@ impl ChannelDsp {
 
         let (decim_factor, channel_sample_rate) =
             Self::pipeline_rates(mode, sdr_sample_rate, audio_sample_rate, audio_bandwidth_hz);
-        let cutoff_hz = audio_bandwidth_hz.min(channel_sample_rate.saturating_sub(1)) as f32 / 2.0;
+        let cutoff_hz = {
+            let raw = audio_bandwidth_hz.min(channel_sample_rate.saturating_sub(1)) as f32 / 2.0;
+            if *mode == RigMode::WFM {
+                raw.max(60_000.0)
+            } else {
+                raw
+            }
+        };
         let cutoff_norm = if sdr_sample_rate == 0 {
             0.1
         } else {
