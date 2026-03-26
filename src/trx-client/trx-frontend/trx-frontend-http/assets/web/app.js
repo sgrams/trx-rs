@@ -1142,6 +1142,10 @@ function signalOverlayHeight() {
     getComputedStyle(spectrumPanelEl).display !== "none";
   if (spectrumVisible) {
     height += spectrumCanvasEl.clientHeight || 0;
+    const wfCanvas = document.getElementById("spectrum-waterfall-canvas");
+    if (wfCanvas && wfCanvas.clientHeight > 0) {
+      height += wfCanvas.clientHeight;
+    }
   }
   return Math.floor(height);
 }
@@ -2660,6 +2664,7 @@ function updateSpectrumAutoHeight() {
   if (lastSpectrumData) {
     scheduleSpectrumDraw();
     scheduleOverviewDraw();
+    scheduleSpectrumWaterfallDraw();
   }
 }
 
@@ -8673,6 +8678,10 @@ let waterfallGamma = 1.0;
 const SPECTRUM_HEADROOM_DB = 20;
 const SPECTRUM_SMOOTH_ALPHA = 0.42;
 
+// Crosshair state (CSS coords relative to spectrum canvas).
+let spectrumCrosshairX = null;
+let spectrumCrosshairY = null;
+
 // BW-strip drag state.
 let _bwDragEdge     = null; // "left" | "right" | null
 let _bwDragStartX   = 0;
@@ -8795,6 +8804,13 @@ function buildSpectrumPeakHoldBins(currentBins) {
     }
   }
   return peakBins;
+}
+
+// Estimate noise floor as the 15th-percentile of visible bins (same heuristic as Auto).
+function estimateNoiseFloorDb(bins) {
+  if (!Array.isArray(bins) || bins.length === 0) return null;
+  const sorted = bins.slice().sort((a, b) => a - b);
+  return sorted[Math.floor(sorted.length * 0.15)];
 }
 
 function buildSpectrumRenderData(frame) {
@@ -8979,6 +8995,9 @@ function startSpectrumStreaming() {
       overviewWaterfallRows = [];
       overviewWaterfallPushCount = 0;
       overviewWfResetTextureCache();
+      spectrumWfRows = [];
+      spectrumWfPushCount = 0;
+      spectrumWfTexReady = false;
       scheduleOverviewDraw();
       clearSpectrumCanvas();
       updateRdsPsOverlay(null);
@@ -9011,6 +9030,7 @@ function startSpectrumStreaming() {
       settlePendingSpectrumFrameWaiters(lastSpectrumData);
       pushSpectrumPeakHoldFrame(lastSpectrumRenderData);
       pushOverviewWaterfallFrame(lastSpectrumData);
+      pushSpectrumWaterfallFrame(lastSpectrumData);
       refreshCenterFreqDisplay();
       if (window.refreshCwTonePicker) window.refreshCwTonePicker();
       scheduleSpectrumDraw();
@@ -9069,6 +9089,9 @@ function stopSpectrumStreaming() {
   overviewWaterfallRows = [];
   overviewWaterfallPushCount = 0;
   overviewWfResetTextureCache();
+  spectrumWfRows = [];
+  spectrumWfPushCount = 0;
+  spectrumWfTexReady = false;
   scheduleOverviewDraw();
   updateRdsPsOverlay(null);
   clearSpectrumCanvas();
@@ -9341,6 +9364,7 @@ function scheduleSpectrumDraw() {
     if (lastSpectrumRenderData) {
       drawSpectrum(lastSpectrumRenderData);
       if (overviewWaterfallRows.length > 0) scheduleOverviewDraw();
+      if (spectrumWfRows.length > 0) scheduleSpectrumWaterfallDraw();
     }
   });
 }
@@ -9406,6 +9430,19 @@ function drawSpectrum(data) {
 
   spectrumGl.drawPolyline(spectrumTmpFillPoints, cssColorToRgba(pal.spectrumLine), Math.max(1, dpr));
 
+  // ── Noise floor reference line ──
+  const noiseDb = estimateNoiseFloorDb(bins);
+  if (noiseDb != null && noiseDb >= DB_MIN && noiseDb <= DB_MAX) {
+    const noiseY = Math.round(H * (1 - (noiseDb - DB_MIN) / dbRange));
+    const nfSegments = [];
+    const dashLen = Math.max(4, Math.round(6 * dpr));
+    const gapLen = Math.max(3, Math.round(5 * dpr));
+    for (let x = 0; x < W; x += dashLen + gapLen) {
+      nfSegments.push(x, noiseY, Math.min(W, x + dashLen), noiseY);
+    }
+    spectrumGl.drawSegments(nfSegments, rgbaWithAlpha(pal.waveformPeak, 0.35), Math.max(1, dpr * 0.8));
+  }
+
   const markerPeaks = visibleSpectrumPeakIndices(data);
   if (markerPeaks.length > 0) {
     spectrumTmpMarkerPoints.length = 0;
@@ -9415,9 +9452,198 @@ function drawSpectrum(data) {
     spectrumGl.drawPoints(spectrumTmpMarkerPoints, Math.max(2, dpr * 1.6), cssColorToRgba(pal.waveformPeak));
   }
 
+  // ── Peak frequency labels (top 5 strongest) ──
+  if (markerPeaks.length > 0) {
+    const topPeaks = markerPeaks.slice(0, 5);
+    const labelEl = document.getElementById("spectrum-peak-labels");
+    if (labelEl) {
+      labelEl.innerHTML = "";
+      const cssW = spectrumCanvas.clientWidth || 640;
+      const cssH = spectrumCanvas.clientHeight || 160;
+      for (const idx of topPeaks) {
+        const peakHz = loHz + (idx / (n - 1)) * fullSpanHz;
+        const peakDb = bins[idx];
+        if (peakDb < DB_MIN + 6) continue; // skip near-floor peaks
+        const xFrac = (peakHz - range.visLoHz) / range.visSpanHz;
+        if (xFrac < 0.02 || xFrac > 0.98) continue;
+        const yFrac = 1 - (Math.max(DB_MIN, Math.min(DB_MAX, peakDb)) - DB_MIN) / dbRange;
+        const span = document.createElement("span");
+        span.className = "spectrum-peak-label";
+        span.textContent = formatSpectrumFreq(peakHz);
+        span.style.left = (xFrac * cssW) + "px";
+        span.style.top = Math.max(2, yFrac * cssH - 16) + "px";
+        labelEl.appendChild(span);
+      }
+    }
+  }
+
+  // ── Crosshair lines ──
+  if (spectrumCrosshairX != null && spectrumCrosshairY != null) {
+    const cx = spectrumCrosshairX * dpr;
+    const cy = spectrumCrosshairY * dpr;
+    const chColor = rgbaWithAlpha(pal.spectrumLabel, 0.5);
+    spectrumGl.drawSegments([cx, 0, cx, H], chColor, Math.max(1, dpr * 0.6));
+    spectrumGl.drawSegments([0, cy, W, cy], chColor, Math.max(1, dpr * 0.6));
+  }
+
+  // ── Zoom indicator ──
+  const zoomEl = document.getElementById("spectrum-zoom-indicator");
+  if (zoomEl) {
+    if (spectrumZoom > 1.01) {
+      zoomEl.textContent = spectrumZoom.toFixed(1) + "x";
+      zoomEl.style.display = "block";
+    } else {
+      zoomEl.style.display = "none";
+    }
+  }
+
+  // ── Zoom minimap ──
+  const minimapEl = document.getElementById("spectrum-minimap");
+  if (minimapEl) {
+    if (spectrumZoom > 1.01) {
+      minimapEl.style.display = "block";
+      const viewFrac = 1 / spectrumZoom;
+      const halfVis = viewFrac / 2;
+      const panClamped = Math.min(Math.max(spectrumPanFrac, halfVis), 1 - halfVis);
+      const viewL = panClamped - halfVis;
+      const viewR = panClamped + halfVis;
+      const inner = minimapEl.querySelector(".minimap-view");
+      if (inner) {
+        inner.style.left = (viewL * 100) + "%";
+        inner.style.width = ((viewR - viewL) * 100) + "%";
+      }
+    } else {
+      minimapEl.style.display = "none";
+    }
+  }
+
   updateSpectrumFreqAxis(range);
   updateBookmarkAxis(range);
   drawSignalOverlay();
+}
+
+// ── Full waterfall panel below spectrum ───────────────────────────────────────
+const spectrumWaterfallCanvas = document.getElementById("spectrum-waterfall-canvas");
+const spectrumWaterfallGl = (typeof createTrxWebGlRenderer === "function" && spectrumWaterfallCanvas)
+  ? createTrxWebGlRenderer(spectrumWaterfallCanvas, spectrumSnapshotGlOptions)
+  : null;
+let spectrumWfRows = [];
+let spectrumWfPushCount = 0;
+let spectrumWfTexData = null;
+let spectrumWfTexWidth = 0;
+let spectrumWfTexHeight = 0;
+let spectrumWfTexPushCount = 0;
+let spectrumWfTexPalKey = "";
+let spectrumWfTexReady = false;
+let spectrumWfDrawPending = false;
+const SPECTRUM_WF_TEX_MAX_W = 1024;
+
+function pushSpectrumWaterfallFrame(data) {
+  if (!spectrumWaterfallCanvas || !data || !Array.isArray(data.bins) || data.bins.length === 0) return;
+  spectrumWfRows.push(data.bins.slice());
+  spectrumWfPushCount++;
+  trimSpectrumWaterfallRows();
+  scheduleSpectrumWaterfallDraw();
+}
+
+function trimSpectrumWaterfallRows() {
+  if (!spectrumWaterfallCanvas) return;
+  const dpr = window.devicePixelRatio || 1;
+  const maxRows = Math.max(1, Math.floor((spectrumWaterfallCanvas.clientHeight || 120) * dpr));
+  while (spectrumWfRows.length > maxRows) {
+    spectrumWfRows.shift();
+  }
+}
+
+function scheduleSpectrumWaterfallDraw() {
+  if (!spectrumWaterfallCanvas || spectrumWfDrawPending) return;
+  spectrumWfDrawPending = true;
+  requestAnimationFrame(() => {
+    spectrumWfDrawPending = false;
+    drawSpectrumWaterfall();
+  });
+}
+
+function drawSpectrumWaterfall() {
+  if (!spectrumWaterfallCanvas || !spectrumWaterfallGl || !spectrumWaterfallGl.ready) return;
+  if (!lastSpectrumData || spectrumWfRows.length === 0) return;
+
+  const dpr = window.devicePixelRatio || 1;
+  const cssW = spectrumWaterfallCanvas.clientWidth || 640;
+  const cssH = spectrumWaterfallCanvas.clientHeight || 120;
+  spectrumWaterfallGl.ensureSize(cssW, cssH, dpr);
+  const W = spectrumWaterfallCanvas.width;
+  const H = spectrumWaterfallCanvas.height;
+  if (W <= 0 || H <= 0) return;
+
+  const pal = canvasPalette();
+  const maxVisible = Math.max(1, Math.floor(H));
+  const rows = spectrumWfRows.slice(-maxVisible);
+  if (rows.length === 0) return;
+
+  const iW = Math.max(96, Math.min(SPECTRUM_WF_TEX_MAX_W, Math.ceil(W / 2)));
+  const iH = Math.max(1, rows.length);
+  const minDb = Number.isFinite(spectrumFloor) ? spectrumFloor : -115;
+  const maxDb = minDb + Math.max(20, Number.isFinite(spectrumRange) ? spectrumRange : 90);
+  const view = spectrumVisibleRange(lastSpectrumData);
+  const viewKey = `${Math.round(view.visLoHz)}:${Math.round(view.visHiHz)}`;
+  const palKey = `swf|${pal.waterfallHue}|${pal.waterfallSat}|${pal.waterfallLight}|${pal.waterfallAlpha}|${spectrumFloor}|${spectrumRange}|${waterfallGamma}|${viewKey}`;
+  const rowStride = iW * 4;
+  const expectedSize = iW * iH * 4;
+  const newPushes = spectrumWfPushCount - spectrumWfTexPushCount;
+  const sizeChanged = spectrumWfTexWidth !== iW || spectrumWfTexHeight !== iH;
+  const palChanged = spectrumWfTexPalKey !== palKey;
+  const needsFull = !spectrumWfTexData || sizeChanged || palChanged || spectrumWfTexPushCount === 0;
+  let texUpdated = false;
+
+  if (!spectrumWfTexData || spectrumWfTexData.length !== expectedSize) {
+    spectrumWfTexData = new Uint8Array(expectedSize);
+  }
+  spectrumWfTexWidth = iW;
+  spectrumWfTexHeight = iH;
+
+  function renderRow(dstY, srcBins) {
+    if (!Array.isArray(srcBins) || srcBins.length === 0) return;
+    const { startIdx, endIdx } = overviewVisibleBinWindow(lastSpectrumData, srcBins.length);
+    const spanBins = Math.max(1, endIdx - startIdx);
+    const rowBase = dstY * rowStride;
+    for (let x = 0; x < iW; x++) {
+      const frac = x / Math.max(1, iW - 1);
+      const binIdx = Math.min(endIdx, startIdx + Math.floor(frac * spanBins));
+      const c = waterfallColorRgba(srcBins[binIdx], pal, minDb, maxDb);
+      const p = rowBase + x * 4;
+      spectrumWfTexData[p + 0] = Math.round(c[0] * 255);
+      spectrumWfTexData[p + 1] = Math.round(c[1] * 255);
+      spectrumWfTexData[p + 2] = Math.round(c[2] * 255);
+      spectrumWfTexData[p + 3] = Math.round(c[3] * 255);
+    }
+  }
+
+  if (needsFull) {
+    for (let y = 0; y < iH; y++) renderRow(y, rows[y]);
+    spectrumWfTexPushCount = spectrumWfPushCount;
+    spectrumWfTexPalKey = palKey;
+    texUpdated = true;
+  } else if (newPushes > 0) {
+    const newCount = Math.min(newPushes, iH);
+    if (newCount >= iH) {
+      for (let y = 0; y < iH; y++) renderRow(y, rows[y]);
+    } else {
+      const shiftBytes = newCount * rowStride;
+      spectrumWfTexData.copyWithin(0, shiftBytes);
+      const startRow = iH - newCount;
+      for (let y = startRow; y < iH; y++) renderRow(y, rows[y]);
+    }
+    spectrumWfTexPushCount = spectrumWfPushCount;
+    spectrumWfTexPalKey = palKey;
+    texUpdated = true;
+  }
+
+  if (texUpdated || !spectrumWfTexReady) {
+    spectrumWaterfallGl.uploadRgbaTexture("spectrum-waterfall", iW, iH, spectrumWfTexData, "linear");
+    spectrumWfTexReady = true;
+  }
+  spectrumWaterfallGl.drawTexture("spectrum-waterfall", 0, 0, W, H, 1, true);
 }
 
 function bmHexToRgba(hex, alpha) {
@@ -10008,6 +10234,46 @@ window.addEventListener("keydown", (event) => {
     void captureSpectrumScreenshot();
     return;
   }
+
+  // Spectrum keyboard navigation
+  if (lastSpectrumData && spectrumCanvas) {
+    // Arrow Left/Right — pan spectrum
+    if (key === "arrowleft" || key === "arrowright") {
+      event.preventDefault();
+      const step = 0.1 / spectrumZoom;
+      spectrumPanFrac += key === "arrowleft" ? -step : step;
+      scheduleSpectrumDraw();
+      scheduleOverviewDraw();
+      return;
+    }
+    // +/= — zoom in
+    if (key === "+" || key === "=") {
+      event.preventDefault();
+      const cssW = spectrumCanvas.clientWidth || 640;
+      spectrumZoomAt(cssW / 2, cssW, lastSpectrumData, 1.25);
+      scheduleSpectrumDraw();
+      scheduleOverviewDraw();
+      return;
+    }
+    // - — zoom out
+    if (key === "-") {
+      event.preventDefault();
+      const cssW = spectrumCanvas.clientWidth || 640;
+      spectrumZoomAt(cssW / 2, cssW, lastSpectrumData, 1 / 1.25);
+      scheduleSpectrumDraw();
+      scheduleOverviewDraw();
+      return;
+    }
+    // 0 — reset zoom
+    if (key === "0") {
+      event.preventDefault();
+      spectrumZoom = 1;
+      spectrumPanFrac = 0.5;
+      scheduleSpectrumDraw();
+      scheduleOverviewDraw();
+      return;
+    }
+  }
 }, { capture: true });
 
 // ── Zoom helpers ──────────────────────────────────────────────────────────────
@@ -10066,6 +10332,19 @@ if (overviewCanvas) {
   }, { passive: false });
   overviewCanvas.addEventListener("click", (e) => {
     handleSpectrumClick(e, overviewCanvas);
+  });
+}
+
+// Full waterfall panel interactions.
+if (spectrumWaterfallCanvas) {
+  spectrumWaterfallCanvas.addEventListener("wheel", (e) => {
+    handleSpectrumWheel(e, spectrumWaterfallCanvas);
+  }, { passive: false });
+  spectrumWaterfallCanvas.addEventListener("click", (e) => {
+    handleSpectrumClick(e, spectrumWaterfallCanvas);
+  });
+  spectrumWaterfallCanvas.addEventListener("mousedown", (e) => {
+    onSpectrumMouseDown(e, spectrumWaterfallCanvas);
   });
 }
 
@@ -10293,10 +10572,20 @@ if (spectrumCanvas) {
     if (tx + tw > rect.width) tx = cssX - tw - 10;
     spectrumTooltip.style.left = tx + "px";
     spectrumTooltip.style.top  = Math.max(0, e.clientY - rect.top - 28) + "px";
+    // Update crosshair position
+    spectrumCrosshairX = cssX;
+    spectrumCrosshairY = e.clientY - rect.top;
+    scheduleSpectrumDraw();
   });
   spectrumCanvas.addEventListener("mouseleave", () => {
     if (spectrumTooltip) spectrumTooltip.style.display = "none";
     spectrumCanvas.style.cursor = "crosshair";
+    spectrumCrosshairX = null;
+    spectrumCrosshairY = null;
+    // Clear peak labels on leave
+    const labelEl = document.getElementById("spectrum-peak-labels");
+    if (labelEl) labelEl.innerHTML = "";
+    scheduleSpectrumDraw();
   });
 }
 
@@ -10333,6 +10622,18 @@ if (spectrumCenterRightBtn) {
     });
   }
 
+  const rangeInput = document.getElementById("spectrum-range-input");
+  if (rangeInput) {
+    rangeInput.value = spectrumRange;
+    rangeInput.addEventListener("change", () => {
+      const v = Number(rangeInput.value);
+      if (!isNaN(v) && v >= 10) {
+        spectrumRange = v;
+        if (lastSpectrumData) scheduleSpectrumDraw();
+      }
+    });
+  }
+
   if (autoBtn) {
     autoBtn.addEventListener("click", () => {
       if (!lastSpectrumData) return;
@@ -10343,6 +10644,7 @@ if (spectrumCenterRightBtn) {
       spectrumFloor = Math.floor(noise / 10) * 10 - 10;
       spectrumRange = Math.max(60, Math.ceil((peak - spectrumFloor) / 10) * 10 + SPECTRUM_HEADROOM_DB);
       if (floorInput) floorInput.value = spectrumFloor;
+      if (rangeInput) rangeInput.value = spectrumRange;
       scheduleSpectrumDraw();
     });
   }

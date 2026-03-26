@@ -118,9 +118,13 @@
           <div id="spectrum-bookmark-axis"></div>
           <div id="spectrum-bookmark-side-left" class="spectrum-bookmark-side spectrum-bookmark-side-left" aria-hidden="true"></div>
           <canvas id="spectrum-canvas"></canvas>
+          <div id="spectrum-peak-labels" aria-hidden="true"></div>
+          <div id="spectrum-zoom-indicator" aria-hidden="true"></div>
+          <div id="spectrum-minimap" aria-hidden="true"><div class="minimap-view"></div></div>
           <div id="spectrum-db-axis" aria-hidden="true"></div>
           <div id="spectrum-bookmark-side-right" class="spectrum-bookmark-side spectrum-bookmark-side-right" aria-hidden="true"></div>
           <div id="spectrum-tooltip"></div>
+          <canvas id="spectrum-waterfall-canvas"></canvas>
           <div id="spectrum-freq-axis">
             <button id="spectrum-center-left-btn" class="spectrum-edge-shift spectrum-edge-shift-left" type="button" aria-label="Shift spectrum center left">&lsaquo;</button>
             <button id="spectrum-center-right-btn" class="spectrum-edge-shift spectrum-edge-shift-right" type="button" aria-label="Shift spectrum center right">&rsaquo;</button>
@@ -149,11 +153,12 @@
               </select>
             </label>
             <label id="spectrum-floor-label">Floor <input type="number" id="spectrum-floor-input" value="-115" step="5" /> dB</label>
+            <label id="spectrum-range-label">Range <input type="number" id="spectrum-range-input" value="90" step="10" min="10" /> dB</label>
             <button id="spectrum-auto-btn" type="button">Auto</button>
             <label id="spectrum-gamma-label">Contrast <input type="range" id="spectrum-gamma-input" min="0.2" max="3.0" step="0.1" value="1.0" /><span id="spectrum-gamma-value">1.0</span></label>
           </div>
         </div>
-        <div id="spectrum-hint" class="spectrum-hint-mouse">Scroll to zoom &middot; Ctrl+Scroll to tune &middot; Drag to pan &middot; Drag BW edges to resize</div>
+        <div id="spectrum-hint" class="spectrum-hint-mouse">Scroll to zoom &middot; Ctrl+Scroll to tune &middot; Drag to pan &middot; Drag BW edges to resize &middot; +/- zoom &middot; Arrows pan &middot; 0 reset</div>
         <div id="spectrum-hint-touch" class="spectrum-hint-touch">Pinch to zoom &middot; Drag to pan &middot; Drag BW edges to resize</div>
       </div>
       <div id="signal-split-control" title="Set waterfall and waveform split" aria-label="Set waterfall and waveform split">

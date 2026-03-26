@@ -34,6 +34,7 @@
   --card-base-max-width: 1280px;
   --card-max-width: 1600px;
   --card-bookmark-gutter: 9.5rem;
+  --spectrum-waterfall-height: 120px;
   --spectrum-bookmark-side-width: 6.5rem;
   --spectrum-bookmark-side-offset: 8.85rem;
 }
@@ -2743,6 +2744,7 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   }
   #spectrum-bw-label,
   #spectrum-floor-label,
+  #spectrum-range-label,
   #spectrum-peak-hold-label {
     flex: 1 1 100%;
     justify-content: space-between;
@@ -2757,6 +2759,7 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   }
   #spectrum-bw-input,
   #spectrum-floor-input,
+  #spectrum-range-input,
   #overview-peak-hold {
     flex: 1 1 auto;
     min-width: 3rem;
@@ -3105,6 +3108,76 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   font-weight: 700;
   pointer-events: none;
 }
+/* ── Peak labels on spectrum ── */
+#spectrum-peak-labels {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: var(--spectrum-plot-height);
+  pointer-events: none;
+  z-index: 6;
+  overflow: hidden;
+}
+.spectrum-peak-label {
+  position: absolute;
+  transform: translateX(-50%);
+  font-size: 0.58rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  color: var(--text-muted);
+  font-weight: 600;
+  white-space: nowrap;
+  pointer-events: none;
+  text-shadow: 0 1px 3px color-mix(in srgb, var(--bg) 80%, transparent);
+  opacity: 0.85;
+}
+/* ── Zoom indicator ── */
+#spectrum-zoom-indicator {
+  display: none;
+  position: absolute;
+  top: 6px;
+  right: 3.5rem;
+  z-index: 9;
+  font-size: 0.68rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-weight: 700;
+  color: var(--text-muted);
+  background: color-mix(in srgb, var(--spectrum-bg) 75%, transparent);
+  padding: 1px 6px;
+  border-radius: 3px;
+  pointer-events: none;
+}
+/* ── Zoom minimap ── */
+#spectrum-minimap {
+  display: none;
+  position: absolute;
+  bottom: 22px;
+  right: 3.5rem;
+  z-index: 9;
+  width: 80px;
+  height: 10px;
+  background: color-mix(in srgb, var(--spectrum-bg) 60%, transparent);
+  border: 1px solid color-mix(in srgb, var(--border-light) 50%, transparent);
+  border-radius: 3px;
+  pointer-events: none;
+  overflow: hidden;
+}
+.minimap-view {
+  position: absolute;
+  top: 0;
+  height: 100%;
+  background: color-mix(in srgb, var(--accent-yellow) 40%, transparent);
+  border-radius: 2px;
+}
+/* ── Full waterfall canvas ── */
+#spectrum-waterfall-canvas {
+  display: block;
+  width: 100%;
+  height: var(--spectrum-waterfall-height, 120px);
+  background: var(--spectrum-bg);
+  cursor: crosshair;
+  touch-action: none;
+}
 #spectrum-bookmark-axis {
   position: absolute;
   top: calc(-1 * var(--overview-plot-height));
@@ -3298,6 +3371,24 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   color: var(--text-muted);
 }
 #spectrum-floor-input {
+  width: 3.4rem;
+  padding: 1px 4px;
+  font-size: 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--input-bg);
+  color: var(--text);
+  text-align: right;
+  height: 1.5rem;
+}
+#spectrum-range-label {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+#spectrum-range-input {
   width: 3.4rem;
   padding: 1px 4px;
   font-size: 0.75rem;
