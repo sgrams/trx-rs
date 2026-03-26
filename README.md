@@ -161,16 +161,6 @@ Audio is transported as Opus between server, client, and browser.
 - `trx-client` relays audio to the HTTP frontend
 - Browsers connect over `/audio`
 
-## Plugins
-
-Both binaries can discover shared-library plugins through:
-
-- `./plugins`
-- `~/.config/trx-rs/plugins`
-- `TRX_PLUGIN_DIRS`
-
-See [`examples/trx-plugin-example/README.md`](examples/trx-plugin-example/README.md).
-
 ## Documentation
 
 - [User Manual](docs/User-Manual.md): configuration, features, and usage

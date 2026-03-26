@@ -88,10 +88,6 @@ The rig controller (`src/trx-core/src/rig/controller/`) is the central state man
 
 Signal decoders run as background tasks in `trx-server`, consuming decoded audio. `trx-ftx` provides the FT8/FT4/FT2 decoder in pure Rust. Decoded frames can be forwarded to PSKReporter and APRS-IS (IGate) uplinks, or logged via `trx-decode-log`.
 
-### Plugin system
-
-Both `trx-server` and `trx-client` can load shared-library plugins exporting a `trx_register` symbol. Search paths: `./plugins`, `~/.config/trx-rs/plugins`, `TRX_PLUGIN_DIRS` env var.
-
 ## Commit Format
 
 ```
