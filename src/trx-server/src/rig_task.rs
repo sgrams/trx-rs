@@ -21,7 +21,7 @@ use trx_core::rig::controller::{
 };
 use trx_core::rig::request::RigRequest;
 use trx_core::rig::state::{RigMode, RigSnapshot, RigState};
-use trx_core::rig::{RigCat, RigRxStatus, RigTxStatus};
+use trx_core::rig::{RigCat, RigRxStatus, RigSdr, RigTxStatus};
 use trx_core::{DynResult, RigError, RigResult};
 
 use crate::audio::DecoderHistories;
@@ -153,7 +153,7 @@ pub async fn run_rig_task(
     // Initial setup: get rig info
     let rig_info = rig.info().clone();
     state.rig_info = Some(rig_info);
-    state.filter = rig.filter_state();
+    state.filter = rig.as_sdr_ref().and_then(|s| s.filter_state());
     if let Some(info) = state.rig_info.as_ref() {
         info!(
             "Rig info: {} {} {}",
@@ -546,8 +546,12 @@ async fn process_command(
             return snapshot_from(ctx.state);
         }
         RigCommand::SetBandwidth(hz) => {
-            if let Err(e) = ctx.rig.set_bandwidth(hz).await {
-                return Err(RigError::communication(format!("set_bandwidth: {e}")));
+            if let Some(sdr) = ctx.rig.as_sdr() {
+                if let Err(e) = sdr.set_bandwidth(hz).await {
+                    return Err(RigError::communication(format!("set_bandwidth: {e}")));
+                }
+            } else {
+                return Err(RigError::not_supported("set_bandwidth"));
             }
             if let Some(f) = ctx.state.filter.as_mut() {
                 f.bandwidth_hz = hz;
@@ -556,26 +560,32 @@ async fn process_command(
             return snapshot_from(ctx.state);
         }
         RigCommand::SetSdrGain(gain_db) => {
-            if let Err(e) = ctx.rig.set_sdr_gain(gain_db).await {
-                return Err(RigError::communication(format!("set_sdr_gain: {e}")));
-            }
-            ctx.state.filter = ctx.rig.filter_state();
+            if let Some(sdr) = ctx.rig.as_sdr() {
+                if let Err(e) = sdr.set_sdr_gain(gain_db).await {
+                    return Err(RigError::communication(format!("set_sdr_gain: {e}")));
+                }
+            } else { return Err(RigError::not_supported("set_sdr_gain")); }
+            ctx.state.filter = ctx.rig.as_sdr_ref().and_then(|s| s.filter_state());
             let _ = ctx.state_tx.send(ctx.state.clone());
             return snapshot_from(ctx.state);
         }
         RigCommand::SetSdrLnaGain(gain_db) => {
-            if let Err(e) = ctx.rig.set_sdr_lna_gain(gain_db).await {
-                return Err(RigError::communication(format!("set_sdr_lna_gain: {e}")));
-            }
-            ctx.state.filter = ctx.rig.filter_state();
+            if let Some(sdr) = ctx.rig.as_sdr() {
+                if let Err(e) = sdr.set_sdr_lna_gain(gain_db).await {
+                    return Err(RigError::communication(format!("set_sdr_lna_gain: {e}")));
+                }
+            } else { return Err(RigError::not_supported("set_sdr_lna_gain")); }
+            ctx.state.filter = ctx.rig.as_sdr_ref().and_then(|s| s.filter_state());
             let _ = ctx.state_tx.send(ctx.state.clone());
             return snapshot_from(ctx.state);
         }
         RigCommand::SetSdrAgc(enabled) => {
-            if let Err(e) = ctx.rig.set_sdr_agc(enabled).await {
-                return Err(RigError::communication(format!("set_sdr_agc: {e}")));
-            }
-            ctx.state.filter = ctx.rig.filter_state();
+            if let Some(sdr) = ctx.rig.as_sdr() {
+                if let Err(e) = sdr.set_sdr_agc(enabled).await {
+                    return Err(RigError::communication(format!("set_sdr_agc: {e}")));
+                }
+            } else { return Err(RigError::not_supported("set_sdr_agc")); }
+            ctx.state.filter = ctx.rig.as_sdr_ref().and_then(|s| s.filter_state());
             let _ = ctx.state_tx.send(ctx.state.clone());
             return snapshot_from(ctx.state);
         }
@@ -583,27 +593,33 @@ async fn process_command(
             enabled,
             threshold_db,
         } => {
-            if let Err(e) = ctx.rig.set_sdr_squelch(enabled, threshold_db).await {
-                return Err(RigError::communication(format!("set_sdr_squelch: {e}")));
-            }
-            ctx.state.filter = ctx.rig.filter_state();
+            if let Some(sdr) = ctx.rig.as_sdr() {
+                if let Err(e) = sdr.set_sdr_squelch(enabled, threshold_db).await {
+                    return Err(RigError::communication(format!("set_sdr_squelch: {e}")));
+                }
+            } else { return Err(RigError::not_supported("set_sdr_squelch")); }
+            ctx.state.filter = ctx.rig.as_sdr_ref().and_then(|s| s.filter_state());
             let _ = ctx.state_tx.send(ctx.state.clone());
             return snapshot_from(ctx.state);
         }
         RigCommand::SetSdrNoiseBlanker { enabled, threshold } => {
-            if let Err(e) = ctx.rig.set_sdr_noise_blanker(enabled, threshold).await {
-                return Err(RigError::communication(format!(
-                    "set_sdr_noise_blanker: {e}"
-                )));
-            }
-            ctx.state.filter = ctx.rig.filter_state();
+            if let Some(sdr) = ctx.rig.as_sdr() {
+                if let Err(e) = sdr.set_sdr_noise_blanker(enabled, threshold).await {
+                    return Err(RigError::communication(format!(
+                        "set_sdr_noise_blanker: {e}"
+                    )));
+                }
+            } else { return Err(RigError::not_supported("set_sdr_noise_blanker")); }
+            ctx.state.filter = ctx.rig.as_sdr_ref().and_then(|s| s.filter_state());
             let _ = ctx.state_tx.send(ctx.state.clone());
             return snapshot_from(ctx.state);
         }
         RigCommand::SetWfmDeemphasis(deemphasis_us) => {
-            if let Err(e) = ctx.rig.set_wfm_deemphasis(deemphasis_us).await {
-                return Err(RigError::communication(format!("set_wfm_deemphasis: {e}")));
-            }
+            if let Some(sdr) = ctx.rig.as_sdr() {
+                if let Err(e) = sdr.set_wfm_deemphasis(deemphasis_us).await {
+                    return Err(RigError::communication(format!("set_wfm_deemphasis: {e}")));
+                }
+            } else { return Err(RigError::not_supported("set_wfm_deemphasis")); }
             if let Some(f) = ctx.state.filter.as_mut() {
                 f.wfm_deemphasis_us = deemphasis_us;
             }
@@ -611,9 +627,11 @@ async fn process_command(
             return snapshot_from(ctx.state);
         }
         RigCommand::SetWfmStereo(enabled) => {
-            if let Err(e) = ctx.rig.set_wfm_stereo(enabled).await {
-                return Err(RigError::communication(format!("set_wfm_stereo: {e}")));
-            }
+            if let Some(sdr) = ctx.rig.as_sdr() {
+                if let Err(e) = sdr.set_wfm_stereo(enabled).await {
+                    return Err(RigError::communication(format!("set_wfm_stereo: {e}")));
+                }
+            } else { return Err(RigError::not_supported("set_wfm_stereo")); }
             if let Some(f) = ctx.state.filter.as_mut() {
                 f.wfm_stereo = enabled;
             }
@@ -621,9 +639,11 @@ async fn process_command(
             return snapshot_from(ctx.state);
         }
         RigCommand::SetWfmDenoise(level) => {
-            if let Err(e) = ctx.rig.set_wfm_denoise(level).await {
-                return Err(RigError::communication(format!("set_wfm_denoise: {e}")));
-            }
+            if let Some(sdr) = ctx.rig.as_sdr() {
+                if let Err(e) = sdr.set_wfm_denoise(level).await {
+                    return Err(RigError::communication(format!("set_wfm_denoise: {e}")));
+                }
+            } else { return Err(RigError::not_supported("set_wfm_denoise")); }
             if let Some(f) = ctx.state.filter.as_mut() {
                 f.wfm_denoise = level;
             }
@@ -631,16 +651,18 @@ async fn process_command(
             return snapshot_from(ctx.state);
         }
         RigCommand::SetCenterFreq(freq) => {
-            if let Err(e) = ctx.rig.set_center_freq(freq).await {
-                return Err(RigError::communication(format!("set_center_freq: {e}")));
-            }
+            if let Some(sdr) = ctx.rig.as_sdr() {
+                if let Err(e) = sdr.set_center_freq(freq).await {
+                    return Err(RigError::communication(format!("set_center_freq: {e}")));
+                }
+            } else { return Err(RigError::not_supported("set_center_freq")); }
             *ctx.poll_pause_until = Some(Instant::now() + Duration::from_millis(200));
             return snapshot_from(ctx.state);
         }
         RigCommand::GetSpectrum => {
             // Fetch current spectrum and embed it in a one-shot snapshot.
-            ctx.state.spectrum = ctx.rig.get_spectrum();
-            ctx.state.vchan_rds = ctx.rig.get_vchan_rds();
+            ctx.state.spectrum = ctx.rig.as_sdr_ref().and_then(|s| s.get_spectrum());
+            ctx.state.vchan_rds = ctx.rig.as_sdr_ref().and_then(|s| s.get_vchan_rds());
             let result = snapshot_from(ctx.state);
             ctx.state.spectrum = None; // don't persist in ongoing state
             ctx.state.vchan_rds = None; // don't persist in ongoing state
@@ -806,7 +828,7 @@ async fn refresh_state_with_retry(
 /// Read current state from the rig via CAT.
 async fn refresh_state_from_cat(rig: &mut Box<dyn RigCat>, state: &mut RigState) -> DynResult<()> {
     let (freq, mode, vfo) = rig.get_status().await?;
-    state.filter = rig.filter_state();
+    state.filter = rig.as_sdr_ref().and_then(|s| s.filter_state());
     state.control.enabled = Some(true);
     let prev_freq_hz = state.status.freq.hz;
     state.apply_freq(freq);
