@@ -354,6 +354,10 @@
     // Mode selector
     setSelected("scheduler-mode-select", mode);
 
+    // Show/hide main-view scheduler controls
+    const controlRow = document.querySelector(".scheduler-control-row");
+    if (controlRow) controlRow.style.display = mode !== "disabled" ? "" : "none";
+
     // Show/hide sections
     const glSection = document.getElementById("scheduler-grayline-section");
     const tsSection = document.getElementById("scheduler-timespan-section");
