@@ -141,7 +141,10 @@ fn record_vdes(context: &FrontendRuntimeContext, mut msg: VdesMessage) {
     prune_vdes_history(context, &mut history);
 }
 
-fn prune_cw_history(context: &FrontendRuntimeContext, history: &mut VecDeque<(Instant, Option<String>, CwEvent)>) {
+fn prune_cw_history(
+    context: &FrontendRuntimeContext,
+    history: &mut VecDeque<(Instant, Option<String>, CwEvent)>,
+) {
     let cutoff = decode_history_cutoff(context);
     while let Some((ts, _, _)) = history.front() {
         if *ts >= cutoff {
@@ -281,25 +284,33 @@ fn matches_rig_filter(entry_rig: Option<&str>, filter: Option<&str>) -> bool {
     }
 }
 
-pub fn snapshot_aprs_history(context: &FrontendRuntimeContext, rig_filter: Option<&str>) -> Vec<AprsPacket> {
+pub fn snapshot_aprs_history(
+    context: &FrontendRuntimeContext,
+    rig_filter: Option<&str>,
+) -> Vec<AprsPacket> {
     let mut history = context
         .aprs_history
         .lock()
         .expect("aprs history mutex poisoned");
     prune_aprs_history(context, &mut history);
-    history.iter()
+    history
+        .iter()
         .filter(|(_, rid, _)| matches_rig_filter(rid.as_deref(), rig_filter))
         .map(|(_, _, pkt)| pkt.clone())
         .collect()
 }
 
-pub fn snapshot_hf_aprs_history(context: &FrontendRuntimeContext, rig_filter: Option<&str>) -> Vec<AprsPacket> {
+pub fn snapshot_hf_aprs_history(
+    context: &FrontendRuntimeContext,
+    rig_filter: Option<&str>,
+) -> Vec<AprsPacket> {
     let mut history = context
         .hf_aprs_history
         .lock()
         .expect("hf_aprs history mutex poisoned");
     prune_hf_aprs_history(context, &mut history);
-    history.iter()
+    history
+        .iter()
         .filter(|(_, rid, _)| matches_rig_filter(rid.as_deref(), rig_filter))
         .map(|(_, _, pkt)| pkt.clone())
         .collect()
@@ -312,7 +323,10 @@ pub fn snapshot_hf_aprs_history(context: &FrontendRuntimeContext, rig_filter: Op
 /// what the map shows (current position/state) and keeps the response compact.
 /// The returned vec is sorted ascending by `ts_ms` so the client can replay
 /// in chronological order.
-pub fn snapshot_ais_history(context: &FrontendRuntimeContext, rig_filter: Option<&str>) -> Vec<AisMessage> {
+pub fn snapshot_ais_history(
+    context: &FrontendRuntimeContext,
+    rig_filter: Option<&str>,
+) -> Vec<AisMessage> {
     let mut history = context
         .ais_history
         .lock()
@@ -331,73 +345,97 @@ pub fn snapshot_ais_history(context: &FrontendRuntimeContext, rig_filter: Option
     out
 }
 
-pub fn snapshot_vdes_history(context: &FrontendRuntimeContext, rig_filter: Option<&str>) -> Vec<VdesMessage> {
+pub fn snapshot_vdes_history(
+    context: &FrontendRuntimeContext,
+    rig_filter: Option<&str>,
+) -> Vec<VdesMessage> {
     let mut history = context
         .vdes_history
         .lock()
         .expect("vdes history mutex poisoned");
     prune_vdes_history(context, &mut history);
-    history.iter()
+    history
+        .iter()
         .filter(|(_, rid, _)| matches_rig_filter(rid.as_deref(), rig_filter))
         .map(|(_, _, msg)| msg.clone())
         .collect()
 }
 
-pub fn snapshot_cw_history(context: &FrontendRuntimeContext, rig_filter: Option<&str>) -> Vec<CwEvent> {
+pub fn snapshot_cw_history(
+    context: &FrontendRuntimeContext,
+    rig_filter: Option<&str>,
+) -> Vec<CwEvent> {
     let mut history = context
         .cw_history
         .lock()
         .expect("cw history mutex poisoned");
     prune_cw_history(context, &mut history);
-    history.iter()
+    history
+        .iter()
         .filter(|(_, rid, _)| matches_rig_filter(rid.as_deref(), rig_filter))
         .map(|(_, _, evt)| evt.clone())
         .collect()
 }
 
-pub fn snapshot_ft8_history(context: &FrontendRuntimeContext, rig_filter: Option<&str>) -> Vec<Ft8Message> {
+pub fn snapshot_ft8_history(
+    context: &FrontendRuntimeContext,
+    rig_filter: Option<&str>,
+) -> Vec<Ft8Message> {
     let mut history = context
         .ft8_history
         .lock()
         .expect("ft8 history mutex poisoned");
     prune_ft8_history(context, &mut history);
-    history.iter()
+    history
+        .iter()
         .filter(|(_, rid, _)| matches_rig_filter(rid.as_deref(), rig_filter))
         .map(|(_, _, msg)| msg.clone())
         .collect()
 }
 
-pub fn snapshot_ft4_history(context: &FrontendRuntimeContext, rig_filter: Option<&str>) -> Vec<Ft8Message> {
+pub fn snapshot_ft4_history(
+    context: &FrontendRuntimeContext,
+    rig_filter: Option<&str>,
+) -> Vec<Ft8Message> {
     let mut history = context
         .ft4_history
         .lock()
         .expect("ft4 history mutex poisoned");
     prune_ft4_history(context, &mut history);
-    history.iter()
+    history
+        .iter()
         .filter(|(_, rid, _)| matches_rig_filter(rid.as_deref(), rig_filter))
         .map(|(_, _, msg)| msg.clone())
         .collect()
 }
 
-pub fn snapshot_ft2_history(context: &FrontendRuntimeContext, rig_filter: Option<&str>) -> Vec<Ft8Message> {
+pub fn snapshot_ft2_history(
+    context: &FrontendRuntimeContext,
+    rig_filter: Option<&str>,
+) -> Vec<Ft8Message> {
     let mut history = context
         .ft2_history
         .lock()
         .expect("ft2 history mutex poisoned");
     prune_ft2_history(context, &mut history);
-    history.iter()
+    history
+        .iter()
         .filter(|(_, rid, _)| matches_rig_filter(rid.as_deref(), rig_filter))
         .map(|(_, _, msg)| msg.clone())
         .collect()
 }
 
-pub fn snapshot_wspr_history(context: &FrontendRuntimeContext, rig_filter: Option<&str>) -> Vec<WsprMessage> {
+pub fn snapshot_wspr_history(
+    context: &FrontendRuntimeContext,
+    rig_filter: Option<&str>,
+) -> Vec<WsprMessage> {
     let mut history = context
         .wspr_history
         .lock()
         .expect("wspr history mutex poisoned");
     prune_wspr_history(context, &mut history);
-    history.iter()
+    history
+        .iter()
         .filter(|(_, rid, _)| matches_rig_filter(rid.as_deref(), rig_filter))
         .map(|(_, _, msg)| msg.clone())
         .collect()

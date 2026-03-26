@@ -160,7 +160,12 @@ impl ClientChannelManager {
             }
         }
         // Fall back to global sender.
-        if let Some(tx) = self.audio_cmd.lock().unwrap_or_else(|e| e.into_inner()).as_ref() {
+        if let Some(tx) = self
+            .audio_cmd
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .as_ref()
+        {
             let _ = tx.try_send(cmd);
         }
     }
@@ -540,7 +545,11 @@ impl ClientChannelManager {
 
     /// Return the channel a session is currently subscribed to.
     pub fn session_channel(&self, session_id: Uuid) -> Option<(String, Uuid)> {
-        self.sessions.read().unwrap_or_else(|e| e.into_inner()).get(&session_id).cloned()
+        self.sessions
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .get(&session_id)
+            .cloned()
     }
 
     /// Return the selected channel's tune metadata.

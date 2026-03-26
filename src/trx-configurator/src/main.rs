@@ -12,7 +12,10 @@ use std::path::PathBuf;
 use clap::Parser;
 
 #[derive(Parser)]
-#[command(name = "trx-configurator", about = "Interactive configuration generator for trx-rs")]
+#[command(
+    name = "trx-configurator",
+    about = "Interactive configuration generator for trx-rs"
+)]
 struct Cli {
     /// Generate a default config without interactive prompts
     #[arg(long)]
@@ -70,7 +73,10 @@ fn main() {
             "client" => ConfigType::Client,
             "combined" => ConfigType::Combined,
             other => {
-                eprintln!("Unknown config type '{}'. Use: server, client, combined", other);
+                eprintln!(
+                    "Unknown config type '{}'. Use: server, client, combined",
+                    other
+                );
                 std::process::exit(1);
             }
         }

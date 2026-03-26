@@ -51,7 +51,11 @@ pub struct FrontendsSetup {
 // ── Prompt functions ────────────────────────────────────────────────────
 
 pub fn prompt_config_type() -> ConfigType {
-    let items = &["Server (trx-server.toml)", "Client (trx-client.toml)", "Combined (trx-rs.toml)"];
+    let items = &[
+        "Server (trx-server.toml)",
+        "Client (trx-client.toml)",
+        "Combined (trx-rs.toml)",
+    ];
     let sel = Select::new()
         .with_prompt("What configuration would you like to generate?")
         .items(items)

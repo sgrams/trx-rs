@@ -527,15 +527,17 @@ fn sync_scheduler_vchannels(
                     .last_bookmark_ids
                     .iter()
                     .filter_map(|bookmark_id| {
-                        bookmark_store_map.get_for_rig(rig_id, bookmark_id).map(|bookmark| {
-                            (
-                                bookmark_id.clone(),
-                                bookmark.freq_hz,
-                                bookmark.mode.clone(),
-                                bookmark.bandwidth_hz.unwrap_or(0) as u32,
-                                bookmark_decoder_kinds(&bookmark),
-                            )
-                        })
+                        bookmark_store_map
+                            .get_for_rig(rig_id, bookmark_id)
+                            .map(|bookmark| {
+                                (
+                                    bookmark_id.clone(),
+                                    bookmark.freq_hz,
+                                    bookmark.mode.clone(),
+                                    bookmark.bandwidth_hz.unwrap_or(0) as u32,
+                                    bookmark_decoder_kinds(&bookmark),
+                                )
+                            })
                     })
                     .collect::<Vec<_>>()
             })
@@ -573,7 +575,10 @@ impl DecodeHistoryPayload {
 
 /// Build the grouped decode history payload from all per-decoder ring-buffers.
 /// When `rig_filter` is `Some`, only entries recorded for that rig are included.
-fn collect_decode_history(context: &FrontendRuntimeContext, rig_filter: Option<&str>) -> DecodeHistoryPayload {
+fn collect_decode_history(
+    context: &FrontendRuntimeContext,
+    rig_filter: Option<&str>,
+) -> DecodeHistoryPayload {
     DecodeHistoryPayload {
         ais: crate::server::audio::snapshot_ais_history(context, rig_filter),
         vdes: crate::server::audio::snapshot_vdes_history(context, rig_filter),
@@ -1497,7 +1502,10 @@ pub async fn list_bookmarks(
             status::index_html(),
         ));
     }
-    let scope = query.scope.as_deref().filter(|s| !s.is_empty() && *s != "general");
+    let scope = query
+        .scope
+        .as_deref()
+        .filter(|s| !s.is_empty() && *s != "general");
     let mut list: Vec<BookmarkWithScope> = match scope {
         Some(remote) => {
             // Rig selected: merge general + rig-specific (rig wins on duplicate IDs).
@@ -1507,20 +1515,36 @@ pub async fn list_bookmarks(
                 .into_iter()
                 .map(|bm| {
                     let id = bm.id.clone();
-                    (id, BookmarkWithScope { bm, scope: "general".into() })
+                    (
+                        id,
+                        BookmarkWithScope {
+                            bm,
+                            scope: "general".into(),
+                        },
+                    )
                 })
                 .collect();
             for bm in store_map.store_for(remote).list() {
                 let id = bm.id.clone();
-                map.insert(id, BookmarkWithScope { bm, scope: remote.to_owned() });
+                map.insert(
+                    id,
+                    BookmarkWithScope {
+                        bm,
+                        scope: remote.to_owned(),
+                    },
+                );
             }
             map.into_values().collect()
         }
-        None => {
-            store_map.general().list().into_iter()
-                .map(|bm| BookmarkWithScope { bm, scope: "general".into() })
-                .collect()
-        }
+        None => store_map
+            .general()
+            .list()
+            .into_iter()
+            .map(|bm| BookmarkWithScope {
+                bm,
+                scope: "general".into(),
+            })
+            .collect(),
     };
     if let Some(ref cat) = query.category {
         if !cat.is_empty() {
