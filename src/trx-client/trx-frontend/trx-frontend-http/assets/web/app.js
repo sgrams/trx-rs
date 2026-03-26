@@ -3490,7 +3490,8 @@ async function switchRigFromSelect(selectEl) {
   if (typeof setSchedulerRig === "function") setSchedulerRig(lastActiveRigId);
   if (typeof setBackgroundDecodeRig === "function") setBackgroundDecodeRig(lastActiveRigId);
   if (typeof bmFetch === "function") bmFetch(document.getElementById("bm-category-filter")?.value || "");
-  // Decode SSE and history are rig-independent — no reconnect needed.
+  // Reconnect decode stream so history + live messages filter to the new rig.
+  connectDecode();
   // Switch this session's rig and reconnect SSE to the new rig's
   // state channel.
   try {
@@ -4018,11 +4019,11 @@ if (spectrumBwSweetBtn) {
 }
 
 // --- Tab navigation ---
-const TAB_ORDER = ["main", "bookmarks", "decoders", "map", "settings", "about"];
+const TAB_ORDER = ["main", "bookmarks", "digital-modes", "map", "settings", "about"];
 const TAB_PATHS = {
   main: "/",
   bookmarks: "/bookmarks",
-  decoders: "/decoders",
+  "digital-modes": "/digital-modes",
   map: "/map",
   settings: "/settings",
   about: "/about",
@@ -8196,6 +8197,7 @@ function updateDecodeStatus(text) {
   if (ft2 && ft2.textContent !== "Receiving") ft2.textContent = text;
 }
 function dispatchDecodeMessage(msg) {
+  if (lastActiveRigId && msg.rig_id && msg.rig_id !== lastActiveRigId) return;
   if (msg.type === "ais" && window.onServerAis) window.onServerAis(msg);
   if (msg.type === "vdes" && window.onServerVdes) window.onServerVdes(msg);
   if (msg.type === "aprs" && window.onServerAprs) window.onServerAprs(msg);
@@ -8209,6 +8211,10 @@ function dispatchDecodeMessage(msg) {
 
 function dispatchDecodeBatch(batch) {
   if (!Array.isArray(batch) || batch.length === 0) return;
+  if (lastActiveRigId) {
+    batch = batch.filter((m) => !m.rig_id || m.rig_id === lastActiveRigId);
+    if (batch.length === 0) return;
+  }
   const type = String(batch[0]?.type || "");
   const uniformType = batch.every((msg) => String(msg?.type || "") === type);
   if (uniformType) {
@@ -8270,6 +8276,7 @@ function scheduleDecodeHistoryDrainStep(callback) {
 }
 
 function decodeHistoryUrl() {
+  if (lastActiveRigId) return "/decode/history?remote=" + encodeURIComponent(lastActiveRigId);
   return "/decode/history";
 }
 

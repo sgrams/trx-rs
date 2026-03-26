@@ -1945,7 +1945,7 @@ pub async fn set_vchan_mode(
 pub fn configure(cfg: &mut web::ServiceConfig) {
     cfg.service(index)
         .service(map_index)
-        .service(decoders_index)
+        .service(digital_modes_index)
         .service(settings_index)
         .service(about_index)
         .service(status_api)
@@ -2057,8 +2057,8 @@ async fn map_index() -> impl Responder {
     no_cache_response("text/html; charset=utf-8", status::index_html())
 }
 
-#[get("/decoders")]
-async fn decoders_index() -> impl Responder {
+#[get("/digital-modes")]
+async fn digital_modes_index() -> impl Responder {
     no_cache_response("text/html; charset=utf-8", status::index_html())
 }
 

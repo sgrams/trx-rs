@@ -477,7 +477,7 @@ impl RouteAccess {
         if path == "/"
             || path == "/index.html"
             || path == "/map"
-            || path == "/decoders"
+            || path == "/digital-modes"
             || path == "/settings"
             || path == "/about"
             || path.starts_with("/auth/")
@@ -666,7 +666,10 @@ mod tests {
     fn test_route_access_public_paths() {
         assert_eq!(RouteAccess::from_path("/"), RouteAccess::Public);
         assert_eq!(RouteAccess::from_path("/map"), RouteAccess::Public);
-        assert_eq!(RouteAccess::from_path("/decoders"), RouteAccess::Public);
+        assert_eq!(
+            RouteAccess::from_path("/digital-modes"),
+            RouteAccess::Public
+        );
         assert_eq!(RouteAccess::from_path("/settings"), RouteAccess::Public);
         assert_eq!(RouteAccess::from_path("/about"), RouteAccess::Public);
         assert_eq!(RouteAccess::from_path("/auth/login"), RouteAccess::Public);
