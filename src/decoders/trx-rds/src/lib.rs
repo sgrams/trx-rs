@@ -17,7 +17,7 @@ const SEARCH_REG_MASK: u32 = (1 << 26) - 1;
 const PHASE_CANDIDATES: usize = 8;
 const BIPHASE_CLOCK_WINDOW: usize = 128;
 /// Minimum quality score to publish RDS state to the outer decoder.
-const MIN_PUBLISH_QUALITY: f32 = 0.38;
+const MIN_PUBLISH_QUALITY: f32 = 0.20;
 /// Tech 6: number of Block A observations before using accumulated PI.
 const PI_ACC_THRESHOLD: u8 = 3;
 /// Tech 5 — Costas loop proportional gain (per sample).
@@ -394,7 +394,11 @@ impl Candidate {
             return None;
         }
 
-        let (data, kind) = decode_block(self.search_reg)?;
+        // Hard decode first; fall back to single-bit flip so we can acquire
+        // Block A on weak signals the same way locked-mode blocks are corrected.
+        let (data, kind) = decode_block(self.search_reg).or_else(|| {
+            (0..26usize).find_map(|k| decode_block(self.search_reg ^ (1 << (25 - k))))
+        })?;
         if kind != BlockKind::A {
             return None;
         }
