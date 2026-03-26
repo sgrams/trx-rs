@@ -1431,6 +1431,39 @@ small { color: var(--text-muted); }
   position: fixed;
   border-radius: 0;
 }
+#server-lost-banner {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.45rem 0.75rem;
+  background: color-mix(in srgb, var(--accent-red) 18%, var(--card-bg));
+  border: 1px solid color-mix(in srgb, var(--accent-red) 40%, var(--border));
+  border-radius: 0.4rem;
+  color: var(--accent-red);
+  font-size: 0.82rem;
+  font-weight: 600;
+  margin-bottom: 0.5rem;
+}
+#server-lost-banner .banner-dot {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: var(--accent-red);
+  animation: banner-pulse 1.5s ease-in-out infinite;
+}
+@keyframes banner-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+#tab-main.server-disconnected #content {
+  pointer-events: none;
+  filter: saturate(0.3) brightness(0.7);
+  opacity: 0.55;
+  transition: filter 0.4s ease, opacity 0.4s ease;
+}
+#tab-main.server-disconnected #server-lost-banner { display: flex; }
+#tab-main:not(.server-disconnected) #content {
+  transition: filter 0.3s ease, opacity 0.3s ease;
+}
 .decode-history-overlay-card {
   min-width: min(26rem, calc(100vw - 2.4rem));
   max-width: min(30rem, calc(100vw - 2.4rem));

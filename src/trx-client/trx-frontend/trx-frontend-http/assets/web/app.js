@@ -3381,6 +3381,8 @@ function connect() {
   lastEventAt = Date.now();
   es.onopen = () => {
     setConnLostOverlay(false);
+    const tm = document.getElementById("tab-main");
+    if (tm) tm.classList.remove("server-disconnected");
     if (!aboutUptimeStart) aboutUptimeStart = Date.now();
     pollFreshSnapshot();
     refreshRigList();
@@ -3392,11 +3394,12 @@ function connect() {
       lastRendered = evt.data;
       render(data);
       lastEventAt = Date.now();
+      const tabMain = document.getElementById("tab-main");
       if (data.server_connected === false) {
         powerHint.textContent = "trx-server connection lost";
-        setConnLostOverlay(true, "trx-server connection lost", "trx-client is running but cannot reach the radio server");
+        if (tabMain) tabMain.classList.add("server-disconnected");
       } else {
-        setConnLostOverlay(false);
+        if (tabMain) tabMain.classList.remove("server-disconnected");
         if (data.initialized) powerHint.textContent = readyText();
       }
     } catch (e) {

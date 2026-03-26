@@ -109,6 +109,8 @@ pub async fn run_remote_client(
                     warn!("Remote connection dropped: {}", e);
                 }
                 config.server_connected.store(false, Ordering::Relaxed);
+                // Nudge the state watch so SSE clients see server_connected=false.
+                state_tx.send_modify(|_| {});
             }
             Ok(Err(e)) => {
                 warn!("Remote connect failed: {}", e);
