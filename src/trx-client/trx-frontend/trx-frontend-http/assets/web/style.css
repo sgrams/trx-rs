@@ -1217,10 +1217,16 @@ small { color: var(--text-muted); }
   flex-shrink: 0;
 }
 .tab-label { display: block; }
+.about-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 1rem; }
+.about-card { background: var(--card-bg); border: 1px solid var(--border); border-radius: 0.5rem; padding: 0; overflow: hidden; }
+.about-card-title { display: flex; align-items: center; gap: 0.5rem; padding: 0.6rem 0.75rem; font-size: 0.8rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-heading); border-bottom: 1px solid var(--border); background: color-mix(in srgb, var(--card-bg) 50%, var(--bg)); }
+.about-card-icon { width: 15px; height: 15px; flex-shrink: 0; }
 .about-table { width: 100%; border-collapse: collapse; }
-.about-table td { padding: 0.5rem 0.6rem; border-bottom: 1px solid var(--border); }
+.about-table td { padding: 0.4rem 0.75rem; border-bottom: 1px solid color-mix(in srgb, var(--border) 50%, transparent); font-size: 0.85rem; }
 .about-table tr:last-child td { border-bottom: none; }
 .about-table td:first-child { color: var(--text-muted); width: 40%; }
+.about-status-on { color: #00d17f; }
+.about-status-off { color: var(--text-muted); }
 .plugin-item { padding: 0.5rem 0.6rem; border-bottom: 1px solid var(--border); color: var(--text); }
 .plugin-item:last-child { border-bottom: none; }
 .footer { display: flex; justify-content: space-between; align-items: baseline; margin-top: auto; padding-top: 1rem; flex-shrink: 0; }
@@ -2848,6 +2854,9 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   #rds-raw-copy-btn {
     width: 100%;
   }
+  .about-grid {
+    grid-template-columns: 1fr;
+  }
   .about-table,
   .about-table tbody,
   .about-table tr,
@@ -2857,8 +2866,8 @@ button:focus-visible, input:focus-visible, select:focus-visible {
     box-sizing: border-box;
   }
   .about-table tr {
-    padding: 0.35rem 0;
-    border-bottom: 1px solid var(--border);
+    padding: 0.35rem 0.75rem;
+    border-bottom: 1px solid color-mix(in srgb, var(--border) 50%, transparent);
   }
   .about-table tr:last-child {
     border-bottom: none;

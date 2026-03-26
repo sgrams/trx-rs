@@ -1037,8 +1037,28 @@ let lastUnsupportedFreqPopupAt = 0;
 let freqDirty = false;
 let initialized = false;
 let lastEventAt = Date.now();
+let aboutUptimeStart = null;
 let es;
 let esHeartbeat;
+
+function formatUptime(ms) {
+  const s = Math.floor(ms / 1000);
+  const d = Math.floor(s / 86400);
+  const h = Math.floor((s % 86400) / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const sec = s % 60;
+  const parts = [];
+  if (d > 0) parts.push(`${d}d`);
+  if (h > 0 || d > 0) parts.push(`${h}h`);
+  parts.push(`${m}m`);
+  parts.push(`${sec}s`);
+  return parts.join(" ");
+}
+setInterval(() => {
+  if (!aboutUptimeStart) return;
+  const el = document.getElementById("about-uptime");
+  if (el) el.textContent = formatUptime(Date.now() - aboutUptimeStart);
+}, 1000);
 let reconnectTimer = null;
 let overviewSignalSamples = [];
 let overviewSignalTimer = null;
@@ -3194,20 +3214,23 @@ function render(update) {
   }
 
   if (typeof update.clients === "number") lastClientCount = update.clients;
-  // Populate About tab
+  // Populate About tab — Server card
   if (update.server_version) {
     document.getElementById("about-server-ver").textContent = `trx-server v${update.server_version}`;
+  }
+  if (update.server_build_date) {
+    document.getElementById("about-server-build-date").textContent = update.server_build_date;
   }
   document.getElementById("about-server-addr").textContent = location.host;
   if (update.server_callsign) {
     document.getElementById("about-server-call").textContent = update.server_callsign;
   }
-  if (update.pskreporter_status) {
-    document.getElementById("about-pskreporter").textContent = update.pskreporter_status;
+  if (Number.isFinite(serverLat) && Number.isFinite(serverLon)) {
+    const grid = latLonToMaidenhead(serverLat, serverLon);
+    document.getElementById("about-server-location").textContent = `${grid} (${serverLat.toFixed(4)}, ${serverLon.toFixed(4)})`;
   }
-  if (update.aprs_is_status) {
-    document.getElementById("about-aprs-is").textContent = update.aprs_is_status;
-  }
+
+  // About — Radio card
   if (update.info) {
     const parts = [update.info.manufacturer, update.info.model, update.info.revision].filter(Boolean).join(" ");
     if (parts) document.getElementById("about-rig-info").textContent = parts;
@@ -3233,20 +3256,58 @@ function render(update) {
       }
     }
   }
-  if (typeof update.clients === "number") {
-    document.getElementById("about-clients").textContent = update.clients;
-  }
   if (lastActiveRigId) {
     document.getElementById("about-active-rig").textContent = lastActiveRigId;
   }
   if (Array.isArray(update.remotes)) {
     applyRigList(update.active_remote, update.remotes);
   }
+
+  // About — Audio card
+  if (streamInfo) {
+    document.getElementById("about-audio-codec").textContent = "Opus";
+    document.getElementById("about-audio-samplerate").textContent = `${(streamInfo.sample_rate || 48000).toLocaleString()} Hz`;
+    document.getElementById("about-audio-channels").textContent = (streamInfo.channels || 1) === 1 ? "Mono" : "Stereo";
+    if (streamInfo.frame_duration_ms) {
+      document.getElementById("about-audio-frame").textContent = `${streamInfo.frame_duration_ms} ms`;
+    }
+  }
+  document.getElementById("about-audio-rx").textContent = rxActive ? "Active" : "Off";
+
+  // About — Decoders card
+  const decMap = [
+    ["about-dec-ft8", update.ft8_decode_enabled],
+    ["about-dec-ft4", update.ft4_decode_enabled],
+    ["about-dec-ft2", update.ft2_decode_enabled],
+    ["about-dec-wspr", update.wspr_decode_enabled],
+    ["about-dec-cw", update.cw_decode_enabled],
+    ["about-dec-aprs", update.aprs_decode_enabled || update.hf_aprs_decode_enabled],
+  ];
+  for (const [id, enabled] of decMap) {
+    const el = document.getElementById(id);
+    if (el) {
+      el.textContent = enabled ? "Active" : "Off";
+      el.className = enabled ? "about-status-on" : "about-status-off";
+    }
+  }
+
+  // About — Integrations card
+  if (update.pskreporter_status) {
+    document.getElementById("about-pskreporter").textContent = update.pskreporter_status;
+  }
+  if (update.aprs_is_status) {
+    document.getElementById("about-aprs-is").textContent = update.aprs_is_status;
+  }
   if (typeof update.rigctl_clients === "number") {
     document.getElementById("about-rigctl-clients").textContent = update.rigctl_clients;
   }
   if (typeof update.rigctl_addr === "string" && update.rigctl_addr.length > 0) {
     document.getElementById("about-rigctl-endpoint").textContent = update.rigctl_addr;
+  }
+
+  // About — Clients card
+  if (typeof update.clients === "number") {
+    document.getElementById("about-clients").textContent = update.clients;
   }
   powerHint.textContent = readyText();
   lastLocked = update.status && update.status.lock === true;
@@ -3313,6 +3374,7 @@ function connect() {
   lastEventAt = Date.now();
   es.onopen = () => {
     setConnLostOverlay(false);
+    if (!aboutUptimeStart) aboutUptimeStart = Date.now();
     pollFreshSnapshot();
     refreshRigList();
   };
