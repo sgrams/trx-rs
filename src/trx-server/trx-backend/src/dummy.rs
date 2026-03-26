@@ -179,7 +179,6 @@ mod tests {
             "dummy rig should not have filter_controls"
         );
     }
-
 }
 
 impl Rig for DummyRig {
