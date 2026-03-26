@@ -202,10 +202,7 @@ impl SchedulerStoreMap {
     /// List configs from all known per-rig stores.
     pub fn list_all(&self) -> Vec<SchedulerConfig> {
         let stores = self.stores.lock().unwrap_or_else(|e| e.into_inner());
-        stores
-            .values()
-            .filter_map(|s| s.get_config())
-            .collect()
+        stores.values().filter_map(|s| s.get_config()).collect()
     }
 
     /// One-time migration: extract `sch:{remote}` entries from legacy
@@ -887,13 +884,16 @@ pub async fn get_scheduler(
     store_map: web::Data<Arc<SchedulerStoreMap>>,
 ) -> impl Responder {
     let remote = path.into_inner();
-    let config = store_map.store_for(&remote).get_config().unwrap_or(SchedulerConfig {
-        remote: remote.clone(),
-        mode: SchedulerMode::Disabled,
-        grayline: None,
-        entries: vec![],
-        interleave_min: None,
-    });
+    let config = store_map
+        .store_for(&remote)
+        .get_config()
+        .unwrap_or(SchedulerConfig {
+            remote: remote.clone(),
+            mode: SchedulerMode::Disabled,
+            grayline: None,
+            entries: vec![],
+            interleave_min: None,
+        });
     HttpResponse::Ok().json(config)
 }
 

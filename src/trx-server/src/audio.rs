@@ -138,10 +138,7 @@ impl StreamErrorLogger {
     fn log(&self, err: &str) {
         let now = Instant::now();
         let kind = classify_stream_error(err);
-        let mut state = self
-            .state
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
 
         // First occurrence or changed error class: log as error once.
         if state.last_kind != Some(kind) {
@@ -1023,7 +1020,10 @@ fn run_playback(
                         if rx.is_empty() {
                             let _ = stream.pause();
                             playing = false;
-                            ring_writer.lock().unwrap_or_else(|e| e.into_inner()).clear();
+                            ring_writer
+                                .lock()
+                                .unwrap_or_else(|e| e.into_inner())
+                                .clear();
                             info!("Audio playback: paused (idle)");
                             if channel_closed {
                                 return Ok(());
@@ -1051,7 +1051,10 @@ fn run_playback(
             let _ = stream.pause();
             playing = false;
         }
-        ring_writer.lock().unwrap_or_else(|e| e.into_inner()).clear();
+        ring_writer
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clear();
 
         if channel_closed {
             return Ok(());

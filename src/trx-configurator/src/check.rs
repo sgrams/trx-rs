@@ -217,7 +217,12 @@ fn check_server_sections(
     errors: &mut Vec<String>,
 ) {
     if let Some(general) = table.get("general").and_then(|v| v.as_table()) {
-        check_unknown_keys(general, SERVER_GENERAL_KEYS, &format!("{}[general].", prefix), warnings);
+        check_unknown_keys(
+            general,
+            SERVER_GENERAL_KEYS,
+            &format!("{}[general].", prefix),
+            warnings,
+        );
         validate_log_level(general, &format!("{}[general]", prefix), errors);
         validate_coordinates(general, &format!("{}[general]", prefix), errors);
     }
@@ -225,13 +230,23 @@ fn check_server_sections(
     if let Some(rig) = table.get("rig").and_then(|v| v.as_table()) {
         check_unknown_keys(rig, RIG_KEYS, &format!("{}[rig].", prefix), warnings);
         if let Some(access) = rig.get("access").and_then(|v| v.as_table()) {
-            check_unknown_keys(access, ACCESS_KEYS, &format!("{}[rig.access].", prefix), warnings);
+            check_unknown_keys(
+                access,
+                ACCESS_KEYS,
+                &format!("{}[rig.access].", prefix),
+                warnings,
+            );
             validate_access(access, &format!("{}[rig.access]", prefix), errors);
         }
     }
 
     if let Some(listen) = table.get("listen").and_then(|v| v.as_table()) {
-        check_unknown_keys(listen, LISTEN_KEYS, &format!("{}[listen].", prefix), warnings);
+        check_unknown_keys(
+            listen,
+            LISTEN_KEYS,
+            &format!("{}[listen].", prefix),
+            warnings,
+        );
         validate_port(listen, "port", &format!("{}[listen]", prefix), errors);
     }
 
@@ -241,7 +256,12 @@ fn check_server_sections(
     }
 
     if let Some(behavior) = table.get("behavior").and_then(|v| v.as_table()) {
-        check_unknown_keys(behavior, BEHAVIOR_KEYS, &format!("{}[behavior].", prefix), warnings);
+        check_unknown_keys(
+            behavior,
+            BEHAVIOR_KEYS,
+            &format!("{}[behavior].", prefix),
+            warnings,
+        );
     }
 }
 
@@ -252,21 +272,41 @@ fn check_client_sections(
     errors: &mut Vec<String>,
 ) {
     if let Some(general) = table.get("general").and_then(|v| v.as_table()) {
-        check_unknown_keys(general, CLIENT_GENERAL_KEYS, &format!("{}[general].", prefix), warnings);
+        check_unknown_keys(
+            general,
+            CLIENT_GENERAL_KEYS,
+            &format!("{}[general].", prefix),
+            warnings,
+        );
         validate_log_level(general, &format!("{}[general]", prefix), errors);
     }
 
     if let Some(remote) = table.get("remote").and_then(|v| v.as_table()) {
-        check_unknown_keys(remote, REMOTE_KEYS, &format!("{}[remote].", prefix), warnings);
+        check_unknown_keys(
+            remote,
+            REMOTE_KEYS,
+            &format!("{}[remote].", prefix),
+            warnings,
+        );
     }
 
     if let Some(frontends) = table.get("frontends").and_then(|v| v.as_table()) {
-        check_unknown_keys(frontends, FRONTENDS_KEYS, &format!("{}[frontends].", prefix), warnings);
+        check_unknown_keys(
+            frontends,
+            FRONTENDS_KEYS,
+            &format!("{}[frontends].", prefix),
+            warnings,
+        );
         if let Some(http) = frontends.get("http").and_then(|v| v.as_table()) {
             validate_port(http, "port", &format!("{}[frontends.http]", prefix), errors);
         }
         if let Some(rigctl) = frontends.get("rigctl").and_then(|v| v.as_table()) {
-            validate_port(rigctl, "port", &format!("{}[frontends.rigctl]", prefix), errors);
+            validate_port(
+                rigctl,
+                "port",
+                &format!("{}[frontends.rigctl]", prefix),
+                errors,
+            );
         }
     }
 }
@@ -285,12 +325,21 @@ fn validate_log_level(table: &toml_edit::Table, context: &str, errors: &mut Vec<
 }
 
 fn validate_coordinates(table: &toml_edit::Table, context: &str, errors: &mut Vec<String>) {
-    if let Some(lat) = table.get("latitude").and_then(|v| v.as_float().or_else(|| v.as_integer().map(|i| i as f64))) {
+    if let Some(lat) = table
+        .get("latitude")
+        .and_then(|v| v.as_float().or_else(|| v.as_integer().map(|i| i as f64)))
+    {
         if !(-90.0..=90.0).contains(&lat) {
-            errors.push(format!("{}.latitude {} is out of range (-90..90)", context, lat));
+            errors.push(format!(
+                "{}.latitude {} is out of range (-90..90)",
+                context, lat
+            ));
         }
     }
-    if let Some(lon) = table.get("longitude").and_then(|v| v.as_float().or_else(|| v.as_integer().map(|i| i as f64))) {
+    if let Some(lon) = table
+        .get("longitude")
+        .and_then(|v| v.as_float().or_else(|| v.as_integer().map(|i| i as f64)))
+    {
         if !(-180.0..=180.0).contains(&lon) {
             errors.push(format!(
                 "{}.longitude {} is out of range (-180..180)",
@@ -309,12 +358,7 @@ fn validate_coordinates(table: &toml_edit::Table, context: &str, errors: &mut Ve
     }
 }
 
-fn validate_port(
-    table: &toml_edit::Table,
-    key: &str,
-    context: &str,
-    errors: &mut Vec<String>,
-) {
+fn validate_port(table: &toml_edit::Table, key: &str, context: &str, errors: &mut Vec<String>) {
     if let Some(port) = table.get(key).and_then(|v| v.as_integer()) {
         if let Some(enabled) = table.get("enabled").and_then(|v| v.as_bool()) {
             if enabled && port <= 0 {
