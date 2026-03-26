@@ -95,6 +95,10 @@ pub trait Rig {
 }
 
 /// Common CAT control operations any rig backend should implement.
+///
+/// This trait covers basic transceiver operations shared by all backends
+/// (serial rigs, SDRs, etc.).  SDR-specific controls live in the
+/// [`RigSdr`] extension trait, accessible via [`as_sdr`](RigCat::as_sdr).
 pub trait RigCat: Rig + Send {
     fn get_status<'a>(&'a mut self) -> RigStatusFuture<'a>;
 
@@ -102,16 +106,6 @@ pub trait RigCat: Rig + Send {
         &'a mut self,
         freq: Freq,
     ) -> Pin<Box<dyn Future<Output = DynResult<()>> + Send + 'a>>;
-
-    fn set_center_freq<'a>(
-        &'a mut self,
-        _freq: Freq,
-    ) -> Pin<Box<dyn Future<Output = DynResult<()>> + Send + 'a>> {
-        Box::pin(std::future::ready(Err(
-            Box::new(response::RigError::not_supported("set_center_freq"))
-                as Box<dyn std::error::Error + Send + Sync>,
-        )))
-    }
 
     fn set_mode<'a>(
         &'a mut self,
@@ -148,6 +142,38 @@ pub trait RigCat: Rig + Send {
 
     fn as_audio_source(&self) -> Option<&dyn AudioSource> {
         None
+    }
+
+    /// Return a mutable reference to the SDR extension trait, if this
+    /// backend supports SDR-specific operations.  Default: `None`.
+    fn as_sdr(&mut self) -> Option<&mut dyn RigSdr> {
+        None
+    }
+
+    /// Return an immutable reference to the SDR extension trait for
+    /// query-only operations (filter state, spectrum, RDS).
+    fn as_sdr_ref(&self) -> Option<&dyn RigSdr> {
+        None
+    }
+}
+
+/// SDR-specific extension operations.
+///
+/// Backends that support SDR features (center frequency, gain, AGC,
+/// squelch, noise blanker, spectrum output, etc.) implement this trait.
+/// Access it from a `dyn RigCat` via [`RigCat::as_sdr`].
+///
+/// All methods have default implementations returning "not supported"
+/// or `None`, so backends need only override what they actually support.
+pub trait RigSdr: Send {
+    fn set_center_freq<'a>(
+        &'a mut self,
+        _freq: Freq,
+    ) -> Pin<Box<dyn Future<Output = DynResult<()>> + Send + 'a>> {
+        Box::pin(std::future::ready(Err(
+            Box::new(response::RigError::not_supported("set_center_freq"))
+                as Box<dyn std::error::Error + Send + Sync>,
+        )))
     }
 
     fn set_bandwidth<'a>(
