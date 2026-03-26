@@ -253,6 +253,22 @@
                 </div>
                 <div class="label"><span>WFM</span></div>
               </div>
+              <div class="controls-col controls-col-sam label-below-col" id="sam-controls-col" style="display:none;">
+                <div class="inline sam-controls-inline">
+                  <label class="wfm-control">
+                    <span class="wfm-control-label">Stereo Width</span>
+                    <input type="range" id="sam-stereo-width" min="0" max="100" value="100" class="status-input" />
+                  </label>
+                  <label class="wfm-control">
+                    <span class="wfm-control-label">Carrier Sync</span>
+                    <select id="sam-carrier-sync" class="status-input">
+                      <option value="on">On</option>
+                      <option value="off">Off</option>
+                    </select>
+                  </label>
+                </div>
+                <div class="label"><span>SAM</span></div>
+              </div>
               <div class="controls-col controls-col-power label-below-col" id="tx-power-col">
                 <div class="label"><span>Transmit / Power</span></div>
                 <div class="btn-grid">
@@ -411,7 +427,7 @@
                 <option value="LSB">
                 <option value="USB">
                 <option value="AM">
-                <option value="AMC-QUAM">
+                <option value="SAM">
                 <option value="FM">
                 <option value="DIG">
                 <option value="CW">

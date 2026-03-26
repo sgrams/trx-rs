@@ -268,6 +268,26 @@ pub trait RigSdr: Send {
         )))
     }
 
+    fn set_sam_stereo_width<'a>(
+        &'a mut self,
+        _width: f32,
+    ) -> Pin<Box<dyn Future<Output = DynResult<()>> + Send + 'a>> {
+        Box::pin(std::future::ready(Err(
+            Box::new(response::RigError::not_supported("set_sam_stereo_width"))
+                as Box<dyn std::error::Error + Send + Sync>,
+        )))
+    }
+
+    fn set_sam_carrier_sync<'a>(
+        &'a mut self,
+        _enabled: bool,
+    ) -> Pin<Box<dyn Future<Output = DynResult<()>> + Send + 'a>> {
+        Box::pin(std::future::ready(Err(
+            Box::new(response::RigError::not_supported("set_sam_carrier_sync"))
+                as Box<dyn std::error::Error + Send + Sync>,
+        )))
+    }
+
     /// Return the current filter state if this backend supports filter controls.
     fn filter_state(&self) -> Option<state::RigFilterState> {
         None

@@ -3,18 +3,18 @@
 // SPDX-License-Identifier: BSD-2-Clause
 
 mod am;
-mod amcquam;
 mod fm;
 mod math;
 mod math_arm;
 mod math_x86;
+mod sam;
 mod ssb;
 mod wfm;
 
 use num_complex::Complex;
 use trx_core::rig::state::RigMode;
 
-pub use self::amcquam::CquamDemod;
+pub use self::sam::SamDemod;
 pub use self::wfm::WfmStereoDecoder;
 
 /// Shared DC blocker used by narrowband and WFM audio paths.
@@ -147,8 +147,8 @@ pub enum Demodulator {
     Cw,
     /// Pass-through (DIG, PKT): same as USB.
     Passthrough,
-    /// AM C-QUAM stereo: synchronous IQ detection with carrier phase tracking.
-    AmCQuam,
+    /// Synchronous AM (Stereo AM): carrier-locked IQ detection with stereo decode.
+    Sam,
 }
 
 impl Demodulator {
@@ -158,7 +158,7 @@ impl Demodulator {
             RigMode::USB => Self::Usb,
             RigMode::LSB => Self::Lsb,
             RigMode::AM => Self::Am,
-            RigMode::AMC => Self::AmCQuam,
+            RigMode::SAM => Self::Sam,
             RigMode::FM => Self::Fm,
             RigMode::WFM => Self::Wfm,
             RigMode::AIS | RigMode::VDES => Self::Fm,
@@ -175,7 +175,7 @@ impl Demodulator {
         match self {
             Self::Usb | Self::Passthrough => ssb::demod_usb(samples),
             Self::Lsb => ssb::demod_lsb(samples),
-            Self::Am | Self::AmCQuam => am::demod_am(samples),
+            Self::Am | Self::Sam => am::demod_am(samples),
             Self::Fm | Self::Wfm => fm::demod_fm(samples),
             Self::Cw => ssb::demod_cw(samples),
         }
@@ -201,7 +201,7 @@ mod tests {
             Demodulator::Passthrough
         );
         assert_eq!(Demodulator::for_mode(&RigMode::PKT), Demodulator::Fm);
-        assert_eq!(Demodulator::for_mode(&RigMode::AMC), Demodulator::AmCQuam);
+        assert_eq!(Demodulator::for_mode(&RigMode::SAM), Demodulator::Sam);
     }
 
     #[test]
@@ -215,7 +215,7 @@ mod tests {
             Demodulator::Wfm,
             Demodulator::Cw,
             Demodulator::Passthrough,
-            Demodulator::AmCQuam,
+            Demodulator::Sam,
         ];
         for demod in &demodulators {
             assert!(

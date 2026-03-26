@@ -47,5 +47,7 @@ pub enum RigCommand {
     SetWfmDeemphasis(u32),
     SetWfmStereo(bool),
     SetWfmDenoise(WfmDenoiseLevel),
+    SetSamStereoWidth(f32),
+    SetSamCarrierSync(bool),
     GetSpectrum,
 }

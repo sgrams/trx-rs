@@ -48,6 +48,10 @@ pub struct SoapySdrRig {
     wfm_stereo: bool,
     /// Whether WFM stereo denoise is enabled.
     wfm_denoise: WfmDenoiseLevel,
+    /// SAM stereo width (0.0 = mono, 1.0 = full stereo).
+    sam_stereo_width: f32,
+    /// SAM carrier synchronization enabled.
+    sam_carrier_sync: bool,
     /// Requested hardware gain setting in dB.
     gain_db: f64,
     /// Optional hard ceiling for the applied hardware gain in dB.
@@ -77,7 +81,7 @@ impl SoapySdrRig {
             RigMode::PKT | RigMode::AIS => 25_000,
             RigMode::VDES => 100_000,
             RigMode::CW | RigMode::CWR => 500,
-            RigMode::AM | RigMode::AMC => 9_000,
+            RigMode::AM | RigMode::SAM => 9_000,
             RigMode::FM => 12_500,
             RigMode::WFM => 180_000,
             RigMode::Other(_) => 3_000,
@@ -251,7 +255,7 @@ impl SoapySdrRig {
                     RigMode::CW,
                     RigMode::CWR,
                     RigMode::AM,
-                    RigMode::AMC,
+                    RigMode::SAM,
                     RigMode::WFM,
                     RigMode::FM,
                     RigMode::AIS,
@@ -311,6 +315,8 @@ impl SoapySdrRig {
             wfm_deemphasis_us,
             wfm_stereo: true,
             wfm_denoise: WfmDenoiseLevel::Auto,
+            sam_stereo_width: 1.0,
+            sam_carrier_sync: true,
             gain_db,
             max_gain_db,
             lna_gain_db: initial_lna_gain_db,
@@ -856,6 +862,38 @@ impl RigSdr for SoapySdrRig {
         })
     }
 
+    fn set_sam_stereo_width<'a>(
+        &'a mut self,
+        width: f32,
+    ) -> Pin<Box<dyn std::future::Future<Output = DynResult<()>> + Send + 'a>> {
+        Box::pin(async move {
+            self.sam_stereo_width = width.clamp(0.0, 1.0);
+            {
+                let dsps = self.pipeline.channel_dsps.read().unwrap();
+                if let Some(dsp_arc) = dsps.get(self.primary_channel_idx) {
+                    dsp_arc.lock().unwrap().set_sam_stereo_width(width);
+                }
+            }
+            Ok(())
+        })
+    }
+
+    fn set_sam_carrier_sync<'a>(
+        &'a mut self,
+        enabled: bool,
+    ) -> Pin<Box<dyn std::future::Future<Output = DynResult<()>> + Send + 'a>> {
+        Box::pin(async move {
+            self.sam_carrier_sync = enabled;
+            {
+                let dsps = self.pipeline.channel_dsps.read().unwrap();
+                if let Some(dsp_arc) = dsps.get(self.primary_channel_idx) {
+                    dsp_arc.lock().unwrap().set_sam_carrier_sync(enabled);
+                }
+            }
+            Ok(())
+        })
+    }
+
     fn filter_state(&self) -> Option<RigFilterState> {
         let wfm_stereo_detected = self
             .pipeline
@@ -883,6 +921,8 @@ impl RigSdr for SoapySdrRig {
             wfm_stereo: self.wfm_stereo,
             wfm_stereo_detected,
             wfm_denoise: self.wfm_denoise,
+            sam_stereo_width: self.sam_stereo_width,
+            sam_carrier_sync: self.sam_carrier_sync,
         })
     }
 

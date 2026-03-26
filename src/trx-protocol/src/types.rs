@@ -52,6 +52,8 @@ pub enum ClientCommand {
     SetWfmDeemphasis { deemphasis_us: u32 },
     SetWfmStereo { enabled: bool },
     SetWfmDenoise { level: WfmDenoiseLevel },
+    SetSamStereoWidth { width: f32 },
+    SetSamCarrierSync { enabled: bool },
     GetSpectrum,
 }
 

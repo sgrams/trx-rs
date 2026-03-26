@@ -2955,6 +2955,13 @@ function render(update) {
       wfmStFlagEl.classList.toggle("wfm-st-flag-stereo", detected);
       wfmStFlagEl.classList.toggle("wfm-st-flag-mono", !detected);
     }
+    if (samStereoWidthEl && typeof update.filter.sam_stereo_width === "number") {
+      samStereoWidthEl.value = String(Math.round(update.filter.sam_stereo_width * 100));
+    }
+    if (samCarrierSyncEl && typeof update.filter.sam_carrier_sync === "boolean") {
+      const nextVal = update.filter.sam_carrier_sync ? "on" : "off";
+      if (samCarrierSyncEl.value !== nextVal) samCarrierSyncEl.value = nextVal;
+    }
     const hasSdrSquelchEnabled = typeof update.filter.sdr_squelch_enabled === "boolean";
     const hasSdrSquelchThreshold = typeof update.filter.sdr_squelch_threshold_db === "number";
     if (hasSdrSquelchEnabled || hasSdrSquelchThreshold) {
@@ -3915,7 +3922,7 @@ const MODE_BW_DEFAULTS = {
   LSB:    [2_700,  300,   6_000,  100],
   USB:    [2_700,  300,   6_000,  100],
   AM:     [9_000,  500,   20_000, 500],
-  "AMC-QUAM": [9_000, 500, 20_000, 500],
+  SAM:    [9_000,  500,   20_000, 500],
   FM:     [12_500, 2_500, 25_000, 500],
   AIS:    [25_000, 12_500, 50_000, 500],
   VDES:   [100_000, 25_000, 200_000, 1_000],
@@ -7487,6 +7494,9 @@ const sdrLnaGainEl = document.getElementById("sdr-lna-gain-db");
 const sdrLnaGainSetBtn = document.getElementById("sdr-lna-gain-set");
 const sdrAgcEl = document.getElementById("sdr-agc-enabled");
 const wfmStFlagEl = document.getElementById("wfm-st-flag");
+const samControlsCol = document.getElementById("sam-controls-col");
+const samStereoWidthEl = document.getElementById("sam-stereo-width");
+const samCarrierSyncEl = document.getElementById("sam-carrier-sync");
 const sdrSquelchWrapEl = document.getElementById("sdr-squelch-wrap");
 const sdrSquelchEl = document.getElementById("sdr-squelch");
 const sdrSquelchPctEl = document.getElementById("sdr-squelch-pct");
@@ -7681,6 +7691,18 @@ if (wfmDeemphasisEl) {
     postPath(`/set_wfm_deemphasis?us=${encodeURIComponent(wfmDeemphasisEl.value)}`).catch(() => {});
   });
 }
+if (samStereoWidthEl) {
+  samStereoWidthEl.addEventListener("input", () => {
+    const width = Number(samStereoWidthEl.value) / 100;
+    postPath(`/set_sam_stereo_width?width=${width}`).catch(() => {});
+  });
+}
+if (samCarrierSyncEl) {
+  samCarrierSyncEl.addEventListener("change", () => {
+    const enabled = samCarrierSyncEl.value === "on";
+    postPath(`/set_sam_carrier_sync?enabled=${enabled}`).catch(() => {});
+  });
+}
 function submitSdrGain() {
   if (!sdrGainEl) return;
   const parsed = Number.parseFloat(sdrGainEl.value);
@@ -7761,9 +7783,9 @@ if (sdrNbThresholdEl) {
   });
 }
 function updateWfmControls() {
-  if (!wfmControlsCol) return;
   const mode = (modeEl && modeEl.value ? modeEl.value : "").toUpperCase();
-  wfmControlsCol.style.display = mode === "WFM" ? "" : "none";
+  if (wfmControlsCol) wfmControlsCol.style.display = mode === "WFM" ? "" : "none";
+  if (samControlsCol) samControlsCol.style.display = mode === "SAM" ? "" : "none";
 }
 
 // Show compatibility warning for non-Chromium browsers

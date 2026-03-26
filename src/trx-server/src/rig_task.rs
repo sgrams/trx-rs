@@ -666,6 +666,38 @@ async fn process_command(
             let _ = ctx.state_tx.send(ctx.state.clone());
             return snapshot_from(ctx.state);
         }
+        RigCommand::SetSamStereoWidth(width) => {
+            if let Some(sdr) = ctx.rig.as_sdr() {
+                if let Err(e) = sdr.set_sam_stereo_width(width).await {
+                    return Err(RigError::communication(format!(
+                        "set_sam_stereo_width: {e}"
+                    )));
+                }
+            } else {
+                return Err(RigError::not_supported("set_sam_stereo_width"));
+            }
+            if let Some(f) = ctx.state.filter.as_mut() {
+                f.sam_stereo_width = width;
+            }
+            let _ = ctx.state_tx.send(ctx.state.clone());
+            return snapshot_from(ctx.state);
+        }
+        RigCommand::SetSamCarrierSync(enabled) => {
+            if let Some(sdr) = ctx.rig.as_sdr() {
+                if let Err(e) = sdr.set_sam_carrier_sync(enabled).await {
+                    return Err(RigError::communication(format!(
+                        "set_sam_carrier_sync: {e}"
+                    )));
+                }
+            } else {
+                return Err(RigError::not_supported("set_sam_carrier_sync"));
+            }
+            if let Some(f) = ctx.state.filter.as_mut() {
+                f.sam_carrier_sync = enabled;
+            }
+            let _ = ctx.state_tx.send(ctx.state.clone());
+            return snapshot_from(ctx.state);
+        }
         RigCommand::SetCenterFreq(freq) => {
             if let Some(sdr) = ctx.rig.as_sdr() {
                 if let Err(e) = sdr.set_center_freq(freq).await {

@@ -6,7 +6,7 @@ use num_complex::Complex;
 use tokio::sync::broadcast;
 use trx_core::rig::state::{RdsData, RigMode, WfmDenoiseLevel};
 
-use crate::demod::{CquamDemod, DcBlocker, Demodulator, SoftAgc, WfmStereoDecoder};
+use crate::demod::{DcBlocker, Demodulator, SamDemod, SoftAgc, WfmStereoDecoder};
 
 use super::{BlockFirFilterPair, IQ_BLOCK_SIZE};
 
@@ -196,7 +196,7 @@ fn agc_for_mode(mode: &RigMode, audio_sample_rate: u32) -> SoftAgc {
     let sr = audio_sample_rate.max(1) as f32;
     match mode {
         RigMode::CW | RigMode::CWR => SoftAgc::new(sr, 1.0, 50.0, 0.5, 30.0),
-        RigMode::AM | RigMode::AMC => SoftAgc::new(sr, 5.0, 200.0, 0.5, 36.0),
+        RigMode::AM | RigMode::SAM => SoftAgc::new(sr, 5.0, 200.0, 0.5, 36.0),
         _ => SoftAgc::new(sr, 5.0, 500.0, 0.5, 30.0),
     }
 }
@@ -210,7 +210,7 @@ fn iq_agc_for_mode(mode: &RigMode, sample_rate: u32) -> Option<SoftAgc> {
         // DC blocker always sees the same steady-state bias (~0.7) regardless
         // of RF signal strength.  Fast attack (0.5 ms) catches sudden carrier
         // appearance; 50 ms release tracks slow fading without distorting audio.
-        RigMode::AM | RigMode::AMC => Some(SoftAgc::new(sr, 0.5, 50.0, 0.7, 30.0)),
+        RigMode::AM | RigMode::SAM => Some(SoftAgc::new(sr, 0.5, 50.0, 0.7, 30.0)),
         RigMode::WFM => None,
         _ => None,
     }
@@ -219,8 +219,8 @@ fn iq_agc_for_mode(mode: &RigMode, sample_rate: u32) -> Option<SoftAgc> {
 fn dc_for_mode(mode: &RigMode) -> Option<DcBlocker> {
     match mode {
         RigMode::WFM => None,
-        // AMC: DC is handled inside CquamDemod per channel (L and R separately).
-        RigMode::AMC => None,
+        // SAM: DC is handled inside SamDemod per channel (L and R separately).
+        RigMode::SAM => None,
         // AM: the envelope detector output has a large carrier-amplitude DC
         // bias (A_c).  r=0.999 gives τ≈125 ms at 8 kHz, tracking carrier
         // level ~10× faster than r=0.9999 while still passing all audio
@@ -235,7 +235,7 @@ fn default_bandwidth_for_mode(mode: &RigMode) -> u32 {
         RigMode::LSB | RigMode::USB | RigMode::DIG => 3_000,
         RigMode::PKT => 25_000,
         RigMode::CW | RigMode::CWR => 500,
-        RigMode::AM | RigMode::AMC => 9_000,
+        RigMode::AM | RigMode::SAM => 9_000,
         RigMode::FM => 12_500,
         RigMode::WFM => 180_000,
         RigMode::AIS => 25_000,
@@ -288,7 +288,7 @@ pub struct ChannelDsp {
     resample_phase: f64,
     resample_phase_inc: f64,
     wfm_decoder: Option<WfmStereoDecoder>,
-    cquam_decoder: Option<CquamDemod>,
+    sam_decoder: Option<SamDemod>,
     iq_agc: Option<SoftAgc>,
     audio_agc: SoftAgc,
     audio_dc: Option<DcBlocker>,
@@ -301,9 +301,9 @@ pub struct ChannelDsp {
 impl ChannelDsp {
     fn clamp_bandwidth_for_mode(mode: &RigMode, bandwidth_hz: u32) -> u32 {
         match mode {
-            // C-QUAM requires ≥ 9 kHz to capture both sum (L+R) and difference
+            // SAM stereo requires ≥ 9 kHz to capture both sum (L+R) and difference
             // (L−R) sidebands; narrower bandwidths would discard stereo content.
-            RigMode::AMC => bandwidth_hz.max(9_000),
+            RigMode::SAM => bandwidth_hz.max(9_000),
             _ => bandwidth_hz,
         }
     }
@@ -385,10 +385,10 @@ impl ChannelDsp {
         } else {
             self.wfm_decoder = None;
         }
-        if self.mode == RigMode::AMC {
-            self.cquam_decoder = Some(CquamDemod::new(self.audio_sample_rate));
+        if self.mode == RigMode::SAM {
+            self.sam_decoder = Some(SamDemod::new(self.audio_sample_rate));
         } else {
-            self.cquam_decoder = None;
+            self.sam_decoder = None;
         }
         self.iq_agc = iq_agc_for_mode(&self.mode, channel_sample_rate);
         self.audio_agc = agc_for_mode(&self.mode, self.audio_sample_rate);
@@ -488,8 +488,8 @@ impl ChannelDsp {
             } else {
                 None
             },
-            cquam_decoder: if *mode == RigMode::AMC {
-                Some(CquamDemod::new(audio_sample_rate))
+            sam_decoder: if *mode == RigMode::SAM {
+                Some(SamDemod::new(audio_sample_rate))
             } else {
                 None
             },
@@ -545,6 +545,18 @@ impl ChannelDsp {
         self.wfm_stereo = enabled;
         if let Some(decoder) = &mut self.wfm_decoder {
             decoder.set_stereo_enabled(enabled);
+        }
+    }
+
+    pub fn set_sam_stereo_width(&mut self, width: f32) {
+        if let Some(decoder) = &mut self.sam_decoder {
+            decoder.set_stereo_width(width);
+        }
+    }
+
+    pub fn set_sam_carrier_sync(&mut self, enabled: bool) {
+        if let Some(decoder) = &mut self.sam_decoder {
+            decoder.set_carrier_sync(enabled);
         }
     }
 
@@ -709,7 +721,7 @@ impl ChannelDsp {
                 *sample = (*sample * WFM_OUTPUT_GAIN).clamp(-1.0, 1.0);
             }
             out
-        } else if let Some(decoder) = self.cquam_decoder.as_mut() {
+        } else if let Some(decoder) = self.sam_decoder.as_mut() {
             let stereo = decoder.demodulate_stereo(decimated);
             // Apply stereo-aware AGC (shared gain preserves L/R balance).
             let mut out = Vec::with_capacity(stereo.len());

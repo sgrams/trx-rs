@@ -519,7 +519,7 @@ fn encode_mode(mode: &RigMode) -> DynResult<char> {
         RigMode::CWR => Ok('7'),
         RigMode::PKT => Ok('9'),
         RigMode::WFM => Ok('4'),
-        RigMode::AMC => Err("Unsupported mode for FT-450D".into()),
+        RigMode::SAM => Err("Unsupported mode for FT-450D".into()),
         RigMode::Other(_) => Err("Unsupported mode for FT-450D".into()),
     }
 }

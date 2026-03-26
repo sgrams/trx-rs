@@ -73,6 +73,8 @@ pub fn client_command_to_rig(cmd: ClientCommand) -> RigCommand {
         }
         ClientCommand::SetWfmStereo { enabled } => RigCommand::SetWfmStereo(enabled),
         ClientCommand::SetWfmDenoise { level } => RigCommand::SetWfmDenoise(level),
+        ClientCommand::SetSamStereoWidth { width } => RigCommand::SetSamStereoWidth(width),
+        ClientCommand::SetSamCarrierSync { enabled } => RigCommand::SetSamCarrierSync(enabled),
         ClientCommand::GetSpectrum => RigCommand::GetSpectrum,
     }
 }
@@ -139,6 +141,8 @@ pub fn rig_command_to_client(cmd: RigCommand) -> ClientCommand {
         }
         RigCommand::SetWfmStereo(enabled) => ClientCommand::SetWfmStereo { enabled },
         RigCommand::SetWfmDenoise(level) => ClientCommand::SetWfmDenoise { level },
+        RigCommand::SetSamStereoWidth(width) => ClientCommand::SetSamStereoWidth { width },
+        RigCommand::SetSamCarrierSync(enabled) => ClientCommand::SetSamCarrierSync { enabled },
         RigCommand::GetSpectrum => ClientCommand::GetSpectrum,
     }
 }

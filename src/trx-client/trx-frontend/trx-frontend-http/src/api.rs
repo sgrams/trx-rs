@@ -1122,6 +1122,36 @@ pub async fn set_wfm_denoise(
     send_command(&rig_tx, RigCommand::SetWfmDenoise(q.level), q.remote).await
 }
 
+#[derive(serde::Deserialize)]
+pub struct SamStereoWidthQuery {
+    pub width: f32,
+    pub remote: Option<String>,
+}
+
+#[post("/set_sam_stereo_width")]
+pub async fn set_sam_stereo_width(
+    query: web::Query<SamStereoWidthQuery>,
+    rig_tx: web::Data<mpsc::Sender<RigRequest>>,
+) -> Result<HttpResponse, Error> {
+    let q = query.into_inner();
+    send_command(&rig_tx, RigCommand::SetSamStereoWidth(q.width), q.remote).await
+}
+
+#[derive(serde::Deserialize)]
+pub struct SamCarrierSyncQuery {
+    pub enabled: bool,
+    pub remote: Option<String>,
+}
+
+#[post("/set_sam_carrier_sync")]
+pub async fn set_sam_carrier_sync(
+    query: web::Query<SamCarrierSyncQuery>,
+    rig_tx: web::Data<mpsc::Sender<RigRequest>>,
+) -> Result<HttpResponse, Error> {
+    let q = query.into_inner();
+    send_command(&rig_tx, RigCommand::SetSamCarrierSync(q.enabled), q.remote).await
+}
+
 #[post("/toggle_aprs_decode")]
 pub async fn toggle_aprs_decode(
     query: web::Query<RemoteQuery>,
@@ -1974,6 +2004,8 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
         .service(set_wfm_deemphasis)
         .service(set_wfm_stereo)
         .service(set_wfm_denoise)
+        .service(set_sam_stereo_width)
+        .service(set_sam_carrier_sync)
         .service(toggle_aprs_decode)
         .service(toggle_hf_aprs_decode)
         .service(toggle_cw_decode)

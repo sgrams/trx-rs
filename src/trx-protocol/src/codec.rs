@@ -22,7 +22,7 @@ pub fn parse_mode(s: &str) -> RigMode {
         "CW" => RigMode::CW,
         "CWR" => RigMode::CWR,
         "AM" => RigMode::AM,
-        "AMC-QUAM" | "AMC_QUAM" | "AMC" => RigMode::AMC,
+        "SAM" | "AMC-QUAM" | "AMC_QUAM" | "AMC" => RigMode::SAM,
         "FM" => RigMode::FM,
         "WFM" => RigMode::WFM,
         "AIS" => RigMode::AIS,
@@ -45,7 +45,7 @@ pub fn mode_to_string(mode: &RigMode) -> Cow<'static, str> {
         RigMode::CW => Cow::Borrowed("CW"),
         RigMode::CWR => Cow::Borrowed("CWR"),
         RigMode::AM => Cow::Borrowed("AM"),
-        RigMode::AMC => Cow::Borrowed("AMC-QUAM"),
+        RigMode::SAM => Cow::Borrowed("SAM"),
         RigMode::FM => Cow::Borrowed("FM"),
         RigMode::WFM => Cow::Borrowed("WFM"),
         RigMode::AIS => Cow::Borrowed("AIS"),
@@ -85,7 +85,8 @@ mod tests {
         assert_eq!(parse_mode("CW"), RigMode::CW);
         assert_eq!(parse_mode("CWR"), RigMode::CWR);
         assert_eq!(parse_mode("AM"), RigMode::AM);
-        assert_eq!(parse_mode("AMC-QUAM"), RigMode::AMC);
+        assert_eq!(parse_mode("SAM"), RigMode::SAM);
+        assert_eq!(parse_mode("AMC-QUAM"), RigMode::SAM);
         assert_eq!(parse_mode("FM"), RigMode::FM);
         assert_eq!(parse_mode("WFM"), RigMode::WFM);
         assert_eq!(parse_mode("AIS"), RigMode::AIS);
@@ -132,7 +133,7 @@ mod tests {
         assert_eq!(mode_to_string(&RigMode::CW), "CW");
         assert_eq!(mode_to_string(&RigMode::CWR), "CWR");
         assert_eq!(mode_to_string(&RigMode::AM), "AM");
-        assert_eq!(mode_to_string(&RigMode::AMC), "AMC-QUAM");
+        assert_eq!(mode_to_string(&RigMode::SAM), "SAM");
         assert_eq!(mode_to_string(&RigMode::FM), "FM");
         assert_eq!(mode_to_string(&RigMode::WFM), "WFM");
         assert_eq!(mode_to_string(&RigMode::AIS), "AIS");
@@ -154,7 +155,7 @@ mod tests {
             RigMode::CW,
             RigMode::CWR,
             RigMode::AM,
-            RigMode::AMC,
+            RigMode::SAM,
             RigMode::FM,
             RigMode::WFM,
             RigMode::AIS,
@@ -325,6 +326,8 @@ mod tests {
                 wfm_stereo: true,
                 wfm_stereo_detected: false,
                 wfm_denoise: trx_core::WfmDenoiseLevel::Auto,
+                sam_stereo_width: 1.0,
+                sam_carrier_sync: true,
             }),
             ..minimal_snapshot()
         })
@@ -369,6 +372,8 @@ mod tests {
                 wfm_stereo: true,
                 wfm_stereo_detected: true,
                 wfm_denoise: trx_core::WfmDenoiseLevel::Auto,
+                sam_stereo_width: 0.5,
+                sam_carrier_sync: false,
             }),
             ..minimal_snapshot()
         };
@@ -379,6 +384,8 @@ mod tests {
         assert_eq!(f.sdr_gain_db, Some(18.0));
         assert_eq!(f.wfm_deemphasis_us, 50);
         assert!(f.wfm_stereo_detected);
+        assert_eq!(f.sam_stereo_width, 0.5);
+        assert!(!f.sam_carrier_sync);
     }
 
     fn minimal_snapshot() -> trx_core::rig::state::RigSnapshot {

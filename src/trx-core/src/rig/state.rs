@@ -87,8 +87,8 @@ pub enum RigMode {
     CW,
     CWR,
     AM,
-    /// AM C-QUAM stereo (Compatible Quadrature Amplitude Modulation).
-    AMC,
+    /// Synchronous AM (Stereo AM) — carrier-locked stereo demodulation.
+    SAM,
     WFM,
     FM,
     AIS,
@@ -338,6 +338,12 @@ pub struct RigFilterState {
     pub wfm_stereo_detected: bool,
     #[serde(default = "default_wfm_denoise_level")]
     pub wfm_denoise: WfmDenoiseLevel,
+    /// SAM stereo width (0.0 = mono, 1.0 = full stereo).
+    #[serde(default = "default_sam_stereo_width")]
+    pub sam_stereo_width: f32,
+    /// SAM carrier synchronization enabled.
+    #[serde(default = "default_sam_carrier_sync")]
+    pub sam_carrier_sync: bool,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
@@ -355,6 +361,14 @@ fn default_wfm_deemphasis_us() -> u32 {
 }
 
 fn default_wfm_stereo() -> bool {
+    true
+}
+
+fn default_sam_stereo_width() -> f32 {
+    1.0
+}
+
+fn default_sam_carrier_sync() -> bool {
     true
 }
 

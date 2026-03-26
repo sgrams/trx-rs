@@ -529,6 +529,8 @@ pub fn command_from_rig_command(cmd: RigCommand) -> Box<dyn RigCommandHandler> {
         | RigCommand::SetWfmDeemphasis(_)
         | RigCommand::SetWfmStereo(_)
         | RigCommand::SetWfmDenoise(_)
+        | RigCommand::SetSamStereoWidth(_)
+        | RigCommand::SetSamCarrierSync(_)
         | RigCommand::GetSpectrum => Box::new(GetSnapshotCommand),
     }
 }
