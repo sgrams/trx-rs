@@ -12,10 +12,10 @@ const RDS_SYMBOL_RATE: f32 = 1_187.5;
 const RDS_CHIP_RATE: f32 = RDS_SYMBOL_RATE * 2.0;
 const RDS_POLY: u16 = 0x1B9;
 const SEARCH_REG_MASK: u32 = (1 << 26) - 1;
-const PHASE_CANDIDATES: usize = 4;
+const PHASE_CANDIDATES: usize = 16;
 const BIPHASE_CLOCK_WINDOW: usize = 128;
 /// Minimum quality score to publish RDS state to the outer decoder.
-const MIN_PUBLISH_QUALITY: f32 = 0.65;
+const MIN_PUBLISH_QUALITY: f32 = 0.55;
 /// Tech 6: number of Block A observations before using accumulated PI.
 const PI_ACC_THRESHOLD: u8 = 3;
 /// Tech 5 — Costas loop proportional gain (per sample).
