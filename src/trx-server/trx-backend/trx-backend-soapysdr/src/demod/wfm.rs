@@ -10,7 +10,7 @@ use super::{math::demod_fm_with_prev, DcBlocker};
 
 const RDS_SUBCARRIER_HZ: f32 = 57_000.0;
 /// Tech 2: pilot lock level above which the ×3 pilot reference is used.
-const PILOT_LOCK_THRESHOLD: f32 = 0.5;
+const PILOT_LOCK_THRESHOLD: f32 = 0.25;
 /// Tech 9: number of complex CMA equalizer taps.
 const CMA_N_TAPS: usize = 8;
 /// Tech 9: CMA LMS step size.
