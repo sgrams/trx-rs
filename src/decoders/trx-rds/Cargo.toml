@@ -9,3 +9,4 @@ edition = "2021"
 
 [dependencies]
 trx-core = { path = "../../trx-core" }
+rustfft = "6"

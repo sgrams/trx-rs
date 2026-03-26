@@ -3,7 +3,9 @@
 // SPDX-License-Identifier: BSD-2-Clause
 
 use std::f32::consts::{PI, SQRT_2, TAU};
+use std::sync::Arc;
 
+use rustfft::{num_complex::Complex, FftPlanner};
 use trx_core::rig::state::RdsData;
 
 const RDS_SUBCARRIER_HZ: f32 = 57_000.0;
@@ -12,10 +14,10 @@ const RDS_SYMBOL_RATE: f32 = 1_187.5;
 const RDS_CHIP_RATE: f32 = RDS_SYMBOL_RATE * 2.0;
 const RDS_POLY: u16 = 0x1B9;
 const SEARCH_REG_MASK: u32 = (1 << 26) - 1;
-const PHASE_CANDIDATES: usize = 16;
+const PHASE_CANDIDATES: usize = 8;
 const BIPHASE_CLOCK_WINDOW: usize = 128;
 /// Minimum quality score to publish RDS state to the outer decoder.
-const MIN_PUBLISH_QUALITY: f32 = 0.55;
+const MIN_PUBLISH_QUALITY: f32 = 0.38;
 /// Tech 6: number of Block A observations before using accumulated PI.
 const PI_ACC_THRESHOLD: u8 = 3;
 /// Tech 5 — Costas loop proportional gain (per sample).
@@ -36,7 +38,7 @@ const OFFSET_CP: u16 = 0x350;
 const OFFSET_D: u16 = 0x1B4;
 
 // ---------------------------------------------------------------------------
-// Tech 1: Root Raised Cosine matched filter
+// Tech 1: Root Raised Cosine matched filter (FFT overlap-save)
 // ---------------------------------------------------------------------------
 
 /// Computes one tap of an RRC filter impulse response.
@@ -56,65 +58,158 @@ fn rrc_tap(t: f32, alpha: f32) -> f32 {
     num / den
 }
 
-/// Causal FIR filter with a ring buffer.
-#[derive(Debug, Clone)]
-struct FirFilter {
-    taps: Vec<f32>,
-    buf: Vec<f32>,
-    pos: usize,
+/// Build and normalise the RRC tap vector.
+fn build_rrc_taps(sample_rate: f32, chip_rate: f32) -> Vec<f32> {
+    let sps = (sample_rate / chip_rate).max(2.0);
+    let n_half = (RRC_SPAN_CHIPS as f32 * sps / 2.0).round() as usize;
+    let n_taps = (2 * n_half + 1).min(513);
+    let center = (n_taps / 2) as f32;
+
+    let mut taps: Vec<f32> = (0..n_taps)
+        .map(|i| rrc_tap((i as f32 - center) / sps, RRC_ALPHA))
+        .collect();
+
+    // Normalise to unity DC gain.
+    let sum: f32 = taps.iter().sum();
+    if sum.abs() > 1e-9 {
+        let inv = 1.0 / sum;
+        for tap in &mut taps {
+            *tap *= inv;
+        }
+    }
+    taps
 }
 
-impl FirFilter {
+/// Tech 1: RRC matched filter using FFT overlap-save convolution.
+///
+/// Processes I and Q simultaneously as a complex signal, halving FFT work
+/// compared to two separate real FIR filters.  Output lags input by at most
+/// `block_size` samples (< 2 ms at a 200 kHz composite rate).
+struct FftRrcFilter {
+    n_taps: usize,
+    block_size: usize,
+    fft_size: usize,
+    /// Pre-computed filter spectrum: FFT(rrc_taps) / fft_size.
+    filter_spectrum: Vec<Complex<f32>>,
+    /// Last (n_taps − 1) complex input samples for overlap-save continuity.
+    overlap: Vec<Complex<f32>>,
+    /// Accumulates new complex input samples for the current block.
+    in_buf: Vec<Complex<f32>>,
+    /// Filtered (I, Q) output pairs ready to be consumed.
+    out_buf: Vec<(f32, f32)>,
+    out_pos: usize,
+    fft: Arc<dyn rustfft::Fft<f32>>,
+    ifft: Arc<dyn rustfft::Fft<f32>>,
+}
+
+impl FftRrcFilter {
     fn new_rrc(sample_rate: f32, chip_rate: f32) -> Self {
-        let sps = (sample_rate / chip_rate).max(2.0);
-        let n_half = (RRC_SPAN_CHIPS as f32 * sps / 2.0).round() as usize;
-        let n_taps = (2 * n_half + 1).min(513);
-        let center = (n_taps / 2) as f32;
+        let taps = build_rrc_taps(sample_rate, chip_rate);
+        let n_taps = taps.len();
 
-        let mut taps: Vec<f32> = (0..n_taps)
-            .map(|i| rrc_tap((i as f32 - center) / sps, RRC_ALPHA))
-            .collect();
+        // block_size >= n_taps ensures the overlap is always the tail of in_buf.
+        let block_size = n_taps.next_power_of_two().max(64);
+        let fft_size = (block_size + n_taps - 1).next_power_of_two();
 
-        // Normalise to unity DC gain.
-        let sum: f32 = taps.iter().sum();
-        if sum.abs() > 1e-9 {
-            let inv = 1.0 / sum;
-            for tap in &mut taps {
-                *tap *= inv;
-            }
-        }
+        let mut planner = FftPlanner::new();
+        let fft = planner.plan_fft_forward(fft_size);
+        let ifft = planner.plan_fft_inverse(fft_size);
 
-        let len = taps.len();
+        // Filter spectrum = FFT(taps, zero-padded to fft_size) / fft_size.
+        // Dividing by fft_size here absorbs the IFFT normalisation factor so
+        // that overlap-save output equals the true linear convolution.
+        let scale = 1.0 / fft_size as f32;
+        let mut filter_spectrum: Vec<Complex<f32>> =
+            taps.iter().map(|&t| Complex::new(t * scale, 0.0)).collect();
+        filter_spectrum.resize(fft_size, Complex::new(0.0, 0.0));
+        fft.process(&mut filter_spectrum);
+
         Self {
-            taps,
-            buf: vec![0.0; len],
-            pos: 0,
+            n_taps,
+            block_size,
+            fft_size,
+            filter_spectrum,
+            overlap: vec![Complex::new(0.0, 0.0); n_taps - 1],
+            in_buf: Vec::with_capacity(block_size),
+            out_buf: Vec::with_capacity(block_size),
+            out_pos: 0,
+            fft,
+            ifft,
         }
     }
 
+    /// Submit one (I, Q) pair and return the filtered result.
+    /// Returns (0, 0) during the initial fill of the first block.
     #[inline]
-    fn process(&mut self, x: f32) -> f32 {
-        let n = self.taps.len();
-        self.buf[self.pos] = x;
-        let mut acc = 0.0_f32;
-        for (k, &tap) in self.taps.iter().enumerate() {
-            let idx = if self.pos >= k {
-                self.pos - k
-            } else {
-                n - k + self.pos
-            };
-            acc += tap * self.buf[idx];
+    fn process(&mut self, i: f32, q: f32) -> (f32, f32) {
+        self.in_buf.push(Complex::new(i, q));
+        if self.in_buf.len() == self.block_size {
+            self.flush_block();
         }
-        self.pos = (self.pos + 1) % n;
-        acc
+        if self.out_pos < self.out_buf.len() {
+            let s = self.out_buf[self.out_pos];
+            self.out_pos += 1;
+            s
+        } else {
+            (0.0, 0.0)
+        }
     }
 
-    #[allow(dead_code)]
-    fn reset(&mut self) {
-        for x in &mut self.buf {
-            *x = 0.0;
+    fn flush_block(&mut self) {
+        // Build FFT input: [overlap | in_buf], zero-padded to fft_size.
+        let mut buf: Vec<Complex<f32>> = Vec::with_capacity(self.fft_size);
+        buf.extend_from_slice(&self.overlap);
+        buf.extend_from_slice(&self.in_buf);
+        buf.resize(self.fft_size, Complex::new(0.0, 0.0));
+
+        // Update overlap: last (n_taps − 1) samples of in_buf.
+        // block_size >= n_taps guarantees in_buf is long enough.
+        let ol = self.n_taps - 1;
+        self.overlap
+            .copy_from_slice(&self.in_buf[self.block_size - ol..]);
+        self.in_buf.clear();
+
+        // FFT → pointwise multiply by filter spectrum → IFFT.
+        self.fft.process(&mut buf);
+        for (b, &h) in buf.iter_mut().zip(self.filter_spectrum.iter()) {
+            *b *= h;
         }
-        self.pos = 0;
+        self.ifft.process(&mut buf);
+
+        // Valid overlap-save output: indices [n_taps−1 .. n_taps−1+block_size).
+        self.out_buf.clear();
+        self.out_pos = 0;
+        let start = self.n_taps - 1;
+        for k in start..start + self.block_size {
+            self.out_buf.push((buf[k].re, buf[k].im));
+        }
+    }
+}
+
+impl Clone for FftRrcFilter {
+    fn clone(&self) -> Self {
+        Self {
+            n_taps: self.n_taps,
+            block_size: self.block_size,
+            fft_size: self.fft_size,
+            filter_spectrum: self.filter_spectrum.clone(),
+            overlap: self.overlap.clone(),
+            in_buf: self.in_buf.clone(),
+            out_buf: self.out_buf.clone(),
+            out_pos: self.out_pos,
+            fft: Arc::clone(&self.fft),
+            ifft: Arc::clone(&self.ifft),
+        }
+    }
+}
+
+impl std::fmt::Debug for FftRrcFilter {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("FftRrcFilter")
+            .field("n_taps", &self.n_taps)
+            .field("block_size", &self.block_size)
+            .field("fft_size", &self.fft_size)
+            .finish()
     }
 }
 
@@ -615,10 +710,8 @@ pub struct RdsDecoder {
     sample_rate_hz: u32,
     carrier_phase: f32,
     carrier_inc: f32,
-    /// Tech 1: RRC matched filter for the I baseband channel.
-    rrc_i: FirFilter,
-    /// Tech 1: RRC matched filter for the Q baseband channel.
-    rrc_q: FirFilter,
+    /// Tech 1: RRC matched filter (I and Q processed together as complex).
+    rrc: FftRrcFilter,
     /// Tech 5: Costas loop integrator state.
     costas_integrator: f32,
     /// Tech 2: pilot-derived 57 kHz carrier reference (cos, sin).
@@ -643,8 +736,7 @@ impl RdsDecoder {
             sample_rate_hz: sample_rate.max(1),
             carrier_phase: 0.0,
             carrier_inc: TAU * RDS_SUBCARRIER_HZ / sample_rate_f,
-            rrc_i: FirFilter::new_rrc(sample_rate_f, RDS_CHIP_RATE),
-            rrc_q: FirFilter::new_rrc(sample_rate_f, RDS_CHIP_RATE),
+            rrc: FftRrcFilter::new_rrc(sample_rate_f, RDS_CHIP_RATE),
             costas_integrator: 0.0,
             pilot_ref: None,
             candidates,
@@ -686,9 +778,8 @@ impl RdsDecoder {
         let raw_i = sample * cos_p * 2.0;
         let raw_q = sample * -sin_p * 2.0;
 
-        // Tech 1: apply RRC matched filter to I and Q.
-        let mixed_i = self.rrc_i.process(raw_i);
-        let mixed_q = self.rrc_q.process(raw_q);
+        // Tech 1: apply RRC matched filter to I and Q (processed as complex).
+        let (mixed_i, mixed_q) = self.rrc.process(raw_i, raw_q);
 
         // Tech 5: Costas loop — tanh soft phase detector.
         // Only active when not using a pilot reference.
@@ -898,8 +989,8 @@ mod tests {
     #[test]
     fn rrc_tap_dc_gain() {
         // All taps of a normalized RRC filter should sum to 1.0.
-        let fir = FirFilter::new_rrc(240_000.0, RDS_CHIP_RATE);
-        let sum: f32 = fir.taps.iter().sum();
+        let taps = build_rrc_taps(240_000.0, RDS_CHIP_RATE);
+        let sum: f32 = taps.iter().sum();
         assert!((sum - 1.0).abs() < 1e-4, "RRC DC gain = {sum}");
     }
 
