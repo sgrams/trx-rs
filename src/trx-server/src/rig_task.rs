@@ -1033,29 +1033,29 @@ fn desired_machine_state(state: &RigState) -> RigMachineState {
 }
 
 fn ready_data_from_state(state: &RigState, rig_info: trx_core::rig::RigInfo) -> ReadyStateData {
-    ReadyStateData {
+    ReadyStateData::new(
         rig_info,
-        freq: state.status.freq,
-        mode: state.status.mode.clone(),
-        vfo: state.status.vfo.clone(),
-        rx: state.status.rx.clone(),
-        tx_limit: state.status.tx.as_ref().and_then(|tx| tx.limit),
-        locked: lock_state_from(state),
-    }
+        state.status.freq,
+        state.status.mode.clone(),
+        state.status.vfo.clone(),
+        state.status.rx.clone(),
+        state.status.tx.as_ref().and_then(|tx| tx.limit),
+        lock_state_from(state),
+    )
 }
 
 fn transmitting_data_from_state(
     state: &RigState,
     rig_info: trx_core::rig::RigInfo,
 ) -> TransmittingStateData {
-    TransmittingStateData {
+    TransmittingStateData::new(
         rig_info,
-        freq: state.status.freq,
-        mode: state.status.mode.clone(),
-        vfo: state.status.vfo.clone(),
-        tx: state.status.tx.clone(),
-        locked: lock_state_from(state),
-    }
+        state.status.freq,
+        state.status.mode.clone(),
+        state.status.vfo.clone(),
+        state.status.tx.clone(),
+        lock_state_from(state),
+    )
 }
 
 fn lock_state_from(state: &RigState) -> bool {
