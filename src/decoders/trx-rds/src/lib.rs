@@ -12,10 +12,10 @@ const RDS_SYMBOL_RATE: f32 = 1_187.5;
 const RDS_CHIP_RATE: f32 = RDS_SYMBOL_RATE * 2.0;
 const RDS_POLY: u16 = 0x1B9;
 const SEARCH_REG_MASK: u32 = (1 << 26) - 1;
-const PHASE_CANDIDATES: usize = 8;
+const PHASE_CANDIDATES: usize = 4;
 const BIPHASE_CLOCK_WINDOW: usize = 128;
 /// Minimum quality score to publish RDS state to the outer decoder.
-const MIN_PUBLISH_QUALITY: f32 = 0.45;
+const MIN_PUBLISH_QUALITY: f32 = 0.65;
 /// Tech 6: number of Block A observations before using accumulated PI.
 const PI_ACC_THRESHOLD: u8 = 3;
 /// Tech 5 — Costas loop proportional gain (per sample).
@@ -755,7 +755,7 @@ fn decode_block(word: u32) -> Option<(u16, BlockKind)> {
     Some((data, kind))
 }
 
-/// Tech 3/7/8: soft-decision block decoder implementing OSD(2).
+/// Tech 3/7/8: soft-decision block decoder implementing OSD(1).
 ///
 /// `word` is the 26-bit hard-decision word; `soft[k]` is the confidence
 /// magnitude (|LLR|) for the k-th received bit, where bit 0 is the MSB
@@ -763,11 +763,10 @@ fn decode_block(word: u32) -> Option<(u16, BlockKind)> {
 ///
 /// Search order:
 /// 1. Hard decode (Hamming distance 0) — zero cost.
-/// 2. All 26 single-bit flips — return the minimum-cost success.
-/// 3. All 325 double-bit flips — return the minimum-cost success.
+/// 2. All 26 single-bit flips — return the lowest-cost success.
 ///
-/// Returns the minimum Euclidean-metric valid codeword within Hamming
-/// distance 2, or `None` if no valid codeword is found.
+/// Limiting to distance 1 keeps false-positive rates low while still
+/// correcting single-bit burst errors.
 fn decode_block_soft(word: u32, soft: &[f32; 26]) -> Option<(u16, BlockKind)> {
     // Distance 0.
     if let Some(result) = decode_block(word) {
@@ -784,26 +783,6 @@ fn decode_block_soft(word: u32, soft: &[f32; 26]) -> Option<(u16, BlockKind)> {
             if flip_cost < best_cost {
                 best_cost = flip_cost;
                 best_result = Some(result);
-            }
-        }
-    }
-
-    // If any single-bit flip decoded, it has lower cost than any double-bit flip
-    // (since all soft values ≥ 0), so return immediately.
-    if best_result.is_some() {
-        return best_result;
-    }
-
-    // Distance 2: all C(26,2) = 325 double-bit flips.
-    for k0 in 0..26usize {
-        for k1 in (k0 + 1)..26 {
-            let trial = word ^ (1 << (25 - k0)) ^ (1 << (25 - k1));
-            if let Some(result) = decode_block(trial) {
-                let cost = soft[k0] + soft[k1];
-                if cost < best_cost {
-                    best_cost = cost;
-                    best_result = Some(result);
-                }
             }
         }
     }
@@ -936,18 +915,12 @@ mod tests {
     }
 
     #[test]
-    fn decode_block_soft_corrects_two_bit_error() {
+    fn decode_block_soft_rejects_two_bit_error() {
+        // OSD(1) does not correct 2-bit errors; verify it returns None.
         let word = encode_block(0x1234, OFFSET_B);
-        // Flip bits at k=24 and k=25 (positions 1 and 0 from LSB in the check field).
-        let corrupted = word ^ 0b11;
-        // Give the two error positions very low confidence so the double-flip
-        // has lower total cost than any spurious single-bit miscorrection.
-        let mut soft = [1.0f32; 26];
-        soft[24] = 0.05; // low confidence → cheap to flip
-        soft[25] = 0.05;
-        let (data, kind) = decode_block_soft(corrupted, &soft).expect("should recover");
-        assert_eq!(data, 0x1234);
-        assert_eq!(kind, BlockKind::B);
+        let corrupted = word ^ 0b11; // flip two bits
+        let soft = [1.0f32; 26];
+        assert!(decode_block_soft(corrupted, &soft).is_none());
     }
 
     #[test]
