@@ -94,6 +94,7 @@ struct FrontendMeta {
     #[serde(rename = "clients")]
     http_clients: usize,
     rigctl_clients: usize,
+    audio_clients: usize,
     #[serde(skip_serializing_if = "Option::is_none")]
     rigctl_addr: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -217,6 +218,7 @@ fn frontend_meta_from_context(
     FrontendMeta {
         http_clients,
         rigctl_clients: context.rigctl_clients.load(Ordering::Relaxed),
+        audio_clients: context.audio_clients.load(Ordering::Relaxed),
         rigctl_addr: rigctl_addr_from_context(context),
         active_remote: active_rig_id_from_context(context),
         remotes: rig_ids_from_context(context),

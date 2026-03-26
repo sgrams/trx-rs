@@ -650,6 +650,9 @@ pub async fn audio_ws(
 
     let (response, mut session, mut msg_stream) = actix_ws::handle(&req, body)?;
 
+    let audio_clients = context.audio_clients.clone();
+    audio_clients.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+
     actix_web::rt::spawn(async move {
         let mut current_info = loop {
             if let Some(info) = info_rx.borrow().clone() {
@@ -682,7 +685,8 @@ pub async fn audio_ws(
                             };
                             let changed = next_info.sample_rate != current_info.sample_rate
                                 || next_info.channels != current_info.channels
-                                || next_info.frame_duration_ms != current_info.frame_duration_ms;
+                                || next_info.frame_duration_ms != current_info.frame_duration_ms
+                                || next_info.bitrate_bps != current_info.bitrate_bps;
                             if changed {
                                 current_info = next_info;
                                 let info_json = match serde_json::to_string(&current_info) {
@@ -723,6 +727,7 @@ pub async fn audio_ws(
             }
         }
         let _ = session.close(None).await;
+        audio_clients.fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
     });
 
     Ok(response)

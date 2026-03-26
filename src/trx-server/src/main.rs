@@ -484,6 +484,7 @@ fn spawn_rig_audio_stack(
         sample_rate: rig_cfg.audio.sample_rate,
         channels: rig_cfg.audio.channels,
         frame_duration_ms: rig_cfg.audio.frame_duration_ms,
+        bitrate_bps: rig_cfg.audio.bitrate_bps,
     };
 
     let (rx_audio_tx, _) = broadcast::channel::<Bytes>(256);

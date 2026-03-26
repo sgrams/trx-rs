@@ -78,6 +78,12 @@ pub struct AudioStreamInfo {
     pub sample_rate: u32,
     pub channels: u8,
     pub frame_duration_ms: u16,
+    #[serde(default, skip_serializing_if = "is_zero_u32")]
+    pub bitrate_bps: u32,
+}
+
+fn is_zero_u32(v: &u32) -> bool {
+    *v == 0
 }
 
 /// Write a length-prefixed audio message.

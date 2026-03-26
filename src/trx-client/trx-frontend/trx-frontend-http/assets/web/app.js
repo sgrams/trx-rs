@@ -3268,11 +3268,18 @@ function render(update) {
     document.getElementById("about-audio-codec").textContent = "Opus";
     document.getElementById("about-audio-samplerate").textContent = `${(streamInfo.sample_rate || 48000).toLocaleString()} Hz`;
     document.getElementById("about-audio-channels").textContent = (streamInfo.channels || 1) === 1 ? "Mono" : "Stereo";
+    if (streamInfo.bitrate_bps) {
+      const kbps = (streamInfo.bitrate_bps / 1000).toFixed(0);
+      document.getElementById("about-audio-bitrate").textContent = `${kbps} kbps`;
+    }
     if (streamInfo.frame_duration_ms) {
       document.getElementById("about-audio-frame").textContent = `${streamInfo.frame_duration_ms} ms`;
     }
   }
   document.getElementById("about-audio-rx").textContent = rxActive ? "Active" : "Off";
+  if (typeof update.audio_clients === "number") {
+    document.getElementById("about-audio-streams").textContent = update.audio_clients;
+  }
 
   // About — Decoders card
   const decMap = [

@@ -224,6 +224,8 @@ pub struct FrontendRuntimeContext {
     pub sse_clients: Arc<AtomicUsize>,
     /// Active rigctl TCP clients.
     pub rigctl_clients: Arc<AtomicUsize>,
+    /// Active audio WebSocket streams.
+    pub audio_clients: Arc<AtomicUsize>,
     /// rigctl listen endpoint, if enabled.
     pub rigctl_listen_addr: Arc<Mutex<Option<SocketAddr>>>,
     /// Guard to avoid spawning duplicate decode collectors.
@@ -367,6 +369,7 @@ impl FrontendRuntimeContext {
             auth_tokens: HashSet::new(),
             sse_clients: Arc::new(AtomicUsize::new(0)),
             rigctl_clients: Arc::new(AtomicUsize::new(0)),
+            audio_clients: Arc::new(AtomicUsize::new(0)),
             rigctl_listen_addr: Arc::new(Mutex::new(None)),
             decode_collector_started: AtomicBool::new(false),
             http_auth_enabled: false,
