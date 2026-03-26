@@ -2989,13 +2989,12 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   width: 100%;
   height: var(--spectrum-plot-height);
   background: var(--spectrum-bg);
-  border-radius: 6px 6px 0 0;
   cursor: crosshair;
   touch-action: none;
 }
 #spectrum-db-axis {
   position: absolute;
-  top: 0;
+  top: var(--spectrum-plot-height);
   left: 0;
   width: 3rem;
   height: var(--spectrum-plot-height);
@@ -3111,7 +3110,7 @@ button:focus-visible, input:focus-visible, select:focus-visible {
 #spectrum-zoom-indicator {
   display: none;
   position: absolute;
-  top: 6px;
+  top: calc(var(--spectrum-plot-height) + 6px);
   right: 3.5rem;
   z-index: 9;
   font-size: 0.68rem;
@@ -3151,6 +3150,7 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   width: 100%;
   height: var(--spectrum-plot-height);
   background: var(--spectrum-bg);
+  border-radius: 6px 6px 0 0;
   cursor: crosshair;
   touch-action: none;
 }
@@ -3199,7 +3199,7 @@ button:focus-visible, input:focus-visible, select:focus-visible {
 }
 .spectrum-bookmark-side {
   position: absolute;
-  top: calc(var(--spectrum-plot-height) / 2);
+  top: calc(var(--spectrum-plot-height) * 1.5);
   transform: translateY(-50%);
   z-index: 7;
   width: var(--spectrum-bookmark-side-width);
