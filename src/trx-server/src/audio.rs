@@ -259,7 +259,7 @@ impl DecoderHistories {
         if msg.ts_ms.is_none() {
             msg.ts_ms = Some(current_timestamp_ms());
         }
-        let mut h = self.ais.lock().expect("ais history mutex poisoned");
+        let mut h = self.ais.lock().unwrap_or_else(|e| e.into_inner());
         let before = h.len();
         h.push_back((Instant::now(), msg));
         Self::prune_ais(&mut h);
@@ -267,7 +267,7 @@ impl DecoderHistories {
     }
 
     pub fn snapshot_ais_history(&self) -> Vec<AisMessage> {
-        let mut h = self.ais.lock().expect("ais history mutex poisoned");
+        let mut h = self.ais.lock().unwrap_or_else(|e| e.into_inner());
         let before = h.len();
         Self::prune_ais(&mut h);
         self.adjust_total_count(before, h.len());
@@ -291,7 +291,7 @@ impl DecoderHistories {
         if msg.ts_ms.is_none() {
             msg.ts_ms = Some(current_timestamp_ms());
         }
-        let mut h = self.vdes.lock().expect("vdes history mutex poisoned");
+        let mut h = self.vdes.lock().unwrap_or_else(|e| e.into_inner());
         let before = h.len();
         h.push_back((Instant::now(), msg));
         Self::prune_vdes(&mut h);
@@ -299,7 +299,7 @@ impl DecoderHistories {
     }
 
     pub fn snapshot_vdes_history(&self) -> Vec<VdesMessage> {
-        let mut h = self.vdes.lock().expect("vdes history mutex poisoned");
+        let mut h = self.vdes.lock().unwrap_or_else(|e| e.into_inner());
         let before = h.len();
         Self::prune_vdes(&mut h);
         self.adjust_total_count(before, h.len());
@@ -326,7 +326,7 @@ impl DecoderHistories {
         if pkt.ts_ms.is_none() {
             pkt.ts_ms = Some(current_timestamp_ms());
         }
-        let mut h = self.aprs.lock().expect("aprs history mutex poisoned");
+        let mut h = self.aprs.lock().unwrap_or_else(|e| e.into_inner());
         let before = h.len();
         h.push_back((Instant::now(), pkt));
         Self::prune_aprs(&mut h);
@@ -334,7 +334,7 @@ impl DecoderHistories {
     }
 
     pub fn snapshot_aprs_history(&self) -> Vec<AprsPacket> {
-        let mut h = self.aprs.lock().expect("aprs history mutex poisoned");
+        let mut h = self.aprs.lock().unwrap_or_else(|e| e.into_inner());
         let before = h.len();
         Self::prune_aprs(&mut h);
         self.adjust_total_count(before, h.len());
@@ -342,7 +342,7 @@ impl DecoderHistories {
     }
 
     pub fn clear_aprs_history(&self) {
-        let mut h = self.aprs.lock().expect("aprs history mutex poisoned");
+        let mut h = self.aprs.lock().unwrap_or_else(|e| e.into_inner());
         let before = h.len();
         h.clear();
         self.adjust_total_count(before, 0);
@@ -368,7 +368,7 @@ impl DecoderHistories {
         if pkt.ts_ms.is_none() {
             pkt.ts_ms = Some(current_timestamp_ms());
         }
-        let mut h = self.hf_aprs.lock().expect("hf_aprs history mutex poisoned");
+        let mut h = self.hf_aprs.lock().unwrap_or_else(|e| e.into_inner());
         let before = h.len();
         h.push_back((Instant::now(), pkt));
         Self::prune_hf_aprs(&mut h);
@@ -376,7 +376,7 @@ impl DecoderHistories {
     }
 
     pub fn snapshot_hf_aprs_history(&self) -> Vec<AprsPacket> {
-        let mut h = self.hf_aprs.lock().expect("hf_aprs history mutex poisoned");
+        let mut h = self.hf_aprs.lock().unwrap_or_else(|e| e.into_inner());
         let before = h.len();
         Self::prune_hf_aprs(&mut h);
         self.adjust_total_count(before, h.len());
@@ -384,7 +384,7 @@ impl DecoderHistories {
     }
 
     pub fn clear_hf_aprs_history(&self) {
-        let mut h = self.hf_aprs.lock().expect("hf_aprs history mutex poisoned");
+        let mut h = self.hf_aprs.lock().unwrap_or_else(|e| e.into_inner());
         let before = h.len();
         h.clear();
         self.adjust_total_count(before, 0);
@@ -404,7 +404,7 @@ impl DecoderHistories {
     }
 
     pub fn record_cw_event(&self, evt: CwEvent) {
-        let mut h = self.cw.lock().expect("cw history mutex poisoned");
+        let mut h = self.cw.lock().unwrap_or_else(|e| e.into_inner());
         let before = h.len();
         h.push_back((Instant::now(), evt));
         Self::prune_cw(&mut h);
@@ -412,7 +412,7 @@ impl DecoderHistories {
     }
 
     pub fn snapshot_cw_history(&self) -> Vec<CwEvent> {
-        let mut h = self.cw.lock().expect("cw history mutex poisoned");
+        let mut h = self.cw.lock().unwrap_or_else(|e| e.into_inner());
         let before = h.len();
         Self::prune_cw(&mut h);
         self.adjust_total_count(before, h.len());
@@ -420,7 +420,7 @@ impl DecoderHistories {
     }
 
     pub fn clear_cw_history(&self) {
-        let mut h = self.cw.lock().expect("cw history mutex poisoned");
+        let mut h = self.cw.lock().unwrap_or_else(|e| e.into_inner());
         let before = h.len();
         h.clear();
         self.adjust_total_count(before, 0);
@@ -440,7 +440,7 @@ impl DecoderHistories {
     }
 
     pub fn record_ft8_message(&self, msg: Ft8Message) {
-        let mut h = self.ft8.lock().expect("ft8 history mutex poisoned");
+        let mut h = self.ft8.lock().unwrap_or_else(|e| e.into_inner());
         let before = h.len();
         h.push_back((Instant::now(), msg));
         Self::prune_ft8(&mut h);
@@ -448,7 +448,7 @@ impl DecoderHistories {
     }
 
     pub fn snapshot_ft8_history(&self) -> Vec<Ft8Message> {
-        let mut h = self.ft8.lock().expect("ft8 history mutex poisoned");
+        let mut h = self.ft8.lock().unwrap_or_else(|e| e.into_inner());
         let before = h.len();
         Self::prune_ft8(&mut h);
         self.adjust_total_count(before, h.len());
@@ -456,7 +456,7 @@ impl DecoderHistories {
     }
 
     pub fn clear_ft8_history(&self) {
-        let mut h = self.ft8.lock().expect("ft8 history mutex poisoned");
+        let mut h = self.ft8.lock().unwrap_or_else(|e| e.into_inner());
         let before = h.len();
         h.clear();
         self.adjust_total_count(before, 0);
@@ -476,7 +476,7 @@ impl DecoderHistories {
     }
 
     pub fn record_ft4_message(&self, msg: Ft8Message) {
-        let mut h = self.ft4.lock().expect("ft4 history mutex poisoned");
+        let mut h = self.ft4.lock().unwrap_or_else(|e| e.into_inner());
         let before = h.len();
         h.push_back((Instant::now(), msg));
         Self::prune_ft4(&mut h);
@@ -484,7 +484,7 @@ impl DecoderHistories {
     }
 
     pub fn snapshot_ft4_history(&self) -> Vec<Ft8Message> {
-        let mut h = self.ft4.lock().expect("ft4 history mutex poisoned");
+        let mut h = self.ft4.lock().unwrap_or_else(|e| e.into_inner());
         let before = h.len();
         Self::prune_ft4(&mut h);
         self.adjust_total_count(before, h.len());
@@ -492,7 +492,7 @@ impl DecoderHistories {
     }
 
     pub fn clear_ft4_history(&self) {
-        let mut h = self.ft4.lock().expect("ft4 history mutex poisoned");
+        let mut h = self.ft4.lock().unwrap_or_else(|e| e.into_inner());
         let before = h.len();
         h.clear();
         self.adjust_total_count(before, 0);
@@ -512,7 +512,7 @@ impl DecoderHistories {
     }
 
     pub fn record_ft2_message(&self, msg: Ft8Message) {
-        let mut h = self.ft2.lock().expect("ft2 history mutex poisoned");
+        let mut h = self.ft2.lock().unwrap_or_else(|e| e.into_inner());
         let before = h.len();
         h.push_back((Instant::now(), msg));
         Self::prune_ft2(&mut h);
@@ -520,7 +520,7 @@ impl DecoderHistories {
     }
 
     pub fn snapshot_ft2_history(&self) -> Vec<Ft8Message> {
-        let mut h = self.ft2.lock().expect("ft2 history mutex poisoned");
+        let mut h = self.ft2.lock().unwrap_or_else(|e| e.into_inner());
         let before = h.len();
         Self::prune_ft2(&mut h);
         self.adjust_total_count(before, h.len());
@@ -528,7 +528,7 @@ impl DecoderHistories {
     }
 
     pub fn clear_ft2_history(&self) {
-        let mut h = self.ft2.lock().expect("ft2 history mutex poisoned");
+        let mut h = self.ft2.lock().unwrap_or_else(|e| e.into_inner());
         let before = h.len();
         h.clear();
         self.adjust_total_count(before, 0);
@@ -548,7 +548,7 @@ impl DecoderHistories {
     }
 
     pub fn record_wspr_message(&self, msg: WsprMessage) {
-        let mut h = self.wspr.lock().expect("wspr history mutex poisoned");
+        let mut h = self.wspr.lock().unwrap_or_else(|e| e.into_inner());
         let before = h.len();
         h.push_back((Instant::now(), msg));
         Self::prune_wspr(&mut h);
@@ -556,7 +556,7 @@ impl DecoderHistories {
     }
 
     pub fn snapshot_wspr_history(&self) -> Vec<WsprMessage> {
-        let mut h = self.wspr.lock().expect("wspr history mutex poisoned");
+        let mut h = self.wspr.lock().unwrap_or_else(|e| e.into_inner());
         let before = h.len();
         Self::prune_wspr(&mut h);
         self.adjust_total_count(before, h.len());
@@ -564,7 +564,7 @@ impl DecoderHistories {
     }
 
     pub fn clear_wspr_history(&self) {
-        let mut h = self.wspr.lock().expect("wspr history mutex poisoned");
+        let mut h = self.wspr.lock().unwrap_or_else(|e| e.into_inner());
         let before = h.len();
         h.clear();
         self.adjust_total_count(before, 0);
