@@ -61,6 +61,11 @@ pub struct RemoteClientConfig {
     pub spectrum: Arc<watch::Sender<SharedSpectrum>>,
     /// Shared flag: `true` while a TCP connection to trx-server is active.
     pub server_connected: Arc<AtomicBool>,
+    /// Per-rig server connection flag.  Keyed by short name (or rig_id in legacy mode).
+    /// Set to `true` once the rig appears in a successful GetRigs response, and to
+    /// `false` when this config's TCP connection drops.  Allows the UI to freeze only
+    /// the affected rig's view rather than all rigs.
+    pub rig_server_connected: Arc<RwLock<HashMap<String, bool>>>,
     pub rig_states: Arc<RwLock<HashMap<String, watch::Sender<RigState>>>>,
     /// Per-rig spectrum watch senders, keyed by short name (or rig_id in legacy mode).
     pub rig_spectrums: Arc<RwLock<HashMap<String, watch::Sender<SharedSpectrum>>>>,
@@ -109,7 +114,32 @@ pub async fn run_remote_client(
                     warn!("Remote connection dropped: {}", e);
                 }
                 config.server_connected.store(false, Ordering::Relaxed);
-                // Nudge the state watch so SSE clients see server_connected=false.
+                // Collect the short names owned by this config so we can mark
+                // only their rigs as disconnected (other server groups unaffected).
+                let owned: Vec<String> = if has_short_names(&config) {
+                    config.rig_id_to_short_name.values().cloned().collect()
+                } else {
+                    // Legacy single-remote: every key in rig_server_connected is ours.
+                    config
+                        .rig_server_connected
+                        .read()
+                        .map(|m| m.keys().cloned().collect())
+                        .unwrap_or_default()
+                };
+                if let Ok(mut conn_map) = config.rig_server_connected.write() {
+                    for name in &owned {
+                        conn_map.insert(name.clone(), false);
+                    }
+                }
+                // Nudge each rig's watch so SSE clients see server_connected=false.
+                if let Ok(rig_map) = config.rig_states.read() {
+                    for name in &owned {
+                        if let Some(tx) = rig_map.get(name) {
+                            tx.send_modify(|_| {});
+                        }
+                    }
+                }
+                // Also nudge the global state watch for backward compat.
                 state_tx.send_modify(|_| {});
             }
             Ok(Err(e)) => {
@@ -513,6 +543,12 @@ async fn refresh_remote_snapshot(
         rig_map.retain(|id, _| {
             !config_owns_short_name(config, id) || active_keys.contains(id.as_str())
         });
+    }
+    // Mark all mapped rigs as connected now that we have a live snapshot.
+    if let Ok(mut conn_map) = config.rig_server_connected.write() {
+        for (key, _) in &mapped_rigs {
+            conn_map.insert(key.clone(), true);
+        }
     }
     Ok(())
 }
@@ -1138,6 +1174,7 @@ mod tests {
                 poll_interval: Duration::from_millis(100),
                 spectrum: Arc::new(spectrum_tx),
                 server_connected: Arc::new(AtomicBool::new(false)),
+                rig_server_connected: Arc::new(RwLock::new(HashMap::new())),
                 rig_states: Arc::new(RwLock::new(HashMap::new())),
                 rig_spectrums: Arc::new(RwLock::new(HashMap::new())),
                 rig_id_to_short_name: HashMap::new(),
@@ -1180,6 +1217,7 @@ mod tests {
             poll_interval: Duration::from_millis(500),
             spectrum: Arc::new(spectrum_tx),
             server_connected: Arc::new(AtomicBool::new(false)),
+            rig_server_connected: Arc::new(RwLock::new(HashMap::new())),
             rig_states: Arc::new(RwLock::new(HashMap::new())),
             rig_spectrums: Arc::new(RwLock::new(HashMap::new())),
             rig_id_to_short_name: HashMap::new(),
@@ -1205,6 +1243,7 @@ mod tests {
             poll_interval: Duration::from_millis(500),
             spectrum: Arc::new(spectrum_tx),
             server_connected: Arc::new(AtomicBool::new(false)),
+            rig_server_connected: Arc::new(RwLock::new(HashMap::new())),
             rig_states: Arc::new(RwLock::new(HashMap::new())),
             rig_spectrums: Arc::new(RwLock::new(HashMap::new())),
             rig_id_to_short_name: HashMap::from([(Some("hf".to_string()), "home-hf".to_string())]),
@@ -1234,6 +1273,7 @@ mod tests {
             poll_interval: Duration::from_millis(500),
             spectrum: Arc::new(spectrum_tx),
             server_connected: Arc::new(AtomicBool::new(false)),
+            rig_server_connected: Arc::new(RwLock::new(HashMap::new())),
             rig_states: Arc::new(RwLock::new(HashMap::new())),
             rig_spectrums: Arc::new(RwLock::new(HashMap::new())),
             rig_id_to_short_name: HashMap::new(),
@@ -1255,6 +1295,7 @@ mod tests {
             poll_interval: Duration::from_millis(500),
             spectrum: Arc::new(spectrum_tx),
             server_connected: Arc::new(AtomicBool::new(false)),
+            rig_server_connected: Arc::new(RwLock::new(HashMap::new())),
             rig_states: Arc::new(RwLock::new(HashMap::new())),
             rig_spectrums: Arc::new(RwLock::new(HashMap::new())),
             rig_id_to_short_name: HashMap::from([
@@ -1292,6 +1333,7 @@ mod tests {
             poll_interval: Duration::from_millis(500),
             spectrum: Arc::new(spectrum_tx),
             server_connected: Arc::new(AtomicBool::new(false)),
+            rig_server_connected: Arc::new(RwLock::new(HashMap::new())),
             rig_states: Arc::new(RwLock::new(HashMap::new())),
             rig_spectrums: Arc::new(RwLock::new(HashMap::new())),
             rig_id_to_short_name: HashMap::from([(Some("hf".to_string()), "gdansk".to_string())]),
@@ -1362,6 +1404,7 @@ mod tests {
             poll_interval: Duration::from_millis(500),
             spectrum: Arc::new(spectrum_tx),
             server_connected: Arc::new(AtomicBool::new(false)),
+            rig_server_connected: Arc::new(RwLock::new(HashMap::new())),
             rig_states: Arc::new(RwLock::new(HashMap::new())),
             rig_spectrums: Arc::new(RwLock::new(HashMap::new())),
             rig_id_to_short_name: HashMap::from([(Some("hf".to_string()), "gdansk".to_string())]),

@@ -187,7 +187,11 @@ pub async fn status_api(
     let json = serde_json::to_string(&state).map_err(actix_web::error::ErrorInternalServerError)?;
     let json = inject_frontend_meta(
         &json,
-        frontend_meta_from_context(clients.load(Ordering::Relaxed), context.get_ref().as_ref()),
+        frontend_meta_from_context(
+            clients.load(Ordering::Relaxed),
+            context.get_ref().as_ref(),
+            None,
+        ),
     );
     Ok(HttpResponse::Ok()
         .insert_header((header::CONTENT_TYPE, "application/json"))
@@ -214,7 +218,19 @@ fn inject_frontend_meta(json: &str, meta: FrontendMeta) -> String {
 fn frontend_meta_from_context(
     http_clients: usize,
     context: &FrontendRuntimeContext,
+    rig_id: Option<&str>,
 ) -> FrontendMeta {
+    // Use per-rig connection state when available so that only the rig whose
+    // server dropped appears disconnected, leaving other rigs unaffected.
+    let server_connected = rig_id
+        .and_then(|rid| {
+            context
+                .rig_server_connected
+                .read()
+                .ok()
+                .and_then(|m| m.get(rid).copied())
+        })
+        .unwrap_or_else(|| context.server_connected.load(Ordering::Relaxed));
     FrontendMeta {
         http_clients,
         rigctl_clients: context.rigctl_clients.load(Ordering::Relaxed),
@@ -231,7 +247,7 @@ fn frontend_meta_from_context(
         spectrum_coverage_margin_hz: spectrum_coverage_margin_hz_from_context(context),
         spectrum_usable_span_ratio: spectrum_usable_span_ratio_from_context(context),
         decode_history_retention_min: decode_history_retention_min_from_context(context),
-        server_connected: context.server_connected.load(Ordering::Relaxed),
+        server_connected,
     }
 }
 
@@ -375,7 +391,7 @@ pub async fn events(
         serde_json::to_string(&initial).map_err(actix_web::error::ErrorInternalServerError)?;
     let initial_json = inject_frontend_meta(
         &initial_json,
-        frontend_meta_from_context(count, context.get_ref().as_ref()),
+        frontend_meta_from_context(count, context.get_ref().as_ref(), active_rig_id.as_deref()),
     );
 
     let mut prefix: Vec<Result<Bytes, Error>> = Vec::new();
@@ -418,18 +434,14 @@ pub async fn events(
                         .ok()
                         .and_then(|g| g.clone())
                 });
-                if let Some(rig_id) = rig_id_opt {
-                    vchan.update_primary(
-                        &rig_id,
-                        v.status.freq.hz,
-                        &format!("{:?}", v.status.mode),
-                    );
+                if let Some(ref rig_id) = rig_id_opt {
+                    vchan.update_primary(rig_id, v.status.freq.hz, &format!("{:?}", v.status.mode));
                     sync_scheduler_vchannels(
                         vchan.as_ref(),
                         bookmark_store_map.as_ref(),
                         &scheduler_status,
                         scheduler_control.as_ref(),
-                        &rig_id,
+                        rig_id,
                     );
                 }
                 serde_json::to_string(&v).ok().map(|json| {
@@ -438,6 +450,7 @@ pub async fn events(
                         frontend_meta_from_context(
                             counter.load(Ordering::Relaxed),
                             context.as_ref(),
+                            rig_id_opt.as_deref(),
                         ),
                     );
                     Ok::<Bytes, Error>(Bytes::from(format!("data: {json}\n\n")))

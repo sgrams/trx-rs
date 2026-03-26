@@ -380,6 +380,7 @@ async fn async_init() -> DynResult<AppState> {
             spectrum: frontend_runtime.spectrum.clone(),
             rig_spectrums: frontend_runtime.rig_spectrums.clone(),
             server_connected: frontend_runtime.server_connected.clone(),
+            rig_server_connected: frontend_runtime.rig_server_connected.clone(),
             rig_id_to_short_name,
             short_name_to_rig_id: Arc::new(RwLock::new(HashMap::new())),
         };

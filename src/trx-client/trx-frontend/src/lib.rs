@@ -301,6 +301,10 @@ pub struct FrontendRuntimeContext {
     /// Whether the remote client currently has an active TCP connection to
     /// trx-server.  Set to `true` on successful connect, `false` on drop.
     pub server_connected: Arc<AtomicBool>,
+    /// Per-rig server connection state, keyed by short name (or rig_id in legacy mode).
+    /// `true` while the rig's trx-server connection is active.
+    /// Allows the UI to freeze only the rig that lost its connection.
+    pub rig_server_connected: Arc<RwLock<HashMap<String, bool>>>,
 }
 
 impl FrontendRuntimeContext {
@@ -404,6 +408,7 @@ impl FrontendRuntimeContext {
             vchan_audio_cmd: Arc::new(Mutex::new(None)),
             vchan_destroyed: None,
             server_connected: Arc::new(AtomicBool::new(false)),
+            rig_server_connected: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 }
