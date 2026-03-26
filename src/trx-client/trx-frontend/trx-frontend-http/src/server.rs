@@ -32,7 +32,7 @@ use actix_web::{
 use tokio::signal;
 use tokio::sync::{broadcast, mpsc, watch};
 use tokio::task::JoinHandle;
-use tracing::{error, info};
+use tracing::{error, info, warn};
 
 use trx_core::RigRequest;
 use trx_core::RigState;
@@ -207,6 +207,16 @@ fn build_server(
         context.http_auth_cookie_secure,
         same_site,
     );
+
+    // Warn operators if auth is enabled but cookie_secure is false,
+    // which means session cookies will be sent over plain HTTP.
+    if auth_config.enabled && !auth_config.cookie_secure {
+        warn!(
+            "HTTP auth is enabled but cookie_secure is false — \
+             session cookies will be sent over unencrypted connections. \
+             Set cookie_secure = true when behind a TLS-terminating proxy."
+        );
+    }
 
     let context_data = web::Data::new(context);
     let auth_state = web::Data::new(AuthState::new(auth_config.clone()));
