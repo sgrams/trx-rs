@@ -15,7 +15,7 @@ use trx_core::radio::freq::{Band, Freq};
 use trx_core::rig::response::RigError;
 use trx_core::rig::state::{RigFilterState, SpectrumData, VchanRdsEntry, WfmDenoiseLevel};
 use trx_core::rig::{
-    AudioSource, Rig, RigAccessMethod, RigCapabilities, RigCat, RigInfo, RigStatusFuture,
+    AudioSource, Rig, RigAccessMethod, RigCapabilities, RigCat, RigInfo, RigSdr, RigStatusFuture,
 };
 use trx_core::{DynResult, RigMode};
 
@@ -518,6 +518,140 @@ impl RigCat for SoapySdrRig {
         })
     }
 
+    fn set_mode<'a>(
+        &'a mut self,
+        mode: RigMode,
+    ) -> Pin<Box<dyn std::future::Future<Output = DynResult<()>> + Send + 'a>> {
+        Box::pin(async move {
+            tracing::debug!("SoapySdrRig: set_mode -> {:?}", mode);
+            self.mode = mode.clone();
+            self.bandwidth_hz = Self::default_bandwidth_for_mode(&mode);
+            // Update the primary channel's demodulator in the live pipeline.
+            {
+                let dsps = self.pipeline.channel_dsps.read().unwrap();
+                if let Some(dsp_arc) = dsps.get(self.primary_channel_idx) {
+                    let mut dsp = dsp_arc.lock().unwrap();
+                    dsp.set_mode(&mode);
+                    dsp.set_filter(self.bandwidth_hz);
+                }
+            }
+            self.apply_ais_channel_activity();
+            self.apply_ais_channel_filters();
+            Ok(())
+        })
+    }
+
+    fn get_signal_strength<'a>(
+        &'a mut self,
+    ) -> Pin<Box<dyn std::future::Future<Output = DynResult<u8>> + Send + 'a>> {
+        // RSSI from real device pending SDR hardware wiring; return 0 for now.
+        Box::pin(async move { Ok(0u8) })
+    }
+
+    // -- TX / unsupported methods -------------------------------------------
+
+    fn set_ptt<'a>(
+        &'a mut self,
+        _ptt: bool,
+    ) -> Pin<Box<dyn std::future::Future<Output = DynResult<()>> + Send + 'a>> {
+        Box::pin(async move {
+            Err(Box::new(RigError::not_supported("set_ptt"))
+                as Box<dyn std::error::Error + Send + Sync>)
+        })
+    }
+
+    fn power_on<'a>(
+        &'a mut self,
+    ) -> Pin<Box<dyn std::future::Future<Output = DynResult<()>> + Send + 'a>> {
+        Box::pin(async move {
+            Err(Box::new(RigError::not_supported("power_on"))
+                as Box<dyn std::error::Error + Send + Sync>)
+        })
+    }
+
+    fn power_off<'a>(
+        &'a mut self,
+    ) -> Pin<Box<dyn std::future::Future<Output = DynResult<()>> + Send + 'a>> {
+        Box::pin(async move {
+            Err(Box::new(RigError::not_supported("power_off"))
+                as Box<dyn std::error::Error + Send + Sync>)
+        })
+    }
+
+    fn get_tx_power<'a>(
+        &'a mut self,
+    ) -> Pin<Box<dyn std::future::Future<Output = DynResult<u8>> + Send + 'a>> {
+        Box::pin(async move {
+            Err(Box::new(RigError::not_supported("get_tx_power"))
+                as Box<dyn std::error::Error + Send + Sync>)
+        })
+    }
+
+    fn get_tx_limit<'a>(
+        &'a mut self,
+    ) -> Pin<Box<dyn std::future::Future<Output = DynResult<u8>> + Send + 'a>> {
+        Box::pin(async move {
+            Err(Box::new(RigError::not_supported("get_tx_limit"))
+                as Box<dyn std::error::Error + Send + Sync>)
+        })
+    }
+
+    fn set_tx_limit<'a>(
+        &'a mut self,
+        _limit: u8,
+    ) -> Pin<Box<dyn std::future::Future<Output = DynResult<()>> + Send + 'a>> {
+        Box::pin(async move {
+            Err(Box::new(RigError::not_supported("set_tx_limit"))
+                as Box<dyn std::error::Error + Send + Sync>)
+        })
+    }
+
+    fn toggle_vfo<'a>(
+        &'a mut self,
+    ) -> Pin<Box<dyn std::future::Future<Output = DynResult<()>> + Send + 'a>> {
+        Box::pin(async move {
+            Err(Box::new(RigError::not_supported("toggle_vfo"))
+                as Box<dyn std::error::Error + Send + Sync>)
+        })
+    }
+
+    fn lock<'a>(
+        &'a mut self,
+    ) -> Pin<Box<dyn std::future::Future<Output = DynResult<()>> + Send + 'a>> {
+        Box::pin(async move {
+            Err(Box::new(RigError::not_supported("lock"))
+                as Box<dyn std::error::Error + Send + Sync>)
+        })
+    }
+
+    fn unlock<'a>(
+        &'a mut self,
+    ) -> Pin<Box<dyn std::future::Future<Output = DynResult<()>> + Send + 'a>> {
+        Box::pin(async move {
+            Err(Box::new(RigError::not_supported("unlock"))
+                as Box<dyn std::error::Error + Send + Sync>)
+        })
+    }
+
+    /// Override: this backend provides demodulated PCM audio.
+    fn as_audio_source(&self) -> Option<&dyn AudioSource> {
+        Some(self)
+    }
+
+    fn as_sdr(&mut self) -> Option<&mut dyn RigSdr> {
+        Some(self)
+    }
+
+    fn as_sdr_ref(&self) -> Option<&dyn RigSdr> {
+        Some(self)
+    }
+}
+
+// ---------------------------------------------------------------------------
+// RigSdr — SDR-specific extension
+// ---------------------------------------------------------------------------
+
+impl RigSdr for SoapySdrRig {
     fn set_center_freq<'a>(
         &'a mut self,
         freq: Freq,
@@ -541,24 +675,19 @@ impl RigCat for SoapySdrRig {
         })
     }
 
-    fn set_mode<'a>(
+    fn set_bandwidth<'a>(
         &'a mut self,
-        mode: RigMode,
-    ) -> Pin<Box<dyn std::future::Future<Output = DynResult<()>> + Send + 'a>> {
+        bandwidth_hz: u32,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = DynResult<()>> + Send + 'a>> {
         Box::pin(async move {
-            tracing::debug!("SoapySdrRig: set_mode -> {:?}", mode);
-            self.mode = mode.clone();
-            self.bandwidth_hz = Self::default_bandwidth_for_mode(&mode);
-            // Update the primary channel's demodulator in the live pipeline.
+            tracing::debug!("SoapySdrRig: set_bandwidth -> {} Hz", bandwidth_hz);
+            self.bandwidth_hz = bandwidth_hz;
             {
                 let dsps = self.pipeline.channel_dsps.read().unwrap();
                 if let Some(dsp_arc) = dsps.get(self.primary_channel_idx) {
-                    let mut dsp = dsp_arc.lock().unwrap();
-                    dsp.set_mode(&mode);
-                    dsp.set_filter(self.bandwidth_hz);
+                    dsp_arc.lock().unwrap().set_filter(bandwidth_hz);
                 }
             }
-            self.apply_ais_channel_activity();
             self.apply_ais_channel_filters();
             Ok(())
         })
@@ -695,116 +824,6 @@ impl RigCat for SoapySdrRig {
         })
     }
 
-    fn get_signal_strength<'a>(
-        &'a mut self,
-    ) -> Pin<Box<dyn std::future::Future<Output = DynResult<u8>> + Send + 'a>> {
-        // RSSI from real device pending SDR hardware wiring; return 0 for now.
-        Box::pin(async move { Ok(0u8) })
-    }
-
-    // -- TX / unsupported methods -------------------------------------------
-
-    fn set_ptt<'a>(
-        &'a mut self,
-        _ptt: bool,
-    ) -> Pin<Box<dyn std::future::Future<Output = DynResult<()>> + Send + 'a>> {
-        Box::pin(async move {
-            Err(Box::new(RigError::not_supported("set_ptt"))
-                as Box<dyn std::error::Error + Send + Sync>)
-        })
-    }
-
-    fn power_on<'a>(
-        &'a mut self,
-    ) -> Pin<Box<dyn std::future::Future<Output = DynResult<()>> + Send + 'a>> {
-        Box::pin(async move {
-            Err(Box::new(RigError::not_supported("power_on"))
-                as Box<dyn std::error::Error + Send + Sync>)
-        })
-    }
-
-    fn power_off<'a>(
-        &'a mut self,
-    ) -> Pin<Box<dyn std::future::Future<Output = DynResult<()>> + Send + 'a>> {
-        Box::pin(async move {
-            Err(Box::new(RigError::not_supported("power_off"))
-                as Box<dyn std::error::Error + Send + Sync>)
-        })
-    }
-
-    fn get_tx_power<'a>(
-        &'a mut self,
-    ) -> Pin<Box<dyn std::future::Future<Output = DynResult<u8>> + Send + 'a>> {
-        Box::pin(async move {
-            Err(Box::new(RigError::not_supported("get_tx_power"))
-                as Box<dyn std::error::Error + Send + Sync>)
-        })
-    }
-
-    fn get_tx_limit<'a>(
-        &'a mut self,
-    ) -> Pin<Box<dyn std::future::Future<Output = DynResult<u8>> + Send + 'a>> {
-        Box::pin(async move {
-            Err(Box::new(RigError::not_supported("get_tx_limit"))
-                as Box<dyn std::error::Error + Send + Sync>)
-        })
-    }
-
-    fn set_tx_limit<'a>(
-        &'a mut self,
-        _limit: u8,
-    ) -> Pin<Box<dyn std::future::Future<Output = DynResult<()>> + Send + 'a>> {
-        Box::pin(async move {
-            Err(Box::new(RigError::not_supported("set_tx_limit"))
-                as Box<dyn std::error::Error + Send + Sync>)
-        })
-    }
-
-    fn toggle_vfo<'a>(
-        &'a mut self,
-    ) -> Pin<Box<dyn std::future::Future<Output = DynResult<()>> + Send + 'a>> {
-        Box::pin(async move {
-            Err(Box::new(RigError::not_supported("toggle_vfo"))
-                as Box<dyn std::error::Error + Send + Sync>)
-        })
-    }
-
-    fn lock<'a>(
-        &'a mut self,
-    ) -> Pin<Box<dyn std::future::Future<Output = DynResult<()>> + Send + 'a>> {
-        Box::pin(async move {
-            Err(Box::new(RigError::not_supported("lock"))
-                as Box<dyn std::error::Error + Send + Sync>)
-        })
-    }
-
-    fn unlock<'a>(
-        &'a mut self,
-    ) -> Pin<Box<dyn std::future::Future<Output = DynResult<()>> + Send + 'a>> {
-        Box::pin(async move {
-            Err(Box::new(RigError::not_supported("unlock"))
-                as Box<dyn std::error::Error + Send + Sync>)
-        })
-    }
-
-    fn set_bandwidth<'a>(
-        &'a mut self,
-        bandwidth_hz: u32,
-    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = DynResult<()>> + Send + 'a>> {
-        Box::pin(async move {
-            tracing::debug!("SoapySdrRig: set_bandwidth -> {} Hz", bandwidth_hz);
-            self.bandwidth_hz = bandwidth_hz;
-            {
-                let dsps = self.pipeline.channel_dsps.read().unwrap();
-                if let Some(dsp_arc) = dsps.get(self.primary_channel_idx) {
-                    dsp_arc.lock().unwrap().set_filter(bandwidth_hz);
-                }
-            }
-            self.apply_ais_channel_filters();
-            Ok(())
-        })
-    }
-
     fn set_wfm_stereo<'a>(
         &'a mut self,
         enabled: bool,
@@ -886,10 +905,5 @@ impl RigCat for SoapySdrRig {
 
     fn get_vchan_rds(&self) -> Option<Vec<VchanRdsEntry>> {
         Some(self.channel_manager.rds_snapshots())
-    }
-
-    /// Override: this backend provides demodulated PCM audio.
-    fn as_audio_source(&self) -> Option<&dyn AudioSource> {
-        Some(self)
     }
 }
