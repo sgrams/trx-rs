@@ -96,26 +96,115 @@ pub enum RigMachineState {
 }
 
 /// Data held when rig is in Ready state.
+///
+/// Fields are crate-private to prevent external mutation that could bypass
+/// state machine invariants. Use the constructor and accessor methods.
 #[derive(Debug, Clone, Serialize)]
 pub struct ReadyStateData {
-    pub rig_info: RigInfo,
-    pub freq: Freq,
-    pub mode: RigMode,
-    pub vfo: Option<RigVfo>,
-    pub rx: Option<RigRxStatus>,
-    pub tx_limit: Option<u8>,
-    pub locked: bool,
+    pub(crate) rig_info: RigInfo,
+    pub(crate) freq: Freq,
+    pub(crate) mode: RigMode,
+    pub(crate) vfo: Option<RigVfo>,
+    pub(crate) rx: Option<RigRxStatus>,
+    pub(crate) tx_limit: Option<u8>,
+    pub(crate) locked: bool,
+}
+
+impl ReadyStateData {
+    pub fn new(
+        rig_info: RigInfo,
+        freq: Freq,
+        mode: RigMode,
+        vfo: Option<RigVfo>,
+        rx: Option<RigRxStatus>,
+        tx_limit: Option<u8>,
+        locked: bool,
+    ) -> Self {
+        Self {
+            rig_info,
+            freq,
+            mode,
+            vfo,
+            rx,
+            tx_limit,
+            locked,
+        }
+    }
+
+    pub fn rig_info(&self) -> &RigInfo {
+        &self.rig_info
+    }
+    pub fn freq(&self) -> Freq {
+        self.freq
+    }
+    pub fn mode(&self) -> &RigMode {
+        &self.mode
+    }
+    pub fn vfo(&self) -> Option<&RigVfo> {
+        self.vfo.as_ref()
+    }
+    pub fn rx(&self) -> Option<&RigRxStatus> {
+        self.rx.as_ref()
+    }
+    pub fn tx_limit(&self) -> Option<u8> {
+        self.tx_limit
+    }
+    pub fn is_locked(&self) -> bool {
+        self.locked
+    }
 }
 
 /// Data held when rig is in Transmitting state.
+///
+/// Fields are crate-private to prevent external mutation that could bypass
+/// state machine invariants. Use the constructor and accessor methods.
 #[derive(Debug, Clone, Serialize)]
 pub struct TransmittingStateData {
-    pub rig_info: RigInfo,
-    pub freq: Freq,
-    pub mode: RigMode,
-    pub vfo: Option<RigVfo>,
-    pub tx: Option<RigTxStatus>,
-    pub locked: bool,
+    pub(crate) rig_info: RigInfo,
+    pub(crate) freq: Freq,
+    pub(crate) mode: RigMode,
+    pub(crate) vfo: Option<RigVfo>,
+    pub(crate) tx: Option<RigTxStatus>,
+    pub(crate) locked: bool,
+}
+
+impl TransmittingStateData {
+    pub fn new(
+        rig_info: RigInfo,
+        freq: Freq,
+        mode: RigMode,
+        vfo: Option<RigVfo>,
+        tx: Option<RigTxStatus>,
+        locked: bool,
+    ) -> Self {
+        Self {
+            rig_info,
+            freq,
+            mode,
+            vfo,
+            tx,
+            locked,
+        }
+    }
+
+    pub fn rig_info(&self) -> &RigInfo {
+        &self.rig_info
+    }
+    pub fn freq(&self) -> Freq {
+        self.freq
+    }
+    pub fn mode(&self) -> &RigMode {
+        &self.mode
+    }
+    pub fn vfo(&self) -> Option<&RigVfo> {
+        self.vfo.as_ref()
+    }
+    pub fn tx(&self) -> Option<&RigTxStatus> {
+        self.tx.as_ref()
+    }
+    pub fn is_locked(&self) -> bool {
+        self.locked
+    }
 }
 
 impl fmt::Display for RigMachineState {
