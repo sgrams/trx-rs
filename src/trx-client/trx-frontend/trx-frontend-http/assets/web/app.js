@@ -9452,31 +9452,6 @@ function drawSpectrum(data) {
     spectrumGl.drawPoints(spectrumTmpMarkerPoints, Math.max(2, dpr * 1.6), cssColorToRgba(pal.waveformPeak));
   }
 
-  // ── Peak frequency labels (top 5 strongest) ──
-  if (markerPeaks.length > 0) {
-    const topPeaks = markerPeaks.slice(0, 5);
-    const labelEl = document.getElementById("spectrum-peak-labels");
-    if (labelEl) {
-      labelEl.innerHTML = "";
-      const cssW = spectrumCanvas.clientWidth || 640;
-      const cssH = spectrumCanvas.clientHeight || 160;
-      for (const idx of topPeaks) {
-        const peakHz = loHz + (idx / (n - 1)) * fullSpanHz;
-        const peakDb = bins[idx];
-        if (peakDb < DB_MIN + 6) continue; // skip near-floor peaks
-        const xFrac = (peakHz - range.visLoHz) / range.visSpanHz;
-        if (xFrac < 0.02 || xFrac > 0.98) continue;
-        const yFrac = 1 - (Math.max(DB_MIN, Math.min(DB_MAX, peakDb)) - DB_MIN) / dbRange;
-        const span = document.createElement("span");
-        span.className = "spectrum-peak-label";
-        span.textContent = formatSpectrumFreq(peakHz);
-        span.style.left = (xFrac * cssW) + "px";
-        span.style.top = Math.max(2, yFrac * cssH - 16) + "px";
-        labelEl.appendChild(span);
-      }
-    }
-  }
-
   // ── Crosshair lines ──
   if (spectrumCrosshairX != null && spectrumCrosshairY != null) {
     const cx = spectrumCrosshairX * dpr;
@@ -10582,9 +10557,6 @@ if (spectrumCanvas) {
     spectrumCanvas.style.cursor = "crosshair";
     spectrumCrosshairX = null;
     spectrumCrosshairY = null;
-    // Clear peak labels on leave
-    const labelEl = document.getElementById("spectrum-peak-labels");
-    if (labelEl) labelEl.innerHTML = "";
     scheduleSpectrumDraw();
   });
 }

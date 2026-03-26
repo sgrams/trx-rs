@@ -34,7 +34,6 @@
   --card-base-max-width: 1280px;
   --card-max-width: 1600px;
   --card-bookmark-gutter: 9.5rem;
-  --spectrum-waterfall-height: 120px;
   --spectrum-bookmark-side-width: 6.5rem;
   --spectrum-bookmark-side-offset: 8.85rem;
 }
@@ -3108,29 +3107,6 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   font-weight: 700;
   pointer-events: none;
 }
-/* ── Peak labels on spectrum ── */
-#spectrum-peak-labels {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: var(--spectrum-plot-height);
-  pointer-events: none;
-  z-index: 6;
-  overflow: hidden;
-}
-.spectrum-peak-label {
-  position: absolute;
-  transform: translateX(-50%);
-  font-size: 0.58rem;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  color: var(--text-muted);
-  font-weight: 600;
-  white-space: nowrap;
-  pointer-events: none;
-  text-shadow: 0 1px 3px color-mix(in srgb, var(--bg) 80%, transparent);
-  opacity: 0.85;
-}
 /* ── Zoom indicator ── */
 #spectrum-zoom-indicator {
   display: none;
@@ -3173,7 +3149,7 @@ button:focus-visible, input:focus-visible, select:focus-visible {
 #spectrum-waterfall-canvas {
   display: block;
   width: 100%;
-  height: var(--spectrum-waterfall-height, 120px);
+  height: var(--spectrum-plot-height);
   background: var(--spectrum-bg);
   cursor: crosshair;
   touch-action: none;
