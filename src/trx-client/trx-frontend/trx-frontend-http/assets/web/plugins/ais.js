@@ -326,6 +326,7 @@ function addAisMessage(msg) {
 
 function normalizeServerAisMessage(msg) {
   return {
+    rig_id: msg.rig_id || null,
     channel: msg.channel,
     message_type: msg.message_type,
     mmsi: msg.mmsi,

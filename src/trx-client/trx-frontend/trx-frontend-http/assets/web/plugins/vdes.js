@@ -256,6 +256,7 @@ function addVdesMessage(msg) {
 
 function normalizeServerVdesMessage(msg) {
   return {
+    rig_id: msg.rig_id || null,
     message_type: msg.message_type,
     bit_len: msg.bit_len,
     raw_bytes: msg.raw_bytes,

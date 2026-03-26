@@ -393,6 +393,7 @@ function addAprsPacket(pkt) {
 
 function normalizeServerAprsPacket(pkt) {
   return {
+    rig_id: pkt.rig_id || null,
     receiver: window.getDecodeRigMeta ? window.getDecodeRigMeta() : null,
     srcCall: pkt.src_call,
     destCall: pkt.dest_call,

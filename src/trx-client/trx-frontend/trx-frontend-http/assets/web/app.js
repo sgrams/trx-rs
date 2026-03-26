@@ -6275,6 +6275,7 @@ function _aprsAddMarkerToMap(call, entry) {
 window.aprsMapAddStation = function(call, lat, lon, info, symbolTable, symbolCode, pkt) {
   const nextPoint = [lat, lon];
   const tsMs = Number.isFinite(pkt?._tsMs) ? Number(pkt._tsMs) : Date.now();
+  const msgRigId = pkt?.rig_id || lastActiveRigId;
   const existing = stationMarkers.get(call);
   if (existing) {
     existing.pkt = pkt;
@@ -6283,9 +6284,9 @@ window.aprsMapAddStation = function(call, lat, lon, info, symbolTable, symbolCod
     existing.info = info;
     existing.symbolTable = symbolTable;
     existing.symbolCode = symbolCode;
-    if (lastActiveRigId) {
+    if (msgRigId) {
       if (!existing.rigIds) existing.rigIds = new Set();
-      existing.rigIds.add(lastActiveRigId);
+      existing.rigIds.add(msgRigId);
     }
     if (!Array.isArray(existing.trackHistory)) existing.trackHistory = [];
     const prevPoint = existing.trackHistory[existing.trackHistory.length - 1];
@@ -6312,7 +6313,7 @@ window.aprsMapAddStation = function(call, lat, lon, info, symbolTable, symbolCod
       info,
       symbolTable,
       symbolCode,
-      rigIds: new Set(lastActiveRigId ? [lastActiveRigId] : []),
+      rigIds: new Set(msgRigId ? [msgRigId] : []),
     };
     stationMarkers.set(call, entry);
     pruneAprsEntry(call, entry, mapHistoryCutoffMs());
@@ -6407,12 +6408,13 @@ window.aisMapAddVessel = function(msg) {
   const popupHtml = buildAisPopupHtml(msg);
   const nextPoint = [msg.lat, msg.lon];
   const tsMs = Number.isFinite(msg?._tsMs) ? Number(msg._tsMs) : Date.now();
+  const msgRigId = msg?.rig_id || lastActiveRigId;
   const existing = aisMarkers.get(key);
   if (existing) {
     existing.msg = msg;
-    if (lastActiveRigId) {
+    if (msgRigId) {
       if (!existing.rigIds) existing.rigIds = new Set();
-      existing.rigIds.add(lastActiveRigId);
+      existing.rigIds.add(msgRigId);
     }
     if (!Array.isArray(existing.trackHistory)) existing.trackHistory = [];
     const prevPoint = existing.trackHistory[existing.trackHistory.length - 1];
@@ -6433,7 +6435,7 @@ window.aisMapAddVessel = function(msg) {
     trackHistory: [{ lat: msg.lat, lon: msg.lon, tsMs }],
     trackPoints: [nextPoint],
     msg,
-    rigIds: new Set(lastActiveRigId ? [lastActiveRigId] : []),
+    rigIds: new Set(msgRigId ? [msgRigId] : []),
   });
   pruneAisEntry(key, aisMarkers.get(key), mapHistoryCutoffMs());
   if (aisMarkers.get(key)?.visibleInHistoryWindow) ensureAisMarker(key, aisMarkers.get(key));
@@ -6447,13 +6449,14 @@ window.vdesMapAddPoint = function(msg) {
   const popupHtml = buildVdesPopupHtml(msg);
   const visible = Number.isFinite(Number(msg?._tsMs))
     && Number(msg._tsMs) >= mapHistoryCutoffMs();
+  const msgRigId = msg?.rig_id || lastActiveRigId;
   const existing = vdesMarkers.get(key);
   if (existing) {
     existing.msg = msg;
     existing.visibleInHistoryWindow = visible;
-    if (lastActiveRigId) {
+    if (msgRigId) {
       if (!existing.rigIds) existing.rigIds = new Set();
-      existing.rigIds.add(lastActiveRigId);
+      existing.rigIds.add(msgRigId);
     }
     if (!visible) {
       if (!decodeHistoryMapRenderingDeferred()) {
@@ -6479,7 +6482,7 @@ window.vdesMapAddPoint = function(msg) {
     marker: null,
     msg,
     visibleInHistoryWindow: visible,
-    rigIds: new Set(lastActiveRigId ? [lastActiveRigId] : []),
+    rigIds: new Set(msgRigId ? [msgRigId] : []),
   };
   vdesMarkers.set(key, entry);
   if (!visible) return;
@@ -7169,6 +7172,7 @@ window.syncBookmarkMapLocators = function(bookmarks) {
 window.mapAddLocator = function(message, grids, type = "ft8", station = null, details = null) {
   if (!Array.isArray(grids) || grids.length === 0) return;
   const markerType = type === "wspr" ? "wspr" : (type === "ft4" ? "ft4" : (type === "ft2" ? "ft2" : "ft8"));
+  const msgRigId = details?.rig_id || lastActiveRigId;
   const unique = [...new Set(grids.map((g) => String(g).toUpperCase()))];
   const stationId = station && String(station).trim() ? String(station).trim().toUpperCase() : "";
   const locatorDetails = new Map();
@@ -7199,7 +7203,7 @@ window.mapAddLocator = function(message, grids, type = "ft8", station = null, de
       dt_s: Number.isFinite(details?.dt_s) ? Number(details.dt_s) : null,
       freq_hz: Number.isFinite(details?.freq_hz) ? Number(details.freq_hz) : null,
       message: String(details?.message || message || "").trim() || null,
-      remote: lastActiveRigId || null,
+      remote: msgRigId || null,
     };
     const detailKey = detailStationId || `${targetId || "decode"}:${detailEntry.message || "decode"}:${detailEntry.ts_ms || Date.now()}`;
     const key = `${markerType}:${grid}`;
@@ -7213,9 +7217,9 @@ window.mapAddLocator = function(message, grids, type = "ft8", station = null, de
       }
       existing.allStationDetails.set(detailKey, { ...detailEntry });
       existing.sourceType = markerType;
-      if (lastActiveRigId) {
+      if (msgRigId) {
         if (!existing.rigIds) existing.rigIds = new Set();
-        existing.rigIds.add(lastActiveRigId);
+        existing.rigIds.add(msgRigId);
       }
       pruneLocatorEntry(key, existing, mapHistoryCutoffMs());
       if (existing.marker) sendLocatorOverlayToBack(existing.marker);
@@ -7233,7 +7237,7 @@ window.mapAddLocator = function(message, grids, type = "ft8", station = null, de
       allStationDetails,
       sourceType: markerType,
       bandMeta: new Map(),
-      rigIds: new Set(lastActiveRigId ? [lastActiveRigId] : []),
+      rigIds: new Set(msgRigId ? [msgRigId] : []),
     };
     locatorMarkers.set(key, entry);
     pruneLocatorEntry(key, entry, mapHistoryCutoffMs());
