@@ -9,7 +9,14 @@ use trx_rds::RdsDecoder;
 use super::{math::demod_fm_with_prev, DcBlocker};
 
 const RDS_SUBCARRIER_HZ: f32 = 57_000.0;
-const RDS_BPF_Q: f32 = 10.0;
+/// Tech 2: pilot lock level above which the ×3 pilot reference is used.
+const PILOT_LOCK_THRESHOLD: f32 = 0.5;
+/// Tech 9: number of complex CMA equalizer taps.
+const CMA_N_TAPS: usize = 8;
+/// Tech 9: CMA LMS step size.
+const CMA_STEP_SIZE: f32 = 1e-5;
+/// Tech 9: slow adaptation rate for the CMA radius estimate.
+const CMA_RADIUS_ALPHA: f32 = 1e-3;
 /// Pilot tone frequency (Hz).
 const PILOT_HZ: f32 = 19_000.0;
 /// Audio bandwidth for WFM (Hz).
@@ -280,6 +287,109 @@ impl BiquadNotch {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Tech 4: 8th-order 57 kHz bandpass filter (4 cascaded biquads)
+// ---------------------------------------------------------------------------
+
+/// Four cascaded biquad bandpass sections forming an effective 8th-order BPF.
+/// Q=5 per section gives ≈ ±2480 Hz passband at 57 kHz — wide enough to pass
+/// the full RDS DSB signal while providing much steeper adjacent-channel
+/// rejection than the previous single-stage (2nd-order) filter.
+#[derive(Debug, Clone)]
+struct Iir8BandPass {
+    stages: [BiquadBandPass; 4],
+}
+
+impl Iir8BandPass {
+    fn new(sample_rate: f32, center_hz: f32) -> Self {
+        const Q: f32 = 5.0;
+        Self {
+            stages: std::array::from_fn(|_| BiquadBandPass::new(sample_rate, center_hz, Q)),
+        }
+    }
+
+    #[inline]
+    fn process(&mut self, x: f32) -> f32 {
+        let mut y = x;
+        for stage in &mut self.stages {
+            y = stage.process(y);
+        }
+        y
+    }
+
+    fn reset(&mut self) {
+        for stage in &mut self.stages {
+            stage.reset();
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Tech 9: CMA blind equalizer (pre-FM-demodulation, constant-modulus)
+// ---------------------------------------------------------------------------
+
+/// Fractionally-spaced complex LMS equalizer driven by the constant-modulus
+/// cost function.  FM is constant-envelope, so E[|y|²] = R² drives tap
+/// adaptation without requiring a training sequence.  Applied to the IQ
+/// stream before FM discrimination to suppress adjacent-channel interference.
+#[derive(Debug, Clone)]
+struct CmaEqualizer {
+    taps: [Complex<f32>; CMA_N_TAPS],
+    buf: [Complex<f32>; CMA_N_TAPS],
+    pos: usize,
+    /// Adaptive radius estimate (tracks long-term input power).
+    radius_sq: f32,
+}
+
+impl CmaEqualizer {
+    fn new() -> Self {
+        let mut taps = [Complex::new(0.0_f32, 0.0_f32); CMA_N_TAPS];
+        // Initialise as identity: tap at the centre = 1+0j.
+        taps[CMA_N_TAPS / 2] = Complex::new(1.0, 0.0);
+        Self {
+            taps,
+            buf: [Complex::new(0.0_f32, 0.0_f32); CMA_N_TAPS],
+            pos: 0,
+            radius_sq: 1.0,
+        }
+    }
+
+    #[inline]
+    fn process(&mut self, x: Complex<f32>) -> Complex<f32> {
+        // Update power estimate (very slow, tracks long-term signal level).
+        self.radius_sq =
+            self.radius_sq * (1.0 - CMA_RADIUS_ALPHA) + x.norm_sqr() * CMA_RADIUS_ALPHA;
+
+        self.buf[self.pos] = x;
+        self.pos = (self.pos + 1) % CMA_N_TAPS;
+
+        // Compute filter output y = Σ w[k] * x[n-k].
+        let mut y = Complex::new(0.0_f32, 0.0_f32);
+        for k in 0..CMA_N_TAPS {
+            y += self.taps[k] * self.buf[(self.pos + k) % CMA_N_TAPS];
+        }
+
+        // CMA gradient: e = |y|² − R²; update w[k] -= μ·e·y·conj(x[n-k]).
+        let err = y.norm_sqr() - self.radius_sq;
+        let scale = CMA_STEP_SIZE * err;
+        for k in 0..CMA_N_TAPS {
+            let x_k = self.buf[(self.pos + k) % CMA_N_TAPS];
+            self.taps[k] -= Complex::new(scale, 0.0) * y * x_k.conj();
+        }
+
+        y
+    }
+
+    fn reset(&mut self) {
+        let mut taps = [Complex::new(0.0_f32, 0.0_f32); CMA_N_TAPS];
+        taps[CMA_N_TAPS / 2] = Complex::new(1.0, 0.0);
+        self.taps = taps;
+        self.buf = [Complex::new(0.0_f32, 0.0_f32); CMA_N_TAPS];
+        self.pos = 0;
+        self.radius_sq = 1.0;
+    }
+}
+
 impl OnePoleLowPass {
     fn new(sample_rate: f32, cutoff_hz: f32) -> Self {
         let sr = sample_rate.max(1.0);
@@ -442,8 +552,11 @@ pub struct WfmStereoDecoder {
     output_channels: usize,
     stereo_enabled: bool,
     rds_decoder: RdsDecoder,
-    rds_bpf: BiquadBandPass,
+    /// Tech 4: 8th-order 57 kHz bandpass filter (4 cascaded biquads).
+    rds_bpf: Iir8BandPass,
     rds_dc: DcBlocker,
+    /// Tech 9: CMA blind equalizer applied before FM demodulation.
+    cma: CmaEqualizer,
     prev_iq: Option<Complex<f32>>,
     nco_cos: f32,
     nco_sin: f32,
@@ -505,8 +618,9 @@ impl WfmStereoDecoder {
             output_channels: output_channels.max(1),
             stereo_enabled,
             rds_decoder: RdsDecoder::new(composite_rate),
-            rds_bpf: BiquadBandPass::new(composite_rate_f, RDS_SUBCARRIER_HZ, RDS_BPF_Q),
+            rds_bpf: Iir8BandPass::new(composite_rate_f, RDS_SUBCARRIER_HZ),
             rds_dc: DcBlocker::new(0.995),
+            cma: CmaEqualizer::new(),
             prev_iq: None,
             nco_cos: 1.0,
             nco_sin: 0.0,
@@ -562,7 +676,11 @@ impl WfmStereoDecoder {
             return Vec::new();
         }
 
-        let disc = demod_fm_with_prev(samples, &mut self.prev_iq);
+        // Tech 9: apply CMA blind equalizer to IQ samples before FM demodulation.
+        // The constant-modulus property of FM drives tap adaptation without a
+        // training sequence, suppressing adjacent-channel interference.
+        let equalized: Vec<Complex<f32>> = samples.iter().map(|&s| self.cma.process(s)).collect();
+        let disc = demod_fm_with_prev(&equalized, &mut self.prev_iq);
         let mut output = Vec::with_capacity(
             ((samples.len() as f64 * self.output_phase_inc).ceil() as usize + 1)
                 * self.output_channels.max(1),
@@ -627,16 +745,30 @@ impl WfmStereoDecoder {
             }
             let stereo_blend_target = if self.stereo_detected { 1.0 } else { 0.0 };
 
+            // Phase-corrected pilot estimates (exact real pilot phase).
+            let sin_est = sin_p * err_cos + cos_p * err_sin;
+            let cos_est = cos_p * err_cos - sin_p * err_sin;
+            // Double-angle (38 kHz stereo carrier).
+            let sin_2p = 2.0 * sin_est * cos_est;
+            let cos_2p = 2.0 * cos_est * cos_est - 1.0;
+
+            // Tech 2: derive the 57 kHz RDS carrier reference from the 19 kHz
+            // pilot via the triple-angle formula: cos(3θ) = cos(2θ+θ), etc.
+            // This gives a phase-coherent reference that is far cleaner than
+            // the RDS decoder's autonomous free-running NCO.
+            let cos_3p = cos_2p * cos_est - sin_2p * sin_est;
+            let sin_3p = sin_2p * cos_est + cos_2p * sin_est;
+            if self.pilot_lock_level > PILOT_LOCK_THRESHOLD {
+                self.rds_decoder.set_pilot_ref(cos_3p, sin_3p);
+            } else {
+                self.rds_decoder.clear_pilot_ref();
+            }
+
             let rds_quality = (0.35 + pilot_mag * 20.0).clamp(0.35, 1.0);
             let rds_clean = self.rds_dc.process(self.rds_bpf.process(x));
             let _ = self.rds_decoder.process_sample(rds_clean, rds_quality);
 
             let sum = self.sum_lpf2.process(self.sum_lpf1.process(x));
-
-            let sin_est = sin_p * err_cos + cos_p * err_sin;
-            let cos_est = cos_p * err_cos - sin_p * err_sin;
-            let sin_2p = 2.0 * sin_est * cos_est;
-            let cos_2p = 2.0 * cos_est * cos_est - 1.0;
             let x_notched = self.diff_pilot_notch.process(x);
             let diff_i = self.diff_dc.process(
                 self.diff_lpf2
@@ -739,6 +871,7 @@ impl WfmStereoDecoder {
         self.rds_decoder.reset();
         self.rds_bpf.reset();
         self.rds_dc.reset();
+        self.cma.reset();
         self.prev_iq = None;
         self.nco_cos = 1.0;
         self.nco_sin = 0.0;

