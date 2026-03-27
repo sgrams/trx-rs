@@ -388,7 +388,8 @@ async function bmApply(bm) {
         ++_freqOptimisticSeq;
         _freqOptimisticHz = bm.freq_hz;
       }
-      applyLocalTunedFrequency(bm.freq_hz);
+      // Force display so the BW overlay is repositioned even when freq is unchanged.
+      applyLocalTunedFrequency(bm.freq_hz, true);
     }
     if (typeof scheduleSpectrumDraw === "function" && typeof lastSpectrumData !== "undefined" && lastSpectrumData) {
       scheduleSpectrumDraw();

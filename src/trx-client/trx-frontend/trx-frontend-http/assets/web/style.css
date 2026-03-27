@@ -629,7 +629,7 @@ button:disabled { opacity: 0.6; cursor: not-allowed; }
   flex-shrink: 0;
 }
 .sig-strength-display {
-  min-width: 5.2rem;
+  min-width: 7.5rem;
   height: 3.35rem;
   padding: 0 0.7rem;
   border: 1px solid var(--border-light);
