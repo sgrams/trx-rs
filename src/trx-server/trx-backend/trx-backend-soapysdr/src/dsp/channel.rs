@@ -297,18 +297,15 @@ pub struct ChannelDsp {
     squelch: VirtualSquelch,
     noise_blanker: NoiseBlanker,
     last_signal_db: f32,
-    /// Single-pole IIR states for narrow IQ lowpass (WFM carrier measurement).
-    /// Filtering the IQ signal (not the power) rejects out-of-band noise so the
-    /// meter reads carrier level, not total wideband noise power.
+    /// Single-pole IIR state for smoothed envelope power (WFM signal strength).
     carrier_iq_i: f32,
-    carrier_iq_q: f32,
-    /// IIR coefficient for the narrow IQ carrier filter, precomputed from sample rate.
+    /// IIR coefficient for the envelope power smoother, precomputed from sample rate.
     carrier_iq_alpha: f32,
 }
 
 impl ChannelDsp {
-    /// Compute the single-pole IIR alpha for narrow IQ carrier measurement.
-    /// Uses ~500 Hz cutoff so the meter reads carrier level, not wideband noise.
+    /// Compute the single-pole IIR alpha for envelope power smoothing.
+    /// Uses ~500 Hz cutoff for a responsive but stable S-meter reading.
     fn narrow_carrier_alpha(channel_sample_rate: u32) -> f32 {
         const CARRIER_BW_HZ: f32 = 500.0;
         if channel_sample_rate == 0 {
@@ -333,6 +330,10 @@ impl ChannelDsp {
         } else {
             2.0 * std::f64::consts::PI * channel_if_hz / self.sdr_sample_rate as f64
         };
+        // Reset signal strength so the meter doesn't show a stale reading
+        // from the previous frequency while the IIR catches up.
+        self.carrier_iq_i = 0.0;
+        self.last_signal_db = -120.0;
     }
 
     fn pipeline_rates(
@@ -427,7 +428,6 @@ impl ChannelDsp {
         self.audio_dc = dc_for_mode(&self.mode);
         self.carrier_iq_alpha = Self::narrow_carrier_alpha(channel_sample_rate);
         self.carrier_iq_i = 0.0;
-        self.carrier_iq_q = 0.0;
         self.frame_buf.clear();
         self.frame_buf_offset = 0;
     }
@@ -544,7 +544,6 @@ impl ChannelDsp {
             noise_blanker: NoiseBlanker::new(nb_cfg.enabled, nb_cfg.threshold),
             last_signal_db: -120.0,
             carrier_iq_i: 0.0,
-            carrier_iq_q: 0.0,
             carrier_iq_alpha: Self::narrow_carrier_alpha(channel_sample_rate),
         }
     }
@@ -760,18 +759,17 @@ impl ChannelDsp {
         // Signal strength measurement (before AGC).
         {
             if self.mode == RigMode::WFM {
-                // WFM: narrow-band carrier measurement via IQ-domain lowpass.
-                // A single-pole IIR on each of I and Q (≈500 Hz cutoff) rejects
-                // wideband noise *before* computing power, so the meter reads
-                // carrier level rather than total noise across the 180 kHz channel.
+                // WFM: smooth envelope power directly.
+                // FM is constant-envelope, so I²+Q² is inherently stable
+                // regardless of modulation content.  Averaging power (not I/Q
+                // components) avoids the ~6 dB dip that occurs when modulation
+                // rotates the carrier away from DC in the IQ plane.
                 let alpha = self.carrier_iq_alpha;
                 for s in decimated.iter() {
-                    self.carrier_iq_i += alpha * (s.re - self.carrier_iq_i);
-                    self.carrier_iq_q += alpha * (s.im - self.carrier_iq_q);
+                    let pwr = s.re * s.re + s.im * s.im;
+                    self.carrier_iq_i += alpha * (pwr - self.carrier_iq_i);
                 }
-                let carrier_pwr =
-                    self.carrier_iq_i * self.carrier_iq_i + self.carrier_iq_q * self.carrier_iq_q;
-                self.last_signal_db = 10.0 * carrier_pwr.max(1e-12).log10();
+                self.last_signal_db = 10.0 * self.carrier_iq_i.max(1e-12).log10();
             } else {
                 // Other modes: peak IQ magnitude with EMA smoothing.
                 const SIGNAL_EMA_ALPHA: f32 = 0.4;
@@ -780,8 +778,7 @@ impl ChannelDsp {
                     .map(|s| s.re * s.re + s.im * s.im)
                     .fold(0.0_f32, f32::max);
                 let peak_db = 10.0 * peak_power.max(1e-12).log10();
-                self.last_signal_db +=
-                    SIGNAL_EMA_ALPHA * (peak_db - self.last_signal_db);
+                self.last_signal_db += SIGNAL_EMA_ALPHA * (peak_db - self.last_signal_db);
             }
         }
 

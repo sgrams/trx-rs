@@ -1049,6 +1049,10 @@ async fn main() -> DynResult<()> {
         );
         if let Some(prebuilt) = sdr_prebuilt_rig {
             task_config.prebuilt_rig = Some(prebuilt);
+            // SDR signal strength is a pre-computed field read — no serial
+            // round-trip — so we can poll much faster than the CAT default.
+            task_config.polling =
+                AdaptivePolling::new(Duration::from_millis(100), Duration::from_millis(100));
         }
 
         // Spawn rig task.
