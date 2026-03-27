@@ -109,6 +109,13 @@ fn encode_sym(state: u32) -> u32 {
     (p1 << 1) | p2
 }
 
+/// Result from the Fano decoder including quality metric.
+struct FanoResult {
+    bits: [u8; NBITS],
+    /// Cumulative path metric — higher values indicate higher confidence.
+    metric: i64,
+}
+
 /// Soft-decision Fano sequential decoder for K=32, rate-1/2 convolutional code.
 ///
 /// Closely follows the reference implementation from WSJT-X (fano.c by Phil Karn, KA9Q).
@@ -117,8 +124,8 @@ fn encode_sym(state: u32) -> u32 {
 /// Symbols are read in pairs: `symbols[2k]` and `symbols[2k+1]` are the two
 /// coded bits for input bit k.
 ///
-/// Output: 81 decoded bits (first 50 are payload), or None on timeout.
-fn fano_decode(symbols: &[u8; NSYMS]) -> Option<[u8; NBITS]> {
+/// Output: decoded bits and cumulative path metric, or None on timeout.
+fn fano_decode(symbols: &[u8; NSYMS]) -> Option<FanoResult> {
     let mettab = build_mettab();
     let max_cycles = FANO_MAX_CYCLES_PER_BIT * NBITS;
     let tail_start = NBITS - 31; // position 50: first tail bit
@@ -234,7 +241,10 @@ fn fano_decode(symbols: &[u8; NSYMS]) -> Option<[u8; NBITS]> {
     for k in 0..NBITS {
         bits[k] = (encstate[k] & 1) as u8;
     }
-    Some(bits)
+    Some(FanoResult {
+        bits,
+        metric: gamma[NBITS],
+    })
 }
 
 /// Unpack 50 payload bits into a formatted WSPR message string.
@@ -343,6 +353,15 @@ fn unpack_message(bits: &[u8; NBITS]) -> Option<String> {
     Some(format!("{} {} {}", callsign, grid, power_dbm))
 }
 
+/// Minimum Fano cumulative path metric to accept a decode.
+///
+/// The Fano decoder can sometimes converge on random noise, producing bits
+/// that happen to unpack into a valid-looking message. The cumulative path
+/// metric reflects how well the received symbols matched the best trellis
+/// path. Real WSPR signals at decodable SNR produce metrics well above this
+/// threshold; noise-induced decodes have metrics near or below zero.
+const FANO_MIN_METRIC: i64 = 20;
+
 /// Attempt protocol-level decode from 162 soft-decision symbols.
 ///
 /// Input: 162 bytes where each value is a soft-decision symbol (0-255):
@@ -354,8 +373,14 @@ pub fn decode_symbols(symbols: &[u8]) -> Option<WsprProtocolMessage> {
         return None;
     }
     let coded = deinterleave(symbols);
-    let bits = fano_decode(&coded)?;
-    let message = unpack_message(&bits)?;
+    let result = fano_decode(&coded)?;
+
+    // Reject low-confidence decodes that are likely false positives from noise
+    if result.metric < FANO_MIN_METRIC {
+        return None;
+    }
+
+    let message = unpack_message(&result.bits)?;
     Some(WsprProtocolMessage { message })
 }
 
@@ -537,13 +562,17 @@ mod tests {
         }
 
         // Fano decode (already in coded order, no interleaving needed)
-        let decoded = fano_decode(&soft);
-        assert!(decoded.is_some(), "Fano decoder should succeed");
-        let decoded = decoded.unwrap();
+        let result = fano_decode(&soft);
+        assert!(result.is_some(), "Fano decoder should succeed");
+        let result = result.unwrap();
         assert_eq!(
-            &decoded[..NBITS],
+            &result.bits[..NBITS],
             &input_bits[..NBITS],
             "Decoded bits should match input"
+        );
+        assert!(
+            result.metric > 0,
+            "Path metric should be positive for perfect symbols"
         );
     }
 }
