@@ -19,13 +19,27 @@ const BIPHASE_CLOCK_WINDOW: usize = 128;
 /// Minimum quality score to publish RDS state to the outer decoder.
 const MIN_PUBLISH_QUALITY: f32 = 0.20;
 /// Tech 6: number of Block A observations before using accumulated PI.
-const PI_ACC_THRESHOLD: u8 = 3;
+/// 5 observations at 9 dB SNR gives reliable majority voting without
+/// significant latency increase (one group = 4 blocks ≈ 87 ms).
+const PI_ACC_THRESHOLD: u8 = 5;
 /// Tech 9: maximum total soft-confidence cost for OSD bit flips.
 /// Rejects corrections where the flipped bits had high confidence —
 /// a strong indicator of a false decode rather than a genuine error.
 /// At 9–10 dB SNR genuine errors have cost ≲ 0.3; noise-induced OSD(2)
 /// matches typically cost 0.6–1.2.
 const OSD_MAX_FLIP_COST: f32 = 0.45;
+/// Tech 11 — Gardner TED proportional gain (per chip, after power normalisation).
+/// Sized so that a full-amplitude timing error (normalised error ≈ 1) produces
+/// a correction of ~Kp per chip, well within the clamp.  This is deliberately
+/// conservative; the I-path handles steady-state offsets.
+const GARDNER_KP: f32 = 1e-4;
+/// Tech 11 — Gardner TED integral gain (per chip, after power normalisation).
+/// Roughly Kp/1000; slow enough to avoid windup yet fast enough to null a
+/// crystal offset (typically < 100 ppm) within a few seconds.
+const GARDNER_KI: f32 = 1e-7;
+/// Tech 11 — maximum clock_inc change per chip (fraction of nominal).
+/// ±1 % corresponds to ±23.75 Hz pull-in range at 2375 chips/s.
+const GARDNER_MAX_FREQ_CORR_FRAC: f32 = 0.01;
 /// Tech 5 — Costas loop proportional gain (per sample).
 const COSTAS_KP: f32 = 8e-4;
 /// Tech 5 — Costas loop integral gain (per sample).
@@ -36,8 +50,10 @@ const COSTAS_MAX_FREQ_CORR: f32 = 0.005;
 /// Tech 1 — RRC roll-off factor.  0.50 gives ~14% narrower noise bandwidth
 /// than 0.75 (one-sided BW = Rs/2 × (1+α)) for ~0.6 dB sensitivity gain.
 const RRC_ALPHA: f32 = 0.50;
-/// Tech 1 — RRC filter span in chips.
-const RRC_SPAN_CHIPS: usize = 4;
+/// Tech 1 — RRC filter span in chips.  6 chips captures more pulse energy
+/// than 4 and reduces ISI on adjacent chips; the added latency is 2 chips
+/// (~0.85 ms at 2375 chips/s), negligible for RDS.
+const RRC_SPAN_CHIPS: usize = 6;
 
 const OFFSET_A: u16 = 0x0FC;
 const OFFSET_B: u16 = 0x198;
@@ -282,13 +298,27 @@ struct Candidate {
     pi_llr_acc: [f32; 16],
     /// Tech 6: number of Block A observations accumulated.
     pi_acc_count: u8,
+    /// Tech 11: nominal clock increment (RDS_CHIP_RATE / sample_rate), stored
+    /// so the TED can clamp clock_inc to a ±GARDNER_MAX_FREQ_CORR_FRAC window.
+    nominal_clock_inc: f32,
+    /// Tech 11: true while waiting to capture the mid-chip sample this period.
+    mid_chip_pending: bool,
+    /// Tech 11: instantaneous filtered I value at the mid-chip instant (~0.5 phase).
+    mid_chip_i: f32,
+    /// Tech 11: instantaneous filtered I value at the previous chip boundary.
+    prev_chip_i: f32,
+    /// Tech 11: Gardner TED PI-loop integrator state.
+    ted_integrator: f32,
+    /// Tech 11: running estimate of chip I power, used for error normalisation.
+    ted_power_est: f32,
 }
 
 impl Candidate {
     fn new(sample_rate: f32, phase_offset: f32) -> Self {
+        let nominal_clock_inc = RDS_CHIP_RATE / sample_rate.max(1.0);
         Self {
             clock_phase: phase_offset,
-            clock_inc: RDS_CHIP_RATE / sample_rate.max(1.0),
+            clock_inc: nominal_clock_inc,
             sym_i_acc: 0.0,
             sym_q_acc: 0.0,
             sym_count: 0,
@@ -319,10 +349,28 @@ impl Candidate {
             ptyn_seen: [false; 2],
             pi_llr_acc: [0.0; 16],
             pi_acc_count: 0,
+            nominal_clock_inc,
+            mid_chip_pending: true,
+            mid_chip_i: 0.0,
+            prev_chip_i: 0.0,
+            ted_integrator: 0.0,
+            // Start at 1.0 so the first normalised error is bounded (≤ signal
+            // amplitude).  The estimate decays toward the true chip power over
+            // the first few hundred chips via the 0.999/0.001 leaky average.
+            ted_power_est: 1.0,
         }
     }
 
     fn process_sample(&mut self, i: f32, q: f32) -> Option<RdsData> {
+        // Tech 11: capture the instantaneous filtered I value at the mid-chip
+        // instant (clock_phase ≈ 0.5) for the Gardner TED.  The check fires on
+        // the first sample that pushes clock_phase at or past 0.5 since the last
+        // chip boundary reset.
+        if self.mid_chip_pending && self.clock_phase >= 0.5 {
+            self.mid_chip_i = i;
+            self.mid_chip_pending = false;
+        }
+
         self.sym_i_acc += i;
         self.sym_q_acc += q;
         self.sym_count = self.sym_count.saturating_add(1);
@@ -331,6 +379,30 @@ impl Candidate {
             return None;
         }
         self.clock_phase -= 1.0;
+        self.mid_chip_pending = true;
+
+        // Tech 11: Gardner TED — e[n] = x_mid[n] · (x[n] − x[n−1]).
+        // Normalise by a running power estimate so the loop bandwidth is
+        // independent of the RDS subcarrier level within the composite signal.
+        // ted_power_est starts at 1.0 so the first normalised error is bounded;
+        // it decays toward the true chip power over the first ~1000 chips.
+        self.ted_power_est = 0.999 * self.ted_power_est
+            + 0.001 * (i * i + self.prev_chip_i * self.prev_chip_i) * 0.5;
+        let max_corr = self.nominal_clock_inc * GARDNER_MAX_FREQ_CORR_FRAC;
+        if self.ted_power_est > 1e-10 {
+            let ted_err = self.mid_chip_i * (i - self.prev_chip_i) / self.ted_power_est;
+            // Anti-windup: clamp the integrator so it cannot accumulate beyond
+            // the correction ceiling even during prolonged large-error transients.
+            self.ted_integrator =
+                (self.ted_integrator + GARDNER_KI * ted_err).clamp(-max_corr, max_corr);
+            let correction =
+                (GARDNER_KP * ted_err + self.ted_integrator).clamp(-max_corr, max_corr);
+            self.clock_inc = (self.clock_inc + correction).clamp(
+                self.nominal_clock_inc * (1.0 - GARDNER_MAX_FREQ_CORR_FRAC),
+                self.nominal_clock_inc * (1.0 + GARDNER_MAX_FREQ_CORR_FRAC),
+            );
+        }
+        self.prev_chip_i = i;
 
         let count = f32::from(self.sym_count.max(1));
         let symbol = (self.sym_i_acc / count, self.sym_q_acc / count);
@@ -839,8 +911,7 @@ impl RdsDecoder {
                     || (is_incumbent && candidate.score >= self.best_score)
                     || self.best_state.is_none();
                 if qualifies {
-                    let same_pi =
-                        self.best_state.as_ref().and_then(|s| s.pi) == update.pi;
+                    let same_pi = self.best_state.as_ref().and_then(|s| s.pi) == update.pi;
                     if publish_quality >= MIN_PUBLISH_QUALITY
                         || same_pi
                         || self.best_state.is_none()
@@ -897,7 +968,7 @@ fn decode_block(word: u32) -> Option<(u16, BlockKind)> {
     Some((data, kind))
 }
 
-/// Tech 3/7/8: soft-decision block decoder implementing OSD(2).
+/// Tech 3/7/8: soft-decision block decoder implementing OSD(3).
 ///
 /// `word` is the 26-bit hard-decision word; `soft[k]` is the confidence
 /// magnitude (|LLR|) for the k-th received bit, where bit 0 is the MSB
@@ -907,8 +978,9 @@ fn decode_block(word: u32) -> Option<(u16, BlockKind)> {
 /// 1. Hard decode (Hamming distance 0) — zero cost.
 /// 2. All 26 single-bit flips — return the lowest-cost success.
 /// 3. All C(26,2)=325 two-bit flips — return the lowest-cost success.
+/// 4. All C(26,3)=2600 three-bit flips — return the lowest-cost success.
 ///
-/// OSD(2) is only used in locked mode (known block boundaries), so the
+/// OSD is only used in locked mode (known block boundaries), so the
 /// false-positive risk is bounded by the sequential block-type gating in
 /// `consume_locked_block`.
 fn decode_block_soft(word: u32, soft: &[f32; 26]) -> Option<(u16, BlockKind)> {
@@ -955,6 +1027,36 @@ fn decode_block_soft(word: u32, soft: &[f32; 26]) -> Option<(u16, BlockKind)> {
             if let Some(result) = decode_block(trial) {
                 best_cost = pair_cost;
                 best_result = Some(result);
+            }
+        }
+    }
+
+    if best_result.is_some() {
+        return best_result;
+    }
+
+    // Distance 3: all C(26,3)=2600 three-bit flips; pick the cheapest triple.
+    // The cost gate keeps false positives comparable to OSD(2); 2600 iterations
+    // with early-exit are fast (< 1 µs on modern hardware at chip rate).
+    for k1 in 0..26usize {
+        if soft[k1] >= OSD_MAX_FLIP_COST {
+            continue;
+        }
+        for k2 in (k1 + 1)..26usize {
+            let c12 = soft[k1] + soft[k2];
+            if c12 >= OSD_MAX_FLIP_COST {
+                continue;
+            }
+            for (k3, &s3) in soft.iter().enumerate().skip(k2 + 1) {
+                let triple_cost = c12 + s3;
+                if triple_cost >= best_cost || triple_cost > OSD_MAX_FLIP_COST {
+                    continue;
+                }
+                let trial = word ^ (1 << (25 - k1)) ^ (1 << (25 - k2)) ^ (1 << (25 - k3));
+                if let Some(result) = decode_block(trial) {
+                    best_cost = triple_cost;
+                    best_result = Some(result);
+                }
             }
         }
     }
@@ -1258,7 +1360,12 @@ mod tests {
         let ps = b"TEST FM!";
         let mut words: Vec<u32> = Vec::new();
         for seg in 0..4u8 {
-            let g = group_0a(pi, seg, [ps[seg as usize * 2], ps[seg as usize * 2 + 1]], 10);
+            let g = group_0a(
+                pi,
+                seg,
+                [ps[seg as usize * 2], ps[seg as usize * 2 + 1]],
+                10,
+            );
             words.extend_from_slice(&g);
         }
         let chips = blocks_to_chips(&words);
@@ -1279,7 +1386,7 @@ mod tests {
         // Preamble bit not added to decoded stream; data starts at chips[2].
 
         let mut prev_chip = chips[1]; // last chip of preamble
-        let mut pair_idx = 0usize;    // which chip within current bit pair (0=first/reference, 1=second/data)
+        let mut pair_idx = 0usize; // which chip within current bit pair (0=first/reference, 1=second/data)
         for &chip in &chips[2..] {
             let biphase_i = (chip as f32 - prev_chip as f32) * 0.5;
             if pair_idx == 1 {
@@ -1299,12 +1406,18 @@ mod tests {
             pair_idx = 1 - pair_idx;
         }
 
-        assert_eq!(decoded.len(), words.len(),
+        assert_eq!(
+            decoded.len(),
+            words.len(),
             "decoded {decoded_len} blocks but expected {expected}",
-            decoded_len = decoded.len(), expected = words.len());
+            decoded_len = decoded.len(),
+            expected = words.len()
+        );
         for (i, (got, want)) in decoded.iter().zip(words.iter()).enumerate() {
-            assert_eq!(got, want,
-                "block {i}: decoded 0x{got:08X} but expected 0x{want:08X}");
+            assert_eq!(
+                got, want,
+                "block {i}: decoded 0x{got:08X} but expected 0x{want:08X}"
+            );
         }
     }
 
@@ -1319,11 +1432,21 @@ mod tests {
         // Four Group-0A blocks cover all four PS segments.
         let mut words: Vec<u32> = Vec::new();
         for seg in 0..4u8 {
-            let g = group_0a(pi, seg, [ps[seg as usize * 2], ps[seg as usize * 2 + 1]], 10);
+            let g = group_0a(
+                pi,
+                seg,
+                [ps[seg as usize * 2], ps[seg as usize * 2 + 1]],
+                10,
+            );
             words.extend_from_slice(&g);
         }
         // Repeat 20× to give the decoder time to acquire.
-        let words: Vec<u32> = words.iter().copied().cycle().take(words.len() * 60).collect();
+        let words: Vec<u32> = words
+            .iter()
+            .copied()
+            .cycle()
+            .take(words.len() * 60)
+            .collect();
 
         let chips = blocks_to_chips(&words);
         let signal = chips_to_rds_signal(&chips, sample_rate);
@@ -1357,7 +1480,12 @@ mod tests {
             let g = group_0a(pi, seg, [b'N', b'Z' + seg], 3);
             words.extend_from_slice(&g);
         }
-        let words: Vec<u32> = words.iter().copied().cycle().take(words.len() * 40).collect();
+        let words: Vec<u32> = words
+            .iter()
+            .copied()
+            .cycle()
+            .take(words.len() * 40)
+            .collect();
 
         let chips = blocks_to_chips(&words);
         let mut signal = chips_to_rds_signal(&chips, sample_rate);
@@ -1386,7 +1514,12 @@ mod tests {
             let g = group_0a(pi, seg, [b'N', b'Z' + seg], 3);
             words.extend_from_slice(&g);
         }
-        let words: Vec<u32> = words.iter().copied().cycle().take(words.len() * 60).collect();
+        let words: Vec<u32> = words
+            .iter()
+            .copied()
+            .cycle()
+            .take(words.len() * 60)
+            .collect();
 
         let chips = blocks_to_chips(&words);
         let mut signal = chips_to_rds_signal(&chips, sample_rate);
@@ -1415,7 +1548,12 @@ mod tests {
             let g = group_0a(pi, seg, [b'A' + seg, b'B' + seg], 1);
             words.extend_from_slice(&g);
         }
-        let words: Vec<u32> = words.iter().copied().cycle().take(words.len() * 20).collect();
+        let words: Vec<u32> = words
+            .iter()
+            .copied()
+            .cycle()
+            .take(words.len() * 20)
+            .collect();
 
         let chips = blocks_to_chips(&words);
         let signal = chips_to_rds_signal(&chips, sample_rate);
@@ -1440,9 +1578,7 @@ mod tests {
 
     /// Inject exactly `n_errors` bit flips at random positions in a 26-bit word.
     fn inject_errors(word: u32, positions: &[usize]) -> u32 {
-        positions
-            .iter()
-            .fold(word, |w, &k| w ^ (1 << (25 - k)))
+        positions.iter().fold(word, |w, &k| w ^ (1 << (25 - k)))
     }
 
     #[test]
@@ -1503,7 +1639,10 @@ mod tests {
             let conf = if bit_idx >= 24 { 0.05 } else { 1.0 };
             last = cand.push_bit_soft(bit, conf);
         }
-        assert!(last.is_some(), "Full group should decode despite 2-bit errors in B/C/D");
+        assert!(
+            last.is_some(),
+            "Full group should decode despite 2-bit errors in B/C/D"
+        );
     }
 
     #[test]
@@ -1534,7 +1673,9 @@ mod tests {
                     if decode_block(corrupted).is_some() {
                         Some(()) // d0 hit (unexpected but count it)
                     } else {
-                        (0..26usize).find_map(|k| decode_block(corrupted ^ (1 << (25 - k)))).map(|_| ())
+                        (0..26usize)
+                            .find_map(|k| decode_block(corrupted ^ (1 << (25 - k))))
+                            .map(|_| ())
                     }
                 };
                 if osd1_result.is_some() {
@@ -1576,7 +1717,12 @@ mod tests {
             words.extend_from_slice(&g);
         }
         // 60× repetitions to give Costas plenty of time to acquire.
-        let words: Vec<u32> = words.iter().copied().cycle().take(words.len() * 60).collect();
+        let words: Vec<u32> = words
+            .iter()
+            .copied()
+            .cycle()
+            .take(words.len() * 60)
+            .collect();
 
         let chips = blocks_to_chips(&words);
         let signal = chips_to_rds_signal(&chips, sample_rate);
