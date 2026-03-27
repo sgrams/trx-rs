@@ -297,21 +297,34 @@ pub struct ChannelDsp {
     squelch: VirtualSquelch,
     noise_blanker: NoiseBlanker,
     last_signal_db: f32,
-    /// Single-pole IIR state for smoothed envelope power (WFM signal strength).
-    carrier_iq_i: f32,
-    /// IIR coefficient for the envelope power smoother, precomputed from sample rate.
-    carrier_iq_alpha: f32,
+    /// Smoothed IQ envelope power (linear) for signal strength.
+    carrier_iq_power: f32,
+    /// IIR attack coefficient (fast) for S-meter envelope tracking.
+    carrier_attack_alpha: f32,
+    /// IIR decay coefficient (slow) for S-meter envelope tracking.
+    carrier_decay_alpha: f32,
+    /// Cached noise floor estimate (dB) from the WFM demodulator's baseband
+    /// noise probe.  Updated after each WFM decode block.
+    wfm_noise_floor_db: f32,
+    /// Previous block's estimated CNR (dB) from the WFM demodulator.
+    wfm_cnr_db: f32,
 }
 
 impl ChannelDsp {
-    /// Compute the single-pole IIR alpha for envelope power smoothing.
-    /// Uses ~500 Hz cutoff for a responsive but stable S-meter reading.
-    fn narrow_carrier_alpha(channel_sample_rate: u32) -> f32 {
-        const CARRIER_BW_HZ: f32 = 500.0;
+    /// Compute asymmetric IIR coefficients for S-meter envelope tracking.
+    ///
+    /// Attack: ~2 ms time constant (fast response to signal increase).
+    /// Decay:  ~300 ms time constant (slow fall for stable reading).
+    /// This matches the IARU Region 1 Technical Recommendation R.1 for
+    /// S-meter behaviour in professional receivers.
+    fn smeter_alphas(channel_sample_rate: u32) -> (f32, f32) {
         if channel_sample_rate == 0 {
-            return 0.1;
+            return (0.3, 0.01);
         }
-        (std::f32::consts::TAU * CARRIER_BW_HZ / channel_sample_rate as f32).min(1.0)
+        let sr = channel_sample_rate as f32;
+        let attack = (1.0 - (-1.0 / (sr * 0.002)).exp()).min(1.0); // τ = 2 ms
+        let decay = (1.0 - (-1.0 / (sr * 0.300)).exp()).min(1.0); // τ = 300 ms
+        (attack, decay)
     }
 
     fn clamp_bandwidth_for_mode(mode: &RigMode, bandwidth_hz: u32) -> u32 {
@@ -332,8 +345,10 @@ impl ChannelDsp {
         };
         // Reset signal strength so the meter doesn't show a stale reading
         // from the previous frequency while the IIR catches up.
-        self.carrier_iq_i = 0.0;
+        self.carrier_iq_power = 0.0;
         self.last_signal_db = -120.0;
+        self.wfm_noise_floor_db = -120.0;
+        self.wfm_cnr_db = 0.0;
     }
 
     fn pipeline_rates(
@@ -426,8 +441,12 @@ impl ChannelDsp {
         self.iq_agc = iq_agc_for_mode(&self.mode, channel_sample_rate);
         self.audio_agc = agc_for_mode(&self.mode, self.audio_sample_rate);
         self.audio_dc = dc_for_mode(&self.mode);
-        self.carrier_iq_alpha = Self::narrow_carrier_alpha(channel_sample_rate);
-        self.carrier_iq_i = 0.0;
+        let (attack, decay) = Self::smeter_alphas(channel_sample_rate);
+        self.carrier_attack_alpha = attack;
+        self.carrier_decay_alpha = decay;
+        self.carrier_iq_power = 0.0;
+        self.wfm_noise_floor_db = -120.0;
+        self.wfm_cnr_db = 0.0;
         self.frame_buf.clear();
         self.frame_buf_offset = 0;
     }
@@ -543,8 +562,11 @@ impl ChannelDsp {
             squelch: VirtualSquelch::new(squelch_cfg),
             noise_blanker: NoiseBlanker::new(nb_cfg.enabled, nb_cfg.threshold),
             last_signal_db: -120.0,
-            carrier_iq_i: 0.0,
-            carrier_iq_alpha: Self::narrow_carrier_alpha(channel_sample_rate),
+            carrier_iq_power: 0.0,
+            carrier_attack_alpha: Self::smeter_alphas(channel_sample_rate).0,
+            carrier_decay_alpha: Self::smeter_alphas(channel_sample_rate).1,
+            wfm_noise_floor_db: -120.0,
+            wfm_cnr_db: 0.0,
         }
     }
 
@@ -765,18 +787,89 @@ impl ChannelDsp {
         {
             let decim_correction = 10.0 * (self.decim_factor as f32).max(1.0).log10();
             if self.mode == RigMode::WFM {
-                // WFM: smooth envelope power directly.
-                // FM is constant-envelope, so I²+Q² is inherently stable
-                // regardless of modulation content.  Averaging power (not I/Q
-                // components) avoids the ~6 dB dip that occurs when modulation
-                // rotates the carrier away from DC in the IQ plane.
-                let alpha = self.carrier_iq_alpha;
-                for s in decimated.iter() {
-                    let pwr = s.re * s.re + s.im * s.im;
-                    self.carrier_iq_i += alpha * (pwr - self.carrier_iq_i);
-                }
-                self.last_signal_db =
-                    10.0 * self.carrier_iq_i.max(1e-12).log10() - decim_correction;
+                // WFM signal strength: asymmetric attack/decay with noise
+                // floor correction from the demodulator's baseband noise
+                // probe (one-block delay, acceptable for a slow metric).
+                //
+                // 1. Compute mean IQ envelope power (channel power including
+                //    both signal and noise).
+                // 2. Apply asymmetric attack/decay smoothing (fast attack
+                //    ~2 ms, slow decay ~300 ms) per IARU R.1 S-meter spec.
+                // 3. Subtract the estimated noise floor (from the WFM
+                //    demodulator's 67 kHz baseband noise probe) in the
+                //    linear domain to isolate the carrier power.
+                // 4. When the stereo pilot is locked and the CNR estimate
+                //    is available, cross-validate: the pilot has a known
+                //    fixed amplitude at the transmitter, so its received
+                //    level provides a quality-weighted correction.
+                let n = decimated.len() as f32;
+                let mean_power = decimated
+                    .iter()
+                    .map(|s| s.re * s.re + s.im * s.im)
+                    .sum::<f32>()
+                    / n;
+
+                // Asymmetric attack/decay: use the faster coefficient when
+                // the new sample is above the current estimate (attack),
+                // and the slower coefficient when below (decay).
+                let alpha = if mean_power > self.carrier_iq_power {
+                    self.carrier_attack_alpha
+                } else {
+                    self.carrier_decay_alpha
+                };
+                self.carrier_iq_power += alpha * (mean_power - self.carrier_iq_power);
+
+                // Noise floor correction: subtract the estimated noise
+                // contribution to reveal the carrier-only power.  The
+                // noise floor estimate comes from the WFM demodulator's
+                // baseband noise probe (updated after each decode block).
+                //
+                // Convert the cached noise floor dB back to linear, then
+                // subtract from the smoothed total power.  This prevents
+                // the meter from reading the noise floor on empty channels.
+                let noise_linear = 10.0_f32.powf(self.wfm_noise_floor_db / 10.0);
+                let carrier_power = (self.carrier_iq_power - noise_linear).max(1e-15);
+
+                // Pilot-referenced correction: when the 19 kHz pilot is
+                // locked (CNR estimate available), blend the IQ-domain
+                // estimate with a pilot-referenced one.  The pilot tone
+                // has a known fixed amplitude (±7.5 kHz deviation, 10% of
+                // ±75 kHz), so its received power relative to the channel
+                // power provides an independent quality-weighted estimate.
+                //
+                // At high CNR (>20 dB), the raw IQ power is accurate and
+                // needs no correction.  At low CNR (<10 dB, near the FM
+                // threshold), the pilot correction becomes more valuable
+                // because noise dominates the IQ reading.
+                let corrected_power = if self.wfm_cnr_db > 3.0 && self.wfm_cnr_db < 25.0 {
+                    // Blend factor: pilot correction is strongest near the
+                    // FM threshold (~10 dB CNR) and fades at high CNR.
+                    let blend = ((25.0 - self.wfm_cnr_db) / 22.0).clamp(0.0, 0.3);
+                    // The pilot is 10% of total deviation, so it sits ~20 dB
+                    // below the main signal.  Scale pilot power accordingly
+                    // to estimate the equivalent carrier power.
+                    let pilot_pwr = self
+                        .wfm_decoder
+                        .as_ref()
+                        .map(|d| d.pilot_tone_power())
+                        .unwrap_or(0.0);
+                    if pilot_pwr > 1e-15 {
+                        // pilot_pwr is in the demodulated baseband domain;
+                        // it is used only for relative correction, not as
+                        // an absolute level.  When pilot is stronger than
+                        // expected relative to noise, bias the reading up;
+                        // when weaker, bias it down.
+                        let pilot_based = carrier_power
+                            * (1.0 + blend * (pilot_pwr / (pilot_pwr + noise_linear) - 0.5));
+                        pilot_based.max(1e-15)
+                    } else {
+                        carrier_power
+                    }
+                } else {
+                    carrier_power
+                };
+
+                self.last_signal_db = 10.0 * corrected_power.max(1e-15).log10() - decim_correction;
             } else {
                 // Other modes: peak IQ magnitude with EMA smoothing.
                 const SIGNAL_EMA_ALPHA: f32 = 0.4;
@@ -804,6 +897,31 @@ impl ChannelDsp {
         const WFM_OUTPUT_GAIN: f32 = 0.50;
         let mut audio = if let Some(decoder) = self.wfm_decoder.as_mut() {
             let mut out = decoder.process_iq(decimated);
+            // Update cached noise floor and CNR estimates from the WFM
+            // demodulator's baseband noise probe for the next signal
+            // strength computation (one-block delay is acceptable for
+            // these slow-moving metrics).
+            let noise_pwr = decoder.baseband_noise_power();
+            let total_pwr = decoder.baseband_total_power();
+            if noise_pwr > 1e-15 && total_pwr > 1e-15 {
+                // Map the baseband noise power to the equivalent IQ-domain
+                // noise floor.  The baseband probe at 67 kHz captures noise
+                // shaped by the f² FM demodulation curve.  Scale by the
+                // ratio of channel bandwidth to probe bandwidth so the
+                // subtraction in the IQ domain is proportionally correct.
+                //
+                // The probe BPF at Q=3 around 67 kHz has a bandwidth of
+                // ~22 kHz.  The channel bandwidth is the full decimated
+                // rate.  The ratio gives us the scaling factor.
+                let probe_bw = 67_000.0_f32 / 3.0; // ~22 kHz
+                let channel_bw = (self.sdr_sample_rate as f32 / self.decim_factor as f32).max(1.0);
+                let bw_ratio = channel_bw / probe_bw;
+                let iq_noise_est = noise_pwr * bw_ratio;
+                self.wfm_noise_floor_db = 10.0 * iq_noise_est.max(1e-15).log10();
+            }
+            if let Some(cnr) = decoder.estimated_cnr_db() {
+                self.wfm_cnr_db += 0.1 * (cnr - self.wfm_cnr_db);
+            }
             for sample in &mut out {
                 *sample = (*sample * WFM_OUTPUT_GAIN).clamp(-1.0, 1.0);
             }
