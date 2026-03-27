@@ -125,6 +125,15 @@ pub trait RigCat: Rig + Send {
         &'a mut self,
     ) -> Pin<Box<dyn Future<Output = DynResult<u8>> + Send + 'a>>;
 
+    /// Return precise signal strength in dBm/dBFS as a float.
+    /// Backends with continuous measurements (e.g. SDR) override this
+    /// to bypass the coarse 0..15 quantisation of `get_signal_strength`.
+    fn get_signal_strength_db<'a>(
+        &'a mut self,
+    ) -> Pin<Box<dyn Future<Output = Option<f64>> + Send + 'a>> {
+        Box::pin(std::future::ready(None))
+    }
+
     fn get_tx_power<'a>(&'a mut self) -> Pin<Box<dyn Future<Output = DynResult<u8>> + Send + 'a>>;
 
     fn get_tx_limit<'a>(&'a mut self) -> Pin<Box<dyn Future<Output = DynResult<u8>> + Send + 'a>>;
@@ -343,9 +352,9 @@ pub struct RigTxStatus {
     pub alc: Option<u8>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct RigRxStatus {
-    pub sig: Option<i32>,
+    pub sig: Option<f64>,
 }
 
 /// Configurable control settings that can be pushed to the rig.

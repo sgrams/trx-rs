@@ -307,7 +307,7 @@ impl RigMachineState {
                 tx_en: true,
                 vfo: data.vfo.clone(),
                 tx: data.tx.clone(),
-                rx: Some(RigRxStatus { sig: Some(0) }),
+                rx: Some(RigRxStatus { sig: Some(0.0) }),
                 lock: Some(data.locked),
             }),
             _ => None,

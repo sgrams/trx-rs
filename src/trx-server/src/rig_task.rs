@@ -887,7 +887,9 @@ async fn refresh_state_from_cat(rig: &mut Box<dyn RigCat>, state: &mut RigState)
     state.status.vfo = vfo;
 
     if state.status.tx_en {
-        state.status.rx.get_or_insert(RigRxStatus { sig: None }).sig = Some(0);
+        state.status.rx.get_or_insert(RigRxStatus { sig: None }).sig = Some(0.0);
+    } else if let Some(db) = rig.get_signal_strength_db().await {
+        state.status.rx.get_or_insert(RigRxStatus { sig: None }).sig = Some(db);
     } else if let Ok(meter) = rig.get_signal_strength().await {
         let sig = map_signal_strength(&state.status.mode, meter);
         state.status.rx.get_or_insert(RigRxStatus { sig: None }).sig = Some(sig);
@@ -1015,12 +1017,12 @@ async fn prime_vfo_state(
 }
 
 /// Map raw signal strength to S-meter value based on mode.
-fn map_signal_strength(mode: &RigMode, raw: u8) -> i32 {
+fn map_signal_strength(mode: &RigMode, raw: u8) -> f64 {
     // FT-817 returns 0-15 for signal strength
     // Map to approximate dBm / S-units
     match mode {
-        RigMode::FM | RigMode::WFM | RigMode::AIS | RigMode::VDES => -120 + (raw as i32 * 6),
-        _ => -127 + (raw as i32 * 6),
+        RigMode::FM | RigMode::WFM | RigMode::AIS | RigMode::VDES => -120.0 + (raw as f64 * 6.0),
+        _ => -127.0 + (raw as f64 * 6.0),
     }
 }
 

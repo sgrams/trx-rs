@@ -567,6 +567,19 @@ impl RigCat for SoapySdrRig {
         })
     }
 
+    fn get_signal_strength_db<'a>(
+        &'a mut self,
+    ) -> Pin<Box<dyn std::future::Future<Output = Option<f64>> + Send + 'a>> {
+        Box::pin(async move {
+            self.pipeline
+                .channel_dsps
+                .read()
+                .unwrap()
+                .get(self.primary_channel_idx)
+                .and_then(|dsp| dsp.lock().ok().map(|d| d.signal_db() as f64))
+        })
+    }
+
     // -- TX / unsupported methods -------------------------------------------
 
     fn set_ptt<'a>(

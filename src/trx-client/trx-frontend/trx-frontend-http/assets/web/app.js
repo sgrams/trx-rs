@@ -582,16 +582,16 @@ let sigStrengthUnitIdx = loadSetting("sigStrengthUnit", 0);
 function formatSigStrength(dbm) {
   if (!Number.isFinite(dbm)) return "--";
   const unit = SIG_STRENGTH_UNITS[sigStrengthUnitIdx] || "dBFS";
-  if (unit === "dBm") return `${dbm} dBm`;
+  if (unit === "dBm") return `${dbm.toFixed(1)} dBm`;
   if (unit === "dBf") {
     // dBf = dBm + 107 (referenced to 1 femtowatt across 50 Ω)
     const dbf = dbm + 107;
-    return `${dbf.toFixed(0)} dBf`;
+    return `${dbf.toFixed(1)} dBf`;
   }
   // dBFS: map receiver range to a full-scale reference
   // Typical receiver: -140 dBm (noise floor) to 0 dBm (full scale)
   const dbfs = Math.max(-140, Math.min(0, dbm));
-  return `${dbfs} dBFS`;
+  return `${dbfs.toFixed(1)} dBFS`;
 }
 
 function refreshSigStrengthDisplay() {
@@ -9199,7 +9199,7 @@ function startSpectrumStreaming() {
       vchanRdsById = next;
       vchanSignalDbById = nextSig;
       if (typeof vchanActiveId !== "undefined" && vchanActiveId && nextSig.has(vchanActiveId)) {
-        sigLastDbm = Math.round(nextSig.get(vchanActiveId));
+        sigLastDbm = nextSig.get(vchanActiveId);
         refreshSigStrengthDisplay();
       }
       updateRdsPsOverlay(primaryRds);

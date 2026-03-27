@@ -757,7 +757,13 @@ impl ChannelDsp {
         }
 
         // Signal strength measurement (before AGC).
+        //
+        // The decimated samples carry the total power of the channel bandwidth,
+        // which is higher than the per-bin spectral density shown on the
+        // spectrum display by approximately 10·log10(decim_factor).  Subtract
+        // that so the meter and the spectrum peak agree.
         {
+            let decim_correction = 10.0 * (self.decim_factor as f32).max(1.0).log10();
             if self.mode == RigMode::WFM {
                 // WFM: smooth envelope power directly.
                 // FM is constant-envelope, so I²+Q² is inherently stable
@@ -769,7 +775,8 @@ impl ChannelDsp {
                     let pwr = s.re * s.re + s.im * s.im;
                     self.carrier_iq_i += alpha * (pwr - self.carrier_iq_i);
                 }
-                self.last_signal_db = 10.0 * self.carrier_iq_i.max(1e-12).log10();
+                self.last_signal_db =
+                    10.0 * self.carrier_iq_i.max(1e-12).log10() - decim_correction;
             } else {
                 // Other modes: peak IQ magnitude with EMA smoothing.
                 const SIGNAL_EMA_ALPHA: f32 = 0.4;
@@ -777,7 +784,7 @@ impl ChannelDsp {
                     .iter()
                     .map(|s| s.re * s.re + s.im * s.im)
                     .fold(0.0_f32, f32::max);
-                let peak_db = 10.0 * peak_power.max(1e-12).log10();
+                let peak_db = 10.0 * peak_power.max(1e-12).log10() - decim_correction;
                 self.last_signal_db += SIGNAL_EMA_ALPHA * (peak_db - self.last_signal_db);
             }
         }
