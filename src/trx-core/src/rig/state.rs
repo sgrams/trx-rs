@@ -430,7 +430,11 @@ pub struct RdsData {
 }
 
 /// RDS metadata snapshot for a virtual channel.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+///
+/// `PartialEq` intentionally ignores `signal_db` so that rapidly-changing
+/// signal levels do not cause the main state snapshot to diff on every poll
+/// cycle (signal_db flows through the spectrum SSE instead).
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VchanRdsEntry {
     /// Virtual channel UUID.
     pub id: Uuid,
@@ -440,6 +444,12 @@ pub struct VchanRdsEntry {
     /// Channel signal level in dBFS.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub signal_db: Option<f32>,
+}
+
+impl PartialEq for VchanRdsEntry {
+    fn eq(&self, other: &Self) -> bool {
+        self.id == other.id && self.rds == other.rds
+    }
 }
 
 /// Read-only projection of state shared with clients.

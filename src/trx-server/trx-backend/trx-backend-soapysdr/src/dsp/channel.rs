@@ -675,12 +675,14 @@ impl ChannelDsp {
 
         // Carrier power: DC component of the mixed signal (narrow-band estimate
         // at the tuned frequency).  Correlates with the spectrum FFT peak.
+        // EMA smoothing (α ≈ 0.4) for fast response with light jitter reduction.
         {
+            const SIGNAL_EMA_ALPHA: f32 = 0.4;
             let inv_n = 1.0 / n as f32;
             let dc_i: f32 = mixed_i.iter().sum::<f32>() * inv_n;
             let dc_q: f32 = mixed_q.iter().sum::<f32>() * inv_n;
-            let carrier_power = dc_i * dc_i + dc_q * dc_q;
-            self.last_signal_db = 10.0 * carrier_power.max(1e-12).log10();
+            let carrier_db = 10.0 * (dc_i * dc_i + dc_q * dc_q).max(1e-12).log10();
+            self.last_signal_db += SIGNAL_EMA_ALPHA * (carrier_db - self.last_signal_db);
         }
 
         self.lpf_iq.filter_block_into(
