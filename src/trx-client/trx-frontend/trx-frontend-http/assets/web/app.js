@@ -7673,16 +7673,19 @@ const sdrSquelchAutoBtn = document.getElementById("sdr-squelch-auto");
 if (sdrSquelchAutoBtn) {
   sdrSquelchAutoBtn.addEventListener("click", () => {
     if (!sdrSquelchSupported) return;
+    let pct = 0; // default: Off
     const data = lastSpectrumData || window.lastSpectrumData;
-    if (!data || !Array.isArray(data.bins) || data.bins.length === 0) return;
-    const noiseDb = estimateNoiseFloorDb(data.bins);
-    if (noiseDb == null || !Number.isFinite(noiseDb)) return;
-    // Set threshold slightly above noise floor so squelch closes on noise
-    const thresholdDb = noiseDb + 6;
-    const clamped = Math.max(SDR_SQUELCH_MIN_DB, Math.min(SDR_SQUELCH_MAX_DB, thresholdDb));
-    const pct = clampSdrSquelchPercent(
-      ((clamped - SDR_SQUELCH_MIN_DB) / (SDR_SQUELCH_MAX_DB - SDR_SQUELCH_MIN_DB)) * 100,
-    );
+    if (data && Array.isArray(data.bins) && data.bins.length > 0) {
+      const noiseDb = estimateNoiseFloorDb(data.bins);
+      if (noiseDb != null && Number.isFinite(noiseDb)) {
+        // Set threshold slightly above noise floor so squelch closes on noise
+        const thresholdDb = noiseDb + 6;
+        const clamped = Math.max(SDR_SQUELCH_MIN_DB, Math.min(SDR_SQUELCH_MAX_DB, thresholdDb));
+        pct = clampSdrSquelchPercent(
+          ((clamped - SDR_SQUELCH_MIN_DB) / (SDR_SQUELCH_MAX_DB - SDR_SQUELCH_MIN_DB)) * 100,
+        );
+      }
+    }
     if (sdrSquelchEl) {
       sdrSquelchEl.value = String(pct);
       updateSdrSquelchPctLabel();
