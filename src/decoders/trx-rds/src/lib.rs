@@ -19,9 +19,10 @@ const BIPHASE_CLOCK_WINDOW: usize = 128;
 /// Minimum quality score to publish RDS state to the outer decoder.
 const MIN_PUBLISH_QUALITY: f32 = 0.20;
 /// Tech 6: number of Block A observations before using accumulated PI.
-/// 8 observations gives reliable majority voting down to 5 dB SNR without
-/// significant latency increase (one group = 4 blocks ≈ 87 ms).
-const PI_ACC_THRESHOLD: u8 = 8;
+/// 5 observations gives reliable majority voting down to 5 dB SNR with
+/// fast acquisition (~435 ms).  Higher values improve voting reliability
+/// but delay PI commitment; 5 balances both.
+const PI_ACC_THRESHOLD: u8 = 5;
 /// Tech 9: maximum total soft-confidence cost for OSD bit flips.
 /// Rejects corrections where the flipped bits had high confidence —
 /// a strong indicator of a false decode rather than a genuine error.
@@ -68,10 +69,12 @@ const COSTAS_LOCK_THRESHOLD: f32 = 0.15;
 /// sensitivity gain.  The tighter excess bandwidth is handled by the longer
 /// RRC_SPAN_CHIPS to keep ISI negligible.
 const RRC_ALPHA: f32 = 0.30;
-/// Tech 1 — RRC filter span in chips.  10 chips captures more pulse energy
-/// and the extra taps keep stopband leakage below −60 dB, critical when α
-/// is small.  Added latency is ~4.2 ms at 2375 chips/s, negligible for RDS.
-const RRC_SPAN_CHIPS: usize = 10;
+/// Tech 1 — RRC filter span in chips.  5 chips captures >95% of the RRC
+/// pulse energy at α=0.30 (first zero at t≈1.43 chips, sidelobes beyond
+/// ±2.5 chips contribute <5% energy) while keeping the FFT overlap-save
+/// block size at 512 and FFT size at 1024 — matching the pre-TED filter
+/// efficiency.  Added latency is ~2.1 ms at 2375 chips/s, negligible for RDS.
+const RRC_SPAN_CHIPS: usize = 5;
 /// Staleness timeout in seconds.  If the incumbent candidate has not produced
 /// a state update in this many seconds, its score advantage is cleared so any
 /// candidate can take over.  Prevents the decoder from "freezing" when the
@@ -145,6 +148,9 @@ struct FftRrcFilter {
     /// Filtered (I, Q) output pairs ready to be consumed.
     out_buf: Vec<(f32, f32)>,
     out_pos: usize,
+    /// Pre-allocated scratch buffer for FFT/IFFT processing, avoiding
+    /// per-block heap allocations (~234 allocs/s at 240 kHz).
+    scratch: Vec<Complex<f32>>,
     fft: Arc<dyn rustfft::Fft<f32>>,
     ifft: Arc<dyn rustfft::Fft<f32>>,
 }
@@ -180,6 +186,7 @@ impl FftRrcFilter {
             in_buf: Vec::with_capacity(block_size),
             out_buf: Vec::with_capacity(block_size),
             out_pos: 0,
+            scratch: vec![Complex::new(0.0, 0.0); fft_size],
             fft,
             ifft,
         }
@@ -203,32 +210,36 @@ impl FftRrcFilter {
     }
 
     fn flush_block(&mut self) {
-        // Build FFT input: [overlap | in_buf], zero-padded to fft_size.
-        let mut buf: Vec<Complex<f32>> = Vec::with_capacity(self.fft_size);
-        buf.extend_from_slice(&self.overlap);
-        buf.extend_from_slice(&self.in_buf);
-        buf.resize(self.fft_size, Complex::new(0.0, 0.0));
+        let ol = self.n_taps - 1;
+        let buf = &mut self.scratch;
+
+        // Build FFT input in pre-allocated scratch: [overlap | in_buf | zeros].
+        buf[..ol].copy_from_slice(&self.overlap);
+        buf[ol..ol + self.block_size].copy_from_slice(&self.in_buf);
+        let zero = Complex::new(0.0, 0.0);
+        for c in &mut buf[ol + self.block_size..self.fft_size] {
+            *c = zero;
+        }
 
         // Update overlap: last (n_taps − 1) samples of in_buf.
         // block_size >= n_taps guarantees in_buf is long enough.
-        let ol = self.n_taps - 1;
         self.overlap
             .copy_from_slice(&self.in_buf[self.block_size - ol..]);
         self.in_buf.clear();
 
         // FFT → pointwise multiply by filter spectrum → IFFT.
-        self.fft.process(&mut buf);
+        self.fft.process(buf);
         for (b, &h) in buf.iter_mut().zip(self.filter_spectrum.iter()) {
             *b *= h;
         }
-        self.ifft.process(&mut buf);
+        self.ifft.process(buf);
 
         // Valid overlap-save output: indices [n_taps−1 .. n_taps−1+block_size).
         self.out_buf.clear();
         self.out_pos = 0;
         let start = self.n_taps - 1;
-        for k in start..start + self.block_size {
-            self.out_buf.push((buf[k].re, buf[k].im));
+        for c in buf.iter().skip(start).take(self.block_size) {
+            self.out_buf.push((c.re, c.im));
         }
     }
 }
@@ -244,6 +255,7 @@ impl Clone for FftRrcFilter {
             in_buf: self.in_buf.clone(),
             out_buf: self.out_buf.clone(),
             out_pos: self.out_pos,
+            scratch: self.scratch.clone(),
             fft: Arc::clone(&self.fft),
             ifft: Arc::clone(&self.ifft),
         }
@@ -409,18 +421,19 @@ impl Candidate {
         // Tech 11: Gardner TED — e[n] = x_mid[n] · (x[n] − x[n−1]).
         //
         // Lock-gated: the TED only adjusts clock_inc after the candidate has
-        // decoded at least one full group (score >= 1).  Before that point
-        // (search mode, or freshly locked without a group), the error signal
-        // is unreliable — noise×noise products dominate at low SNR — and the
-        // resulting jitter degrades biphase soft values, OSD confidence, and
-        // PI LLR accumulation.  Fixed-clock operation is more stable during
-        // acquisition because the 8-candidate architecture covers the timing
-        // search space via phase offsets.
+        // decoded at least 3 full groups (score >= 3).  A higher gate than the
+        // previous score >= 1 ensures the candidate is genuinely locked to a
+        // real signal — not a single false OSD match — before allowing timing
+        // adjustments.  At marginal SNR the Gardner error signal is dominated
+        // by noise×noise products; deferring TED until 3 groups avoids the
+        // resulting jitter that degrades soft values, OSD confidence, and PI
+        // LLR accumulation.  The 8-candidate architecture provides adequate
+        // timing coverage during the initial lock period via phase offsets.
         let chip_power = (i * i + self.prev_chip_i * self.prev_chip_i) * 0.5;
         self.ted_power_est = GARDNER_POWER_ALPHA * self.ted_power_est
             + (1.0 - GARDNER_POWER_ALPHA) * chip_power;
         let max_corr = self.nominal_clock_inc * GARDNER_MAX_FREQ_CORR_FRAC;
-        if self.ted_power_est > 1e-10 && self.score >= 1 {
+        if self.ted_power_est > 1e-10 && self.score >= 3 {
             let ted_err = self.mid_chip_i * (i - self.prev_chip_i) / self.ted_power_est;
             // Anti-windup: clamp the integrator so it cannot accumulate beyond
             // the correction ceiling even during prolonged large-error transients.
@@ -541,14 +554,17 @@ impl Candidate {
 
     fn consume_locked_block(&mut self, word: u32) -> Option<RdsData> {
         let expected = self.expect;
-        // Use more aggressive OSD once we have decoded at least one group,
-        // because the sequential block gating already prevents false groups.
-        let max_cost = if self.score >= 1 {
-            OSD_MAX_FLIP_COST + 0.15
+        // Conservative OSD until the candidate has proven itself with multiple
+        // successful groups.  OSD(2) at baseline matches the pre-TED decoder's
+        // false-positive rate; OSD(3) is only unlocked after 2+ groups where
+        // sequential block gating provides strong protection.  The cost ceiling
+        // stays tight (0.50 vs the previous 0.60) to reject noise-induced matches.
+        let max_cost = if self.score >= 2 {
+            OSD_MAX_FLIP_COST + 0.05
         } else {
             OSD_MAX_FLIP_COST
         };
-        let max_order = if self.score >= 1 { 4u8 } else { 3 };
+        let max_order = if self.score >= 2 { 3u8 } else { 2 };
         // Tech 3/7/8: use soft-decision decoder instead of hard decode.
         let Some((data, kind)) =
             decode_block_soft(word, &self.block_soft, max_cost, max_order)
@@ -1052,7 +1068,28 @@ fn decode_block(word: u32) -> Option<(u16, BlockKind)> {
     Some((data, kind))
 }
 
+/// Map a 10-bit CRC syndrome to its RDS block kind, if it matches any offset.
+#[inline]
+fn offset_to_kind(syndrome: u16) -> Option<BlockKind> {
+    match syndrome {
+        OFFSET_A => Some(BlockKind::A),
+        OFFSET_B => Some(BlockKind::B),
+        OFFSET_C => Some(BlockKind::C),
+        OFFSET_CP => Some(BlockKind::CPrime),
+        OFFSET_D => Some(BlockKind::D),
+        _ => None,
+    }
+}
+
 /// Tech 3/7/8: soft-decision block decoder implementing OSD(3) or OSD(4).
+///
+/// Uses syndrome arithmetic instead of recomputing CRC for each trial:
+/// flipping bit k changes the syndrome by a precomputed delta (CRC linearity),
+/// reducing each trial to a single XOR + 5-way comparison instead of a full
+/// 16-iteration CRC.  Bit positions are sorted by ascending soft confidence
+/// so inner loops can `break` (not just `continue`) once accumulated cost
+/// exceeds the threshold, since all subsequent combinations are guaranteed
+/// to be more expensive.
 ///
 /// `word` is the 26-bit hard-decision word; `soft[k]` is the confidence
 /// magnitude (|LLR|) for the k-th received bit, where bit 0 is the MSB
@@ -1060,42 +1097,59 @@ fn decode_block(word: u32) -> Option<(u16, BlockKind)> {
 ///
 /// `max_cost` is the maximum total flip cost (adaptive based on signal quality).
 /// `max_order` is the maximum OSD order (3 or 4).
-///
-/// Search order:
-/// 1. Hard decode (Hamming distance 0) — zero cost.
-/// 2. All 26 single-bit flips — return the lowest-cost success.
-/// 3. All C(26,2)=325 two-bit flips — return the lowest-cost success.
-/// 4. All C(26,3)=2600 three-bit flips — return the lowest-cost success.
-/// 5. (order 4) All C(26,4)=14950 four-bit flips — return the lowest-cost success.
-///
-/// OSD is only used in locked mode (known block boundaries), so the
-/// false-positive risk is bounded by the sequential block-type gating in
-/// `consume_locked_block`.
 fn decode_block_soft(
     word: u32,
     soft: &[f32; 26],
     max_cost: f32,
     max_order: u8,
 ) -> Option<(u16, BlockKind)> {
-    // Distance 0.
-    if let Some(result) = decode_block(word) {
-        return Some(result);
+    // Compute base syndrome once: CRC(data) XOR check_bits.
+    let base_data = (word >> 10) as u16;
+    let check = (word & 0x03ff) as u16;
+    let base_syn = crc10(base_data) ^ check;
+
+    // Distance 0: hard decode.
+    if let Some(kind) = offset_to_kind(base_syn) {
+        return Some((base_data, kind));
     }
+
+    // Precompute syndrome delta for each of the 26 bit positions.
+    // Exploits CRC linearity: CRC(a ^ b) = CRC(a) ^ CRC(b).
+    let bit_syn: [u16; 26] = {
+        let mut t = [0u16; 26];
+        for (k, slot) in t[..16].iter_mut().enumerate() {
+            *slot = crc10(1u16 << (15 - k));
+        }
+        for (k, slot) in t[16..].iter_mut().enumerate() {
+            *slot = 1u16 << (9 - k);
+        }
+        t
+    };
+
+    // Sort bit indices by ascending soft confidence for early termination.
+    let mut order = [0u8; 26];
+    for (i, slot) in order.iter_mut().enumerate() {
+        *slot = i as u8;
+    }
+    order.sort_unstable_by(|&a, &b| {
+        soft[a as usize]
+            .partial_cmp(&soft[b as usize])
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
 
     let mut best_result: Option<(u16, BlockKind)> = None;
     let mut best_cost = f32::INFINITY;
 
-    // Distance 1: all 26 single-bit flips; pick the cheapest success.
-    for (k, &flip_cost) in soft.iter().enumerate() {
-        if flip_cost >= best_cost {
-            continue;
+    // Distance 1: single-bit flips in cost-ascending order.
+    for &ki in &order {
+        let k = ki as usize;
+        if soft[k] >= best_cost {
+            break;
         }
-        let trial = word ^ (1 << (25 - k));
-        if let Some(result) = decode_block(trial) {
-            if flip_cost < best_cost {
-                best_cost = flip_cost;
-                best_result = Some(result);
-            }
+        if let Some(kind) = offset_to_kind(base_syn ^ bit_syn[k]) {
+            best_cost = soft[k];
+            best_result = Some((((word ^ (1 << (25 - k))) >> 10) as u16, kind));
+            break; // sorted order: first match is cheapest
         }
     }
 
@@ -1107,17 +1161,25 @@ fn decode_block_soft(
         best_cost = f32::INFINITY;
     }
 
-    // Distance 2: all C(26,2)=325 two-bit flips; pick the cheapest pair.
-    for k1 in 0..26usize {
-        for k2 in (k1 + 1)..26usize {
+    // Distance 2: two-bit flips.
+    for (i1, &ki1) in order.iter().enumerate() {
+        let k1 = ki1 as usize;
+        if soft[k1] >= max_cost {
+            break;
+        }
+        let syn1 = base_syn ^ bit_syn[k1];
+        for &ki2 in &order[i1 + 1..] {
+            let k2 = ki2 as usize;
             let pair_cost = soft[k1] + soft[k2];
-            if pair_cost >= best_cost || pair_cost > max_cost {
-                continue;
+            if pair_cost > max_cost || pair_cost >= best_cost {
+                break;
             }
-            let trial = word ^ (1 << (25 - k1)) ^ (1 << (25 - k2));
-            if let Some(result) = decode_block(trial) {
+            if let Some(kind) = offset_to_kind(syn1 ^ bit_syn[k2]) {
                 best_cost = pair_cost;
-                best_result = Some(result);
+                best_result = Some((
+                    ((word ^ (1 << (25 - k1)) ^ (1 << (25 - k2))) >> 10) as u16,
+                    kind,
+                ));
             }
         }
     }
@@ -1126,25 +1188,32 @@ fn decode_block_soft(
         return best_result;
     }
 
-    // Distance 3: all C(26,3)=2600 three-bit flips.
-    for k1 in 0..26usize {
+    // Distance 3: three-bit flips.
+    for (i1, &ki1) in order.iter().enumerate() {
+        let k1 = ki1 as usize;
         if soft[k1] >= max_cost {
-            continue;
+            break;
         }
-        for k2 in (k1 + 1)..26usize {
+        let syn1 = base_syn ^ bit_syn[k1];
+        for (off2, &ki2) in order[i1 + 1..].iter().enumerate() {
+            let k2 = ki2 as usize;
             let c12 = soft[k1] + soft[k2];
             if c12 >= max_cost {
-                continue;
+                break;
             }
-            for (k3, &s3) in soft.iter().enumerate().skip(k2 + 1) {
-                let triple_cost = c12 + s3;
-                if triple_cost >= best_cost || triple_cost > max_cost {
-                    continue;
+            let i2 = i1 + 1 + off2;
+            let syn12 = syn1 ^ bit_syn[k2];
+            for &ki3 in &order[i2 + 1..] {
+                let k3 = ki3 as usize;
+                let triple_cost = c12 + soft[k3];
+                if triple_cost > max_cost || triple_cost >= best_cost {
+                    break;
                 }
-                let trial = word ^ (1 << (25 - k1)) ^ (1 << (25 - k2)) ^ (1 << (25 - k3));
-                if let Some(result) = decode_block(trial) {
+                if let Some(kind) = offset_to_kind(syn12 ^ bit_syn[k3]) {
                     best_cost = triple_cost;
-                    best_result = Some(result);
+                    let flip =
+                        (1u32 << (25 - k1)) ^ (1u32 << (25 - k2)) ^ (1u32 << (25 - k3));
+                    best_result = Some((((word ^ flip) >> 10) as u16, kind));
                 }
             }
         }
@@ -1154,35 +1223,42 @@ fn decode_block_soft(
         return best_result;
     }
 
-    // Distance 4: all C(26,4)=14950 four-bit flips.
-    // Cost pruning keeps this fast (most branches pruned at low order).
-    for k1 in 0..26usize {
+    // Distance 4: four-bit flips.
+    for (i1, &ki1) in order.iter().enumerate() {
+        let k1 = ki1 as usize;
         if soft[k1] >= max_cost {
-            continue;
+            break;
         }
-        for k2 in (k1 + 1)..26usize {
+        let syn1 = base_syn ^ bit_syn[k1];
+        for (off2, &ki2) in order[i1 + 1..].iter().enumerate() {
+            let k2 = ki2 as usize;
             let c12 = soft[k1] + soft[k2];
             if c12 >= max_cost {
-                continue;
+                break;
             }
-            for k3 in (k2 + 1)..26usize {
+            let i2 = i1 + 1 + off2;
+            let syn12 = syn1 ^ bit_syn[k2];
+            for (off3, &ki3) in order[i2 + 1..].iter().enumerate() {
+                let k3 = ki3 as usize;
                 let c123 = c12 + soft[k3];
                 if c123 >= max_cost {
-                    continue;
+                    break;
                 }
-                for (k4, &s4) in soft.iter().enumerate().skip(k3 + 1) {
-                    let quad_cost = c123 + s4;
-                    if quad_cost >= best_cost || quad_cost > max_cost {
-                        continue;
+                let i3 = i2 + 1 + off3;
+                let syn123 = syn12 ^ bit_syn[k3];
+                for &ki4 in &order[i3 + 1..] {
+                    let k4 = ki4 as usize;
+                    let quad_cost = c123 + soft[k4];
+                    if quad_cost > max_cost || quad_cost >= best_cost {
+                        break;
                     }
-                    let trial = word
-                        ^ (1 << (25 - k1))
-                        ^ (1 << (25 - k2))
-                        ^ (1 << (25 - k3))
-                        ^ (1 << (25 - k4));
-                    if let Some(result) = decode_block(trial) {
+                    if let Some(kind) = offset_to_kind(syn123 ^ bit_syn[k4]) {
                         best_cost = quad_cost;
-                        best_result = Some(result);
+                        let flip = (1u32 << (25 - k1))
+                            ^ (1u32 << (25 - k2))
+                            ^ (1u32 << (25 - k3))
+                            ^ (1u32 << (25 - k4));
+                        best_result = Some((((word ^ flip) >> 10) as u16, kind));
                     }
                 }
             }
