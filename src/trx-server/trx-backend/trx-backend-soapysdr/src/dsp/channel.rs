@@ -297,15 +297,18 @@ pub struct ChannelDsp {
     squelch: VirtualSquelch,
     noise_blanker: NoiseBlanker,
     last_signal_db: f32,
-    /// Per-sample IIR state for narrow carrier power measurement (WFM).
-    carrier_pwr_iir: f32,
-    /// IIR coefficient for the narrow carrier filter, precomputed from sample rate.
-    carrier_pwr_alpha: f32,
+    /// Single-pole IIR states for narrow IQ lowpass (WFM carrier measurement).
+    /// Filtering the IQ signal (not the power) rejects out-of-band noise so the
+    /// meter reads carrier level, not total wideband noise power.
+    carrier_iq_i: f32,
+    carrier_iq_q: f32,
+    /// IIR coefficient for the narrow IQ carrier filter, precomputed from sample rate.
+    carrier_iq_alpha: f32,
 }
 
 impl ChannelDsp {
-    /// Compute the single-pole IIR alpha for narrow carrier power measurement.
-    /// Uses ~500 Hz cutoff so the meter reads carrier envelope, not wideband noise.
+    /// Compute the single-pole IIR alpha for narrow IQ carrier measurement.
+    /// Uses ~500 Hz cutoff so the meter reads carrier level, not wideband noise.
     fn narrow_carrier_alpha(channel_sample_rate: u32) -> f32 {
         const CARRIER_BW_HZ: f32 = 500.0;
         if channel_sample_rate == 0 {
@@ -422,8 +425,9 @@ impl ChannelDsp {
         self.iq_agc = iq_agc_for_mode(&self.mode, channel_sample_rate);
         self.audio_agc = agc_for_mode(&self.mode, self.audio_sample_rate);
         self.audio_dc = dc_for_mode(&self.mode);
-        self.carrier_pwr_alpha = Self::narrow_carrier_alpha(channel_sample_rate);
-        self.carrier_pwr_iir = 0.0;
+        self.carrier_iq_alpha = Self::narrow_carrier_alpha(channel_sample_rate);
+        self.carrier_iq_i = 0.0;
+        self.carrier_iq_q = 0.0;
         self.frame_buf.clear();
         self.frame_buf_offset = 0;
     }
@@ -539,8 +543,9 @@ impl ChannelDsp {
             squelch: VirtualSquelch::new(squelch_cfg),
             noise_blanker: NoiseBlanker::new(nb_cfg.enabled, nb_cfg.threshold),
             last_signal_db: -120.0,
-            carrier_pwr_iir: 0.0,
-            carrier_pwr_alpha: Self::narrow_carrier_alpha(channel_sample_rate),
+            carrier_iq_i: 0.0,
+            carrier_iq_q: 0.0,
+            carrier_iq_alpha: Self::narrow_carrier_alpha(channel_sample_rate),
         }
     }
 
@@ -755,16 +760,18 @@ impl ChannelDsp {
         // Signal strength measurement (before AGC).
         {
             if self.mode == RigMode::WFM {
-                // WFM: narrow carrier measurement via per-sample IIR on |IQ|².
-                // FM has constant envelope so IIR converges to carrier power A²,
-                // rejecting wideband noise that inflates a peak reading.
-                let alpha = self.carrier_pwr_alpha;
+                // WFM: narrow-band carrier measurement via IQ-domain lowpass.
+                // A single-pole IIR on each of I and Q (≈500 Hz cutoff) rejects
+                // wideband noise *before* computing power, so the meter reads
+                // carrier level rather than total noise across the 180 kHz channel.
+                let alpha = self.carrier_iq_alpha;
                 for s in decimated.iter() {
-                    let pwr = s.re * s.re + s.im * s.im;
-                    self.carrier_pwr_iir += alpha * (pwr - self.carrier_pwr_iir);
+                    self.carrier_iq_i += alpha * (s.re - self.carrier_iq_i);
+                    self.carrier_iq_q += alpha * (s.im - self.carrier_iq_q);
                 }
-                self.last_signal_db =
-                    10.0 * self.carrier_pwr_iir.max(1e-12).log10();
+                let carrier_pwr =
+                    self.carrier_iq_i * self.carrier_iq_i + self.carrier_iq_q * self.carrier_iq_q;
+                self.last_signal_db = 10.0 * carrier_pwr.max(1e-12).log10();
             } else {
                 // Other modes: peak IQ magnitude with EMA smoothing.
                 const SIGNAL_EMA_ALPHA: f32 = 0.4;
