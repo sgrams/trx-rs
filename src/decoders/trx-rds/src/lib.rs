@@ -19,9 +19,9 @@ const BIPHASE_CLOCK_WINDOW: usize = 128;
 /// Minimum quality score to publish RDS state to the outer decoder.
 const MIN_PUBLISH_QUALITY: f32 = 0.20;
 /// Tech 6: number of Block A observations before using accumulated PI.
-/// 5 observations at 9 dB SNR gives reliable majority voting without
+/// 8 observations gives reliable majority voting down to 5 dB SNR without
 /// significant latency increase (one group = 4 blocks ≈ 87 ms).
-const PI_ACC_THRESHOLD: u8 = 5;
+const PI_ACC_THRESHOLD: u8 = 8;
 /// Tech 9: maximum total soft-confidence cost for OSD bit flips.
 /// Rejects corrections where the flipped bits had high confidence —
 /// a strong indicator of a false decode rather than a genuine error.
@@ -29,31 +29,42 @@ const PI_ACC_THRESHOLD: u8 = 5;
 /// matches typically cost 0.6–1.2.
 const OSD_MAX_FLIP_COST: f32 = 0.45;
 /// Tech 11 — Gardner TED proportional gain (per chip, after power normalisation).
-/// Sized so that a full-amplitude timing error (normalised error ≈ 1) produces
-/// a correction of ~Kp per chip, well within the clamp.  This is deliberately
-/// conservative; the I-path handles steady-state offsets.
-const GARDNER_KP: f32 = 1e-4;
+/// Together with GARDNER_KI these form a type-2 PLL with damping ratio
+/// ζ = Kp / (2·√Ki) ≈ 0.707 and natural frequency ωn = √Ki ≈ 2.83e-4 rad/chip
+/// (loop BW ≈ 0.11 Hz at 2375 chips/s).
+const GARDNER_KP: f32 = 4e-4;
 /// Tech 11 — Gardner TED integral gain (per chip, after power normalisation).
-/// Roughly Kp/1000; slow enough to avoid windup yet fast enough to null a
-/// crystal offset (typically < 100 ppm) within a few seconds.
-const GARDNER_KI: f32 = 1e-7;
+/// Tracks crystal offsets (typically < 100 ppm) while the narrow loop BW
+/// keeps jitter low at ≤ 5 dB SNR.
+const GARDNER_KI: f32 = 8e-8;
 /// Tech 11 — maximum clock_inc change per chip (fraction of nominal).
 /// ±1 % corresponds to ±23.75 Hz pull-in range at 2375 chips/s.
 const GARDNER_MAX_FREQ_CORR_FRAC: f32 = 0.01;
-/// Tech 5 — Costas loop proportional gain (per sample).
+/// Tech 5 — Costas loop proportional gain for acquisition (per sample).
 const COSTAS_KP: f32 = 8e-4;
-/// Tech 5 — Costas loop integral gain (per sample).
+/// Tech 5 — Costas loop integral gain for acquisition (per sample).
 /// Tuned for ζ ≈ 0.68 (ωn = √KI ≈ 5.9e-4 rad/sample → ~22 Hz loop BW).
 const COSTAS_KI: f32 = 3.5e-7;
+/// Tech 5 — Costas loop proportional gain for narrow tracking mode.
+/// ~4× narrower loop BW (~5.5 Hz) reduces phase noise at low SNR.
+const COSTAS_KP_TRACK: f32 = 2.0e-4;
+/// Tech 5 — Costas loop integral gain for narrow tracking mode.
+const COSTAS_KI_TRACK: f32 = 2.2e-8;
 /// Tech 5 — maximum frequency correction per sample (radians).
 const COSTAS_MAX_FREQ_CORR: f32 = 0.005;
-/// Tech 1 — RRC roll-off factor.  0.50 gives ~14% narrower noise bandwidth
-/// than 0.75 (one-sided BW = Rs/2 × (1+α)) for ~0.6 dB sensitivity gain.
-const RRC_ALPHA: f32 = 0.50;
-/// Tech 1 — RRC filter span in chips.  6 chips captures more pulse energy
-/// than 4 and reduces ISI on adjacent chips; the added latency is 2 chips
-/// (~0.85 ms at 2375 chips/s), negligible for RDS.
-const RRC_SPAN_CHIPS: usize = 6;
+/// Leaky-average time constant for Costas error magnitude tracking.
+const COSTAS_ERR_AVG_ALPHA: f32 = 0.998;
+/// Costas error average below this threshold triggers narrow tracking mode.
+const COSTAS_LOCK_THRESHOLD: f32 = 0.15;
+/// Tech 1 — RRC roll-off factor.  0.30 gives ~23% narrower noise bandwidth
+/// than 0.50 (one-sided BW = Rs/2 × (1+α) = 772 Hz) for ~0.6 dB extra
+/// sensitivity gain.  The tighter excess bandwidth is handled by the longer
+/// RRC_SPAN_CHIPS to keep ISI negligible.
+const RRC_ALPHA: f32 = 0.30;
+/// Tech 1 — RRC filter span in chips.  10 chips captures more pulse energy
+/// and the extra taps keep stopband leakage below −60 dB, critical when α
+/// is small.  Added latency is ~4.2 ms at 2375 chips/s, negligible for RDS.
+const RRC_SPAN_CHIPS: usize = 10;
 
 const OFFSET_A: u16 = 0x0FC;
 const OFFSET_B: u16 = 0x198;
@@ -86,7 +97,7 @@ fn rrc_tap(t: f32, alpha: f32) -> f32 {
 fn build_rrc_taps(sample_rate: f32, chip_rate: f32) -> Vec<f32> {
     let sps = (sample_rate / chip_rate).max(2.0);
     let n_half = (RRC_SPAN_CHIPS as f32 * sps / 2.0).round() as usize;
-    let n_taps = (2 * n_half + 1).min(513);
+    let n_taps = (2 * n_half + 1).min(1025);
     let center = (n_taps / 2) as f32;
 
     let mut taps: Vec<f32> = (0..n_taps)
@@ -294,6 +305,8 @@ struct Candidate {
     rt_ab_flag: bool,
     ptyn_bytes: [u8; 8],
     ptyn_seen: [bool; 2],
+    /// Consecutive block decode failures in locked mode.
+    consecutive_block_failures: u8,
     /// Tech 6: accumulated LLR for the PI field (16 bits, MSB first).
     pi_llr_acc: [f32; 16],
     /// Tech 6: number of Block A observations accumulated.
@@ -347,6 +360,7 @@ impl Candidate {
             rt_ab_flag: false,
             ptyn_bytes: [b' '; 8],
             ptyn_seen: [false; 2],
+            consecutive_block_failures: 0,
             pi_llr_acc: [0.0; 16],
             pi_acc_count: 0,
             nominal_clock_inc,
@@ -395,9 +409,13 @@ impl Candidate {
             // the correction ceiling even during prolonged large-error transients.
             self.ted_integrator =
                 (self.ted_integrator + GARDNER_KI * ted_err).clamp(-max_corr, max_corr);
+            // Type-2 PLL: clock_inc = nominal + PI_correction.
+            // The integrator tracks the steady-state frequency offset; Kp provides
+            // transient phase correction.  Using nominal as the base (not +=)
+            // prevents the integrator output from being double-integrated.
             let correction =
                 (GARDNER_KP * ted_err + self.ted_integrator).clamp(-max_corr, max_corr);
-            self.clock_inc = (self.clock_inc + correction).clamp(
+            self.clock_inc = (self.nominal_clock_inc + correction).clamp(
                 self.nominal_clock_inc * (1.0 - GARDNER_MAX_FREQ_CORR_FRAC),
                 self.nominal_clock_inc * (1.0 + GARDNER_MAX_FREQ_CORR_FRAC),
             );
@@ -480,9 +498,9 @@ impl Candidate {
         }
 
         // Hard decode only in search mode: OSD in the slide window would create
-        // ~13 % false Block A hits per bit, letting wrong clock candidates
-        // accumulate false groups as fast as the correct one accrues real ones.
-        // Once locked, OSD(2) in consume_locked_block handles weak blocks.
+        // too many false Block A hits from noise, especially with the cost-pruned
+        // OSD variants.  Once locked, OSD(3/4) in consume_locked_block handles
+        // weak blocks safely thanks to sequential block-type gating.
         let (data, kind) = decode_block(self.search_reg)?;
         if kind != BlockKind::A {
             return None;
@@ -493,18 +511,30 @@ impl Candidate {
         self.block_reg = 0;
         self.block_bits = 0;
         self.block_a = data;
+        self.consecutive_block_failures = 0;
         self.state.pi = Some(data);
         None
     }
 
     fn consume_locked_block(&mut self, word: u32) -> Option<RdsData> {
         let expected = self.expect;
+        // Use more aggressive OSD once we have decoded at least one group,
+        // because the sequential block gating already prevents false groups.
+        let max_cost = if self.score >= 1 {
+            OSD_MAX_FLIP_COST + 0.15
+        } else {
+            OSD_MAX_FLIP_COST
+        };
+        let max_order = if self.score >= 1 { 4u8 } else { 3 };
         // Tech 3/7/8: use soft-decision decoder instead of hard decode.
-        let Some((data, kind)) = decode_block_soft(word, &self.block_soft) else {
+        let Some((data, kind)) =
+            decode_block_soft(word, &self.block_soft, max_cost, max_order)
+        else {
             self.drop_lock(word);
             return None;
         };
 
+        self.consecutive_block_failures = 0;
         match (expected, kind) {
             (ExpectBlock::B, BlockKind::B) => {
                 self.block_b = data;
@@ -817,6 +847,8 @@ pub struct RdsDecoder {
     /// Tech 2: pilot-derived 57 kHz carrier reference (cos, sin).
     /// When Some, the free-running NCO is bypassed and Costas is suppressed.
     pilot_ref: Option<(f32, f32)>,
+    /// Leaky average of |Costas error| for adaptive loop bandwidth.
+    costas_err_avg: f32,
     candidates: Vec<Candidate>,
     best_score: u32,
     /// Index into `candidates` for the current winning candidate.
@@ -845,6 +877,7 @@ impl RdsDecoder {
             rrc: FftRrcFilter::new_rrc(sample_rate_f, RDS_CHIP_RATE),
             costas_integrator: 0.0,
             pilot_ref: None,
+            costas_err_avg: 1.0,
             candidates,
             best_score: 0,
             best_candidate_idx: None,
@@ -890,10 +923,18 @@ impl RdsDecoder {
 
         // Tech 5: Costas loop — tanh soft phase detector.
         // Only active when not using a pilot reference.
+        // Adaptive bandwidth: use wide gains for acquisition, narrow once locked.
         if self.pilot_ref.is_none() {
             let err = mixed_i.tanh() * mixed_q;
-            self.costas_integrator += COSTAS_KI * err;
-            let freq_correction = (COSTAS_KP * err + self.costas_integrator)
+            self.costas_err_avg = COSTAS_ERR_AVG_ALPHA * self.costas_err_avg
+                + (1.0 - COSTAS_ERR_AVG_ALPHA) * err.abs();
+            let (kp, ki) = if self.costas_err_avg < COSTAS_LOCK_THRESHOLD {
+                (COSTAS_KP_TRACK, COSTAS_KI_TRACK)
+            } else {
+                (COSTAS_KP, COSTAS_KI)
+            };
+            self.costas_integrator += ki * err;
+            let freq_correction = (kp * err + self.costas_integrator)
                 .clamp(-COSTAS_MAX_FREQ_CORR, COSTAS_MAX_FREQ_CORR);
             self.carrier_phase -= freq_correction;
             self.carrier_phase = self.carrier_phase.rem_euclid(TAU);
@@ -968,22 +1009,31 @@ fn decode_block(word: u32) -> Option<(u16, BlockKind)> {
     Some((data, kind))
 }
 
-/// Tech 3/7/8: soft-decision block decoder implementing OSD(3).
+/// Tech 3/7/8: soft-decision block decoder implementing OSD(3) or OSD(4).
 ///
 /// `word` is the 26-bit hard-decision word; `soft[k]` is the confidence
 /// magnitude (|LLR|) for the k-th received bit, where bit 0 is the MSB
 /// (bit 25 of `word`) and bit 25 is the LSB (bit 0 of `word`).
+///
+/// `max_cost` is the maximum total flip cost (adaptive based on signal quality).
+/// `max_order` is the maximum OSD order (3 or 4).
 ///
 /// Search order:
 /// 1. Hard decode (Hamming distance 0) — zero cost.
 /// 2. All 26 single-bit flips — return the lowest-cost success.
 /// 3. All C(26,2)=325 two-bit flips — return the lowest-cost success.
 /// 4. All C(26,3)=2600 three-bit flips — return the lowest-cost success.
+/// 5. (order 4) All C(26,4)=14950 four-bit flips — return the lowest-cost success.
 ///
 /// OSD is only used in locked mode (known block boundaries), so the
 /// false-positive risk is bounded by the sequential block-type gating in
 /// `consume_locked_block`.
-fn decode_block_soft(word: u32, soft: &[f32; 26]) -> Option<(u16, BlockKind)> {
+fn decode_block_soft(
+    word: u32,
+    soft: &[f32; 26],
+    max_cost: f32,
+    max_order: u8,
+) -> Option<(u16, BlockKind)> {
     // Distance 0.
     if let Some(result) = decode_block(word) {
         return Some(result);
@@ -1007,11 +1057,9 @@ fn decode_block_soft(word: u32, soft: &[f32; 26]) -> Option<(u16, BlockKind)> {
     }
 
     if best_result.is_some() {
-        // Tech 9: reject if the cheapest single-bit flip cost is too high.
-        if best_cost <= OSD_MAX_FLIP_COST {
+        if best_cost <= max_cost {
             return best_result;
         }
-        // Cost too high — fall through to OSD(2) in case a cheaper pair exists.
         best_result = None;
         best_cost = f32::INFINITY;
     }
@@ -1020,7 +1068,7 @@ fn decode_block_soft(word: u32, soft: &[f32; 26]) -> Option<(u16, BlockKind)> {
     for k1 in 0..26usize {
         for k2 in (k1 + 1)..26usize {
             let pair_cost = soft[k1] + soft[k2];
-            if pair_cost >= best_cost || pair_cost > OSD_MAX_FLIP_COST {
+            if pair_cost >= best_cost || pair_cost > max_cost {
                 continue;
             }
             let trial = word ^ (1 << (25 - k1)) ^ (1 << (25 - k2));
@@ -1035,27 +1083,64 @@ fn decode_block_soft(word: u32, soft: &[f32; 26]) -> Option<(u16, BlockKind)> {
         return best_result;
     }
 
-    // Distance 3: all C(26,3)=2600 three-bit flips; pick the cheapest triple.
-    // The cost gate keeps false positives comparable to OSD(2); 2600 iterations
-    // with early-exit are fast (< 1 µs on modern hardware at chip rate).
+    // Distance 3: all C(26,3)=2600 three-bit flips.
     for k1 in 0..26usize {
-        if soft[k1] >= OSD_MAX_FLIP_COST {
+        if soft[k1] >= max_cost {
             continue;
         }
         for k2 in (k1 + 1)..26usize {
             let c12 = soft[k1] + soft[k2];
-            if c12 >= OSD_MAX_FLIP_COST {
+            if c12 >= max_cost {
                 continue;
             }
             for (k3, &s3) in soft.iter().enumerate().skip(k2 + 1) {
                 let triple_cost = c12 + s3;
-                if triple_cost >= best_cost || triple_cost > OSD_MAX_FLIP_COST {
+                if triple_cost >= best_cost || triple_cost > max_cost {
                     continue;
                 }
                 let trial = word ^ (1 << (25 - k1)) ^ (1 << (25 - k2)) ^ (1 << (25 - k3));
                 if let Some(result) = decode_block(trial) {
                     best_cost = triple_cost;
                     best_result = Some(result);
+                }
+            }
+        }
+    }
+
+    if best_result.is_some() || max_order < 4 {
+        return best_result;
+    }
+
+    // Distance 4: all C(26,4)=14950 four-bit flips.
+    // Cost pruning keeps this fast (most branches pruned at low order).
+    for k1 in 0..26usize {
+        if soft[k1] >= max_cost {
+            continue;
+        }
+        for k2 in (k1 + 1)..26usize {
+            let c12 = soft[k1] + soft[k2];
+            if c12 >= max_cost {
+                continue;
+            }
+            for k3 in (k2 + 1)..26usize {
+                let c123 = c12 + soft[k3];
+                if c123 >= max_cost {
+                    continue;
+                }
+                for (k4, &s4) in soft.iter().enumerate().skip(k3 + 1) {
+                    let quad_cost = c123 + s4;
+                    if quad_cost >= best_cost || quad_cost > max_cost {
+                        continue;
+                    }
+                    let trial = word
+                        ^ (1 << (25 - k1))
+                        ^ (1 << (25 - k2))
+                        ^ (1 << (25 - k3))
+                        ^ (1 << (25 - k4));
+                    if let Some(result) = decode_block(trial) {
+                        best_cost = quad_cost;
+                        best_result = Some(result);
+                    }
                 }
             }
         }
@@ -1186,7 +1271,7 @@ mod tests {
         // Mark the corrupted bit as low confidence (realistic: a genuine
         // error has low |biphase_I|).
         soft[15] = 0.05;
-        let (data, kind) = decode_block_soft(corrupted, &soft).expect("should recover");
+        let (data, kind) = decode_block_soft(corrupted, &soft, OSD_MAX_FLIP_COST, 3).expect("should recover");
         assert_eq!(data, 0xABCD);
         assert_eq!(kind, BlockKind::A);
     }
@@ -1202,7 +1287,7 @@ mod tests {
         let mut soft = [1.0f32; 26];
         soft[0] = 0.05;
         soft[1] = 0.05;
-        let (data, kind) = decode_block_soft(corrupted, &soft).expect("OSD(2) should correct");
+        let (data, kind) = decode_block_soft(corrupted, &soft, OSD_MAX_FLIP_COST, 3).expect("OSD(2) should correct");
         assert_eq!(data, 0x1234);
         assert_eq!(kind, BlockKind::B);
     }
@@ -1224,7 +1309,7 @@ mod tests {
         let corrupted = word ^ (1 << (25 - 2)); // flip bit k=2
         let mut soft = [1.0f32; 26];
         soft[2] = 0.01; // least confident → cheapest to flip
-        let (data, kind) = decode_block_soft(corrupted, &soft).expect("should recover");
+        let (data, kind) = decode_block_soft(corrupted, &soft, OSD_MAX_FLIP_COST, 3).expect("should recover");
         assert_eq!(data, 0xBEEF);
         assert_eq!(kind, BlockKind::D);
     }
@@ -1538,6 +1623,74 @@ mod tests {
     }
 
     #[test]
+    fn end_to_end_noisy_signal_snr_7db_decodes_pi() {
+        let sample_rate = 240_000.0f32;
+        let pi = 0x4BBC;
+
+        let mut words: Vec<u32> = Vec::new();
+        for seg in 0..4u8 {
+            let g = group_0a(pi, seg, [b'N', b'Z' + seg], 3);
+            words.extend_from_slice(&g);
+        }
+        let words: Vec<u32> = words
+            .iter()
+            .copied()
+            .cycle()
+            .take(words.len() * 80)
+            .collect();
+
+        let chips = blocks_to_chips(&words);
+        let mut signal = chips_to_rds_signal(&chips, sample_rate);
+        let mut rng = 0xBAAD_F00D_1337_C0DEu64;
+        add_awgn(&mut signal, 7.0, &mut rng);
+
+        let mut dec = RdsDecoder::new(sample_rate as u32);
+        let mut got_pi = false;
+        for &s in &signal {
+            if dec.process_sample(s, 1.0).and_then(|st| st.pi) == Some(pi) {
+                got_pi = true;
+                break;
+            }
+        }
+        assert!(got_pi, "PI should decode at SNR = 7 dB");
+    }
+
+    #[test]
+    fn end_to_end_noisy_signal_snr_5db_decodes_pi() {
+        // At 5 dB SNR: raw BER ~3.6%, OSD(4) + block retry + adaptive Costas
+        // should still recover PI reliably with enough groups.
+        let sample_rate = 240_000.0f32;
+        let pi = 0x4BBC;
+
+        let mut words: Vec<u32> = Vec::new();
+        for seg in 0..4u8 {
+            let g = group_0a(pi, seg, [b'N', b'Z' + seg], 3);
+            words.extend_from_slice(&g);
+        }
+        let words: Vec<u32> = words
+            .iter()
+            .copied()
+            .cycle()
+            .take(words.len() * 120)
+            .collect();
+
+        let chips = blocks_to_chips(&words);
+        let mut signal = chips_to_rds_signal(&chips, sample_rate);
+        let mut rng = 0xDEAD_C0DE_FACE_B00Cu64;
+        add_awgn(&mut signal, 5.0, &mut rng);
+
+        let mut dec = RdsDecoder::new(sample_rate as u32);
+        let mut got_pi = false;
+        for &s in &signal {
+            if dec.process_sample(s, 1.0).and_then(|st| st.pi) == Some(pi) {
+                got_pi = true;
+                break;
+            }
+        }
+        assert!(got_pi, "PI should decode at SNR = 5 dB");
+    }
+
+    #[test]
     fn end_to_end_with_pilot_reference_decodes_pi() {
         // With an exact pilot reference, PI acquisition should be fast (< 20 groups).
         let sample_rate = 240_000.0f32;
@@ -1603,14 +1756,14 @@ mod tests {
         soft[1] = 0.05;
 
         // Verify each corrupted block individually recovers via OSD(2).
-        let (d_b, k_b) = decode_block_soft(corrupt_b, &soft).expect("block B should recover");
+        let (d_b, k_b) = decode_block_soft(corrupt_b, &soft, OSD_MAX_FLIP_COST, 3).expect("block B should recover");
         assert_eq!((d_b, k_b), (block_b_data, BlockKind::B));
 
         // C' check
-        let (d_c, _k_c) = decode_block_soft(corrupt_c, &soft).expect("block C' should recover");
+        let (d_c, _k_c) = decode_block_soft(corrupt_c, &soft, OSD_MAX_FLIP_COST, 3).expect("block C' should recover");
         assert_eq!(d_c, 0x4865);
 
-        let (d_d, k_d) = decode_block_soft(corrupt_d, &soft).expect("block D should recover");
+        let (d_d, k_d) = decode_block_soft(corrupt_d, &soft, OSD_MAX_FLIP_COST, 3).expect("block D should recover");
         assert_eq!(k_d, BlockKind::D);
         assert_eq!(d_d, u16::from_be_bytes(*b"Hi"));
 
@@ -1683,7 +1836,7 @@ mod tests {
                 }
 
                 // OSD(2).
-                if decode_block_soft(corrupted, &soft).is_some() {
+                if decode_block_soft(corrupted, &soft, OSD_MAX_FLIP_COST, 3).is_some() {
                     osd2_ok += 1;
                 }
             }
