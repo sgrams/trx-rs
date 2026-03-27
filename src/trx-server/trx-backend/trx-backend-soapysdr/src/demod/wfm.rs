@@ -616,6 +616,16 @@ pub struct WfmStereoDecoder {
     cci_level: f32,
     /// Smoothed ACI (Adjacent Channel Interference) estimate, 0–100 scale.
     aci_level: f32,
+    /// Bandpass filter at ~67 kHz to measure noise above the FM baseband.
+    /// FM demodulated noise follows an f² spectral shape, so energy above
+    /// the useful baseband (audio + RDS ≤ 57 kHz) is a reliable noise probe.
+    noise_probe_bpf: BiquadBandPass,
+    /// Smoothed baseband noise power from the 67 kHz probe.
+    baseband_noise_power: f32,
+    /// Smoothed total baseband power (wideband) for CNR estimation.
+    baseband_total_power: f32,
+    /// Smoothed pilot tone power (from coherent PLL magnitude).
+    pilot_tone_power: f32,
 }
 
 impl WfmStereoDecoder {
@@ -686,6 +696,10 @@ impl WfmStereoDecoder {
             output_phase: 0.0,
             cci_level: 0.0,
             aci_level: 0.0,
+            noise_probe_bpf: BiquadBandPass::new(composite_rate_f, 67_000.0, 3.0),
+            baseband_noise_power: 0.0,
+            baseband_total_power: 0.0,
+            pilot_tone_power: 0.0,
         }
     }
 
@@ -735,6 +749,38 @@ impl WfmStereoDecoder {
         }
 
         let disc = demod_fm_with_prev(&equalized, &mut self.prev_iq);
+
+        // Baseband noise floor estimation: measure power at ~67 kHz in the
+        // demodulated baseband.  FM demodulation noise has a parabolic (f²)
+        // power spectral density, so energy above the useful baseband
+        // (audio ≤ 18 kHz, pilot 19 kHz, stereo ≤ 53 kHz, RDS 57 kHz) is
+        // dominated by channel noise.  This provides a reliable noise probe
+        // that is independent of program content.
+        {
+            const NOISE_SMOOTH_ALPHA: f32 = 0.02;
+            const TOTAL_SMOOTH_ALPHA: f32 = 0.02;
+            const PILOT_POWER_ALPHA: f32 = 0.05;
+            let mut noise_acc = 0.0_f32;
+            let mut total_acc = 0.0_f32;
+            for &d in &disc {
+                let x = d * self.fm_gain;
+                let probe = self.noise_probe_bpf.process(x);
+                noise_acc += probe * probe;
+                total_acc += x * x;
+            }
+            let n = disc.len().max(1) as f32;
+            let noise_pwr = noise_acc / n;
+            let total_pwr = total_acc / n;
+            self.baseband_noise_power +=
+                NOISE_SMOOTH_ALPHA * (noise_pwr - self.baseband_noise_power);
+            self.baseband_total_power +=
+                TOTAL_SMOOTH_ALPHA * (total_pwr - self.baseband_total_power);
+            // Pilot power is updated from the PLL magnitude accumulator in
+            // the per-sample loop below; here we just apply smoothing from
+            // the previous block's pilot magnitude.
+            let _ = PILOT_POWER_ALPHA; // used below in detect block
+        }
+
         let mut output = Vec::with_capacity(
             ((samples.len() as f64 * self.output_phase_inc).ceil() as usize + 1)
                 * self.output_channels.max(1),
@@ -778,6 +824,9 @@ impl WfmStereoDecoder {
                 let pilot_coherence = (avg_mag / (avg_abs + 1e-4)).clamp(0.0, 1.0);
                 let pilot_lock = ((pilot_coherence - PILOT_LOCK_ONSET) / 0.2).clamp(0.0, 1.0);
                 self.pilot_lock_level += 0.12 * (pilot_lock - self.pilot_lock_level);
+                // Track coherent pilot power for signal strength correction.
+                // avg_mag² is proportional to the 19 kHz pilot carrier power.
+                self.pilot_tone_power += 0.05 * (avg_mag * avg_mag - self.pilot_tone_power);
                 let stereo_drive = (avg_mag * pilot_lock * 120.0).clamp(0.0, 1.0);
                 let detect_coeff = if stereo_drive > self.stereo_detect_level {
                     0.0008 * STEREO_DETECT_DECIMATION as f32
@@ -989,6 +1038,10 @@ impl WfmStereoDecoder {
         self.output_phase = 0.0;
         self.cci_level = 0.0;
         self.aci_level = 0.0;
+        self.noise_probe_bpf.reset();
+        self.baseband_noise_power = 0.0;
+        self.baseband_total_power = 0.0;
+        self.pilot_tone_power = 0.0;
     }
 
     pub fn set_denoise_level(&mut self, level: WfmDenoiseLevel) {
@@ -1007,6 +1060,45 @@ impl WfmStereoDecoder {
     /// Current ACI (Adjacent Channel Interference) level, 0–100 scale.
     pub fn aci_level(&self) -> u8 {
         self.aci_level.round().clamp(0.0, 100.0) as u8
+    }
+
+    /// Smoothed baseband noise power from the 67 kHz probe region.
+    /// Returns the linear power (not dB).  A higher value indicates more
+    /// channel noise in the demodulated FM baseband.
+    pub fn baseband_noise_power(&self) -> f32 {
+        self.baseband_noise_power
+    }
+
+    /// Smoothed total baseband power (wideband demodulated FM output).
+    pub fn baseband_total_power(&self) -> f32 {
+        self.baseband_total_power
+    }
+
+    /// Smoothed coherent pilot tone power from PLL tracking.
+    /// Non-zero only when a 19 kHz stereo pilot is present and locked.
+    pub fn pilot_tone_power(&self) -> f32 {
+        self.pilot_tone_power
+    }
+
+    /// Pilot lock level (0.0–1.0), indicating 19 kHz pilot PLL quality.
+    pub fn pilot_lock(&self) -> f32 {
+        self.pilot_lock_level
+    }
+
+    /// Estimated carrier-to-noise ratio in dB, derived from the ratio of
+    /// total baseband power to the above-band noise probe.  Returns `None`
+    /// when the noise probe has not yet settled (first few blocks).
+    pub fn estimated_cnr_db(&self) -> Option<f32> {
+        if self.baseband_noise_power < 1e-15 {
+            return None;
+        }
+        // The noise probe at 67 kHz captures energy shaped by the f² FM
+        // demodulation noise curve.  The ratio of total baseband power to
+        // this probe gives an estimate proportional to CNR.  The absolute
+        // calibration depends on filter bandwidths, but the relative trend
+        // is what matters for the S-meter correction.
+        let ratio = self.baseband_total_power / self.baseband_noise_power;
+        Some(10.0 * ratio.max(1e-12).log10())
     }
 }
 
