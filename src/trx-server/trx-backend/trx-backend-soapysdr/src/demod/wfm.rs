@@ -10,7 +10,13 @@ use super::{math::demod_fm_with_prev, DcBlocker};
 
 const RDS_SUBCARRIER_HZ: f32 = 57_000.0;
 /// Tech 2: pilot lock level above which the ×3 pilot reference is used.
-const PILOT_LOCK_THRESHOLD: f32 = 0.25;
+/// Effective pilot coherence threshold ≈ ONSET + THRESHOLD × 0.2 = 0.36.
+const PILOT_LOCK_THRESHOLD: f32 = 0.20;
+/// Coherence below which pilot_lock contribution is zero (linear ramp 0→1
+/// over the range [ONSET, ONSET+0.2]).  Lower value → pilot ref used on
+/// weaker stations; risk: noisier reference.  0.30 vs original 0.40 means
+/// we engage at coherence ≥ 0.36 instead of ≥ 0.45.
+const PILOT_LOCK_ONSET: f32 = 0.30;
 /// Tech 9: number of complex CMA equalizer taps.
 const CMA_N_TAPS: usize = 8;
 /// Tech 9: CMA LMS step size.
@@ -722,7 +728,7 @@ impl WfmStereoDecoder {
                 let avg_mag = self.detect_pilot_mag_acc * inv_n;
                 let avg_abs = self.detect_pilot_abs_acc * inv_n;
                 let pilot_coherence = (avg_mag / (avg_abs + 1e-4)).clamp(0.0, 1.0);
-                let pilot_lock = ((pilot_coherence - 0.4) / 0.2).clamp(0.0, 1.0);
+                let pilot_lock = ((pilot_coherence - PILOT_LOCK_ONSET) / 0.2).clamp(0.0, 1.0);
                 self.pilot_lock_level += 0.12 * (pilot_lock - self.pilot_lock_level);
                 let stereo_drive = (avg_mag * pilot_lock * 120.0).clamp(0.0, 1.0);
                 let detect_coeff = if stereo_drive > self.stereo_detect_level {

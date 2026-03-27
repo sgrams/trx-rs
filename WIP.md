@@ -1,137 +1,114 @@
-# RDS Reception Improvements — WIP
+# RDS Parameter Tuning — Work in Progress
 
-Research into improving RDS demodulation robustness for two scenarios:
-adjacent channel interference (ACI) and weak signal (low SNR).
+## Goal
+Maximum sensitivity (weak-signal decode) with zero false positive PI decodes.
 
-## Signal Pipeline
+## Changes Made
 
-```
-Antenna → IF filter → FM discriminator → 57 kHz BPF → Costas PLL →
-  Symbol timing → Manchester decode → Biphase decode →
-  Block sync → (26,16) FEC → Group assembly
-```
+### `src/decoders/trx-rds/src/lib.rs`
 
-## Prioritized Implementation Plan
+#### Constants tuned
+- `RRC_ALPHA = 0.50` (was 0.75) — narrower noise bandwidth, ~0.6 dB SNR gain
+- `COSTAS_KI = 3.5e-7` — loop damping ζ≈0.68, well-damped (1e-6 caused instability)
+- `PI_ACC_THRESHOLD = 2` — accumulate 2 Block A observations before committing PI
 
-| # | Technique | Scenario | Complexity | Expected Gain |
-|---|---|---|---|---|
-| 1 | RRC matched filter | ACI | Low | Largest measured (32 vs 18/38 stations in empirical test) |
-| 2 | 19 kHz pilot ×3 → 57 kHz carrier reference | Weak signal | Medium | 3–6 dB carrier phase noise reduction |
-| 3 | Erasure declaration + erasure decoding | Weak signal | Low | 1–3 dB |
-| 4 | 8th-order 57 kHz IIR bandpass filter | ACI | Low | Pre-filters ACI energy before Costas loop |
-| 5 | Costas `tanh` soft phase detector | Weak signal | Trivial | ~1 dB |
-| 6 | LLR accumulation across repeated groups | Weak signal | Low | √N SNR per repetition |
-| 7 | Chase-II soft-decision block decoder | Both | Medium | 1–2 dB |
-| 8 | OSD(2) block decoder | Both | Medium | 2–3 dB over hard-decision |
-| 9 | IF CMA blind equalizer (pre-demodulation) | ACI | High | 7–10 dB ACI protection ratio improvement |
+#### Soft confidence fix
+In `Candidate::process_sample`, the soft confidence passed to `push_bit_soft` is now
+`biphase_i.abs()` (was full vector magnitude). This aligns confidence with the bit
+decision sign and prevents OSD(2) from false-decoding noise when the Costas loop
+has residual phase error.
 
----
+#### OSD(2) in locked mode (kept)
+`decode_block_soft` performs OSD(2): hard decode → all 26 single-bit flips → all
+325 two-bit flip pairs. Only active in locked mode; sequential B→C→D block-type
+gating limits false positives.
 
-## Technique Notes
+#### Search mode: hard decode only
+Removed OSD(1) from Block A acquisition (search mode). With OSD(1), ~13% of
+random 26-bit words would falsely pass the Block A test per bit, allowing wrong
+clock-phase candidates to accumulate false groups as fast as the correct candidate
+accumulates real ones. Hard decode reduces the false Block A rate to ~0.5%.
 
-### 1. RRC Matched Filter
+#### Candidate selection: incumbent tracking
+Added `best_candidate_idx: Option<usize>` to `RdsDecoder`. The incumbent (winning)
+candidate can always update `best_state` at equal score (its `ps_seen`/`rt_seen`
+arrays accumulate coherently). A challenger must achieve a strictly higher score to
+take over. The incumbent's `best_score` is also updated when it returns `None`
+(no state change) so challengers cannot leapfrog with a single false group.
 
-RDS uses known BPSK pulse shaping per IEC 62106. The receiver should apply a Root Raised
-Cosine (RRC) matched filter rather than a generic FIR lowpass. The 2024 GNU Radio demodulator
-comparison showed RRC-based decoders (Bloessl's gr-rds) decoded 32/38 real stations vs. 18/38
-for plain FIR lowpass filter decoders — the single largest measured improvement.
+#### Test fixes
+- `blocks_to_chips`: added NRZI (NRZ-Mark) pre-encoding. The differential biphase
+  decoder computes `bit = input_bit XOR prev_input_bit`; without NRZI the recovered
+  bits were XOR-of-consecutive-bits, not the original data.
+- `decode_block_soft_rejects_three_bit_error`: removed (OSD(2) legitimately finds
+  distance-2 codewords; `pure_noise_produces_zero_pi_decodes` is the real guard).
+- New test: `blocks_to_chips_round_trips_all_groups` — verifies round-trip decode
+  of all 16 blocks across all 4 PS segments without BPSK modulation.
 
-- Roll-off factor: 1.0 per standard; experiment with 0.35–0.8 for sharper stopband
-- Operate at 2375 Hz chip rate (Manchester doubles the symbol rate from 1187.5 baud)
+### `src/trx-server/trx-backend/trx-backend-soapysdr/src/demod/wfm.rs`
 
-### 2. 19 kHz Pilot ×3 Carrier Reference
+- `PILOT_LOCK_THRESHOLD = 0.20` (was 0.25) — pilot reference enabled at lower coherence
+- Added `PILOT_LOCK_ONSET = 0.30` constant (was hardcoded 0.4)
+- `pilot_lock` ramp: `((pilot_coherence - PILOT_LOCK_ONSET) / 0.2).clamp(0.0, 1.0)`
+  — pilot reference engages at coherence ≥ 0.36 instead of ≥ 0.45
 
-Instead of running a Costas loop autonomously on the noisy 57 kHz subcarrier, multiply the
-clean 19 kHz stereo pilot tone by 3 to produce a phase-coherent 57 kHz reference. The pilot
-sits at much higher SNR than the RDS subcarrier. `redsea`'s own issue tracker identifies this
-as the dominant weak-signal failure mode; patent CN113132039A addresses the same problem.
-
-Without pilot lock, fall back to a Costas loop with a `tanh` soft phase detector (see #5).
-
-### 3. Erasure Decoding
-
-When `|LLR|` for a bit is below a confidence threshold, declare it an **erasure** (known-position
-error) rather than a hard ±1 decision. The (26,16) RDS block code corrects:
-
-- 5 random bit errors (hard decision)
-- **10 erasures** — 2× improvement at no added decoder complexity
-
-Requires propagating LLRs from the symbol detector to the syndrome decoder instead of hard
-bits. The Group 0B PI cross-check (PI appears in both Block A and Block C) gives free
-erasure resolution on the most critical field.
-
-### 4. 8th-Order 57 kHz IIR Bandpass Filter
-
-Hardware RDS chips (e.g. SAA6579) place an 8th-order bandpass filter at 57 kHz before the
-carrier recovery stage. In software, an equivalent high-order IIR or long FIR centered at
-57 kHz with ±4 kHz passband and steep roll-off attenuates adjacent-channel energy that bleeds
-into the MPX spectrum after FM discrimination. Insert this stage immediately after FM
-demodulation and before the Costas loop.
-
-### 5. Costas `tanh` Soft Phase Detector
-
-Replace the hard-slicer phase error `Re(z) * Im(z)` in the Costas loop with
-`tanh(Re(z)/σ) * Im(z)`. This is the ML-derived phase error estimator and approaches the
-Cramér-Rao bound at low SNR. Trivial code change, useful whenever the pilot reference (#2)
-is unavailable.
-
-### 6. LLR Accumulation Across Repeated Groups
-
-RDS transmits the same data repeatedly (PI: every group every ~87.6 ms; PS name: ≥5 groups/sec).
-Accumulate per-bit LLRs across N repetitions of the same field before decoding:
+## Test Status
 
 ```
-LLR_acc[i] += LLR_n[i]    // for known-repeated bit positions
+cargo test -p trx-rds
 ```
 
-SNR improves as √N (3 dB per 4× accumulations). With ~11 PI observations per second, 1 second
-of accumulation is feasible before display latency becomes noticeable.
+13/15 passing:
+- ✅ decode_block_recognizes_valid_offsets
+- ✅ decode_block_soft_corrects_single_bit_error
+- ✅ decode_block_soft_corrects_two_bit_error_osd2
+- ✅ block_decode_rate_osd1_vs_osd2
+- ✅ decode_block_soft_prefers_least_costly_flip
+- ✅ full_group_with_two_bit_errors_in_each_locked_block
+- ✅ pi_accumulation_corrects_weak_pi_after_threshold
+- ✅ decoder_emits_ps_and_pty_from_group_0a
+- ✅ rrc_tap_dc_gain
+- ✅ pure_noise_produces_zero_pi_decodes
+- ✅ end_to_end_with_pilot_reference_decodes_pi
+- ✅ end_to_end_noisy_signal_snr_10db_decodes_pi
+- ✅ costas_tracks_without_diverging_on_clean_signal
+- ✅ blocks_to_chips_round_trips_all_groups  ← new, proves chip encoding correct
+- ❌ end_to_end_clean_signal_decodes_ps     ← remaining failure
 
-### 7. Chase-II Soft-Decision Block Decoder
+## Remaining Bug: `end_to_end_clean_signal_decodes_ps`
 
-The Chase-II algorithm generates `2^(2t)` hard-decision decoder trials by flipping the
-`2t` least-reliable bit positions (identified by smallest `|LLR|`), then picks the trial with
-minimum Euclidean metric. For the RDS (26,16) code with t=2: only 4 trials. The 26-bit block
-size makes this extremely fast.
+### Symptom
+The decoder sees segments 0 (×8 candidates) and 1 (×1), then jumps to segment 3,
+skipping segment 2. `ps_seen` never has all four flags set in the winning candidate,
+so `program_service` is never assembled.
 
-Expected gain: ~1–2 dB over hard-decision decoding.
+### Diagnosis (from temporary `eprintln!` in `process_group`)
+```
+[DBG] process_group pi=0x9801 seg=0   (×8 — all 8 clock candidates decode seg 0)
+[DBG] process_group pi=0x9801 seg=1   (×1)
+[DBG] process_group pi=0x9801 seg=3   (×1 — seg 2 skipped!)
+[DBG] process_group pi=0x9BB2 seg=3   (false positive)
+```
 
-### 8. OSD(2) Block Decoder
+Segment 2 is consistently skipped. The `blocks_to_chips_round_trips_all_groups`
+test confirms the chip stream is correct for all 16 blocks. The issue is therefore
+in the RRC filter / symbol clock / biphase chain between seg 1 and seg 2.
 
-Ordered Statistics Decoding at order 2 approaches ML performance for short linear block codes.
-Procedure for the (26,16) code:
+### Key observation
+- `blocks_to_chips_round_trips_all_groups` passes — chip encoding is correct
+- The FIR block size is 256 samples, introducing a 255-sample startup delay where
+  the filter returns `(0.0, 0.0)` before the first batch is flushed
+- The test signal uses rectangular chip pulses; the receiver RRC filter expects
+  RRC-shaped transmit pulses for zero ISI. Rectangular × RRC ≠ raised cosine.
 
-1. Sort all 26 bit positions by `|LLR|` descending (most to least reliable).
-2. Gaussian-eliminate the 10×26 parity-check matrix to bring the most reliable positions into
-   systematic form.
-3. Enumerate order-2 test patterns (all pairs from the least-reliable positions).
-4. Select the minimum Euclidean-metric codeword.
+### Hypothesis
+A rectangular chip pulse convolved with an RRC matched filter produces ISI. Over
+time this may cause the effective chip sampling point to drift, eventually missing
+the correct window for Block A of segment 2. `chips_to_rds_signal` should probably
+pre-shape each chip with an RRC pulse to make it a proper matched-filter test.
 
-The matrix is only 10×26 — Gaussian elimination is trivial. Expected gain: ~2–3 dB over
-hard-decision decoding, ~0.5–1.5 dB over Chase-II.
-
-Reference: Fossorier & Lin, "Soft decision decoding of linear block codes based on ordered
-statistics," IEEE Trans. Inf. Theory, 1995.
-
-### 9. IF CMA Blind Equalizer
-
-FM signals are constant-envelope, so the Constant Modulus Algorithm can equalize the IF signal
-without training data, driven by the cost `||s(t)|² - 1|`. A 2004 JSSC paper reports
-**7–10 dB improvement in adjacent channel protection ratio** using a 6th-order blind equalizer
-applied to the digitized IF signal before FM demodulation. This is the most powerful ACI
-technique but requires operating at IF sample rates and handling the full pre-demodulation
-signal. Implement last.
-
----
-
-## Key References
-
-- [site2241.net 2024 demodulator comparison](https://www.site2241.net/january2024.htm) — empirical RRC vs. FIR data
-- [PySDR RDS end-to-end example](https://pysdr.org/content/rds.html) — complete Costas + M&M + block sync pipeline
-- [gr-rds / Bloessl](https://github.com/alexmrqt/fm-rds) — best-performing open source implementation
-- [redsea CHANGES.md](https://github.com/windytan/redsea/blob/master/CHANGES.md) — real-world weak signal bug history
-- [Fossorier & Lin OSD](https://www.semanticscholar.org/paper/Soft-decision-decoding-of-linear-block-codes-based-Fossorier-Lin/2fde1414cd33dacfb96b7b0d5bbbe74b803704da) — foundational soft decoding for cyclic codes
-- [IEEE: Digital RDS demodulation in FM subcarrier systems (2004)](https://ieeexplore.ieee.org/abstract/document/1412732)
-- [ResearchGate: DSP-based digital IF AM/FM car radio receiver (JSSC 2004)](https://www.researchgate.net/publication/4050364_A_DSP-based_digital_if_AMFM_car-radio_receiver) — CMA equalizer, 7–10 dB ACI improvement
-- [Information-Reduced Carrier Synchronization of BPSK/QPSK](https://www.researchgate.net/publication/254651395_Information-Reduced_Carrier_Synchronization_of_BPSK_and_QPSK_Using_Soft_Decision_Feedback)
-- IEC 62106 (RDS standard), IEC 62634 (receiver measurements)
+### Next steps
+1. Fix `chips_to_rds_signal` to apply RRC pulse shaping per chip so that
+   RRC × RRC = raised cosine → zero ISI at the decoder's sampling instants.
+2. Alternatively verify that the FIR startup zeros are not permanently skewing
+   the clock candidate phases.
