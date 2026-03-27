@@ -2969,6 +2969,8 @@ function render(update) {
     currentBandwidthHz = update.filter.bandwidth_hz;
     window.currentBandwidthHz = currentBandwidthHz;
     syncBandwidthInput(currentBandwidthHz);
+    // Reposition BW overlay immediately so freq+bw render together.
+    positionFastOverlay(lastFreqHz, currentBandwidthHz);
     if (window.refreshCwTonePicker) {
       window.refreshCwTonePicker();
     }
