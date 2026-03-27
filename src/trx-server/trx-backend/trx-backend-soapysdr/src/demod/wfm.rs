@@ -606,6 +606,10 @@ pub struct WfmStereoDecoder {
     prev_blend: f32,
     output_phase_inc: f64,
     output_phase: f64,
+    /// Smoothed CCI (Co-Channel Interference) estimate, 0–100 scale.
+    cci_level: f32,
+    /// Smoothed ACI (Adjacent Channel Interference) estimate, 0–100 scale.
+    aci_level: f32,
 }
 
 impl WfmStereoDecoder {
@@ -674,6 +678,8 @@ impl WfmStereoDecoder {
             prev_blend: 0.0,
             output_phase_inc,
             output_phase: 0.0,
+            cci_level: 0.0,
+            aci_level: 0.0,
         }
     }
 
@@ -686,6 +692,28 @@ impl WfmStereoDecoder {
         // The constant-modulus property of FM drives tap adaptation without a
         // training sequence, suppressing adjacent-channel interference.
         let equalized: Vec<Complex<f32>> = samples.iter().map(|&s| self.cma.process(s)).collect();
+
+        // ACI estimation: measure CMA tap deviation from identity.
+        // When adjacent-channel interference is present the equalizer drives its
+        // taps away from the centre-tap-only identity configuration.
+        {
+            let mut tap_dev = 0.0_f32;
+            for (k, &tap) in self.cma.taps.iter().enumerate() {
+                if k == CMA_N_TAPS / 2 {
+                    // Centre tap: deviation from (1+0j).
+                    tap_dev += (tap - Complex::new(1.0, 0.0)).norm_sqr();
+                } else {
+                    tap_dev += tap.norm_sqr();
+                }
+            }
+            // Map deviation to 0–100 scale. Empirically, deviation > 0.5 is
+            // heavy ACI; scale linearly with a sqrt compressor for readability.
+            let raw_aci = (tap_dev.sqrt() * 100.0 / 0.7).clamp(0.0, 100.0);
+            // Smooth with ~200 ms time constant at block rate.
+            let alpha = 0.08_f32;
+            self.aci_level += alpha * (raw_aci - self.aci_level);
+        }
+
         let disc = demod_fm_with_prev(&equalized, &mut self.prev_iq);
         let mut output = Vec::with_capacity(
             ((samples.len() as f64 * self.output_phase_inc).ceil() as usize + 1)
@@ -745,6 +773,23 @@ impl WfmStereoDecoder {
                 } else if self.stereo_detect_level > 0.6 {
                     self.stereo_detected = true;
                 }
+                // CCI estimation: pilot quadrature leakage indicates co-channel
+                // interference.  A clean pilot has all energy in I; CCI adds
+                // incoherent 19 kHz energy that leaks into Q.
+                let q_abs = (self.pilot_q_lp.y).abs();
+                let i_abs = (self.pilot_i_lp.y).abs();
+                let cci_ratio = if i_abs > 1e-8 {
+                    (q_abs / i_abs).clamp(0.0, 1.0)
+                } else {
+                    0.0
+                };
+                // Also factor in coherence drop: low coherence at moderate
+                // pilot amplitude implies multipath / co-channel.
+                let coherence_penalty = (1.0 - pilot_coherence).clamp(0.0, 1.0);
+                let raw_cci = ((cci_ratio * 0.6 + coherence_penalty * 0.4) * 100.0).clamp(0.0, 100.0);
+                let cci_alpha = 0.08_f32;
+                self.cci_level += cci_alpha * (raw_cci - self.cci_level);
+
                 self.detect_counter = 0;
                 self.detect_pilot_mag_acc = 0.0;
                 self.detect_pilot_abs_acc = 0.0;
@@ -770,7 +815,13 @@ impl WfmStereoDecoder {
                 self.rds_decoder.clear_pilot_ref();
             }
 
-            let rds_quality = (0.35 + pilot_mag * 20.0).clamp(0.35, 1.0);
+            // Adaptive RDS quality: base metric from pilot strength, then
+            // penalise for CCI and ACI so the decoder weights bits lower when
+            // interference is present (reduces block-error rate).
+            let rds_base = (0.35 + pilot_mag * 20.0).clamp(0.35, 1.0);
+            let cci_penalty = 1.0 - (self.cci_level * 0.006).clamp(0.0, 0.45);
+            let aci_penalty = 1.0 - (self.aci_level * 0.004).clamp(0.0, 0.30);
+            let rds_quality = (rds_base * cci_penalty * aci_penalty).clamp(0.10, 1.0);
             let rds_clean = self.rds_dc.process(self.rds_bpf.process(x));
             let _ = self.rds_decoder.process_sample(rds_clean, rds_quality);
 
@@ -916,6 +967,8 @@ impl WfmStereoDecoder {
         self.denoise.reset();
         self.prev_blend = 0.0;
         self.output_phase = 0.0;
+        self.cci_level = 0.0;
+        self.aci_level = 0.0;
     }
 
     pub fn set_denoise_level(&mut self, level: WfmDenoiseLevel) {
@@ -924,6 +977,16 @@ impl WfmStereoDecoder {
 
     pub fn stereo_detected(&self) -> bool {
         self.stereo_detected
+    }
+
+    /// Current CCI (Co-Channel Interference) level, 0–100 scale.
+    pub fn cci_level(&self) -> u8 {
+        self.cci_level.round().clamp(0.0, 100.0) as u8
+    }
+
+    /// Current ACI (Adjacent Channel Interference) level, 0–100 scale.
+    pub fn aci_level(&self) -> u8 {
+        self.aci_level.round().clamp(0.0, 100.0) as u8
     }
 }
 

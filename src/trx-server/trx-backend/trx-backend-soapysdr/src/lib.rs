@@ -895,14 +895,20 @@ impl RigSdr for SoapySdrRig {
     }
 
     fn filter_state(&self) -> Option<RigFilterState> {
-        let wfm_stereo_detected = self
-            .pipeline
-            .channel_dsps
-            .read()
-            .unwrap()
-            .get(self.primary_channel_idx)
-            .and_then(|dsp| dsp.lock().ok().map(|d| d.wfm_stereo_detected()))
-            .unwrap_or(false);
+        let (wfm_stereo_detected, wfm_cci, wfm_aci) = {
+            let dsps = self.pipeline.channel_dsps.read().unwrap();
+            let dsp = dsps.get(self.primary_channel_idx);
+            let stereo = dsp
+                .and_then(|d| d.lock().ok().map(|d| d.wfm_stereo_detected()))
+                .unwrap_or(false);
+            let cci = dsp
+                .and_then(|d| d.lock().ok().map(|d| d.wfm_cci()))
+                .unwrap_or(0);
+            let aci = dsp
+                .and_then(|d| d.lock().ok().map(|d| d.wfm_aci()))
+                .unwrap_or(0);
+            (stereo, cci, aci)
+        };
         Some(RigFilterState {
             bandwidth_hz: self.bandwidth_hz,
             cw_center_hz: 700,
@@ -921,6 +927,8 @@ impl RigSdr for SoapySdrRig {
             wfm_stereo: self.wfm_stereo,
             wfm_stereo_detected,
             wfm_denoise: self.wfm_denoise,
+            wfm_cci,
+            wfm_aci,
             sam_stereo_width: self.sam_stereo_width,
             sam_carrier_sync: self.sam_carrier_sync,
         })

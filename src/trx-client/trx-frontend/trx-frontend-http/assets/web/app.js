@@ -1701,6 +1701,7 @@ function resetDecoderStateOnRigSwitch() {
   vchanRdsById = new Map();
   resetRdsDisplay();
   resetWfmStereoIndicator();
+  resetIntfBars();
 
   // Spectrum — clear stale data from previous rig's SDR
   lastSpectrumData = null;
@@ -1726,6 +1727,23 @@ function resetWfmStereoIndicator() {
   wfmStFlagEl.textContent = "MO";
   wfmStFlagEl.classList.remove("wfm-st-flag-stereo");
   wfmStFlagEl.classList.add("wfm-st-flag-mono");
+}
+
+function updateIntfBar(fillEl, valEl, level) {
+  if (!fillEl || !valEl) return;
+  const v = Math.round(Math.min(Math.max(level, 0), 100));
+  valEl.textContent = String(v);
+  fillEl.style.width = v + "%";
+  fillEl.classList.toggle("wfm-intf-warn", v >= 35 && v < 65);
+  fillEl.classList.toggle("wfm-intf-high", v >= 65);
+  if (v < 35) {
+    fillEl.classList.remove("wfm-intf-warn", "wfm-intf-high");
+  }
+}
+
+function resetIntfBars() {
+  updateIntfBar(wfmCciFillEl, wfmCciValEl, 0);
+  updateIntfBar(wfmAciFillEl, wfmAciValEl, 0);
 }
 
 // ── Fast CSS-based frequency/BW marker positioning ──────────────────────────
@@ -1800,6 +1818,7 @@ function applyLocalTunedFrequency(hz, forceDisplay = false) {
     primaryRds = null;
     resetRdsDisplay();
     resetWfmStereoIndicator();
+    resetIntfBars();
   }
   lastFreqHz = hz;
   window.lastFreqHz = lastFreqHz;
@@ -2955,6 +2974,8 @@ function render(update) {
       wfmStFlagEl.classList.toggle("wfm-st-flag-stereo", detected);
       wfmStFlagEl.classList.toggle("wfm-st-flag-mono", !detected);
     }
+    if (typeof update.filter.wfm_cci === "number") updateIntfBar(wfmCciFillEl, wfmCciValEl, update.filter.wfm_cci);
+    if (typeof update.filter.wfm_aci === "number") updateIntfBar(wfmAciFillEl, wfmAciValEl, update.filter.wfm_aci);
     if (samStereoWidthEl && typeof update.filter.sam_stereo_width === "number") {
       samStereoWidthEl.value = String(Math.round(update.filter.sam_stereo_width * 100));
     }
@@ -7494,6 +7515,10 @@ const sdrLnaGainEl = document.getElementById("sdr-lna-gain-db");
 const sdrLnaGainSetBtn = document.getElementById("sdr-lna-gain-set");
 const sdrAgcEl = document.getElementById("sdr-agc-enabled");
 const wfmStFlagEl = document.getElementById("wfm-st-flag");
+const wfmCciFillEl = document.getElementById("wfm-cci-fill");
+const wfmCciValEl = document.getElementById("wfm-cci-val");
+const wfmAciFillEl = document.getElementById("wfm-aci-fill");
+const wfmAciValEl = document.getElementById("wfm-aci-val");
 const samControlsCol = document.getElementById("sam-controls-col");
 const samStereoWidthEl = document.getElementById("sam-stereo-width");
 const samCarrierSyncEl = document.getElementById("sam-carrier-sync");

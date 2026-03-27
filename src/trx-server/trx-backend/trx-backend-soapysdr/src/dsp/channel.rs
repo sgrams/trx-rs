@@ -601,6 +601,20 @@ impl ChannelDsp {
             .unwrap_or(false)
     }
 
+    pub fn wfm_cci(&self) -> u8 {
+        self.wfm_decoder
+            .as_ref()
+            .map(WfmStereoDecoder::cci_level)
+            .unwrap_or(0)
+    }
+
+    pub fn wfm_aci(&self) -> u8 {
+        self.wfm_decoder
+            .as_ref()
+            .map(WfmStereoDecoder::aci_level)
+            .unwrap_or(0)
+    }
+
     pub fn reset_rds(&mut self) {
         if let Some(decoder) = &mut self.wfm_decoder {
             decoder.reset_rds();

@@ -265,6 +265,47 @@ input.status-input, select.status-input { width: 100%; padding: 0.45rem 0.5rem; 
   border-color: var(--border-light);
   background: color-mix(in srgb, var(--input-bg) 92%, var(--panel-2));
 }
+.wfm-intf-bar-wrap {
+  min-width: 3.6rem;
+}
+.wfm-intf-bar {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 3.6rem;
+  min-height: 2.1rem;
+  padding: 0;
+  box-sizing: border-box;
+  border: 1px solid var(--border-light);
+  border-radius: 6px;
+  overflow: hidden;
+  background: var(--input-bg);
+}
+.wfm-intf-fill {
+  position: absolute;
+  left: 0;
+  top: 0;
+  height: 100%;
+  width: 0%;
+  border-radius: 5px 0 0 5px;
+  background: color-mix(in srgb, #4fc3f7 45%, transparent);
+  transition: width 0.25s ease, background 0.35s ease;
+}
+.wfm-intf-fill.wfm-intf-warn {
+  background: color-mix(in srgb, #ffa726 55%, transparent);
+}
+.wfm-intf-fill.wfm-intf-high {
+  background: color-mix(in srgb, #ef5350 55%, transparent);
+}
+.wfm-intf-val {
+  position: relative;
+  z-index: 1;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  color: var(--text-primary);
+}
 .controls-col-center::after {
   content: "";
   display: block;
