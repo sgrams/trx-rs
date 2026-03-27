@@ -475,8 +475,7 @@ impl Candidate {
         };
         let max_order = if self.score >= 2 { 3u8 } else { 2 };
         // Tech 3/7/8: use soft-decision decoder instead of hard decode.
-        let Some((data, kind)) =
-            decode_block_soft(word, &self.block_soft, max_cost, max_order)
+        let Some((data, kind)) = decode_block_soft(word, &self.block_soft, max_cost, max_order)
         else {
             self.drop_lock(word);
             return None;
@@ -1120,8 +1119,7 @@ fn decode_block_soft(
                 }
                 if let Some(kind) = offset_to_kind(syn12 ^ bit_syn[k3]) {
                     best_cost = triple_cost;
-                    let flip =
-                        (1u32 << (25 - k1)) ^ (1u32 << (25 - k2)) ^ (1u32 << (25 - k3));
+                    let flip = (1u32 << (25 - k1)) ^ (1u32 << (25 - k2)) ^ (1u32 << (25 - k3));
                     best_result = Some((((word ^ flip) >> 10) as u16, kind));
                 }
             }
@@ -1299,7 +1297,8 @@ mod tests {
         // Mark the corrupted bit as low confidence (realistic: a genuine
         // error has low |biphase_I|).
         soft[15] = 0.05;
-        let (data, kind) = decode_block_soft(corrupted, &soft, OSD_MAX_FLIP_COST, 3).expect("should recover");
+        let (data, kind) =
+            decode_block_soft(corrupted, &soft, OSD_MAX_FLIP_COST, 3).expect("should recover");
         assert_eq!(data, 0xABCD);
         assert_eq!(kind, BlockKind::A);
     }
@@ -1315,7 +1314,8 @@ mod tests {
         let mut soft = [1.0f32; 26];
         soft[0] = 0.05;
         soft[1] = 0.05;
-        let (data, kind) = decode_block_soft(corrupted, &soft, OSD_MAX_FLIP_COST, 3).expect("OSD(2) should correct");
+        let (data, kind) = decode_block_soft(corrupted, &soft, OSD_MAX_FLIP_COST, 3)
+            .expect("OSD(2) should correct");
         assert_eq!(data, 0x1234);
         assert_eq!(kind, BlockKind::B);
     }
@@ -1337,7 +1337,8 @@ mod tests {
         let corrupted = word ^ (1 << (25 - 2)); // flip bit k=2
         let mut soft = [1.0f32; 26];
         soft[2] = 0.01; // least confident → cheapest to flip
-        let (data, kind) = decode_block_soft(corrupted, &soft, OSD_MAX_FLIP_COST, 3).expect("should recover");
+        let (data, kind) =
+            decode_block_soft(corrupted, &soft, OSD_MAX_FLIP_COST, 3).expect("should recover");
         assert_eq!(data, 0xBEEF);
         assert_eq!(kind, BlockKind::D);
     }
@@ -1784,14 +1785,17 @@ mod tests {
         soft[1] = 0.05;
 
         // Verify each corrupted block individually recovers via OSD(2).
-        let (d_b, k_b) = decode_block_soft(corrupt_b, &soft, OSD_MAX_FLIP_COST, 3).expect("block B should recover");
+        let (d_b, k_b) = decode_block_soft(corrupt_b, &soft, OSD_MAX_FLIP_COST, 3)
+            .expect("block B should recover");
         assert_eq!((d_b, k_b), (block_b_data, BlockKind::B));
 
         // C' check
-        let (d_c, _k_c) = decode_block_soft(corrupt_c, &soft, OSD_MAX_FLIP_COST, 3).expect("block C' should recover");
+        let (d_c, _k_c) = decode_block_soft(corrupt_c, &soft, OSD_MAX_FLIP_COST, 3)
+            .expect("block C' should recover");
         assert_eq!(d_c, 0x4865);
 
-        let (d_d, k_d) = decode_block_soft(corrupt_d, &soft, OSD_MAX_FLIP_COST, 3).expect("block D should recover");
+        let (d_d, k_d) = decode_block_soft(corrupt_d, &soft, OSD_MAX_FLIP_COST, 3)
+            .expect("block D should recover");
         assert_eq!(k_d, BlockKind::D);
         assert_eq!(d_d, u16::from_be_bytes(*b"Hi"));
 

@@ -708,7 +708,11 @@ impl WfmStereoDecoder {
             }
             let mean_mag = sum_mag / n;
             let var = (sum_mag_sq / n - mean_mag * mean_mag).max(0.0);
-            let cv = if mean_mag > 1e-8 { var.sqrt() / mean_mag } else { 0.0 };
+            let cv = if mean_mag > 1e-8 {
+                var.sqrt() / mean_mag
+            } else {
+                0.0
+            };
             // Map CV to 0–100. Empirically, CV > 0.35 is heavy ACI.
             let raw_aci = (cv * 100.0 / 0.35).clamp(0.0, 100.0);
             let alpha = 0.08_f32;
@@ -718,7 +722,8 @@ impl WfmStereoDecoder {
         // Tech 9: apply CMA blind equalizer to IQ samples before FM demodulation.
         // The constant-modulus property of FM drives tap adaptation without a
         // training sequence, suppressing adjacent-channel interference.
-        let mut equalized: Vec<Complex<f32>> = samples.iter().map(|&s| self.cma.process(s)).collect();
+        let mut equalized: Vec<Complex<f32>> =
+            samples.iter().map(|&s| self.cma.process(s)).collect();
 
         // Hard-limit to unit magnitude after CMA (preserves phase for FM demod
         // while preventing clipping artefacts).
@@ -1462,7 +1467,12 @@ mod tests {
         let iq = fm_modulate(&composite, 2.1, 75_000.0, fs);
 
         let mut decoder = WfmStereoDecoder::new(
-            composite_rate, audio_rate, 2, true, 50, WfmDenoiseLevel::Auto,
+            composite_rate,
+            audio_rate,
+            2,
+            true,
+            50,
+            WfmDenoiseLevel::Auto,
         );
         let _ = decoder.process_iq(&iq);
 
@@ -1503,7 +1513,12 @@ mod tests {
         }
 
         let mut decoder = WfmStereoDecoder::new(
-            composite_rate, audio_rate, 2, true, 50, WfmDenoiseLevel::Auto,
+            composite_rate,
+            audio_rate,
+            2,
+            true,
+            50,
+            WfmDenoiseLevel::Auto,
         );
         let _ = decoder.process_iq(&iq);
 
@@ -1525,7 +1540,12 @@ mod tests {
         let iq = fm_modulate(&composite, 2.1, 75_000.0, fs);
 
         let mut decoder = WfmStereoDecoder::new(
-            composite_rate, audio_rate, 2, true, 50, WfmDenoiseLevel::Auto,
+            composite_rate,
+            audio_rate,
+            2,
+            true,
+            50,
+            WfmDenoiseLevel::Auto,
         );
         let _ = decoder.process_iq(&iq);
 
@@ -1570,7 +1590,12 @@ mod tests {
         }
 
         let mut decoder = WfmStereoDecoder::new(
-            composite_rate, audio_rate, 2, true, 50, WfmDenoiseLevel::Auto,
+            composite_rate,
+            audio_rate,
+            2,
+            true,
+            50,
+            WfmDenoiseLevel::Auto,
         );
         let _ = decoder.process_iq(&iq);
 
