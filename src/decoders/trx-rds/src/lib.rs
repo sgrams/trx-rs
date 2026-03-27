@@ -1155,19 +1155,46 @@ mod tests {
 
     /// Modulate chip stream as BPSK on the 57 kHz RDS subcarrier.
     /// Returns a composite FM-baseband signal for `RdsDecoder::process_sample`.
+    ///
+    /// Each chip is RRC pulse-shaped so that RRC(tx) × RRC(rx) = raised cosine,
+    /// giving zero ISI at the receiver's optimal sampling instants.
     fn chips_to_rds_signal(chips: &[i8], sample_rate: f32) -> Vec<f32> {
-        let samples_per_chip = sample_rate / RDS_CHIP_RATE;
-        let n = (chips.len() as f32 * samples_per_chip).ceil() as usize;
-        let mut sig = vec![0.0f32; n];
+        let spc = sample_rate / RDS_CHIP_RATE;
+        let n = (chips.len() as f32 * spc).ceil() as usize;
+
+        // Build the transmit RRC pulse shape (same taps as the receiver).
+        let taps = build_rrc_taps(sample_rate, RDS_CHIP_RATE);
+
+        // Create baseband impulse train and convolve with RRC taps.
+        let mut baseband = vec![0.0f32; n];
         for (ci, &chip) in chips.iter().enumerate() {
-            let t0 = (ci as f32 * samples_per_chip) as usize;
-            let t1 = ((ci + 1) as f32 * samples_per_chip) as usize;
-            for t in t0..t1.min(n) {
-                let phase = TAU * RDS_SUBCARRIER_HZ * t as f32 / sample_rate;
-                sig[t] = chip as f32 * phase.cos();
+            let center = ((ci as f32 + 0.5) * spc).round() as usize;
+            if center < n {
+                baseband[center] = chip as f32;
             }
         }
-        sig
+
+        // Convolve baseband impulse train with RRC taps (direct FIR).
+        let half = taps.len() / 2;
+        let mut shaped = vec![0.0f32; n];
+        for (i, &impulse) in baseband.iter().enumerate() {
+            if impulse == 0.0 {
+                continue;
+            }
+            for (j, &tap) in taps.iter().enumerate() {
+                let idx = i + j;
+                if idx >= half && idx - half < n {
+                    shaped[idx - half] += impulse * tap;
+                }
+            }
+        }
+
+        // BPSK modulate onto the 57 kHz subcarrier.
+        for t in 0..n {
+            let phase = TAU * RDS_SUBCARRIER_HZ * t as f32 / sample_rate;
+            shaped[t] *= phase.cos();
+        }
+        shaped
     }
 
     /// Add AWGN at the given SNR (dB) relative to the signal's actual power.
