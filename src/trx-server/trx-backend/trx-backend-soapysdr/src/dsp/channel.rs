@@ -673,6 +673,16 @@ impl ChannelDsp {
         }
         self.mixer_phase = (phase_start + n as f64 * phase_inc).rem_euclid(std::f64::consts::TAU);
 
+        // Carrier power: DC component of the mixed signal (narrow-band estimate
+        // at the tuned frequency).  Correlates with the spectrum FFT peak.
+        {
+            let inv_n = 1.0 / n as f32;
+            let dc_i: f32 = mixed_i.iter().sum::<f32>() * inv_n;
+            let dc_q: f32 = mixed_q.iter().sum::<f32>() * inv_n;
+            let carrier_power = dc_i * dc_i + dc_q * dc_q;
+            self.last_signal_db = 10.0 * carrier_power.max(1e-12).log10();
+        }
+
         self.lpf_iq.filter_block_into(
             mixed_i,
             mixed_q,
@@ -740,14 +750,12 @@ impl ChannelDsp {
             }
         }
 
-        let (signal_power_mean, signal_power_peak) =
-            decimated.iter().fold((0.0_f32, 0.0_f32), |(sum, peak), s| {
-                let p = s.re * s.re + s.im * s.im;
-                (sum + p, peak.max(p))
-            });
-        let signal_power = signal_power_mean / decimated.len() as f32;
+        let signal_power = decimated
+            .iter()
+            .map(|s| s.re * s.re + s.im * s.im)
+            .sum::<f32>()
+            / decimated.len() as f32;
         let signal_db = 10.0 * signal_power.max(1e-12).log10();
-        self.last_signal_db = 10.0 * signal_power_peak.max(1e-12).log10();
         const WFM_OUTPUT_GAIN: f32 = 0.50;
         let mut audio = if let Some(decoder) = self.wfm_decoder.as_mut() {
             let mut out = decoder.process_iq(decimated);
