@@ -268,6 +268,7 @@ enum BlockKind {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ExpectBlock {
+    A,
     B,
     C,
     D,
@@ -549,9 +550,15 @@ impl Candidate {
                 None
             }
             (ExpectBlock::D, BlockKind::D) => {
-                self.locked = false;
-                self.search_bits = 0;
-                self.search_reg = 0;
+                // Stay locked and expect Block A next so the next group's
+                // Block A can benefit from OSD soft decoding.  Previously
+                // the decoder dropped lock here and fell back to search mode
+                // (hard CRC only), which caused it to freeze after 2-3
+                // groups on weak signals because Block A could not be
+                // re-acquired without OSD.
+                self.expect = ExpectBlock::A;
+                self.block_reg = 0;
+                self.block_bits = 0;
                 self.process_group(
                     self.block_a,
                     self.block_b,
