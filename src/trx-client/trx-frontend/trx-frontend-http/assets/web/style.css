@@ -1277,6 +1277,15 @@ small { color: var(--text-muted); }
   color: var(--text-muted);
   line-height: 1;
 }
+.sql-auto-btn {
+  font-size: 0.68rem;
+  padding: 0 5px;
+  height: 1.2rem;
+  min-height: 0;
+  line-height: 1;
+  border-radius: 3px;
+  cursor: pointer;
+}
 .vol-slider {
   -webkit-appearance: none;
   appearance: none;
