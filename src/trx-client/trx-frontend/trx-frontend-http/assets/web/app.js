@@ -631,6 +631,45 @@ let jogAngle = 0;
 let lastClientCount = null;
 let lastLocked = false;
 let sdrSquelchSupported = false;
+// ── Previous-state tracking for "B" hotkey ────────────────────────────────────
+let previousTuneState = null; // { freqHz, bandwidthHz, mode, centerHz }
+
+function savePreviousTuneState() {
+  previousTuneState = {
+    freqHz: lastFreqHz,
+    bandwidthHz: currentBandwidthHz,
+    mode: modeEl ? modeEl.value : "",
+    centerHz: lastSpectrumData ? Number(lastSpectrumData.center_hz) : null,
+  };
+}
+
+async function restorePreviousTuneState() {
+  if (!previousTuneState) {
+    showHint("No previous state", 1500);
+    return;
+  }
+  const saved = previousTuneState;
+  savePreviousTuneState(); // save current as previous so B toggles back
+  if (saved.mode && modeEl && modeEl.value !== saved.mode) {
+    modeEl.value = saved.mode;
+    await postPath(`/set_mode?mode=${encodeURIComponent(saved.mode)}`);
+    updateWfmControls();
+  }
+  if (Number.isFinite(saved.bandwidthHz) && saved.bandwidthHz !== currentBandwidthHz) {
+    currentBandwidthHz = saved.bandwidthHz;
+    window.currentBandwidthHz = currentBandwidthHz;
+    syncBandwidthInput(currentBandwidthHz);
+    await postPath(`/set_bandwidth?hz=${saved.bandwidthHz}`);
+  }
+  if (Number.isFinite(saved.freqHz)) {
+    setRigFrequency(saved.freqHz);
+  }
+  if (Number.isFinite(saved.centerHz)) {
+    await postPath(`/set_center_freq?hz=${saved.centerHz}`);
+  }
+  showHint("Restored previous", 1500);
+}
+
 let lastRigIds = [];
 let lastRigDisplayNames = {};
 let lastActiveRigId = null;
@@ -1850,6 +1889,7 @@ function applyLocalTunedFrequency(hz, forceDisplay = false) {
   const freqChanged = lastFreqHz !== hz;
   if (!freqChanged && !forceDisplay) return;
   if (freqChanged) {
+    if (lastFreqHz != null) savePreviousTuneState();
     primaryRds = null;
     resetRdsDisplay();
     resetWfmStereoIndicator();
@@ -10347,17 +10387,151 @@ window.addEventListener("keydown", (event) => {
     return;
   }
 
+  // R — retune current frequency (re-send same settings)
+  if (key === "r") {
+    event.preventDefault();
+    if (lastFreqHz != null) {
+      showHint("Retuning…", 1200);
+      setRigFrequency(lastFreqHz);
+    }
+    return;
+  }
+
+  // B — jump to previous frequency/bw/mode/decode state
+  if (key === "b") {
+    event.preventDefault();
+    void restorePreviousTuneState();
+    return;
+  }
+
+  // [ — narrow bandwidth by 10 kHz
+  if (key === "[") {
+    event.preventDefault();
+    const [, minBw] = mwDefaultsForMode(modeEl ? modeEl.value : "USB");
+    const next = Math.max(minBw, currentBandwidthHz - 10_000);
+    if (next !== currentBandwidthHz) {
+      currentBandwidthHz = next;
+      window.currentBandwidthHz = currentBandwidthHz;
+      syncBandwidthInput(next);
+      positionFastOverlay(lastFreqHz, next);
+      if (lastSpectrumData) scheduleSpectrumDraw();
+      postPath(`/set_bandwidth?hz=${next}`).catch(() => {});
+      showHint(`BW ${formatBwLabel(next)}`, 1200);
+    }
+    return;
+  }
+
+  // ] — widen bandwidth by 10 kHz
+  if (key === "]") {
+    event.preventDefault();
+    const [, , maxBw] = mwDefaultsForMode(modeEl ? modeEl.value : "USB");
+    const next = Math.min(maxBw, currentBandwidthHz + 10_000);
+    if (next !== currentBandwidthHz) {
+      currentBandwidthHz = next;
+      window.currentBandwidthHz = currentBandwidthHz;
+      syncBandwidthInput(next);
+      positionFastOverlay(lastFreqHz, next);
+      if (lastSpectrumData) scheduleSpectrumDraw();
+      postPath(`/set_bandwidth?hz=${next}`).catch(() => {});
+      showHint(`BW ${formatBwLabel(next)}`, 1200);
+    }
+    return;
+  }
+
+  // Left/Right arrows — retune by current jog step
+  if (key === "arrowleft" || key === "arrowright") {
+    event.preventDefault();
+    jogFreq(key === "arrowright" ? 1 : -1);
+    return;
+  }
+
+  // Up/Down arrows — shift center (spectrum) frequency
+  if (key === "arrowup" || key === "arrowdown") {
+    event.preventDefault();
+    void shiftSpectrumCenter(key === "arrowup" ? 1 : -1);
+    return;
+  }
+
+  // M — open mode picker
+  if (key === "m") {
+    event.preventDefault();
+    if (modeEl && !modeEl.disabled) {
+      modeEl.focus();
+      modeEl.click();
+      // Attempt to programmatically open the <select> via showPicker (modern browsers)
+      if (typeof modeEl.showPicker === "function") {
+        try { modeEl.showPicker(); } catch (_) {}
+      }
+    }
+    return;
+  }
+
+  // Z — toggle mono/stereo (WFM)
+  if (key === "z") {
+    event.preventDefault();
+    if (wfmAudioModeEl) {
+      const next = wfmAudioModeEl.value === "mono" ? "stereo" : "mono";
+      wfmAudioModeEl.value = next;
+      saveSetting("wfmAudioMode", next);
+      const enabled = next !== "mono";
+      postPath(`/set_wfm_stereo?enabled=${enabled ? "true" : "false"}`).catch(() => {});
+      showHint(next === "stereo" ? "Stereo" : "Mono", 1200);
+    } else {
+      showHint("Stereo N/A", 1200);
+    }
+    return;
+  }
+
+  // N — toggle noise blanker
+  if (key === "n") {
+    event.preventDefault();
+    if (sdrNbSupported && sdrNbEnabledEl) {
+      sdrNbEnabledEl.checked = !sdrNbEnabledEl.checked;
+      submitSdrNbState();
+      showHint(sdrNbEnabledEl.checked ? "NB On" : "NB Off", 1200);
+    } else {
+      showHint("NB N/A", 1200);
+    }
+    return;
+  }
+
+  // Q — toggle squelch (cycle 0 → auto → 0)
+  if (key === "q") {
+    event.preventDefault();
+    if (sdrSquelchSupported && sdrSquelchEl) {
+      const current = clampSdrSquelchPercent(Number(sdrSquelchEl.value));
+      let nextPct;
+      if (current > 0) {
+        nextPct = 0; // turn off
+      } else {
+        // Auto: estimate from noise floor
+        let auto = 30;
+        const data = lastSpectrumData || window.lastSpectrumData;
+        if (data && Array.isArray(data.bins) && data.bins.length > 0) {
+          const noiseDb = estimateNoiseFloorDb(data.bins);
+          if (noiseDb != null && Number.isFinite(noiseDb)) {
+            const thresholdDb = noiseDb + 6;
+            const clamped = Math.max(SDR_SQUELCH_MIN_DB, Math.min(SDR_SQUELCH_MAX_DB, thresholdDb));
+            auto = clampSdrSquelchPercent(
+              ((clamped - SDR_SQUELCH_MIN_DB) / (SDR_SQUELCH_MAX_DB - SDR_SQUELCH_MIN_DB)) * 100,
+            );
+          }
+        }
+        nextPct = auto;
+      }
+      sdrSquelchEl.value = String(nextPct);
+      updateSdrSquelchPctLabel();
+      saveSetting("sdrSquelchPct", nextPct);
+      submitSdrSquelchPercent(nextPct);
+      showHint(nextPct > 0 ? `Squelch ${nextPct}%` : "Squelch Off", 1200);
+    } else {
+      showHint("Squelch N/A", 1200);
+    }
+    return;
+  }
+
   // Spectrum keyboard navigation
   if (lastSpectrumData && spectrumCanvas) {
-    // Arrow Left/Right — pan spectrum
-    if (key === "arrowleft" || key === "arrowright") {
-      event.preventDefault();
-      const step = 0.1 / spectrumZoom;
-      spectrumPanFrac += key === "arrowleft" ? -step : step;
-      scheduleSpectrumDraw();
-      scheduleOverviewDraw();
-      return;
-    }
     // +/= — zoom in
     if (key === "+" || key === "=") {
       event.preventDefault();
