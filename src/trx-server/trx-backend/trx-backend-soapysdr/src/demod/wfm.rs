@@ -298,9 +298,15 @@ impl BiquadNotch {
 // ---------------------------------------------------------------------------
 
 /// Four cascaded biquad bandpass sections forming an effective 8th-order BPF.
-/// Q=5 per section gives ≈ ±2480 Hz passband at 57 kHz — wide enough to pass
-/// the full RDS DSB signal while providing much steeper adjacent-channel
-/// rejection than the previous single-stage (2nd-order) filter.
+/// Q=3.5 per section gives ≈ ±3560 Hz composite passband at 57 kHz.
+///
+/// At α=0.30 the RDS signal extends ±1544 Hz from center.  The previous
+/// Q=5 gave only ±2480 Hz composite bandwidth, which tapered the RDS band
+/// edges by −1.2 dB — enough to distort the RRC matched filter's expected
+/// pulse shape, cause ISI, and degrade soft-decision confidence values.
+/// Q=3.5 reduces edge attenuation to −0.59 dB while still providing
+/// ≈−4 dB rejection at the stereo difference signal edge (53 kHz) and
+/// steep 8th-order roll-off beyond.
 #[derive(Debug, Clone)]
 struct Iir8BandPass {
     stages: [BiquadBandPass; 4],
@@ -308,7 +314,7 @@ struct Iir8BandPass {
 
 impl Iir8BandPass {
     fn new(sample_rate: f32, center_hz: f32) -> Self {
-        const Q: f32 = 5.0;
+        const Q: f32 = 3.5;
         Self {
             stages: std::array::from_fn(|_| BiquadBandPass::new(sample_rate, center_hz, Q)),
         }
