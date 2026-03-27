@@ -759,7 +759,6 @@ impl WfmStereoDecoder {
         {
             const NOISE_SMOOTH_ALPHA: f32 = 0.02;
             const TOTAL_SMOOTH_ALPHA: f32 = 0.02;
-            const PILOT_POWER_ALPHA: f32 = 0.05;
             let mut noise_acc = 0.0_f32;
             let mut total_acc = 0.0_f32;
             for &d in &disc {
@@ -775,10 +774,6 @@ impl WfmStereoDecoder {
                 NOISE_SMOOTH_ALPHA * (noise_pwr - self.baseband_noise_power);
             self.baseband_total_power +=
                 TOTAL_SMOOTH_ALPHA * (total_pwr - self.baseband_total_power);
-            // Pilot power is updated from the PLL magnitude accumulator in
-            // the per-sample loop below; here we just apply smoothing from
-            // the previous block's pilot magnitude.
-            let _ = PILOT_POWER_ALPHA; // used below in detect block
         }
 
         let mut output = Vec::with_capacity(
