@@ -296,6 +296,7 @@ pub struct ChannelDsp {
     force_mono_pcm: bool,
     squelch: VirtualSquelch,
     noise_blanker: NoiseBlanker,
+    last_signal_db: f32,
 }
 
 impl ChannelDsp {
@@ -521,6 +522,7 @@ impl ChannelDsp {
             force_mono_pcm,
             squelch: VirtualSquelch::new(squelch_cfg),
             noise_blanker: NoiseBlanker::new(nb_cfg.enabled, nb_cfg.threshold),
+            last_signal_db: -120.0,
         }
     }
 
@@ -613,6 +615,10 @@ impl ChannelDsp {
             .as_ref()
             .map(WfmStereoDecoder::aci_level)
             .unwrap_or(0)
+    }
+
+    pub fn signal_db(&self) -> f32 {
+        self.last_signal_db
     }
 
     pub fn reset_rds(&mut self) {
@@ -740,6 +746,7 @@ impl ChannelDsp {
             .sum::<f32>()
             / decimated.len() as f32;
         let signal_db = 10.0 * signal_power.max(1e-12).log10();
+        self.last_signal_db = signal_db;
         const WFM_OUTPUT_GAIN: f32 = 0.50;
         let mut audio = if let Some(decoder) = self.wfm_decoder.as_mut() {
             let mut out = decoder.process_iq(decimated);

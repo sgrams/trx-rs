@@ -437,6 +437,9 @@ pub struct VchanRdsEntry {
     /// Latest RDS data, if decoded.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub rds: Option<RdsData>,
+    /// Channel signal level in dBFS.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub signal_db: Option<f32>,
 }
 
 /// Read-only projection of state shared with clients.

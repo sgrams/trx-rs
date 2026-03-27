@@ -245,12 +245,19 @@ impl SdrVirtualChannelManager {
         let dsps = self.pipeline.channel_dsps.read().unwrap();
         channels
             .iter()
-            .filter(|ch| matches!(ch.mode, RigMode::WFM))
             .map(|ch| {
-                let rds = dsps
-                    .get(ch.pipeline_slot)
-                    .and_then(|dsp| dsp.lock().ok().and_then(|d| d.rds_data()));
-                VchanRdsEntry { id: ch.id, rds }
+                let dsp_guard = dsps.get(ch.pipeline_slot).and_then(|dsp| dsp.lock().ok());
+                let rds = if matches!(ch.mode, RigMode::WFM) {
+                    dsp_guard.as_ref().and_then(|d| d.rds_data())
+                } else {
+                    None
+                };
+                let signal_db = dsp_guard.as_ref().map(|d| d.signal_db());
+                VchanRdsEntry {
+                    id: ch.id,
+                    rds,
+                    signal_db,
+                }
             })
             .collect()
     }

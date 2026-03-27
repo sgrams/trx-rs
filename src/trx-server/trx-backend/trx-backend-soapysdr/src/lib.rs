@@ -550,8 +550,21 @@ impl RigCat for SoapySdrRig {
     fn get_signal_strength<'a>(
         &'a mut self,
     ) -> Pin<Box<dyn std::future::Future<Output = DynResult<u8>> + Send + 'a>> {
-        // RSSI from real device pending SDR hardware wiring; return 0 for now.
-        Box::pin(async move { Ok(0u8) })
+        Box::pin(async move {
+            let signal_db = self
+                .pipeline
+                .channel_dsps
+                .read()
+                .unwrap()
+                .get(self.primary_channel_idx)
+                .and_then(|dsp| dsp.lock().ok().map(|d| d.signal_db()))
+                .unwrap_or(-120.0);
+            // Map DSP signal power (roughly -120 .. 0 dBFS) to 0..15 range
+            // to match the FT-817 meter scale used by map_signal_strength.
+            let clamped = signal_db.clamp(-120.0, 0.0);
+            let raw = ((clamped + 120.0) / 120.0 * 15.0).round() as u8;
+            Ok(raw.min(15))
+        })
     }
 
     // -- TX / unsupported methods -------------------------------------------

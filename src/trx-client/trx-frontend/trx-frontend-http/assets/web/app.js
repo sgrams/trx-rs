@@ -362,6 +362,7 @@ let overviewPeakHoldMs = Number(loadSetting("overviewPeakHoldMs", 2000));
 let decodeHistoryRetentionMin = 24 * 60;
 let primaryRds = null;
 let vchanRdsById = new Map();
+let vchanSignalDbById = new Map();
 let rdsOverlayEntries = [];
 
 function currentDecodeHistoryRetentionMs() {
@@ -9163,12 +9164,21 @@ function startSpectrumStreaming() {
     try {
       const payload = evt.data === "null" ? [] : JSON.parse(evt.data);
       const next = new Map();
+      const nextSig = new Map();
       if (Array.isArray(payload)) {
         payload.forEach((entry) => {
-          if (entry && entry.id) next.set(entry.id, entry.rds ?? null);
+          if (entry && entry.id) {
+            next.set(entry.id, entry.rds ?? null);
+            if (typeof entry.signal_db === "number") nextSig.set(entry.id, entry.signal_db);
+          }
         });
       }
       vchanRdsById = next;
+      vchanSignalDbById = nextSig;
+      if (typeof vchanActiveId !== "undefined" && vchanActiveId && nextSig.has(vchanActiveId)) {
+        sigLastDbm = Math.round(nextSig.get(vchanActiveId));
+        refreshSigStrengthDisplay();
+      }
       updateRdsPsOverlay(primaryRds);
     } catch (_) {}
   });
