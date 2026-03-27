@@ -10387,8 +10387,23 @@ window.addEventListener("keydown", (event) => {
     return;
   }
 
-  // R — retune current frequency (re-send same settings)
+  // R — round frequency up to the next jog step boundary
   if (key === "r") {
+    event.preventDefault();
+    if (lastLocked) { showHint("Locked", 1500); return; }
+    if (lastFreqHz != null) {
+      const step = Math.max(1, jogStep);
+      const rounded = Math.ceil(lastFreqHz / step) * step;
+      const newHz = rounded === lastFreqHz ? lastFreqHz + step : rounded;
+      if (!freqAllowed(newHz)) { showUnsupportedFreqPopup(newHz); return; }
+      setRigFrequency(newHz);
+      showHint(`Rounded → ${formatFreq(newHz)}`, 1200);
+    }
+    return;
+  }
+
+  // T — retune current frequency (re-send same settings)
+  if (key === "t") {
     event.preventDefault();
     if (lastFreqHz != null) {
       showHint("Retuning…", 1200);
