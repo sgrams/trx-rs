@@ -307,6 +307,7 @@ function applyCapabilities(caps) {
 const freqEl = document.getElementById("freq");
 const centerFreqEl = document.getElementById("center-freq");
 const wavelengthEl = document.getElementById("wavelength");
+const sigStrengthEl = document.getElementById("sig-strength");
 const modeEl = document.getElementById("mode");
 const bandLabel = document.getElementById("band-label");
 const powerBtn = document.getElementById("power-btn");
@@ -573,6 +574,38 @@ let lastRendered = null;
 let hintTimer = null;
 let sigMeasuring = false;
 let sigLastSUnits = null;
+let sigLastDbm = null;
+const SIG_STRENGTH_UNITS = ["dBFS", "dBf", "dBm"];
+let sigStrengthUnitIdx = loadSetting("sigStrengthUnit", 0);
+
+function formatSigStrength(dbm) {
+  if (!Number.isFinite(dbm)) return "--";
+  const unit = SIG_STRENGTH_UNITS[sigStrengthUnitIdx] || "dBFS";
+  if (unit === "dBm") return `${dbm} dBm`;
+  if (unit === "dBf") {
+    // dBf = dBm + 107 (referenced to 1 femtowatt across 50 Ω)
+    const dbf = dbm + 107;
+    return `${dbf.toFixed(0)} dBf`;
+  }
+  // dBFS: map receiver range to a full-scale reference
+  // Typical receiver: -140 dBm (noise floor) to 0 dBm (full scale)
+  const dbfs = Math.max(-140, Math.min(0, dbm));
+  return `${dbfs} dBFS`;
+}
+
+function refreshSigStrengthDisplay() {
+  if (!sigStrengthEl) return;
+  sigStrengthEl.textContent = formatSigStrength(sigLastDbm);
+}
+
+if (sigStrengthEl) {
+  sigStrengthEl.addEventListener("click", () => {
+    sigStrengthUnitIdx = (sigStrengthUnitIdx + 1) % SIG_STRENGTH_UNITS.length;
+    saveSetting("sigStrengthUnit", sigStrengthUnitIdx);
+    refreshSigStrengthDisplay();
+  });
+}
+
 let sigMeasureTimer = null;
 let sigMeasureLastTickMs = 0;
 let sigMeasureAccumMs = 0;
@@ -3217,13 +3250,17 @@ function render(update) {
   if (update.status && update.status.rx && typeof update.status.rx.sig === "number") {
     const sUnits = dbmToSUnits(update.status.rx.sig);
     sigLastSUnits = sUnits;
+    sigLastDbm = update.status.rx.sig;
     const pct = sUnits <= 9 ? Math.max(0, Math.min(100, (sUnits / 9) * 100)) : 100;
     signalBar.style.width = `${pct}%`;
     signalValue.textContent = formatSignal(sUnits);
+    refreshSigStrengthDisplay();
   } else {
     sigLastSUnits = null;
+    sigLastDbm = null;
     signalBar.style.width = "0%";
     signalValue.textContent = "--";
+    refreshSigStrengthDisplay();
   }
   if (bandLabel) {
     bandLabel.textContent = typeof update.band === "string" ? update.band : "--";

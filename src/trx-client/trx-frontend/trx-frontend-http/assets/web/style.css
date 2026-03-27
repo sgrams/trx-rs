@@ -550,6 +550,9 @@ button:disabled { opacity: 0.6; cursor: not-allowed; }
 .wavelength-col {
   flex: 0 0 auto;
 }
+.sig-strength-col {
+  flex: 0 0 auto;
+}
 .unit-col {
   flex: 0 0 auto;
 }
@@ -624,6 +627,26 @@ button:disabled { opacity: 0.6; cursor: not-allowed; }
   letter-spacing: 0.03em;
   white-space: nowrap;
   flex-shrink: 0;
+}
+.sig-strength-display {
+  min-width: 5.2rem;
+  height: 3.35rem;
+  padding: 0 0.7rem;
+  border: 1px solid var(--border-light);
+  border-radius: 6px;
+  background: var(--input-bg);
+  color: var(--wavelength-fg);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-family: 'DSEG14 Classic', monospace;
+  font-weight: 600;
+  font-size: 1.25rem;
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+  flex-shrink: 0;
+  cursor: pointer;
+  user-select: none;
 }
 small { color: var(--text-muted); }
 .header {
@@ -2747,11 +2770,13 @@ button:focus-visible, input:focus-visible, select:focus-visible {
     min-width: 0;
   }
   .wavelength-col,
+  .sig-strength-col,
   .unit-col,
   .mult-col {
     min-width: 0;
   }
   .wavelength-display,
+  .sig-strength-display,
   .jog-step,
   .jog-mult {
     width: 100%;
