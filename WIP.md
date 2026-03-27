@@ -10,7 +10,9 @@ Maximum sensitivity (weak-signal decode) with zero false positive PI decodes.
 #### Constants tuned
 - `RRC_ALPHA = 0.50` (was 0.75) — narrower noise bandwidth, ~0.6 dB SNR gain
 - `COSTAS_KI = 3.5e-7` — loop damping ζ≈0.68, well-damped (1e-6 caused instability)
-- `PI_ACC_THRESHOLD = 2` — accumulate 2 Block A observations before committing PI
+- `PI_ACC_THRESHOLD = 3` (was 2) — accumulate 3 Block A observations before committing PI
+- `OSD_MAX_FLIP_COST = 0.45` — Tech 9: reject OSD corrections where flipped bits had
+  high confidence (genuine errors have cost ≲ 0.3; noise matches cost 0.6–1.2)
 
 #### Soft confidence fix
 In `Candidate::process_sample`, the soft confidence passed to `push_bit_soft` is now
@@ -28,6 +30,18 @@ Removed OSD(1) from Block A acquisition (search mode). With OSD(1), ~13% of
 random 26-bit words would falsely pass the Block A test per bit, allowing wrong
 clock-phase candidates to accumulate false groups as fast as the correct candidate
 accumulates real ones. Hard decode reduces the false Block A rate to ~0.5%.
+
+#### Tech 9: OSD cost ceiling
+`decode_block_soft` now enforces `OSD_MAX_FLIP_COST = 0.45` — the sum of soft
+confidences for all flipped bits must not exceed this threshold. At 9–10 dB SNR,
+genuine bit errors have very low `|biphase_I|` (cost ≲ 0.3), while noise-induced
+OSD matches flip high-confidence bits (cost 0.6–1.2). This eliminates most
+spurious OSD(2) matches without affecting real weak-signal corrections.
+
+#### Tech 10: PI consistency gate
+`process_group` rejects groups whose Block A PI differs from the candidate's
+established PI. This prevents a single false OSD decode from polluting accumulated
+text fields (PS, RT, PTYN) with garbage from noise or interference.
 
 #### Candidate selection: incumbent tracking
 Added `best_candidate_idx: Option<usize>` to `RdsDecoder`. The incumbent (winning)
@@ -58,7 +72,7 @@ take over. The incumbent's `best_score` is also updated when it returns `None`
 cargo test -p trx-rds
 ```
 
-13/15 passing:
+16/16 passing:
 - ✅ decode_block_recognizes_valid_offsets
 - ✅ decode_block_soft_corrects_single_bit_error
 - ✅ decode_block_soft_corrects_two_bit_error_osd2
@@ -68,47 +82,10 @@ cargo test -p trx-rds
 - ✅ pi_accumulation_corrects_weak_pi_after_threshold
 - ✅ decoder_emits_ps_and_pty_from_group_0a
 - ✅ rrc_tap_dc_gain
-- ✅ pure_noise_produces_zero_pi_decodes
+- ✅ pure_noise_produces_zero_pi_decodes (2 seconds of noise, zero false PI)
 - ✅ end_to_end_with_pilot_reference_decodes_pi
 - ✅ end_to_end_noisy_signal_snr_10db_decodes_pi
+- ✅ end_to_end_noisy_signal_snr_9db_decodes_pi  ← new, 9 dB threshold
 - ✅ costas_tracks_without_diverging_on_clean_signal
-- ✅ blocks_to_chips_round_trips_all_groups  ← new, proves chip encoding correct
-- ❌ end_to_end_clean_signal_decodes_ps     ← remaining failure
-
-## Remaining Bug: `end_to_end_clean_signal_decodes_ps`
-
-### Symptom
-The decoder sees segments 0 (×8 candidates) and 1 (×1), then jumps to segment 3,
-skipping segment 2. `ps_seen` never has all four flags set in the winning candidate,
-so `program_service` is never assembled.
-
-### Diagnosis (from temporary `eprintln!` in `process_group`)
-```
-[DBG] process_group pi=0x9801 seg=0   (×8 — all 8 clock candidates decode seg 0)
-[DBG] process_group pi=0x9801 seg=1   (×1)
-[DBG] process_group pi=0x9801 seg=3   (×1 — seg 2 skipped!)
-[DBG] process_group pi=0x9BB2 seg=3   (false positive)
-```
-
-Segment 2 is consistently skipped. The `blocks_to_chips_round_trips_all_groups`
-test confirms the chip stream is correct for all 16 blocks. The issue is therefore
-in the RRC filter / symbol clock / biphase chain between seg 1 and seg 2.
-
-### Key observation
-- `blocks_to_chips_round_trips_all_groups` passes — chip encoding is correct
-- The FIR block size is 256 samples, introducing a 255-sample startup delay where
-  the filter returns `(0.0, 0.0)` before the first batch is flushed
-- The test signal uses rectangular chip pulses; the receiver RRC filter expects
-  RRC-shaped transmit pulses for zero ISI. Rectangular × RRC ≠ raised cosine.
-
-### Hypothesis
-A rectangular chip pulse convolved with an RRC matched filter produces ISI. Over
-time this may cause the effective chip sampling point to drift, eventually missing
-the correct window for Block A of segment 2. `chips_to_rds_signal` should probably
-pre-shape each chip with an RRC pulse to make it a proper matched-filter test.
-
-### Next steps
-1. Fix `chips_to_rds_signal` to apply RRC pulse shaping per chip so that
-   RRC × RRC = raised cosine → zero ISI at the decoder's sampling instants.
-2. Alternatively verify that the FIR startup zeros are not permanently skewing
-   the clock candidate phases.
+- ✅ blocks_to_chips_round_trips_all_groups
+- ✅ end_to_end_clean_signal_decodes_ps

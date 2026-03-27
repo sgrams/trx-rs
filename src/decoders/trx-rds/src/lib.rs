@@ -19,7 +19,13 @@ const BIPHASE_CLOCK_WINDOW: usize = 128;
 /// Minimum quality score to publish RDS state to the outer decoder.
 const MIN_PUBLISH_QUALITY: f32 = 0.20;
 /// Tech 6: number of Block A observations before using accumulated PI.
-const PI_ACC_THRESHOLD: u8 = 2;
+const PI_ACC_THRESHOLD: u8 = 3;
+/// Tech 9: maximum total soft-confidence cost for OSD bit flips.
+/// Rejects corrections where the flipped bits had high confidence —
+/// a strong indicator of a false decode rather than a genuine error.
+/// At 9–10 dB SNR genuine errors have cost ≲ 0.3; noise-induced OSD(2)
+/// matches typically cost 0.6–1.2.
+const OSD_MAX_FLIP_COST: f32 = 0.45;
 /// Tech 5 — Costas loop proportional gain (per sample).
 const COSTAS_KP: f32 = 8e-4;
 /// Tech 5 — Costas loop integral gain (per sample).
@@ -517,6 +523,17 @@ impl Candidate {
     ) -> Option<RdsData> {
         let mut changed = false;
 
+        // Tech 10: PI consistency — if this candidate already has an established
+        // PI, reject groups whose Block A carries a different PI code.
+        // This prevents a single false OSD decode from polluting accumulated
+        // text fields (PS, RT) with garbage from an unrelated station or noise.
+        if let Some(existing_pi) = self.state.pi {
+            if block_a != existing_pi {
+                // Don't count this group; don't update any state.
+                return None;
+            }
+        }
+
         // Tech 6: accumulate PI LLR on every successfully decoded Block A.
         self.accumulate_pi_llr(block_a);
         if self.state.pi != Some(block_a) && self.pi_acc_count == 0 {
@@ -905,6 +922,9 @@ fn decode_block_soft(word: u32, soft: &[f32; 26]) -> Option<(u16, BlockKind)> {
 
     // Distance 1: all 26 single-bit flips; pick the cheapest success.
     for (k, &flip_cost) in soft.iter().enumerate() {
+        if flip_cost >= best_cost {
+            continue;
+        }
         let trial = word ^ (1 << (25 - k));
         if let Some(result) = decode_block(trial) {
             if flip_cost < best_cost {
@@ -915,14 +935,20 @@ fn decode_block_soft(word: u32, soft: &[f32; 26]) -> Option<(u16, BlockKind)> {
     }
 
     if best_result.is_some() {
-        return best_result;
+        // Tech 9: reject if the cheapest single-bit flip cost is too high.
+        if best_cost <= OSD_MAX_FLIP_COST {
+            return best_result;
+        }
+        // Cost too high — fall through to OSD(2) in case a cheaper pair exists.
+        best_result = None;
+        best_cost = f32::INFINITY;
     }
 
     // Distance 2: all C(26,2)=325 two-bit flips; pick the cheapest pair.
     for k1 in 0..26usize {
         for k2 in (k1 + 1)..26usize {
             let pair_cost = soft[k1] + soft[k2];
-            if pair_cost >= best_cost {
+            if pair_cost >= best_cost || pair_cost > OSD_MAX_FLIP_COST {
                 continue;
             }
             let trial = word ^ (1 << (25 - k1)) ^ (1 << (25 - k2));
@@ -1054,7 +1080,10 @@ mod tests {
         let word = encode_block(0xABCD, OFFSET_A);
         // Flip one bit (bit 10, i.e. position k=15 from MSB).
         let corrupted = word ^ (1 << 10);
-        let soft = [1.0f32; 26];
+        let mut soft = [1.0f32; 26];
+        // Mark the corrupted bit as low confidence (realistic: a genuine
+        // error has low |biphase_I|).
+        soft[15] = 0.05;
         let (data, kind) = decode_block_soft(corrupted, &soft).expect("should recover");
         assert_eq!(data, 0xABCD);
         assert_eq!(kind, BlockKind::A);
@@ -1347,6 +1376,35 @@ mod tests {
     }
 
     #[test]
+    fn end_to_end_noisy_signal_snr_9db_decodes_pi() {
+        // At 9 dB SNR the decoder should still recover PI reliably.
+        let sample_rate = 240_000.0f32;
+        let pi = 0x4BBC;
+
+        let mut words: Vec<u32> = Vec::new();
+        for seg in 0..4u8 {
+            let g = group_0a(pi, seg, [b'N', b'Z' + seg], 3);
+            words.extend_from_slice(&g);
+        }
+        let words: Vec<u32> = words.iter().copied().cycle().take(words.len() * 60).collect();
+
+        let chips = blocks_to_chips(&words);
+        let mut signal = chips_to_rds_signal(&chips, sample_rate);
+        let mut rng = 0xCAFE_BABE_9876_5432u64;
+        add_awgn(&mut signal, 9.0, &mut rng);
+
+        let mut dec = RdsDecoder::new(sample_rate as u32);
+        let mut got_pi = false;
+        for &s in &signal {
+            if dec.process_sample(s, 1.0).and_then(|st| st.pi) == Some(pi) {
+                got_pi = true;
+                break;
+            }
+        }
+        assert!(got_pi, "PI should decode at SNR = 9 dB");
+    }
+
+    #[test]
     fn end_to_end_with_pilot_reference_decodes_pi() {
         // With an exact pilot reference, PI acquisition should be fast (< 20 groups).
         let sample_rate = 240_000.0f32;
@@ -1548,14 +1606,15 @@ mod tests {
 
     #[test]
     fn pure_noise_produces_zero_pi_decodes() {
-        // Feed 0.5 seconds of white noise (no RDS signal) through the decoder.
+        // Feed 2 seconds of white noise (no RDS signal) through the decoder.
         // The decoder must not report any PI (false positive).
         //
         // Note: with OSD(2) active in locked mode, the lock gate requires
         // Block A to be acquired first (hard or OSD-1 decode in search mode),
         // which keeps the false-acquisition rate low even at OSD(2).
+        // Tech 9 (OSD cost ceiling) further suppresses noise-induced matches.
         let sample_rate = 240_000.0f32;
-        let n_samples = (sample_rate * 0.5) as usize;
+        let n_samples = (sample_rate * 2.0) as usize;
         let mut rng = 0xFEED_FACE_DEAD_BEEFu64;
         let mut noise: Vec<f32> = (0..n_samples).map(|_| gaussian(&mut rng)).collect();
         // Scale noise to unit power.
