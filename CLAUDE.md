@@ -39,24 +39,30 @@ This is a Cargo workspace. All crates live under `src/`:
 
 ```
 src/
-  trx-core/           # Core types, traits, state machine, controller
-  trx-protocol/       # Client↔server protocol conversion, auth, codec
-  trx-app/            # Shared application helpers (config, plugins, logging)
-  trx-server/         # Server binary (rig_task, audio, APRS-IS, PSKReporter)
-    trx-backend/      # Backend abstraction trait + factory
-      trx-backend-ft817/    # Yaesu FT-817 CAT implementation
-      trx-backend-ft450d/   # Yaesu FT-450D CAT implementation
-  trx-client/         # Client binary (connects to server, runs frontends)
-    trx-frontend/     # Frontend trait (FrontendSpawner)
-      trx-frontend-http/      # Web UI with REST API, SSE, and auth
+  trx-core/           # Core types, traits, state machine, controller (~3,500 LOC)
+  trx-protocol/       # Client↔server protocol DTOs, auth, codec, mapping (~1,100 LOC)
+  trx-app/            # Shared application helpers (config paths, logging init)
+  trx-reporting/      # PSKReporter UDP uplink + APRS-IS TCP uplink (~1,150 LOC)
+  trx-server/         # Server binary: rig_task, audio pipeline, listener (~3,700 LOC)
+    trx-backend/      # Backend abstraction trait + factory + dummy
+      trx-backend-ft817/    # Yaesu FT-817 binary CAT (BCD encoding)
+      trx-backend-ft450d/   # Yaesu FT-450D ASCII CAT
+      trx-backend-soapysdr/ # SoapySDR RX with full DSP pipeline (~5,000+ LOC)
+  trx-client/         # Client binary: remote connection, frontend spawning (~1,500 LOC)
+    trx-frontend/     # Frontend trait (FrontendSpawner), runtime context
+      trx-frontend-http/      # Web UI: REST API, SSE, WebSocket audio, session auth
       trx-frontend-http-json/ # JSON-over-TCP control frontend
       trx-frontend-rigctl/    # Hamlib-compatible rigctl TCP interface
+  trx-configurator/   # Interactive setup wizard
   decoders/
-    trx-aprs/         # APRS packet decoder
-    trx-cw/           # CW (Morse) decoder
-    trx-ftx/          # Pure Rust FTx decoder (FT8/FT4/FT2)
-    trx-wspr/         # WSPR decoder
-    trx-decode-log/   # Shared decoder logging (JSON Lines, date-rotated files)
+    trx-aprs/         # APRS packet decoder (AX.25 + APRS-IS)
+    trx-cw/           # CW (Morse) decoder (Goertzel tone detection)
+    trx-ftx/          # Pure Rust FTx decoder (FT8/FT4/FT2, LDPC/OSD) (~3,000+ LOC)
+    trx-wspr/         # WSPR weak-signal decoder
+    trx-ais/          # AIS maritime transponder decoder
+    trx-rds/          # RDS decoder for WFM (~2,000 LOC)
+    trx-vdes/         # VDES maritime data exchange decoder (~1,300 LOC)
+    trx-decode-log/   # JSON Lines file logging with date rotation
 ```
 
 ## Architecture
@@ -95,3 +101,30 @@ Signal decoders run as background tasks in `trx-server`, consuming decoded audio
 ```
 
 Types: `feat`, `fix`, `docs`, `style`, `refactor`, `test`, `chore`. Use `(trx-rs)` for repo-wide changes. Sign commits with `git commit -s`. Write isolated commits per crate.
+
+## Codebase Review Observations
+
+Full architecture documentation: `docs/architecture.md`
+Improvement plan: `docs/improvement-plan.md`
+
+### Strengths
+
+- **Explicit state machine**: `RigMachineState` FSM prevents invalid states with a deterministic transition table and exhaustive matching. Well-tested with lifecycle, error recovery, and invalid transition tests.
+- **Trait-based polymorphism**: Clean abstraction boundaries (`RigCat`, `RigSdr`, `AudioSource`, `RigListener`, `RigCommandHandler`, `CommandExecutor`, `TokenValidator`, `FrontendSpawner`) enable loose coupling and testability.
+- **Multi-rig architecture**: Per-rig task isolation with `HashMap<rig_id, RigHandle>` routing, per-rig state/spectrum/audio watch channels, and backward-compatible single-rig mode.
+- **Async concurrency model**: Proper use of tokio channels -- `watch` for state snapshots, `broadcast` for PCM/decode fan-out, `mpsc` for commands. No mutex contention on hot paths.
+- **Comprehensive SDR support**: Full DSP pipeline with multi-mode demodulation (SSB, AM, SAM, FM, WFM, AIS, VDES), virtual channel management, squelch, noise blanker, spectrum FFT, RDS decoding.
+- **Pure Rust decoders**: FT8/FT4/FT2, APRS, CW, WSPR, AIS, VDES, RDS -- all implemented without C FFI dependencies.
+- **Good test coverage** in protocol layer: codec, mapping, auth all have thorough unit tests with round-trip verification.
+- **Feature-gated backends**: ft817, ft450d, soapysdr compiled conditionally to minimize binary size.
+
+### Areas for Improvement
+
+- **FrontendRuntimeContext** (`trx-frontend/src/lib.rs`) is a 60+ field god-struct mixing audio, decode, auth, UI config, and per-rig routing. Should be decomposed into sub-structs.
+- **Dual command enums**: `ClientCommand` and `RigCommand` are near-identical 40+ variant enums with mechanical 1:1 mapping in `mapping.rs`. Adding a command requires 4-file changes.
+- **Command handler boilerplate**: 11 implementations of `RigCommandHandler` follow identical patterns across 500+ lines. A macro could reduce this to ~100 lines.
+- **No integration tests** for `rig_task.rs` (1050 lines) or `audio.rs` (850+ lines) -- the most critical server components.
+- **No command execution timeouts** at the `CommandExecutor` level. Backend stalls propagate up. The 10s timeout only exists at the rig_task layer.
+- **Event emitter not panic-safe**: If one `RigListener` panics, remaining listeners in the notification loop are skipped.
+- **Sparse structured logging** in trx-core: only one `debug!()` call. State transitions, command execution, and retries are not instrumented.
+- **No command rate limiting**: rapid-fire commands from clients can overwhelm slow serial CAT interfaces.
