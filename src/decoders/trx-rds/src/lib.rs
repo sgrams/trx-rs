@@ -29,25 +29,6 @@ const PI_ACC_THRESHOLD: u8 = 5;
 /// At 9–10 dB SNR genuine errors have cost ≲ 0.3; noise-induced OSD(2)
 /// matches typically cost 0.6–1.2.
 const OSD_MAX_FLIP_COST: f32 = 0.45;
-/// Tech 11 — Gardner TED proportional gain (per chip, after power normalisation).
-/// Reduced from 4e-4 to 1.5e-4 to lower jitter at marginal SNR while still
-/// tracking crystal offsets up to ~100 ppm.  The narrower transient response
-/// is acceptable because the 8-candidate architecture covers the timing
-/// acquisition range; TED only needs to track slow drift once locked.
-const GARDNER_KP: f32 = 1.5e-4;
-/// Tech 11 — Gardner TED integral gain (per chip, after power normalisation).
-/// Reduced from 8e-8 to 2e-8.  Together with GARDNER_KP these give
-/// ζ ≈ 0.75 and ωn ≈ 1.4e-4 rad/chip (loop BW ≈ 0.053 Hz at 2375 chips/s).
-const GARDNER_KI: f32 = 2e-8;
-/// Tech 11 — maximum clock_inc change per chip (fraction of nominal).
-/// ±1 % corresponds to ±23.75 Hz pull-in range at 2375 chips/s.
-const GARDNER_MAX_FREQ_CORR_FRAC: f32 = 0.01;
-/// Tech 11 — Gardner TED power estimate convergence time constant.
-/// Faster than the previous 0.999/0.001 (now 0.995/0.005) so the power
-/// estimate settles in ~200 chips (~84 ms) instead of ~1000 chips (~420 ms).
-/// This reduces the startup transient where incorrect normalisation causes
-/// the TED to over-steer.
-const GARDNER_POWER_ALPHA: f32 = 0.995;
 /// Tech 5 — Costas loop proportional gain for acquisition (per sample).
 const COSTAS_KP: f32 = 8e-4;
 /// Tech 5 — Costas loop integral gain for acquisition (per sample).
@@ -336,27 +317,13 @@ struct Candidate {
     pi_llr_acc: [f32; 16],
     /// Tech 6: number of Block A observations accumulated.
     pi_acc_count: u8,
-    /// Tech 11: nominal clock increment (RDS_CHIP_RATE / sample_rate), stored
-    /// so the TED can clamp clock_inc to a ±GARDNER_MAX_FREQ_CORR_FRAC window.
-    nominal_clock_inc: f32,
-    /// Tech 11: true while waiting to capture the mid-chip sample this period.
-    mid_chip_pending: bool,
-    /// Tech 11: instantaneous filtered I value at the mid-chip instant (~0.5 phase).
-    mid_chip_i: f32,
-    /// Tech 11: instantaneous filtered I value at the previous chip boundary.
-    prev_chip_i: f32,
-    /// Tech 11: Gardner TED PI-loop integrator state.
-    ted_integrator: f32,
-    /// Tech 11: running estimate of chip I signal power, used for error normalisation.
-    ted_power_est: f32,
 }
 
 impl Candidate {
     fn new(sample_rate: f32, phase_offset: f32) -> Self {
-        let nominal_clock_inc = RDS_CHIP_RATE / sample_rate.max(1.0);
         Self {
             clock_phase: phase_offset,
-            clock_inc: nominal_clock_inc,
+            clock_inc: RDS_CHIP_RATE / sample_rate.max(1.0),
             sym_i_acc: 0.0,
             sym_q_acc: 0.0,
             sym_count: 0,
@@ -388,28 +355,10 @@ impl Candidate {
 
             pi_llr_acc: [0.0; 16],
             pi_acc_count: 0,
-            nominal_clock_inc,
-            mid_chip_pending: true,
-            mid_chip_i: 0.0,
-            prev_chip_i: 0.0,
-            ted_integrator: 0.0,
-            // Start at 1.0 so the first normalised error is bounded (≤ signal
-            // amplitude).  The estimate converges toward the true chip power
-            // over the first ~200 chips via the GARDNER_POWER_ALPHA leaky average.
-            ted_power_est: 1.0,
         }
     }
 
     fn process_sample(&mut self, i: f32, q: f32) -> Option<RdsData> {
-        // Tech 11: capture the instantaneous filtered I value at the mid-chip
-        // instant (clock_phase ≈ 0.5) for the Gardner TED.  The check fires on
-        // the first sample that pushes clock_phase at or past 0.5 since the last
-        // chip boundary reset.
-        if self.mid_chip_pending && self.clock_phase >= 0.5 {
-            self.mid_chip_i = i;
-            self.mid_chip_pending = false;
-        }
-
         self.sym_i_acc += i;
         self.sym_q_acc += q;
         self.sym_count = self.sym_count.saturating_add(1);
@@ -418,48 +367,6 @@ impl Candidate {
             return None;
         }
         self.clock_phase -= 1.0;
-        self.mid_chip_pending = true;
-
-        // Tech 11: Gardner TED — e[n] = x_mid[n] · (x[n] − x[n−1]).
-        //
-        // Lock-gated: the TED only adjusts clock_inc after the candidate has
-        // decoded at least 3 full groups (score >= 3).  A higher gate than the
-        // previous score >= 1 ensures the candidate is genuinely locked to a
-        // real signal — not a single false OSD match — before allowing timing
-        // adjustments.  At marginal SNR the Gardner error signal is dominated
-        // by noise×noise products; deferring TED until 3 groups avoids the
-        // resulting jitter that degrades soft values, OSD confidence, and PI
-        // LLR accumulation.  The 8-candidate architecture provides adequate
-        // timing coverage during the initial lock period via phase offsets.
-        let chip_power = (i * i + self.prev_chip_i * self.prev_chip_i) * 0.5;
-        self.ted_power_est = GARDNER_POWER_ALPHA * self.ted_power_est
-            + (1.0 - GARDNER_POWER_ALPHA) * chip_power;
-        let max_corr = self.nominal_clock_inc * GARDNER_MAX_FREQ_CORR_FRAC;
-        if self.ted_power_est > 1e-10 && self.score >= 3 {
-            let ted_err = self.mid_chip_i * (i - self.prev_chip_i) / self.ted_power_est;
-            // Anti-windup: clamp the integrator so it cannot accumulate beyond
-            // the correction ceiling even during prolonged large-error transients.
-            self.ted_integrator =
-                (self.ted_integrator + GARDNER_KI * ted_err).clamp(-max_corr, max_corr);
-            // Type-2 PLL: clock_inc = nominal + PI_correction.
-            // The integrator tracks the steady-state frequency offset; Kp provides
-            // transient phase correction.  Using nominal as the base (not +=)
-            // prevents the integrator output from being double-integrated.
-            let correction =
-                (GARDNER_KP * ted_err + self.ted_integrator).clamp(-max_corr, max_corr);
-            self.clock_inc = (self.nominal_clock_inc + correction).clamp(
-                self.nominal_clock_inc * (1.0 - GARDNER_MAX_FREQ_CORR_FRAC),
-                self.nominal_clock_inc * (1.0 + GARDNER_MAX_FREQ_CORR_FRAC),
-            );
-        } else {
-            // Below SNR gate: freeze the TED loop and decay the integrator
-            // toward zero so the clock drifts back toward nominal rate.
-            // This prevents the integrator from holding a stale correction
-            // from a previous strong-signal period that no longer applies.
-            self.ted_integrator *= 0.999;
-            self.clock_inc = self.nominal_clock_inc + self.ted_integrator;
-        }
-        self.prev_chip_i = i;
 
         let count = f32::from(self.sym_count.max(1));
         let symbol = (self.sym_i_acc / count, self.sym_q_acc / count);
