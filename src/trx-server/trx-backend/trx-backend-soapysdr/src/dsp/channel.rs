@@ -673,18 +673,6 @@ impl ChannelDsp {
         }
         self.mixer_phase = (phase_start + n as f64 * phase_inc).rem_euclid(std::f64::consts::TAU);
 
-        // Carrier power: DC component of the mixed signal (narrow-band estimate
-        // at the tuned frequency).  Correlates with the spectrum FFT peak.
-        // EMA smoothing (α ≈ 0.4) for fast response with light jitter reduction.
-        {
-            const SIGNAL_EMA_ALPHA: f32 = 0.4;
-            let inv_n = 1.0 / n as f32;
-            let dc_i: f32 = mixed_i.iter().sum::<f32>() * inv_n;
-            let dc_q: f32 = mixed_q.iter().sum::<f32>() * inv_n;
-            let carrier_db = 10.0 * (dc_i * dc_i + dc_q * dc_q).max(1e-12).log10();
-            self.last_signal_db += SIGNAL_EMA_ALPHA * (carrier_db - self.last_signal_db);
-        }
-
         self.lpf_iq.filter_block_into(
             mixed_i,
             mixed_q,
@@ -744,6 +732,19 @@ impl ChannelDsp {
 
         if decimated.is_empty() {
             return;
+        }
+
+        // Signal strength: peak IQ magnitude of filtered+decimated signal
+        // BEFORE AGC.  For FM (constant envelope) peak ≈ carrier power.
+        // EMA (α = 0.4) for fast response with light jitter reduction.
+        {
+            const SIGNAL_EMA_ALPHA: f32 = 0.4;
+            let peak_power = decimated
+                .iter()
+                .map(|s| s.re * s.re + s.im * s.im)
+                .fold(0.0_f32, f32::max);
+            let peak_db = 10.0 * peak_power.max(1e-12).log10();
+            self.last_signal_db += SIGNAL_EMA_ALPHA * (peak_db - self.last_signal_db);
         }
 
         if let Some(iq_agc) = &mut self.iq_agc {
