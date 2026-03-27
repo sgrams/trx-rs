@@ -688,30 +688,39 @@ impl WfmStereoDecoder {
             return Vec::new();
         }
 
+        // ACI estimation: measure IQ envelope variance before hard-limiting.
+        // A clean FM signal has constant envelope (zero variance); ACI causes
+        // amplitude modulation that raises the coefficient of variation.
+        {
+            let n = samples.len() as f32;
+            let mut sum_mag = 0.0_f32;
+            let mut sum_mag_sq = 0.0_f32;
+            for s in samples.iter() {
+                let mag = s.norm();
+                sum_mag += mag;
+                sum_mag_sq += mag * mag;
+            }
+            let mean_mag = sum_mag / n;
+            let var = (sum_mag_sq / n - mean_mag * mean_mag).max(0.0);
+            let cv = if mean_mag > 1e-8 { var.sqrt() / mean_mag } else { 0.0 };
+            // Map CV to 0–100. Empirically, CV > 0.35 is heavy ACI.
+            let raw_aci = (cv * 100.0 / 0.35).clamp(0.0, 100.0);
+            let alpha = 0.08_f32;
+            self.aci_level += alpha * (raw_aci - self.aci_level);
+        }
+
         // Tech 9: apply CMA blind equalizer to IQ samples before FM demodulation.
         // The constant-modulus property of FM drives tap adaptation without a
         // training sequence, suppressing adjacent-channel interference.
-        let equalized: Vec<Complex<f32>> = samples.iter().map(|&s| self.cma.process(s)).collect();
+        let mut equalized: Vec<Complex<f32>> = samples.iter().map(|&s| self.cma.process(s)).collect();
 
-        // ACI estimation: measure CMA tap deviation from identity.
-        // When adjacent-channel interference is present the equalizer drives its
-        // taps away from the centre-tap-only identity configuration.
-        {
-            let mut tap_dev = 0.0_f32;
-            for (k, &tap) in self.cma.taps.iter().enumerate() {
-                if k == CMA_N_TAPS / 2 {
-                    // Centre tap: deviation from (1+0j).
-                    tap_dev += (tap - Complex::new(1.0, 0.0)).norm_sqr();
-                } else {
-                    tap_dev += tap.norm_sqr();
-                }
+        // Hard-limit to unit magnitude after CMA (preserves phase for FM demod
+        // while preventing clipping artefacts).
+        for s in equalized.iter_mut() {
+            let mag = s.norm();
+            if mag > 1.0 {
+                *s /= mag;
             }
-            // Map deviation to 0–100 scale. Empirically, deviation > 0.5 is
-            // heavy ACI; scale linearly with a sqrt compressor for readability.
-            let raw_aci = (tap_dev.sqrt() * 100.0 / 0.7).clamp(0.0, 100.0);
-            // Smooth with ~200 ms time constant at block rate.
-            let alpha = 0.08_f32;
-            self.aci_level += alpha * (raw_aci - self.aci_level);
         }
 
         let disc = demod_fm_with_prev(&equalized, &mut self.prev_iq);
@@ -773,20 +782,20 @@ impl WfmStereoDecoder {
                 } else if self.stereo_detect_level > 0.6 {
                     self.stereo_detected = true;
                 }
-                // CCI estimation: pilot quadrature leakage indicates co-channel
-                // interference.  A clean pilot has all energy in I; CCI adds
-                // incoherent 19 kHz energy that leaks into Q.
-                let q_abs = (self.pilot_q_lp.y).abs();
-                let i_abs = (self.pilot_i_lp.y).abs();
-                let cci_ratio = if i_abs > 1e-8 {
-                    (q_abs / i_abs).clamp(0.0, 1.0)
+                // CCI estimation: a clean 19 kHz pilot has coherence ≈ π/4
+                // (ratio of coherent magnitude to rectified absolute value).
+                // Co-channel interference degrades this coherence by adding
+                // incoherent energy at 19 kHz.  Normalise by the theoretical
+                // maximum so a clean pilot reads 0 %.  Only report CCI when
+                // the pilot is actually detected; mono signals have no pilot
+                // and CCI is not meaningful.
+                let raw_cci = if self.pilot_lock_level > 0.1 {
+                    const MAX_COHERENCE: f32 = std::f32::consts::FRAC_PI_4;
+                    let norm = (pilot_coherence / MAX_COHERENCE).clamp(0.0, 1.0);
+                    ((1.0 - norm) * 100.0).clamp(0.0, 100.0)
                 } else {
                     0.0
                 };
-                // Also factor in coherence drop: low coherence at moderate
-                // pilot amplitude implies multipath / co-channel.
-                let coherence_penalty = (1.0 - pilot_coherence).clamp(0.0, 1.0);
-                let raw_cci = ((cci_ratio * 0.6 + coherence_penalty * 0.4) * 100.0).clamp(0.0, 100.0);
                 let cci_alpha = 0.08_f32;
                 self.cci_level += cci_alpha * (raw_cci - self.cci_level);
 
@@ -1403,5 +1412,166 @@ mod tests {
 
         assert!(l_rms > 0.01);
         assert!(separation_db > 15.0);
+    }
+
+    /// Helper: generate stereo FM IQ samples from a composite signal.
+    fn fm_modulate(composite: &[f32], peak: f32, deviation_hz: f32, fs: f32) -> Vec<Complex<f32>> {
+        use std::f32::consts::TAU;
+        let mod_index = TAU * deviation_hz / (peak * fs);
+        let mut phase = 0.0_f32;
+        composite
+            .iter()
+            .map(|&c| {
+                phase += mod_index * c;
+                Complex::from_polar(1.0, phase)
+            })
+            .collect()
+    }
+
+    /// Helper: build a stereo FM composite signal (1 kHz audio in L only).
+    fn stereo_composite(fs: f32, n: usize) -> Vec<f32> {
+        use std::f32::consts::TAU;
+        let audio_freq = 1000.0_f32;
+        let pilot_freq = 19_000.0_f32;
+        let carrier_freq = 38_000.0_f32;
+        let mut composite = vec![0.0_f32; n];
+        for (i, sample) in composite.iter_mut().enumerate() {
+            let t = i as f32 / fs;
+            let audio = (TAU * audio_freq * t).sin();
+            let pilot = 0.1 * (TAU * pilot_freq * t).cos();
+            let carrier = (TAU * carrier_freq * t).cos();
+            *sample = audio + pilot + audio * carrier;
+        }
+        composite
+    }
+
+    #[test]
+    fn test_clean_signal_aci_near_zero() {
+        let composite_rate: u32 = 240_000;
+        let audio_rate: u32 = 48_000;
+        let fs = composite_rate as f32;
+        let n = (fs * 0.5) as usize;
+
+        let composite = stereo_composite(fs, n);
+        let iq = fm_modulate(&composite, 2.1, 75_000.0, fs);
+
+        let mut decoder = WfmStereoDecoder::new(
+            composite_rate, audio_rate, 2, true, 50, WfmDenoiseLevel::Auto,
+        );
+        let _ = decoder.process_iq(&iq);
+
+        // Clean constant-envelope FM should show near-zero ACI.
+        assert!(
+            decoder.aci_level() < 5,
+            "clean signal ACI should be near 0, got {}",
+            decoder.aci_level()
+        );
+    }
+
+    #[test]
+    fn test_aci_nonzero_with_adjacent_channel() {
+        use std::f32::consts::TAU;
+
+        let composite_rate: u32 = 240_000;
+        let audio_rate: u32 = 48_000;
+        let fs = composite_rate as f32;
+        let n = (fs * 1.0) as usize;
+
+        // Main stereo FM signal
+        let composite = stereo_composite(fs, n);
+        let mut iq = fm_modulate(&composite, 2.1, 75_000.0, fs);
+
+        // Add a strong adjacent-channel signal offset by 150 kHz.
+        // This creates amplitude modulation on the combined IQ envelope.
+        let adj_freq_offset = 150_000.0_f32;
+        let adj_composite: Vec<f32> = (0..n)
+            .map(|i| (TAU * 3_000.0 * i as f32 / fs).sin())
+            .collect();
+        let adj_mod_index = TAU * 75_000.0 / (1.1 * fs);
+        let mut adj_phase = 0.0_f32;
+        for (i, s) in iq.iter_mut().enumerate() {
+            let t = i as f32 / fs;
+            adj_phase += adj_mod_index * adj_composite[i];
+            let adj = Complex::from_polar(0.5, adj_phase + TAU * adj_freq_offset * t);
+            *s = *s + adj;
+        }
+
+        let mut decoder = WfmStereoDecoder::new(
+            composite_rate, audio_rate, 2, true, 50, WfmDenoiseLevel::Auto,
+        );
+        let _ = decoder.process_iq(&iq);
+
+        assert!(
+            decoder.aci_level() > 5,
+            "adjacent-channel signal should raise ACI above 5 %, got {}",
+            decoder.aci_level()
+        );
+    }
+
+    #[test]
+    fn test_clean_stereo_cci_near_zero() {
+        let composite_rate: u32 = 240_000;
+        let audio_rate: u32 = 48_000;
+        let fs = composite_rate as f32;
+        let n = (fs * 0.5) as usize;
+
+        let composite = stereo_composite(fs, n);
+        let iq = fm_modulate(&composite, 2.1, 75_000.0, fs);
+
+        let mut decoder = WfmStereoDecoder::new(
+            composite_rate, audio_rate, 2, true, 50, WfmDenoiseLevel::Auto,
+        );
+        let _ = decoder.process_iq(&iq);
+
+        // A clean stereo signal should show CCI near zero.
+        assert!(
+            decoder.cci_level() < 10,
+            "clean stereo CCI should be near 0, got {}",
+            decoder.cci_level()
+        );
+    }
+
+    #[test]
+    fn test_cci_nonzero_with_cochannel() {
+        use std::f32::consts::TAU;
+
+        let composite_rate: u32 = 240_000;
+        let audio_rate: u32 = 48_000;
+        let fs = composite_rate as f32;
+        let n = (fs * 1.0) as usize;
+
+        // Main stereo FM signal.
+        let composite = stereo_composite(fs, n);
+        let mut iq = fm_modulate(&composite, 2.1, 75_000.0, fs);
+
+        // Add a co-channel interferer: another FM station at the SAME
+        // frequency but with a different pilot phase and different audio.
+        let mut intf_composite = vec![0.0_f32; n];
+        for (i, sample) in intf_composite.iter_mut().enumerate() {
+            let t = i as f32 / fs;
+            let audio = (TAU * 5_000.0 * t).sin();
+            // Pilot with a different starting phase.
+            let pilot = 0.1 * (TAU * 19_000.0 * t + 1.5).cos();
+            let carrier = (TAU * 38_000.0 * t + 3.0).cos();
+            *sample = audio + pilot + audio * carrier;
+        }
+        let intf_iq = fm_modulate(&intf_composite, 2.1, 75_000.0, fs);
+
+        // Mix at 70 % of the main signal's amplitude — strong enough to
+        // overcome the FM capture effect and visibly degrade pilot coherence.
+        for (s, intf) in iq.iter_mut().zip(intf_iq.iter()) {
+            *s = *s + intf * 0.7;
+        }
+
+        let mut decoder = WfmStereoDecoder::new(
+            composite_rate, audio_rate, 2, true, 50, WfmDenoiseLevel::Auto,
+        );
+        let _ = decoder.process_iq(&iq);
+
+        assert!(
+            decoder.cci_level() > 2,
+            "co-channel interference should raise CCI above 2 %, got {}",
+            decoder.cci_level()
+        );
     }
 }

@@ -740,15 +740,6 @@ impl ChannelDsp {
             .sum::<f32>()
             / decimated.len() as f32;
         let signal_db = 10.0 * signal_power.max(1e-12).log10();
-        if self.wfm_decoder.is_some() {
-            for sample in decimated.iter_mut() {
-                let mag = (sample.re * sample.re + sample.im * sample.im).sqrt();
-                if mag > 1.0 {
-                    *sample /= mag;
-                }
-            }
-        }
-
         const WFM_OUTPUT_GAIN: f32 = 0.50;
         let mut audio = if let Some(decoder) = self.wfm_decoder.as_mut() {
             let mut out = decoder.process_iq(decimated);
