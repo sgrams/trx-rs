@@ -65,6 +65,11 @@ const RRC_ALPHA: f32 = 0.30;
 /// and the extra taps keep stopband leakage below −60 dB, critical when α
 /// is small.  Added latency is ~4.2 ms at 2375 chips/s, negligible for RDS.
 const RRC_SPAN_CHIPS: usize = 10;
+/// Staleness timeout in seconds.  If the incumbent candidate has not produced
+/// a state update in this many seconds, its score advantage is cleared so any
+/// candidate can take over.  Prevents the decoder from "freezing" when the
+/// incumbent's timing or carrier tracking degrades.
+const STALE_TIMEOUT_SECS: f32 = 2.0;
 
 const OFFSET_A: u16 = 0x0FC;
 const OFFSET_B: u16 = 0x198;
@@ -305,8 +310,6 @@ struct Candidate {
     rt_ab_flag: bool,
     ptyn_bytes: [u8; 8],
     ptyn_seen: [bool; 2],
-    /// Consecutive block decode failures in locked mode.
-    consecutive_block_failures: u8,
     /// Tech 6: accumulated LLR for the PI field (16 bits, MSB first).
     pi_llr_acc: [f32; 16],
     /// Tech 6: number of Block A observations accumulated.
@@ -360,7 +363,7 @@ impl Candidate {
             rt_ab_flag: false,
             ptyn_bytes: [b' '; 8],
             ptyn_seen: [false; 2],
-            consecutive_block_failures: 0,
+
             pi_llr_acc: [0.0; 16],
             pi_acc_count: 0,
             nominal_clock_inc,
@@ -511,7 +514,6 @@ impl Candidate {
         self.block_reg = 0;
         self.block_bits = 0;
         self.block_a = data;
-        self.consecutive_block_failures = 0;
         self.state.pi = Some(data);
         None
     }
@@ -534,7 +536,6 @@ impl Candidate {
             return None;
         };
 
-        self.consecutive_block_failures = 0;
         match (expected, kind) {
             (ExpectBlock::B, BlockKind::B) => {
                 self.block_b = data;
@@ -858,6 +859,12 @@ pub struct RdsDecoder {
     /// cycling through `best_state` with partially-accumulated ps_seen / rt_seen.
     best_candidate_idx: Option<usize>,
     best_state: Option<RdsData>,
+    /// Running sample counter for staleness detection.
+    sample_counter: u64,
+    /// Sample counter at which best_state was last updated.
+    last_update_sample: u64,
+    /// Number of samples before the incumbent is considered stale.
+    stale_threshold: u64,
 }
 
 impl RdsDecoder {
@@ -882,6 +889,9 @@ impl RdsDecoder {
             best_score: 0,
             best_candidate_idx: None,
             best_state: None,
+            sample_counter: 0,
+            last_update_sample: 0,
+            stale_threshold: (STALE_TIMEOUT_SECS * sample_rate_f) as u64,
         }
     }
 
@@ -940,14 +950,22 @@ impl RdsDecoder {
             self.carrier_phase = self.carrier_phase.rem_euclid(TAU);
         }
 
+        self.sample_counter += 1;
+
+        // Staleness check: if the incumbent hasn't produced an update in
+        // STALE_TIMEOUT_SECS, clear its score advantage so any candidate
+        // can take over.  This prevents the decoder from "freezing" on stale
+        // data when the incumbent's timing or carrier tracking degrades.
+        if self.best_candidate_idx.is_some()
+            && self.sample_counter - self.last_update_sample > self.stale_threshold
+        {
+            self.best_score = 0;
+            self.best_candidate_idx = None;
+        }
+
         for (idx, candidate) in self.candidates.iter_mut().enumerate() {
             let is_incumbent = self.best_candidate_idx == Some(idx);
             if let Some(update) = candidate.process_sample(mixed_i, mixed_q) {
-                // The incumbent candidate can always update at equal score so its
-                // accumulated text state (ps_seen, rt_seen, etc.) stays coherent.
-                // A challenger must exceed the current best score to take over,
-                // which prevents N candidates decoding the same groups from cycling
-                // through best_state with different partial ps_seen / rt_seen arrays.
                 let qualifies = candidate.score > self.best_score
                     || (is_incumbent && candidate.score >= self.best_score)
                     || self.best_state.is_none();
@@ -960,12 +978,10 @@ impl RdsDecoder {
                         self.best_score = candidate.score;
                         self.best_candidate_idx = Some(idx);
                         self.best_state = Some(update);
+                        self.last_update_sample = self.sample_counter;
                     }
                 }
             } else if is_incumbent {
-                // Even when no state change occurred, keep best_score current so
-                // challengers must match the incumbent's actual group count to
-                // take over, not just its last state-emitting group count.
                 self.best_score = candidate.score;
             }
         }
