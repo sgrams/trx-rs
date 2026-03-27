@@ -338,6 +338,12 @@ pub struct RigFilterState {
     pub wfm_stereo_detected: bool,
     #[serde(default = "default_wfm_denoise_level")]
     pub wfm_denoise: WfmDenoiseLevel,
+    /// Co-Channel Interference level (0–100 scale).
+    #[serde(default)]
+    pub wfm_cci: u8,
+    /// Adjacent Channel Interference level (0–100 scale).
+    #[serde(default)]
+    pub wfm_aci: u8,
     /// SAM stereo width (0.0 = mono, 1.0 = full stereo).
     #[serde(default = "default_sam_stereo_width")]
     pub sam_stereo_width: f32,

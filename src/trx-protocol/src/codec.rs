@@ -326,6 +326,8 @@ mod tests {
                 wfm_stereo: true,
                 wfm_stereo_detected: false,
                 wfm_denoise: trx_core::WfmDenoiseLevel::Auto,
+                wfm_cci: 0,
+                wfm_aci: 0,
                 sam_stereo_width: 1.0,
                 sam_carrier_sync: true,
             }),
@@ -372,6 +374,8 @@ mod tests {
                 wfm_stereo: true,
                 wfm_stereo_detected: true,
                 wfm_denoise: trx_core::WfmDenoiseLevel::Auto,
+                wfm_cci: 12,
+                wfm_aci: 45,
                 sam_stereo_width: 0.5,
                 sam_carrier_sync: false,
             }),
@@ -384,6 +388,8 @@ mod tests {
         assert_eq!(f.sdr_gain_db, Some(18.0));
         assert_eq!(f.wfm_deemphasis_us, 50);
         assert!(f.wfm_stereo_detected);
+        assert_eq!(f.wfm_cci, 12);
+        assert_eq!(f.wfm_aci, 45);
         assert_eq!(f.sam_stereo_width, 0.5);
         assert!(!f.sam_carrier_sync);
     }
