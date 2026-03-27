@@ -1848,6 +1848,7 @@ function positionFastOverlay(freqHz, bwHz) {
 function applyLocalTunedFrequency(hz, forceDisplay = false) {
   if (!Number.isFinite(hz)) return;
   const freqChanged = lastFreqHz !== hz;
+  if (!freqChanged && !forceDisplay) return;
   if (freqChanged) {
     primaryRds = null;
     resetRdsDisplay();
@@ -1873,7 +1874,7 @@ function applyLocalTunedFrequency(hz, forceDisplay = false) {
   }
   // Instant CSS marker repositioning (GPU-composited, no WebGL).
   positionFastOverlay(lastFreqHz, currentBandwidthHz);
-  if (lastSpectrumData) {
+  if (freqChanged && lastSpectrumData) {
     scheduleSpectrumDraw();
   }
   positionRdsPsOverlay();
@@ -3058,7 +3059,7 @@ function render(update) {
       if (_freqOptimisticHz != null && Math.abs(sseHz - _freqOptimisticHz) <= 1) {
         _freqOptimisticHz = null; // server confirmed — clear guard early
       }
-      applyLocalTunedFrequency(sseHz, true);
+      applyLocalTunedFrequency(sseHz);
     }
   }
   if (update.status && update.status.mode) {
@@ -3735,6 +3736,16 @@ freqEl.addEventListener("keydown", (e) => {
   if (e.key === "Enter") {
     e.preventDefault();
     applyFreqFromInput();
+  } else if (e.key === "Escape") {
+    freqDirty = false;
+    refreshFreqDisplay();
+    freqEl.blur();
+  }
+});
+freqEl.addEventListener("blur", () => {
+  if (freqDirty) {
+    freqDirty = false;
+    refreshFreqDisplay();
   }
 });
 if (centerFreqEl) {
@@ -3743,6 +3754,16 @@ if (centerFreqEl) {
     if (e.key === "Enter") {
       e.preventDefault();
       applyCenterFreqFromInput();
+    } else if (e.key === "Escape") {
+      centerFreqDirty = false;
+      refreshCenterFreqDisplay();
+      centerFreqEl.blur();
+    }
+  });
+  centerFreqEl.addEventListener("blur", () => {
+    if (centerFreqDirty) {
+      centerFreqDirty = false;
+      refreshCenterFreqDisplay();
     }
   });
   centerFreqEl.addEventListener("wheel", (e) => {
