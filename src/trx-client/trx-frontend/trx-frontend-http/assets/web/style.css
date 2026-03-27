@@ -1286,6 +1286,10 @@ small { color: var(--text-muted); }
   border-radius: 3px;
   cursor: pointer;
 }
+.sql-auto-btn.active {
+  background: var(--accent-green);
+  color: #000;
+}
 .vol-slider {
   -webkit-appearance: none;
   appearance: none;
