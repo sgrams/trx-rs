@@ -740,13 +740,14 @@ impl ChannelDsp {
             }
         }
 
-        let signal_power = decimated
-            .iter()
-            .map(|s| s.re * s.re + s.im * s.im)
-            .sum::<f32>()
-            / decimated.len() as f32;
+        let (signal_power_mean, signal_power_peak) =
+            decimated.iter().fold((0.0_f32, 0.0_f32), |(sum, peak), s| {
+                let p = s.re * s.re + s.im * s.im;
+                (sum + p, peak.max(p))
+            });
+        let signal_power = signal_power_mean / decimated.len() as f32;
         let signal_db = 10.0 * signal_power.max(1e-12).log10();
-        self.last_signal_db = signal_db;
+        self.last_signal_db = 10.0 * signal_power_peak.max(1e-12).log10();
         const WFM_OUTPUT_GAIN: f32 = 0.50;
         let mut audio = if let Some(decoder) = self.wfm_decoder.as_mut() {
             let mut out = decoder.process_iq(decimated);
