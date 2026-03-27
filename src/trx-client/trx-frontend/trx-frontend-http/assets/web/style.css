@@ -2311,6 +2311,12 @@ body.map-fake-fullscreen-active {
   font-size: 0.74rem;
   color: var(--text-muted);
 }
+.decode-locator-tip-rx {
+  margin-top: 0.12rem;
+  font-size: 0.72rem;
+  color: var(--accent-yellow);
+  opacity: 0.85;
+}
 .decode-locator-tip-note {
   margin-top: 0.2rem;
   font-size: 0.76rem;

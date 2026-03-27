@@ -6877,6 +6877,10 @@ function buildDecodeLocatorTooltipHtml(grid, entry, type) {
         Number.isFinite(detail?.dt_s) ? `dt ${Number(detail.dt_s).toFixed(2)}` : null,
         escapeMapHtml(freq),
       ].filter(Boolean).join(" · ");
+      const rxLabel = _receiverLabel(detail?.remote);
+      const rxHtml = rxLabel
+        ? `<div class="decode-locator-tip-rx">${escapeMapHtml(rxLabel)}</div>`
+        : "";
       const message = detail?.message
         ? `<div class="decode-locator-tip-note">${escapeMapHtml(String(detail.message))}</div>`
         : "";
@@ -6886,6 +6890,7 @@ function buildDecodeLocatorTooltipHtml(grid, entry, type) {
           `<span class="decode-locator-tip-time">${escapeMapHtml(formatDecodeLocatorTime(Number(detail?.ts_ms)))}</span>` +
         `</div>` +
         (meta ? `<div class="decode-locator-tip-meta">${meta}</div>` : "") +
+        rxHtml +
         message +
       `</div>`;
     })
@@ -6977,6 +6982,15 @@ function _receiverLabel(rigId) {
   return name;
 }
 
+function _locatorEntryVisibleOnMap(entry) {
+  return entry?.marker && aprsMap && aprsMap.hasLayer(entry.marker);
+}
+
+function _detailPassesRigFilter(detail) {
+  if (!mapRigFilter) return true;
+  return detail?.remote === mapRigFilter;
+}
+
 function renderMapQsoSummary() {
   const listEl = document.getElementById("map-qso-summary-list");
   if (!listEl) return;
@@ -6984,7 +6998,8 @@ function renderMapQsoSummary() {
   const entries = Array.from(decodeContactPaths.values())
     .filter((entry) => entry
       && Number.isFinite(entry.distanceKm)
-      && decodeContactPathMatchesCurrentMap(entry))
+      && decodeContactPathMatchesCurrentMap(entry)
+      && _detailPassesRigFilter(entry))
     .sort((a, b) => {
       const distanceDelta = Number(b.distanceKm) - Number(a.distanceKm);
       if (Math.abs(distanceDelta) > 0.001) return distanceDelta;
@@ -7094,9 +7109,11 @@ function renderMapSignalSummary() {
   const bestByStation = new Map();
   for (const entry of locatorMarkers.values()) {
     if (!entry || (entry.sourceType !== "ft8" && entry.sourceType !== "ft4" && entry.sourceType !== "ft2" && entry.sourceType !== "wspr")) continue;
+    if (!_locatorEntryVisibleOnMap(entry)) continue;
     if (!(entry.stationDetails instanceof Map)) continue;
     for (const detail of entry.stationDetails.values()) {
       if (!Number.isFinite(detail?.snr_db)) continue;
+      if (!_detailPassesRigFilter(detail)) continue;
       const station = String(detail?.source || detail?.station || "").trim().toUpperCase();
       if (!station) continue;
       const snrDb = Number(detail.snr_db);
@@ -7217,9 +7234,11 @@ function renderMapWeakSignalSummary() {
   const worstByStation = new Map();
   for (const entry of locatorMarkers.values()) {
     if (!entry || (entry.sourceType !== "ft8" && entry.sourceType !== "ft4" && entry.sourceType !== "ft2" && entry.sourceType !== "wspr")) continue;
+    if (!_locatorEntryVisibleOnMap(entry)) continue;
     if (!(entry.stationDetails instanceof Map)) continue;
     for (const detail of entry.stationDetails.values()) {
       if (!Number.isFinite(detail?.snr_db)) continue;
+      if (!_detailPassesRigFilter(detail)) continue;
       const station = String(detail?.source || detail?.station || "").trim().toUpperCase();
       if (!station) continue;
       const snrDb = Number(detail.snr_db);
