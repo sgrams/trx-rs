@@ -69,12 +69,14 @@ const COSTAS_LOCK_THRESHOLD: f32 = 0.15;
 /// sensitivity gain.  The tighter excess bandwidth is handled by the longer
 /// RRC_SPAN_CHIPS to keep ISI negligible.
 const RRC_ALPHA: f32 = 0.30;
-/// Tech 1 — RRC filter span in chips.  5 chips captures >95% of the RRC
-/// pulse energy at α=0.30 (first zero at t≈1.43 chips, sidelobes beyond
-/// ±2.5 chips contribute <5% energy) while keeping the FFT overlap-save
-/// block size at 512 and FFT size at 1024 — matching the pre-TED filter
-/// efficiency.  Added latency is ~2.1 ms at 2375 chips/s, negligible for RDS.
-const RRC_SPAN_CHIPS: usize = 5;
+/// Tech 1 — RRC filter span in chips.  10 chips captures the full RRC
+/// pulse including low-level sidelobes, keeping stopband leakage below
+/// −60 dB — critical for rejecting adjacent-channel interference on real
+/// signals where α is small.  The extra taps (vs span 5) increase FFT
+/// size from 1024 to 2048 but the improved stopband rejection translates
+/// directly into better block decode rate on weak, noisy signals.
+/// Added latency is ~4.2 ms at 2375 chips/s, negligible for RDS.
+const RRC_SPAN_CHIPS: usize = 10;
 /// Staleness timeout in seconds.  If the incumbent candidate has not produced
 /// a state update in this many seconds, its score advantage is cleared so any
 /// candidate can take over.  Prevents the decoder from "freezing" when the
