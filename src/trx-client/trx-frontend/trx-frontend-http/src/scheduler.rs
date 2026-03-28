@@ -88,6 +88,40 @@ pub struct ScheduleEntry {
     pub bookmark_ids: Vec<String>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SatelliteEntry {
+    pub id: String,
+    pub satellite: String,
+    pub norad_id: u32,
+    pub bookmark_id: String,
+    #[serde(default = "default_min_elevation")]
+    pub min_elevation_deg: f64,
+    #[serde(default)]
+    pub priority: i32,
+    #[serde(default)]
+    pub center_hz: Option<u64>,
+    #[serde(default)]
+    pub bookmark_ids: Vec<String>,
+}
+
+fn default_min_elevation() -> f64 {
+    5.0
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct SatelliteConfig {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default = "default_pretune_secs")]
+    pub pretune_secs: u32,
+    #[serde(default)]
+    pub entries: Vec<SatelliteEntry>,
+}
+
+fn default_pretune_secs() -> u32 {
+    60
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct SchedulerConfig {
     pub remote: String,
@@ -101,6 +135,8 @@ pub struct SchedulerConfig {
     /// `None` (or 0) disables interleaving — the first matching entry wins.
     #[serde(default)]
     pub interleave_min: Option<u32>,
+    #[serde(default)]
+    pub satellites: Option<SatelliteConfig>,
 }
 
 // ============================================================================
@@ -893,6 +929,7 @@ pub async fn get_scheduler(
             grayline: None,
             entries: vec![],
             interleave_min: None,
+            satellites: None,
         });
     HttpResponse::Ok().json(config)
 }
