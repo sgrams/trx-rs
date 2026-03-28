@@ -1384,10 +1384,9 @@ function pushHeaderSignalSample(sUnits) {
 
 function trimOverviewWaterfallRows() {
   if (!overviewCanvas) return;
-  const dpr = window.devicePixelRatio || 1;
-  const maxRows = Math.max(1, Math.floor(overviewCanvas.height / dpr));
-  while (overviewWaterfallRows.length > maxRows) {
-    overviewWaterfallRows.shift();
+  const maxRows = Math.max(1, Math.floor(overviewCanvas.height / _cachedDpr));
+  if (overviewWaterfallRows.length > maxRows) {
+    overviewWaterfallRows.splice(0, overviewWaterfallRows.length - maxRows);
   }
 }
 
@@ -1465,20 +1464,17 @@ function drawOverviewWaterfall(W, H, pal) {
   overviewWfTexWidth = iW;
   overviewWfTexHeight = iH;
 
+  ensureWaterfallLut(pal, minDb, maxDb);
+
   function renderRow(dstY, srcBins) {
     if (!Array.isArray(srcBins) || srcBins.length === 0) return;
     const { startIdx, endIdx } = overviewVisibleBinWindow(lastSpectrumData, srcBins.length);
     const spanBins = Math.max(1, endIdx - startIdx);
     const rowBase = dstY * rowStride;
+    const iwM1 = Math.max(1, iW - 1);
     for (let x = 0; x < iW; x++) {
-      const frac = x / Math.max(1, iW - 1);
-      const binIdx = Math.min(endIdx, startIdx + Math.floor(frac * spanBins));
-      const c = waterfallColorRgba(srcBins[binIdx], pal, minDb, maxDb);
-      const p = rowBase + x * 4;
-      overviewWfTexData[p + 0] = Math.round(c[0] * 255);
-      overviewWfTexData[p + 1] = Math.round(c[1] * 255);
-      overviewWfTexData[p + 2] = Math.round(c[2] * 255);
-      overviewWfTexData[p + 3] = Math.round(c[3] * 255);
+      const binIdx = Math.min(endIdx, startIdx + ((x * spanBins / iwM1) | 0));
+      waterfallLutWrite(overviewWfTexData, rowBase + x * 4, srcBins[binIdx]);
     }
   }
 
@@ -1580,6 +1576,38 @@ function waterfallColorRgba(db, pal, minDb, maxDb) {
     return window.trxHslToRgba(hue, pal.waterfallSat, light, alpha);
   }
   return cssColorToRgba(`hsla(${hue}, ${pal.waterfallSat}%, ${light}%, ${alpha})`);
+}
+
+// 256-entry waterfall color lookup table (bins are i8 = 256 possible values).
+// Eliminates per-pixel HSL→RGBA computation in the waterfall rendering hot path.
+let _wfLutKey = "";
+const _wfLut = new Uint8Array(256 * 4); // [r,g,b,a] × 256 entries, 0-255 range
+
+function ensureWaterfallLut(pal, minDb, maxDb) {
+  const key = `${pal.waterfallHue}|${pal.waterfallSat}|${pal.waterfallLight}|${pal.waterfallAlpha}|${minDb}|${maxDb}|${waterfallGamma}`;
+  if (key === _wfLutKey) return;
+  _wfLutKey = key;
+  for (let i = 0; i < 256; i++) {
+    // i8 range: -128 to 127 (dB values in the spectrum)
+    const db = i < 128 ? i : i - 256;
+    const c = waterfallColorRgba(db, pal, minDb, maxDb);
+    const p = i * 4;
+    _wfLut[p + 0] = (c[0] * 255 + 0.5) | 0;
+    _wfLut[p + 1] = (c[1] * 255 + 0.5) | 0;
+    _wfLut[p + 2] = (c[2] * 255 + 0.5) | 0;
+    _wfLut[p + 3] = (c[3] * 255 + 0.5) | 0;
+  }
+}
+
+// Fast waterfall pixel write using LUT. `db` is the raw i8 bin value.
+function waterfallLutWrite(texData, offset, db) {
+  // Convert signed i8 to 0-255 LUT index
+  const idx = ((db | 0) + 256) & 0xFF;
+  const p = idx * 4;
+  texData[offset]     = _wfLut[p];
+  texData[offset + 1] = _wfLut[p + 1];
+  texData[offset + 2] = _wfLut[p + 2];
+  texData[offset + 3] = _wfLut[p + 3];
 }
 
 function formatFreq(hz) {
@@ -2766,6 +2794,8 @@ function updateSpectrumAutoHeight() {
 
   root.style.setProperty("--overview-plot-height", `${nextOverviewHeight}px`);
   root.style.setProperty("--spectrum-plot-height", `${nextSpectrumHeight}px`);
+  // Refresh cached canvas sizes after layout change.
+  if (typeof _updateCachedCanvasSizes === "function") _updateCachedCanvasSizes();
   if (lastSpectrumData) {
     scheduleSpectrumDraw();
     scheduleOverviewDraw();
@@ -9014,6 +9044,7 @@ let spectrumRange = 90;
 let waterfallGamma = 1.0;
 const SPECTRUM_HEADROOM_DB = 20;
 const SPECTRUM_SMOOTH_ALPHA = 0.42;
+let _spectrumBinBuf = []; // Reusable buffer for SSE bin decoding
 
 // Crosshair state (CSS coords relative to spectrum canvas).
 let spectrumCrosshairX = null;
@@ -9102,9 +9133,14 @@ function pruneSpectrumPeakHoldFrames(now = Date.now()) {
     clearSpectrumPeakHoldFrames();
     return;
   }
-  spectrumPeakHoldFrames = spectrumPeakHoldFrames.filter((frame) => {
-    return frame && Array.isArray(frame.bins) && now - frame.t <= holdMs;
-  });
+  // In-place removal from front (frames are time-ordered).
+  let removeCount = 0;
+  for (let i = 0; i < spectrumPeakHoldFrames.length; i++) {
+    const f = spectrumPeakHoldFrames[i];
+    if (f && Array.isArray(f.bins) && now - f.t <= holdMs) break;
+    removeCount++;
+  }
+  if (removeCount > 0) spectrumPeakHoldFrames.splice(0, removeCount);
 }
 
 function pushSpectrumPeakHoldFrame(frame) {
@@ -9144,27 +9180,60 @@ function buildSpectrumPeakHoldBins(currentBins) {
 }
 
 // Estimate noise floor as the 15th-percentile of visible bins (same heuristic as Auto).
+// Uses O(N) nth-element selection instead of O(N log N) sort.
 function estimateNoiseFloorDb(bins) {
   if (!Array.isArray(bins) || bins.length === 0) return null;
-  const sorted = bins.slice().sort((a, b) => a - b);
-  return sorted[Math.floor(sorted.length * 0.15)];
+  const k = Math.floor(bins.length * 0.15);
+  return nthElement(bins, k);
 }
+
+// O(N) average-case selection algorithm (Floyd-Rivest / quickselect).
+function nthElement(arr, k) {
+  const tmp = _nthScratch.length >= arr.length ? _nthScratch : new Float64Array(arr.length);
+  if (tmp.length > _nthScratch.length) _nthScratch = tmp;
+  for (let i = 0; i < arr.length; i++) tmp[i] = arr[i];
+  let lo = 0, hi = arr.length - 1;
+  while (lo < hi) {
+    const pivot = tmp[lo + ((hi - lo) >> 1)];
+    let i = lo, j = hi;
+    while (i <= j) {
+      while (tmp[i] < pivot) i++;
+      while (tmp[j] > pivot) j--;
+      if (i <= j) { const t = tmp[i]; tmp[i] = tmp[j]; tmp[j] = t; i++; j--; }
+    }
+    if (j < k) lo = i;
+    if (k < i) hi = j;
+  }
+  return tmp[k];
+}
+let _nthScratch = new Float64Array(0);
+
+// Pre-allocated buffer for smoothed spectrum bins (avoids .map() allocation per frame).
+let _smoothBins = [];
 
 function buildSpectrumRenderData(frame) {
   if (!frame || !Array.isArray(frame.bins)) return frame;
+  const n = frame.bins.length;
   const prev = lastSpectrumRenderData;
   const canBlend =
     prev &&
     Array.isArray(prev.bins) &&
-    prev.bins.length === frame.bins.length &&
+    prev.bins.length === n &&
     prev.sample_rate === frame.sample_rate &&
     prev.center_hz === frame.center_hz;
-  const bins = frame.bins.map((value, idx) => {
-    if (!canBlend) return value;
-    const prevValue = prev.bins[idx];
-    return prevValue + (value - prevValue) * SPECTRUM_SMOOTH_ALPHA;
-  });
-  return { ...frame, bins };
+  if (_smoothBins.length !== n) _smoothBins = new Array(n);
+  const src = frame.bins;
+  if (canBlend) {
+    const prevBins = prev.bins;
+    const alpha = SPECTRUM_SMOOTH_ALPHA;
+    for (let i = 0; i < n; i++) {
+      _smoothBins[i] = prevBins[i] + (src[i] - prevBins[i]) * alpha;
+    }
+  } else {
+    for (let i = 0; i < n; i++) _smoothBins[i] = src[i];
+  }
+  // Return object reusing the frame's metadata.
+  return { bins: _smoothBins, center_hz: frame.center_hz, sample_rate: frame.sample_rate, rds: frame.rds };
 }
 
 // Returns { loHz, hiHz, visLoHz, visHiHz, fullSpanHz, visSpanHz } and clamps
@@ -9353,8 +9422,10 @@ function startSpectrumStreaming() {
       const b64 = evt.data.slice(commaB + 1);
       const hadSpectrum = !!lastSpectrumData;
       const raw = atob(b64);
-      const bins = new Array(raw.length);
-      for (let i = 0; i < raw.length; i++) bins[i] = (raw.charCodeAt(i) << 24 >> 24);
+      const len = raw.length;
+      if (_spectrumBinBuf.length !== len) _spectrumBinBuf = new Array(len);
+      const bins = _spectrumBinBuf;
+      for (let i = 0; i < len; i++) bins[i] = (raw.charCodeAt(i) << 24 >> 24);
       // Preserve any RDS data from the last rds event.
       const rds = lastSpectrumData?.rds;
       lastSpectrumData = { bins, center_hz: centerHz, sample_rate: sampleRate, rds };
@@ -9718,9 +9789,9 @@ function scheduleSpectrumDraw() {
 function drawSpectrum(data) {
   if (!spectrumCanvas || !spectrumGl || !spectrumGl.ready) return;
 
-  const dpr = window.devicePixelRatio || 1;
-  const cssW = spectrumCanvas.clientWidth || 640;
-  const cssH = spectrumCanvas.clientHeight || 160;
+  const dpr = _cachedDpr;
+  const cssW = _cachedSpectrumCssW;
+  const cssH = _cachedSpectrumCssH;
   spectrumGl.ensureSize(cssW, cssH, dpr);
   const W = spectrumCanvas.width;
   const H = spectrumCanvas.height;
@@ -9808,33 +9879,30 @@ function drawSpectrum(data) {
   }
 
   // ── Zoom indicator ──
-  const zoomEl = document.getElementById("spectrum-zoom-indicator");
-  if (zoomEl) {
+  if (_spectrumZoomEl) {
     if (spectrumZoom > 1.01) {
-      zoomEl.textContent = spectrumZoom.toFixed(1) + "x";
-      zoomEl.style.display = "block";
+      _spectrumZoomEl.textContent = spectrumZoom.toFixed(1) + "x";
+      _spectrumZoomEl.style.display = "block";
     } else {
-      zoomEl.style.display = "none";
+      _spectrumZoomEl.style.display = "none";
     }
   }
 
   // ── Zoom minimap ──
-  const minimapEl = document.getElementById("spectrum-minimap");
-  if (minimapEl) {
+  if (_spectrumMinimapEl) {
     if (spectrumZoom > 1.01) {
-      minimapEl.style.display = "block";
+      _spectrumMinimapEl.style.display = "block";
       const viewFrac = 1 / spectrumZoom;
       const halfVis = viewFrac / 2;
       const panClamped = Math.min(Math.max(spectrumPanFrac, halfVis), 1 - halfVis);
       const viewL = panClamped - halfVis;
       const viewR = panClamped + halfVis;
-      const inner = minimapEl.querySelector(".minimap-view");
-      if (inner) {
-        inner.style.left = (viewL * 100) + "%";
-        inner.style.width = ((viewR - viewL) * 100) + "%";
+      if (_spectrumMinimapInner) {
+        _spectrumMinimapInner.style.left = (viewL * 100) + "%";
+        _spectrumMinimapInner.style.width = ((viewR - viewL) * 100) + "%";
       }
     } else {
-      minimapEl.style.display = "none";
+      _spectrumMinimapEl.style.display = "none";
     }
   }
 
@@ -9859,6 +9927,32 @@ let spectrumWfTexReady = false;
 let spectrumWfDrawPending = false;
 const SPECTRUM_WF_TEX_MAX_W = 1024;
 
+// Cached DOM references for drawSpectrum (avoid getElementById per frame).
+const _spectrumZoomEl = document.getElementById("spectrum-zoom-indicator");
+const _spectrumMinimapEl = document.getElementById("spectrum-minimap");
+const _spectrumMinimapInner = _spectrumMinimapEl ? _spectrumMinimapEl.querySelector(".minimap-view") : null;
+
+// Cached canvas dimensions (updated on resize instead of reading clientWidth/clientHeight per frame).
+let _cachedSpectrumCssW = 640, _cachedSpectrumCssH = 160;
+let _cachedSpecWfCssW = 640, _cachedSpecWfCssH = 120;
+let _cachedDpr = window.devicePixelRatio || 1;
+
+function _updateCachedCanvasSizes() {
+  _cachedDpr = window.devicePixelRatio || 1;
+  if (spectrumCanvas) {
+    _cachedSpectrumCssW = spectrumCanvas.clientWidth || 640;
+    _cachedSpectrumCssH = spectrumCanvas.clientHeight || 160;
+  }
+  if (spectrumWaterfallCanvas) {
+    _cachedSpecWfCssW = spectrumWaterfallCanvas.clientWidth || 640;
+    _cachedSpecWfCssH = spectrumWaterfallCanvas.clientHeight || 120;
+  }
+}
+// Refresh on resize; also called from scheduleSpectrumLayout.
+window.addEventListener("resize", _updateCachedCanvasSizes);
+// Initial read.
+_updateCachedCanvasSizes();
+
 function pushSpectrumWaterfallFrame(data) {
   if (!spectrumWaterfallCanvas || !data || !Array.isArray(data.bins) || data.bins.length === 0) return;
   spectrumWfRows.push(data.bins.slice());
@@ -9869,10 +9963,9 @@ function pushSpectrumWaterfallFrame(data) {
 
 function trimSpectrumWaterfallRows() {
   if (!spectrumWaterfallCanvas) return;
-  const dpr = window.devicePixelRatio || 1;
-  const maxRows = Math.max(1, Math.floor((spectrumWaterfallCanvas.clientHeight || 120) * dpr));
-  while (spectrumWfRows.length > maxRows) {
-    spectrumWfRows.shift();
+  const maxRows = Math.max(1, Math.floor(_cachedSpecWfCssH * _cachedDpr));
+  if (spectrumWfRows.length > maxRows) {
+    spectrumWfRows.splice(0, spectrumWfRows.length - maxRows);
   }
 }
 
@@ -9889,9 +9982,9 @@ function drawSpectrumWaterfall() {
   if (!spectrumWaterfallCanvas || !spectrumWaterfallGl || !spectrumWaterfallGl.ready) return;
   if (!lastSpectrumData || spectrumWfRows.length === 0) return;
 
-  const dpr = window.devicePixelRatio || 1;
-  const cssW = spectrumWaterfallCanvas.clientWidth || 640;
-  const cssH = spectrumWaterfallCanvas.clientHeight || 120;
+  const dpr = _cachedDpr;
+  const cssW = _cachedSpecWfCssW;
+  const cssH = _cachedSpecWfCssH;
   spectrumWaterfallGl.ensureSize(cssW, cssH, dpr);
   const W = spectrumWaterfallCanvas.width;
   const H = spectrumWaterfallCanvas.height;
@@ -9923,20 +10016,17 @@ function drawSpectrumWaterfall() {
   spectrumWfTexWidth = iW;
   spectrumWfTexHeight = iH;
 
+  ensureWaterfallLut(pal, minDb, maxDb);
+
   function renderRow(dstY, srcBins) {
     if (!Array.isArray(srcBins) || srcBins.length === 0) return;
     const { startIdx, endIdx } = overviewVisibleBinWindow(lastSpectrumData, srcBins.length);
     const spanBins = Math.max(1, endIdx - startIdx);
     const rowBase = dstY * rowStride;
+    const iwM1 = Math.max(1, iW - 1);
     for (let x = 0; x < iW; x++) {
-      const frac = x / Math.max(1, iW - 1);
-      const binIdx = Math.min(endIdx, startIdx + Math.floor(frac * spanBins));
-      const c = waterfallColorRgba(srcBins[binIdx], pal, minDb, maxDb);
-      const p = rowBase + x * 4;
-      spectrumWfTexData[p + 0] = Math.round(c[0] * 255);
-      spectrumWfTexData[p + 1] = Math.round(c[1] * 255);
-      spectrumWfTexData[p + 2] = Math.round(c[2] * 255);
-      spectrumWfTexData[p + 3] = Math.round(c[3] * 255);
+      const binIdx = Math.min(endIdx, startIdx + ((x * spanBins / iwM1) | 0));
+      waterfallLutWrite(spectrumWfTexData, rowBase + x * 4, srcBins[binIdx]);
     }
   }
 
