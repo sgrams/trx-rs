@@ -27,7 +27,7 @@ const DEFAULT_AUDIO_PORT: u16 = 4531;
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
 const IO_TIMEOUT: Duration = Duration::from_secs(15);
 const SPECTRUM_IO_TIMEOUT: Duration = Duration::from_secs(3);
-const MAX_JSON_LINE_BYTES: usize = 16 * 1024;
+const MAX_JSON_LINE_BYTES: usize = 256 * 1024;
 const MAX_CONSECUTIVE_POLL_FAILURES: u32 = 3;
 
 #[derive(Clone, Debug, PartialEq, Eq)]

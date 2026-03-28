@@ -34,7 +34,7 @@ use crate::rig_handle::RigHandle;
 
 const IO_TIMEOUT: Duration = Duration::from_secs(10);
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(12);
-const MAX_JSON_LINE_BYTES: usize = 16 * 1024;
+const MAX_JSON_LINE_BYTES: usize = 256 * 1024;
 /// Run the JSON TCP listener, accepting client connections.
 ///
 /// `rigs` is a shared map from rig_id → `RigHandle`.  The first entry (by

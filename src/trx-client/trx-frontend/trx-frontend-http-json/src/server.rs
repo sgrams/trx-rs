@@ -24,7 +24,7 @@ use trx_protocol::ClientResponse;
 
 const IO_TIMEOUT: Duration = Duration::from_secs(10);
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(12);
-const MAX_JSON_LINE_BYTES: usize = 16 * 1024;
+const MAX_JSON_LINE_BYTES: usize = 256 * 1024;
 
 /// JSON-over-TCP frontend for control and status.
 pub struct HttpJsonFrontend;
