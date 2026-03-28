@@ -4,27 +4,27 @@
 // Predictions view: next 24 h passes for ham satellites
 
 // ── DOM references ──────────────────────────────────────────────────
-const wxsatStatus = document.getElementById("wxsat-status");
-const wxsatLiveView = document.getElementById("wxsat-live-view");
-const wxsatHistoryView = document.getElementById("wxsat-history-view");
-const wxsatPredictionsView = document.getElementById("wxsat-predictions-view");
-const wxsatLiveLatest = document.getElementById("wxsat-live-latest");
-const wxsatHistoryList = document.getElementById("wxsat-history-list");
-const wxsatHistoryCount = document.getElementById("wxsat-history-count");
-const wxsatFilterInput = document.getElementById("wxsat-filter");
-const wxsatSortSelect = document.getElementById("wxsat-sort");
-const wxsatTypeFilter = document.getElementById("wxsat-type-filter");
-const wxsatAptState = document.getElementById("wxsat-apt-state");
-const wxsatLrptState = document.getElementById("wxsat-lrpt-state");
+const satStatus = document.getElementById("sat-status");
+const satLiveView = document.getElementById("sat-live-view");
+const satHistoryView = document.getElementById("sat-history-view");
+const satPredictionsView = document.getElementById("sat-predictions-view");
+const satLiveLatest = document.getElementById("sat-live-latest");
+const satHistoryList = document.getElementById("sat-history-list");
+const satHistoryCount = document.getElementById("sat-history-count");
+const satFilterInput = document.getElementById("sat-filter");
+const satSortSelect = document.getElementById("sat-sort");
+const satTypeFilter = document.getElementById("sat-type-filter");
+const satAptState = document.getElementById("sat-apt-state");
+const satLrptState = document.getElementById("sat-lrpt-state");
 
 // ── State ───────────────────────────────────────────────────────────
-let wxsatImageHistory = [];
-const WXSAT_MAX_IMAGES = 100;
-let wxsatFilterText = "";
-let wxsatActiveView = "live"; // "live" | "history" | "predictions"
+let satImageHistory = [];
+const SAT_MAX_IMAGES = 100;
+let satFilterText = "";
+let satActiveView = "live"; // "live" | "history" | "predictions"
 
 // ── UI scheduler helper ─────────────────────────────────────────────
-function scheduleWxsatUi(key, job) {
+function scheduleSatUi(key, job) {
   if (typeof window.trxScheduleUiFrameJob === "function") {
     window.trxScheduleUiFrameJob(key, job);
     return;
@@ -33,51 +33,51 @@ function scheduleWxsatUi(key, job) {
 }
 
 // ── View switching ──────────────────────────────────────────────────
-const wxsatViewLiveBtn = document.getElementById("wxsat-view-live");
-const wxsatViewHistoryBtn = document.getElementById("wxsat-view-history");
-const wxsatViewPredictionsBtn = document.getElementById("wxsat-view-predictions");
+const satViewLiveBtn = document.getElementById("sat-view-live");
+const satViewHistoryBtn = document.getElementById("sat-view-history");
+const satViewPredictionsBtn = document.getElementById("sat-view-predictions");
 
-function switchWxsatView(view) {
-  wxsatActiveView = view;
-  if (wxsatLiveView) wxsatLiveView.style.display = view === "live" ? "" : "none";
-  if (wxsatHistoryView) wxsatHistoryView.style.display = view === "history" ? "" : "none";
-  if (wxsatPredictionsView) wxsatPredictionsView.style.display = view === "predictions" ? "" : "none";
-  if (wxsatViewLiveBtn) wxsatViewLiveBtn.classList.toggle("wxsat-view-active", view === "live");
-  if (wxsatViewHistoryBtn) wxsatViewHistoryBtn.classList.toggle("wxsat-view-active", view === "history");
-  if (wxsatViewPredictionsBtn) wxsatViewPredictionsBtn.classList.toggle("wxsat-view-active", view === "predictions");
+function switchSatView(view) {
+  satActiveView = view;
+  if (satLiveView) satLiveView.style.display = view === "live" ? "" : "none";
+  if (satHistoryView) satHistoryView.style.display = view === "history" ? "" : "none";
+  if (satPredictionsView) satPredictionsView.style.display = view === "predictions" ? "" : "none";
+  if (satViewLiveBtn) satViewLiveBtn.classList.toggle("sat-view-active", view === "live");
+  if (satViewHistoryBtn) satViewHistoryBtn.classList.toggle("sat-view-active", view === "history");
+  if (satViewPredictionsBtn) satViewPredictionsBtn.classList.toggle("sat-view-active", view === "predictions");
   if (view === "history") {
-    renderWxsatHistoryTable();
+    renderSatHistoryTable();
   } else if (view === "predictions") {
     loadSatPredictions();
   }
 }
 
-wxsatViewLiveBtn?.addEventListener("click", () => switchWxsatView("live"));
-wxsatViewHistoryBtn?.addEventListener("click", () => switchWxsatView("history"));
-wxsatViewPredictionsBtn?.addEventListener("click", () => switchWxsatView("predictions"));
+satViewLiveBtn?.addEventListener("click", () => switchSatView("live"));
+satViewHistoryBtn?.addEventListener("click", () => switchSatView("history"));
+satViewPredictionsBtn?.addEventListener("click", () => switchSatView("predictions"));
 
 // ── Live view: decoder state ────────────────────────────────────────
-// Updated from app.js render() via window.updateWxsatLiveState
-window.updateWxsatLiveState = function (update) {
-  if (!wxsatAptState || !wxsatLrptState) return;
+// Updated from app.js render() via window.updateSatLiveState
+window.updateSatLiveState = function (update) {
+  if (!satAptState || !satLrptState) return;
   const aptOn = !!update.wxsat_decode_enabled;
   const lrptOn = !!update.lrpt_decode_enabled;
 
-  wxsatAptState.textContent = aptOn ? "Listening" : "Idle";
-  wxsatAptState.className = "wxsat-live-value " + (aptOn ? "wxsat-state-listening" : "wxsat-state-idle");
-  wxsatLrptState.textContent = lrptOn ? "Listening" : "Idle";
-  wxsatLrptState.className = "wxsat-live-value " + (lrptOn ? "wxsat-state-listening" : "wxsat-state-idle");
+  satAptState.textContent = aptOn ? "Listening" : "Idle";
+  satAptState.className = "sat-live-value " + (aptOn ? "sat-state-listening" : "sat-state-idle");
+  satLrptState.textContent = lrptOn ? "Listening" : "Idle";
+  satLrptState.className = "sat-live-value " + (lrptOn ? "sat-state-listening" : "sat-state-idle");
 };
 
-function renderWxsatLatestCard() {
-  if (!wxsatLiveLatest) return;
-  if (wxsatImageHistory.length === 0) {
-    wxsatLiveLatest.innerHTML =
+function renderSatLatestCard() {
+  if (!satLiveLatest) return;
+  if (satImageHistory.length === 0) {
+    satLiveLatest.innerHTML =
       '<div style="color:var(--text-muted);font-size:0.82rem;">No images decoded yet. Enable a decoder and wait for a satellite pass.</div>';
     return;
   }
 
-  const img = wxsatImageHistory[0];
+  const img = satImageHistory[0];
   const decoder = img._decoder || "unknown";
   const typeName = decoder === "lrpt" ? "Meteor LRPT" : "NOAA APT";
   const satellite = img.satellite || "";
@@ -93,30 +93,30 @@ function renderWxsatLatestCard() {
   meta.push(`${lines} ${unit}`);
   meta.push(`${date} ${ts}`);
 
-  let html = `<div class="wxsat-latest-card">`;
-  html += `<div class="wxsat-latest-title">Latest decoded image</div>`;
-  html += `<div class="wxsat-latest-meta">${meta.join(" &middot; ")}</div>`;
+  let html = `<div class="sat-latest-card">`;
+  html += `<div class="sat-latest-title">Latest decoded image</div>`;
+  html += `<div class="sat-latest-meta">${meta.join(" &middot; ")}</div>`;
   if (img.path) {
     html += `<a href="${img.path}" target="_blank" style="font-size:0.8rem;color:var(--accent);display:inline-block;margin-top:0.25rem;">Download PNG</a>`;
   }
   if (img.geo_bounds) {
-    html += ` <button type="button" class="wxsat-map-btn" onclick="window.wxsatShowOnMap(${img.geo_bounds[0]},${img.geo_bounds[1]},${img.geo_bounds[2]},${img.geo_bounds[3]})" style="font-size:0.8rem;margin-top:0.25rem;margin-left:0.5rem;cursor:pointer;background:none;border:1px solid var(--accent);color:var(--accent);border-radius:3px;padding:1px 6px;">Show on Map</button>`;
+    html += ` <button type="button" class="sat-map-btn" onclick="window.satShowOnMap(${img.geo_bounds[0]},${img.geo_bounds[1]},${img.geo_bounds[2]},${img.geo_bounds[3]})" style="font-size:0.8rem;margin-top:0.25rem;margin-left:0.5rem;cursor:pointer;background:none;border:1px solid var(--accent);color:var(--accent);border-radius:3px;padding:1px 6px;">Show on Map</button>`;
   }
   html += `</div>`;
-  wxsatLiveLatest.innerHTML = html;
+  satLiveLatest.innerHTML = html;
 }
 
 // ── History view: table ─────────────────────────────────────────────
-function getFilteredHistory() {
-  let items = wxsatImageHistory;
+function getSatFilteredHistory() {
+  let items = satImageHistory;
 
   // Type filter
-  const typeVal = wxsatTypeFilter ? wxsatTypeFilter.value : "all";
+  const typeVal = satTypeFilter ? satTypeFilter.value : "all";
   if (typeVal === "apt") items = items.filter((i) => i._decoder === "apt");
   else if (typeVal === "lrpt") items = items.filter((i) => i._decoder === "lrpt");
 
   // Text filter
-  if (wxsatFilterText) {
+  if (satFilterText) {
     items = items.filter((i) => {
       const haystack = [
         i._decoder === "lrpt" ? "meteor lrpt" : "noaa apt",
@@ -127,12 +127,12 @@ function getFilteredHistory() {
       ]
         .join(" ")
         .toUpperCase();
-      return haystack.includes(wxsatFilterText);
+      return haystack.includes(satFilterText);
     });
   }
 
   // Sort
-  const sortVal = wxsatSortSelect ? wxsatSortSelect.value : "newest";
+  const sortVal = satSortSelect ? satSortSelect.value : "newest";
   if (sortVal === "oldest") {
     items = items.slice().reverse();
   }
@@ -140,13 +140,13 @@ function getFilteredHistory() {
   return items;
 }
 
-function renderWxsatHistoryRow(img) {
+function renderSatHistoryRow(img) {
   const row = document.createElement("div");
-  row.className = "wxsat-history-row";
+  row.className = "sat-history-row";
 
   const decoder = img._decoder || "unknown";
   const typeName = decoder === "lrpt" ? "Meteor LRPT" : "NOAA APT";
-  const typeClass = decoder === "lrpt" ? "wxsat-type-lrpt" : "wxsat-type-apt";
+  const typeClass = decoder === "lrpt" ? "sat-type-lrpt" : "sat-type-apt";
   const ts = img._ts || "--";
   const date = img._tsMs ? new Date(img._tsMs).toLocaleDateString([], { month: "short", day: "numeric" }) : "";
   const satellite = img.satellite || "--";
@@ -157,12 +157,12 @@ function renderWxsatHistoryRow(img) {
     ? `<a href="${img.path}" target="_blank" style="color:var(--accent);">PNG</a>`
     : "--";
   if (img.geo_bounds) {
-    link += ` <a href="javascript:void(0)" onclick="window.wxsatShowOnMap(${img.geo_bounds[0]},${img.geo_bounds[1]},${img.geo_bounds[2]},${img.geo_bounds[3]})" style="color:var(--accent);">Map</a>`;
+    link += ` <a href="javascript:void(0)" onclick="window.satShowOnMap(${img.geo_bounds[0]},${img.geo_bounds[1]},${img.geo_bounds[2]},${img.geo_bounds[3]})" style="color:var(--accent);">Map</a>`;
   }
 
   row.innerHTML = [
     `<span>${date} ${ts}</span>`,
-    `<span class="wxsat-col-type ${typeClass}">${typeName}</span>`,
+    `<span class="sat-col-type ${typeClass}">${typeName}</span>`,
     `<span>${satellite}</span>`,
     `<span>${channels}</span>`,
     `<span>${lines} ${unit}</span>`,
@@ -172,19 +172,19 @@ function renderWxsatHistoryRow(img) {
   return row;
 }
 
-function renderWxsatHistoryTable() {
-  if (!wxsatHistoryList) return;
-  const items = getFilteredHistory();
+function renderSatHistoryTable() {
+  if (!satHistoryList) return;
+  const items = getSatFilteredHistory();
   const fragment = document.createDocumentFragment();
   for (let i = 0; i < items.length; i += 1) {
-    fragment.appendChild(renderWxsatHistoryRow(items[i]));
+    fragment.appendChild(renderSatHistoryRow(items[i]));
   }
-  wxsatHistoryList.replaceChildren(fragment);
+  satHistoryList.replaceChildren(fragment);
 
-  if (wxsatHistoryCount) {
-    const total = wxsatImageHistory.length;
+  if (satHistoryCount) {
+    const total = satImageHistory.length;
     const shown = items.length;
-    wxsatHistoryCount.textContent =
+    satHistoryCount.textContent =
       total === 0
         ? "No images yet"
         : shown === total
@@ -194,7 +194,7 @@ function renderWxsatHistoryTable() {
 }
 
 // ── Add image to history ────────────────────────────────────────────
-function addWxsatImage(img, decoder) {
+function addSatImage(img, decoder) {
   const tsMs = Number.isFinite(img.ts_ms) ? Number(img.ts_ms) : Date.now();
   img._tsMs = tsMs;
   img._ts = new Date(tsMs).toLocaleTimeString([], {
@@ -204,55 +204,55 @@ function addWxsatImage(img, decoder) {
   });
   img._decoder = decoder;
 
-  wxsatImageHistory.unshift(img);
-  if (wxsatImageHistory.length > WXSAT_MAX_IMAGES) {
-    wxsatImageHistory = wxsatImageHistory.slice(0, WXSAT_MAX_IMAGES);
+  satImageHistory.unshift(img);
+  if (satImageHistory.length > SAT_MAX_IMAGES) {
+    satImageHistory = satImageHistory.slice(0, SAT_MAX_IMAGES);
   }
 
-  scheduleWxsatUi("wxsat-latest", () => renderWxsatLatestCard());
-  if (wxsatActiveView === "history") {
-    scheduleWxsatUi("wxsat-history", () => renderWxsatHistoryTable());
+  scheduleSatUi("sat-latest", () => renderSatLatestCard());
+  if (satActiveView === "history") {
+    scheduleSatUi("sat-history", () => renderSatHistoryTable());
   }
 }
 
 // ── Server callbacks ────────────────────────────────────────────────
-window.onServerWxsatImage = function (msg) {
-  if (wxsatStatus) wxsatStatus.textContent = "Image received (NOAA APT)";
-  addWxsatImage(msg, "apt");
-  if (msg.geo_bounds && msg.path && window.addWxsatMapOverlay) {
-    window.addWxsatMapOverlay(msg);
+window.onServerSatImage = function (msg) {
+  if (satStatus) satStatus.textContent = "Image received (NOAA APT)";
+  addSatImage(msg, "apt");
+  if (msg.geo_bounds && msg.path && window.addSatMapOverlay) {
+    window.addSatMapOverlay(msg);
   }
 };
 
 window.onServerLrptImage = function (msg) {
-  if (wxsatStatus) wxsatStatus.textContent = "Image received (Meteor LRPT)";
-  addWxsatImage(msg, "lrpt");
-  if (msg.geo_bounds && msg.path && window.addWxsatMapOverlay) {
-    window.addWxsatMapOverlay(msg);
+  if (satStatus) satStatus.textContent = "Image received (Meteor LRPT)";
+  addSatImage(msg, "lrpt");
+  if (msg.geo_bounds && msg.path && window.addSatMapOverlay) {
+    window.addSatMapOverlay(msg);
   }
 };
 
-window.resetWxsatHistoryView = function () {
-  wxsatImageHistory = [];
-  if (wxsatHistoryList) wxsatHistoryList.innerHTML = "";
-  renderWxsatLatestCard();
-  renderWxsatHistoryTable();
-  if (window.clearWxsatMapOverlays) window.clearWxsatMapOverlays();
+window.resetSatHistoryView = function () {
+  satImageHistory = [];
+  if (satHistoryList) satHistoryList.innerHTML = "";
+  renderSatLatestCard();
+  renderSatHistoryTable();
+  if (window.clearSatMapOverlays) window.clearSatMapOverlays();
 };
 
-window.pruneWxsatHistoryView = function () {
-  renderWxsatHistoryTable();
-  renderWxsatLatestCard();
+window.pruneSatHistoryView = function () {
+  renderSatHistoryTable();
+  renderSatLatestCard();
 };
 
 // ── Toggle buttons ──────────────────────────────────────────────────
-const wxsatDecodeToggleBtn = document.getElementById("wxsat-decode-toggle-btn");
-wxsatDecodeToggleBtn?.addEventListener("click", async () => {
+const satDecodeToggleBtn = document.getElementById("sat-decode-toggle-btn");
+satDecodeToggleBtn?.addEventListener("click", async () => {
   try {
-    await window.takeSchedulerControlForDecoderDisable?.(wxsatDecodeToggleBtn);
+    await window.takeSchedulerControlForDecoderDisable?.(satDecodeToggleBtn);
     await postPath("/toggle_wxsat_decode");
   } catch (e) {
-    console.error("WXSAT toggle failed", e);
+    console.error("SAT toggle failed", e);
   }
 });
 
@@ -267,22 +267,22 @@ lrptDecodeToggleBtn?.addEventListener("click", async () => {
 });
 
 // ── Filter / sort event listeners ───────────────────────────────────
-wxsatFilterInput?.addEventListener("input", () => {
-  wxsatFilterText = wxsatFilterInput.value.trim().toUpperCase();
-  renderWxsatHistoryTable();
+satFilterInput?.addEventListener("input", () => {
+  satFilterText = satFilterInput.value.trim().toUpperCase();
+  renderSatHistoryTable();
 });
 
-wxsatSortSelect?.addEventListener("change", () => renderWxsatHistoryTable());
-wxsatTypeFilter?.addEventListener("change", () => renderWxsatHistoryTable());
+satSortSelect?.addEventListener("change", () => renderSatHistoryTable());
+satTypeFilter?.addEventListener("change", () => renderSatHistoryTable());
 
 // ── Settings: clear history ─────────────────────────────────────────
 document
-  .getElementById("settings-clear-wxsat-history")
+  .getElementById("settings-clear-sat-history")
   ?.addEventListener("click", async () => {
     try {
       await postPath("/clear_wxsat_decode");
       await postPath("/clear_lrpt_decode");
-      window.resetWxsatHistoryView();
+      window.resetSatHistoryView();
     } catch (e) {
       console.error("Weather satellite history clear failed", e);
     }
@@ -372,10 +372,10 @@ async function loadSatPredictions() {
 }
 
 // ── Navigate to map centered on satellite image bounds ──────────────
-window.wxsatShowOnMap = function (south, west, north, east) {
-  // Enable wxsat filter if not active
+window.satShowOnMap = function (south, west, north, east) {
+  // Enable sat filter if not active
   if (typeof window.enableMapSourceFilter === "function") {
-    window.enableMapSourceFilter("wxsat");
+    window.enableMapSourceFilter("sat");
   }
   // Navigate to the center of the image bounds
   const lat = (south + north) / 2;
@@ -386,5 +386,5 @@ window.wxsatShowOnMap = function (south, west, north, east) {
 };
 
 // ── Initial render ──────────────────────────────────────────────────
-renderWxsatLatestCard();
-renderWxsatHistoryTable();
+renderSatLatestCard();
+renderSatHistoryTable();

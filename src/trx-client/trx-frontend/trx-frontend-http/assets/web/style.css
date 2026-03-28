@@ -4539,28 +4539,28 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   }
 }
 /* ── SAT panel ──────────────────────────────────────────────────────── */
-.wxsat-view-bar { display: flex; gap: 0; margin-bottom: 0.75rem; border-bottom: 1px solid var(--border); }
-.wxsat-view-btn { flex-shrink: 0; background: transparent; border: none; border-bottom: 2px solid transparent; border-radius: 0; padding: 0.3rem 0.9rem; color: var(--text-muted); cursor: pointer; font-size: 0.82rem; }
-.wxsat-view-active { border-bottom-color: var(--accent-green); color: var(--accent-green); font-weight: 600; }
-.wxsat-view-btn:hover:not(.wxsat-view-active) { color: var(--text); }
-.wxsat-live-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; margin-bottom: 0.5rem; }
-.wxsat-live-card { background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 0.35rem; padding: 0.5rem 0.75rem; display: flex; flex-direction: column; gap: 0.15rem; }
-.wxsat-live-label { font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.04em; }
-.wxsat-live-value { font-size: 0.9rem; font-weight: 600; }
-.wxsat-state-idle { color: var(--text-muted); }
-.wxsat-state-listening { color: var(--accent-green); }
-.wxsat-state-decoding { color: #f0a020; }
-.wxsat-history-controls { display: flex; gap: 0.5rem; align-items: center; margin-bottom: 0.5rem; flex-wrap: wrap; }
-.wxsat-sort-select { background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 0.25rem; color: var(--text); padding: 0.25rem 0.4rem; font-size: 0.82rem; }
-.wxsat-history-header { display: grid; grid-template-columns: 7rem 5.5rem 9rem 6rem 4.5rem 1fr; gap: 0.25rem; padding: 0.25rem 0.4rem; font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.03em; border-bottom: 1px solid var(--border); }
-.wxsat-history-row { display: grid; grid-template-columns: 7rem 5.5rem 9rem 6rem 4.5rem 1fr; gap: 0.25rem; padding: 0.35rem 0.4rem; font-size: 0.82rem; border-bottom: 1px solid var(--border-faint, rgba(255,255,255,0.04)); }
-.wxsat-history-row:hover { background: var(--bg-hover, rgba(255,255,255,0.02)); }
-.wxsat-col-type { font-weight: 500; }
-.wxsat-type-apt { color: #6ec6ff; }
-.wxsat-type-lrpt { color: #b39ddb; }
-.wxsat-latest-card { background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 0.4rem; padding: 0.6rem 0.75rem; }
-.wxsat-latest-card .wxsat-latest-title { font-size: 0.82rem; font-weight: 600; margin-bottom: 0.25rem; }
-.wxsat-latest-card .wxsat-latest-meta { font-size: 0.78rem; color: var(--text-muted); }
+.sat-view-bar { display: flex; gap: 0; margin-bottom: 0.75rem; border-bottom: 1px solid var(--border); }
+.sat-view-btn { flex-shrink: 0; background: transparent; border: none; border-bottom: 2px solid transparent; border-radius: 0; padding: 0.3rem 0.9rem; color: var(--text-muted); cursor: pointer; font-size: 0.82rem; }
+.sat-view-active { border-bottom-color: var(--accent-green); color: var(--accent-green); font-weight: 600; }
+.sat-view-btn:hover:not(.sat-view-active) { color: var(--text); }
+.sat-live-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; margin-bottom: 0.5rem; }
+.sat-live-card { background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 0.35rem; padding: 0.5rem 0.75rem; display: flex; flex-direction: column; gap: 0.15rem; }
+.sat-live-label { font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.04em; }
+.sat-live-value { font-size: 0.9rem; font-weight: 600; }
+.sat-state-idle { color: var(--text-muted); }
+.sat-state-listening { color: var(--accent-green); }
+.sat-state-decoding { color: #f0a020; }
+.sat-history-controls { display: flex; gap: 0.5rem; align-items: center; margin-bottom: 0.5rem; flex-wrap: wrap; }
+.sat-sort-select { background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 0.25rem; color: var(--text); padding: 0.25rem 0.4rem; font-size: 0.82rem; }
+.sat-history-header { display: grid; grid-template-columns: 7rem 5.5rem 9rem 6rem 4.5rem 1fr; gap: 0.25rem; padding: 0.25rem 0.4rem; font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.03em; border-bottom: 1px solid var(--border); }
+.sat-history-row { display: grid; grid-template-columns: 7rem 5.5rem 9rem 6rem 4.5rem 1fr; gap: 0.25rem; padding: 0.35rem 0.4rem; font-size: 0.82rem; border-bottom: 1px solid var(--border-faint, rgba(255,255,255,0.04)); }
+.sat-history-row:hover { background: var(--bg-hover, rgba(255,255,255,0.02)); }
+.sat-col-type { font-weight: 500; }
+.sat-type-apt { color: #6ec6ff; }
+.sat-type-lrpt { color: #b39ddb; }
+.sat-latest-card { background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 0.4rem; padding: 0.6rem 0.75rem; }
+.sat-latest-card .sat-latest-title { font-size: 0.82rem; font-weight: 600; margin-bottom: 0.25rem; }
+.sat-latest-card .sat-latest-meta { font-size: 0.78rem; color: var(--text-muted); }
 .sat-pred-header { display: grid; grid-template-columns: 6rem 1fr 4.5rem 5rem 6rem; gap: 0.25rem; padding: 0.25rem 0.4rem; font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.03em; border-bottom: 1px solid var(--border); }
 .sat-pred-row { display: grid; grid-template-columns: 6rem 1fr 4.5rem 5rem 6rem; gap: 0.25rem; padding: 0.35rem 0.4rem; font-size: 0.82rem; border-bottom: 1px solid var(--border-faint, rgba(255,255,255,0.04)); }
 .sat-pred-row:hover { background: var(--bg-hover, rgba(255,255,255,0.02)); }
@@ -4573,8 +4573,8 @@ button:focus-visible, input:focus-visible, select:focus-visible {
 .sat-pred-el-mid  { color: #f0a020; }
 .sat-pred-el-low  { color: var(--text-muted); }
 @media (max-width: 600px) {
-  .wxsat-live-grid { grid-template-columns: 1fr; }
-  .wxsat-history-header, .wxsat-history-row { grid-template-columns: 5rem 4rem 6rem 4rem 3.5rem 1fr; font-size: 0.75rem; }
+  .sat-live-grid { grid-template-columns: 1fr; }
+  .sat-history-header, .sat-history-row { grid-template-columns: 5rem 4rem 6rem 4rem 3.5rem 1fr; font-size: 0.75rem; }
   .sat-pred-header, .sat-pred-row { grid-template-columns: 5.5rem 1fr 4rem 4.5rem; font-size: 0.75rem; }
   .sat-pred-col-dir { display: none; }
 }

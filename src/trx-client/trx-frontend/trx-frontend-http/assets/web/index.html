@@ -515,7 +515,7 @@
         <button class="sub-tab" data-subtab="ft2">FT2</button>
         <button class="sub-tab" data-subtab="wspr">WSPR</button>
         <button class="sub-tab" data-subtab="rds">RDS</button>
-        <button class="sub-tab" data-subtab="wxsat">SAT</button>
+        <button class="sub-tab" data-subtab="sat">SAT</button>
       </div>
       <div id="subtab-overview" class="sub-tab-panel">
         <div class="plugin-item">
@@ -801,28 +801,28 @@
         </div>
         <div id="cw-output"></div>
       </div>
-      <div id="subtab-wxsat" class="sub-tab-panel" style="display:none;">
+      <div id="subtab-sat" class="sub-tab-panel" style="display:none;">
         <div class="ft8-controls">
-          <button id="wxsat-decode-toggle-btn" type="button">Enable NOAA APT</button>
+          <button id="sat-decode-toggle-btn" type="button">Enable NOAA APT</button>
           <button id="lrpt-decode-toggle-btn" type="button">Enable Meteor LRPT</button>
-          <small id="wxsat-status" style="color:var(--text-muted);">Waiting for satellite pass</small>
+          <small id="sat-status" style="color:var(--text-muted);">Waiting for satellite pass</small>
         </div>
         <!-- View selector -->
-        <div class="wxsat-view-bar">
-          <button id="wxsat-view-live" class="wxsat-view-btn wxsat-view-active" type="button">Live</button>
-          <button id="wxsat-view-history" class="wxsat-view-btn" type="button">History</button>
-          <button id="wxsat-view-predictions" class="wxsat-view-btn" type="button">Predictions</button>
+        <div class="sat-view-bar">
+          <button id="sat-view-live" class="sat-view-btn sat-view-active" type="button">Live</button>
+          <button id="sat-view-history" class="sat-view-btn" type="button">History</button>
+          <button id="sat-view-predictions" class="sat-view-btn" type="button">Predictions</button>
         </div>
         <!-- Live view -->
-        <div id="wxsat-live-view">
-          <div class="wxsat-live-grid">
-            <div class="wxsat-live-card">
-              <span class="wxsat-live-label">NOAA APT</span>
-              <span id="wxsat-apt-state" class="wxsat-live-value wxsat-state-idle">Idle</span>
+        <div id="sat-live-view">
+          <div class="sat-live-grid">
+            <div class="sat-live-card">
+              <span class="sat-live-label">NOAA APT</span>
+              <span id="sat-apt-state" class="sat-live-value sat-state-idle">Idle</span>
             </div>
-            <div class="wxsat-live-card">
-              <span class="wxsat-live-label">Meteor LRPT</span>
-              <span id="wxsat-lrpt-state" class="wxsat-live-value wxsat-state-idle">Idle</span>
+            <div class="sat-live-card">
+              <span class="sat-live-label">Meteor LRPT</span>
+              <span id="sat-lrpt-state" class="sat-live-value sat-state-idle">Idle</span>
             </div>
           </div>
           <div style="margin:0.5rem 0;">
@@ -835,35 +835,35 @@
               Multi-channel CCSDS-framed imagery (APIDs 64&ndash;69) with RGB composite output.
             </div>
           </div>
-          <div id="wxsat-live-latest" style="margin-top:0.5rem;"></div>
+          <div id="sat-live-latest" style="margin-top:0.5rem;"></div>
         </div>
         <!-- History view -->
-        <div id="wxsat-history-view" style="display:none;">
-          <div class="wxsat-history-controls">
-            <input id="wxsat-filter" class="ft8-filter" type="text" placeholder="Filter (e.g. NOAA-18, Meteor, APT)" />
-            <select id="wxsat-sort" class="wxsat-sort-select">
+        <div id="sat-history-view" style="display:none;">
+          <div class="sat-history-controls">
+            <input id="sat-filter" class="ft8-filter" type="text" placeholder="Filter (e.g. NOAA-18, Meteor, APT)" />
+            <select id="sat-sort" class="sat-sort-select">
               <option value="newest">Newest first</option>
               <option value="oldest">Oldest first</option>
             </select>
-            <select id="wxsat-type-filter" class="wxsat-sort-select">
+            <select id="sat-type-filter" class="sat-sort-select">
               <option value="all">All types</option>
               <option value="apt">NOAA APT only</option>
               <option value="lrpt">Meteor LRPT only</option>
             </select>
           </div>
-          <div class="wxsat-history-header">
-            <span class="wxsat-col-time">Time</span>
-            <span class="wxsat-col-type">Type</span>
-            <span class="wxsat-col-sat">Satellite</span>
-            <span class="wxsat-col-ch">Channels</span>
-            <span class="wxsat-col-lines">Lines</span>
-            <span class="wxsat-col-link">Image</span>
+          <div class="sat-history-header">
+            <span class="sat-col-time">Time</span>
+            <span class="sat-col-type">Type</span>
+            <span class="sat-col-sat">Satellite</span>
+            <span class="sat-col-ch">Channels</span>
+            <span class="sat-col-lines">Lines</span>
+            <span class="sat-col-link">Image</span>
           </div>
-          <div id="wxsat-history-list"></div>
-          <small id="wxsat-history-count" style="color:var(--text-muted);font-size:0.75rem;">No images yet</small>
+          <div id="sat-history-list"></div>
+          <small id="sat-history-count" style="color:var(--text-muted);font-size:0.75rem;">No images yet</small>
         </div>
         <!-- Predictions view -->
-        <div id="wxsat-predictions-view" style="display:none;">
+        <div id="sat-predictions-view" style="display:none;">
           <div class="sat-pred-header">
             <span class="sat-pred-col-time">AOS (UTC)</span>
             <span class="sat-pred-col-sat">Satellite</span>
@@ -1122,7 +1122,7 @@
               <button id="settings-clear-ft4-history" class="sch-write sch-reset-btn" type="button">Clear full FT4 history</button>
               <button id="settings-clear-ft2-history" class="sch-write sch-reset-btn" type="button">Clear full FT2 history</button>
               <button id="settings-clear-wspr-history" class="sch-write sch-reset-btn" type="button">Clear full WSPR history</button>
-              <button id="settings-clear-wxsat-history" class="sch-write sch-reset-btn" type="button">Clear full Sat history</button>
+              <button id="settings-clear-sat-history" class="sch-write sch-reset-btn" type="button">Clear full Sat history</button>
             </div>
           </div>
         </div>
@@ -1195,7 +1195,7 @@
               <tr><td>WSPR</td><td id="about-dec-wspr" class="about-status-off">Off</td></tr>
               <tr><td>CW</td><td id="about-dec-cw" class="about-status-off">Off</td></tr>
               <tr><td>APRS</td><td id="about-dec-aprs" class="about-status-off">Off</td></tr>
-              <tr><td>NOAA APT</td><td id="about-dec-wxsat" class="about-status-off">Off</td></tr>
+              <tr><td>NOAA APT</td><td id="about-dec-sat" class="about-status-off">Off</td></tr>
               <tr><td>Meteor LRPT</td><td id="about-dec-lrpt" class="about-status-off">Off</td></tr>
             </table>
           </div>
@@ -1287,7 +1287,7 @@
   <script src="/ft2.js"></script>
   <script src="/wspr.js"></script>
   <script src="/cw.js"></script>
-  <script src="/wxsat.js"></script>
+  <script src="/sat.js"></script>
   <script src="/bookmarks.js"></script>
   <script src="/scheduler.js"></script>
   <script src="/background-decode.js"></script>

@@ -2648,14 +2648,12 @@ async fn finalize_wxsat_pass(
             .or_else(|| {
                 // Fallback: use station location if available
                 match (station_lat, station_lon) {
-                    (Some(lat), Some(lon)) => Some(
-                        trx_core::geo::estimate_pass_geo_from_station(
-                            apt_image.first_line_ms,
-                            pass_end_ms,
-                            lat,
-                            lon,
-                        ),
-                    ),
+                    (Some(lat), Some(lon)) => Some(trx_core::geo::estimate_pass_geo_from_station(
+                        apt_image.first_line_ms,
+                        pass_end_ms,
+                        lat,
+                        lon,
+                    )),
                     _ => None,
                 }
             });
@@ -2877,18 +2875,14 @@ async fn finalize_lrpt_pass(
                         station_lon,
                     )
                 })
-                .or_else(|| {
-                    match (station_lat, station_lon) {
-                        (Some(lat), Some(lon)) => Some(
-                            trx_core::geo::estimate_pass_geo_from_station(
-                                pass_start_ms,
-                                pass_end_ms,
-                                lat,
-                                lon,
-                            ),
-                        ),
-                        _ => None,
-                    }
+                .or_else(|| match (station_lat, station_lon) {
+                    (Some(lat), Some(lon)) => Some(trx_core::geo::estimate_pass_geo_from_station(
+                        pass_start_ms,
+                        pass_end_ms,
+                        lat,
+                        lon,
+                    )),
+                    _ => None,
                 });
             let (geo_bounds, ground_track) = match pass_geo {
                 Some(geo) => (Some(geo.bounds), Some(geo.ground_track)),
@@ -2907,7 +2901,10 @@ async fn finalize_lrpt_pass(
                 ground_track,
             };
             if geo_bounds.is_some() {
-                info!("LRPT: geo-referenced {} image overlay", sat_name.as_deref().unwrap_or("unknown"));
+                info!(
+                    "LRPT: geo-referenced {} image overlay",
+                    sat_name.as_deref().unwrap_or("unknown")
+                );
             }
             histories.record_lrpt_image(img.clone());
             let _ = decode_tx.send(DecodedMessage::LrptImage(img));

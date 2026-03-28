@@ -215,7 +215,7 @@ function applyAuthRestrictions() {
       "ft4-decode-toggle-btn",
       "ft2-decode-toggle-btn",
       "wspr-decode-toggle-btn",
-      "wxsat-decode-toggle-btn",
+      "sat-decode-toggle-btn",
       "lrpt-decode-toggle-btn",
       "hf-aprs-decode-toggle-btn",
       "cw-auto",
@@ -228,7 +228,7 @@ function applyAuthRestrictions() {
       "settings-clear-ft4-history",
       "settings-clear-ft2-history",
       "settings-clear-wspr-history",
-      "settings-clear-wxsat-history"
+      "settings-clear-sat-history"
     ];
     pluginToggleBtns.forEach(id => {
       const btn = document.getElementById(id);
@@ -3231,13 +3231,13 @@ function render(update) {
     hfAprsToggleBtn.style.borderColor = hfAprsOn ? "#00d17f" : "";
     hfAprsToggleBtn.style.color = hfAprsOn ? "#00d17f" : "";
   }
-  const wxsatToggleBtn = document.getElementById("wxsat-decode-toggle-btn");
-  if (wxsatToggleBtn) {
-    const wxsatOn = !!update.wxsat_decode_enabled;
-    wxsatToggleBtn.dataset.enabled = wxsatOn ? "true" : "false";
-    wxsatToggleBtn.textContent = wxsatOn ? "Disable NOAA APT" : "Enable NOAA APT";
-    wxsatToggleBtn.style.borderColor = wxsatOn ? "#00d17f" : "";
-    wxsatToggleBtn.style.color = wxsatOn ? "#00d17f" : "";
+  const satToggleBtn = document.getElementById("sat-decode-toggle-btn");
+  if (satToggleBtn) {
+    const satOn = !!update.wxsat_decode_enabled;
+    satToggleBtn.dataset.enabled = satOn ? "true" : "false";
+    satToggleBtn.textContent = satOn ? "Disable NOAA APT" : "Enable NOAA APT";
+    satToggleBtn.style.borderColor = satOn ? "#00d17f" : "";
+    satToggleBtn.style.color = satOn ? "#00d17f" : "";
   }
   const lrptToggleBtn = document.getElementById("lrpt-decode-toggle-btn");
   if (lrptToggleBtn) {
@@ -3247,7 +3247,7 @@ function render(update) {
     lrptToggleBtn.style.borderColor = lrptOn ? "#00d17f" : "";
     lrptToggleBtn.style.color = lrptOn ? "#00d17f" : "";
   }
-  if (window.updateWxsatLiveState) window.updateWxsatLiveState(update);
+  if (window.updateSatLiveState) window.updateSatLiveState(update);
   const cwAutoEl = document.getElementById("cw-auto");
   const cwWpmEl = document.getElementById("cw-wpm");
   const cwToneEl = document.getElementById("cw-tone");
@@ -3423,7 +3423,7 @@ function render(update) {
     ["about-dec-wspr", update.wspr_decode_enabled],
     ["about-dec-cw", update.cw_decode_enabled],
     ["about-dec-aprs", update.aprs_decode_enabled || update.hf_aprs_decode_enabled],
-    ["about-dec-wxsat", update.wxsat_decode_enabled],
+    ["about-dec-sat", update.wxsat_decode_enabled],
     ["about-dec-lrpt", update.lrpt_decode_enabled],
   ];
   for (const [id, enabled] of decMap) {
@@ -4489,7 +4489,7 @@ const locatorMarkers = new Map();
 const decodeContactPaths = new Map();
 let selectedMapQsoKey = null;
 const mapMarkers = new Set();
-const DEFAULT_MAP_SOURCE_FILTER = { ais: true, vdes: true, aprs: true, bookmark: false, ft8: true, ft4: true, ft2: true, wspr: true, wxsat: false };
+const DEFAULT_MAP_SOURCE_FILTER = { ais: true, vdes: true, aprs: true, bookmark: false, ft8: true, ft4: true, ft2: true, wspr: true, sat: false };
 const mapFilter = { ...DEFAULT_MAP_SOURCE_FILTER };
 const mapLocatorFilter = { phase: "band", bands: new Set() };
 let mapSearchFilter = "";
@@ -4861,7 +4861,7 @@ function locatorFilterColor(type) {
 function mapSourceColor(type) {
   if (type === "ais") return "#38bdf8";
   if (type === "vdes") return "#a78bfa";
-  if (type === "wxsat") return "#f59e0b";
+  if (type === "sat") return "#f59e0b";
   if (type === "aprs") return "#00d17f";
   return locatorFilterColor(type);
 }
@@ -5676,10 +5676,10 @@ function syncAprsReceiverMarker() {
 // Weather satellite image overlays on the map
 // ---------------------------------------------------------------------------
 
-const wxsatOverlays = new Map(); // key -> { overlay, track, msg }
-let wxsatOverlaySeq = 0;
+const satOverlays = new Map(); // key -> { overlay, track, msg }
+let satOverlaySeq = 0;
 
-window.addWxsatMapOverlay = function(msg) {
+window.addSatMapOverlay = function(msg) {
   if (!msg || !msg.geo_bounds || !msg.path) return;
   const bounds = msg.geo_bounds;
   // bounds = [south, west, north, east]
@@ -5688,14 +5688,14 @@ window.addWxsatMapOverlay = function(msg) {
     [bounds[0], bounds[1]], // SW
     [bounds[2], bounds[3]]  // NE
   );
-  const key = "wxsat-" + (++wxsatOverlaySeq);
+  const key = "sat-" + (++satOverlaySeq);
   const overlay = L.imageOverlay(msg.path, latLngBounds, {
     opacity: 0.55,
     interactive: true,
     zIndex: 300,
   });
-  overlay.__trxType = "wxsat";
-  overlay.__trxWxsatKey = key;
+  overlay.__trxType = "sat";
+  overlay.__trxSatKey = key;
   overlay.__trxRigIds = msg.rig_id ? new Set([msg.rig_id]) : new Set();
   overlay.__trxHistoryVisible = true;
   mapMarkers.add(overlay);
@@ -5718,13 +5718,13 @@ window.addWxsatMapOverlay = function(msg) {
   if (msg.ground_track && Array.isArray(msg.ground_track) && msg.ground_track.length >= 2) {
     const latlngs = msg.ground_track.map(function(pt) { return [pt[0], pt[1]]; });
     track = L.polyline(latlngs, {
-      color: mapSourceColor("wxsat"),
+      color: mapSourceColor("sat"),
       weight: 2,
       opacity: 0.7,
       dashArray: "6, 4",
     });
-    track.__trxType = "wxsat";
-    track.__trxWxsatKey = key;
+    track.__trxType = "sat";
+    track.__trxSatKey = key;
     track.__trxRigIds = overlay.__trxRigIds;
     track.__trxHistoryVisible = true;
     mapMarkers.add(track);
@@ -5733,7 +5733,7 @@ window.addWxsatMapOverlay = function(msg) {
     }
   }
 
-  wxsatOverlays.set(key, { overlay: overlay, track: track, msg: msg });
+  satOverlays.set(key, { overlay: overlay, track: track, msg: msg });
 
   if (aprsMap) {
     overlay.addTo(aprsMap);
@@ -5741,8 +5741,8 @@ window.addWxsatMapOverlay = function(msg) {
   applyMapFilter();
 };
 
-window.removeWxsatMapOverlay = function(key) {
-  const entry = wxsatOverlays.get(key);
+window.removeSatMapOverlay = function(key) {
+  const entry = satOverlays.get(key);
   if (!entry) return;
   if (entry.overlay) {
     mapMarkers.delete(entry.overlay);
@@ -5752,12 +5752,12 @@ window.removeWxsatMapOverlay = function(key) {
     mapMarkers.delete(entry.track);
     if (aprsMap && aprsMap.hasLayer(entry.track)) entry.track.removeFrom(aprsMap);
   }
-  wxsatOverlays.delete(key);
+  satOverlays.delete(key);
 };
 
-window.clearWxsatMapOverlays = function() {
-  for (const [key] of wxsatOverlays) {
-    window.removeWxsatMapOverlay(key);
+window.clearSatMapOverlays = function() {
+  for (const [key] of satOverlays) {
+    window.removeSatMapOverlay(key);
   }
 };
 
@@ -5805,8 +5805,8 @@ window.clearMapMarkersByType = function(type) {
     return;
   }
 
-  if (type === "wxsat") {
-    window.clearWxsatMapOverlays();
+  if (type === "sat") {
+    window.clearSatMapOverlays();
     return;
   }
 
@@ -8612,7 +8612,7 @@ function dispatchDecodeMessage(msg) {
   if (msg.type === "ft4" && window.onServerFt4) window.onServerFt4(msg);
   if (msg.type === "ft2" && window.onServerFt2) window.onServerFt2(msg);
   if (msg.type === "wspr" && window.onServerWspr) window.onServerWspr(msg);
-  if (msg.type === "wxsat_image" && window.onServerWxsatImage) window.onServerWxsatImage(msg);
+  if (msg.type === "wxsat_image" && window.onServerSatImage) window.onServerSatImage(msg);
   if (msg.type === "lrpt_image" && window.onServerLrptImage) window.onServerLrptImage(msg);
 }
 

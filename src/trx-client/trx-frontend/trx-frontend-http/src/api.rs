@@ -2174,7 +2174,7 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
         .service(ft2_js)
         .service(wspr_js)
         .service(cw_js)
-        .service(wxsat_js)
+        .service(sat_js)
         .service(bookmarks_js)
         .service(scheduler_js)
         .service(background_decode_js)
@@ -2318,9 +2318,9 @@ async fn cw_js() -> impl Responder {
     no_cache_response("application/javascript; charset=utf-8", status::CW_JS)
 }
 
-#[get("/wxsat.js")]
-async fn wxsat_js() -> impl Responder {
-    no_cache_response("application/javascript; charset=utf-8", status::WXSAT_JS)
+#[get("/sat.js")]
+async fn sat_js() -> impl Responder {
+    no_cache_response("application/javascript; charset=utf-8", status::SAT_JS)
 }
 
 #[get("/bookmarks.js")]

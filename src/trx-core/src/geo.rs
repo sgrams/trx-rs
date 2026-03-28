@@ -72,8 +72,15 @@ pub struct PassPrediction {
     pub duration_s: u64,
 }
 
-/// Well-known amateur satellites: (display name, NORAD ID).
-const HAM_SATS: &[(&str, u32)] = &[
+/// Satellites included in pass predictions: weather + amateur.
+const PREDICTION_SATS: &[(&str, u32)] = &[
+    // Weather satellites (TLEs from CelesTrak weather group)
+    ("NOAA-15", 25338),
+    ("NOAA-18", 28654),
+    ("NOAA-19", 33591),
+    ("Meteor-M N2-3", 57166),
+    ("Meteor-M N2-4", 59051),
+    // Amateur satellites (TLEs from CelesTrak amateur group)
     ("ISS (ARISS)", 25544),
     ("AO-91 (RadFxSat)", 43017),
     ("AO-92 (Fox-1D)", 43137),
@@ -457,7 +464,7 @@ pub fn compute_upcoming_passes(
 
     let mut all_passes = Vec::new();
 
-    for &(name, norad_id) in HAM_SATS {
+    for &(name, norad_id) in PREDICTION_SATS {
         let tle = guard
             .as_ref()
             .and_then(|s| s.get(&norad_id))
