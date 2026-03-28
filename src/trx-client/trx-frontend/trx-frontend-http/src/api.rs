@@ -1376,12 +1376,17 @@ struct SatPassesResponse {
     passes: Vec<trx_core::geo::PassPrediction>,
     #[serde(skip_serializing_if = "Option::is_none")]
     error: Option<String>,
+    /// Number of satellites evaluated for predictions.
+    satellite_count: usize,
+    /// Source of the TLE data used: "celestrak" or "unavailable".
+    tle_source: trx_core::geo::TleSource,
 }
 
-/// Return predicted passes for all known amateur satellites over the next 24 h.
+/// Return predicted passes for all known satellites over the next 24 h.
 ///
 /// Requires the server station location to be configured.  Returns an empty
-/// `passes` array with an `error` field if the location is missing.
+/// `passes` array with an `error` field if the location is missing or TLE
+/// data has not been fetched yet.
 #[get("/sat_passes")]
 pub async fn sat_passes(state: web::Data<watch::Receiver<RigState>>) -> impl Responder {
     let rig_state = state.get_ref().borrow().clone();
@@ -1392,6 +1397,8 @@ pub async fn sat_passes(state: web::Data<watch::Receiver<RigState>>) -> impl Res
         return web::Json(SatPassesResponse {
             passes: vec![],
             error: Some("No station location configured".to_string()),
+            satellite_count: 0,
+            tle_source: trx_core::geo::TleSource::Unavailable,
         });
     };
 
@@ -1401,10 +1408,18 @@ pub async fn sat_passes(state: web::Data<watch::Receiver<RigState>>) -> impl Res
         .as_millis() as i64;
     let window_ms = 24 * 60 * 60 * 1000_i64;
 
-    let passes = trx_core::geo::compute_upcoming_passes(lat, lon, now_ms, window_ms);
+    let result = trx_core::geo::compute_upcoming_passes(lat, lon, now_ms, window_ms);
+    let error = match result.tle_source {
+        trx_core::geo::TleSource::Unavailable => {
+            Some("TLE data not yet available — waiting for CelesTrak fetch".to_string())
+        }
+        trx_core::geo::TleSource::Celestrak => None,
+    };
     web::Json(SatPassesResponse {
-        passes,
-        error: None,
+        passes: result.passes,
+        error,
+        satellite_count: result.satellite_count,
+        tle_source: result.tle_source,
     })
 }
 

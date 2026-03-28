@@ -292,6 +292,7 @@ document
 let satPredData = [];
 let satPredFilterText = "";
 let satPredMinEl = 0;
+let satPredSatCount = 0;
 const satPredFilterInput = document.getElementById("sat-pred-filter");
 const satPredMinElSelect = document.getElementById("sat-pred-min-el");
 
@@ -375,7 +376,11 @@ function renderSatPredictions(passes, error) {
     fragment.appendChild(row);
   }
   list.replaceChildren(fragment);
-  if (status) status.textContent = `${passes.length} pass${passes.length === 1 ? "" : "es"} in the next 24 h · times in UTC`;
+  if (status) {
+    let text = `${passes.length} pass${passes.length === 1 ? "" : "es"} in the next 24 h · times in UTC`;
+    if (satPredSatCount > 0) text += ` · ${satPredSatCount} satellites tracked`;
+    status.textContent = text;
+  }
 }
 
 async function loadSatPredictions() {
@@ -387,6 +392,7 @@ async function loadSatPredictions() {
     const resp = await fetch("/sat_passes");
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
     const data = await resp.json();
+    satPredSatCount = data.satellite_count || 0;
     if (data.error) {
       satPredData = [];
       renderSatPredictions([], data.error);

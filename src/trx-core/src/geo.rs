@@ -14,6 +14,27 @@ use std::f64::consts::PI;
 use std::sync::RwLock;
 use std::time::Duration;
 
+/// Result of computing upcoming passes, including metadata about TLE source.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct PassPredictionResult {
+    /// Predicted passes sorted by AOS time.
+    pub passes: Vec<PassPrediction>,
+    /// Number of satellites evaluated.
+    pub satellite_count: usize,
+    /// Whether predictions are based on live CelesTrak TLE data.
+    pub tle_source: TleSource,
+}
+
+/// Indicates the origin of the TLE data used for predictions.
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TleSource {
+    /// Live TLE data fetched from CelesTrak.
+    Celestrak,
+    /// No TLE data available yet (CelesTrak fetch pending or failed).
+    Unavailable,
+}
+
 /// Half-swath width in km for NOAA APT / Meteor LRPT imagery.
 const SWATH_HALF_WIDTH_KM: f64 = 1400.0;
 
@@ -79,30 +100,6 @@ pub struct PassPrediction {
     /// Pass duration in seconds.
     pub duration_s: u64,
 }
-
-/// Satellites included in pass predictions: weather + amateur.
-const PREDICTION_SATS: &[(&str, u32)] = &[
-    // Weather satellites (TLEs from CelesTrak weather group)
-    ("NOAA-15", 25338),
-    ("NOAA-18", 28654),
-    ("NOAA-19", 33591),
-    ("Meteor-M N2-3", 57166),
-    ("Meteor-M N2-4", 59051),
-    // Amateur satellites (TLEs from CelesTrak amateur group)
-    ("ISS (ARISS)", 25544),
-    ("AO-91 (RadFxSat)", 43017),
-    ("AO-92 (Fox-1D)", 43137),
-    ("SO-50", 27607),
-    ("AO-73 (FUNcube-1)", 39444),
-    ("JO-97 (JY1SAT)", 43803),
-    ("PO-101 (Diwata-2B)", 43678),
-    ("LilacSat-2", 40908),
-    ("CAS-4B", 42759),
-    ("EO-88 (Nayif-1)", 42017),
-    ("RS-44 (Dosaaf-85)", 44909),
-    ("SALSAT", 46926),
-    ("GREENCUBE (IO-117)", 52765),
-];
 
 /// Map satellite name patterns to NORAD catalog numbers.
 fn norad_id_for_satellite(name: &str) -> Option<u32> {
@@ -328,7 +325,10 @@ fn latlon_to_ecef(lat_deg: f64, lon_deg: f64) -> [f64; 3] {
     ]
 }
 
-/// Convert ECI position (km) to ECEF using GMST rotation.
+/// Convert ECI (TEME) position (km) to ECEF using sidereal time rotation.
+///
+/// Uses the sgp4 crate's IAU sidereal time for consistency with the
+/// propagator's reference frame.
 fn eci_to_ecef(x: f64, y: f64, z: f64, time_ms: i64) -> [f64; 3] {
     let gmst = gmst_from_ms(time_ms);
     [
@@ -466,23 +466,24 @@ fn find_passes_for_sat(
 /// `window_ms` milliseconds, starting from `start_ms`.
 ///
 /// Iterates over every satellite fetched from CelesTrak (weather + amateur).
-/// Falls back to hardcoded weather-satellite TLEs when the store is empty.
+/// Returns [`TleSource::Unavailable`] when CelesTrak data has not been
+/// fetched yet — the hardcoded fallback TLEs use approximate orbital
+/// elements and are NOT suitable for pass-time predictions.
 /// Results are sorted by AOS time.
 pub fn compute_upcoming_passes(
     station_lat: f64,
     station_lon: f64,
     start_ms: i64,
     window_ms: i64,
-) -> Vec<PassPrediction> {
+) -> PassPredictionResult {
     let guard = match TLE_STORE.read() {
         Ok(g) => g,
         Err(e) => e.into_inner(),
     };
 
-    let mut all_passes = Vec::new();
-
     if let Some(store) = guard.as_ref() {
-        // Use all satellites in the dynamic store.
+        let satellite_count = store.len();
+        let mut all_passes = Vec::new();
         for (&norad_id, entry) in store {
             let passes = find_passes_for_sat(
                 &entry.name,
@@ -496,27 +497,22 @@ pub fn compute_upcoming_passes(
             );
             all_passes.extend(passes);
         }
+        all_passes.sort_by_key(|p| p.aos_ms);
+        PassPredictionResult {
+            passes: all_passes,
+            satellite_count,
+            tle_source: TleSource::Celestrak,
+        }
     } else {
-        // Fallback: hardcoded weather satellite TLEs only.
-        for &(name, norad_id) in PREDICTION_SATS {
-            if let Some((l1, l2)) = hardcoded_tle(norad_id) {
-                let passes = find_passes_for_sat(
-                    name,
-                    norad_id,
-                    l1,
-                    l2,
-                    station_lat,
-                    station_lon,
-                    start_ms,
-                    window_ms,
-                );
-                all_passes.extend(passes);
-            }
+        // No CelesTrak data available — don't use hardcoded TLEs for
+        // predictions because their orbital elements are approximate
+        // and produce pass times that are hours off.
+        PassPredictionResult {
+            passes: vec![],
+            satellite_count: 0,
+            tle_source: TleSource::Unavailable,
         }
     }
-
-    all_passes.sort_by_key(|p| p.aos_ms);
-    all_passes
 }
 
 /// Compute geographic bounds and ground track for a satellite pass.
@@ -824,6 +820,64 @@ NOAA 19
     fn test_gmst_not_nan() {
         let gmst = gmst_from_ms(1774800000000);
         assert!(gmst.is_finite(), "GMST should be finite");
+    }
+
+    #[test]
+    fn test_gmst_vs_sgp4_sidereal_time() {
+        // Compare our GMST with sgp4 crate's IAU sidereal time
+        let time_ms = 1774800000000_i64; // 2026-03-28
+        let our_gmst = gmst_from_ms(time_ms);
+
+        let dt = sgp4::chrono::DateTime::from_timestamp_millis(time_ms).unwrap();
+        let epoch = sgp4::julian_years_since_j2000(&dt.naive_utc());
+        let sgp4_gmst = sgp4::iau_epoch_to_sidereal_time(epoch);
+
+        let diff_deg = (our_gmst - sgp4_gmst).abs() * 180.0 / PI;
+        assert!(
+            diff_deg < 1.0,
+            "GMST mismatch: ours={:.4}° sgp4={:.4}° diff={:.4}°",
+            our_gmst * 180.0 / PI,
+            sgp4_gmst * 180.0 / PI,
+            diff_deg
+        );
+    }
+
+    #[test]
+    fn test_noaa19_pass_sanity() {
+        // NOAA-19: sun-sync polar orbit at ~870 km, ~102 min period.
+        // From Munich (~48°N, 11°E) expect 4-8 passes per 24 h,
+        // each lasting 30 s – 16 min with sensible elevations.
+        let start = 1774800000000_i64; // 2026-03-28
+        let window = 24 * 60 * 60 * 1000_i64;
+        let (l1, l2) = hardcoded_tle(33591).unwrap();
+        let passes = find_passes_for_sat("NOAA 19", 33591, l1, l2, 48.0, 11.0, start, window);
+        assert!(
+            passes.len() >= 2 && passes.len() <= 10,
+            "Expected 2-10 passes for NOAA-19 in 24h, got {}",
+            passes.len()
+        );
+        for p in &passes {
+            assert!(
+                p.duration_s >= 30 && p.duration_s <= 1200,
+                "Pass duration should be 30s-20min, got {}s",
+                p.duration_s
+            );
+            assert!(
+                p.max_elevation_deg > 0.0 && p.max_elevation_deg <= 90.0,
+                "Max elevation should be 0-90°, got {}",
+                p.max_elevation_deg
+            );
+        }
+    }
+
+    #[test]
+    fn test_compute_upcoming_passes_no_store() {
+        // With empty TLE store, should return unavailable source, not
+        // fabricated predictions from hardcoded TLEs.
+        let result = compute_upcoming_passes(48.0, 11.0, 1774800000000, 86_400_000);
+        assert!(matches!(result.tle_source, TleSource::Unavailable));
+        assert!(result.passes.is_empty());
+        assert_eq!(result.satellite_count, 0);
     }
 
     #[test]
