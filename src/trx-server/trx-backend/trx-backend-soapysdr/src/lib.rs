@@ -23,6 +23,86 @@ const AIS_CHANNEL_SPACING_HZ: i64 = 50_000;
 
 pub use vchan_impl::SdrVirtualChannelManager;
 
+/// Configuration struct for constructing a [`SoapySdrRig`].
+///
+/// Replaces the 20+ parameter `new_with_config()` constructor with a more
+/// readable and maintainable builder.  All fields have sensible defaults via
+/// the `Default` implementation.
+#[derive(Debug, Clone)]
+pub struct SoapySdrConfig {
+    /// SoapySDR device args string (e.g. `"driver=rtlsdr"`).
+    pub args: String,
+    /// Per-channel tuples of `(channel_if_hz, initial_mode, audio_bandwidth_hz)`.
+    pub channels: Vec<(f64, RigMode, u32)>,
+    /// `"auto"` or `"manual"`.
+    pub gain_mode: String,
+    /// Gain in dB; used when `gain_mode == "manual"`.
+    pub gain_db: f64,
+    /// Optional hard ceiling for the applied hardware gain in dB.
+    pub max_gain_db: Option<f64>,
+    /// Output PCM rate (Hz).
+    pub audio_sample_rate: u32,
+    /// Number of audio channels.
+    pub audio_channels: usize,
+    /// Output frame length (ms).
+    pub frame_duration_ms: u16,
+    /// WFM deemphasis time constant in microseconds.
+    pub wfm_deemphasis_us: u32,
+    /// Initial dial frequency.
+    pub initial_freq: Freq,
+    /// Initial demodulation mode.
+    pub initial_mode: RigMode,
+    /// IQ capture rate (Hz).
+    pub sdr_sample_rate: u32,
+    /// Hardware IF filter bandwidth to apply to the device.
+    pub bandwidth_hz: u32,
+    /// The hardware is tuned this many Hz *below* the dial frequency so the
+    /// desired signal lands off-DC.  The DSP mixer shifts it back.
+    pub center_offset_hz: i64,
+    /// Enable software squelch for all modes except WFM.
+    pub squelch_enabled: bool,
+    /// Squelch open threshold in dBFS.
+    pub squelch_threshold_db: f32,
+    /// Close hysteresis in dB.
+    pub squelch_hysteresis_db: f32,
+    /// Tail hold time in milliseconds.
+    pub squelch_tail_ms: u32,
+    /// Maximum number of dynamic virtual channels.
+    pub max_virtual_channels: usize,
+    /// Whether the noise blanker is enabled on the primary channel.
+    pub nb_enabled: bool,
+    /// Noise blanker impulse threshold multiplier.
+    pub nb_threshold: f64,
+}
+
+impl Default for SoapySdrConfig {
+    fn default() -> Self {
+        Self {
+            args: String::new(),
+            channels: Vec::new(),
+            gain_mode: "auto".to_string(),
+            gain_db: 30.0,
+            max_gain_db: None,
+            audio_sample_rate: 48_000,
+            audio_channels: 1,
+            frame_duration_ms: 20,
+            wfm_deemphasis_us: 50,
+            initial_freq: Freq { hz: 144_300_000 },
+            initial_mode: RigMode::USB,
+            sdr_sample_rate: 1_920_000,
+            bandwidth_hz: 1_500_000,
+            center_offset_hz: 0,
+            squelch_enabled: false,
+            squelch_threshold_db: -65.0,
+            squelch_hysteresis_db: 3.0,
+            squelch_tail_ms: 180,
+            max_virtual_channels: 4,
+            nb_enabled: false,
+            nb_threshold: 10.0,
+        }
+    }
+}
+
 /// RX-only backend for any SoapySDR-compatible device.
 pub struct SoapySdrRig {
     info: RigInfo,
@@ -88,55 +168,32 @@ impl SoapySdrRig {
         }
     }
 
-    /// Full constructor.  All channel configuration is passed as plain
-    /// parameters so this crate does not need to depend on `trx-server`
-    /// (which is a binary, not a library crate).
+    /// Construct from a [`SoapySdrConfig`] struct.
     ///
-    /// # Parameters
-    /// - `args`: SoapySDR device args string (e.g. `"driver=rtlsdr"`).
-    ///   Opens a real hardware device via SoapySDR.
-    /// - `channels`: per-channel tuples of
-    ///   `(channel_if_hz, initial_mode, audio_bandwidth_hz)`.
-    /// - `gain_mode`: `"auto"` or `"manual"`.
-    /// - `gain_db`: gain in dB; used when `gain_mode == "manual"`.
-    /// - `max_gain_db`: optional hard ceiling for the applied hardware gain.
-    /// - `audio_sample_rate`: output PCM rate (Hz).
-    /// - `frame_duration_ms`: output frame length (ms).
-    /// - `initial_freq`: initial dial frequency reported by `get_status`.
-    /// - `initial_mode`: initial demodulation mode.
-    /// - `sdr_sample_rate`: IQ capture rate (Hz).
-    /// - `bandwidth_hz`: hardware IF filter bandwidth to apply to the device.
-    /// - `center_offset_hz`: the hardware is tuned this many Hz *below* the
-    ///   dial frequency so the desired signal lands off-DC.  The DSP mixer
-    ///   shifts it back.  Pass 0 to tune exactly to the dial frequency.
-    /// - `squelch_enabled`: enable software squelch for all modes except WFM.
-    /// - `squelch_threshold_db`: squelch open threshold in dBFS.
-    /// - `squelch_hysteresis_db`: close hysteresis in dB.
-    /// - `squelch_tail_ms`: tail hold time in milliseconds.
-    #[allow(clippy::too_many_arguments)]
-    pub fn new_with_config(
-        args: &str,
-        channels: &[(f64, RigMode, u32)],
-        gain_mode: &str,
-        gain_db: f64,
-        max_gain_db: Option<f64>,
-        audio_sample_rate: u32,
-        audio_channels: usize,
-        frame_duration_ms: u16,
-        wfm_deemphasis_us: u32,
-        initial_freq: Freq,
-        initial_mode: RigMode,
-        sdr_sample_rate: u32,
-        bandwidth_hz: u32,
-        center_offset_hz: i64,
-        squelch_enabled: bool,
-        squelch_threshold_db: f32,
-        squelch_hysteresis_db: f32,
-        squelch_tail_ms: u32,
-        max_virtual_channels: usize,
-        nb_enabled: bool,
-        nb_threshold: f64,
-    ) -> DynResult<Self> {
+    /// This is the preferred constructor.  See [`SoapySdrConfig`] for field
+    /// documentation and defaults.
+    pub fn new_from_config(config: SoapySdrConfig) -> DynResult<Self> {
+        let args = &config.args;
+        let channels = &config.channels;
+        let gain_mode = &config.gain_mode;
+        let gain_db = config.gain_db;
+        let max_gain_db = config.max_gain_db;
+        let audio_sample_rate = config.audio_sample_rate;
+        let audio_channels = config.audio_channels;
+        let frame_duration_ms = config.frame_duration_ms;
+        let wfm_deemphasis_us = config.wfm_deemphasis_us;
+        let initial_freq = config.initial_freq;
+        let initial_mode = config.initial_mode;
+        let sdr_sample_rate = config.sdr_sample_rate;
+        let bandwidth_hz = config.bandwidth_hz;
+        let center_offset_hz = config.center_offset_hz;
+        let squelch_enabled = config.squelch_enabled;
+        let squelch_threshold_db = config.squelch_threshold_db;
+        let squelch_hysteresis_db = config.squelch_hysteresis_db;
+        let squelch_tail_ms = config.squelch_tail_ms;
+        let max_virtual_channels = config.max_virtual_channels;
+        let nb_enabled = config.nb_enabled;
+        let nb_threshold = config.nb_threshold;
         tracing::info!(
             "initialising SoapySDR backend (args={:?}, gain_mode={:?}, gain_db={}, max_gain_db={:?})",
             args,
@@ -332,33 +389,67 @@ impl SoapySdrRig {
         Ok(rig)
     }
 
+    /// Legacy constructor kept for backward compatibility.
+    ///
+    /// Prefer [`Self::new_from_config`] with a [`SoapySdrConfig`] struct for
+    /// better readability.
+    #[allow(clippy::too_many_arguments)]
+    pub fn new_with_config(
+        args: &str,
+        channels: &[(f64, RigMode, u32)],
+        gain_mode: &str,
+        gain_db: f64,
+        max_gain_db: Option<f64>,
+        audio_sample_rate: u32,
+        audio_channels: usize,
+        frame_duration_ms: u16,
+        wfm_deemphasis_us: u32,
+        initial_freq: Freq,
+        initial_mode: RigMode,
+        sdr_sample_rate: u32,
+        bandwidth_hz: u32,
+        center_offset_hz: i64,
+        squelch_enabled: bool,
+        squelch_threshold_db: f32,
+        squelch_hysteresis_db: f32,
+        squelch_tail_ms: u32,
+        max_virtual_channels: usize,
+        nb_enabled: bool,
+        nb_threshold: f64,
+    ) -> DynResult<Self> {
+        Self::new_from_config(SoapySdrConfig {
+            args: args.to_string(),
+            channels: channels.to_vec(),
+            gain_mode: gain_mode.to_string(),
+            gain_db,
+            max_gain_db,
+            audio_sample_rate,
+            audio_channels,
+            frame_duration_ms,
+            wfm_deemphasis_us,
+            initial_freq,
+            initial_mode,
+            sdr_sample_rate,
+            bandwidth_hz,
+            center_offset_hz,
+            squelch_enabled,
+            squelch_threshold_db,
+            squelch_hysteresis_db,
+            squelch_tail_ms,
+            max_virtual_channels,
+            nb_enabled,
+            nb_threshold,
+        })
+    }
+
     /// Simple constructor for backward compatibility with the factory function.
     /// Creates a pipeline with no channels — the DSP loop runs but produces no
     /// PCM frames.
     pub fn new(args: &str) -> DynResult<Self> {
-        Self::new_with_config(
-            args,
-            &[], // no channels — pipeline does nothing; filter defaults applied in new_with_config
-            "auto",
-            30.0,
-            None,
-            48_000,
-            1,
-            20,
-            50,
-            Freq { hz: 144_300_000 },
-            RigMode::USB,
-            1_920_000,
-            1_500_000, // bandwidth_hz
-            0,         // center_offset_hz
-            false,     // squelch_enabled
-            -65.0,     // squelch_threshold_db
-            3.0,       // squelch_hysteresis_db
-            180,       // squelch_tail_ms
-            4,         // max_virtual_channels
-            false,     // nb_enabled
-            10.0,      // nb_threshold
-        )
+        Self::new_from_config(SoapySdrConfig {
+            args: args.to_string(),
+            ..SoapySdrConfig::default()
+        })
     }
 
     /// Return the virtual channel manager for this SDR rig.

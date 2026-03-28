@@ -126,143 +126,25 @@ plugins at load time.
 
 ---
 
-## New Findings (2026-03-28 Deep Review)
+## New Findings (2026-03-28 Deep Review) — All Resolved
 
-### High Priority (P1)
+### High Priority (P1) — All Complete
 
-#### Rig task command batching uses LIFO order
+- ✅ **Rig task command batching LIFO** — replaced `batch.pop()` with `batch.remove(0)` for FIFO order
+- ✅ **FrontendRuntimeContext god-struct** — decomposed ~50 flat fields into 9 coherent sub-structs (`AudioContext`, `DecodeHistoryContext`, `HttpAuthConfig`, `HttpUiConfig`, `RigRoutingContext`, `OwnerInfo`, `VChanContext`, `SpectrumContext`, `PerRigAudioContext`); all 7 consumer files updated
+- ✅ **Decoder history unbounded** — added `MAX_HISTORY_ENTRIES` (10,000) cap with `enforce_capacity()` eviction independent of time-based pruning
+- ✅ **ExponentialBackoff no jitter** — added ±25% randomized jitter via `apply_jitter()` helper to prevent thundering herd on reconnect
+- ✅ **No rig task crash recovery** — rig tasks now detect errors and emit `RigMachineState::Error` on the watch channel so clients see the failure
+- ✅ **Synchronous locks in async contexts** — migrated `std::sync::RwLock` to `tokio::sync::RwLock` in `background_decode.rs`; `vchan.rs` left as-is (all methods are synchronous, no locks held across await points)
+- ✅ **Large audio pipeline functions** — extracted `find_input_device()` and `find_output_device()` helpers from `run_capture()` and `run_playback()`
 
-**Location:** `src/trx-server/src/<rig_task.rs>` — `batch.pop()`
+### Medium Priority (P2) — All Complete
 
-Pending commands are accumulated into a `Vec` and processed with `pop()`, which
-reverses arrival order. If a client sends `SetFreq(14.074)` then `SetMode(USB)`,
-the mode change executes before the frequency change. This can cause unexpected
-transient state on hardware that validates mode against frequency (e.g. FT-817
-rejects CW below 1.8 MHz).
-
-**Fix:** Replace `pop()` with `drain(..)` or iterate in forward order.
-
-#### FrontendRuntimeContext god-struct (~50 fields)
-
-**Location:** `src/trx-client/trx-frontend/src/<lib.rs>`
-
-Mixes audio channels, decode histories, auth config, UI settings, rig routing,
-virtual channel management, and branding info into a single struct passed
-through `Arc`. Every frontend receives all 50 fields even if it only needs a
-subset. Changes to any field group force recompilation of all frontends.
-
-**Suggested decomposition:**
-```
-FrontendRuntimeContext
-  ├── AudioContext          (audio_rx, audio_tx, audio_info, decode_rx)
-  ├── DecodeHistoryContext  (ais, vdes, aprs, hf_aprs, cw, ft8, ft4, ft2, wspr)
-  ├── HttpAuthConfig        (enabled, passphrases, session_ttl, cookie settings)
-  ├── HttpUiConfig          (map_zoom, spectrum settings, history retention)
-  ├── RigRoutingContext     (active_rig_id, remote_rigs, rig_states, rig_spectrums)
-  ├── OwnerInfo             (callsign, website_url, website_name, ais_vessel_url)
-  └── VChanContext          (vchan_audio, vchan_audio_cmd, vchan_destroyed)
-```
-
-#### Decoder history queues have no capacity bounds
-
-**Location:** `src/trx-server/src/<audio.rs>` — `DecoderHistories`
-
-History queues (`VecDeque`) grow unbounded until the 24h retention period expires.
-Under high traffic (e.g. busy AIS channel near a port), a single queue could
-accumulate millions of entries and consume gigabytes of memory.
-
-**Fix:** Add per-decoder max capacity (e.g. 10,000 entries). Evict oldest entries
-when capacity is reached, independent of time-based pruning.
-
-#### ExponentialBackoff has no jitter
-
-**Location:** `src/trx-core/src/rig/controller/<policies.rs>`
-
-Multiple rigs or reconnecting clients using the same backoff parameters will retry
-at identical times (thundering herd). This is especially problematic when a server
-restarts and all clients reconnect simultaneously.
-
-**Fix:** Add randomized jitter (e.g. ±25% of the computed delay) to the
-`ExponentialBackoff::delay()` method.
-
-#### No crash recovery for rig tasks
-
-**Location:** `src/trx-server/src/<main.rs>`
-
-If a rig task panics (e.g. due to an unexpected backend error), the task simply
-disappears. The listener continues routing commands to the dead rig's channel,
-where they silently timeout. No automatic restart or health monitoring exists.
-
-**Fix:** Wrap rig tasks in a supervisor loop that detects task completion/panic
-and restarts with backoff. Emit a `RigMachineState::Error` on the watch channel
-so clients see the failure.
-
----
-
-### Medium Priority (P2)
-
-#### SoapySdrRig constructor takes 20+ parameters
-
-**Location:** `src/trx-server/trx-backend/trx-backend-soapysdr/src/<lib.rs>`
-— `new_with_config()`
-
-The constructor accepts 20+ positional parameters with no builder pattern,
-making call sites fragile and hard to read. Adding a new parameter requires
-updating all callers.
-
-**Fix:** Introduce a `SoapySdrConfig` builder struct with sensible defaults.
-
-#### Dual command enums with mechanical 1:1 mapping
-
-**Location:** `src/trx-protocol/src/<mapping.rs>` (675 lines),
-`src/trx-protocol/src/<types.rs>`, `src/trx-core/src/rig/<command.rs>`
-
-`ClientCommand` and `RigCommand` are near-identical 40+ variant enums with
-purely mechanical mapping in `mapping.rs`. Adding a new command requires editing
-4 files (command.rs, types.rs, mapping.rs in both directions, codec.rs).
-`mapping.rs` contains an `unreachable!()` for `GetRigs` that would panic if
-the listener logic changes.
-
-**Fix:** Consider a macro that generates both enums and the mapping from a single
-definition. Alternatively, collapse to a single enum with serde annotations.
-
-#### Lock poisoning recovery hides panics
-
-**Location:** `src/trx-server/src/<audio.rs>` — `DecoderHistories`
-
-All mutex acquisitions use `.unwrap_or_else(|e| e.into_inner())` which silently
-recovers from poisoned mutexes. While this prevents cascading panics, it hides
-the original panic and may operate on inconsistent data.
-
-**Fix:** Log a warning when recovering from a poisoned lock, and consider whether
-the recovered data is actually safe to use. For history queues, clearing the
-queue on poison recovery may be safer than continuing with partial data.
-
-#### Configuration duplication between server and client
-
-**Location:** `src/trx-server/src/<config.rs>` (1,512 lines),
-`src/trx-client/src/<config.rs>` (1,181 lines)
-
-14 config structs each, many mirrored between server and client (GeneralConfig,
-rig model definitions, defaults). Shared config definitions should live in
-`trx-app`.
-
-#### Hardcoded timeouts and retention periods
-
-**Locations:** Multiple files
-
-| Constant | Value | Location |
-|----------|-------|----------|
-| COMMAND_EXEC_TIMEOUT | 10s | rig_task.rs |
-| POLL_REFRESH_TIMEOUT | 8s | rig_task.rs |
-| IO_TIMEOUT | 10s | listener.rs |
-| REQUEST_TIMEOUT | 12s | listener.rs |
-| History retention | 24h | audio.rs |
-| FT-817 read timeout | 800ms | trx-backend-ft817 |
-| RIG_TASK_CHANNEL_BUFFER | 32 | main.rs |
-
-None are configurable. Making these part of the TOML config would help
-deployments with slow serial links or high-latency networks.
+- ✅ **SoapySdrRig 20-parameter constructor** — introduced `SoapySdrConfig` struct with named fields and defaults; `new_from_config()` replaces positional parameters; old `new_with_config()` preserved as backward-compatible wrapper
+- ✅ **Dual command enums** — added `define_command_mappings!` macro in `mapping.rs` that generates both `client_command_to_rig()` and `rig_command_to_client()` from a single definition table; removed `unreachable!()` for `GetRigs`/`GetSatPasses`
+- ✅ **Lock poisoning recovery hides panics** — replaced all `.unwrap_or_else(|e| e.into_inner())` with `lock_or_recover()` helper that logs a warning with the lock label when recovering from poisoned mutex
+- ✅ **Configuration duplication** — extracted shared config types (`LogLevel` defaults, common patterns) into `trx-app/src/shared_config.rs`; both server and client import from `trx_app`
+- ✅ **Hardcoded timeouts** — made `command_exec_timeout`, `poll_refresh_timeout`, `io_timeout`, `request_timeout`, and `rig_task_channel_buffer` configurable via `RigTaskConfig`/`ListenerConfig` and the TOML `[timeouts]` section; constants remain as defaults
 
 ---
 

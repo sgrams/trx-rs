@@ -4,8 +4,10 @@
 
 pub mod config;
 pub mod logging;
+pub mod shared_config;
 pub mod util;
 
 pub use config::{ConfigError, ConfigFile};
 pub use logging::init_logging;
+pub use shared_config::{validate_log_level, validate_tokens};
 pub use util::normalize_name;

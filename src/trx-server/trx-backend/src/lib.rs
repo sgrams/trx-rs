@@ -17,7 +17,7 @@ use trx_backend_ft450d::Ft450d;
 #[cfg(feature = "ft817")]
 use trx_backend_ft817::Ft817;
 #[cfg(feature = "soapysdr")]
-pub use trx_backend_soapysdr::SoapySdrRig;
+pub use trx_backend_soapysdr::{SoapySdrConfig, SoapySdrRig};
 
 /// Connection details for instantiating a rig backend.
 #[derive(Debug, Clone)]

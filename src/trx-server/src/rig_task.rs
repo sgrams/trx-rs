@@ -27,8 +27,10 @@ use trx_core::{DynResult, RigError, RigResult};
 use crate::audio::DecoderHistories;
 use crate::error::is_invalid_bcd_error;
 
-const POLL_REFRESH_TIMEOUT: Duration = Duration::from_secs(8);
-const COMMAND_EXEC_TIMEOUT: Duration = Duration::from_secs(10);
+/// Fallback poll refresh timeout used when no config value is provided.
+const DEFAULT_POLL_REFRESH_TIMEOUT: Duration = Duration::from_secs(8);
+/// Fallback command execution timeout used when no config value is provided.
+const DEFAULT_COMMAND_EXEC_TIMEOUT: Duration = Duration::from_secs(10);
 /// Configuration for the rig task.
 pub struct RigTaskConfig {
     pub registry: Arc<RegistrationContext>,
@@ -57,6 +59,10 @@ pub struct RigTaskConfig {
     /// `SoapySdrRig` (built with channel config) without duplicating the
     /// pipeline construction.
     pub prebuilt_rig: Option<Box<dyn RigCat>>,
+    /// Maximum time to wait for a single rig command to complete.
+    pub command_exec_timeout: Duration,
+    /// Maximum time for a CAT poll refresh cycle.
+    pub poll_refresh_timeout: Duration,
 }
 
 impl Default for RigTaskConfig {
@@ -85,6 +91,8 @@ impl Default for RigTaskConfig {
             histories: DecoderHistories::new(),
             vfo_prime: true,
             prebuilt_rig: None,
+            command_exec_timeout: DEFAULT_COMMAND_EXEC_TIMEOUT,
+            poll_refresh_timeout: DEFAULT_POLL_REFRESH_TIMEOUT,
         }
     }
 }
@@ -142,6 +150,10 @@ pub async fn run_rig_task(
     );
     state.pskreporter_status = config.pskreporter_status.clone();
     state.aprs_is_status = config.aprs_is_status.clone();
+
+    // Timeout configuration
+    let command_exec_timeout = config.command_exec_timeout;
+    let poll_refresh_timeout = config.poll_refresh_timeout;
 
     // Polling configuration
     let polling = &config.polling;
@@ -284,7 +296,7 @@ pub async fn run_rig_task(
                 // Poll rig state
                 let old_state = state.clone();
                 match time::timeout(
-                    POLL_REFRESH_TIMEOUT,
+                    poll_refresh_timeout,
                     refresh_state_with_retry(&mut rig, &mut state, retry),
                 )
                 .await
@@ -315,7 +327,7 @@ pub async fn run_rig_task(
                     Err(_) => {
                         error!(
                             "CAT polling timed out after {:?}",
-                            POLL_REFRESH_TIMEOUT
+                            poll_refresh_timeout
                         );
                     }
                 }
@@ -329,8 +341,9 @@ pub async fn run_rig_task(
                     batch.push(next);
                 }
 
-                // Process each request
-                while let Some(RigRequest { cmd, respond_to, .. }) = batch.pop() {
+                // Process each request in FIFO order (drain from front)
+                while !batch.is_empty() {
+                    let RigRequest { cmd, respond_to, .. } = batch.remove(0);
                     if matches!(cmd, RigCommand::GetSpectrum) {
                         let mut responders = vec![respond_to];
                         let mut idx = 0;

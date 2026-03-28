@@ -36,15 +36,17 @@ fn current_timestamp_ms() -> i64 {
 }
 
 fn decode_history_retention(context: &FrontendRuntimeContext) -> Duration {
-    let default_minutes = context.http_decode_history_retention_min.max(1);
+    let default_minutes = context.http_ui.decode_history_retention_min.max(1);
     let minutes = context
-        .remote_active_rig_id
+        .routing
+        .active_rig_id
         .lock()
         .ok()
         .and_then(|v| v.clone())
         .and_then(|rig_id| {
             context
-                .http_decode_history_retention_min_by_rig
+                .http_ui
+                .decode_history_retention_min_by_rig
                 .get(&rig_id)
                 .copied()
         })
@@ -111,7 +113,8 @@ fn prune_vdes_history(
 
 fn active_rig_id(context: &FrontendRuntimeContext) -> Option<String> {
     context
-        .remote_active_rig_id
+        .routing
+        .active_rig_id
         .lock()
         .ok()
         .and_then(|g| g.clone())
@@ -123,7 +126,7 @@ fn record_ais(context: &FrontendRuntimeContext, mut msg: AisMessage) {
     }
     let rig_id = msg.rig_id.clone().or_else(|| active_rig_id(context));
     let mut history = context
-        .ais_history
+        .decode_history.ais
         .lock()
         .expect("ais history mutex poisoned");
     history.push_back((Instant::now(), rig_id, msg));
@@ -136,7 +139,7 @@ fn record_vdes(context: &FrontendRuntimeContext, mut msg: VdesMessage) {
     }
     let rig_id = msg.rig_id.clone().or_else(|| active_rig_id(context));
     let mut history = context
-        .vdes_history
+        .decode_history.vdes
         .lock()
         .expect("vdes history mutex poisoned");
     history.push_back((Instant::now(), rig_id, msg));
@@ -214,7 +217,7 @@ fn record_aprs(context: &FrontendRuntimeContext, mut pkt: AprsPacket) {
     }
     let rig_id = pkt.rig_id.clone().or_else(|| active_rig_id(context));
     let mut history = context
-        .aprs_history
+        .decode_history.aprs
         .lock()
         .expect("aprs history mutex poisoned");
     history.push_back((Instant::now(), rig_id, pkt));
@@ -227,7 +230,7 @@ fn record_hf_aprs(context: &FrontendRuntimeContext, mut pkt: AprsPacket) {
     }
     let rig_id = pkt.rig_id.clone().or_else(|| active_rig_id(context));
     let mut history = context
-        .hf_aprs_history
+        .decode_history.hf_aprs
         .lock()
         .expect("hf_aprs history mutex poisoned");
     history.push_back((Instant::now(), rig_id, pkt));
@@ -237,7 +240,7 @@ fn record_hf_aprs(context: &FrontendRuntimeContext, mut pkt: AprsPacket) {
 fn record_cw(context: &FrontendRuntimeContext, event: CwEvent) {
     let rig_id = event.rig_id.clone().or_else(|| active_rig_id(context));
     let mut history = context
-        .cw_history
+        .decode_history.cw
         .lock()
         .expect("cw history mutex poisoned");
     history.push_back((Instant::now(), rig_id, event));
@@ -247,7 +250,7 @@ fn record_cw(context: &FrontendRuntimeContext, event: CwEvent) {
 fn record_ft8(context: &FrontendRuntimeContext, msg: Ft8Message) {
     let rig_id = msg.rig_id.clone().or_else(|| active_rig_id(context));
     let mut history = context
-        .ft8_history
+        .decode_history.ft8
         .lock()
         .expect("ft8 history mutex poisoned");
     history.push_back((Instant::now(), rig_id, msg));
@@ -257,7 +260,7 @@ fn record_ft8(context: &FrontendRuntimeContext, msg: Ft8Message) {
 fn record_ft4(context: &FrontendRuntimeContext, msg: Ft8Message) {
     let rig_id = msg.rig_id.clone().or_else(|| active_rig_id(context));
     let mut history = context
-        .ft4_history
+        .decode_history.ft4
         .lock()
         .expect("ft4 history mutex poisoned");
     history.push_back((Instant::now(), rig_id, msg));
@@ -267,7 +270,7 @@ fn record_ft4(context: &FrontendRuntimeContext, msg: Ft8Message) {
 fn record_ft2(context: &FrontendRuntimeContext, msg: Ft8Message) {
     let rig_id = msg.rig_id.clone().or_else(|| active_rig_id(context));
     let mut history = context
-        .ft2_history
+        .decode_history.ft2
         .lock()
         .expect("ft2 history mutex poisoned");
     history.push_back((Instant::now(), rig_id, msg));
@@ -277,7 +280,7 @@ fn record_ft2(context: &FrontendRuntimeContext, msg: Ft8Message) {
 fn record_wspr(context: &FrontendRuntimeContext, msg: WsprMessage) {
     let rig_id = msg.rig_id.clone().or_else(|| active_rig_id(context));
     let mut history = context
-        .wspr_history
+        .decode_history.wspr
         .lock()
         .expect("wspr history mutex poisoned");
     history.push_back((Instant::now(), rig_id, msg));
@@ -298,7 +301,7 @@ pub fn snapshot_aprs_history(
     rig_filter: Option<&str>,
 ) -> Vec<AprsPacket> {
     let mut history = context
-        .aprs_history
+        .decode_history.aprs
         .lock()
         .expect("aprs history mutex poisoned");
     prune_aprs_history(context, &mut history);
@@ -314,7 +317,7 @@ pub fn snapshot_hf_aprs_history(
     rig_filter: Option<&str>,
 ) -> Vec<AprsPacket> {
     let mut history = context
-        .hf_aprs_history
+        .decode_history.hf_aprs
         .lock()
         .expect("hf_aprs history mutex poisoned");
     prune_hf_aprs_history(context, &mut history);
@@ -337,7 +340,7 @@ pub fn snapshot_ais_history(
     rig_filter: Option<&str>,
 ) -> Vec<AisMessage> {
     let mut history = context
-        .ais_history
+        .decode_history.ais
         .lock()
         .expect("ais history mutex poisoned");
     prune_ais_history(context, &mut history);
@@ -359,7 +362,7 @@ pub fn snapshot_vdes_history(
     rig_filter: Option<&str>,
 ) -> Vec<VdesMessage> {
     let mut history = context
-        .vdes_history
+        .decode_history.vdes
         .lock()
         .expect("vdes history mutex poisoned");
     prune_vdes_history(context, &mut history);
@@ -375,7 +378,7 @@ pub fn snapshot_cw_history(
     rig_filter: Option<&str>,
 ) -> Vec<CwEvent> {
     let mut history = context
-        .cw_history
+        .decode_history.cw
         .lock()
         .expect("cw history mutex poisoned");
     prune_cw_history(context, &mut history);
@@ -391,7 +394,7 @@ pub fn snapshot_ft8_history(
     rig_filter: Option<&str>,
 ) -> Vec<Ft8Message> {
     let mut history = context
-        .ft8_history
+        .decode_history.ft8
         .lock()
         .expect("ft8 history mutex poisoned");
     prune_ft8_history(context, &mut history);
@@ -407,7 +410,7 @@ pub fn snapshot_ft4_history(
     rig_filter: Option<&str>,
 ) -> Vec<Ft8Message> {
     let mut history = context
-        .ft4_history
+        .decode_history.ft4
         .lock()
         .expect("ft4 history mutex poisoned");
     prune_ft4_history(context, &mut history);
@@ -423,7 +426,7 @@ pub fn snapshot_ft2_history(
     rig_filter: Option<&str>,
 ) -> Vec<Ft8Message> {
     let mut history = context
-        .ft2_history
+        .decode_history.ft2
         .lock()
         .expect("ft2 history mutex poisoned");
     prune_ft2_history(context, &mut history);
@@ -439,7 +442,7 @@ pub fn snapshot_wspr_history(
     rig_filter: Option<&str>,
 ) -> Vec<WsprMessage> {
     let mut history = context
-        .wspr_history
+        .decode_history.wspr
         .lock()
         .expect("wspr history mutex poisoned");
     prune_wspr_history(context, &mut history);
@@ -452,7 +455,7 @@ pub fn snapshot_wspr_history(
 
 pub fn clear_aprs_history(context: &FrontendRuntimeContext) {
     let mut history = context
-        .aprs_history
+        .decode_history.aprs
         .lock()
         .expect("aprs history mutex poisoned");
     history.clear();
@@ -460,7 +463,7 @@ pub fn clear_aprs_history(context: &FrontendRuntimeContext) {
 
 pub fn clear_hf_aprs_history(context: &FrontendRuntimeContext) {
     let mut history = context
-        .hf_aprs_history
+        .decode_history.hf_aprs
         .lock()
         .expect("hf_aprs history mutex poisoned");
     history.clear();
@@ -468,7 +471,7 @@ pub fn clear_hf_aprs_history(context: &FrontendRuntimeContext) {
 
 pub fn clear_ais_history(context: &FrontendRuntimeContext) {
     let mut history = context
-        .ais_history
+        .decode_history.ais
         .lock()
         .expect("ais history mutex poisoned");
     history.clear();
@@ -476,7 +479,7 @@ pub fn clear_ais_history(context: &FrontendRuntimeContext) {
 
 pub fn clear_vdes_history(context: &FrontendRuntimeContext) {
     let mut history = context
-        .vdes_history
+        .decode_history.vdes
         .lock()
         .expect("vdes history mutex poisoned");
     history.clear();
@@ -484,7 +487,7 @@ pub fn clear_vdes_history(context: &FrontendRuntimeContext) {
 
 pub fn clear_cw_history(context: &FrontendRuntimeContext) {
     let mut history = context
-        .cw_history
+        .decode_history.cw
         .lock()
         .expect("cw history mutex poisoned");
     history.clear();
@@ -492,7 +495,7 @@ pub fn clear_cw_history(context: &FrontendRuntimeContext) {
 
 pub fn clear_ft8_history(context: &FrontendRuntimeContext) {
     let mut history = context
-        .ft8_history
+        .decode_history.ft8
         .lock()
         .expect("ft8 history mutex poisoned");
     history.clear();
@@ -500,7 +503,7 @@ pub fn clear_ft8_history(context: &FrontendRuntimeContext) {
 
 pub fn clear_ft4_history(context: &FrontendRuntimeContext) {
     let mut history = context
-        .ft4_history
+        .decode_history.ft4
         .lock()
         .expect("ft4 history mutex poisoned");
     history.clear();
@@ -508,7 +511,7 @@ pub fn clear_ft4_history(context: &FrontendRuntimeContext) {
 
 pub fn clear_ft2_history(context: &FrontendRuntimeContext) {
     let mut history = context
-        .ft2_history
+        .decode_history.ft2
         .lock()
         .expect("ft2 history mutex poisoned");
     history.clear();
@@ -516,7 +519,7 @@ pub fn clear_ft2_history(context: &FrontendRuntimeContext) {
 
 pub fn clear_wspr_history(context: &FrontendRuntimeContext) {
     let mut history = context
-        .wspr_history
+        .decode_history.wspr
         .lock()
         .expect("wspr history mutex poisoned");
     history.clear();
@@ -525,7 +528,7 @@ pub fn clear_wspr_history(context: &FrontendRuntimeContext) {
 pub fn subscribe_decode(
     context: &FrontendRuntimeContext,
 ) -> Option<broadcast::Receiver<DecodedMessage>> {
-    context.decode_rx.as_ref().map(|tx| tx.subscribe())
+    context.audio.decode_rx.as_ref().map(|tx| tx.subscribe())
 }
 
 pub fn start_decode_history_collector(context: Arc<FrontendRuntimeContext>) {
@@ -536,7 +539,7 @@ pub fn start_decode_history_collector(context: Arc<FrontendRuntimeContext>) {
         return;
     }
 
-    let Some(tx) = context.decode_rx.as_ref().cloned() else {
+    let Some(tx) = context.audio.decode_rx.as_ref().cloned() else {
         return;
     };
 
@@ -576,7 +579,7 @@ pub async fn audio_ws(
     query: web::Query<AudioQuery>,
     context: web::Data<Arc<FrontendRuntimeContext>>,
 ) -> Result<HttpResponse, Error> {
-    let Some(tx_sender) = context.audio_tx.as_ref().cloned() else {
+    let Some(tx_sender) = context.audio.tx.as_ref().cloned() else {
         return Ok(HttpResponse::NotFound().body("audio not enabled"));
     };
 
@@ -596,14 +599,14 @@ pub async fn audio_ws(
         let info_rx = if let Some(ref remote) = query.remote {
             context.rig_audio_info_rx(remote)
         } else {
-            context.audio_info.as_ref().cloned()
+            context.audio.info.as_ref().cloned()
         };
         let Some(info_rx) = info_rx else {
             return Ok(HttpResponse::NotFound().body("audio not enabled"));
         };
         let deadline = Instant::now() + Duration::from_secs(2);
         let rx_sub = loop {
-            match context.vchan_audio.read() {
+            match context.vchan.audio.read() {
                 Ok(map) => {
                     if let Some(tx) = map.get(&ch_id) {
                         break tx.subscribe();
@@ -639,10 +642,10 @@ pub async fn audio_ws(
         };
         (rx_sub, info_rx)
     } else {
-        let Some(info_rx) = context.audio_info.as_ref().cloned() else {
+        let Some(info_rx) = context.audio.info.as_ref().cloned() else {
             return Ok(HttpResponse::NotFound().body("audio not enabled"));
         };
-        let Some(rx) = context.audio_rx.as_ref() else {
+        let Some(rx) = context.audio.rx.as_ref() else {
             return Ok(HttpResponse::NotFound().body("audio not enabled"));
         };
         (rx.subscribe(), info_rx)
@@ -651,7 +654,7 @@ pub async fn audio_ws(
 
     let (response, mut session, mut msg_stream) = actix_ws::handle(&req, body)?;
 
-    let audio_clients = context.audio_clients.clone();
+    let audio_clients = context.audio.clients.clone();
     audio_clients.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 
     actix_web::rt::spawn(async move {

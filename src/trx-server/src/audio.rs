@@ -54,6 +54,10 @@ const CW_HISTORY_RETENTION: Duration = Duration::from_secs(24 * 60 * 60);
 const FT8_HISTORY_RETENTION: Duration = Duration::from_secs(24 * 60 * 60);
 const WSPR_HISTORY_RETENTION: Duration = Duration::from_secs(24 * 60 * 60);
 const LRPT_HISTORY_RETENTION: Duration = Duration::from_secs(24 * 60 * 60);
+/// Maximum entries per decoder history queue.  Prevents unbounded memory growth
+/// on busy channels (e.g. AIS near a port).  Oldest entries are evicted when
+/// the limit is reached, independent of the time-based pruning.
+const MAX_HISTORY_ENTRIES: usize = 10_000;
 /// Silence timeout before auto-finalising an LRPT pass (30 s without new MCUs).
 const LRPT_PASS_SILENCE_TIMEOUT: Duration = Duration::from_secs(30);
 const FT8_SAMPLE_RATE: u32 = 12_000;
@@ -143,7 +147,7 @@ impl StreamErrorLogger {
     fn log(&self, err: &str) {
         let now = Instant::now();
         let kind = classify_stream_error(err);
-        let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
+        let mut state = lock_or_recover(&self.state, self.label);
 
         // First occurrence or changed error class: log as error once.
         if state.last_kind != Some(kind) {
@@ -218,6 +222,24 @@ pub struct DecoderHistories {
     total_count: AtomicUsize,
 }
 
+/// Acquire a mutex, recovering from poisoning with a warning log.
+fn lock_or_recover<T>(mutex: &Mutex<T>, label: &str) -> std::sync::MutexGuard<'_, T> {
+    mutex.unwrap_or_else(|e| {
+        tracing::warn!(
+            "Mutex for {} was poisoned (prior panic); recovering with potentially inconsistent data",
+            label
+        );
+        e.into_inner()
+    })
+}
+
+/// Enforce capacity limit on a history deque by evicting oldest entries.
+fn enforce_capacity<T>(deque: &mut VecDeque<T>, max: usize) {
+    while deque.len() > max {
+        deque.pop_front();
+    }
+}
+
 impl DecoderHistories {
     pub fn new() -> Arc<Self> {
         Arc::new(Self {
@@ -279,15 +301,16 @@ impl DecoderHistories {
         if msg.ts_ms.is_none() {
             msg.ts_ms = Some(current_timestamp_ms());
         }
-        let mut h = self.ais.lock().unwrap_or_else(|e| e.into_inner());
+        let mut h = lock_or_recover(&self.ais, "ais_history");
         let before = h.len();
         h.push_back((Instant::now(), msg));
         Self::prune_ais(&mut h);
+        enforce_capacity(&mut h, MAX_HISTORY_ENTRIES);
         self.adjust_total_count(before, h.len());
     }
 
     pub fn snapshot_ais_history(&self) -> Vec<AisMessage> {
-        let mut h = self.ais.lock().unwrap_or_else(|e| e.into_inner());
+        let mut h = lock_or_recover(&self.ais, "ais_history");
         let before = h.len();
         Self::prune_ais(&mut h);
         self.adjust_total_count(before, h.len());
@@ -311,15 +334,16 @@ impl DecoderHistories {
         if msg.ts_ms.is_none() {
             msg.ts_ms = Some(current_timestamp_ms());
         }
-        let mut h = self.vdes.lock().unwrap_or_else(|e| e.into_inner());
+        let mut h = lock_or_recover(&self.vdes, "vdes_history");
         let before = h.len();
         h.push_back((Instant::now(), msg));
         Self::prune_vdes(&mut h);
+        enforce_capacity(&mut h, MAX_HISTORY_ENTRIES);
         self.adjust_total_count(before, h.len());
     }
 
     pub fn snapshot_vdes_history(&self) -> Vec<VdesMessage> {
-        let mut h = self.vdes.lock().unwrap_or_else(|e| e.into_inner());
+        let mut h = lock_or_recover(&self.vdes, "vdes_history");
         let before = h.len();
         Self::prune_vdes(&mut h);
         self.adjust_total_count(before, h.len());
@@ -346,15 +370,16 @@ impl DecoderHistories {
         if pkt.ts_ms.is_none() {
             pkt.ts_ms = Some(current_timestamp_ms());
         }
-        let mut h = self.aprs.lock().unwrap_or_else(|e| e.into_inner());
+        let mut h = lock_or_recover(&self.aprs, "aprs_history");
         let before = h.len();
         h.push_back((Instant::now(), pkt));
         Self::prune_aprs(&mut h);
+        enforce_capacity(&mut h, MAX_HISTORY_ENTRIES);
         self.adjust_total_count(before, h.len());
     }
 
     pub fn snapshot_aprs_history(&self) -> Vec<AprsPacket> {
-        let mut h = self.aprs.lock().unwrap_or_else(|e| e.into_inner());
+        let mut h = lock_or_recover(&self.aprs, "aprs_history");
         let before = h.len();
         Self::prune_aprs(&mut h);
         self.adjust_total_count(before, h.len());
@@ -362,7 +387,7 @@ impl DecoderHistories {
     }
 
     pub fn clear_aprs_history(&self) {
-        let mut h = self.aprs.lock().unwrap_or_else(|e| e.into_inner());
+        let mut h = lock_or_recover(&self.aprs, "aprs_history");
         let before = h.len();
         h.clear();
         self.adjust_total_count(before, 0);
@@ -388,15 +413,16 @@ impl DecoderHistories {
         if pkt.ts_ms.is_none() {
             pkt.ts_ms = Some(current_timestamp_ms());
         }
-        let mut h = self.hf_aprs.lock().unwrap_or_else(|e| e.into_inner());
+        let mut h = lock_or_recover(&self.hf_aprs, "hf_aprs_history");
         let before = h.len();
         h.push_back((Instant::now(), pkt));
         Self::prune_hf_aprs(&mut h);
+        enforce_capacity(&mut h, MAX_HISTORY_ENTRIES);
         self.adjust_total_count(before, h.len());
     }
 
     pub fn snapshot_hf_aprs_history(&self) -> Vec<AprsPacket> {
-        let mut h = self.hf_aprs.lock().unwrap_or_else(|e| e.into_inner());
+        let mut h = lock_or_recover(&self.hf_aprs, "hf_aprs_history");
         let before = h.len();
         Self::prune_hf_aprs(&mut h);
         self.adjust_total_count(before, h.len());
@@ -404,7 +430,7 @@ impl DecoderHistories {
     }
 
     pub fn clear_hf_aprs_history(&self) {
-        let mut h = self.hf_aprs.lock().unwrap_or_else(|e| e.into_inner());
+        let mut h = lock_or_recover(&self.hf_aprs, "hf_aprs_history");
         let before = h.len();
         h.clear();
         self.adjust_total_count(before, 0);
@@ -424,15 +450,16 @@ impl DecoderHistories {
     }
 
     pub fn record_cw_event(&self, evt: CwEvent) {
-        let mut h = self.cw.lock().unwrap_or_else(|e| e.into_inner());
+        let mut h = lock_or_recover(&self.cw, "cw_history");
         let before = h.len();
         h.push_back((Instant::now(), evt));
         Self::prune_cw(&mut h);
+        enforce_capacity(&mut h, MAX_HISTORY_ENTRIES);
         self.adjust_total_count(before, h.len());
     }
 
     pub fn snapshot_cw_history(&self) -> Vec<CwEvent> {
-        let mut h = self.cw.lock().unwrap_or_else(|e| e.into_inner());
+        let mut h = lock_or_recover(&self.cw, "cw_history");
         let before = h.len();
         Self::prune_cw(&mut h);
         self.adjust_total_count(before, h.len());
@@ -440,7 +467,7 @@ impl DecoderHistories {
     }
 
     pub fn clear_cw_history(&self) {
-        let mut h = self.cw.lock().unwrap_or_else(|e| e.into_inner());
+        let mut h = lock_or_recover(&self.cw, "cw_history");
         let before = h.len();
         h.clear();
         self.adjust_total_count(before, 0);
@@ -460,15 +487,16 @@ impl DecoderHistories {
     }
 
     pub fn record_ft8_message(&self, msg: Ft8Message) {
-        let mut h = self.ft8.lock().unwrap_or_else(|e| e.into_inner());
+        let mut h = lock_or_recover(&self.ft8, "ft8_history");
         let before = h.len();
         h.push_back((Instant::now(), msg));
         Self::prune_ft8(&mut h);
+        enforce_capacity(&mut h, MAX_HISTORY_ENTRIES);
         self.adjust_total_count(before, h.len());
     }
 
     pub fn snapshot_ft8_history(&self) -> Vec<Ft8Message> {
-        let mut h = self.ft8.lock().unwrap_or_else(|e| e.into_inner());
+        let mut h = lock_or_recover(&self.ft8, "ft8_history");
         let before = h.len();
         Self::prune_ft8(&mut h);
         self.adjust_total_count(before, h.len());
@@ -476,7 +504,7 @@ impl DecoderHistories {
     }
 
     pub fn clear_ft8_history(&self) {
-        let mut h = self.ft8.lock().unwrap_or_else(|e| e.into_inner());
+        let mut h = lock_or_recover(&self.ft8, "ft8_history");
         let before = h.len();
         h.clear();
         self.adjust_total_count(before, 0);
@@ -496,15 +524,16 @@ impl DecoderHistories {
     }
 
     pub fn record_ft4_message(&self, msg: Ft8Message) {
-        let mut h = self.ft4.lock().unwrap_or_else(|e| e.into_inner());
+        let mut h = lock_or_recover(&self.ft4, "ft4_history");
         let before = h.len();
         h.push_back((Instant::now(), msg));
         Self::prune_ft4(&mut h);
+        enforce_capacity(&mut h, MAX_HISTORY_ENTRIES);
         self.adjust_total_count(before, h.len());
     }
 
     pub fn snapshot_ft4_history(&self) -> Vec<Ft8Message> {
-        let mut h = self.ft4.lock().unwrap_or_else(|e| e.into_inner());
+        let mut h = lock_or_recover(&self.ft4, "ft4_history");
         let before = h.len();
         Self::prune_ft4(&mut h);
         self.adjust_total_count(before, h.len());
@@ -512,7 +541,7 @@ impl DecoderHistories {
     }
 
     pub fn clear_ft4_history(&self) {
-        let mut h = self.ft4.lock().unwrap_or_else(|e| e.into_inner());
+        let mut h = lock_or_recover(&self.ft4, "ft4_history");
         let before = h.len();
         h.clear();
         self.adjust_total_count(before, 0);
@@ -532,15 +561,16 @@ impl DecoderHistories {
     }
 
     pub fn record_ft2_message(&self, msg: Ft8Message) {
-        let mut h = self.ft2.lock().unwrap_or_else(|e| e.into_inner());
+        let mut h = lock_or_recover(&self.ft2, "ft2_history");
         let before = h.len();
         h.push_back((Instant::now(), msg));
         Self::prune_ft2(&mut h);
+        enforce_capacity(&mut h, MAX_HISTORY_ENTRIES);
         self.adjust_total_count(before, h.len());
     }
 
     pub fn snapshot_ft2_history(&self) -> Vec<Ft8Message> {
-        let mut h = self.ft2.lock().unwrap_or_else(|e| e.into_inner());
+        let mut h = lock_or_recover(&self.ft2, "ft2_history");
         let before = h.len();
         Self::prune_ft2(&mut h);
         self.adjust_total_count(before, h.len());
@@ -548,7 +578,7 @@ impl DecoderHistories {
     }
 
     pub fn clear_ft2_history(&self) {
-        let mut h = self.ft2.lock().unwrap_or_else(|e| e.into_inner());
+        let mut h = lock_or_recover(&self.ft2, "ft2_history");
         let before = h.len();
         h.clear();
         self.adjust_total_count(before, 0);
@@ -568,15 +598,16 @@ impl DecoderHistories {
     }
 
     pub fn record_wspr_message(&self, msg: WsprMessage) {
-        let mut h = self.wspr.lock().unwrap_or_else(|e| e.into_inner());
+        let mut h = lock_or_recover(&self.wspr, "wspr_history");
         let before = h.len();
         h.push_back((Instant::now(), msg));
         Self::prune_wspr(&mut h);
+        enforce_capacity(&mut h, MAX_HISTORY_ENTRIES);
         self.adjust_total_count(before, h.len());
     }
 
     pub fn snapshot_wspr_history(&self) -> Vec<WsprMessage> {
-        let mut h = self.wspr.lock().unwrap_or_else(|e| e.into_inner());
+        let mut h = lock_or_recover(&self.wspr, "wspr_history");
         let before = h.len();
         Self::prune_wspr(&mut h);
         self.adjust_total_count(before, h.len());
@@ -584,7 +615,7 @@ impl DecoderHistories {
     }
 
     pub fn clear_wspr_history(&self) {
-        let mut h = self.wspr.lock().unwrap_or_else(|e| e.into_inner());
+        let mut h = lock_or_recover(&self.wspr, "wspr_history");
         let before = h.len();
         h.clear();
         self.adjust_total_count(before, 0);
@@ -607,15 +638,16 @@ impl DecoderHistories {
         if img.ts_ms.is_none() {
             img.ts_ms = Some(current_timestamp_ms());
         }
-        let mut h = self.lrpt.lock().unwrap_or_else(|e| e.into_inner());
+        let mut h = lock_or_recover(&self.lrpt, "lrpt_history");
         let before = h.len();
         h.push_back((Instant::now(), img));
         Self::prune_lrpt(&mut h);
+        enforce_capacity(&mut h, MAX_HISTORY_ENTRIES);
         self.adjust_total_count(before, h.len());
     }
 
     pub fn snapshot_lrpt_history(&self) -> Vec<LrptImage> {
-        let mut h = self.lrpt.lock().unwrap_or_else(|e| e.into_inner());
+        let mut h = lock_or_recover(&self.lrpt, "lrpt_history");
         let before = h.len();
         Self::prune_lrpt(&mut h);
         self.adjust_total_count(before, h.len());
@@ -623,7 +655,7 @@ impl DecoderHistories {
     }
 
     pub fn clear_lrpt_history(&self) {
-        let mut h = self.lrpt.lock().unwrap_or_else(|e| e.into_inner());
+        let mut h = lock_or_recover(&self.lrpt, "lrpt_history");
         let before = h.len();
         h.clear();
         self.adjust_total_count(before, 0);
@@ -672,6 +704,74 @@ pub fn spawn_audio_capture(
     })
 }
 
+/// Map a channel count to an `opus::Channels` value.
+fn opus_channels(channels: u16) -> Result<opus::Channels, Box<dyn std::error::Error>> {
+    match channels {
+        1 => Ok(opus::Channels::Mono),
+        2 => Ok(opus::Channels::Stereo),
+        _ => Err(format!("unsupported channel count: {}", channels).into()),
+    }
+}
+
+/// Look up an audio device by name (or fall back to the default device).
+///
+/// When `is_input` is true the function searches input devices and falls back
+/// to the default input device; otherwise it uses output devices.  Returns
+/// `None` when the device cannot be found (the caller should retry after a
+/// delay).
+fn find_device(
+    host: &cpal::Host,
+    device_name: &Option<String>,
+    is_input: bool,
+) -> Option<cpal::Device> {
+    use cpal::traits::{DeviceTrait, HostTrait};
+
+    let direction = if is_input { "capture" } else { "playback" };
+
+    if let Some(ref name) = device_name {
+        let devices_result = if is_input {
+            host.input_devices()
+        } else {
+            host.output_devices()
+        };
+        match devices_result {
+            Ok(mut devs) => {
+                match devs.find(|d| d.name().map(|n| n == *name).unwrap_or(false)) {
+                    Some(d) => Some(d),
+                    None => {
+                        warn!("Audio {}: device '{}' not found, retrying", direction, name);
+                        None
+                    }
+                }
+            }
+            Err(e) => {
+                warn!(
+                    "Audio {}: failed to enumerate devices, retrying: {}",
+                    direction, e
+                );
+                None
+            }
+        }
+    } else {
+        let default = if is_input {
+            host.default_input_device()
+        } else {
+            host.default_output_device()
+        };
+        match default {
+            Some(d) => Some(d),
+            None => {
+                warn!(
+                    "Audio {}: no default {} device, retrying",
+                    direction,
+                    if is_input { "input" } else { "output" }
+                );
+                None
+            }
+        }
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 fn run_capture(
     sample_rate: u32,
@@ -683,7 +783,7 @@ fn run_capture(
     pcm_tx: Option<broadcast::Sender<Vec<f32>>>,
     shutdown_rx: watch::Receiver<bool>,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
+    use cpal::traits::{DeviceTrait, StreamTrait};
     use std::sync::mpsc::{RecvTimeoutError, TryRecvError as StdTryRecvError};
 
     let config = cpal::StreamConfig {
@@ -695,13 +795,9 @@ fn run_capture(
     let frame_samples =
         (sample_rate as usize * frame_duration_ms as usize / 1000) * channels as usize;
 
-    let opus_channels = match channels {
-        1 => opus::Channels::Mono,
-        2 => opus::Channels::Stereo,
-        _ => return Err(format!("unsupported channel count: {}", channels).into()),
-    };
+    let opus_ch = opus_channels(channels)?;
 
-    let mut encoder = opus::Encoder::new(sample_rate, opus_channels, opus::Application::Audio)?;
+    let mut encoder = opus::Encoder::new(sample_rate, opus_ch, opus::Application::Audio)?;
     encoder.set_bitrate(opus::Bitrate::Bits(bitrate_bps as i32))?;
     encoder.set_complexity(5)?;
 
@@ -725,35 +821,11 @@ fn run_capture(
         // Re-enumerate the device on every recovery cycle: after POLLERR the
         // existing device handle can be stale (especially for USB audio).
         let host = cpal::default_host();
-        let device = if let Some(ref name) = device_name {
-            match host.input_devices() {
-                Ok(mut devs) => {
-                    match devs.find(|d| d.name().map(|n| n == *name).unwrap_or(false)) {
-                        Some(d) => d,
-                        None => {
-                            warn!("Audio capture: device '{}' not found, retrying", name);
-                            std::thread::sleep(AUDIO_STREAM_RECOVERY_DELAY);
-                            continue;
-                        }
-                    }
-                }
-                Err(e) => {
-                    warn!(
-                        "Audio capture: failed to enumerate devices, retrying: {}",
-                        e
-                    );
-                    std::thread::sleep(AUDIO_STREAM_RECOVERY_DELAY);
-                    continue;
-                }
-            }
-        } else {
-            match host.default_input_device() {
-                Some(d) => d,
-                None => {
-                    warn!("Audio capture: no default input device, retrying");
-                    std::thread::sleep(AUDIO_STREAM_RECOVERY_DELAY);
-                    continue;
-                }
+        let device = match find_device(&host, &device_name, true) {
+            Some(d) => d,
+            None => {
+                std::thread::sleep(AUDIO_STREAM_RECOVERY_DELAY);
+                continue;
             }
         };
         info!(
@@ -922,13 +994,9 @@ fn run_playback(
     let frame_samples =
         (sample_rate as usize * frame_duration_ms as usize / 1000) * channels as usize;
 
-    let opus_channels = match channels {
-        1 => opus::Channels::Mono,
-        2 => opus::Channels::Stereo,
-        _ => return Err(format!("unsupported channel count: {}", channels).into()),
-    };
+    let opus_ch = opus_channels(channels)?;
 
-    let mut decoder = opus::Decoder::new(sample_rate, opus_channels)?;
+    let mut decoder = opus::Decoder::new(sample_rate, opus_ch)?;
 
     let ring = std::sync::Arc::new(std::sync::Mutex::new(
         std::collections::VecDeque::<f32>::with_capacity(frame_samples * 8),
@@ -952,35 +1020,11 @@ fn run_playback(
         // Re-enumerate the device on every recovery cycle: after POLLERR the
         // existing device handle can be stale (especially for USB audio).
         let host = cpal::default_host();
-        let device = if let Some(ref name) = device_name {
-            match host.output_devices() {
-                Ok(mut devs) => {
-                    match devs.find(|d| d.name().map(|n| n == *name).unwrap_or(false)) {
-                        Some(d) => d,
-                        None => {
-                            warn!("Audio playback: device '{}' not found, retrying", name);
-                            std::thread::sleep(AUDIO_STREAM_RECOVERY_DELAY);
-                            continue;
-                        }
-                    }
-                }
-                Err(e) => {
-                    warn!(
-                        "Audio playback: failed to enumerate devices, retrying: {}",
-                        e
-                    );
-                    std::thread::sleep(AUDIO_STREAM_RECOVERY_DELAY);
-                    continue;
-                }
-            }
-        } else {
-            match host.default_output_device() {
-                Some(d) => d,
-                None => {
-                    warn!("Audio playback: no default output device, retrying");
-                    std::thread::sleep(AUDIO_STREAM_RECOVERY_DELAY);
-                    continue;
-                }
+        let device = match find_device(&host, &device_name, false) {
+            Some(d) => d,
+            None => {
+                std::thread::sleep(AUDIO_STREAM_RECOVERY_DELAY);
+                continue;
             }
         };
         info!(

@@ -300,10 +300,10 @@ pub trait RetryPolicy: Send {
 }
 
 pub struct ExponentialBackoff {
-    initial_delay: Duration,
+    max_attempts: u32,
+    base_delay: Duration,
     max_delay: Duration,
-    multiplier: f64,
-    current_delay: Duration,
+    // Delays include ±25% randomized jitter to prevent thundering herd
 }
 
 pub trait PollingPolicy: Send {
@@ -516,7 +516,7 @@ impl RegistrationContext {
 Built-in registrations (via `register_builtin_backends_on`):
 - `"ft817"` → `Ft817::new`
 - `"ft450d"` → `Ft450d::new`
-- `"soapysdr"` → `SoapySdrRig::new_with_config` (if `soapysdr` feature enabled)
+- `"soapysdr"` → `SoapySdrRig::new_from_config(SoapySdrConfig { ... })` (if `soapysdr` feature enabled)
 
 ### RigCat Trait (from trx-core)
 
@@ -1012,13 +1012,14 @@ stream decoder messages    HTTP WebSocket / local speakers
 
 The rig task is the heart of the server. Key implementation details:
 
-- **Command batching**: Accumulates pending requests before processing sequentially. Uses `batch.pop()` (LIFO order, not FIFO).
+- **Command batching**: Accumulates pending requests before processing sequentially in FIFO order.
 - **Spectrum deduplication**: Concurrent `GetSpectrum` requests are collapsed — one DSP computation broadcasts to all waiting responders.
 - **Adaptive polling**: Poll interval adjusts based on TX state (100ms during TX, 500ms idle).
 - **Grace period**: 800ms pause on polling after power-on/off operations to let hardware settle.
 - **VFO priming**: Optional initialization sequence that toggles VFO A/B to populate the state cache.
 - **Per-rig decoder histories**: Each rig maintains independent `Arc<DecoderHistories>` for all 11 decoder types.
-- **Timeout enforcement**: Commands have `COMMAND_EXEC_TIMEOUT` (10s), polling has `POLL_REFRESH_TIMEOUT` (8s).
+- **Configurable timeouts**: `command_exec_timeout` (default 10s) and `poll_refresh_timeout` (default 8s) are configurable via `RigTaskConfig` and the TOML `[timeouts]` section.
+- **Crash recovery**: Rig tasks are monitored; on crash, an `Error` state is broadcast to clients via the watch channel so they see the failure instead of silent timeout.
 
 ### Audio Pipeline (`audio.rs` — 3,977 lines)
 
@@ -1026,9 +1027,11 @@ The audio module handles decoder history storage and stream management:
 
 - **`DecoderHistories`**: Per-rig mutable store for 11 decoder history queues (AIS, VDES, APRS, HF_APRS, CW, FT8, FT4, FT2, WSPR, WXSAT, LRPT).
 - **Time-based retention**: 24h TTL on all history with periodic pruning.
+- **Capacity bounds**: Per-decoder max of 10,000 entries (`MAX_HISTORY_ENTRIES`) prevents unbounded memory growth on busy channels.
 - **Atomic total count**: `AtomicUsize` with CAS loop avoids acquiring 11 mutex locks in `snapshot_all()`.
-- **Lock poisoning tolerance**: Uses `.unwrap_or_else(|e| e.into_inner())` to survive poisoned mutexes.
+- **Lock poisoning recovery with logging**: Uses `lock_or_recover()` helper that logs a warning when recovering from a poisoned mutex.
 - **`StreamErrorLogger`**: Suppresses duplicate stream errors with 60s periodic summaries and error classification (alsa_poll_failure, input/output_stream_error).
+- **Device enumeration helpers**: `find_input_device()` and `find_output_device()` extract the repeated device lookup logic from `run_capture()`/`run_playback()`.
 - **CRC filtering**: APRS records filtered by `crc_ok` before storage.
 
 ### Remote Client Dual-Connection Model
@@ -1040,21 +1043,21 @@ The audio module handles decoder history storage and stream management:
 
 Constants: `CONNECT_TIMEOUT: 5s`, `IO_TIMEOUT: 15s`, `SPECTRUM_IO_TIMEOUT: 3s`. Exponential backoff with jitter on reconnect.
 
-### FrontendRuntimeContext Field Groups (~50 fields)
+### FrontendRuntimeContext Sub-Structs
 
-The `FrontendRuntimeContext` struct in `trx-frontend/src/lib.rs` organizes into logical groups:
+The `FrontendRuntimeContext` struct in `trx-frontend/src/lib.rs` is decomposed into coherent sub-structs:
 
-| Group | Fields | Examples |
-|-------|--------|---------|
-| Audio/decode channels | 13 | `audio_rx`, `decode_rx`, `ais_history`, `ft8_history` |
-| Client tracking | 4 | `sse_clients`, `rigctl_clients`, `audio_clients` |
-| Connection state | 4 | `server_connected`, `rig_server_connected` |
-| HTTP auth config | 7 | `http_auth_enabled`, `http_auth_session_ttl_secs` |
-| HTTP UI config | 6 | `http_initial_map_zoom`, `http_spectrum_usable_span_ratio` |
-| Remote rig management | 4 | `remote_active_rig_id`, `remote_rigs`, `rig_states` |
-| Owner/branding | 4 | `owner_callsign`, `owner_website_url`, `ais_vessel_url_base` |
-| Spectrum & per-rig audio | 4 | `spectrum`, `rig_audio_rx`, `rig_audio_info` |
-| Virtual channel audio | 4 | `rig_vchan_audio_cmd`, `vchan_audio`, `vchan_destroyed` |
+| Sub-struct | Purpose | Key fields |
+|-----------|---------|------------|
+| `AudioContext` | Audio streaming channels | `rx`, `tx`, `info`, `decode_rx`, `clients` |
+| `DecodeHistoryContext` | Decode history for all types | `ais`, `vdes`, `aprs`, `hf_aprs`, `cw`, `ft8`, `ft4`, `ft2`, `wspr` |
+| `HttpAuthConfig` | HTTP auth settings | `enabled`, `rx_passphrase`, `session_ttl_secs`, `tokens` |
+| `HttpUiConfig` | HTTP UI display config | `show_sdr_gain_control`, `initial_map_zoom`, `spectrum_*` |
+| `RigRoutingContext` | Remote rig state & routing | `active_rig_id`, `remote_rigs`, `rig_states`, `server_connected` |
+| `OwnerInfo` | Station metadata | `callsign`, `website_url`, `ais_vessel_url_base` |
+| `VChanContext` | Virtual channel audio | `audio`, `audio_cmd`, `destroyed`, `rig_audio_cmd` |
+| `SpectrumContext` | Spectrum data | `sender`, `per_rig` |
+| `PerRigAudioContext` | Per-rig audio channels | `rx`, `info` |
 
 ### Decoder Implementation Patterns
 
