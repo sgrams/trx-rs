@@ -2,22 +2,18 @@
 //
 // SPDX-License-Identifier: BSD-2-Clause
 
-//! APT image assembly and JPEG encoding.
+//! APT image assembly.
 //!
 //! Standard output layout: channel A (visible / IR-A) on the left half and
 //! channel B (IR-B / IR) on the right half, stacked vertically by line number.
 
-use std::io::Cursor;
-
-use image::{DynamicImage, GrayImage};
-
 use super::apt::{RawLine, IMAGE_A_LEN, IMAGE_B_LEN};
 
-/// Assemble decoded lines into a JPEG image.
+/// Assemble decoded APT lines into a PNG image.
 ///
-/// Returns the JPEG bytes, or `None` if `lines` is empty or encoding fails.
+/// Returns the PNG bytes, or `None` if `lines` is empty or encoding fails.
 /// Width = `IMAGE_A_LEN + IMAGE_B_LEN` (1818 px), height = number of lines.
-pub fn encode_jpeg(lines: &[RawLine], quality: u8) -> Option<Vec<u8>> {
+pub fn encode_png(lines: &[RawLine]) -> Option<Vec<u8>> {
     if lines.is_empty() {
         return None;
     }
@@ -31,13 +27,5 @@ pub fn encode_jpeg(lines: &[RawLine], quality: u8) -> Option<Vec<u8>> {
         pixels.extend_from_slice(line.pixels_b.as_ref());
     }
 
-    let gray = GrayImage::from_raw(width, height, pixels)?;
-    let dynamic = DynamicImage::ImageLuma8(gray);
-
-    let mut cursor = Cursor::new(Vec::new());
-    dynamic
-        .write_to(&mut cursor, image::ImageOutputFormat::Jpeg(quality))
-        .ok()?;
-
-    Some(cursor.into_inner())
+    crate::image_enc::encode_grayscale_png(width, height, pixels)
 }
