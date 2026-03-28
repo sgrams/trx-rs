@@ -794,9 +794,6 @@ fn spawn_rig_audio_stack(
             }
         }));
 
-        // Start periodic TLE refresh from CelesTrak (on start + once/day).
-        trx_core::geo::spawn_tle_refresh_task();
-
         // Spawn weather satellite APT decoder task
         let wxsat_pcm_rx = pcm_tx.subscribe();
         let wxsat_state_rx = state_rx.clone();
@@ -1144,6 +1141,11 @@ async fn main() -> DynResult<()> {
 
     // Spawn periodic flush of decode history to disk (every 60 s).
     history_store::spawn_flush_task(history_db, rig_histories_for_flush);
+
+    // Start periodic TLE refresh from CelesTrak (on start + once/day).
+    // Called once globally rather than per-rig to avoid redundant HTTP fetches
+    // and write-lock contention on the TLE store.
+    trx_core::geo::spawn_tle_refresh_task();
 
     // Start JSON TCP listener.
     if cfg.listen.enabled {
