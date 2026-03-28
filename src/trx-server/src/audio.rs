@@ -2467,12 +2467,10 @@ pub async fn run_wxsat_decoder(
     let mut decoder = AptDecoder::new(sample_rate);
     let mut last_reset_seq: u64 = 0;
     let mut active = state_rx.borrow().wxsat_decode_enabled;
-    let mut pass_start_ms: i64 = 0;
     // Instant of the last time new lines were decoded (for auto-finalise)
     let mut last_line_at = tokio::time::Instant::now();
 
     if active {
-        pass_start_ms = current_timestamp_ms();
         pcm_rx = pcm_rx.resubscribe();
     }
 
@@ -2484,7 +2482,6 @@ pub async fn run_wxsat_decoder(
                     active = state.wxsat_decode_enabled;
                     if active {
                         decoder.reset();
-                        pass_start_ms = current_timestamp_ms();
                         last_line_at = tokio::time::Instant::now();
                         pcm_rx = pcm_rx.resubscribe();
                     }
@@ -2537,7 +2534,6 @@ pub async fn run_wxsat_decoder(
                         if new_reset_seq != last_reset_seq {
                             last_reset_seq = new_reset_seq;
                             decoder.reset();
-                            pass_start_ms = current_timestamp_ms();
                         }
                         if was_active && !active {
                             // User disabled — finalise whatever we have
@@ -2556,7 +2552,6 @@ pub async fn run_wxsat_decoder(
                             .await;
                         } else if !was_active && active {
                             decoder.reset();
-                            pass_start_ms = current_timestamp_ms();
                             last_line_at = tokio::time::Instant::now();
                             pcm_rx = pcm_rx.resubscribe();
                         }
@@ -2585,7 +2580,6 @@ pub async fn run_wxsat_decoder(
                 )
                 .await;
                 // Remain active; ready for the next pass
-                pass_start_ms = current_timestamp_ms();
                 last_line_at = tokio::time::Instant::now();
             }
         }
