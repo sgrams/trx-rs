@@ -104,27 +104,44 @@ Types: `feat`, `fix`, `docs`, `style`, `refactor`, `test`, `chore`. Use `(trx-rs
 
 ## Codebase Review Observations
 
-Full architecture documentation: `docs/architecture.md`
-Improvement plan: `docs/improvement-plan.md`
+Full architecture documentation: `docs/Architecture.md`
+Improvement plan: `docs/Improvement-Areas.md`
+
+*Last reviewed: 2026-03-28*
 
 ### Strengths
 
-- **Explicit state machine**: `RigMachineState` FSM prevents invalid states with a deterministic transition table and exhaustive matching. Well-tested with lifecycle, error recovery, and invalid transition tests.
-- **Trait-based polymorphism**: Clean abstraction boundaries (`RigCat`, `RigSdr`, `AudioSource`, `RigListener`, `RigCommandHandler`, `CommandExecutor`, `TokenValidator`, `FrontendSpawner`) enable loose coupling and testability.
-- **Multi-rig architecture**: Per-rig task isolation with `HashMap<rig_id, RigHandle>` routing, per-rig state/spectrum/audio watch channels, and backward-compatible single-rig mode.
-- **Async concurrency model**: Proper use of tokio channels -- `watch` for state snapshots, `broadcast` for PCM/decode fan-out, `mpsc` for commands. No mutex contention on hot paths.
-- **Comprehensive SDR support**: Full DSP pipeline with multi-mode demodulation (SSB, AM, SAM, FM, WFM, AIS, VDES), virtual channel management, squelch, noise blanker, spectrum FFT, RDS decoding.
-- **Pure Rust decoders**: FT8/FT4/FT2, APRS, CW, WSPR, AIS, VDES, RDS -- all implemented without C FFI dependencies.
-- **Good test coverage** in protocol layer: codec, mapping, auth all have thorough unit tests with round-trip verification.
-- **Feature-gated backends**: ft817, ft450d, soapysdr compiled conditionally to minimize binary size.
+- **Explicit state machine**: `RigMachineState` FSM (7 states) prevents invalid states with a deterministic transition table and exhaustive matching. Well-tested with lifecycle, error recovery, and invalid transition tests. `ReadyStateData`/`TransmittingStateData` use `pub(crate)` fields with controlled accessors.
+- **Trait-based polymorphism**: Clean abstraction boundaries (`RigCat`, `RigSdr`, `AudioSource`, `RigListener`, `RigCommandHandler`, `CommandExecutor`, `TokenValidator`, `FrontendSpawner`) enable loose coupling and testability. `RigCat`/`RigSdr` split cleanly separates CAT ops from SDR-specific methods.
+- **Multi-rig architecture**: Per-rig task isolation with `HashMap<rig_id, RigHandle>` routing, per-rig state/spectrum/audio/decoder-history channels, dual-connection model (main + spectrum) in the client, and backward-compatible single-rig mode.
+- **Async concurrency model**: Proper use of tokio channels -- `watch` for state snapshots, `broadcast` for PCM/decode fan-out, `mpsc` for commands. No mutex contention on hot paths. Spectrum deduplication collapses concurrent GetSpectrum requests.
+- **Comprehensive SDR support**: Full DSP pipeline with multi-mode demodulation (SSB, AM, SAM, FM, WFM, AIS, VDES), virtual channel management, squelch, noise blanker, spectrum FFT, RDS decoding. AVX2-optimized FM discriminator with scalar fallbacks.
+- **Pure Rust decoders**: FT8/FT4/FT2, APRS, CW, WSPR, AIS, VDES, RDS -- all implemented without C FFI dependencies. Consistent decoder pattern: stateful struct → `process_block()` → `decode_if_ready()`.
+- **Good test coverage** in protocol layer: codec, mapping, auth all have thorough unit tests with round-trip verification. 45+ mapping tests cover all command variants.
+- **Feature-gated backends**: ft817, ft450d, soapysdr compiled conditionally to minimize binary size. Factory pattern with name normalization for registration.
+- **Defensive error handling**: Lock poisoning recovery, stream error deduplication with 60s summaries, input truncation in logs (128 chars), per-IP rate limiting on auth endpoints.
+- **Well-documented DSP guidelines**: `docs/Optimization-Guidelines.md` captures lessons on NCO design, polyphase resampling, AVX2 batching, and stereo FM decoding.
 
 ### Areas for Improvement
 
-- **FrontendRuntimeContext** (`trx-frontend/src/lib.rs`) is a 60+ field god-struct mixing audio, decode, auth, UI config, and per-rig routing. Should be decomposed into sub-structs.
-- **Dual command enums**: `ClientCommand` and `RigCommand` are near-identical 40+ variant enums with mechanical 1:1 mapping in `mapping.rs`. Adding a command requires 4-file changes.
-- **Command handler boilerplate**: 11 implementations of `RigCommandHandler` follow identical patterns across 500+ lines. A macro could reduce this to ~100 lines.
-- **No integration tests** for `rig_task.rs` (1050 lines) or `audio.rs` (850+ lines) -- the most critical server components.
-- **No command execution timeouts** at the `CommandExecutor` level. Backend stalls propagate up. The 10s timeout only exists at the rig_task layer.
-- **Event emitter not panic-safe**: If one `RigListener` panics, remaining listeners in the notification loop are skipped.
-- **Sparse structured logging** in trx-core: only one `debug!()` call. State transitions, command execution, and retries are not instrumented.
-- **No command rate limiting**: rapid-fire commands from clients can overwhelm slow serial CAT interfaces.
+**P1 — High:**
+- **FrontendRuntimeContext** (`trx-frontend/src/lib.rs`) is a ~50-field god-struct mixing audio channels, decode histories (9 types), auth config (7 fields), UI settings, rig routing, virtual channels, and branding. Should be decomposed into sub-structs (see `docs/Improvement-Areas.md`).
+- **Rig task command batching uses LIFO** (`rig_task.rs`): `batch.pop()` reverses arrival order. Commands execute newest-first, causing unexpected transient states.
+- **Decoder history unbounded** (`audio.rs`): No capacity limit on `VecDeque` queues; only 24h time-based pruning. Busy AIS channels can exhaust memory.
+- **ExponentialBackoff has no jitter** (`policies.rs`): All rigs/clients retry at identical times after a server restart (thundering herd).
+- **No rig task crash recovery** (`main.rs`): If a rig task panics, it silently disappears. No supervisor, no restart, no health monitoring.
+
+**P2 — Medium:**
+- **Dual command enums**: `ClientCommand` and `RigCommand` are near-identical 40+ variant enums with mechanical 1:1 mapping in `mapping.rs` (675 lines). Adding a command requires 4-file changes. `GetRigs` triggers `unreachable!()`.
+- **SoapySdrRig 20-parameter constructor**: No builder pattern, fragile call sites.
+- **Lock poisoning recovery hides panics**: `unwrap_or_else(|e| e.into_inner())` throughout `audio.rs` silently continues with potentially inconsistent data.
+- **Hardcoded timeouts**: 10+ timeout/retention constants scattered across files, none configurable via TOML.
+- **Config duplication**: `config.rs` in server (1,512 LOC) and client (1,181 LOC) mirror many structs.
+
+**P3 — Low:**
+- **Command handler boilerplate**: 11 `RigCommandHandler` impls follow identical patterns across 500+ lines. Macro opportunity.
+- **No integration tests** for `rig_task.rs` (1,315 LOC) or `audio.rs` (3,977 LOC) — the two largest server modules.
+- **No command execution timeouts** at the `CommandExecutor` level. Backend stalls propagate up.
+- **FT-817 VFO inference fragile**: Fails when VFO A and B share the same frequency.
+- **VDES decoder incomplete**: Turbo FEC and link-layer parsing not implemented.
+- **No protocol versioning**: Unknown commands cause parse errors with no graceful degradation.

@@ -1003,3 +1003,90 @@ DecoderHistories buffer        ↓
 listener connections           ↓
 stream decoder messages    HTTP WebSocket / local speakers
 ```
+
+---
+
+## Detailed Component Notes
+
+### Rig Task Internals (`rig_task.rs` — 1,315 lines)
+
+The rig task is the heart of the server. Key implementation details:
+
+- **Command batching**: Accumulates pending requests before processing sequentially. Uses `batch.pop()` (LIFO order, not FIFO).
+- **Spectrum deduplication**: Concurrent `GetSpectrum` requests are collapsed — one DSP computation broadcasts to all waiting responders.
+- **Adaptive polling**: Poll interval adjusts based on TX state (100ms during TX, 500ms idle).
+- **Grace period**: 800ms pause on polling after power-on/off operations to let hardware settle.
+- **VFO priming**: Optional initialization sequence that toggles VFO A/B to populate the state cache.
+- **Per-rig decoder histories**: Each rig maintains independent `Arc<DecoderHistories>` for all 11 decoder types.
+- **Timeout enforcement**: Commands have `COMMAND_EXEC_TIMEOUT` (10s), polling has `POLL_REFRESH_TIMEOUT` (8s).
+
+### Audio Pipeline (`audio.rs` — 3,977 lines)
+
+The audio module handles decoder history storage and stream management:
+
+- **`DecoderHistories`**: Per-rig mutable store for 11 decoder history queues (AIS, VDES, APRS, HF_APRS, CW, FT8, FT4, FT2, WSPR, WXSAT, LRPT).
+- **Time-based retention**: 24h TTL on all history with periodic pruning.
+- **Atomic total count**: `AtomicUsize` with CAS loop avoids acquiring 11 mutex locks in `snapshot_all()`.
+- **Lock poisoning tolerance**: Uses `.unwrap_or_else(|e| e.into_inner())` to survive poisoned mutexes.
+- **`StreamErrorLogger`**: Suppresses duplicate stream errors with 60s periodic summaries and error classification (alsa_poll_failure, input/output_stream_error).
+- **CRC filtering**: APRS records filtered by `crc_ok` before storage.
+
+### Remote Client Dual-Connection Model
+
+`remote_client.rs` maintains two independent TCP connections to the server:
+
+1. **Main connection** (port 4530): State polling, command forwarding, rig discovery.
+2. **Spectrum connection** (dedicated): Polls `GetSpectrum` at 50ms intervals (20 fps) independently to avoid blocking the main connection during command processing.
+
+Constants: `CONNECT_TIMEOUT: 5s`, `IO_TIMEOUT: 15s`, `SPECTRUM_IO_TIMEOUT: 3s`. Exponential backoff with jitter on reconnect.
+
+### FrontendRuntimeContext Field Groups (~50 fields)
+
+The `FrontendRuntimeContext` struct in `trx-frontend/src/lib.rs` organizes into logical groups:
+
+| Group | Fields | Examples |
+|-------|--------|---------|
+| Audio/decode channels | 13 | `audio_rx`, `decode_rx`, `ais_history`, `ft8_history` |
+| Client tracking | 4 | `sse_clients`, `rigctl_clients`, `audio_clients` |
+| Connection state | 4 | `server_connected`, `rig_server_connected` |
+| HTTP auth config | 7 | `http_auth_enabled`, `http_auth_session_ttl_secs` |
+| HTTP UI config | 6 | `http_initial_map_zoom`, `http_spectrum_usable_span_ratio` |
+| Remote rig management | 4 | `remote_active_rig_id`, `remote_rigs`, `rig_states` |
+| Owner/branding | 4 | `owner_callsign`, `owner_website_url`, `ais_vessel_url_base` |
+| Spectrum & per-rig audio | 4 | `spectrum`, `rig_audio_rx`, `rig_audio_info` |
+| Virtual channel audio | 4 | `rig_vchan_audio_cmd`, `vchan_audio`, `vchan_destroyed` |
+
+### Decoder Implementation Patterns
+
+All real-time decoders follow a consistent pattern:
+
+```rust
+// 1. Stateful decoder struct with sample buffer
+pub struct XxxDecoder { sample_buf: Vec<f32>, ... }
+
+// 2. Block/sample processing
+pub fn process_block(&mut self, samples: &[f32]) { ... }
+
+// 3. Result extraction
+pub fn decode_if_ready(&mut self) -> Vec<XxxResult> { ... }
+```
+
+| Decoder | Algorithm | Sample Rate | Key Constants |
+|---------|-----------|-------------|---------------|
+| FT8/FT4/FT2 | Waterfall + LDPC/OSD | Varies | MAX_LDPC_ITERATIONS=20, MAX_CANDIDATES=120 |
+| CW | Goertzel tone detection | Varies | 10ms windows, tone range 300–1200 Hz |
+| APRS | Bell 202 AFSK (1200/2200 Hz) | 9600 | HDLC framing, NRZI, CRC-16-CCITT |
+| AIS | GMSK 9600 baud | 9600 | Narrowband FM input |
+| WSPR | Fano decoder | 12000 | 162 symbols, 120s slot, 1.46 Hz spacing |
+| RDS | RRC matched filter + Costas PLL | Native | 57 kHz subcarrier, 1187.5 bps, OSD FEC |
+| VDES | pi/4-QPSK 76.8 ksps | 100k | Burst detection, partial Turbo FEC |
+
+### Backend Reliability Workarounds (FT-817)
+
+The FT-817 CAT backend (`trx-backend-ft817/`) includes empirical workarounds for hardware quirks:
+
+- **Duplicate frame sends**: `set_mode()` and `set_ptt()` send CAT frames twice with 80ms delay (radio sometimes drops first frame).
+- **Panel unlock before commands**: Clears stale bytes from the serial buffer.
+- **Power-on dummy frame**: CPU wakes before CAT framing locks; dummy frame ensures readiness.
+- **VFO state inference**: Infers VFO A/B by matching frequencies against cached values (fragile when frequencies collide).
+- **Read timeout**: 800ms per CAT read operation (not configurable).
