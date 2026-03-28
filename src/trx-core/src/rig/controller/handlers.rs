@@ -520,6 +520,10 @@ pub fn command_from_rig_command(cmd: RigCommand) -> Box<dyn RigCommandHandler> {
         | RigCommand::ResetFt4Decoder
         | RigCommand::ResetFt2Decoder
         | RigCommand::ResetWsprDecoder
+        | RigCommand::SetWxsatDecodeEnabled(_)
+        | RigCommand::SetLrptDecodeEnabled(_)
+        | RigCommand::ResetWxsatDecoder
+        | RigCommand::ResetLrptDecoder
         | RigCommand::SetBandwidth(_)
         | RigCommand::SetSdrGain(_)
         | RigCommand::SetSdrLnaGain(_)

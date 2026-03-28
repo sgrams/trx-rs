@@ -54,6 +54,14 @@ pub fn client_command_to_rig(cmd: ClientCommand) -> RigCommand {
         ClientCommand::ResetFt4Decoder => RigCommand::ResetFt4Decoder,
         ClientCommand::ResetFt2Decoder => RigCommand::ResetFt2Decoder,
         ClientCommand::ResetWsprDecoder => RigCommand::ResetWsprDecoder,
+        ClientCommand::SetWxsatDecodeEnabled { enabled } => {
+            RigCommand::SetWxsatDecodeEnabled(enabled)
+        }
+        ClientCommand::SetLrptDecodeEnabled { enabled } => {
+            RigCommand::SetLrptDecodeEnabled(enabled)
+        }
+        ClientCommand::ResetWxsatDecoder => RigCommand::ResetWxsatDecoder,
+        ClientCommand::ResetLrptDecoder => RigCommand::ResetLrptDecoder,
         ClientCommand::SetBandwidth { bandwidth_hz } => RigCommand::SetBandwidth(bandwidth_hz),
         ClientCommand::SetSdrGain { gain_db } => RigCommand::SetSdrGain(gain_db),
         ClientCommand::SetSdrLnaGain { gain_db } => RigCommand::SetSdrLnaGain(gain_db),
@@ -122,6 +130,14 @@ pub fn rig_command_to_client(cmd: RigCommand) -> ClientCommand {
         RigCommand::ResetFt4Decoder => ClientCommand::ResetFt4Decoder,
         RigCommand::ResetFt2Decoder => ClientCommand::ResetFt2Decoder,
         RigCommand::ResetWsprDecoder => ClientCommand::ResetWsprDecoder,
+        RigCommand::SetWxsatDecodeEnabled(enabled) => {
+            ClientCommand::SetWxsatDecodeEnabled { enabled }
+        }
+        RigCommand::SetLrptDecodeEnabled(enabled) => {
+            ClientCommand::SetLrptDecodeEnabled { enabled }
+        }
+        RigCommand::ResetWxsatDecoder => ClientCommand::ResetWxsatDecoder,
+        RigCommand::ResetLrptDecoder => ClientCommand::ResetLrptDecoder,
         RigCommand::SetBandwidth(bandwidth_hz) => ClientCommand::SetBandwidth { bandwidth_hz },
         RigCommand::SetSdrGain(gain_db) => ClientCommand::SetSdrGain { gain_db },
         RigCommand::SetSdrLnaGain(gain_db) => ClientCommand::SetSdrLnaGain { gain_db },

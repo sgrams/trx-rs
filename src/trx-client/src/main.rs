@@ -520,6 +520,7 @@ async fn async_init() -> DynResult<AppState> {
                     }
                 }
                 DecodedMessage::WxsatImage(_) => {}
+                DecodedMessage::LrptImage(_) => {}
             }
         });
 

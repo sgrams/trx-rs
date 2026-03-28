@@ -215,6 +215,8 @@ function applyAuthRestrictions() {
       "ft4-decode-toggle-btn",
       "ft2-decode-toggle-btn",
       "wspr-decode-toggle-btn",
+      "wxsat-decode-toggle-btn",
+      "lrpt-decode-toggle-btn",
       "hf-aprs-decode-toggle-btn",
       "cw-auto",
       "settings-clear-ais-history",
@@ -225,7 +227,8 @@ function applyAuthRestrictions() {
       "settings-clear-ft8-history",
       "settings-clear-ft4-history",
       "settings-clear-ft2-history",
-      "settings-clear-wspr-history"
+      "settings-clear-wspr-history",
+      "settings-clear-wxsat-history"
     ];
     pluginToggleBtns.forEach(id => {
       const btn = document.getElementById(id);
@@ -3228,6 +3231,22 @@ function render(update) {
     hfAprsToggleBtn.style.borderColor = hfAprsOn ? "#00d17f" : "";
     hfAprsToggleBtn.style.color = hfAprsOn ? "#00d17f" : "";
   }
+  const wxsatToggleBtn = document.getElementById("wxsat-decode-toggle-btn");
+  if (wxsatToggleBtn) {
+    const wxsatOn = !!update.wxsat_decode_enabled;
+    wxsatToggleBtn.dataset.enabled = wxsatOn ? "true" : "false";
+    wxsatToggleBtn.textContent = wxsatOn ? "Disable NOAA APT" : "Enable NOAA APT";
+    wxsatToggleBtn.style.borderColor = wxsatOn ? "#00d17f" : "";
+    wxsatToggleBtn.style.color = wxsatOn ? "#00d17f" : "";
+  }
+  const lrptToggleBtn = document.getElementById("lrpt-decode-toggle-btn");
+  if (lrptToggleBtn) {
+    const lrptOn = !!update.lrpt_decode_enabled;
+    lrptToggleBtn.dataset.enabled = lrptOn ? "true" : "false";
+    lrptToggleBtn.textContent = lrptOn ? "Disable Meteor LRPT" : "Enable Meteor LRPT";
+    lrptToggleBtn.style.borderColor = lrptOn ? "#00d17f" : "";
+    lrptToggleBtn.style.color = lrptOn ? "#00d17f" : "";
+  }
   const cwAutoEl = document.getElementById("cw-auto");
   const cwWpmEl = document.getElementById("cw-wpm");
   const cwToneEl = document.getElementById("cw-tone");
@@ -3403,6 +3422,8 @@ function render(update) {
     ["about-dec-wspr", update.wspr_decode_enabled],
     ["about-dec-cw", update.cw_decode_enabled],
     ["about-dec-aprs", update.aprs_decode_enabled || update.hf_aprs_decode_enabled],
+    ["about-dec-wxsat", update.wxsat_decode_enabled],
+    ["about-dec-lrpt", update.lrpt_decode_enabled],
   ];
   for (const [id, enabled] of decMap) {
     const el = document.getElementById(id);
@@ -8476,6 +8497,8 @@ function dispatchDecodeMessage(msg) {
   if (msg.type === "ft4" && window.onServerFt4) window.onServerFt4(msg);
   if (msg.type === "ft2" && window.onServerFt2) window.onServerFt2(msg);
   if (msg.type === "wspr" && window.onServerWspr) window.onServerWspr(msg);
+  if (msg.type === "wxsat_image" && window.onServerWxsatImage) window.onServerWxsatImage(msg);
+  if (msg.type === "lrpt_image" && window.onServerLrptImage) window.onServerLrptImage(msg);
 }
 
 function dispatchDecodeBatch(batch) {

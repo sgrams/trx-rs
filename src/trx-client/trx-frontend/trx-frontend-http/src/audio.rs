@@ -555,6 +555,7 @@ pub fn start_decode_history_collector(context: Arc<FrontendRuntimeContext>) {
                     DecodedMessage::Ft2(msg) => record_ft2(&context, msg),
                     DecodedMessage::Wspr(msg) => record_wspr(&context, msg),
                     DecodedMessage::WxsatImage(_) => {}
+                    DecodedMessage::LrptImage(_) => {}
                 },
                 Err(broadcast::error::RecvError::Lagged(_)) => continue,
                 Err(broadcast::error::RecvError::Closed) => break,

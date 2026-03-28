@@ -11,7 +11,7 @@ use std::io::Cursor;
 
 use image::{DynamicImage, GrayImage};
 
-use crate::apt::{RawLine, IMAGE_A_LEN, IMAGE_B_LEN};
+use super::apt::{RawLine, IMAGE_A_LEN, IMAGE_B_LEN};
 
 /// Assemble decoded lines into a JPEG image.
 ///
