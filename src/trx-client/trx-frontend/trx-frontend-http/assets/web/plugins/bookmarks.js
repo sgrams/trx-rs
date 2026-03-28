@@ -236,6 +236,8 @@ function bmReadDecoders() {
   if (document.getElementById("bm-dec-ft2").checked) decoders.push("ft2");
   if (document.getElementById("bm-dec-wspr").checked) decoders.push("wspr");
   if (document.getElementById("bm-dec-hf-aprs").checked) decoders.push("hf-aprs");
+  if (document.getElementById("bm-dec-wxsat").checked) decoders.push("wxsat");
+  if (document.getElementById("bm-dec-lrpt").checked) decoders.push("lrpt");
   return decoders;
 }
 
@@ -249,6 +251,8 @@ function bmWriteDecoders(decoders) {
   document.getElementById("bm-dec-ft2").checked = list.includes("ft2");
   document.getElementById("bm-dec-wspr").checked = list.includes("wspr");
   document.getElementById("bm-dec-hf-aprs").checked = list.includes("hf-aprs");
+  document.getElementById("bm-dec-wxsat").checked = list.includes("wxsat");
+  document.getElementById("bm-dec-lrpt").checked = list.includes("lrpt");
 }
 
 function bmOpenForm(bm) {
@@ -437,7 +441,7 @@ async function bmApply(bm) {
             toggles.push(postPath("/toggle_" + key.replace(/-/g, "_") + "_decode"));
           }
         };
-        check("ft8"); check("ft4"); check("ft2"); check("wspr"); check("hf-aprs");
+        check("ft8"); check("ft4"); check("ft2"); check("wspr"); check("hf-aprs"); check("wxsat"); check("lrpt");
         if (toggles.length) await Promise.all(toggles);
       }
     })() : Promise.resolve();
