@@ -2523,13 +2523,15 @@ async fn send_command_to_rig(
 
 fn bookmark_decoder_state(
     bookmark: &crate::server::bookmarks::Bookmark,
-) -> (bool, bool, bool, bool, bool, bool) {
+) -> (bool, bool, bool, bool, bool, bool, bool, bool) {
     let mut want_aprs = bookmark.mode.trim().eq_ignore_ascii_case("PKT");
     let mut want_hf_aprs = false;
     let mut want_ft8 = false;
     let mut want_ft4 = false;
     let mut want_ft2 = false;
     let mut want_wspr = false;
+    let mut want_wxsat = false;
+    let mut want_lrpt = false;
 
     for decoder in bookmark
         .decoders
@@ -2543,6 +2545,8 @@ fn bookmark_decoder_state(
             "ft4" => want_ft4 = true,
             "ft2" => want_ft2 = true,
             "wspr" => want_wspr = true,
+            "wxsat" => want_wxsat = true,
+            "lrpt" => want_lrpt = true,
             _ => {}
         }
     }
@@ -2554,6 +2558,8 @@ fn bookmark_decoder_state(
         want_ft4,
         want_ft2,
         want_wspr,
+        want_wxsat,
+        want_lrpt,
     )
 }
 
@@ -2621,7 +2627,7 @@ async fn apply_selected_channel(
     let Some(bookmark) = bookmark_store_map.get_for_rig(remote, bookmark_id) else {
         return Ok(());
     };
-    let (want_aprs, want_hf_aprs, want_ft8, want_ft4, want_ft2, want_wspr) =
+    let (want_aprs, want_hf_aprs, want_ft8, want_ft4, want_ft2, want_wspr, want_wxsat, want_lrpt) =
         bookmark_decoder_state(&bookmark);
     let desired = [
         RigCommand::SetAprsDecodeEnabled(want_aprs),
@@ -2630,6 +2636,8 @@ async fn apply_selected_channel(
         RigCommand::SetFt4DecodeEnabled(want_ft4),
         RigCommand::SetFt2DecodeEnabled(want_ft2),
         RigCommand::SetWsprDecodeEnabled(want_wspr),
+        RigCommand::SetWxsatDecodeEnabled(want_wxsat),
+        RigCommand::SetLrptDecodeEnabled(want_lrpt),
     ];
     for cmd in desired {
         send_command_to_rig(rig_tx, remote, cmd).await?;
