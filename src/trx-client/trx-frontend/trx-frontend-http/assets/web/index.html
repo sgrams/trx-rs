@@ -864,6 +864,15 @@
         </div>
         <!-- Predictions view -->
         <div id="sat-predictions-view" style="display:none;">
+          <div class="ft8-controls">
+            <input id="sat-pred-filter" class="ft8-filter" type="text" placeholder="Filter (e.g. ISS, NOAA, Meteor)" />
+            <select id="sat-pred-min-el" class="sat-sort-select">
+              <option value="0">All passes</option>
+              <option value="10">Min 10°</option>
+              <option value="20">Min 20°</option>
+              <option value="45">Min 45°</option>
+            </select>
+          </div>
           <div class="sat-pred-header">
             <span class="sat-pred-col-time">AOS (UTC)</span>
             <span class="sat-pred-col-sat">Satellite</span>

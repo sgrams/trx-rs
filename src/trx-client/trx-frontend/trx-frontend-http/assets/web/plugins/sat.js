@@ -289,6 +289,32 @@ document
   });
 
 // ── Predictions view ────────────────────────────────────────────────
+let satPredData = [];
+let satPredFilterText = "";
+let satPredMinEl = 0;
+const satPredFilterInput = document.getElementById("sat-pred-filter");
+const satPredMinElSelect = document.getElementById("sat-pred-min-el");
+
+function getFilteredPredictions() {
+  let items = satPredData;
+  if (satPredMinEl > 0) {
+    items = items.filter((p) => p.max_elevation_deg >= satPredMinEl);
+  }
+  if (satPredFilterText) {
+    items = items.filter((p) => p.satellite.toUpperCase().includes(satPredFilterText));
+  }
+  return items;
+}
+
+satPredFilterInput?.addEventListener("input", () => {
+  satPredFilterText = satPredFilterInput.value.trim().toUpperCase();
+  renderSatPredictions(getFilteredPredictions());
+});
+
+satPredMinElSelect?.addEventListener("change", () => {
+  satPredMinEl = parseInt(satPredMinElSelect.value, 10) || 0;
+  renderSatPredictions(getFilteredPredictions());
+});
 
 function azToCardinal(deg) {
   const dirs = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"];
@@ -362,9 +388,11 @@ async function loadSatPredictions() {
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
     const data = await resp.json();
     if (data.error) {
+      satPredData = [];
       renderSatPredictions([], data.error);
     } else {
-      renderSatPredictions(data.passes || []);
+      satPredData = data.passes || [];
+      renderSatPredictions(getFilteredPredictions());
     }
   } catch (e) {
     renderSatPredictions([], `Failed to load predictions: ${e.message}`);

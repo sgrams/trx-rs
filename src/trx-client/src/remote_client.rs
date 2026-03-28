@@ -1111,6 +1111,8 @@ mod tests {
             cw_auto: true,
             cw_wpm: 15,
             cw_tone_hz: 700,
+            wxsat_decode_enabled: false,
+            lrpt_decode_enabled: false,
             filter: None,
             spectrum: None,
             vchan_rds: None,

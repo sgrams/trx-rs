@@ -31,10 +31,18 @@ const CELESTRAK_HAM_URL: &str =
 /// How often to refresh TLEs after the initial fetch (24 hours).
 const TLE_REFRESH_INTERVAL: Duration = Duration::from_secs(24 * 60 * 60);
 
+/// A single TLE entry: satellite name + two-line element set.
+#[derive(Debug, Clone)]
+pub struct TleEntry {
+    pub name: String,
+    pub line1: String,
+    pub line2: String,
+}
+
 /// Global store for dynamically-fetched TLE data.
 ///
-/// Keys are NORAD catalog numbers; values are `(line1, line2)` strings.
-static TLE_STORE: RwLock<Option<HashMap<u32, (String, String)>>> = RwLock::new(None);
+/// Keys are NORAD catalog numbers; values contain the satellite name and TLE lines.
+static TLE_STORE: RwLock<Option<HashMap<u32, TleEntry>>> = RwLock::new(None);
 
 /// Geographic bounds for a satellite image overlay: `[south, west, north, east]`.
 pub type GeoBounds = [f64; 4];
@@ -158,8 +166,8 @@ fn tle_for_satellite(name: &str) -> Option<(String, String)> {
     // Try dynamic store first.
     if let Ok(guard) = TLE_STORE.read() {
         if let Some(store) = guard.as_ref() {
-            if let Some((l1, l2)) = store.get(&norad_id) {
-                return Some((l1.clone(), l2.clone()));
+            if let Some(entry) = store.get(&norad_id) {
+                return Some((entry.line1.clone(), entry.line2.clone()));
             }
         }
     }
@@ -172,19 +180,27 @@ fn tle_for_satellite(name: &str) -> Option<(String, String)> {
 // CelesTrak TLE refresh
 // ---------------------------------------------------------------------------
 
-/// Parse a CelesTrak 3-line TLE response into a map of NORAD ID → (line1, line2).
-fn parse_tle_response(body: &str) -> HashMap<u32, (String, String)> {
+/// Parse a CelesTrak 3-line TLE response into a map of NORAD ID → TleEntry.
+fn parse_tle_response(body: &str) -> HashMap<u32, TleEntry> {
     let mut result = HashMap::new();
     let lines: Vec<&str> = body.lines().map(|l| l.trim_end()).collect();
     let mut i = 0;
     while i + 2 < lines.len() {
+        let name_line = lines[i].trim();
         let line1 = lines[i + 1];
         let line2 = lines[i + 2];
         // Validate TLE line markers
         if line1.starts_with("1 ") && line2.starts_with("2 ") {
             // Extract NORAD catalog number from line 1 columns 2-6
             if let Ok(norad_id) = line1[2..7].trim().parse::<u32>() {
-                result.insert(norad_id, (line1.to_string(), line2.to_string()));
+                result.insert(
+                    norad_id,
+                    TleEntry {
+                        name: name_line.to_string(),
+                        line1: line1.to_string(),
+                        line2: line2.to_string(),
+                    },
+                );
             }
         }
         i += 3;
@@ -446,10 +462,11 @@ fn find_passes_for_sat(
     passes
 }
 
-/// Compute upcoming passes for all known amateur satellites over the next
+/// Compute upcoming passes for all satellites in the TLE store over the next
 /// `window_ms` milliseconds, starting from `start_ms`.
 ///
-/// Satellites without TLE data in the store are silently skipped.
+/// Iterates over every satellite fetched from CelesTrak (weather + amateur).
+/// Falls back to hardcoded weather-satellite TLEs when the store is empty.
 /// Results are sorted by AOS time.
 pub fn compute_upcoming_passes(
     station_lat: f64,
@@ -464,25 +481,37 @@ pub fn compute_upcoming_passes(
 
     let mut all_passes = Vec::new();
 
-    for &(name, norad_id) in PREDICTION_SATS {
-        let tle = guard
-            .as_ref()
-            .and_then(|s| s.get(&norad_id))
-            .cloned()
-            .or_else(|| hardcoded_tle(norad_id).map(|(l1, l2)| (l1.to_string(), l2.to_string())));
-
-        if let Some((line1, line2)) = tle {
+    if let Some(store) = guard.as_ref() {
+        // Use all satellites in the dynamic store.
+        for (&norad_id, entry) in store {
             let passes = find_passes_for_sat(
-                name,
+                &entry.name,
                 norad_id,
-                &line1,
-                &line2,
+                &entry.line1,
+                &entry.line2,
                 station_lat,
                 station_lon,
                 start_ms,
                 window_ms,
             );
             all_passes.extend(passes);
+        }
+    } else {
+        // Fallback: hardcoded weather satellite TLEs only.
+        for &(name, norad_id) in PREDICTION_SATS {
+            if let Some((l1, l2)) = hardcoded_tle(norad_id) {
+                let passes = find_passes_for_sat(
+                    name,
+                    norad_id,
+                    l1,
+                    l2,
+                    station_lat,
+                    station_lon,
+                    start_ms,
+                    window_ms,
+                );
+                all_passes.extend(passes);
+            }
         }
     }
 
@@ -747,8 +776,10 @@ NOAA 19
         assert_eq!(tles.len(), 2);
         assert!(tles.contains_key(&25338));
         assert!(tles.contains_key(&33591));
-        assert!(tles[&25338].0.starts_with("1 25338"));
-        assert!(tles[&33591].1.starts_with("2 33591"));
+        assert_eq!(tles[&25338].name, "NOAA 15");
+        assert!(tles[&25338].line1.starts_with("1 25338"));
+        assert_eq!(tles[&33591].name, "NOAA 19");
+        assert!(tles[&33591].line2.starts_with("2 33591"));
     }
 
     #[test]
