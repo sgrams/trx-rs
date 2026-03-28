@@ -1,7 +1,0 @@
-# SPDX-FileCopyrightText: 2026 Stan Grams <sjg@haxx.space>
-#
-# SPDX-License-Identifier: BSD-2-Clause
-
-[submodule "docs"]
-	path = docs
-	url = http://github.com/sgrams/trx-rs.wiki.git
