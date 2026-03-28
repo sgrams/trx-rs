@@ -277,12 +277,70 @@ pub async fn refresh_tles_from_celestrak() -> Result<usize, String> {
     fetch_and_merge_tles(CELESTRAK_WEATHER_URL, SatCategory::Weather).await
 }
 
+/// Seed the global TLE store with hardcoded fallback TLEs so that
+/// weather satellite predictions are available immediately, even before
+/// the first CelesTrak fetch completes.  CelesTrak data will overwrite
+/// these entries with more accurate orbital elements once fetched.
+fn seed_hardcoded_tles() {
+    let hardcoded: &[(u32, &str, SatCategory)] = &[
+        (25338, "NOAA 15", SatCategory::Weather),
+        (28654, "NOAA 18", SatCategory::Weather),
+        (33591, "NOAA 19", SatCategory::Weather),
+        (57166, "METEOR-M2 3", SatCategory::Weather),
+        (59051, "METEOR-M2-4", SatCategory::Weather),
+    ];
+    let mut entries = HashMap::new();
+    for &(norad_id, name, cat) in hardcoded {
+        if let Some((l1, l2)) = hardcoded_tle(norad_id) {
+            entries.insert(
+                norad_id,
+                TleEntry {
+                    name: name.to_string(),
+                    line1: l1.to_string(),
+                    line2: l2.to_string(),
+                    category: cat,
+                },
+            );
+        }
+    }
+    if entries.is_empty() {
+        return;
+    }
+    match TLE_STORE.write() {
+        Ok(mut guard) => {
+            if let Some(store) = guard.as_mut() {
+                // Only insert entries that are not already present so we
+                // never overwrite fresh CelesTrak data with hardcoded.
+                for (id, entry) in entries {
+                    store.entry(id).or_insert(entry);
+                }
+            } else {
+                *guard = Some(entries);
+            }
+        }
+        Err(e) => {
+            let mut guard = e.into_inner();
+            if let Some(store) = guard.as_mut() {
+                for (id, entry) in entries {
+                    store.entry(id).or_insert(entry);
+                }
+            } else {
+                *guard = Some(entries);
+            }
+        }
+    }
+}
+
 /// Spawn a background task that fetches TLEs from CelesTrak on start and
 /// then refreshes once per day.
 ///
 /// The task runs until the process exits.  Fetch failures are logged but
 /// do not stop the periodic refresh — hardcoded fallback TLEs remain usable.
 pub fn spawn_tle_refresh_task() {
+    // Seed the store with hardcoded TLEs immediately so that predictions
+    // are available before the first CelesTrak fetch completes.
+    seed_hardcoded_tles();
+
     tokio::spawn(async {
         // Initial fetch at startup: weather + NOAA + amateur satellites.
         match fetch_and_merge_tles(CELESTRAK_WEATHER_URL, SatCategory::Weather).await {
@@ -916,6 +974,82 @@ NOAA 19
                 p.max_elevation_deg
             );
         }
+    }
+
+    #[test]
+    fn test_noaa15_pass_sanity() {
+        let start = 1774800000000_i64;
+        let window = 24 * 60 * 60 * 1000_i64;
+        let (l1, l2) = hardcoded_tle(25338).unwrap();
+        let passes = find_passes_for_sat(
+            "NOAA 15",
+            25338,
+            SatCategory::Weather,
+            l1,
+            l2,
+            48.0,
+            11.0,
+            start,
+            window,
+        );
+        assert!(
+            passes.len() >= 2,
+            "Expected at least 2 passes for NOAA-15 in 24h, got {}",
+            passes.len()
+        );
+        assert!(
+            passes.iter().any(|p| p.satellite == "NOAA 15"),
+            "Pass should have satellite name 'NOAA 15'"
+        );
+    }
+
+    #[test]
+    fn test_noaa18_pass_sanity() {
+        let start = 1774800000000_i64;
+        let window = 24 * 60 * 60 * 1000_i64;
+        let (l1, l2) = hardcoded_tle(28654).unwrap();
+        let passes = find_passes_for_sat(
+            "NOAA 18",
+            28654,
+            SatCategory::Weather,
+            l1,
+            l2,
+            48.0,
+            11.0,
+            start,
+            window,
+        );
+        assert!(
+            passes.len() >= 2,
+            "Expected at least 2 passes for NOAA-18 in 24h, got {}",
+            passes.len()
+        );
+    }
+
+    #[test]
+    fn test_seed_hardcoded_tles_populates_store() {
+        seed_hardcoded_tles();
+        let guard = TLE_STORE.read().unwrap();
+        let store = guard
+            .as_ref()
+            .expect("TLE store should be populated after seeding");
+        // Verify NOAA-15/18/19 are in the store
+        assert!(
+            store.contains_key(&25338),
+            "NOAA 15 (25338) should be in store"
+        );
+        assert!(
+            store.contains_key(&28654),
+            "NOAA 18 (28654) should be in store"
+        );
+        assert!(
+            store.contains_key(&33591),
+            "NOAA 19 (33591) should be in store"
+        );
+        assert_eq!(store[&25338].name, "NOAA 15");
+        assert_eq!(store[&28654].name, "NOAA 18");
+        assert_eq!(store[&33591].name, "NOAA 19");
+        assert_eq!(store[&25338].category, SatCategory::Weather);
     }
 
     #[test]
