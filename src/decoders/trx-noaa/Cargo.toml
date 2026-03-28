@@ -1,0 +1,14 @@
+# SPDX-FileCopyrightText: 2026 Stan Grams <sjg@haxx.space>
+#
+# SPDX-License-Identifier: BSD-2-Clause
+
+[package]
+name = "trx-noaa"
+version.workspace = true
+edition = "2021"
+
+[dependencies]
+trx-core = { path = "../../trx-core" }
+rustfft = "6"
+num-complex = "0.4"
+image = { version = "0.24", default-features = false, features = ["jpeg"] }

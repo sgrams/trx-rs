@@ -66,6 +66,8 @@ pub const AUDIO_MSG_VCHAN_BW: u8 = 0x13;
 pub const AUDIO_MSG_FT4_DECODE: u8 = 0x14;
 /// Server → client: FT2 decoded message (JSON `DecodedMessage::Ft2`).
 pub const AUDIO_MSG_FT2_DECODE: u8 = 0x15;
+/// Server → client: NOAA APT image complete (JSON `DecodedMessage::NoaaImage`).
+pub const AUDIO_MSG_NOAA_IMAGE: u8 = 0x16;
 
 /// Maximum payload size for normal messages (1 MB).
 const MAX_PAYLOAD_SIZE: u32 = 1_048_576;

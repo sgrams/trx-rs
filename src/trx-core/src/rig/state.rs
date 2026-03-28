@@ -46,6 +46,8 @@ pub struct RigState {
     #[serde(default)]
     pub wspr_decode_enabled: bool,
     #[serde(default)]
+    pub noaa_decode_enabled: bool,
+    #[serde(default)]
     pub cw_auto: bool,
     #[serde(default)]
     pub cw_wpm: u32,
@@ -77,6 +79,8 @@ pub struct RigState {
     pub ft2_decode_reset_seq: u64,
     #[serde(default, skip_serializing)]
     pub wspr_decode_reset_seq: u64,
+    #[serde(default, skip_serializing)]
+    pub noaa_decode_reset_seq: u64,
 }
 
 /// Mode supported by the rig.
@@ -159,6 +163,7 @@ impl RigState {
             ft4_decode_enabled: false,
             ft2_decode_enabled: false,
             wspr_decode_enabled: false,
+            noaa_decode_enabled: false,
             cw_auto: true,
             cw_wpm: 15,
             cw_tone_hz: 700,
@@ -172,6 +177,7 @@ impl RigState {
             ft4_decode_reset_seq: 0,
             ft2_decode_reset_seq: 0,
             wspr_decode_reset_seq: 0,
+            noaa_decode_reset_seq: 0,
         }
     }
 
@@ -231,6 +237,7 @@ impl RigState {
             ft4_decode_enabled: snapshot.ft4_decode_enabled,
             ft2_decode_enabled: snapshot.ft2_decode_enabled,
             wspr_decode_enabled: snapshot.wspr_decode_enabled,
+            noaa_decode_enabled: snapshot.noaa_decode_enabled,
             filter: snapshot.filter,
             spectrum: None, // spectrum flows through /api/spectrum, not persistent state
             vchan_rds: None, // vchan RDS flows through /api/spectrum, not persistent state
@@ -241,6 +248,7 @@ impl RigState {
             ft4_decode_reset_seq: 0,
             ft2_decode_reset_seq: 0,
             wspr_decode_reset_seq: 0,
+            noaa_decode_reset_seq: 0,
         }
     }
 
@@ -278,6 +286,7 @@ impl RigState {
             ft4_decode_enabled: self.ft4_decode_enabled,
             ft2_decode_enabled: self.ft2_decode_enabled,
             wspr_decode_enabled: self.wspr_decode_enabled,
+            noaa_decode_enabled: self.noaa_decode_enabled,
             filter: self.filter.clone(),
             spectrum: self.spectrum.clone(),
             vchan_rds: self.vchan_rds.clone(),
@@ -488,6 +497,8 @@ pub struct RigSnapshot {
     pub ft2_decode_enabled: bool,
     #[serde(default)]
     pub wspr_decode_enabled: bool,
+    #[serde(default)]
+    pub noaa_decode_enabled: bool,
     #[serde(default)]
     pub cw_auto: bool,
     #[serde(default)]

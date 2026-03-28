@@ -28,6 +28,8 @@ pub enum DecodedMessage {
     Ft2(Ft8Message),
     #[serde(rename = "wspr")]
     Wspr(WsprMessage),
+    #[serde(rename = "noaa_image")]
+    NoaaImage(NoaaImage),
 }
 
 impl DecodedMessage {
@@ -40,6 +42,7 @@ impl DecodedMessage {
             Self::Cw(m) => m.rig_id = Some(id),
             Self::Ft8(m) | Self::Ft4(m) | Self::Ft2(m) => m.rig_id = Some(id),
             Self::Wspr(m) => m.rig_id = Some(id),
+            Self::NoaaImage(m) => m.rig_id = Some(id),
         }
     }
 
@@ -52,6 +55,7 @@ impl DecodedMessage {
             Self::Cw(m) => m.rig_id.as_deref(),
             Self::Ft8(m) | Self::Ft4(m) | Self::Ft2(m) => m.rig_id.as_deref(),
             Self::Wspr(m) => m.rig_id.as_deref(),
+            Self::NoaaImage(m) => m.rig_id.as_deref(),
         }
     }
 }
@@ -201,6 +205,23 @@ pub struct Ft8Message {
     pub freq_hz: f32,
     /// Decoded message text
     pub message: String,
+}
+
+/// A completed NOAA APT satellite image, saved to disk as a JPEG.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NoaaImage {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rig_id: Option<String>,
+    /// UTC timestamp (milliseconds since epoch) of pass start (first decoded line).
+    pub pass_start_ms: i64,
+    /// UTC timestamp (milliseconds since epoch) when the image was finalised.
+    pub pass_end_ms: i64,
+    /// Number of decoded image lines.
+    pub line_count: u32,
+    /// Absolute filesystem path to the saved JPEG file.
+    pub path: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ts_ms: Option<i64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

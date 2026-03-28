@@ -793,6 +793,25 @@ fn spawn_rig_audio_stack(
                 _ = wait_for_shutdown(wspr_shutdown_rx) => {}
             }
         }));
+
+        // Spawn NOAA APT decoder task
+        let noaa_pcm_rx = pcm_tx.subscribe();
+        let noaa_state_rx = state_rx.clone();
+        let noaa_decode_tx = decode_tx.clone();
+        let noaa_sr = rig_cfg.audio.sample_rate;
+        let noaa_ch = rig_cfg.audio.channels;
+        let noaa_shutdown_rx = shutdown_rx.clone();
+        let noaa_histories = histories.clone();
+        let noaa_output_dir = dirs::cache_dir()
+            .unwrap_or_else(|| std::path::PathBuf::from(".cache"))
+            .join("trx-rs")
+            .join("noaa");
+        handles.push(tokio::spawn(async move {
+            tokio::select! {
+                _ = audio::run_noaa_decoder(noaa_sr, noaa_ch as u16, noaa_pcm_rx, noaa_state_rx, noaa_decode_tx, noaa_histories, noaa_output_dir) => {}
+                _ = wait_for_shutdown(noaa_shutdown_rx) => {}
+            }
+        }));
     }
 
     if rig_cfg.audio.tx_enabled {
