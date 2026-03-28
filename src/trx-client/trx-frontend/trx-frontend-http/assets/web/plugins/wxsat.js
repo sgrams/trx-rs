@@ -95,6 +95,9 @@ function renderWxsatLatestCard() {
   if (img.path) {
     html += `<a href="${img.path}" target="_blank" style="font-size:0.8rem;color:var(--accent);display:inline-block;margin-top:0.25rem;">Download PNG</a>`;
   }
+  if (img.geo_bounds) {
+    html += ` <button type="button" class="wxsat-map-btn" onclick="window.wxsatShowOnMap(${img.geo_bounds[0]},${img.geo_bounds[1]},${img.geo_bounds[2]},${img.geo_bounds[3]})" style="font-size:0.8rem;margin-top:0.25rem;margin-left:0.5rem;cursor:pointer;background:none;border:1px solid var(--accent);color:var(--accent);border-radius:3px;padding:1px 6px;">Show on Map</button>`;
+  }
   html += `</div>`;
   wxsatLiveLatest.innerHTML = html;
 }
@@ -146,9 +149,12 @@ function renderWxsatHistoryRow(img) {
   const channels = decoder === "lrpt" ? (img.channels || "--") : (img.channel_a && img.channel_b ? `A:${img.channel_a} B:${img.channel_b}` : img.channel_a || "--");
   const lines = img.line_count || img.mcu_count || 0;
   const unit = decoder === "lrpt" ? "MCU" : "ln";
-  const link = img.path
+  let link = img.path
     ? `<a href="${img.path}" target="_blank" style="color:var(--accent);">PNG</a>`
     : "--";
+  if (img.geo_bounds) {
+    link += ` <a href="javascript:void(0)" onclick="window.wxsatShowOnMap(${img.geo_bounds[0]},${img.geo_bounds[1]},${img.geo_bounds[2]},${img.geo_bounds[3]})" style="color:var(--accent);">Map</a>`;
+  }
 
   row.innerHTML = [
     `<span>${date} ${ts}</span>`,
@@ -209,11 +215,17 @@ function addWxsatImage(img, decoder) {
 window.onServerWxsatImage = function (msg) {
   if (wxsatStatus) wxsatStatus.textContent = "Image received (NOAA APT)";
   addWxsatImage(msg, "apt");
+  if (msg.geo_bounds && msg.path && window.addWxsatMapOverlay) {
+    window.addWxsatMapOverlay(msg);
+  }
 };
 
 window.onServerLrptImage = function (msg) {
   if (wxsatStatus) wxsatStatus.textContent = "Image received (Meteor LRPT)";
   addWxsatImage(msg, "lrpt");
+  if (msg.geo_bounds && msg.path && window.addWxsatMapOverlay) {
+    window.addWxsatMapOverlay(msg);
+  }
 };
 
 window.resetWxsatHistoryView = function () {
@@ -221,6 +233,7 @@ window.resetWxsatHistoryView = function () {
   if (wxsatHistoryList) wxsatHistoryList.innerHTML = "";
   renderWxsatLatestCard();
   renderWxsatHistoryTable();
+  if (window.clearWxsatMapOverlays) window.clearWxsatMapOverlays();
 };
 
 window.pruneWxsatHistoryView = function () {
@@ -270,6 +283,20 @@ document
       console.error("Weather satellite history clear failed", e);
     }
   });
+
+// ── Navigate to map centered on satellite image bounds ──────────────
+window.wxsatShowOnMap = function (south, west, north, east) {
+  // Enable wxsat filter if not active
+  if (typeof window.enableMapSourceFilter === "function") {
+    window.enableMapSourceFilter("wxsat");
+  }
+  // Navigate to the center of the image bounds
+  const lat = (south + north) / 2;
+  const lon = (west + east) / 2;
+  if (window.navigateToAprsMap) {
+    window.navigateToAprsMap(lat, lon);
+  }
+};
 
 // ── Initial render ──────────────────────────────────────────────────
 renderWxsatLatestCard();

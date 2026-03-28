@@ -4,6 +4,7 @@
 
 pub mod audio;
 pub mod decode;
+pub mod geo;
 pub mod math;
 pub mod radio;
 pub mod rig;

@@ -509,6 +509,7 @@ checksum = "fac4744fb15ae8337dc853fee7fb3f4e48c0fbaa23d0afe49c447b4fab126118"
 dependencies = [
  "iana-time-zone",
  "num-traits",
+ "serde",
  "windows-link",
 ]
 
@@ -2138,6 +2139,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "sgp4"
+version = "2.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9467b9a7be8485ed8be0f336d399c8f32c0fcd60686e7dd2ed3dab75c9a73eb3"
+dependencies = [
+ "chrono",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "sha1"
 version = "0.10.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2708,6 +2720,7 @@ dependencies = [
  "flate2",
  "serde",
  "serde_json",
+ "sgp4",
  "tokio",
  "tracing",
  "uuid",

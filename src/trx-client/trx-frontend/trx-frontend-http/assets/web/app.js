@@ -4489,7 +4489,7 @@ const locatorMarkers = new Map();
 const decodeContactPaths = new Map();
 let selectedMapQsoKey = null;
 const mapMarkers = new Set();
-const DEFAULT_MAP_SOURCE_FILTER = { ais: true, vdes: true, aprs: true, bookmark: false, ft8: true, ft4: true, ft2: true, wspr: true };
+const DEFAULT_MAP_SOURCE_FILTER = { ais: true, vdes: true, aprs: true, bookmark: false, ft8: true, ft4: true, ft2: true, wspr: true, wxsat: false };
 const mapFilter = { ...DEFAULT_MAP_SOURCE_FILTER };
 const mapLocatorFilter = { phase: "band", bands: new Set() };
 let mapSearchFilter = "";
@@ -4861,6 +4861,7 @@ function locatorFilterColor(type) {
 function mapSourceColor(type) {
   if (type === "ais") return "#38bdf8";
   if (type === "vdes") return "#a78bfa";
+  if (type === "wxsat") return "#f59e0b";
   if (type === "aprs") return "#00d17f";
   return locatorFilterColor(type);
 }
@@ -5426,6 +5427,14 @@ function renderMapLocatorLegend(phase, sourceItems, bandItems) {
   legendEl.innerHTML = `<div class="map-band-legend-title">${title}</div><div class="map-band-legend-list">${rows}</div>`;
 }
 
+window.enableMapSourceFilter = function(key) {
+  if (Object.prototype.hasOwnProperty.call(mapFilter, key) && !mapFilter[key]) {
+    mapFilter[key] = true;
+    rebuildMapLocatorFilters();
+    applyMapFilter();
+  }
+};
+
 function rebuildMapLocatorFilters() {
   const phaseEl = document.getElementById("map-locator-phase");
   const choiceEl = document.getElementById("map-locator-choice-filter");
@@ -5663,6 +5672,95 @@ function syncAprsReceiverMarker() {
   if (!seen.size) aprsMapReceiverMarker = null;
 }
 
+// ---------------------------------------------------------------------------
+// Weather satellite image overlays on the map
+// ---------------------------------------------------------------------------
+
+const wxsatOverlays = new Map(); // key -> { overlay, track, msg }
+let wxsatOverlaySeq = 0;
+
+window.addWxsatMapOverlay = function(msg) {
+  if (!msg || !msg.geo_bounds || !msg.path) return;
+  const bounds = msg.geo_bounds;
+  // bounds = [south, west, north, east]
+  if (!Array.isArray(bounds) || bounds.length !== 4) return;
+  const latLngBounds = L.latLngBounds(
+    [bounds[0], bounds[1]], // SW
+    [bounds[2], bounds[3]]  // NE
+  );
+  const key = "wxsat-" + (++wxsatOverlaySeq);
+  const overlay = L.imageOverlay(msg.path, latLngBounds, {
+    opacity: 0.55,
+    interactive: true,
+    zIndex: 300,
+  });
+  overlay.__trxType = "wxsat";
+  overlay.__trxWxsatKey = key;
+  overlay.__trxRigIds = msg.rig_id ? new Set([msg.rig_id]) : new Set();
+  overlay.__trxHistoryVisible = true;
+  mapMarkers.add(overlay);
+
+  // Build a popup for the overlay
+  const decoder = msg.mcu_count != null ? "Meteor LRPT" : "NOAA APT";
+  const satellite = msg.satellite || "Unknown";
+  const ts = msg.ts_ms ? new Date(msg.ts_ms).toLocaleString() : "";
+  overlay.bindPopup(
+    `<div style="font-size:0.82rem;max-width:200px;">` +
+    `<strong>${escapeMapHtml(decoder)}</strong><br>` +
+    `${escapeMapHtml(satellite)}<br>` +
+    `${escapeMapHtml(ts)}<br>` +
+    (msg.path ? `<a href="${escapeMapHtml(msg.path)}" target="_blank" style="color:var(--accent);">Download PNG</a>` : "") +
+    `</div>`
+  );
+
+  // Add ground track polyline if available
+  let track = null;
+  if (msg.ground_track && Array.isArray(msg.ground_track) && msg.ground_track.length >= 2) {
+    const latlngs = msg.ground_track.map(function(pt) { return [pt[0], pt[1]]; });
+    track = L.polyline(latlngs, {
+      color: mapSourceColor("wxsat"),
+      weight: 2,
+      opacity: 0.7,
+      dashArray: "6, 4",
+    });
+    track.__trxType = "wxsat";
+    track.__trxWxsatKey = key;
+    track.__trxRigIds = overlay.__trxRigIds;
+    track.__trxHistoryVisible = true;
+    mapMarkers.add(track);
+    if (aprsMap) {
+      track.addTo(aprsMap);
+    }
+  }
+
+  wxsatOverlays.set(key, { overlay: overlay, track: track, msg: msg });
+
+  if (aprsMap) {
+    overlay.addTo(aprsMap);
+  }
+  applyMapFilter();
+};
+
+window.removeWxsatMapOverlay = function(key) {
+  const entry = wxsatOverlays.get(key);
+  if (!entry) return;
+  if (entry.overlay) {
+    mapMarkers.delete(entry.overlay);
+    if (aprsMap && aprsMap.hasLayer(entry.overlay)) entry.overlay.removeFrom(aprsMap);
+  }
+  if (entry.track) {
+    mapMarkers.delete(entry.track);
+    if (aprsMap && aprsMap.hasLayer(entry.track)) entry.track.removeFrom(aprsMap);
+  }
+  wxsatOverlays.delete(key);
+};
+
+window.clearWxsatMapOverlays = function() {
+  for (const [key] of wxsatOverlays) {
+    window.removeWxsatMapOverlay(key);
+  }
+};
+
 window.clearMapMarkersByType = function(type) {
   if (type === "aprs") {
     selectedAprsTrackCall = null;
@@ -5704,6 +5802,11 @@ window.clearMapMarkersByType = function(type) {
       }
     });
     vdesMarkers.clear();
+    return;
+  }
+
+  if (type === "wxsat") {
+    window.clearWxsatMapOverlays();
     return;
   }
 
