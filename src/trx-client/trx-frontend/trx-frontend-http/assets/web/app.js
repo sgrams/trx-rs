@@ -7680,6 +7680,10 @@ document.querySelectorAll(".sub-tab-bar").forEach((bar) => {
         if (window.refreshCwTonePicker) window.refreshCwTonePicker();
       });
     }
+    // Clear SAT prediction DOM when leaving the SAT tab to reduce node count.
+    if (btn.dataset.subtab !== "sat" && typeof window.clearSatPredictionDom === "function") {
+      window.clearSatPredictionDom();
+    }
   });
 });
 
