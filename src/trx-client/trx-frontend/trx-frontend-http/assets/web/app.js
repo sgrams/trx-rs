@@ -1440,7 +1440,7 @@ function overviewVisibleBinWindow(data, binCount) {
 }
 
 function pushOverviewWaterfallFrame(data) {
-  if (!overviewCanvas || !data || !Array.isArray(data.bins) || data.bins.length === 0) return;
+  if (!overviewCanvas || !data || !isBinsArray(data.bins) || data.bins.length === 0) return;
   overviewWaterfallRows.push(data.bins.slice());
   overviewWaterfallPushCount++;
   trimOverviewWaterfallRows();
@@ -1502,7 +1502,7 @@ function drawOverviewWaterfall(W, H, pal) {
   ensureWaterfallLut(pal, minDb, maxDb);
 
   function renderRow(dstY, srcBins) {
-    if (!Array.isArray(srcBins) || srcBins.length === 0) return;
+    if (!isBinsArray(srcBins) || srcBins.length === 0) return;
     const { startIdx, endIdx } = overviewVisibleBinWindow(lastSpectrumData, srcBins.length);
     const spanBins = Math.max(1, endIdx - startIdx);
     const rowBase = dstY * rowStride;
@@ -2200,7 +2200,7 @@ function setRigFrequency(freqHz) {
 }
 
 function spectrumBinIndexForHz(data, hz) {
-  if (!data || !Array.isArray(data.bins) || data.bins.length < 2 || !Number.isFinite(hz)) {
+  if (!data || !isBinsArray(data.bins) || data.bins.length < 2 || !Number.isFinite(hz)) {
     return null;
   }
   const maxIdx = data.bins.length - 1;
@@ -2216,7 +2216,7 @@ function spectrumPowerScore(db) {
 }
 
 function sweetSpotCandidateForFrame(data, freqHz, bandwidthHz) {
-  if (!data || !Array.isArray(data.bins) || data.bins.length < 16) {
+  if (!data || !isBinsArray(data.bins) || data.bins.length < 16) {
     return null;
   }
   if (!Number.isFinite(freqHz) || !Number.isFinite(bandwidthHz) || bandwidthHz <= 0) {
@@ -4167,7 +4167,7 @@ async function applyBandwidthFromInput() {
 }
 
 function estimateBandwidthAroundPeak(data, centerHz) {
-  if (!data || !Array.isArray(data.bins) || data.bins.length < 3 || !Number.isFinite(centerHz)) {
+  if (!data || !isBinsArray(data.bins) || data.bins.length < 3 || !Number.isFinite(centerHz)) {
     return null;
   }
 
@@ -7976,7 +7976,7 @@ if (sdrSquelchAutoBtn) {
     if (!sdrSquelchSupported) return;
     let pct = 0; // default: Off
     const data = lastSpectrumData || window.lastSpectrumData;
-    if (data && Array.isArray(data.bins) && data.bins.length > 0) {
+    if (data && isBinsArray(data.bins) && data.bins.length > 0) {
       const noiseDb = estimateNoiseFloorDb(data.bins);
       if (noiseDb != null && Number.isFinite(noiseDb)) {
         // Set threshold slightly above noise floor so squelch closes on noise
@@ -9023,6 +9023,37 @@ let waterfallGamma = 1.0;
 const SPECTRUM_HEADROOM_DB = 20;
 const SPECTRUM_SMOOTH_ALPHA = 0.42;
 let _spectrumBinBuf = []; // Reusable buffer for SSE bin decoding
+// Fast base64 → Int8Array decoder using a lookup table.
+// Avoids atob() (which allocates a UTF-16 string) and the subsequent
+// charCodeAt loop, decoding directly into a reusable typed array.
+const _b64Lut = new Uint8Array(128);
+for (let i = 0; i < 128; i++) _b64Lut[i] = 255;
+"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/".split("").forEach((c, i) => {
+  _b64Lut[c.charCodeAt(0)] = i;
+});
+let _spectrumBinI8 = new Int8Array(0); // Reusable typed-array bin buffer
+// Check if a value is an array-like bins buffer (Array or TypedArray).
+function isBinsArray(v) { return Array.isArray(v) || ArrayBuffer.isView(v); }
+function decodeBase64ToInt8(b64) {
+  // Strip trailing '=' padding
+  let end = b64.length;
+  while (end > 0 && b64.charCodeAt(end - 1) === 61) end--;
+  const outLen = (end * 3 >>> 2); // exact byte count without padding
+  if (_spectrumBinI8.length !== outLen) _spectrumBinI8 = new Int8Array(outLen);
+  const out = _spectrumBinI8;
+  let j = 0;
+  for (let i = 0; i < end; ) {
+    const a = _b64Lut[b64.charCodeAt(i++)];
+    const b = i < end ? _b64Lut[b64.charCodeAt(i++)] : 0;
+    const c = i < end ? _b64Lut[b64.charCodeAt(i++)] : 0;
+    const d = i < end ? _b64Lut[b64.charCodeAt(i++)] : 0;
+    const n = (a << 18) | (b << 12) | (c << 6) | d;
+    if (j < outLen) out[j++] = (n >> 16) & 0xff;
+    if (j < outLen) out[j++] = (n >> 8) & 0xff;
+    if (j < outLen) out[j++] = n & 0xff;
+  }
+  return out;
+}
 
 // Crosshair state (CSS coords relative to spectrum canvas).
 let spectrumCrosshairX = null;
@@ -9115,14 +9146,14 @@ function pruneSpectrumPeakHoldFrames(now = Date.now()) {
   let removeCount = 0;
   for (let i = 0; i < spectrumPeakHoldFrames.length; i++) {
     const f = spectrumPeakHoldFrames[i];
-    if (f && Array.isArray(f.bins) && now - f.t <= holdMs) break;
+    if (f && isBinsArray(f.bins) && now - f.t <= holdMs) break;
     removeCount++;
   }
   if (removeCount > 0) spectrumPeakHoldFrames.splice(0, removeCount);
 }
 
 function pushSpectrumPeakHoldFrame(frame) {
-  if (!frame || !Array.isArray(frame.bins) || frame.bins.length === 0) {
+  if (!frame || !isBinsArray(frame.bins) || frame.bins.length === 0) {
     clearSpectrumPeakHoldFrames();
     return;
   }
@@ -9142,14 +9173,14 @@ function pushSpectrumPeakHoldFrame(frame) {
 
 function buildSpectrumPeakHoldBins(currentBins) {
   const holdMs = Math.max(0, Number.isFinite(overviewPeakHoldMs) ? overviewPeakHoldMs : 0);
-  if (holdMs <= 0 || !Array.isArray(currentBins) || currentBins.length === 0) {
+  if (holdMs <= 0 || !isBinsArray(currentBins) || currentBins.length === 0) {
     return null;
   }
   pruneSpectrumPeakHoldFrames();
   if (spectrumPeakHoldFrames.length === 0) return null;
   const peakBins = currentBins.slice();
   for (const frame of spectrumPeakHoldFrames) {
-    if (!frame || !Array.isArray(frame.bins) || frame.bins.length !== peakBins.length) continue;
+    if (!frame || !isBinsArray(frame.bins) || frame.bins.length !== peakBins.length) continue;
     for (let i = 0; i < peakBins.length; i++) {
       if (frame.bins[i] > peakBins[i]) peakBins[i] = frame.bins[i];
     }
@@ -9160,7 +9191,7 @@ function buildSpectrumPeakHoldBins(currentBins) {
 // Estimate noise floor as the 15th-percentile of visible bins (same heuristic as Auto).
 // Uses O(N) nth-element selection instead of O(N log N) sort.
 function estimateNoiseFloorDb(bins) {
-  if (!Array.isArray(bins) || bins.length === 0) return null;
+  if (!isBinsArray(bins) || bins.length === 0) return null;
   const k = Math.floor(bins.length * 0.15);
   return nthElement(bins, k);
 }
@@ -9190,12 +9221,12 @@ let _nthScratch = new Float64Array(0);
 let _smoothBins = [];
 
 function buildSpectrumRenderData(frame) {
-  if (!frame || !Array.isArray(frame.bins)) return frame;
+  if (!frame || !isBinsArray(frame.bins)) return frame;
   const n = frame.bins.length;
   const prev = lastSpectrumRenderData;
   const canBlend =
     prev &&
-    Array.isArray(prev.bins) &&
+    isBinsArray(prev.bins) &&
     prev.bins.length === n &&
     prev.sample_rate === frame.sample_rate &&
     prev.center_hz === frame.center_hz;
@@ -9238,7 +9269,7 @@ function canvasXToHz(cssX, cssW, range) {
 }
 
 function nearestSpectrumPeak(cssX, cssW, data) {
-  if (!data || !Array.isArray(data.bins) || data.bins.length === 0 || cssW <= 0) {
+  if (!data || !isBinsArray(data.bins) || data.bins.length === 0 || cssW <= 0) {
     return null;
   }
 
@@ -9309,7 +9340,7 @@ function spectrumTargetHzAt(cssX, cssW, data) {
 }
 
 function visibleSpectrumPeakIndices(data, limit = 24) {
-  if (!data || !Array.isArray(data.bins) || data.bins.length < 3) {
+  if (!data || !isBinsArray(data.bins) || data.bins.length < 3) {
     return [];
   }
 
@@ -9399,11 +9430,7 @@ function startSpectrumStreaming() {
       const sampleRate = Number(evt.data.slice(commaA + 1, commaB));
       const b64 = evt.data.slice(commaB + 1);
       const hadSpectrum = !!lastSpectrumData;
-      const raw = atob(b64);
-      const len = raw.length;
-      if (_spectrumBinBuf.length !== len) _spectrumBinBuf = new Array(len);
-      const bins = _spectrumBinBuf;
-      for (let i = 0; i < len; i++) bins[i] = (raw.charCodeAt(i) << 24 >> 24);
+      const bins = decodeBase64ToInt8(b64);
       // Preserve any RDS data from the last rds event.
       const rds = lastSpectrumData?.rds;
       lastSpectrumData = { bins, center_hz: centerHz, sample_rate: sampleRate, rds };
@@ -9815,7 +9842,7 @@ function drawSpectrum(data) {
   }
   spectrumGl.drawFilledArea(spectrumTmpFillPoints, H, cssColorToRgba(pal.spectrumFill));
 
-  if (Array.isArray(peakHoldBins) && peakHoldBins.length === n) {
+  if (isBinsArray(peakHoldBins) && peakHoldBins.length === n) {
     spectrumTmpPeakPoints.length = 0;
     for (let i = 0; i < n; i++) {
       spectrumTmpPeakPoints.push(binX(i), binYFromBins(peakHoldBins, i));
@@ -9932,7 +9959,7 @@ window.addEventListener("resize", _updateCachedCanvasSizes);
 _updateCachedCanvasSizes();
 
 function pushSpectrumWaterfallFrame(data) {
-  if (!spectrumWaterfallCanvas || !data || !Array.isArray(data.bins) || data.bins.length === 0) return;
+  if (!spectrumWaterfallCanvas || !data || !isBinsArray(data.bins) || data.bins.length === 0) return;
   spectrumWfRows.push(data.bins.slice());
   spectrumWfPushCount++;
   trimSpectrumWaterfallRows();
@@ -9997,7 +10024,7 @@ function drawSpectrumWaterfall() {
   ensureWaterfallLut(pal, minDb, maxDb);
 
   function renderRow(dstY, srcBins) {
-    if (!Array.isArray(srcBins) || srcBins.length === 0) return;
+    if (!isBinsArray(srcBins) || srcBins.length === 0) return;
     const { startIdx, endIdx } = overviewVisibleBinWindow(lastSpectrumData, srcBins.length);
     const spanBins = Math.max(1, endIdx - startIdx);
     const rowBase = dstY * rowStride;
@@ -10767,7 +10794,7 @@ window.addEventListener("keydown", (event) => {
         // Auto: estimate from noise floor
         let auto = 30;
         const data = lastSpectrumData || window.lastSpectrumData;
-        if (data && Array.isArray(data.bins) && data.bins.length > 0) {
+        if (data && isBinsArray(data.bins) && data.bins.length > 0) {
           const noiseDb = estimateNoiseFloorDb(data.bins);
           if (noiseDb != null && Number.isFinite(noiseDb)) {
             const thresholdDb = noiseDb + 6;
