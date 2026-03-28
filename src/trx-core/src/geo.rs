@@ -15,7 +15,7 @@ use std::sync::RwLock;
 use std::time::Duration;
 
 /// Result of computing upcoming passes, including metadata about TLE source.
-#[derive(Debug, Clone, serde::Serialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct PassPredictionResult {
     /// Predicted passes sorted by AOS time.
     pub passes: Vec<PassPrediction>,
@@ -26,7 +26,7 @@ pub struct PassPredictionResult {
 }
 
 /// Indicates the origin of the TLE data used for predictions.
-#[derive(Debug, Clone, serde::Serialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum TleSource {
     /// Live TLE data fetched from CelesTrak.
@@ -52,12 +52,22 @@ const CELESTRAK_HAM_URL: &str =
 /// How often to refresh TLEs after the initial fetch (24 hours).
 const TLE_REFRESH_INTERVAL: Duration = Duration::from_secs(24 * 60 * 60);
 
+/// Satellite category based on TLE source group.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SatCategory {
+    Weather,
+    Amateur,
+    Other,
+}
+
 /// A single TLE entry: satellite name + two-line element set.
 #[derive(Debug, Clone)]
 pub struct TleEntry {
     pub name: String,
     pub line1: String,
     pub line2: String,
+    pub category: SatCategory,
 }
 
 /// Global store for dynamically-fetched TLE data.
@@ -81,12 +91,14 @@ pub struct PassGeo {
 }
 
 /// A predicted satellite pass over the observer's location.
-#[derive(Debug, Clone, serde::Serialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct PassPrediction {
     /// Satellite display name.
     pub satellite: String,
     /// NORAD catalog number.
     pub norad_id: u32,
+    /// Satellite category (weather, amateur, other).
+    pub category: SatCategory,
     /// Acquisition of Signal: UTC timestamp in milliseconds.
     pub aos_ms: i64,
     /// Loss of Signal: UTC timestamp in milliseconds.
@@ -178,7 +190,7 @@ fn tle_for_satellite(name: &str) -> Option<(String, String)> {
 // ---------------------------------------------------------------------------
 
 /// Parse a CelesTrak 3-line TLE response into a map of NORAD ID → TleEntry.
-fn parse_tle_response(body: &str) -> HashMap<u32, TleEntry> {
+fn parse_tle_response(body: &str, category: SatCategory) -> HashMap<u32, TleEntry> {
     let mut result = HashMap::new();
     let lines: Vec<&str> = body.lines().map(|l| l.trim_end()).collect();
     let mut i = 0;
@@ -196,6 +208,7 @@ fn parse_tle_response(body: &str) -> HashMap<u32, TleEntry> {
                         name: name_line.to_string(),
                         line1: line1.to_string(),
                         line2: line2.to_string(),
+                        category,
                     },
                 );
             }
@@ -206,7 +219,7 @@ fn parse_tle_response(body: &str) -> HashMap<u32, TleEntry> {
 }
 
 /// Fetch TLEs from a CelesTrak URL and merge them into the global store.
-async fn fetch_and_merge_tles(url: &str) -> Result<usize, String> {
+async fn fetch_and_merge_tles(url: &str, category: SatCategory) -> Result<usize, String> {
     let response = reqwest::Client::builder()
         .timeout(Duration::from_secs(30))
         .build()
@@ -225,7 +238,7 @@ async fn fetch_and_merge_tles(url: &str) -> Result<usize, String> {
         .await
         .map_err(|e| format!("Failed to read CelesTrak response: {e}"))?;
 
-    let tles = parse_tle_response(&body);
+    let tles = parse_tle_response(&body, category);
     let count = tles.len();
 
     if count == 0 {
@@ -257,7 +270,7 @@ async fn fetch_and_merge_tles(url: &str) -> Result<usize, String> {
 ///
 /// Returns the number of TLEs loaded, or an error description.
 pub async fn refresh_tles_from_celestrak() -> Result<usize, String> {
-    fetch_and_merge_tles(CELESTRAK_WEATHER_URL).await
+    fetch_and_merge_tles(CELESTRAK_WEATHER_URL, SatCategory::Weather).await
 }
 
 /// Spawn a background task that fetches TLEs from CelesTrak on start and
@@ -268,7 +281,7 @@ pub async fn refresh_tles_from_celestrak() -> Result<usize, String> {
 pub fn spawn_tle_refresh_task() {
     tokio::spawn(async {
         // Initial fetch at startup: weather + amateur satellites.
-        match fetch_and_merge_tles(CELESTRAK_WEATHER_URL).await {
+        match fetch_and_merge_tles(CELESTRAK_WEATHER_URL, SatCategory::Weather).await {
             Ok(n) => {
                 tracing::info!("TLE refresh: loaded {n} weather satellite TLEs from CelesTrak")
             }
@@ -276,7 +289,7 @@ pub fn spawn_tle_refresh_task() {
                 tracing::warn!("TLE refresh: weather fetch failed ({e}), using hardcoded TLEs")
             }
         }
-        match fetch_and_merge_tles(CELESTRAK_HAM_URL).await {
+        match fetch_and_merge_tles(CELESTRAK_HAM_URL, SatCategory::Amateur).await {
             Ok(n) => {
                 tracing::info!("TLE refresh: loaded {n} amateur satellite TLEs from CelesTrak")
             }
@@ -290,7 +303,7 @@ pub fn spawn_tle_refresh_task() {
 
         loop {
             interval.tick().await;
-            match fetch_and_merge_tles(CELESTRAK_WEATHER_URL).await {
+            match fetch_and_merge_tles(CELESTRAK_WEATHER_URL, SatCategory::Weather).await {
                 Ok(n) => {
                     tracing::info!("TLE refresh: updated {n} weather satellite TLEs from CelesTrak")
                 }
@@ -298,7 +311,7 @@ pub fn spawn_tle_refresh_task() {
                     tracing::warn!("TLE refresh: weather fetch failed ({e}), keeping previous TLEs")
                 }
             }
-            match fetch_and_merge_tles(CELESTRAK_HAM_URL).await {
+            match fetch_and_merge_tles(CELESTRAK_HAM_URL, SatCategory::Amateur).await {
                 Ok(n) => {
                     tracing::info!("TLE refresh: updated {n} amateur satellite TLEs from CelesTrak")
                 }
@@ -372,6 +385,7 @@ fn compute_az_el(
 fn find_passes_for_sat(
     name: &str,
     norad_id: u32,
+    category: SatCategory,
     line1: &str,
     line2: &str,
     obs_lat: f64,
@@ -432,6 +446,7 @@ fn find_passes_for_sat(
             passes.push(PassPrediction {
                 satellite: name.to_string(),
                 norad_id,
+                category,
                 aos_ms,
                 los_ms: t_ms,
                 max_elevation_deg: (max_el * 10.0).round() / 10.0,
@@ -450,6 +465,7 @@ fn find_passes_for_sat(
         passes.push(PassPrediction {
             satellite: name.to_string(),
             norad_id,
+            category,
             aos_ms,
             los_ms: start_ms + window_ms,
             max_elevation_deg: (max_el * 10.0).round() / 10.0,
@@ -488,6 +504,7 @@ pub fn compute_upcoming_passes(
             let passes = find_passes_for_sat(
                 &entry.name,
                 norad_id,
+                entry.category,
                 &entry.line1,
                 &entry.line2,
                 station_lat,
@@ -768,20 +785,21 @@ NOAA 19
 1 33591U 09005A   26085.50000000  .00000028  00000-0  20000-4 0  9997
 2 33591  99.1700 050.5000 0014000 100.0000 260.0000 14.12300000  8003
 ";
-        let tles = parse_tle_response(body);
+        let tles = parse_tle_response(body, SatCategory::Weather);
         assert_eq!(tles.len(), 2);
         assert!(tles.contains_key(&25338));
         assert!(tles.contains_key(&33591));
         assert_eq!(tles[&25338].name, "NOAA 15");
         assert!(tles[&25338].line1.starts_with("1 25338"));
+        assert_eq!(tles[&25338].category, SatCategory::Weather);
         assert_eq!(tles[&33591].name, "NOAA 19");
         assert!(tles[&33591].line2.starts_with("2 33591"));
     }
 
     #[test]
     fn test_parse_tle_response_empty() {
-        assert!(parse_tle_response("").is_empty());
-        assert!(parse_tle_response("not a tle\n").is_empty());
+        assert!(parse_tle_response("", SatCategory::Other).is_empty());
+        assert!(parse_tle_response("not a tle\n", SatCategory::Other).is_empty());
     }
 
     #[test]
@@ -850,7 +868,17 @@ NOAA 19
         let start = 1774800000000_i64; // 2026-03-28
         let window = 24 * 60 * 60 * 1000_i64;
         let (l1, l2) = hardcoded_tle(33591).unwrap();
-        let passes = find_passes_for_sat("NOAA 19", 33591, l1, l2, 48.0, 11.0, start, window);
+        let passes = find_passes_for_sat(
+            "NOAA 19",
+            33591,
+            SatCategory::Weather,
+            l1,
+            l2,
+            48.0,
+            11.0,
+            start,
+            window,
+        );
         assert!(
             passes.len() >= 2 && passes.len() <= 10,
             "Expected 2-10 passes for NOAA-19 in 24h, got {}",

@@ -4572,9 +4572,16 @@ button:focus-visible, input:focus-visible, select:focus-visible {
 .sat-pred-el-high { color: var(--accent-green); font-weight: 600; }
 .sat-pred-el-mid  { color: #f0a020; }
 .sat-pred-el-low  { color: var(--text-muted); }
+.sat-pred-section-title { font-size: 0.75rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); padding: 0.5rem 0.4rem 0.15rem; }
+.sat-pred-header-current { grid-template-columns: 1fr 4.5rem 6rem 6rem 5.5rem 6rem; }
+.sat-pred-row-current { display: grid; grid-template-columns: 1fr 4.5rem 6rem 6rem 5.5rem 6rem; gap: 0.25rem; padding: 0.35rem 0.4rem; font-size: 0.82rem; border-bottom: 1px solid var(--border-faint, rgba(255,255,255,0.04)); }
+.sat-pred-row-current:hover { background: var(--bg-hover, rgba(255,255,255,0.02)); }
+.sat-pred-col-countdown { font-variant-numeric: tabular-nums; font-weight: 600; color: var(--accent-green); }
+.sat-pred-current-empty { padding: 0.5rem 0.4rem; font-size: 0.8rem; color: var(--text-muted); }
 @media (max-width: 600px) {
   .sat-live-grid { grid-template-columns: 1fr; }
   .sat-history-header, .sat-history-row { grid-template-columns: 5rem 4rem 6rem 4rem 3.5rem 1fr; font-size: 0.75rem; }
   .sat-pred-header, .sat-pred-row { grid-template-columns: 5.5rem 1fr 4rem 4.5rem; font-size: 0.75rem; }
+  .sat-pred-header-current, .sat-pred-row-current { grid-template-columns: 1fr 4rem 5rem 5rem 4.5rem; font-size: 0.75rem; }
   .sat-pred-col-dir { display: none; }
 }

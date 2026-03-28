@@ -866,6 +866,12 @@
         <div id="sat-predictions-view" style="display:none;">
           <div class="ft8-controls">
             <input id="sat-pred-filter" class="ft8-filter" type="text" placeholder="Filter (e.g. ISS, NOAA, Meteor)" />
+            <select id="sat-pred-category" class="sat-sort-select">
+              <option value="all">All</option>
+              <option value="weather">Weather</option>
+              <option value="amateur">Ham Radio</option>
+              <option value="other">Other</option>
+            </select>
             <select id="sat-pred-min-el" class="sat-sort-select">
               <option value="0">All passes</option>
               <option value="10">Min 10°</option>
@@ -873,14 +879,31 @@
               <option value="45">Min 45°</option>
             </select>
           </div>
-          <div class="sat-pred-header">
-            <span class="sat-pred-col-time">AOS (UTC)</span>
-            <span class="sat-pred-col-sat">Satellite</span>
-            <span class="sat-pred-col-el">Max El</span>
-            <span class="sat-pred-col-dur">Duration</span>
-            <span class="sat-pred-col-dir">Direction</span>
+          <!-- Current passes -->
+          <div id="sat-pred-current-section">
+            <div class="sat-pred-section-title">Currently receivable</div>
+            <div class="sat-pred-header sat-pred-header-current">
+              <span class="sat-pred-col-sat">Satellite</span>
+              <span class="sat-pred-col-el">Max El</span>
+              <span class="sat-pred-col-time">AOS Start</span>
+              <span class="sat-pred-col-time">AOS End</span>
+              <span class="sat-pred-col-countdown">Time left</span>
+              <span class="sat-pred-col-dir">Direction</span>
+            </div>
+            <div id="sat-pred-current-list"></div>
           </div>
-          <div id="sat-pred-list"></div>
+          <!-- Upcoming passes -->
+          <div id="sat-pred-upcoming-section">
+            <div class="sat-pred-section-title">Upcoming passes</div>
+            <div class="sat-pred-header">
+              <span class="sat-pred-col-time">AOS (UTC)</span>
+              <span class="sat-pred-col-sat">Satellite</span>
+              <span class="sat-pred-col-el">Max El</span>
+              <span class="sat-pred-col-dur">Duration</span>
+              <span class="sat-pred-col-dir">Direction</span>
+            </div>
+            <div id="sat-pred-list"></div>
+          </div>
           <small id="sat-pred-status" style="color:var(--text-muted);font-size:0.75rem;">Loading predictions&hellip;</small>
         </div>
       </div>

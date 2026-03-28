@@ -292,12 +292,18 @@ document
 let satPredData = [];
 let satPredFilterText = "";
 let satPredMinEl = 0;
+let satPredCategory = "all";
 let satPredSatCount = 0;
+let satPredCountdownTimer = null;
 const satPredFilterInput = document.getElementById("sat-pred-filter");
 const satPredMinElSelect = document.getElementById("sat-pred-min-el");
+const satPredCategorySelect = document.getElementById("sat-pred-category");
 
 function getFilteredPredictions() {
   let items = satPredData;
+  if (satPredCategory !== "all") {
+    items = items.filter((p) => p.category === satPredCategory);
+  }
   if (satPredMinEl > 0) {
     items = items.filter((p) => p.max_elevation_deg >= satPredMinEl);
   }
@@ -307,14 +313,23 @@ function getFilteredPredictions() {
   return items;
 }
 
+function applyPredFilters() {
+  renderSatPredictions(getFilteredPredictions());
+}
+
 satPredFilterInput?.addEventListener("input", () => {
   satPredFilterText = satPredFilterInput.value.trim().toUpperCase();
-  renderSatPredictions(getFilteredPredictions());
+  applyPredFilters();
 });
 
 satPredMinElSelect?.addEventListener("change", () => {
   satPredMinEl = parseInt(satPredMinElSelect.value, 10) || 0;
-  renderSatPredictions(getFilteredPredictions());
+  applyPredFilters();
+});
+
+satPredCategorySelect?.addEventListener("change", () => {
+  satPredCategory = satPredCategorySelect.value;
+  applyPredFilters();
 });
 
 function azToCardinal(deg) {
@@ -339,55 +354,142 @@ function formatPredDuration(s) {
   return `${s}s`;
 }
 
+function formatCountdown(ms) {
+  const totalSec = Math.max(0, Math.floor(ms / 1000));
+  const m = Math.floor(totalSec / 60);
+  const s = totalSec % 60;
+  return `${m}:${String(s).padStart(2, "0")}`;
+}
+
 function renderSatPredictions(passes, error) {
-  const list = document.getElementById("sat-pred-list");
+  const currentList = document.getElementById("sat-pred-current-list");
+  const upcomingList = document.getElementById("sat-pred-list");
+  const currentSection = document.getElementById("sat-pred-current-section");
+  const upcomingSection = document.getElementById("sat-pred-upcoming-section");
   const status = document.getElementById("sat-pred-status");
-  if (!list) return;
+
+  // Stop any previous countdown timer
+  if (satPredCountdownTimer) { clearInterval(satPredCountdownTimer); satPredCountdownTimer = null; }
 
   if (error) {
-    list.innerHTML = "";
+    if (currentList) currentList.innerHTML = "";
+    if (upcomingList) upcomingList.innerHTML = "";
+    if (currentSection) currentSection.style.display = "none";
+    if (upcomingSection) upcomingSection.style.display = "none";
     if (status) status.textContent = error;
     return;
   }
 
   if (!Array.isArray(passes) || passes.length === 0) {
-    list.innerHTML = "";
+    if (currentList) currentList.innerHTML = "";
+    if (upcomingList) upcomingList.innerHTML = "";
+    if (currentSection) currentSection.style.display = "none";
+    if (upcomingSection) upcomingSection.style.display = "none";
     if (status) status.textContent = "No passes found in the next 24 hours.";
     return;
   }
 
-  const fragment = document.createDocumentFragment();
-  for (const pass of passes) {
-    const row = document.createElement("div");
-    row.className = "sat-pred-row";
-    const elClass = pass.max_elevation_deg >= 45
-      ? "sat-pred-el-high"
-      : pass.max_elevation_deg >= 10
-        ? "sat-pred-el-mid"
-        : "sat-pred-el-low";
-    const dir = `${azToCardinal(pass.azimuth_aos_deg)} → ${azToCardinal(pass.azimuth_los_deg)}`;
-    row.innerHTML = [
-      `<span class="sat-pred-col-time">${formatPredTime(pass.aos_ms)}</span>`,
-      `<span class="sat-pred-col-sat">${pass.satellite}</span>`,
-      `<span class="sat-pred-col-el ${elClass}">${pass.max_elevation_deg.toFixed(1)}°</span>`,
-      `<span class="sat-pred-col-dur">${formatPredDuration(pass.duration_s)}</span>`,
-      `<span class="sat-pred-col-dir">${dir}</span>`,
-    ].join("");
-    fragment.appendChild(row);
+  const now = Date.now();
+  const current = passes.filter((p) => p.aos_ms <= now && p.los_ms > now);
+  const upcoming = passes.filter((p) => p.aos_ms > now);
+
+  // ── Current passes ──
+  if (currentSection) currentSection.style.display = current.length > 0 ? "" : "none";
+  if (currentList) {
+    if (current.length === 0) {
+      currentList.innerHTML = "";
+    } else {
+      const frag = document.createDocumentFragment();
+      for (const pass of current) {
+        const row = document.createElement("div");
+        row.className = "sat-pred-row-current";
+        const elClass = pass.max_elevation_deg >= 45
+          ? "sat-pred-el-high"
+          : pass.max_elevation_deg >= 10
+            ? "sat-pred-el-mid"
+            : "sat-pred-el-low";
+        const dir = `${azToCardinal(pass.azimuth_aos_deg)} → ${azToCardinal(pass.azimuth_los_deg)}`;
+        const remaining = Math.max(0, pass.los_ms - now);
+        row.innerHTML = [
+          `<span class="sat-pred-col-sat">${pass.satellite}</span>`,
+          `<span class="sat-pred-col-el ${elClass}">${pass.max_elevation_deg.toFixed(1)}°</span>`,
+          `<span class="sat-pred-col-time">${formatPredTime(pass.aos_ms)}</span>`,
+          `<span class="sat-pred-col-time">${formatPredTime(pass.los_ms)}</span>`,
+          `<span class="sat-pred-col-countdown" data-los="${pass.los_ms}">${formatCountdown(remaining)}</span>`,
+          `<span class="sat-pred-col-dir">${dir}</span>`,
+        ].join("");
+        frag.appendChild(row);
+      }
+      currentList.replaceChildren(frag);
+    }
   }
-  list.replaceChildren(fragment);
+
+  // ── Upcoming passes ──
+  if (upcomingSection) upcomingSection.style.display = upcoming.length > 0 ? "" : "none";
+  if (upcomingList) {
+    const frag = document.createDocumentFragment();
+    for (const pass of upcoming) {
+      const row = document.createElement("div");
+      row.className = "sat-pred-row";
+      const elClass = pass.max_elevation_deg >= 45
+        ? "sat-pred-el-high"
+        : pass.max_elevation_deg >= 10
+          ? "sat-pred-el-mid"
+          : "sat-pred-el-low";
+      const dir = `${azToCardinal(pass.azimuth_aos_deg)} → ${azToCardinal(pass.azimuth_los_deg)}`;
+      row.innerHTML = [
+        `<span class="sat-pred-col-time">${formatPredTime(pass.aos_ms)}</span>`,
+        `<span class="sat-pred-col-sat">${pass.satellite}</span>`,
+        `<span class="sat-pred-col-el ${elClass}">${pass.max_elevation_deg.toFixed(1)}°</span>`,
+        `<span class="sat-pred-col-dur">${formatPredDuration(pass.duration_s)}</span>`,
+        `<span class="sat-pred-col-dir">${dir}</span>`,
+      ].join("");
+      frag.appendChild(row);
+    }
+    upcomingList.replaceChildren(frag);
+  }
+
+  // ── Status ──
   if (status) {
-    let text = `${passes.length} pass${passes.length === 1 ? "" : "es"} in the next 24 h · times in UTC`;
+    const totalAll = getFilteredPredictions().length;
+    let text = `${current.length} active · ${upcoming.length} upcoming · times in UTC`;
     if (satPredSatCount > 0) text += ` · ${satPredSatCount} satellites tracked`;
     status.textContent = text;
+  }
+
+  // ── Countdown timer: update "time left" every second ──
+  if (current.length > 0) {
+    satPredCountdownTimer = setInterval(() => {
+      const n = Date.now();
+      const els = document.querySelectorAll("#sat-pred-current-list .sat-pred-col-countdown");
+      let anyActive = false;
+      for (const el of els) {
+        const los = parseInt(el.dataset.los, 10);
+        const rem = los - n;
+        if (rem > 0) {
+          el.textContent = formatCountdown(rem);
+          anyActive = true;
+        } else {
+          el.textContent = "0:00";
+        }
+      }
+      if (!anyActive) {
+        // All current passes ended — re-render to move them out
+        clearInterval(satPredCountdownTimer);
+        satPredCountdownTimer = null;
+        renderSatPredictions(getFilteredPredictions());
+      }
+    }, 1000);
   }
 }
 
 async function loadSatPredictions() {
   const status = document.getElementById("sat-pred-status");
-  const list = document.getElementById("sat-pred-list");
+  const currentList = document.getElementById("sat-pred-current-list");
+  const upcomingList = document.getElementById("sat-pred-list");
   if (status) status.textContent = "Loading predictions\u2026";
-  if (list) list.innerHTML = "";
+  if (currentList) currentList.innerHTML = "";
+  if (upcomingList) upcomingList.innerHTML = "";
   try {
     const resp = await fetch("/sat_passes");
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
