@@ -11,7 +11,6 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use bytes::Bytes;
-use chrono::Local;
 use flate2::write::GzEncoder;
 use flate2::Compression;
 use num_complex::Complex;
@@ -2477,11 +2476,15 @@ pub async fn run_noaa_decoder(
             changed = state_rx.changed() => {
                 match changed {
                     Ok(()) => {
-                        let state = state_rx.borrow();
+                        // Extract fields before any await so the Ref is dropped.
+                        let (new_active, new_reset_seq) = {
+                            let state = state_rx.borrow();
+                            (state.noaa_decode_enabled, state.noaa_decode_reset_seq)
+                        };
                         let was_active = active;
-                        active = state.noaa_decode_enabled;
-                        if state.noaa_decode_reset_seq != last_reset_seq {
-                            last_reset_seq = state.noaa_decode_reset_seq;
+                        active = new_active;
+                        if new_reset_seq != last_reset_seq {
+                            last_reset_seq = new_reset_seq;
                             decoder.reset();
                             pass_start_ms = current_timestamp_ms();
                         }
@@ -2489,7 +2492,6 @@ pub async fn run_noaa_decoder(
                             // User disabled — finalise whatever we have
                             finalize_noaa_pass(
                                 &mut decoder,
-                                pass_start_ms,
                                 &output_dir,
                                 &decode_tx,
                                 &histories,
@@ -2514,7 +2516,6 @@ pub async fn run_noaa_decoder(
                 );
                 finalize_noaa_pass(
                     &mut decoder,
-                    pass_start_ms,
                     &output_dir,
                     &decode_tx,
                     &histories,
@@ -2532,7 +2533,6 @@ pub async fn run_noaa_decoder(
 /// `DecodedMessage::NoaaImage` event.  No-ops if fewer than 2 lines decoded.
 async fn finalize_noaa_pass(
     decoder: &mut AptDecoder,
-    pass_start_ms: i64,
     output_dir: &std::path::Path,
     decode_tx: &broadcast::Sender<DecodedMessage>,
     histories: &Arc<DecoderHistories>,
