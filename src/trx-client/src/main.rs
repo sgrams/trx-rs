@@ -519,6 +519,7 @@ async fn async_init() -> DynResult<AppState> {
                         history.push_back((now, None, message));
                     }
                 }
+                DecodedMessage::NoaaImage(_) => {}
             }
         });
 
