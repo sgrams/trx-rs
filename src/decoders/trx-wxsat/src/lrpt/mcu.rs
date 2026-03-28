@@ -55,7 +55,6 @@ impl ChannelBuffer {
         self.cursor += data.len();
         self.lines = (self.cursor / LINE_WIDTH as usize) as u32;
     }
-
 }
 
 /// Assembles decoded MCU blocks from multiple APIDs into a composite image.
@@ -145,12 +144,7 @@ impl ChannelAssembler {
         }
 
         // Determine the maximum number of complete lines across channels
-        let max_lines = self
-            .channels
-            .values()
-            .map(|ch| ch.lines)
-            .max()
-            .unwrap_or(0);
+        let max_lines = self.channels.values().map(|ch| ch.lines).max().unwrap_or(0);
 
         if max_lines == 0 {
             return None;

@@ -64,8 +64,7 @@ impl QpskDemod {
 
         for &s in samples {
             // Mix with NCO to remove carrier offset
-            let lo =
-                Complex::new(self.nco_phase.cos() as f32, (-self.nco_phase.sin()) as f32);
+            let lo = Complex::new(self.nco_phase.cos() as f32, (-self.nco_phase.sin()) as f32);
             let mixed = Complex::new(s, 0.0) * lo;
 
             // Symbol timing via Gardner TED

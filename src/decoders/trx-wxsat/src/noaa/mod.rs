@@ -117,12 +117,22 @@ impl AptDecoder {
             }
             (tf.satellite, tf.sensor_a, tf.sensor_b)
         } else {
-            (Satellite::Unknown, SensorChannel::Unknown, SensorChannel::Unknown)
+            (
+                Satellite::Unknown,
+                SensorChannel::Unknown,
+                SensorChannel::Unknown,
+            )
         };
 
         // Apply histogram equalisation per-channel for contrast enhancement
-        let mut all_a: Vec<u8> = lines.iter().flat_map(|l| l.pixels_a.iter().copied()).collect();
-        let mut all_b: Vec<u8> = lines.iter().flat_map(|l| l.pixels_b.iter().copied()).collect();
+        let mut all_a: Vec<u8> = lines
+            .iter()
+            .flat_map(|l| l.pixels_a.iter().copied())
+            .collect();
+        let mut all_b: Vec<u8> = lines
+            .iter()
+            .flat_map(|l| l.pixels_b.iter().copied())
+            .collect();
         telemetry::histogram_equalize(&mut all_a);
         telemetry::histogram_equalize(&mut all_b);
 
@@ -130,8 +140,10 @@ impl AptDecoder {
         let width_a = apt::IMAGE_A_LEN;
         let width_b = apt::IMAGE_B_LEN;
         for (i, line) in lines.iter_mut().enumerate() {
-            line.pixels_a.copy_from_slice(&all_a[i * width_a..(i + 1) * width_a]);
-            line.pixels_b.copy_from_slice(&all_b[i * width_b..(i + 1) * width_b]);
+            line.pixels_a
+                .copy_from_slice(&all_a[i * width_a..(i + 1) * width_a]);
+            line.pixels_b
+                .copy_from_slice(&all_b[i * width_b..(i + 1) * width_b]);
         }
 
         let png = image_enc::encode_png(&lines)?;
