@@ -11,4 +11,4 @@ and remote control are exposed elsewhere on the network.
 - [Architecture](Architecture) — system design, crate layout, data flow, and internals
 - [Optimization Guidelines](Optimization-Guidelines) — performance guidelines for the real-time DSP pipeline
 - [Planned Features](Planned-Features) — planned features and design notes
-- [Improvement Areas](Improvement-Areas) — codebase audit: quality, architecture, security, and performance
+- [Improvement Areas](Improvement-Areas) — codebase audit: quality, architecture, security, performance, and improvement plan
