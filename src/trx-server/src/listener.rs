@@ -597,7 +597,7 @@ mod tests {
 
         let mut auth = HashSet::new();
         auth.insert("secret".to_string());
-        let handle = tokio::spawn(run_listener(addr, rigs, default_id, auth, shutdown_rx));
+        let handle = tokio::spawn(run_listener(addr, rigs, default_id, auth, None, ListenerTimeouts::default(), shutdown_rx));
 
         let stream = TcpStream::connect(addr).await.expect("connect");
         let (reader, mut writer) = stream.into_split();
@@ -633,6 +633,8 @@ mod tests {
             rigs,
             default_id,
             HashSet::new(),
+            None,
+            ListenerTimeouts::default(),
             shutdown_rx,
         ));
 
@@ -674,6 +676,8 @@ mod tests {
             rigs,
             default_id,
             HashSet::new(),
+            None,
+            ListenerTimeouts::default(),
             shutdown_rx,
         ));
 

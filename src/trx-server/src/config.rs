@@ -790,6 +790,7 @@ impl ServerConfig {
             aprsfi: AprsFiConfig::default(),
             decode_logs: DecodeLogsConfig::default(),
             sdr: SdrConfig::default(),
+            timeouts: TimeoutsConfig::default(),
             rigs: Vec::new(),
         };
         toml::to_string_pretty(&Wrapper { inner: example }).unwrap_or_default()
