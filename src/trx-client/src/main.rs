@@ -564,6 +564,9 @@ async fn async_init() -> DynResult<AppState> {
 
     let frontend_runtime_ctx = Arc::new(frontend_runtime);
 
+    // Fetch satellite TLEs from CelesTrak for pass predictions.
+    trx_core::geo::spawn_tle_refresh_task();
+
     // Start decode history collector before audio client starts replay.
     // Frontend tasks are spawned asynchronously, so starting the collector
     // here avoids missing the initial server-side history burst.
