@@ -1348,10 +1348,8 @@ pub async fn toggle_lrpt_decode(
 #[post("/clear_wxsat_decode")]
 pub async fn clear_wxsat_decode(
     query: web::Query<RemoteQuery>,
-    context: web::Data<Arc<FrontendRuntimeContext>>,
     rig_tx: web::Data<mpsc::Sender<RigRequest>>,
 ) -> Result<HttpResponse, Error> {
-    crate::server::audio::clear_wxsat_history(context.get_ref());
     send_command(
         &rig_tx,
         RigCommand::ResetWxsatDecoder,
@@ -1363,10 +1361,8 @@ pub async fn clear_wxsat_decode(
 #[post("/clear_lrpt_decode")]
 pub async fn clear_lrpt_decode(
     query: web::Query<RemoteQuery>,
-    context: web::Data<Arc<FrontendRuntimeContext>>,
     rig_tx: web::Data<mpsc::Sender<RigRequest>>,
 ) -> Result<HttpResponse, Error> {
-    crate::server::audio::clear_lrpt_history(context.get_ref());
     send_command(
         &rig_tx,
         RigCommand::ResetLrptDecoder,
@@ -2556,6 +2552,7 @@ async fn wait_for_view(mut rx: watch::Receiver<RigState>) -> Result<RigSnapshot,
         ft2_decode_enabled: state.ft2_decode_enabled,
         wspr_decode_enabled: state.wspr_decode_enabled,
         wxsat_decode_enabled: state.wxsat_decode_enabled,
+        lrpt_decode_enabled: state.lrpt_decode_enabled,
         filter: state.filter.clone(),
         spectrum: None,
         vchan_rds: None,
