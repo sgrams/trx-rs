@@ -15,7 +15,6 @@ const satDom = {
   filterInput:      document.getElementById("sat-filter"),
   sortSelect:       document.getElementById("sat-sort"),
   typeFilter:       document.getElementById("sat-type-filter"),
-  aptState:         document.getElementById("sat-apt-state"),
   lrptState:        document.getElementById("sat-lrpt-state"),
   viewLiveBtn:      document.getElementById("sat-view-live"),
   viewHistoryBtn:   document.getElementById("sat-view-history"),
@@ -84,16 +83,10 @@ satDom.viewHistoryBtn?.addEventListener("click", () => switchSatView("history"))
 satDom.viewPredBtn?.addEventListener("click", () => switchSatView("predictions"));
 
 // ── Live view: decoder state ────────────────────────────────────────
-let _lastSatAptOn = null, _lastSatLrptOn = null;
+let _lastSatLrptOn = null;
 window.updateSatLiveState = function (update) {
-  if (!satDom.aptState || !satDom.lrptState) return;
-  const aptOn = !!update.wxsat_decode_enabled;
+  if (!satDom.lrptState) return;
   const lrptOn = !!update.lrpt_decode_enabled;
-  if (aptOn !== _lastSatAptOn) {
-    _lastSatAptOn = aptOn;
-    satDom.aptState.textContent = aptOn ? "Listening" : "Idle";
-    satDom.aptState.className = "sat-live-value " + (aptOn ? "sat-state-listening" : "sat-state-idle");
-  }
   if (lrptOn !== _lastSatLrptOn) {
     _lastSatLrptOn = lrptOn;
     satDom.lrptState.textContent = lrptOn ? "Listening" : "Idle";
@@ -111,11 +104,11 @@ function renderSatLatestCard() {
 
   const img = satImageHistory[0];
   const decoder = img._decoder || "unknown";
-  const typeName = decoder === "lrpt" ? "Meteor LRPT" : "NOAA APT";
+  const typeName = "Meteor LRPT";
   const satellite = img.satellite || "";
   const channels = img.channels || img.channel_a || "";
-  const lines = img.line_count || img.mcu_count || 0;
-  const unit = decoder === "lrpt" ? "MCU rows" : "lines";
+  const lines = img.mcu_count || img.line_count || 0;
+  const unit = "MCU rows";
   const ts = img._ts || "--";
   const date = img._tsMs ? new Date(img._tsMs).toLocaleDateString() : "";
 
@@ -143,13 +136,12 @@ function getSatFilteredHistory() {
   let items = satImageHistory;
 
   const typeVal = satDom.typeFilter ? satDom.typeFilter.value : "all";
-  if (typeVal === "apt") items = items.filter((i) => i._decoder === "apt");
-  else if (typeVal === "lrpt") items = items.filter((i) => i._decoder === "lrpt");
+  if (typeVal === "lrpt") items = items.filter((i) => i._decoder === "lrpt");
 
   if (satFilterText) {
     items = items.filter((i) => {
       const haystack = [
-        i._decoder === "lrpt" ? "meteor lrpt" : "noaa apt",
+        "meteor lrpt",
         i.satellite || "",
         i.channels || "",
         i.channel_a || "",
@@ -170,14 +162,14 @@ function renderSatHistoryRow(img) {
   row.className = "sat-history-row";
 
   const decoder = img._decoder || "unknown";
-  const typeName = decoder === "lrpt" ? "Meteor LRPT" : "NOAA APT";
-  const typeClass = decoder === "lrpt" ? "sat-type-lrpt" : "sat-type-apt";
+  const typeName = "Meteor LRPT";
+  const typeClass = "sat-type-lrpt";
   const ts = img._ts || "--";
   const date = img._tsMs ? new Date(img._tsMs).toLocaleDateString([], { month: "short", day: "numeric" }) : "";
   const satellite = img.satellite || "--";
-  const channels = decoder === "lrpt" ? (img.channels || "--") : (img.channel_a && img.channel_b ? `A:${img.channel_a} B:${img.channel_b}` : img.channel_a || "--");
-  const lines = img.line_count || img.mcu_count || 0;
-  const unit = decoder === "lrpt" ? "MCU" : "ln";
+  const channels = img.channels || "--";
+  const lines = img.mcu_count || img.line_count || 0;
+  const unit = "MCU";
   let link = img.path
     ? `<a href="${img.path}" target="_blank" style="color:var(--accent);">PNG</a>`
     : "--";
@@ -241,14 +233,6 @@ function addSatImage(img, decoder) {
 }
 
 // ── Server callbacks ────────────────────────────────────────────────
-window.onServerSatImage = function (msg) {
-  if (satDom.status) satDom.status.textContent = "Image received (NOAA APT)";
-  addSatImage(msg, "apt");
-  if (msg.geo_bounds && msg.path && window.addSatMapOverlay) {
-    window.addSatMapOverlay(msg);
-  }
-};
-
 window.onServerLrptImage = function (msg) {
   if (satDom.status) satDom.status.textContent = "Image received (Meteor LRPT)";
   addSatImage(msg, "lrpt");
@@ -271,16 +255,6 @@ window.pruneSatHistoryView = function () {
 };
 
 // ── Toggle buttons ──────────────────────────────────────────────────
-const satDecodeToggleBtn = document.getElementById("sat-decode-toggle-btn");
-satDecodeToggleBtn?.addEventListener("click", async () => {
-  try {
-    await window.takeSchedulerControlForDecoderDisable?.(satDecodeToggleBtn);
-    await postPath("/toggle_wxsat_decode");
-  } catch (e) {
-    console.error("SAT toggle failed", e);
-  }
-});
-
 const lrptDecodeToggleBtn = document.getElementById("lrpt-decode-toggle-btn");
 lrptDecodeToggleBtn?.addEventListener("click", async () => {
   try {
@@ -305,7 +279,6 @@ document
   .getElementById("settings-clear-sat-history")
   ?.addEventListener("click", async () => {
     try {
-      await postPath("/clear_wxsat_decode");
       await postPath("/clear_lrpt_decode");
       window.resetSatHistoryView();
     } catch (e) {

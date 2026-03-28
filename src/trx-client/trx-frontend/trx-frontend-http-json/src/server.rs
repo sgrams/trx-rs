@@ -420,6 +420,7 @@ mod tests {
             ft4_decode_enabled: false,
             ft2_decode_enabled: false,
             wspr_decode_enabled: false,
+            lrpt_decode_enabled: false,
             cw_auto: true,
             cw_wpm: 15,
             cw_tone_hz: 700,

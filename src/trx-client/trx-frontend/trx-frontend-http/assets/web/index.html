@@ -577,7 +577,7 @@
         <div class="plugin-item">
           <strong>Weather Satellite Decoder</strong>
           <div style="color:var(--text-muted); font-size:0.85rem; margin-top:0.2rem;">
-            Decodes NOAA APT (137 MHz FM) and Meteor-M LRPT (137 MHz QPSK) weather satellite imagery.
+            Decodes Meteor-M LRPT (137 MHz QPSK) weather satellite imagery.
           </div>
         </div>
       </div>
@@ -805,7 +805,6 @@
       </div>
       <div id="subtab-sat" class="sub-tab-panel" style="display:none;">
         <div class="ft8-controls">
-          <button id="sat-decode-toggle-btn" type="button">Enable NOAA APT</button>
           <button id="lrpt-decode-toggle-btn" type="button">Enable Meteor LRPT</button>
           <small id="sat-status" style="color:var(--text-muted);">Waiting for satellite pass</small>
         </div>
@@ -819,20 +818,12 @@
         <div id="sat-live-view">
           <div class="sat-live-grid">
             <div class="sat-live-card">
-              <span class="sat-live-label">NOAA APT</span>
-              <span id="sat-apt-state" class="sat-live-value sat-state-idle">Idle</span>
-            </div>
-            <div class="sat-live-card">
               <span class="sat-live-label">Meteor LRPT</span>
               <span id="sat-lrpt-state" class="sat-live-value sat-state-idle">Idle</span>
             </div>
           </div>
           <div style="margin:0.5rem 0;">
             <div style="color:var(--text-muted); font-size:0.82rem; line-height:1.5;">
-              <strong>NOAA APT</strong> &mdash; Automatic Picture Transmission from NOAA-15/18/19 (137 MHz FM).
-              Dual-channel visible + infrared imagery at 4160 samples/sec with telemetry-based radiometric calibration.
-            </div>
-            <div style="color:var(--text-muted); font-size:0.82rem; line-height:1.5; margin-top:0.3rem;">
               <strong>Meteor-M LRPT</strong> &mdash; Low Rate Picture Transmission from Meteor-M N2-3/N2-4 (137 MHz QPSK at 72 kbps).
               Multi-channel CCSDS-framed imagery (APIDs 64&ndash;69) with RGB composite output.
             </div>
@@ -842,14 +833,13 @@
         <!-- History view -->
         <div id="sat-history-view" style="display:none;">
           <div class="sat-history-controls">
-            <input id="sat-filter" class="ft8-filter" type="text" placeholder="Filter (e.g. NOAA-18, Meteor, APT)" />
+            <input id="sat-filter" class="ft8-filter" type="text" placeholder="Filter (e.g. Meteor, LRPT)" />
             <select id="sat-sort" class="sat-sort-select">
               <option value="newest">Newest first</option>
               <option value="oldest">Oldest first</option>
             </select>
             <select id="sat-type-filter" class="sat-sort-select">
               <option value="all">All types</option>
-              <option value="apt">NOAA APT only</option>
               <option value="lrpt">Meteor LRPT only</option>
             </select>
           </div>
@@ -1091,9 +1081,6 @@
                 <label class="bm-label">Satellite preset
                   <select id="scheduler-sat-preset" class="status-input" aria-label="Satellite preset">
                     <option value="">— custom —</option>
-                    <option value="NOAA 15|25338">NOAA 15 (137.620 MHz APT)</option>
-                    <option value="NOAA 18|28654">NOAA 18 (137.9125 MHz APT)</option>
-                    <option value="NOAA 19|33591">NOAA 19 (137.100 MHz APT)</option>
                     <option value="METEOR-M2 3|57166">Meteor-M2 3 (137.900 MHz LRPT)</option>
                     <option value="METEOR-M2-4|59051">Meteor-M2-4 (137.900 MHz LRPT)</option>
                   </select>
@@ -1299,7 +1286,6 @@
               <tr><td>WSPR</td><td id="about-dec-wspr" class="about-status-off">Off</td></tr>
               <tr><td>CW</td><td id="about-dec-cw" class="about-status-off">Off</td></tr>
               <tr><td>APRS</td><td id="about-dec-aprs" class="about-status-off">Off</td></tr>
-              <tr><td>NOAA APT</td><td id="about-dec-sat" class="about-status-off">Off</td></tr>
               <tr><td>Meteor LRPT</td><td id="about-dec-lrpt" class="about-status-off">Off</td></tr>
             </table>
           </div>

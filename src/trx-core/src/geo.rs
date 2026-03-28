@@ -35,7 +35,7 @@ pub enum TleSource {
     Unavailable,
 }
 
-/// Half-swath width in km for NOAA APT / Meteor LRPT imagery.
+/// Half-swath width in km for Meteor LRPT imagery.
 const SWATH_HALF_WIDTH_KM: f64 = 1400.0;
 
 /// Earth radius in km (WGS84 mean).

@@ -4606,7 +4606,6 @@ button:focus-visible, input:focus-visible, select:focus-visible {
 .sat-history-row { display: grid; grid-template-columns: 7rem 5.5rem 9rem 6rem 4.5rem 1fr; gap: 0.25rem; padding: 0.35rem 0.4rem; font-size: 0.82rem; border-bottom: 1px solid var(--border-faint, rgba(255,255,255,0.04)); }
 .sat-history-row:hover { background: var(--bg-hover, rgba(255,255,255,0.02)); }
 .sat-col-type { font-weight: 500; }
-.sat-type-apt { color: #6ec6ff; }
 .sat-type-lrpt { color: #b39ddb; }
 .sat-latest-card { background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 0.4rem; padding: 0.6rem 0.75rem; }
 .sat-latest-card .sat-latest-title { font-size: 0.82rem; font-weight: 600; margin-bottom: 0.25rem; }

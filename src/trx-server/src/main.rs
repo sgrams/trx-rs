@@ -794,25 +794,6 @@ fn spawn_rig_audio_stack(
             }
         }));
 
-        // Spawn weather satellite APT decoder task
-        let wxsat_pcm_rx = pcm_tx.subscribe();
-        let wxsat_state_rx = state_rx.clone();
-        let wxsat_decode_tx = decode_tx.clone();
-        let wxsat_sr = rig_cfg.audio.sample_rate;
-        let wxsat_ch = rig_cfg.audio.channels;
-        let wxsat_shutdown_rx = shutdown_rx.clone();
-        let wxsat_histories = histories.clone();
-        let wxsat_output_dir = dirs::cache_dir()
-            .unwrap_or_else(|| std::path::PathBuf::from(".cache"))
-            .join("trx-rs")
-            .join("wxsat");
-        handles.push(tokio::spawn(async move {
-            tokio::select! {
-                _ = audio::run_wxsat_decoder(wxsat_sr, wxsat_ch as u16, wxsat_pcm_rx, wxsat_state_rx, wxsat_decode_tx, wxsat_histories, wxsat_output_dir) => {}
-                _ = wait_for_shutdown(wxsat_shutdown_rx) => {}
-            }
-        }));
-
         // Spawn Meteor-M LRPT decoder task
         let lrpt_pcm_rx = pcm_tx.subscribe();
         let lrpt_state_rx = state_rx.clone();

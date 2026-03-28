@@ -215,7 +215,6 @@ function applyAuthRestrictions() {
       "ft4-decode-toggle-btn",
       "ft2-decode-toggle-btn",
       "wspr-decode-toggle-btn",
-      "sat-decode-toggle-btn",
       "lrpt-decode-toggle-btn",
       "hf-aprs-decode-toggle-btn",
       "cw-auto",
@@ -371,7 +370,6 @@ const _decoderToggles = {
   ft2:    { el: document.getElementById("ft2-decode-toggle-btn"), last: null },
   wspr:   { el: document.getElementById("wspr-decode-toggle-btn"), last: null },
   hfAprs: { el: document.getElementById("hf-aprs-decode-toggle-btn"), last: null },
-  sat:    { el: document.getElementById("sat-decode-toggle-btn"), last: null },
   lrpt:   { el: document.getElementById("lrpt-decode-toggle-btn"), last: null },
 };
 
@@ -387,7 +385,7 @@ function syncDecoderToggle(entry, enabled, label) {
 // Cached About-tab decoder status elements — avoids 8× getElementById per render().
 const _aboutDecEls = [
   "about-dec-ft8", "about-dec-ft4", "about-dec-ft2", "about-dec-wspr",
-  "about-dec-cw", "about-dec-aprs", "about-dec-sat", "about-dec-lrpt",
+  "about-dec-cw", "about-dec-aprs", "about-dec-lrpt",
 ].map((id) => ({ el: document.getElementById(id), last: null }));
 
 function syncAboutDecoder(idx, enabled) {
@@ -3270,7 +3268,6 @@ function render(update) {
   syncDecoderToggle(_decoderToggles.ft2,     !!update.ft2_decode_enabled,     "FT2");
   syncDecoderToggle(_decoderToggles.wspr,    !!update.wspr_decode_enabled,    "WSPR");
   syncDecoderToggle(_decoderToggles.hfAprs,  !!update.hf_aprs_decode_enabled, "HF APRS");
-  syncDecoderToggle(_decoderToggles.sat,     !!update.wxsat_decode_enabled,   "NOAA APT");
   syncDecoderToggle(_decoderToggles.lrpt,    !!update.lrpt_decode_enabled,    "Meteor LRPT");
   if (window.updateSatLiveState) window.updateSatLiveState(update);
   const cwAutoEl = document.getElementById("cw-auto");
@@ -3447,8 +3444,7 @@ function render(update) {
   syncAboutDecoder(3, !!update.wspr_decode_enabled);
   syncAboutDecoder(4, !!update.cw_decode_enabled);
   syncAboutDecoder(5, !!(update.aprs_decode_enabled || update.hf_aprs_decode_enabled));
-  syncAboutDecoder(6, !!update.wxsat_decode_enabled);
-  syncAboutDecoder(7, !!update.lrpt_decode_enabled);
+  syncAboutDecoder(6, !!update.lrpt_decode_enabled);
 
   // About — Integrations card
   if (update.pskreporter_status) {
@@ -5717,7 +5713,7 @@ window.addSatMapOverlay = function(msg) {
   mapMarkers.add(overlay);
 
   // Build a popup for the overlay
-  const decoder = msg.mcu_count != null ? "Meteor LRPT" : "NOAA APT";
+  const decoder = "Meteor LRPT";
   const satellite = msg.satellite || "Unknown";
   const ts = msg.ts_ms ? new Date(msg.ts_ms).toLocaleString() : "";
   overlay.bindPopup(
@@ -8632,7 +8628,6 @@ function dispatchDecodeMessage(msg) {
   if (msg.type === "ft4" && window.onServerFt4) window.onServerFt4(msg);
   if (msg.type === "ft2" && window.onServerFt2) window.onServerFt2(msg);
   if (msg.type === "wspr" && window.onServerWspr) window.onServerWspr(msg);
-  if (msg.type === "wxsat_image" && window.onServerSatImage) window.onServerSatImage(msg);
   if (msg.type === "lrpt_image" && window.onServerLrptImage) window.onServerLrptImage(msg);
 }
 

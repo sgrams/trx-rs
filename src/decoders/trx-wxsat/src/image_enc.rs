@@ -4,8 +4,7 @@
 
 //! Shared PNG image encoding for weather satellite decoders.
 //!
-//! Both NOAA APT and Meteor-M LRPT decoders produce PNG output through
-//! this common module.
+//! The Meteor-M LRPT decoder produces PNG output through this module.
 
 use std::io::Cursor;
 

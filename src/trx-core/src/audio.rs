@@ -66,8 +66,6 @@ pub const AUDIO_MSG_VCHAN_BW: u8 = 0x13;
 pub const AUDIO_MSG_FT4_DECODE: u8 = 0x14;
 /// Server → client: FT2 decoded message (JSON `DecodedMessage::Ft2`).
 pub const AUDIO_MSG_FT2_DECODE: u8 = 0x15;
-/// Server → client: weather satellite APT image complete (JSON `DecodedMessage::WxsatImage`).
-pub const AUDIO_MSG_WXSAT_IMAGE: u8 = 0x16;
 /// Server → client: Meteor-M LRPT image complete (JSON `DecodedMessage::LrptImage`).
 pub const AUDIO_MSG_LRPT_IMAGE: u8 = 0x17;
 

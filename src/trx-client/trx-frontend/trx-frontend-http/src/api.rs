@@ -1305,21 +1305,6 @@ pub async fn toggle_wspr_decode(
     .await
 }
 
-#[post("/toggle_wxsat_decode")]
-pub async fn toggle_wxsat_decode(
-    query: web::Query<RemoteQuery>,
-    state: web::Data<watch::Receiver<RigState>>,
-    rig_tx: web::Data<mpsc::Sender<RigRequest>>,
-) -> Result<HttpResponse, Error> {
-    let enabled = state.get_ref().borrow().wxsat_decode_enabled;
-    send_command(
-        &rig_tx,
-        RigCommand::SetWxsatDecodeEnabled(!enabled),
-        query.into_inner().remote,
-    )
-    .await
-}
-
 #[post("/toggle_lrpt_decode")]
 pub async fn toggle_lrpt_decode(
     query: web::Query<RemoteQuery>,
@@ -1330,19 +1315,6 @@ pub async fn toggle_lrpt_decode(
     send_command(
         &rig_tx,
         RigCommand::SetLrptDecodeEnabled(!enabled),
-        query.into_inner().remote,
-    )
-    .await
-}
-
-#[post("/clear_wxsat_decode")]
-pub async fn clear_wxsat_decode(
-    query: web::Query<RemoteQuery>,
-    rig_tx: web::Data<mpsc::Sender<RigRequest>>,
-) -> Result<HttpResponse, Error> {
-    send_command(
-        &rig_tx,
-        RigCommand::ResetWxsatDecoder,
         query.into_inner().remote,
     )
     .await
@@ -2195,7 +2167,6 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
         .service(toggle_ft4_decode)
         .service(toggle_ft2_decode)
         .service(toggle_wspr_decode)
-        .service(toggle_wxsat_decode)
         .service(toggle_lrpt_decode)
         .service(sat_passes)
         .service(clear_ais_decode)
@@ -2207,7 +2178,6 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
         .service(clear_ft4_decode)
         .service(clear_ft2_decode)
         .service(clear_wspr_decode)
-        .service(clear_wxsat_decode)
         .service(clear_lrpt_decode)
         .service(select_rig)
         // Bookmark CRUD
@@ -2523,14 +2493,13 @@ async fn send_command_to_rig(
 
 fn bookmark_decoder_state(
     bookmark: &crate::server::bookmarks::Bookmark,
-) -> (bool, bool, bool, bool, bool, bool, bool, bool) {
+) -> (bool, bool, bool, bool, bool, bool, bool) {
     let mut want_aprs = bookmark.mode.trim().eq_ignore_ascii_case("PKT");
     let mut want_hf_aprs = false;
     let mut want_ft8 = false;
     let mut want_ft4 = false;
     let mut want_ft2 = false;
     let mut want_wspr = false;
-    let mut want_wxsat = false;
     let mut want_lrpt = false;
 
     for decoder in bookmark
@@ -2545,7 +2514,6 @@ fn bookmark_decoder_state(
             "ft4" => want_ft4 = true,
             "ft2" => want_ft2 = true,
             "wspr" => want_wspr = true,
-            "wxsat" => want_wxsat = true,
             "lrpt" => want_lrpt = true,
             _ => {}
         }
@@ -2558,7 +2526,6 @@ fn bookmark_decoder_state(
         want_ft4,
         want_ft2,
         want_wspr,
-        want_wxsat,
         want_lrpt,
     )
 }
@@ -2627,7 +2594,7 @@ async fn apply_selected_channel(
     let Some(bookmark) = bookmark_store_map.get_for_rig(remote, bookmark_id) else {
         return Ok(());
     };
-    let (want_aprs, want_hf_aprs, want_ft8, want_ft4, want_ft2, want_wspr, want_wxsat, want_lrpt) =
+    let (want_aprs, want_hf_aprs, want_ft8, want_ft4, want_ft2, want_wspr, want_lrpt) =
         bookmark_decoder_state(&bookmark);
     let desired = [
         RigCommand::SetAprsDecodeEnabled(want_aprs),
@@ -2636,7 +2603,6 @@ async fn apply_selected_channel(
         RigCommand::SetFt4DecodeEnabled(want_ft4),
         RigCommand::SetFt2DecodeEnabled(want_ft2),
         RigCommand::SetWsprDecodeEnabled(want_wspr),
-        RigCommand::SetWxsatDecodeEnabled(want_wxsat),
         RigCommand::SetLrptDecodeEnabled(want_lrpt),
     ];
     for cmd in desired {
@@ -2688,7 +2654,6 @@ async fn wait_for_view(mut rx: watch::Receiver<RigState>) -> Result<RigSnapshot,
         ft4_decode_enabled: state.ft4_decode_enabled,
         ft2_decode_enabled: state.ft2_decode_enabled,
         wspr_decode_enabled: state.wspr_decode_enabled,
-        wxsat_decode_enabled: state.wxsat_decode_enabled,
         lrpt_decode_enabled: state.lrpt_decode_enabled,
         filter: state.filter.clone(),
         spectrum: None,
