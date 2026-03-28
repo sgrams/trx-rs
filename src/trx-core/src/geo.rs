@@ -45,6 +45,10 @@ const EARTH_RADIUS_KM: f64 = 6371.0;
 const CELESTRAK_WEATHER_URL: &str =
     "https://celestrak.org/NORAD/elements/gp.php?GROUP=weather&FORMAT=tle";
 
+/// CelesTrak NOAA satellite TLE endpoint (includes NOAA-15/18/19 APT sats).
+const CELESTRAK_NOAA_URL: &str =
+    "https://celestrak.org/NORAD/elements/gp.php?GROUP=noaa&FORMAT=tle";
+
 /// CelesTrak amateur satellite TLE endpoint.
 const CELESTRAK_HAM_URL: &str =
     "https://celestrak.org/NORAD/elements/gp.php?GROUP=amateur&FORMAT=tle";
@@ -280,13 +284,21 @@ pub async fn refresh_tles_from_celestrak() -> Result<usize, String> {
 /// do not stop the periodic refresh — hardcoded fallback TLEs remain usable.
 pub fn spawn_tle_refresh_task() {
     tokio::spawn(async {
-        // Initial fetch at startup: weather + amateur satellites.
+        // Initial fetch at startup: weather + NOAA + amateur satellites.
         match fetch_and_merge_tles(CELESTRAK_WEATHER_URL, SatCategory::Weather).await {
             Ok(n) => {
                 tracing::info!("TLE refresh: loaded {n} weather satellite TLEs from CelesTrak")
             }
             Err(e) => {
                 tracing::warn!("TLE refresh: weather fetch failed ({e}), using hardcoded TLEs")
+            }
+        }
+        match fetch_and_merge_tles(CELESTRAK_NOAA_URL, SatCategory::Weather).await {
+            Ok(n) => {
+                tracing::info!("TLE refresh: loaded {n} NOAA satellite TLEs from CelesTrak")
+            }
+            Err(e) => {
+                tracing::warn!("TLE refresh: NOAA fetch failed ({e})")
             }
         }
         match fetch_and_merge_tles(CELESTRAK_HAM_URL, SatCategory::Amateur).await {
@@ -309,6 +321,14 @@ pub fn spawn_tle_refresh_task() {
                 }
                 Err(e) => {
                     tracing::warn!("TLE refresh: weather fetch failed ({e}), keeping previous TLEs")
+                }
+            }
+            match fetch_and_merge_tles(CELESTRAK_NOAA_URL, SatCategory::Weather).await {
+                Ok(n) => {
+                    tracing::info!("TLE refresh: updated {n} NOAA satellite TLEs from CelesTrak")
+                }
+                Err(e) => {
+                    tracing::warn!("TLE refresh: NOAA fetch failed ({e}), keeping previous TLEs")
                 }
             }
             match fetch_and_merge_tles(CELESTRAK_HAM_URL, SatCategory::Amateur).await {

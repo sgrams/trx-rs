@@ -271,6 +271,7 @@ async fn handle_client(
         }
 
         // GetSatPasses: compute satellite passes from the server-side TLE store.
+        // Runs on a blocking thread to avoid stalling the connection handler.
         if matches!(envelope.cmd, ClientCommand::GetSatPasses) {
             let result = if let Some((lat, lon)) = station_coords {
                 let now_ms = std::time::SystemTime::now()
@@ -278,7 +279,15 @@ async fn handle_client(
                     .unwrap_or_default()
                     .as_millis() as i64;
                 let window_ms = 24 * 3600 * 1000; // 24 hours
-                trx_core::geo::compute_upcoming_passes(lat, lon, now_ms, window_ms)
+                tokio::task::spawn_blocking(move || {
+                    trx_core::geo::compute_upcoming_passes(lat, lon, now_ms, window_ms)
+                })
+                .await
+                .unwrap_or_else(|_| trx_core::geo::PassPredictionResult {
+                    passes: vec![],
+                    satellite_count: 0,
+                    tle_source: trx_core::geo::TleSource::Unavailable,
+                })
             } else {
                 trx_core::geo::PassPredictionResult {
                     passes: vec![],

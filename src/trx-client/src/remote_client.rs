@@ -212,6 +212,116 @@ async fn run_spectrum_connection(
     }
 }
 
+/// Satellite pass prediction refresh runs on a dedicated TCP connection so it
+/// never blocks state polls or user commands on the main connection.
+/// Fetches immediately on connect, then every 5 minutes.
+async fn run_sat_pass_connection(
+    config: RemoteClientConfig,
+    mut shutdown_rx: watch::Receiver<bool>,
+) {
+    const SAT_PASS_REFRESH_INTERVAL: Duration = Duration::from_secs(5 * 60);
+    // Allow extra time for server-side SGP4 computation.
+    const SAT_PASS_IO_TIMEOUT: Duration = Duration::from_secs(30);
+
+    loop {
+        if *shutdown_rx.borrow() {
+            break;
+        }
+
+        match time::timeout(CONNECT_TIMEOUT, TcpStream::connect(&config.addr)).await {
+            Ok(Ok(stream)) => {
+                let _ = stream.set_nodelay(true);
+                let (reader, mut writer) = stream.into_split();
+                let mut reader = BufReader::new(reader);
+                let mut interval = time::interval(SAT_PASS_REFRESH_INTERVAL);
+
+                'inner: loop {
+                    tokio::select! {
+                        changed = shutdown_rx.changed() => {
+                            match changed {
+                                Ok(()) if *shutdown_rx.borrow() => return,
+                                Ok(()) => {}
+                                Err(_) => return,
+                            }
+                        }
+                        _ = interval.tick() => {
+                            match send_get_sat_passes_on(
+                                &config,
+                                &mut writer,
+                                &mut reader,
+                                SAT_PASS_IO_TIMEOUT,
+                            )
+                            .await
+                            {
+                                Ok(result) => {
+                                    if let Ok(mut guard) = config.sat_passes.write() {
+                                        *guard = Some(result);
+                                    }
+                                }
+                                Err(e) => {
+                                    warn!("Sat passes refresh failed: {}", e);
+                                    break 'inner;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            Ok(Err(e)) => warn!("Sat-pass connect failed: {}", e),
+            Err(_) => warn!("Sat-pass connect timed out"),
+        }
+
+        tokio::select! {
+            _ = time::sleep(Duration::from_secs(5)) => {}
+            changed = shutdown_rx.changed() => {
+                if matches!(changed, Ok(()) | Err(_)) && *shutdown_rx.borrow() {
+                    break;
+                }
+            }
+        }
+    }
+}
+
+/// Send a GetSatPasses request on the given connection with a custom timeout.
+async fn send_get_sat_passes_on(
+    config: &RemoteClientConfig,
+    writer: &mut tokio::net::tcp::OwnedWriteHalf,
+    reader: &mut BufReader<tokio::net::tcp::OwnedReadHalf>,
+    timeout: Duration,
+) -> RigResult<trx_core::geo::PassPredictionResult> {
+    let envelope = build_envelope(config, ClientCommand::GetSatPasses, None);
+    let mut payload = serde_json::to_string(&envelope)
+        .map_err(|e| RigError::communication(format!("JSON serialize failed: {e}")))?;
+    payload.push('\n');
+
+    time::timeout(timeout, writer.write_all(payload.as_bytes()))
+        .await
+        .map_err(|_| RigError::communication(format!("write timed out after {timeout:?}")))?
+        .map_err(|e| RigError::communication(format!("write failed: {e}")))?;
+    time::timeout(timeout, writer.flush())
+        .await
+        .map_err(|_| RigError::communication(format!("flush timed out after {timeout:?}")))?
+        .map_err(|e| RigError::communication(format!("flush failed: {e}")))?;
+
+    let line = time::timeout(timeout, read_limited_line(reader, MAX_JSON_LINE_BYTES))
+        .await
+        .map_err(|_| RigError::communication(format!("read timed out after {timeout:?}")))?
+        .map_err(|e| RigError::communication(format!("read failed: {e}")))?;
+    let line = line.ok_or_else(|| RigError::communication("connection closed by remote"))?;
+
+    let resp: ClientResponse = serde_json::from_str(line.trim_end())
+        .map_err(|e| RigError::communication(format!("invalid response: {e}")))?;
+    if resp.success {
+        return resp
+            .sat_passes
+            .ok_or_else(|| RigError::communication("missing sat_passes in GetSatPasses response"));
+    }
+
+    Err(RigError::communication(
+        resp.error.unwrap_or_else(|| "remote error".into()),
+    ))
+}
+
 async fn handle_spectrum_connection(
     config: &RemoteClientConfig,
     stream: TcpStream,
@@ -303,25 +413,23 @@ async fn handle_connection(
         warn!("Initial remote snapshot refresh failed: {}", e);
     }
 
-    // Fetch satellite passes immediately and then every 5 minutes.
-    let sat_pass_interval = Duration::from_secs(5 * 60);
-    let mut last_sat_pass_refresh = Instant::now();
-    match send_get_sat_passes(config, &mut writer, &mut reader).await {
-        Ok(result) => {
-            if let Ok(mut guard) = config.sat_passes.write() {
-                *guard = Some(result);
-            }
-        }
-        Err(e) => warn!("Initial sat passes fetch failed: {}", e),
-    }
+    // Satellite pass refresh runs on its own dedicated TCP connection so it
+    // never blocks state polls or user commands on the main connection.
+    let sat_pass_task = tokio::spawn(run_sat_pass_connection(config.clone(), shutdown_rx.clone()));
 
     loop {
         tokio::select! {
             changed = shutdown_rx.changed() => {
                 match changed {
-                    Ok(()) if *shutdown_rx.borrow() => return Ok(()),
+                    Ok(()) if *shutdown_rx.borrow() => {
+                        sat_pass_task.abort();
+                        return Ok(());
+                    }
                     Ok(()) => {}
-                    Err(_) => return Ok(()),
+                    Err(_) => {
+                        sat_pass_task.abort();
+                        return Ok(());
+                    }
                 }
             }
             _ = poll_interval.tick() => {
@@ -342,9 +450,11 @@ async fn handle_connection(
                         e.message.contains("timed out")
                             || e.message.contains("connection closed");
                     if timeout_or_disconnect {
+                        sat_pass_task.abort();
                         return Err(e);
                     }
                     if poll_failure_streak >= MAX_CONSECUTIVE_POLL_FAILURES {
+                        sat_pass_task.abort();
                         return Err(RigError::communication(format!(
                             "remote poll failed {} consecutive times: {}",
                             poll_failure_streak, e
@@ -352,19 +462,6 @@ async fn handle_connection(
                     }
                 } else {
                     poll_failure_streak = 0;
-                }
-
-                // Refresh satellite passes periodically (every 5 minutes).
-                if last_sat_pass_refresh.elapsed() >= sat_pass_interval {
-                    last_sat_pass_refresh = Instant::now();
-                    match send_get_sat_passes(config, &mut writer, &mut reader).await {
-                        Ok(result) => {
-                            if let Ok(mut guard) = config.sat_passes.write() {
-                                *guard = Some(result);
-                            }
-                        }
-                        Err(e) => warn!("Sat passes refresh failed: {}", e),
-                    }
                 }
             }
             req = rx.recv() => {
@@ -611,44 +708,6 @@ async fn send_get_rigs(
         return resp
             .rigs
             .ok_or_else(|| RigError::communication("missing rigs list in GetRigs response"));
-    }
-
-    Err(RigError::communication(
-        resp.error.unwrap_or_else(|| "remote error".into()),
-    ))
-}
-
-async fn send_get_sat_passes(
-    config: &RemoteClientConfig,
-    writer: &mut tokio::net::tcp::OwnedWriteHalf,
-    reader: &mut BufReader<tokio::net::tcp::OwnedReadHalf>,
-) -> RigResult<trx_core::geo::PassPredictionResult> {
-    let envelope = build_envelope(config, ClientCommand::GetSatPasses, None);
-    let mut payload = serde_json::to_string(&envelope)
-        .map_err(|e| RigError::communication(format!("JSON serialize failed: {e}")))?;
-    payload.push('\n');
-
-    time::timeout(IO_TIMEOUT, writer.write_all(payload.as_bytes()))
-        .await
-        .map_err(|_| RigError::communication(format!("write timed out after {:?}", IO_TIMEOUT)))?
-        .map_err(|e| RigError::communication(format!("write failed: {e}")))?;
-    time::timeout(IO_TIMEOUT, writer.flush())
-        .await
-        .map_err(|_| RigError::communication(format!("flush timed out after {:?}", IO_TIMEOUT)))?
-        .map_err(|e| RigError::communication(format!("flush failed: {e}")))?;
-
-    let line = time::timeout(IO_TIMEOUT, read_limited_line(reader, MAX_JSON_LINE_BYTES))
-        .await
-        .map_err(|_| RigError::communication(format!("read timed out after {:?}", IO_TIMEOUT)))?
-        .map_err(|e| RigError::communication(format!("read failed: {e}")))?;
-    let line = line.ok_or_else(|| RigError::communication("connection closed by remote"))?;
-
-    let resp: ClientResponse = serde_json::from_str(line.trim_end())
-        .map_err(|e| RigError::communication(format!("invalid response: {e}")))?;
-    if resp.success {
-        return resp
-            .sat_passes
-            .ok_or_else(|| RigError::communication("missing sat_passes in GetSatPasses response"));
     }
 
     Err(RigError::communication(
