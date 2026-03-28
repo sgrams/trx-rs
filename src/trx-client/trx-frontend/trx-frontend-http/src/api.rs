@@ -5,7 +5,7 @@
 use std::collections::HashMap;
 use std::io::Write;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 use actix_web::{delete, get, post, put, web, HttpRequest, HttpResponse, Responder};
 use actix_web::{http::header, Error};
@@ -116,14 +116,16 @@ struct FrontendMeta {
     server_connected: bool,
 }
 
-/// Wrapper that flattens a rig state with frontend meta into a single JSON
-/// object, replacing the old string-level splice approach.
+/// Direct-serialize wrapper: flattens snapshot + meta in a single serde pass,
+/// avoiding the intermediate `serde_json::Value` round-trip used by
+/// `inject_frontend_meta`.  Used on the SSE hot path where state updates
+/// arrive at high frequency.
 #[derive(serde::Serialize)]
-struct StateWithMeta<'a> {
+struct SnapshotWithMeta<'a> {
     #[serde(flatten)]
-    state: &'a serde_json::Value,
+    snapshot: &'a RigSnapshot,
     #[serde(flatten)]
-    meta: &'a FrontendMeta,
+    meta: FrontendMeta,
 }
 
 /// Tracks per-SSE-session rig selection so different browser tabs can
@@ -183,36 +185,20 @@ pub async fn status_api(
         .filter(|s| !s.is_empty())
         .and_then(|rid| context.rig_state_rx(rid))
         .unwrap_or_else(|| state.get_ref().clone());
-    let state = wait_for_view(rx).await?;
-    let json = serde_json::to_string(&state).map_err(actix_web::error::ErrorInternalServerError)?;
-    let json = inject_frontend_meta(
-        &json,
-        frontend_meta_from_context(
+    let snapshot = wait_for_view(rx).await?;
+    let combined = SnapshotWithMeta {
+        snapshot: &snapshot,
+        meta: frontend_meta_from_context(
             clients.load(Ordering::Relaxed),
             context.get_ref().as_ref(),
             None,
         ),
-    );
+    };
+    let json =
+        serde_json::to_string(&combined).map_err(actix_web::error::ErrorInternalServerError)?;
     Ok(HttpResponse::Ok()
         .insert_header((header::CONTENT_TYPE, "application/json"))
         .body(json))
-}
-
-/// Merge a rig state JSON string with frontend meta via `#[serde(flatten)]`.
-///
-/// Parses the state once into a `serde_json::Value`, then serializes the
-/// combined `StateWithMeta` wrapper in a single pass — cleaner and faster
-/// than the old string-level splice approach.
-fn inject_frontend_meta(json: &str, meta: FrontendMeta) -> String {
-    let state: serde_json::Value = match serde_json::from_str(json) {
-        Ok(v) => v,
-        Err(_) => return json.to_string(),
-    };
-    let combined = StateWithMeta {
-        state: &state,
-        meta: &meta,
-    };
-    serde_json::to_string(&combined).unwrap_or_else(|_| json.to_string())
 }
 
 fn frontend_meta_from_context(
@@ -387,12 +373,16 @@ pub async fn events(
     }
 
     // Build the prefix burst: rig state → session UUID → initial channels.
-    let initial_json =
-        serde_json::to_string(&initial).map_err(actix_web::error::ErrorInternalServerError)?;
-    let initial_json = inject_frontend_meta(
-        &initial_json,
-        frontend_meta_from_context(count, context.get_ref().as_ref(), active_rig_id.as_deref()),
-    );
+    let initial_combined = SnapshotWithMeta {
+        snapshot: &initial,
+        meta: frontend_meta_from_context(
+            count,
+            context.get_ref().as_ref(),
+            active_rig_id.as_deref(),
+        ),
+    };
+    let initial_json = serde_json::to_string(&initial_combined)
+        .map_err(actix_web::error::ErrorInternalServerError)?;
 
     let mut prefix: Vec<Result<Bytes, Error>> = Vec::new();
     prefix.push(Ok(Bytes::from(format!("data: {initial_json}\n\n"))));
@@ -444,15 +434,15 @@ pub async fn events(
                         rig_id,
                     );
                 }
-                serde_json::to_string(&v).ok().map(|json| {
-                    let json = inject_frontend_meta(
-                        &json,
-                        frontend_meta_from_context(
-                            counter.load(Ordering::Relaxed),
-                            context.as_ref(),
-                            rig_id_opt.as_deref(),
-                        ),
-                    );
+                let combined = SnapshotWithMeta {
+                    snapshot: &v,
+                    meta: frontend_meta_from_context(
+                        counter.load(Ordering::Relaxed),
+                        context.as_ref(),
+                        rig_id_opt.as_deref(),
+                    ),
+                };
+                serde_json::to_string(&combined).ok().map(|json| {
                     Ok::<Bytes, Error>(Bytes::from(format!("data: {json}\n\n")))
                 })
             })
@@ -1626,6 +1616,82 @@ where
         .body(body)
 }
 
+/// Pre-compressed (gzip) + ETag-aware response for immutable embedded assets.
+///
+/// Assets are embedded at compile time and never change within a build.
+/// We pre-compress each asset once (via `OnceLock`) and serve the cached
+/// gzip bytes with a strong ETag derived from the build version tag, so
+/// browsers can cache aggressively and validate cheaply with `If-None-Match`.
+fn static_asset_response(
+    req: &HttpRequest,
+    content_type: &'static str,
+    gz_bytes: &[u8],
+    etag: &str,
+) -> HttpResponse {
+    // Check If-None-Match for conditional GET.
+    if let Some(inm) = req.headers().get(header::IF_NONE_MATCH) {
+        if let Ok(val) = inm.to_str() {
+            if val == etag || val == "*" {
+                return HttpResponse::NotModified()
+                    .insert_header((header::ETAG, etag.to_owned()))
+                    .insert_header((header::CACHE_CONTROL, "public, max-age=86400, must-revalidate"))
+                    .finish();
+            }
+        }
+    }
+    HttpResponse::Ok()
+        .insert_header((header::CONTENT_TYPE, content_type))
+        .insert_header((header::CONTENT_ENCODING, "gzip"))
+        .insert_header((header::ETAG, etag.to_owned()))
+        .insert_header((header::CACHE_CONTROL, "public, max-age=86400, must-revalidate"))
+        .body(Bytes::copy_from_slice(gz_bytes))
+}
+
+/// Cache entry for a pre-compressed asset: gzip bytes + ETag string.
+struct GzCacheEntry {
+    gz: Vec<u8>,
+    etag: String,
+}
+
+/// Compress `src` with gzip and build an ETag from the build version + asset name.
+fn gz_cache_entry(src: &[u8], name: &str) -> GzCacheEntry {
+    let mut encoder = GzEncoder::new(Vec::with_capacity(src.len() / 2), Compression::best());
+    encoder.write_all(src).expect("gzip compress");
+    let gz = encoder.finish().expect("gzip finish");
+    let etag = format!("\"{}:{}\"", status::build_version_tag(), name);
+    GzCacheEntry { gz, etag }
+}
+
+macro_rules! define_gz_cache {
+    ($fn_name:ident, $src:expr, $asset_name:literal) => {
+        fn $fn_name() -> &'static GzCacheEntry {
+            static CACHE: OnceLock<GzCacheEntry> = OnceLock::new();
+            CACHE.get_or_init(|| gz_cache_entry($src.as_bytes(), $asset_name))
+        }
+    };
+}
+
+define_gz_cache!(gz_index_html, status::index_html(), "index.html");
+define_gz_cache!(gz_style_css, status::STYLE_CSS, "style.css");
+define_gz_cache!(gz_app_js, status::APP_JS, "app.js");
+define_gz_cache!(gz_decode_history_worker_js, status::DECODE_HISTORY_WORKER_JS, "decode-history-worker.js");
+define_gz_cache!(gz_webgl_renderer_js, status::WEBGL_RENDERER_JS, "webgl-renderer.js");
+define_gz_cache!(gz_leaflet_ais_tracksymbol_js, status::LEAFLET_AIS_TRACKSYMBOL_JS, "leaflet-ais-tracksymbol.js");
+define_gz_cache!(gz_ais_js, status::AIS_JS, "ais.js");
+define_gz_cache!(gz_vdes_js, status::VDES_JS, "vdes.js");
+define_gz_cache!(gz_aprs_js, status::APRS_JS, "aprs.js");
+define_gz_cache!(gz_hf_aprs_js, status::HF_APRS_JS, "hf-aprs.js");
+define_gz_cache!(gz_ft8_js, status::FT8_JS, "ft8.js");
+define_gz_cache!(gz_ft4_js, status::FT4_JS, "ft4.js");
+define_gz_cache!(gz_ft2_js, status::FT2_JS, "ft2.js");
+define_gz_cache!(gz_wspr_js, status::WSPR_JS, "wspr.js");
+define_gz_cache!(gz_cw_js, status::CW_JS, "cw.js");
+define_gz_cache!(gz_sat_js, status::SAT_JS, "sat.js");
+define_gz_cache!(gz_bookmarks_js, status::BOOKMARKS_JS, "bookmarks.js");
+define_gz_cache!(gz_scheduler_js, status::SCHEDULER_JS, "scheduler.js");
+define_gz_cache!(gz_background_decode_js, status::BACKGROUND_DECODE_JS, "background-decode.js");
+define_gz_cache!(gz_vchan_js, status::VCHAN_JS, "vchan.js");
+
 /// A bookmark with its owning scope tag for the list response.
 #[derive(serde::Serialize)]
 struct BookmarkWithScope {
@@ -2200,34 +2266,40 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
 }
 
 #[get("/")]
-async fn index() -> impl Responder {
-    no_cache_response("text/html; charset=utf-8", status::index_html())
+async fn index(req: HttpRequest) -> impl Responder {
+    let c = gz_index_html();
+    static_asset_response(&req, "text/html; charset=utf-8", &c.gz, &c.etag)
 }
 
 #[get("/map")]
-async fn map_index() -> impl Responder {
-    no_cache_response("text/html; charset=utf-8", status::index_html())
+async fn map_index(req: HttpRequest) -> impl Responder {
+    let c = gz_index_html();
+    static_asset_response(&req, "text/html; charset=utf-8", &c.gz, &c.etag)
 }
 
 #[get("/digital-modes")]
-async fn digital_modes_index() -> impl Responder {
-    no_cache_response("text/html; charset=utf-8", status::index_html())
+async fn digital_modes_index(req: HttpRequest) -> impl Responder {
+    let c = gz_index_html();
+    static_asset_response(&req, "text/html; charset=utf-8", &c.gz, &c.etag)
 }
 
 #[get("/settings")]
-async fn settings_index() -> impl Responder {
-    no_cache_response("text/html; charset=utf-8", status::index_html())
+async fn settings_index(req: HttpRequest) -> impl Responder {
+    let c = gz_index_html();
+    static_asset_response(&req, "text/html; charset=utf-8", &c.gz, &c.etag)
 }
 
 #[get("/about")]
-async fn about_index() -> impl Responder {
-    no_cache_response("text/html; charset=utf-8", status::index_html())
+async fn about_index(req: HttpRequest) -> impl Responder {
+    let c = gz_index_html();
+    static_asset_response(&req, "text/html; charset=utf-8", &c.gz, &c.etag)
 }
 
 #[get("/favicon.ico")]
 async fn favicon() -> impl Responder {
     HttpResponse::Ok()
         .insert_header((header::CONTENT_TYPE, "image/png"))
+        .insert_header((header::CACHE_CONTROL, "public, max-age=604800, immutable"))
         .body(FAVICON_BYTES)
 }
 
@@ -2235,6 +2307,7 @@ async fn favicon() -> impl Responder {
 async fn favicon_png() -> impl Responder {
     HttpResponse::Ok()
         .insert_header((header::CONTENT_TYPE, "image/png"))
+        .insert_header((header::CACHE_CONTROL, "public, max-age=604800, immutable"))
         .body(FAVICON_BYTES)
 }
 
@@ -2242,120 +2315,122 @@ async fn favicon_png() -> impl Responder {
 async fn logo() -> impl Responder {
     HttpResponse::Ok()
         .insert_header((header::CONTENT_TYPE, "image/png"))
+        .insert_header((header::CACHE_CONTROL, "public, max-age=604800, immutable"))
         .body(LOGO_BYTES)
 }
 
 #[get("/style.css")]
-async fn style_css() -> impl Responder {
-    no_cache_response("text/css; charset=utf-8", status::STYLE_CSS)
+async fn style_css(req: HttpRequest) -> impl Responder {
+    let c = gz_style_css();
+    static_asset_response(&req, "text/css; charset=utf-8", &c.gz, &c.etag)
 }
 
 #[get("/app.js")]
-async fn app_js() -> impl Responder {
-    no_cache_response("application/javascript; charset=utf-8", status::APP_JS)
+async fn app_js(req: HttpRequest) -> impl Responder {
+    let c = gz_app_js();
+    static_asset_response(&req, "application/javascript; charset=utf-8", &c.gz, &c.etag)
 }
 
 #[get("/decode-history-worker.js")]
-async fn decode_history_worker_js() -> impl Responder {
-    no_cache_response(
-        "application/javascript; charset=utf-8",
-        status::DECODE_HISTORY_WORKER_JS,
-    )
+async fn decode_history_worker_js(req: HttpRequest) -> impl Responder {
+    let c = gz_decode_history_worker_js();
+    static_asset_response(&req, "application/javascript; charset=utf-8", &c.gz, &c.etag)
 }
 
 #[get("/webgl-renderer.js")]
-async fn webgl_renderer_js() -> impl Responder {
-    no_cache_response(
-        "application/javascript; charset=utf-8",
-        status::WEBGL_RENDERER_JS,
-    )
+async fn webgl_renderer_js(req: HttpRequest) -> impl Responder {
+    let c = gz_webgl_renderer_js();
+    static_asset_response(&req, "application/javascript; charset=utf-8", &c.gz, &c.etag)
 }
 
 #[get("/leaflet-ais-tracksymbol.js")]
-async fn leaflet_ais_tracksymbol_js() -> impl Responder {
-    no_cache_response(
-        "application/javascript; charset=utf-8",
-        status::LEAFLET_AIS_TRACKSYMBOL_JS,
-    )
+async fn leaflet_ais_tracksymbol_js(req: HttpRequest) -> impl Responder {
+    let c = gz_leaflet_ais_tracksymbol_js();
+    static_asset_response(&req, "application/javascript; charset=utf-8", &c.gz, &c.etag)
 }
 
 #[get("/aprs.js")]
-async fn aprs_js() -> impl Responder {
-    no_cache_response("application/javascript; charset=utf-8", status::APRS_JS)
+async fn aprs_js(req: HttpRequest) -> impl Responder {
+    let c = gz_aprs_js();
+    static_asset_response(&req, "application/javascript; charset=utf-8", &c.gz, &c.etag)
 }
 
 #[get("/hf-aprs.js")]
-async fn hf_aprs_js() -> impl Responder {
-    no_cache_response("application/javascript; charset=utf-8", status::HF_APRS_JS)
+async fn hf_aprs_js(req: HttpRequest) -> impl Responder {
+    let c = gz_hf_aprs_js();
+    static_asset_response(&req, "application/javascript; charset=utf-8", &c.gz, &c.etag)
 }
 
 #[get("/ais.js")]
-async fn ais_js() -> impl Responder {
-    no_cache_response("application/javascript; charset=utf-8", status::AIS_JS)
+async fn ais_js(req: HttpRequest) -> impl Responder {
+    let c = gz_ais_js();
+    static_asset_response(&req, "application/javascript; charset=utf-8", &c.gz, &c.etag)
 }
 
 #[get("/vdes.js")]
-async fn vdes_js() -> impl Responder {
-    no_cache_response("application/javascript; charset=utf-8", status::VDES_JS)
+async fn vdes_js(req: HttpRequest) -> impl Responder {
+    let c = gz_vdes_js();
+    static_asset_response(&req, "application/javascript; charset=utf-8", &c.gz, &c.etag)
 }
 
 #[get("/ft8.js")]
-async fn ft8_js() -> impl Responder {
-    no_cache_response("application/javascript; charset=utf-8", status::FT8_JS)
+async fn ft8_js(req: HttpRequest) -> impl Responder {
+    let c = gz_ft8_js();
+    static_asset_response(&req, "application/javascript; charset=utf-8", &c.gz, &c.etag)
 }
 
 #[get("/ft4.js")]
-async fn ft4_js() -> impl Responder {
-    no_cache_response("application/javascript; charset=utf-8", status::FT4_JS)
+async fn ft4_js(req: HttpRequest) -> impl Responder {
+    let c = gz_ft4_js();
+    static_asset_response(&req, "application/javascript; charset=utf-8", &c.gz, &c.etag)
 }
 
 #[get("/ft2.js")]
-async fn ft2_js() -> impl Responder {
-    no_cache_response("application/javascript; charset=utf-8", status::FT2_JS)
+async fn ft2_js(req: HttpRequest) -> impl Responder {
+    let c = gz_ft2_js();
+    static_asset_response(&req, "application/javascript; charset=utf-8", &c.gz, &c.etag)
 }
 
 #[get("/wspr.js")]
-async fn wspr_js() -> impl Responder {
-    no_cache_response("application/javascript; charset=utf-8", status::WSPR_JS)
+async fn wspr_js(req: HttpRequest) -> impl Responder {
+    let c = gz_wspr_js();
+    static_asset_response(&req, "application/javascript; charset=utf-8", &c.gz, &c.etag)
 }
 
 #[get("/cw.js")]
-async fn cw_js() -> impl Responder {
-    no_cache_response("application/javascript; charset=utf-8", status::CW_JS)
+async fn cw_js(req: HttpRequest) -> impl Responder {
+    let c = gz_cw_js();
+    static_asset_response(&req, "application/javascript; charset=utf-8", &c.gz, &c.etag)
 }
 
 #[get("/sat.js")]
-async fn sat_js() -> impl Responder {
-    no_cache_response("application/javascript; charset=utf-8", status::SAT_JS)
+async fn sat_js(req: HttpRequest) -> impl Responder {
+    let c = gz_sat_js();
+    static_asset_response(&req, "application/javascript; charset=utf-8", &c.gz, &c.etag)
 }
 
 #[get("/bookmarks.js")]
-async fn bookmarks_js() -> impl Responder {
-    no_cache_response(
-        "application/javascript; charset=utf-8",
-        status::BOOKMARKS_JS,
-    )
+async fn bookmarks_js(req: HttpRequest) -> impl Responder {
+    let c = gz_bookmarks_js();
+    static_asset_response(&req, "application/javascript; charset=utf-8", &c.gz, &c.etag)
 }
 
 #[get("/scheduler.js")]
-async fn scheduler_js() -> impl Responder {
-    no_cache_response(
-        "application/javascript; charset=utf-8",
-        status::SCHEDULER_JS,
-    )
+async fn scheduler_js(req: HttpRequest) -> impl Responder {
+    let c = gz_scheduler_js();
+    static_asset_response(&req, "application/javascript; charset=utf-8", &c.gz, &c.etag)
 }
 
 #[get("/background-decode.js")]
-async fn background_decode_js() -> impl Responder {
-    no_cache_response(
-        "application/javascript; charset=utf-8",
-        status::BACKGROUND_DECODE_JS,
-    )
+async fn background_decode_js(req: HttpRequest) -> impl Responder {
+    let c = gz_background_decode_js();
+    static_asset_response(&req, "application/javascript; charset=utf-8", &c.gz, &c.etag)
 }
 
 #[get("/vchan.js")]
-async fn vchan_js() -> impl Responder {
-    no_cache_response("application/javascript; charset=utf-8", status::VCHAN_JS)
+async fn vchan_js(req: HttpRequest) -> impl Responder {
+    let c = gz_vchan_js();
+    static_asset_response(&req, "application/javascript; charset=utf-8", &c.gz, &c.etag)
 }
 
 /// Generic query extractor for endpoints that only need the optional remote.

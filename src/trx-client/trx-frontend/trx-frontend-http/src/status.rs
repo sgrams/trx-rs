@@ -2,6 +2,8 @@
 //
 // SPDX-License-Identifier: BSD-2-Clause
 
+use std::sync::OnceLock;
+
 const PKG_NAME: &str = env!("CARGO_PKG_NAME");
 const PKG_VERSION: &str = env!("CARGO_PKG_VERSION");
 const CLIENT_BUILD_DATE: &str = env!("TRX_CLIENT_BUILD_DATE");
@@ -28,9 +30,22 @@ pub const SCHEDULER_JS: &str = include_str!("../assets/web/plugins/scheduler.js"
 pub const BACKGROUND_DECODE_JS: &str = include_str!("../assets/web/plugins/background-decode.js");
 pub const VCHAN_JS: &str = include_str!("../assets/web/plugins/vchan.js");
 
-pub fn index_html() -> String {
-    INDEX_HTML
-        .replace("{pkg}", PKG_NAME)
-        .replace("{ver}", PKG_VERSION)
-        .replace("{client_build_date}", CLIENT_BUILD_DATE)
+/// Build version tag used for cache-busting asset URLs and ETag headers.
+/// Computed once from `PKG_VERSION` + `CLIENT_BUILD_DATE`.
+pub fn build_version_tag() -> &'static str {
+    static TAG: OnceLock<String> = OnceLock::new();
+    TAG.get_or_init(|| format!("{PKG_VERSION}-{CLIENT_BUILD_DATE}"))
+}
+
+/// Pre-computed index HTML with version/date placeholders resolved.
+/// Computed once on first access, avoiding three `.replace()` calls per
+/// request on the ~50 KB HTML template.
+pub fn index_html() -> &'static str {
+    static HTML: OnceLock<String> = OnceLock::new();
+    HTML.get_or_init(|| {
+        INDEX_HTML
+            .replace("{pkg}", PKG_NAME)
+            .replace("{ver}", PKG_VERSION)
+            .replace("{client_build_date}", CLIENT_BUILD_DATE)
+    })
 }
