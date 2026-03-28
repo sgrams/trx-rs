@@ -25,21 +25,21 @@ use trx_core::audio::{
     parse_vchan_uuid_msg, read_audio_msg, write_audio_msg, write_vchan_audio_frame,
     write_vchan_uuid_msg, AudioStreamInfo, AUDIO_MSG_AIS_DECODE, AUDIO_MSG_APRS_DECODE,
     AUDIO_MSG_CW_DECODE, AUDIO_MSG_FT2_DECODE, AUDIO_MSG_FT4_DECODE, AUDIO_MSG_FT8_DECODE,
-    AUDIO_MSG_HF_APRS_DECODE, AUDIO_MSG_HISTORY_COMPRESSED, AUDIO_MSG_NOAA_IMAGE,
+    AUDIO_MSG_HF_APRS_DECODE, AUDIO_MSG_HISTORY_COMPRESSED, AUDIO_MSG_WXSAT_IMAGE,
     AUDIO_MSG_RX_FRAME, AUDIO_MSG_STREAM_INFO, AUDIO_MSG_TX_FRAME, AUDIO_MSG_VCHAN_ALLOCATED,
     AUDIO_MSG_VCHAN_BW, AUDIO_MSG_VCHAN_DESTROYED, AUDIO_MSG_VCHAN_FREQ, AUDIO_MSG_VCHAN_MODE,
     AUDIO_MSG_VCHAN_REMOVE, AUDIO_MSG_VCHAN_SUB, AUDIO_MSG_VCHAN_UNSUB, AUDIO_MSG_VDES_DECODE,
     AUDIO_MSG_WSPR_DECODE,
 };
 use trx_core::decode::{
-    AisMessage, AprsPacket, CwEvent, DecodedMessage, Ft8Message, NoaaImage, VdesMessage,
-    WsprMessage,
+    AisMessage, AprsPacket, CwEvent, DecodedMessage, Ft8Message, VdesMessage, WsprMessage,
+    WxsatImage,
 };
 use trx_core::rig::state::{RigMode, RigState};
 use trx_core::vchan::SharedVChanManager;
 use trx_cw::CwDecoder;
 use trx_ftx::Ft8Decoder;
-use trx_noaa::AptDecoder;
+use trx_wxsat::AptDecoder;
 use trx_vdes::VdesDecoder;
 use trx_wspr::WsprDecoder;
 use uuid::Uuid;
@@ -54,9 +54,9 @@ const VDES_HISTORY_RETENTION: Duration = Duration::from_secs(24 * 60 * 60);
 const CW_HISTORY_RETENTION: Duration = Duration::from_secs(24 * 60 * 60);
 const FT8_HISTORY_RETENTION: Duration = Duration::from_secs(24 * 60 * 60);
 const WSPR_HISTORY_RETENTION: Duration = Duration::from_secs(24 * 60 * 60);
-const NOAA_HISTORY_RETENTION: Duration = Duration::from_secs(24 * 60 * 60);
-/// Silence timeout before auto-finalising a NOAA pass (30 s without new lines).
-const NOAA_PASS_SILENCE_TIMEOUT: Duration = Duration::from_secs(30);
+const WXSAT_HISTORY_RETENTION: Duration = Duration::from_secs(24 * 60 * 60);
+/// Silence timeout before auto-finalising a wxsat pass (30 s without new lines).
+const WXSAT_PASS_SILENCE_TIMEOUT: Duration = Duration::from_secs(30);
 const FT8_SAMPLE_RATE: u32 = 12_000;
 const FT2_ASYNC_BUFFER_SAMPLES: usize = 45_000;
 const FT2_ASYNC_TRIGGER_SAMPLES: usize = 9_000;
@@ -213,7 +213,7 @@ pub struct DecoderHistories {
     pub ft4: Mutex<VecDeque<(Instant, Ft8Message)>>,
     pub ft2: Mutex<VecDeque<(Instant, Ft8Message)>>,
     pub wspr: Mutex<VecDeque<(Instant, WsprMessage)>>,
-    pub noaa: Mutex<VecDeque<(Instant, NoaaImage)>>,
+    pub wxsat: Mutex<VecDeque<(Instant, WxsatImage)>>,
     /// Approximate total entry count across all decoders, maintained
     /// atomically so `estimated_total_count()` avoids 9 lock acquisitions.
     total_count: AtomicUsize,
@@ -231,7 +231,7 @@ impl DecoderHistories {
             ft4: Mutex::new(VecDeque::new()),
             ft2: Mutex::new(VecDeque::new()),
             wspr: Mutex::new(VecDeque::new()),
-            noaa: Mutex::new(VecDeque::new()),
+            wxsat: Mutex::new(VecDeque::new()),
             total_count: AtomicUsize::new(0),
         })
     }
@@ -591,10 +591,10 @@ impl DecoderHistories {
         self.adjust_total_count(before, 0);
     }
 
-    // --- NOAA ---
+    // --- WXSAT ---
 
-    fn prune_noaa(history: &mut VecDeque<(Instant, NoaaImage)>) {
-        let cutoff = Instant::now() - NOAA_HISTORY_RETENTION;
+    fn prune_wxsat(history: &mut VecDeque<(Instant, WxsatImage)>) {
+        let cutoff = Instant::now() - WXSAT_HISTORY_RETENTION;
         while let Some((ts, _)) = history.front() {
             if *ts < cutoff {
                 history.pop_front();
@@ -604,21 +604,21 @@ impl DecoderHistories {
         }
     }
 
-    pub fn record_noaa_image(&self, mut img: NoaaImage) {
+    pub fn record_wxsat_image(&self, mut img: WxsatImage) {
         if img.ts_ms.is_none() {
             img.ts_ms = Some(current_timestamp_ms());
         }
-        let mut h = self.noaa.lock().unwrap_or_else(|e| e.into_inner());
+        let mut h = self.wxsat.lock().unwrap_or_else(|e| e.into_inner());
         let before = h.len();
         h.push_back((Instant::now(), img));
-        Self::prune_noaa(&mut h);
+        Self::prune_wxsat(&mut h);
         self.adjust_total_count(before, h.len());
     }
 
-    pub fn snapshot_noaa_history(&self) -> Vec<NoaaImage> {
-        let mut h = self.noaa.lock().unwrap_or_else(|e| e.into_inner());
+    pub fn snapshot_wxsat_history(&self) -> Vec<WxsatImage> {
+        let mut h = self.wxsat.lock().unwrap_or_else(|e| e.into_inner());
         let before = h.len();
-        Self::prune_noaa(&mut h);
+        Self::prune_wxsat(&mut h);
         self.adjust_total_count(before, h.len());
         h.iter().map(|(_, img)| img.clone()).collect()
     }
@@ -2394,16 +2394,16 @@ pub async fn run_wspr_decoder(
 }
 
 // ---------------------------------------------------------------------------
-// NOAA APT decoder task
+// Weather satellite APT decoder task
 // ---------------------------------------------------------------------------
 
-/// Decode NOAA APT satellite images from FM-demodulated audio.
+/// Decode weather satellite APT images from FM-demodulated audio.
 ///
-/// The task is idle until `state.noaa_decode_enabled` becomes `true`.
+/// The task is idle until `state.wxsat_decode_enabled` becomes `true`.
 /// When the user disables the decoder (or 30 s of silence elapses with no
 /// new decoded lines), the accumulated image is encoded as JPEG and saved to
 /// `output_dir/<YYYY-MM-DD_HH-MM-SS>.jpg`.
-pub async fn run_noaa_decoder(
+pub async fn run_wxsat_decoder(
     sample_rate: u32,
     channels: u16,
     mut pcm_rx: broadcast::Receiver<Vec<f32>>,
@@ -2412,10 +2412,10 @@ pub async fn run_noaa_decoder(
     histories: Arc<DecoderHistories>,
     output_dir: std::path::PathBuf,
 ) {
-    info!("NOAA decoder started ({}Hz, {} ch)", sample_rate, channels);
+    info!("wxsat decoder started ({}Hz, {} ch)", sample_rate, channels);
     let mut decoder = AptDecoder::new(sample_rate);
     let mut last_reset_seq: u64 = 0;
-    let mut active = state_rx.borrow().noaa_decode_enabled;
+    let mut active = state_rx.borrow().wxsat_decode_enabled;
     let mut pass_start_ms: i64 = 0;
     // Instant of the last time new lines were decoded (for auto-finalise)
     let mut last_line_at = tokio::time::Instant::now();
@@ -2430,15 +2430,15 @@ pub async fn run_noaa_decoder(
             match state_rx.changed().await {
                 Ok(()) => {
                     let state = state_rx.borrow();
-                    active = state.noaa_decode_enabled;
+                    active = state.wxsat_decode_enabled;
                     if active {
                         decoder.reset();
                         pass_start_ms = current_timestamp_ms();
                         last_line_at = tokio::time::Instant::now();
                         pcm_rx = pcm_rx.resubscribe();
                     }
-                    if state.noaa_decode_reset_seq != last_reset_seq {
-                        last_reset_seq = state.noaa_decode_reset_seq;
+                    if state.wxsat_decode_reset_seq != last_reset_seq {
+                        last_reset_seq = state.wxsat_decode_reset_seq;
                         decoder.reset();
                     }
                 }
@@ -2447,13 +2447,13 @@ pub async fn run_noaa_decoder(
             continue;
         }
 
-        let silence_deadline = last_line_at + NOAA_PASS_SILENCE_TIMEOUT;
+        let silence_deadline = last_line_at + WXSAT_PASS_SILENCE_TIMEOUT;
 
         tokio::select! {
             recv = pcm_rx.recv() => {
                 match recv {
                     Ok(frame) => {
-                        let reset_seq = state_rx.borrow().noaa_decode_reset_seq;
+                        let reset_seq = state_rx.borrow().wxsat_decode_reset_seq;
                         if reset_seq != last_reset_seq {
                             last_reset_seq = reset_seq;
                             decoder.reset();
@@ -2468,7 +2468,7 @@ pub async fn run_noaa_decoder(
                         }
                     }
                     Err(broadcast::error::RecvError::Lagged(n)) => {
-                        warn!("NOAA decoder: dropped {} PCM frames", n);
+                        warn!("wxsat decoder: dropped {} PCM frames", n);
                     }
                     Err(broadcast::error::RecvError::Closed) => break,
                 }
@@ -2479,7 +2479,7 @@ pub async fn run_noaa_decoder(
                         // Extract fields before any await so the Ref is dropped.
                         let (new_active, new_reset_seq) = {
                             let state = state_rx.borrow();
-                            (state.noaa_decode_enabled, state.noaa_decode_reset_seq)
+                            (state.wxsat_decode_enabled, state.wxsat_decode_reset_seq)
                         };
                         let was_active = active;
                         active = new_active;
@@ -2490,7 +2490,7 @@ pub async fn run_noaa_decoder(
                         }
                         if was_active && !active {
                             // User disabled — finalise whatever we have
-                            finalize_noaa_pass(
+                            finalize_wxsat_pass(
                                 &mut decoder,
                                 &output_dir,
                                 &decode_tx,
@@ -2510,11 +2510,11 @@ pub async fn run_noaa_decoder(
             // Auto-finalise after sustained silence (satellite pass ended)
             _ = tokio::time::sleep_until(silence_deadline), if decoder.line_count() > 0 => {
                 info!(
-                    "NOAA: no new lines for {}s — finalising pass ({} lines)",
-                    NOAA_PASS_SILENCE_TIMEOUT.as_secs(),
+                    "wxsat: no new lines for {}s — finalising pass ({} lines)",
+                    WXSAT_PASS_SILENCE_TIMEOUT.as_secs(),
                     decoder.line_count()
                 );
-                finalize_noaa_pass(
+                finalize_wxsat_pass(
                     &mut decoder,
                     &output_dir,
                     &decode_tx,
@@ -2530,8 +2530,8 @@ pub async fn run_noaa_decoder(
 }
 
 /// Encode all accumulated lines as JPEG, write to disk, and broadcast the
-/// `DecodedMessage::NoaaImage` event.  No-ops if fewer than 2 lines decoded.
-async fn finalize_noaa_pass(
+/// `DecodedMessage::WxsatImage` event.  No-ops if fewer than 2 lines decoded.
+async fn finalize_wxsat_pass(
     decoder: &mut AptDecoder,
     output_dir: &std::path::Path,
     decode_tx: &broadcast::Sender<DecodedMessage>,
@@ -2556,7 +2556,7 @@ async fn finalize_noaa_pass(
 
     if let Err(e) = std::fs::create_dir_all(output_dir) {
         warn!(
-            "NOAA: failed to create output directory {:?}: {}",
+            "wxsat: failed to create output directory {:?}: {}",
             output_dir, e
         );
         decoder.reset();
@@ -2565,26 +2565,35 @@ async fn finalize_noaa_pass(
 
     match std::fs::write(&path, &apt_image.jpeg) {
         Ok(()) => {
+            let sat_str = format!("{}", apt_image.satellite);
+            let ch_a_str = format!("{}", apt_image.sensor_a);
+            let ch_b_str = format!("{}", apt_image.sensor_b);
             info!(
-                "NOAA: saved {} ({} lines, {} bytes) to {:?}",
+                "wxsat: saved {} ({} lines, {} bytes, {}, A={}, B={}) to {:?}",
                 filename,
                 apt_image.line_count,
                 apt_image.jpeg.len(),
+                sat_str,
+                ch_a_str,
+                ch_b_str,
                 path
             );
-            let img = NoaaImage {
+            let img = WxsatImage {
                 rig_id: None,
                 pass_start_ms: apt_image.first_line_ms,
                 pass_end_ms,
                 line_count: apt_image.line_count,
                 path: path.to_string_lossy().into_owned(),
                 ts_ms: Some(pass_end_ms),
+                satellite: Some(sat_str),
+                channel_a: Some(ch_a_str),
+                channel_b: Some(ch_b_str),
             };
-            histories.record_noaa_image(img.clone());
-            let _ = decode_tx.send(DecodedMessage::NoaaImage(img));
+            histories.record_wxsat_image(img.clone());
+            let _ = decode_tx.send(DecodedMessage::WxsatImage(img));
         }
         Err(e) => {
-            warn!("NOAA: failed to write {:?}: {}", path, e);
+            warn!("wxsat: failed to write {:?}: {}", path, e);
         }
     }
 
@@ -3191,9 +3200,9 @@ async fn handle_audio_client(
             AUDIO_MSG_CW_DECODE
         );
         push_history!(
-            histories.snapshot_noaa_history(),
-            DecodedMessage::NoaaImage,
-            AUDIO_MSG_NOAA_IMAGE
+            histories.snapshot_wxsat_history(),
+            DecodedMessage::WxsatImage,
+            AUDIO_MSG_WXSAT_IMAGE
         );
 
         (blob, count)
@@ -3278,7 +3287,7 @@ async fn handle_audio_client(
                                 DecodedMessage::Ft4(_) => AUDIO_MSG_FT4_DECODE,
                                 DecodedMessage::Ft2(_) => AUDIO_MSG_FT2_DECODE,
                                 DecodedMessage::Wspr(_) => AUDIO_MSG_WSPR_DECODE,
-                                DecodedMessage::NoaaImage(_) => AUDIO_MSG_NOAA_IMAGE,
+                                DecodedMessage::WxsatImage(_) => AUDIO_MSG_WXSAT_IMAGE,
                             };
                             if let Ok(json) = serde_json::to_vec(&msg) {
                                 if let Err(e) = write_audio_msg(&mut writer_for_rx, msg_type, &json).await {
@@ -3306,7 +3315,7 @@ async fn handle_audio_client(
                                 DecodedMessage::Ft4(_) => AUDIO_MSG_FT4_DECODE,
                                 DecodedMessage::Ft2(_) => AUDIO_MSG_FT2_DECODE,
                                 DecodedMessage::Wspr(_) => AUDIO_MSG_WSPR_DECODE,
-                                DecodedMessage::NoaaImage(_) => AUDIO_MSG_NOAA_IMAGE,
+                                DecodedMessage::WxsatImage(_) => AUDIO_MSG_WXSAT_IMAGE,
                             };
                             if let Ok(json) = serde_json::to_vec(&msg) {
                                 if let Err(e) = write_audio_msg(&mut writer_for_rx, msg_type, &json).await {

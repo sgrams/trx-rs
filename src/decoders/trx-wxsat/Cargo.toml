@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: BSD-2-Clause
 
 [package]
-name = "trx-noaa"
+name = "trx-wxsat"
 version.workspace = true
 edition = "2021"
 

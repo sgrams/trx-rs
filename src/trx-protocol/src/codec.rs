@@ -455,6 +455,7 @@ mod tests {
             ft4_decode_enabled: false,
             ft2_decode_enabled: false,
             wspr_decode_enabled: false,
+            wxsat_decode_enabled: false,
             cw_auto: false,
             cw_wpm: 0,
             cw_tone_hz: 0,

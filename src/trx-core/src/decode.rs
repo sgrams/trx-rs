@@ -28,8 +28,8 @@ pub enum DecodedMessage {
     Ft2(Ft8Message),
     #[serde(rename = "wspr")]
     Wspr(WsprMessage),
-    #[serde(rename = "noaa_image")]
-    NoaaImage(NoaaImage),
+    #[serde(rename = "wxsat_image")]
+    WxsatImage(WxsatImage),
 }
 
 impl DecodedMessage {
@@ -42,7 +42,7 @@ impl DecodedMessage {
             Self::Cw(m) => m.rig_id = Some(id),
             Self::Ft8(m) | Self::Ft4(m) | Self::Ft2(m) => m.rig_id = Some(id),
             Self::Wspr(m) => m.rig_id = Some(id),
-            Self::NoaaImage(m) => m.rig_id = Some(id),
+            Self::WxsatImage(m) => m.rig_id = Some(id),
         }
     }
 
@@ -55,7 +55,7 @@ impl DecodedMessage {
             Self::Cw(m) => m.rig_id.as_deref(),
             Self::Ft8(m) | Self::Ft4(m) | Self::Ft2(m) => m.rig_id.as_deref(),
             Self::Wspr(m) => m.rig_id.as_deref(),
-            Self::NoaaImage(m) => m.rig_id.as_deref(),
+            Self::WxsatImage(m) => m.rig_id.as_deref(),
         }
     }
 }
@@ -207,9 +207,9 @@ pub struct Ft8Message {
     pub message: String,
 }
 
-/// A completed NOAA APT satellite image, saved to disk as a JPEG.
+/// A completed weather satellite APT image, saved to disk as a JPEG.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct NoaaImage {
+pub struct WxsatImage {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub rig_id: Option<String>,
     /// UTC timestamp (milliseconds since epoch) of pass start (first decoded line).
@@ -222,6 +222,15 @@ pub struct NoaaImage {
     pub path: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ts_ms: Option<i64>,
+    /// Identified satellite (e.g. "NOAA-15", "NOAA-18", "NOAA-19").
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub satellite: Option<String>,
+    /// Sensor channel name for sub-channel A (e.g. "1-VIS", "2-NIR", "4-TIR").
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub channel_a: Option<String>,
+    /// Sensor channel name for sub-channel B.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub channel_b: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

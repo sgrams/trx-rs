@@ -5,7 +5,7 @@
 [workspace]
 members = [
     "src/decoders/trx-ais",
-    "src/decoders/trx-noaa",
+    "src/decoders/trx-wxsat",
     "src/decoders/trx-aprs",
     "src/decoders/trx-cw",
     "src/decoders/trx-decode-log",
