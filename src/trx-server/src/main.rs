@@ -794,6 +794,9 @@ fn spawn_rig_audio_stack(
             }
         }));
 
+        // Start periodic TLE refresh from CelesTrak (on start + once/day).
+        trx_core::geo::spawn_tle_refresh_task();
+
         // Spawn weather satellite APT decoder task
         let wxsat_pcm_rx = pcm_tx.subscribe();
         let wxsat_state_rx = state_rx.clone();
