@@ -19,9 +19,6 @@
 //! APIDs 65 (R), 65 (G), 68 (B) depending on illumination.
 
 use std::collections::BTreeMap;
-use std::io::Cursor;
-
-use image::{DynamicImage, RgbImage};
 
 use super::cadu::Cadu;
 use super::MeteorSatellite;
@@ -168,9 +165,8 @@ impl ChannelAssembler {
         let ch_g = self.channels.get(&65);
         let ch_b = self.channels.get(&66);
 
-        let mut rgb_pixels: Vec<u8> = Vec::with_capacity(npix * 3);
-
         if ch_r.is_some() || ch_g.is_some() || ch_b.is_some() {
+            let mut rgb_pixels: Vec<u8> = Vec::with_capacity(npix * 3);
             for i in 0..npix {
                 let r = ch_r.and_then(|c| c.pixels.get(i).copied()).unwrap_or(0);
                 let g = ch_g.and_then(|c| c.pixels.get(i).copied()).unwrap_or(0);
@@ -179,26 +175,16 @@ impl ChannelAssembler {
                 rgb_pixels.push(g);
                 rgb_pixels.push(b);
             }
+            crate::image_enc::encode_rgb_png(width, height, rgb_pixels)
         } else {
             // Fallback: grayscale from the first available channel
             let first_ch = self.channels.values().next()?;
+            let mut gray_pixels: Vec<u8> = Vec::with_capacity(npix);
             for i in 0..npix {
-                let v = first_ch.pixels.get(i).copied().unwrap_or(0);
-                rgb_pixels.push(v);
-                rgb_pixels.push(v);
-                rgb_pixels.push(v);
+                gray_pixels.push(first_ch.pixels.get(i).copied().unwrap_or(0));
             }
+            crate::image_enc::encode_grayscale_png(width, height, gray_pixels)
         }
-
-        let img = RgbImage::from_raw(width, height, rgb_pixels)?;
-        let dynamic = DynamicImage::ImageRgb8(img);
-
-        let mut cursor = Cursor::new(Vec::new());
-        dynamic
-            .write_to(&mut cursor, image::ImageOutputFormat::Png)
-            .ok()?;
-
-        Some(cursor.into_inner())
     }
 
     pub fn reset(&mut self) {

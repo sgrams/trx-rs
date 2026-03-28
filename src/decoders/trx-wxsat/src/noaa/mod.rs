@@ -26,13 +26,10 @@ pub mod telemetry;
 use apt::{AptDemod, SyncTracker};
 use telemetry::{Satellite, SensorChannel};
 
-/// JPEG encoding quality (0-100).
-const JPEG_QUALITY: u8 = 85;
-
 /// Completed APT image returned by [`AptDecoder::finalize`].
 pub struct AptImage {
-    /// JPEG-encoded image bytes.
-    pub jpeg: Vec<u8>,
+    /// PNG-encoded image bytes.
+    pub png: Vec<u8>,
     /// Number of decoded image lines.
     pub line_count: u32,
     /// Millisecond timestamp when the first line was decoded.
@@ -137,9 +134,9 @@ impl AptDecoder {
             line.pixels_b.copy_from_slice(&all_b[i * width_b..(i + 1) * width_b]);
         }
 
-        let jpeg = image_enc::encode_jpeg(&lines, JPEG_QUALITY)?;
+        let png = image_enc::encode_png(&lines)?;
         Some(AptImage {
-            jpeg,
+            png,
             line_count: lines.len() as u32,
             first_line_ms: self.first_line_ms.unwrap_or_else(crate::now_ms),
             satellite,

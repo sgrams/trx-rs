@@ -11,4 +11,4 @@ edition = "2021"
 trx-core = { path = "../../trx-core" }
 rustfft = "6"
 num-complex = "0.4"
-image = { version = "0.24", default-features = false, features = ["jpeg", "png"] }
+image = { version = "0.24", default-features = false, features = ["png"] }

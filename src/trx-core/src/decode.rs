@@ -211,7 +211,7 @@ pub struct Ft8Message {
     pub message: String,
 }
 
-/// A completed weather satellite APT image, saved to disk as a JPEG.
+/// A completed weather satellite APT image, saved to disk as a PNG.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WxsatImage {
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -222,7 +222,7 @@ pub struct WxsatImage {
     pub pass_end_ms: i64,
     /// Number of decoded image lines.
     pub line_count: u32,
-    /// Absolute filesystem path to the saved JPEG file.
+    /// Absolute filesystem path to the saved PNG file.
     pub path: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ts_ms: Option<i64>,

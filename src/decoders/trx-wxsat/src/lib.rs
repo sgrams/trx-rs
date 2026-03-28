@@ -12,6 +12,7 @@
 //! - **Meteor-M LRPT** ([`lrpt`]): Low Rate Picture Transmission from
 //!   Meteor-M N2-3/N2-4 using QPSK modulation at 72 kbps with CCSDS framing.
 
+pub mod image_enc;
 pub mod lrpt;
 pub mod noaa;
 

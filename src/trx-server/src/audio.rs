@@ -2453,8 +2453,8 @@ pub async fn run_wspr_decoder(
 ///
 /// The task is idle until `state.wxsat_decode_enabled` becomes `true`.
 /// When the user disables the decoder (or 30 s of silence elapses with no
-/// new decoded lines), the accumulated image is encoded as JPEG and saved to
-/// `output_dir/<YYYY-MM-DD_HH-MM-SS>.jpg`.
+/// new decoded lines), the accumulated image is encoded as PNG and saved to
+/// `output_dir/<YYYY-MM-DD_HH-MM-SS>.png`.
 pub async fn run_wxsat_decoder(
     sample_rate: u32,
     channels: u16,
@@ -2581,7 +2581,7 @@ pub async fn run_wxsat_decoder(
     }
 }
 
-/// Encode all accumulated lines as JPEG, write to disk, and broadcast the
+/// Encode all accumulated lines as PNG, write to disk, and broadcast the
 /// `DecodedMessage::WxsatImage` event.  No-ops if fewer than 2 lines decoded.
 async fn finalize_wxsat_pass(
     decoder: &mut AptDecoder,
@@ -2601,9 +2601,9 @@ async fn finalize_wxsat_pass(
         return;
     };
 
-    // Build output path: <output_dir>/<YYYY-MM-DD_HH-MM-SS>.jpg
+    // Build output path: <output_dir>/<YYYY-MM-DD_HH-MM-SS>.png
     let dt = chrono::Local::now();
-    let filename = dt.format("%Y-%m-%d_%H-%M-%S.jpg").to_string();
+    let filename = dt.format("%Y-%m-%d_%H-%M-%S.png").to_string();
     let path = output_dir.join(&filename);
 
     if let Err(e) = std::fs::create_dir_all(output_dir) {
@@ -2615,7 +2615,7 @@ async fn finalize_wxsat_pass(
         return;
     }
 
-    match std::fs::write(&path, &apt_image.jpeg) {
+    match std::fs::write(&path, &apt_image.png) {
         Ok(()) => {
             let sat_str = format!("{}", apt_image.satellite);
             let ch_a_str = format!("{}", apt_image.sensor_a);
@@ -2624,7 +2624,7 @@ async fn finalize_wxsat_pass(
                 "wxsat: saved {} ({} lines, {} bytes, {}, A={}, B={}) to {:?}",
                 filename,
                 apt_image.line_count,
-                apt_image.jpeg.len(),
+                apt_image.png.len(),
                 sat_str,
                 ch_a_str,
                 ch_b_str,
