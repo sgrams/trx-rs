@@ -3247,6 +3247,7 @@ function render(update) {
     lrptToggleBtn.style.borderColor = lrptOn ? "#00d17f" : "";
     lrptToggleBtn.style.color = lrptOn ? "#00d17f" : "";
   }
+  if (window.updateWxsatLiveState) window.updateWxsatLiveState(update);
   const cwAutoEl = document.getElementById("cw-auto");
   const cwWpmEl = document.getElementById("cw-wpm");
   const cwToneEl = document.getElementById("cw-tone");

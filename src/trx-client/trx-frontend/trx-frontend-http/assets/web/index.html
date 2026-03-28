@@ -807,17 +807,60 @@
           <button id="lrpt-decode-toggle-btn" type="button">Enable Meteor LRPT</button>
           <small id="wxsat-status" style="color:var(--text-muted);">Waiting for satellite pass</small>
         </div>
-        <div style="margin:0.5rem 0;">
-          <div style="color:var(--text-muted); font-size:0.82rem; line-height:1.5;">
-            <strong>NOAA APT</strong> &mdash; Automatic Picture Transmission from NOAA-15/18/19 (137 MHz FM).
-            Dual-channel visible + infrared imagery at 4160 samples/sec with telemetry-based radiometric calibration.
-          </div>
-          <div style="color:var(--text-muted); font-size:0.82rem; line-height:1.5; margin-top:0.3rem;">
-            <strong>Meteor-M LRPT</strong> &mdash; Low Rate Picture Transmission from Meteor-M N2-3/N2-4 (137 MHz QPSK at 72 kbps).
-            Multi-channel CCSDS-framed imagery (APIDs 64&ndash;69) with RGB composite output.
-          </div>
+        <!-- View selector -->
+        <div class="wxsat-view-bar">
+          <button id="wxsat-view-live" class="wxsat-view-btn wxsat-view-active" type="button">Live</button>
+          <button id="wxsat-view-history" class="wxsat-view-btn" type="button">History</button>
         </div>
-        <div id="wxsat-images"></div>
+        <!-- Live view -->
+        <div id="wxsat-live-view">
+          <div class="wxsat-live-grid">
+            <div class="wxsat-live-card">
+              <span class="wxsat-live-label">NOAA APT</span>
+              <span id="wxsat-apt-state" class="wxsat-live-value wxsat-state-idle">Idle</span>
+            </div>
+            <div class="wxsat-live-card">
+              <span class="wxsat-live-label">Meteor LRPT</span>
+              <span id="wxsat-lrpt-state" class="wxsat-live-value wxsat-state-idle">Idle</span>
+            </div>
+          </div>
+          <div style="margin:0.5rem 0;">
+            <div style="color:var(--text-muted); font-size:0.82rem; line-height:1.5;">
+              <strong>NOAA APT</strong> &mdash; Automatic Picture Transmission from NOAA-15/18/19 (137 MHz FM).
+              Dual-channel visible + infrared imagery at 4160 samples/sec with telemetry-based radiometric calibration.
+            </div>
+            <div style="color:var(--text-muted); font-size:0.82rem; line-height:1.5; margin-top:0.3rem;">
+              <strong>Meteor-M LRPT</strong> &mdash; Low Rate Picture Transmission from Meteor-M N2-3/N2-4 (137 MHz QPSK at 72 kbps).
+              Multi-channel CCSDS-framed imagery (APIDs 64&ndash;69) with RGB composite output.
+            </div>
+          </div>
+          <div id="wxsat-live-latest" style="margin-top:0.5rem;"></div>
+        </div>
+        <!-- History view -->
+        <div id="wxsat-history-view" style="display:none;">
+          <div class="wxsat-history-controls">
+            <input id="wxsat-filter" class="ft8-filter" type="text" placeholder="Filter (e.g. NOAA-18, Meteor, APT)" />
+            <select id="wxsat-sort" class="wxsat-sort-select">
+              <option value="newest">Newest first</option>
+              <option value="oldest">Oldest first</option>
+            </select>
+            <select id="wxsat-type-filter" class="wxsat-sort-select">
+              <option value="all">All types</option>
+              <option value="apt">NOAA APT only</option>
+              <option value="lrpt">Meteor LRPT only</option>
+            </select>
+          </div>
+          <div class="wxsat-history-header">
+            <span class="wxsat-col-time">Time</span>
+            <span class="wxsat-col-type">Type</span>
+            <span class="wxsat-col-sat">Satellite</span>
+            <span class="wxsat-col-ch">Channels</span>
+            <span class="wxsat-col-lines">Lines</span>
+            <span class="wxsat-col-link">Image</span>
+          </div>
+          <div id="wxsat-history-list"></div>
+          <small id="wxsat-history-count" style="color:var(--text-muted);font-size:0.75rem;">No images yet</small>
+        </div>
       </div>
     </div>
     <div id="tab-map" class="tab-panel" style="display:none;">
