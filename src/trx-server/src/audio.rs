@@ -2541,11 +2541,17 @@ pub async fn run_wxsat_decoder(
                         }
                         if was_active && !active {
                             // User disabled — finalise whatever we have
+                            let (slat, slon) = {
+                                let s = state_rx.borrow();
+                                (s.server_latitude, s.server_longitude)
+                            };
                             finalize_wxsat_pass(
                                 &mut decoder,
                                 &output_dir,
                                 &decode_tx,
                                 &histories,
+                                slat,
+                                slon,
                             )
                             .await;
                         } else if !was_active && active {
@@ -2565,11 +2571,17 @@ pub async fn run_wxsat_decoder(
                     WXSAT_PASS_SILENCE_TIMEOUT.as_secs(),
                     decoder.line_count()
                 );
+                let (slat, slon) = {
+                    let s = state_rx.borrow();
+                    (s.server_latitude, s.server_longitude)
+                };
                 finalize_wxsat_pass(
                     &mut decoder,
                     &output_dir,
                     &decode_tx,
                     &histories,
+                    slat,
+                    slon,
                 )
                 .await;
                 // Remain active; ready for the next pass
@@ -2587,6 +2599,8 @@ async fn finalize_wxsat_pass(
     output_dir: &std::path::Path,
     decode_tx: &broadcast::Sender<DecodedMessage>,
     histories: &Arc<DecoderHistories>,
+    station_lat: Option<f64>,
+    station_lon: Option<f64>,
 ) {
     if decoder.line_count() < 2 {
         decoder.reset();
@@ -2629,6 +2643,32 @@ async fn finalize_wxsat_pass(
                 ch_b_str,
                 path
             );
+            // Compute geographic bounds from SGP4 propagation
+            let pass_geo = trx_core::geo::compute_pass_geo(
+                &sat_str,
+                apt_image.first_line_ms,
+                pass_end_ms,
+                station_lat,
+                station_lon,
+            )
+            .or_else(|| {
+                // Fallback: use station location if available
+                match (station_lat, station_lon) {
+                    (Some(lat), Some(lon)) => Some(
+                        trx_core::geo::estimate_pass_geo_from_station(
+                            apt_image.first_line_ms,
+                            pass_end_ms,
+                            lat,
+                            lon,
+                        ),
+                    ),
+                    _ => None,
+                }
+            });
+            let (geo_bounds, ground_track) = match pass_geo {
+                Some(geo) => (Some(geo.bounds), Some(geo.ground_track)),
+                None => (None, None),
+            };
             let img = WxsatImage {
                 rig_id: None,
                 pass_start_ms: apt_image.first_line_ms,
@@ -2636,10 +2676,15 @@ async fn finalize_wxsat_pass(
                 line_count: apt_image.line_count,
                 path: path.to_string_lossy().into_owned(),
                 ts_ms: Some(pass_end_ms),
-                satellite: Some(sat_str),
+                satellite: Some(sat_str.clone()),
                 channel_a: Some(ch_a_str),
                 channel_b: Some(ch_b_str),
+                geo_bounds,
+                ground_track,
             };
+            if geo_bounds.is_some() {
+                info!("wxsat: geo-referenced {} image overlay", sat_str);
+            }
             histories.record_wxsat_image(img.clone());
             let _ = decode_tx.send(DecodedMessage::WxsatImage(img));
         }
@@ -2740,12 +2785,18 @@ pub async fn run_lrpt_decoder(
                         decoder.reset();
                     }
                     if was_active && !active {
+                        let (slat, slon) = {
+                            let s = state_rx.borrow();
+                            (s.server_latitude, s.server_longitude)
+                        };
                         finalize_lrpt_pass(
                             &mut decoder,
                             &output_dir,
                             &decode_tx,
                             &histories,
                             pass_start_ms,
+                            slat,
+                            slon,
                         ).await;
                     }
                 } else {
@@ -2758,12 +2809,18 @@ pub async fn run_lrpt_decoder(
                     LRPT_PASS_SILENCE_TIMEOUT.as_secs(),
                     decoder.mcu_count()
                 );
+                let (slat, slon) = {
+                    let s = state_rx.borrow();
+                    (s.server_latitude, s.server_longitude)
+                };
                 finalize_lrpt_pass(
                     &mut decoder,
                     &output_dir,
                     &decode_tx,
                     &histories,
                     pass_start_ms,
+                    slat,
+                    slon,
                 ).await;
             }
         }
@@ -2776,6 +2833,8 @@ async fn finalize_lrpt_pass(
     decode_tx: &broadcast::Sender<DecodedMessage>,
     histories: &Arc<DecoderHistories>,
     pass_start_ms: i64,
+    station_lat: Option<f64>,
+    station_lon: Option<f64>,
 ) {
     if decoder.mcu_count() < 2 {
         decoder.reset();
@@ -2811,6 +2870,36 @@ async fn finalize_lrpt_pass(
                 lrpt_image.png.len(),
                 path
             );
+            let sat_name = lrpt_image.satellite.map(|s| s.to_string());
+            // Compute geographic bounds from SGP4 propagation
+            let pass_geo = sat_name
+                .as_deref()
+                .and_then(|sat| {
+                    trx_core::geo::compute_pass_geo(
+                        sat,
+                        pass_start_ms,
+                        pass_end_ms,
+                        station_lat,
+                        station_lon,
+                    )
+                })
+                .or_else(|| {
+                    match (station_lat, station_lon) {
+                        (Some(lat), Some(lon)) => Some(
+                            trx_core::geo::estimate_pass_geo_from_station(
+                                pass_start_ms,
+                                pass_end_ms,
+                                lat,
+                                lon,
+                            ),
+                        ),
+                        _ => None,
+                    }
+                });
+            let (geo_bounds, ground_track) = match pass_geo {
+                Some(geo) => (Some(geo.bounds), Some(geo.ground_track)),
+                None => (None, None),
+            };
             let img = LrptImage {
                 rig_id: None,
                 pass_start_ms,
@@ -2818,9 +2907,14 @@ async fn finalize_lrpt_pass(
                 mcu_count: lrpt_image.mcu_count,
                 path: path.to_string_lossy().into_owned(),
                 ts_ms: Some(pass_end_ms),
-                satellite: lrpt_image.satellite.map(|s| s.to_string()),
+                satellite: sat_name.clone(),
                 channels: lrpt_image.channels.clone(),
+                geo_bounds,
+                ground_track,
             };
+            if geo_bounds.is_some() {
+                info!("LRPT: geo-referenced {} image overlay", sat_name.as_deref().unwrap_or("unknown"));
+            }
             histories.record_lrpt_image(img.clone());
             let _ = decode_tx.send(DecodedMessage::LrptImage(img));
         }

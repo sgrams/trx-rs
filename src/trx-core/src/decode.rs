@@ -235,6 +235,12 @@ pub struct WxsatImage {
     /// Sensor channel name for sub-channel B.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub channel_b: Option<String>,
+    /// Geographic bounds `[south, west, north, east]` for map overlay.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub geo_bounds: Option<[f64; 4]>,
+    /// Ground track points `[[lat, lon], ...]` from SGP4 propagation.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ground_track: Option<Vec<[f64; 2]>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -274,4 +280,10 @@ pub struct LrptImage {
     /// APID channels decoded (e.g. "64,65,66" for RGB).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub channels: Option<String>,
+    /// Geographic bounds `[south, west, north, east]` for map overlay.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub geo_bounds: Option<[f64; 4]>,
+    /// Ground track points `[[lat, lon], ...]` from SGP4 propagation.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ground_track: Option<Vec<[f64; 2]>>,
 }

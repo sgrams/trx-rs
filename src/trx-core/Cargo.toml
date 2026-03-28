@@ -14,3 +14,4 @@ serde_json = { workspace = true }
 tracing = { workspace = true }
 flate2 = { workspace = true }
 uuid = { workspace = true }
+sgp4 = "2"
