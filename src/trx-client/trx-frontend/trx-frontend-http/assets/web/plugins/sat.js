@@ -20,6 +20,8 @@ const satLrptState = document.getElementById("sat-lrpt-state");
 // ── State ───────────────────────────────────────────────────────────
 let satImageHistory = [];
 const SAT_MAX_IMAGES = 100;
+const SAT_PRED_PAGE_SIZE = 50; // max rows before "Show more"
+let satPredShowAll = false;
 let satFilterText = "";
 let satActiveView = "live"; // "live" | "history" | "predictions"
 
@@ -38,6 +40,7 @@ const satViewHistoryBtn = document.getElementById("sat-view-history");
 const satViewPredictionsBtn = document.getElementById("sat-view-predictions");
 
 function switchSatView(view) {
+  const leavingPredictions = satActiveView === "predictions" && view !== "predictions";
   satActiveView = view;
   if (satLiveView) satLiveView.style.display = view === "live" ? "" : "none";
   if (satHistoryView) satHistoryView.style.display = view === "history" ? "" : "none";
@@ -45,12 +48,24 @@ function switchSatView(view) {
   if (satViewLiveBtn) satViewLiveBtn.classList.toggle("sat-view-active", view === "live");
   if (satViewHistoryBtn) satViewHistoryBtn.classList.toggle("sat-view-active", view === "history");
   if (satViewPredictionsBtn) satViewPredictionsBtn.classList.toggle("sat-view-active", view === "predictions");
+  // Clear prediction DOM when leaving to reduce node count.
+  if (leavingPredictions) {
+    clearPredictionDom();
+  }
   if (view === "history") {
     renderSatHistoryTable();
   } else if (view === "predictions") {
+    satPredShowAll = false;
     loadSatPredictions();
   }
 }
+
+function clearPredictionDom() {
+  if (satPredCountdownTimer) { clearInterval(satPredCountdownTimer); satPredCountdownTimer = null; }
+  if (satPredCurrentList) satPredCurrentList.innerHTML = "";
+  if (satPredUpcomingList) satPredUpcomingList.innerHTML = "";
+}
+window.clearSatPredictionDom = clearPredictionDom;
 
 satViewLiveBtn?.addEventListener("click", () => switchSatView("live"));
 satViewHistoryBtn?.addEventListener("click", () => switchSatView("history"));
@@ -298,6 +313,11 @@ let satPredCountdownTimer = null;
 const satPredFilterInput = document.getElementById("sat-pred-filter");
 const satPredMinElSelect = document.getElementById("sat-pred-min-el");
 const satPredCategorySelect = document.getElementById("sat-pred-category");
+const satPredCurrentList = document.getElementById("sat-pred-current-list");
+const satPredUpcomingList = document.getElementById("sat-pred-list");
+const satPredCurrentSection = document.getElementById("sat-pred-current-section");
+const satPredUpcomingSection = document.getElementById("sat-pred-upcoming-section");
+const satPredStatus = document.getElementById("sat-pred-status");
 
 function getFilteredPredictions() {
   let items = satPredData;
@@ -362,11 +382,11 @@ function formatCountdown(ms) {
 }
 
 function renderSatPredictions(passes, error) {
-  const currentList = document.getElementById("sat-pred-current-list");
-  const upcomingList = document.getElementById("sat-pred-list");
-  const currentSection = document.getElementById("sat-pred-current-section");
-  const upcomingSection = document.getElementById("sat-pred-upcoming-section");
-  const status = document.getElementById("sat-pred-status");
+  const currentList = satPredCurrentList;
+  const upcomingList = satPredUpcomingList;
+  const currentSection = satPredCurrentSection;
+  const upcomingSection = satPredUpcomingSection;
+  const status = satPredStatus;
 
   // Stop any previous countdown timer
   if (satPredCountdownTimer) { clearInterval(satPredCountdownTimer); satPredCountdownTimer = null; }
@@ -424,11 +444,14 @@ function renderSatPredictions(passes, error) {
     }
   }
 
-  // ── Upcoming passes ──
+  // ── Upcoming passes (capped to reduce DOM node count) ──
+  const upcomingLimit = satPredShowAll ? upcoming.length : SAT_PRED_PAGE_SIZE;
+  const visibleUpcoming = upcoming.slice(0, upcomingLimit);
+  const hiddenCount = upcoming.length - visibleUpcoming.length;
   if (upcomingSection) upcomingSection.style.display = upcoming.length > 0 ? "" : "none";
   if (upcomingList) {
     const frag = document.createDocumentFragment();
-    for (const pass of upcoming) {
+    for (const pass of visibleUpcoming) {
       const row = document.createElement("div");
       row.className = "sat-pred-row";
       const elClass = pass.max_elevation_deg >= 45
@@ -446,50 +469,66 @@ function renderSatPredictions(passes, error) {
       ].join("");
       frag.appendChild(row);
     }
+    if (hiddenCount > 0) {
+      const moreRow = document.createElement("div");
+      moreRow.className = "sat-pred-row";
+      moreRow.style.cursor = "pointer";
+      moreRow.style.textAlign = "center";
+      moreRow.innerHTML = `<span style="grid-column:1/-1;color:var(--accent);font-size:0.82rem;">Show ${hiddenCount} more passes\u2026</span>`;
+      moreRow.addEventListener("click", () => {
+        satPredShowAll = true;
+        renderSatPredictions(getFilteredPredictions());
+      });
+      frag.appendChild(moreRow);
+    }
     upcomingList.replaceChildren(frag);
   }
 
   // ── Status ──
   if (status) {
-    const totalAll = getFilteredPredictions().length;
     let text = `${current.length} active · ${upcoming.length} upcoming · times in UTC`;
     if (satPredSatCount > 0) text += ` · ${satPredSatCount} satellites tracked`;
     status.textContent = text;
   }
 
   // ── Countdown timer: update "time left" every second ──
-  if (current.length > 0) {
-    satPredCountdownTimer = setInterval(() => {
-      const n = Date.now();
-      const els = document.querySelectorAll("#sat-pred-current-list .sat-pred-col-countdown");
-      let anyActive = false;
-      for (const el of els) {
-        const los = parseInt(el.dataset.los, 10);
-        const rem = los - n;
-        if (rem > 0) {
-          el.textContent = formatCountdown(rem);
-          anyActive = true;
-        } else {
-          el.textContent = "0:00";
+  // Only run when predictions view is actually visible.
+  if (current.length > 0 && satActiveView === "predictions") {
+    const countdownEls = currentList ? currentList.querySelectorAll(".sat-pred-col-countdown") : [];
+    if (countdownEls.length > 0) {
+      satPredCountdownTimer = setInterval(() => {
+        // Pause timer if predictions view was hidden (e.g. switched tabs).
+        if (satActiveView !== "predictions") {
+          clearInterval(satPredCountdownTimer);
+          satPredCountdownTimer = null;
+          return;
         }
-      }
-      if (!anyActive) {
-        // All current passes ended — re-render to move them out
-        clearInterval(satPredCountdownTimer);
-        satPredCountdownTimer = null;
-        renderSatPredictions(getFilteredPredictions());
-      }
-    }, 1000);
+        const n = Date.now();
+        let anyActive = false;
+        for (const el of countdownEls) {
+          const los = parseInt(el.dataset.los, 10);
+          const rem = los - n;
+          if (rem > 0) {
+            el.textContent = formatCountdown(rem);
+            anyActive = true;
+          } else {
+            el.textContent = "0:00";
+          }
+        }
+        if (!anyActive) {
+          clearInterval(satPredCountdownTimer);
+          satPredCountdownTimer = null;
+          renderSatPredictions(getFilteredPredictions());
+        }
+      }, 1000);
+    }
   }
 }
 
 async function loadSatPredictions() {
-  const status = document.getElementById("sat-pred-status");
-  const currentList = document.getElementById("sat-pred-current-list");
-  const upcomingList = document.getElementById("sat-pred-list");
-  if (status) status.textContent = "Loading predictions\u2026";
-  if (currentList) currentList.innerHTML = "";
-  if (upcomingList) upcomingList.innerHTML = "";
+  if (satPredStatus) satPredStatus.textContent = "Loading predictions\u2026";
+  if (satPredCurrentList) satPredCurrentList.innerHTML = "";
+  if (satPredUpcomingList) satPredUpcomingList.innerHTML = "";
   try {
     const resp = await fetch("/sat_passes");
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
