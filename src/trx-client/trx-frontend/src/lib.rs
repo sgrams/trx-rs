@@ -189,130 +189,253 @@ impl Default for FrontendRegistrationContext {
     }
 }
 
-/// Runtime context for frontend operation, containing audio channels and decode state.
-pub struct FrontendRuntimeContext {
+// ---------------------------------------------------------------------------
+// Sub-structs for FrontendRuntimeContext decomposition
+// ---------------------------------------------------------------------------
+
+/// Audio streaming channels (server ↔ browser).
+pub struct AudioContext {
     /// Audio RX broadcast channel (server → browser)
-    pub audio_rx: Option<broadcast::Sender<Bytes>>,
+    pub rx: Option<broadcast::Sender<Bytes>>,
     /// Audio TX channel (browser → server)
-    pub audio_tx: Option<mpsc::Sender<Bytes>>,
+    pub tx: Option<mpsc::Sender<Bytes>>,
     /// Audio stream info watch channel
-    pub audio_info: Option<watch::Receiver<Option<AudioStreamInfo>>>,
+    pub info: Option<watch::Receiver<Option<AudioStreamInfo>>>,
     /// Decode message broadcast channel
     pub decode_rx: Option<broadcast::Sender<DecodedMessage>>,
-    /// Decode history entry: (record_time, rig_id, message).
-    /// AIS decode history
-    pub ais_history: DecodeHistory<AisMessage>,
-    /// VDES decode history
-    pub vdes_history: DecodeHistory<VdesMessage>,
-    /// APRS decode history
-    pub aprs_history: DecodeHistory<AprsPacket>,
-    /// HF APRS decode history
-    pub hf_aprs_history: DecodeHistory<AprsPacket>,
-    /// CW decode history
-    pub cw_history: DecodeHistory<CwEvent>,
-    /// FT8 decode history
-    pub ft8_history: DecodeHistory<Ft8Message>,
-    /// FT4 decode history
-    pub ft4_history: DecodeHistory<Ft8Message>,
-    /// FT2 decode history
-    pub ft2_history: DecodeHistory<Ft8Message>,
-    /// WSPR decode history
-    pub wspr_history: DecodeHistory<WsprMessage>,
-    /// Authentication tokens for HTTP-JSON frontend
-    pub auth_tokens: HashSet<String>,
-    /// Active HTTP SSE clients (incremented on /events connect, decremented on disconnect).
-    pub sse_clients: Arc<AtomicUsize>,
-    /// Active rigctl TCP clients.
-    pub rigctl_clients: Arc<AtomicUsize>,
     /// Active audio WebSocket streams.
-    pub audio_clients: Arc<AtomicUsize>,
-    /// rigctl listen endpoint, if enabled.
-    pub rigctl_listen_addr: Arc<Mutex<Option<SocketAddr>>>,
-    /// Guard to avoid spawning duplicate decode collectors.
-    pub decode_collector_started: AtomicBool,
-    /// HTTP frontend authentication configuration (enabled, passphrases, TTL, etc.)
-    pub http_auth_enabled: bool,
-    /// HTTP frontend auth rx passphrase
-    pub http_auth_rx_passphrase: Option<String>,
-    /// HTTP frontend auth control passphrase
-    pub http_auth_control_passphrase: Option<String>,
-    /// HTTP frontend auth tx access control enabled
-    pub http_auth_tx_access_control_enabled: bool,
-    /// HTTP frontend auth session TTL in seconds
-    pub http_auth_session_ttl_secs: u64,
-    /// HTTP frontend auth cookie secure flag
-    pub http_auth_cookie_secure: bool,
-    /// HTTP frontend auth cookie same-site policy
-    pub http_auth_cookie_same_site: String,
-    /// Whether the HTTP UI should expose the RF Gain control.
-    pub http_show_sdr_gain_control: bool,
-    /// Initial APRS map zoom level when receiver coordinates are available.
-    pub http_initial_map_zoom: u8,
-    /// Spectrum center-retune guard margin on each side of the tuned passband.
-    pub http_spectrum_coverage_margin_hz: u32,
-    /// Fraction of the sampled spectrum span treated as usable by the web UI.
-    pub http_spectrum_usable_span_ratio: f32,
-    /// Default decode history retention in minutes.
-    pub http_decode_history_retention_min: u64,
-    /// Per-rig decode history retention overrides in minutes.
-    pub http_decode_history_retention_min_by_rig: HashMap<String, u64>,
-    /// Currently selected remote rig id (used by remote client routing).
-    pub remote_active_rig_id: Arc<Mutex<Option<String>>>,
+    pub clients: Arc<AtomicUsize>,
+}
+
+impl Default for AudioContext {
+    fn default() -> Self {
+        Self {
+            rx: None,
+            tx: None,
+            info: None,
+            decode_rx: None,
+            clients: Arc::new(AtomicUsize::new(0)),
+        }
+    }
+}
+
+/// Decode history entries for all decoder types.
+pub struct DecodeHistoryContext {
+    pub ais: DecodeHistory<AisMessage>,
+    pub vdes: DecodeHistory<VdesMessage>,
+    pub aprs: DecodeHistory<AprsPacket>,
+    pub hf_aprs: DecodeHistory<AprsPacket>,
+    pub cw: DecodeHistory<CwEvent>,
+    pub ft8: DecodeHistory<Ft8Message>,
+    pub ft4: DecodeHistory<Ft8Message>,
+    pub ft2: DecodeHistory<Ft8Message>,
+    pub wspr: DecodeHistory<WsprMessage>,
+}
+
+impl Default for DecodeHistoryContext {
+    fn default() -> Self {
+        Self {
+            ais: Arc::new(Mutex::new(VecDeque::new())),
+            vdes: Arc::new(Mutex::new(VecDeque::new())),
+            aprs: Arc::new(Mutex::new(VecDeque::new())),
+            hf_aprs: Arc::new(Mutex::new(VecDeque::new())),
+            cw: Arc::new(Mutex::new(VecDeque::new())),
+            ft8: Arc::new(Mutex::new(VecDeque::new())),
+            ft4: Arc::new(Mutex::new(VecDeque::new())),
+            ft2: Arc::new(Mutex::new(VecDeque::new())),
+            wspr: Arc::new(Mutex::new(VecDeque::new())),
+        }
+    }
+}
+
+/// HTTP authentication configuration.
+pub struct HttpAuthConfig {
+    pub enabled: bool,
+    pub rx_passphrase: Option<String>,
+    pub control_passphrase: Option<String>,
+    pub tx_access_control_enabled: bool,
+    pub session_ttl_secs: u64,
+    pub cookie_secure: bool,
+    pub cookie_same_site: String,
+    /// Authentication tokens for HTTP-JSON frontend.
+    pub tokens: HashSet<String>,
+}
+
+impl Default for HttpAuthConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            rx_passphrase: None,
+            control_passphrase: None,
+            tx_access_control_enabled: true,
+            session_ttl_secs: 480 * 60,
+            cookie_secure: false,
+            cookie_same_site: "Lax".to_string(),
+            tokens: HashSet::new(),
+        }
+    }
+}
+
+/// HTTP UI display configuration.
+pub struct HttpUiConfig {
+    pub show_sdr_gain_control: bool,
+    pub initial_map_zoom: u8,
+    pub spectrum_coverage_margin_hz: u32,
+    pub spectrum_usable_span_ratio: f32,
+    pub decode_history_retention_min: u64,
+    pub decode_history_retention_min_by_rig: HashMap<String, u64>,
+}
+
+impl Default for HttpUiConfig {
+    fn default() -> Self {
+        Self {
+            show_sdr_gain_control: true,
+            initial_map_zoom: 10,
+            spectrum_coverage_margin_hz: 50_000,
+            spectrum_usable_span_ratio: 0.92,
+            decode_history_retention_min: 24 * 60,
+            decode_history_retention_min_by_rig: HashMap::new(),
+        }
+    }
+}
+
+/// Remote rig routing and state management.
+pub struct RigRoutingContext {
+    /// Currently selected remote rig id.
+    pub active_rig_id: Arc<Mutex<Option<String>>>,
     /// Cached remote rig list from GetRigs polling.
     pub remote_rigs: Arc<Mutex<Vec<RemoteRigEntry>>>,
     /// Cached satellite pass predictions from the server (GetSatPasses).
     pub sat_passes: Arc<RwLock<Option<trx_core::geo::PassPredictionResult>>>,
     /// Per-rig state watch channels, keyed by rig_id.
-    /// Populated by the remote client poll loop so each SSE session can
-    /// subscribe to a specific rig's state independently.
     pub rig_states: Arc<RwLock<HashMap<String, watch::Sender<RigState>>>>,
-    /// Owner callsign from trx-client config/CLI for frontend display.
-    pub owner_callsign: Option<String>,
-    /// Optional website URL for the web UI header title link.
-    pub owner_website_url: Option<String>,
-    /// Optional website name for the web UI header title label.
-    pub owner_website_name: Option<String>,
-    /// Optional base URL used to link AIS vessel names as `<base><mmsi>`.
-    pub ais_vessel_url_base: Option<String>,
-    /// Spectrum sender; SSE clients subscribe via `spectrum.subscribe()`.
-    pub spectrum: Arc<watch::Sender<SharedSpectrum>>,
-    /// Per-rig spectrum watch channels, keyed by rig_id.
-    /// Populated by the remote client spectrum polling task so each SSE
-    /// session can subscribe to a specific rig's spectrum independently.
-    pub rig_spectrums: Arc<RwLock<HashMap<String, watch::Sender<SharedSpectrum>>>>,
-    /// Per-rig RX audio broadcast senders, keyed by rig_id.
-    /// Each rig's audio client task publishes Opus frames here.
-    pub rig_audio_rx: Arc<RwLock<HashMap<String, broadcast::Sender<Bytes>>>>,
-    /// Per-rig audio stream info watch channels, keyed by rig_id.
-    pub rig_audio_info: Arc<RwLock<HashMap<String, watch::Sender<Option<AudioStreamInfo>>>>>,
-    /// Per-rig virtual-channel command senders, keyed by rig_id.
-    pub rig_vchan_audio_cmd: Arc<RwLock<HashMap<String, mpsc::Sender<VChanAudioCmd>>>>,
-    /// Per-virtual-channel Opus audio senders.
-    /// Key: server-side virtual channel UUID.
-    /// Value: `broadcast::Sender<Bytes>` that receives per-channel Opus packets
-    /// forwarded by the audio-client task from `AUDIO_MSG_RX_FRAME_CH` frames.
-    pub vchan_audio: Arc<RwLock<HashMap<Uuid, broadcast::Sender<Bytes>>>>,
-    /// Channel to send `VChanAudioCmd` to the audio-client task, which in turn
-    /// forwards `VCHAN_SUB` / `VCHAN_UNSUB` frames over the audio TCP connection.
-    /// `None` when no audio connection is active.
-    pub vchan_audio_cmd: Arc<Mutex<Option<mpsc::Sender<VChanAudioCmd>>>>,
-    /// Broadcast sender that fires whenever the server destroys a virtual
-    /// channel (e.g. out-of-bandwidth after center-frequency retune).
-    /// The HTTP frontend subscribes to clean up `ClientChannelManager`.
-    pub vchan_destroyed: Option<broadcast::Sender<Uuid>>,
-    /// Whether the remote client currently has an active TCP connection to
-    /// trx-server.  Set to `true` on successful connect, `false` on drop.
+    /// Whether the remote client currently has an active TCP connection.
     pub server_connected: Arc<AtomicBool>,
-    /// Per-rig server connection state, keyed by short name (or rig_id in legacy mode).
-    /// `true` while the rig's trx-server connection is active.
-    /// Allows the UI to freeze only the rig that lost its connection.
+    /// Per-rig server connection state.
     pub rig_server_connected: Arc<RwLock<HashMap<String, bool>>>,
+}
+
+impl Default for RigRoutingContext {
+    fn default() -> Self {
+        Self {
+            active_rig_id: Arc::new(Mutex::new(None)),
+            remote_rigs: Arc::new(Mutex::new(Vec::new())),
+            sat_passes: Arc::new(RwLock::new(None)),
+            rig_states: Arc::new(RwLock::new(HashMap::new())),
+            server_connected: Arc::new(AtomicBool::new(false)),
+            rig_server_connected: Arc::new(RwLock::new(HashMap::new())),
+        }
+    }
+}
+
+/// Owner/station metadata for frontend display.
+#[derive(Default)]
+pub struct OwnerInfo {
+    pub callsign: Option<String>,
+    pub website_url: Option<String>,
+    pub website_name: Option<String>,
+    pub ais_vessel_url_base: Option<String>,
+}
+
+
+/// Virtual channel audio management.
+pub struct VChanContext {
+    /// Per-virtual-channel Opus audio senders.
+    pub audio: Arc<RwLock<HashMap<Uuid, broadcast::Sender<Bytes>>>>,
+    /// Channel to send `VChanAudioCmd` to the audio-client task.
+    pub audio_cmd: Arc<Mutex<Option<mpsc::Sender<VChanAudioCmd>>>>,
+    /// Broadcast sender that fires when the server destroys a virtual channel.
+    pub destroyed: Option<broadcast::Sender<Uuid>>,
+    /// Per-rig virtual-channel command senders.
+    pub rig_audio_cmd: Arc<RwLock<HashMap<String, mpsc::Sender<VChanAudioCmd>>>>,
+}
+
+impl Default for VChanContext {
+    fn default() -> Self {
+        Self {
+            audio: Arc::new(RwLock::new(HashMap::new())),
+            audio_cmd: Arc::new(Mutex::new(None)),
+            destroyed: None,
+            rig_audio_cmd: Arc::new(RwLock::new(HashMap::new())),
+        }
+    }
+}
+
+/// Spectrum data management.
+pub struct SpectrumContext {
+    /// Spectrum sender; SSE clients subscribe via `sender.subscribe()`.
+    pub sender: Arc<watch::Sender<SharedSpectrum>>,
+    /// Per-rig spectrum watch channels, keyed by rig_id.
+    pub per_rig: Arc<RwLock<HashMap<String, watch::Sender<SharedSpectrum>>>>,
+}
+
+impl Default for SpectrumContext {
+    fn default() -> Self {
+        Self {
+            sender: {
+                let (tx, _rx) = watch::channel(SharedSpectrum::default());
+                Arc::new(tx)
+            },
+            per_rig: Arc::new(RwLock::new(HashMap::new())),
+        }
+    }
+}
+
+/// Per-rig audio channels for multi-rig setups.
+pub struct PerRigAudioContext {
+    /// Per-rig RX audio broadcast senders.
+    pub rx: Arc<RwLock<HashMap<String, broadcast::Sender<Bytes>>>>,
+    /// Per-rig audio stream info watch channels.
+    pub info: Arc<RwLock<HashMap<String, watch::Sender<Option<AudioStreamInfo>>>>>,
+}
+
+impl Default for PerRigAudioContext {
+    fn default() -> Self {
+        Self {
+            rx: Arc::new(RwLock::new(HashMap::new())),
+            info: Arc::new(RwLock::new(HashMap::new())),
+        }
+    }
+}
+
+/// Runtime context for frontend operation.
+///
+/// Decomposed into coherent sub-structs to improve readability and allow
+/// frontends to access only the context groups they need.
+pub struct FrontendRuntimeContext {
+    /// Audio streaming channels.
+    pub audio: AudioContext,
+    /// Decode history for all decoder types.
+    pub decode_history: DecodeHistoryContext,
+    /// HTTP authentication configuration.
+    pub http_auth: HttpAuthConfig,
+    /// HTTP UI display configuration.
+    pub http_ui: HttpUiConfig,
+    /// Remote rig routing and state.
+    pub routing: RigRoutingContext,
+    /// Owner/station metadata.
+    pub owner: OwnerInfo,
+    /// Virtual channel management.
+    pub vchan: VChanContext,
+    /// Spectrum data.
+    pub spectrum: SpectrumContext,
+    /// Per-rig audio channels.
+    pub rig_audio: PerRigAudioContext,
+    /// Active HTTP SSE clients.
+    pub sse_clients: Arc<AtomicUsize>,
+    /// Active rigctl TCP clients.
+    pub rigctl_clients: Arc<AtomicUsize>,
+    /// rigctl listen endpoint, if enabled.
+    pub rigctl_listen_addr: Arc<Mutex<Option<SocketAddr>>>,
+    /// Guard to avoid spawning duplicate decode collectors.
+    pub decode_collector_started: AtomicBool,
 }
 
 impl FrontendRuntimeContext {
     /// Get a watch receiver for a specific rig's state.
     pub fn rig_state_rx(&self, rig_id: &str) -> Option<watch::Receiver<RigState>> {
-        self.rig_states
+        self.routing
+            .rig_states
             .read()
             .ok()
             .and_then(|map| map.get(rig_id).map(|tx| tx.subscribe()))
@@ -321,13 +444,13 @@ impl FrontendRuntimeContext {
     /// Get a watch receiver for a specific rig's spectrum.
     /// Lazily inserts a new channel if the rig_id is not yet present.
     pub fn rig_spectrum_rx(&self, rig_id: &str) -> watch::Receiver<SharedSpectrum> {
-        if let Ok(map) = self.rig_spectrums.read() {
+        if let Ok(map) = self.spectrum.per_rig.read() {
             if let Some(tx) = map.get(rig_id) {
                 return tx.subscribe();
             }
         }
         // Insert on miss.
-        if let Ok(mut map) = self.rig_spectrums.write() {
+        if let Ok(mut map) = self.spectrum.per_rig.write() {
             map.entry(rig_id.to_string())
                 .or_insert_with(|| watch::channel(SharedSpectrum::default()).0)
                 .subscribe()
@@ -339,7 +462,8 @@ impl FrontendRuntimeContext {
 
     /// Subscribe to a specific rig's RX audio broadcast.
     pub fn rig_audio_subscribe(&self, rig_id: &str) -> Option<broadcast::Receiver<Bytes>> {
-        self.rig_audio_rx
+        self.rig_audio
+            .rx
             .read()
             .ok()
             .and_then(|map| map.get(rig_id).map(|tx| tx.subscribe()))
@@ -350,7 +474,8 @@ impl FrontendRuntimeContext {
         &self,
         rig_id: &str,
     ) -> Option<watch::Receiver<Option<AudioStreamInfo>>> {
-        self.rig_audio_info
+        self.rig_audio
+            .info
             .read()
             .ok()
             .and_then(|map| map.get(rig_id).map(|tx| tx.subscribe()))
@@ -359,59 +484,19 @@ impl FrontendRuntimeContext {
     /// Create a new empty runtime context.
     pub fn new() -> Self {
         Self {
-            audio_rx: None,
-            audio_tx: None,
-            audio_info: None,
-            decode_rx: None,
-            ais_history: Arc::new(Mutex::new(VecDeque::new())),
-            vdes_history: Arc::new(Mutex::new(VecDeque::new())),
-            aprs_history: Arc::new(Mutex::new(VecDeque::new())),
-            hf_aprs_history: Arc::new(Mutex::new(VecDeque::new())),
-            cw_history: Arc::new(Mutex::new(VecDeque::new())),
-            ft8_history: Arc::new(Mutex::new(VecDeque::new())),
-            ft4_history: Arc::new(Mutex::new(VecDeque::new())),
-            ft2_history: Arc::new(Mutex::new(VecDeque::new())),
-            wspr_history: Arc::new(Mutex::new(VecDeque::new())),
-            auth_tokens: HashSet::new(),
+            audio: AudioContext::default(),
+            decode_history: DecodeHistoryContext::default(),
+            http_auth: HttpAuthConfig::default(),
+            http_ui: HttpUiConfig::default(),
+            routing: RigRoutingContext::default(),
+            owner: OwnerInfo::default(),
+            vchan: VChanContext::default(),
+            spectrum: SpectrumContext::default(),
+            rig_audio: PerRigAudioContext::default(),
             sse_clients: Arc::new(AtomicUsize::new(0)),
             rigctl_clients: Arc::new(AtomicUsize::new(0)),
-            audio_clients: Arc::new(AtomicUsize::new(0)),
             rigctl_listen_addr: Arc::new(Mutex::new(None)),
             decode_collector_started: AtomicBool::new(false),
-            http_auth_enabled: false,
-            http_auth_rx_passphrase: None,
-            http_auth_control_passphrase: None,
-            http_auth_tx_access_control_enabled: true,
-            http_auth_session_ttl_secs: 480 * 60,
-            http_auth_cookie_secure: false,
-            http_auth_cookie_same_site: "Lax".to_string(),
-            http_show_sdr_gain_control: true,
-            http_initial_map_zoom: 10,
-            http_spectrum_coverage_margin_hz: 50_000,
-            http_spectrum_usable_span_ratio: 0.92,
-            http_decode_history_retention_min: 24 * 60,
-            http_decode_history_retention_min_by_rig: HashMap::new(),
-            remote_active_rig_id: Arc::new(Mutex::new(None)),
-            remote_rigs: Arc::new(Mutex::new(Vec::new())),
-            sat_passes: Arc::new(RwLock::new(None)),
-            rig_states: Arc::new(RwLock::new(HashMap::new())),
-            owner_callsign: None,
-            owner_website_url: None,
-            owner_website_name: None,
-            ais_vessel_url_base: None,
-            spectrum: {
-                let (tx, _rx) = watch::channel(SharedSpectrum::default());
-                Arc::new(tx)
-            },
-            rig_spectrums: Arc::new(RwLock::new(HashMap::new())),
-            rig_audio_rx: Arc::new(RwLock::new(HashMap::new())),
-            rig_audio_info: Arc::new(RwLock::new(HashMap::new())),
-            rig_vchan_audio_cmd: Arc::new(RwLock::new(HashMap::new())),
-            vchan_audio: Arc::new(RwLock::new(HashMap::new())),
-            vchan_audio_cmd: Arc::new(Mutex::new(None)),
-            vchan_destroyed: None,
-            server_connected: Arc::new(AtomicBool::new(false)),
-            rig_server_connected: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 }

@@ -5,7 +5,8 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::Ordering;
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
+use tokio::sync::RwLock;
 use std::time::Duration;
 
 use actix_web::{delete, get, put, web, HttpResponse, Responder};
@@ -115,18 +116,18 @@ impl BackgroundDecodeStore {
             .unwrap_or_else(|| PathBuf::from("background_decode.db"))
     }
 
-    pub fn get(&self, rig_id: &str) -> Option<BackgroundDecodeConfig> {
-        let db = self.db.read().unwrap_or_else(|e| e.into_inner());
+    pub async fn get(&self, rig_id: &str) -> Option<BackgroundDecodeConfig> {
+        let db = self.db.read().await;
         db.get::<BackgroundDecodeConfig>(&format!("bgd:{rig_id}"))
     }
 
-    pub fn upsert(&self, config: &BackgroundDecodeConfig) -> bool {
-        let mut db = self.db.write().unwrap_or_else(|e| e.into_inner());
+    pub async fn upsert(&self, config: &BackgroundDecodeConfig) -> bool {
+        let mut db = self.db.write().await;
         db.set(&format!("bgd:{}", config.rig_id), config).is_ok()
     }
 
-    pub fn remove(&self, rig_id: &str) -> bool {
-        let mut db = self.db.write().unwrap_or_else(|e| e.into_inner());
+    pub async fn remove(&self, rig_id: &str) -> bool {
+        let mut db = self.db.write().await;
         db.rem(&format!("bgd:{rig_id}")).unwrap_or(false)
     }
 }
@@ -171,9 +172,10 @@ impl BackgroundDecodeManager {
         });
     }
 
-    pub fn get_config(&self, rig_id: &str) -> BackgroundDecodeConfig {
+    pub async fn get_config(&self, rig_id: &str) -> BackgroundDecodeConfig {
         self.store
             .get(rig_id)
+            .await
             .unwrap_or_else(|| BackgroundDecodeConfig {
                 rig_id: rig_id.to_string(),
                 enabled: false,
@@ -181,9 +183,9 @@ impl BackgroundDecodeManager {
             })
     }
 
-    pub fn put_config(&self, mut config: BackgroundDecodeConfig) -> Option<BackgroundDecodeConfig> {
+    pub async fn put_config(&self, mut config: BackgroundDecodeConfig) -> Option<BackgroundDecodeConfig> {
         config.bookmark_ids = dedup_ids(&config.bookmark_ids);
-        if self.store.upsert(&config) {
+        if self.store.upsert(&config).await {
             self.trigger();
             Some(config)
         } else {
@@ -191,19 +193,20 @@ impl BackgroundDecodeManager {
         }
     }
 
-    pub fn reset_config(&self, rig_id: &str) -> bool {
-        let removed = self.store.remove(rig_id);
+    pub async fn reset_config(&self, rig_id: &str) -> bool {
+        let removed = self.store.remove(rig_id).await;
         self.trigger();
         removed
     }
 
-    pub fn status(&self, rig_id: &str) -> BackgroundDecodeStatus {
-        if let Ok(status) = self.status.read() {
+    pub async fn status(&self, rig_id: &str) -> BackgroundDecodeStatus {
+        {
+            let status = self.status.read().await;
             if let Some(entry) = status.get(rig_id) {
                 return entry.clone();
             }
         }
-        let cfg = self.get_config(rig_id);
+        let cfg = self.get_config(rig_id).await;
         let bookmarks: HashMap<String, Bookmark> = self
             .bookmarks
             .list_for_rig(rig_id)
@@ -243,7 +246,8 @@ impl BackgroundDecodeManager {
 
     fn active_rig_id(&self) -> Option<String> {
         self.context
-            .remote_active_rig_id
+            .routing
+            .active_rig_id
             .lock()
             .ok()
             .and_then(|guard| guard.clone())
@@ -252,7 +256,7 @@ impl BackgroundDecodeManager {
     fn send_audio_cmd(&self, cmd: VChanAudioCmd) {
         // Route through per-rig sender when available.
         if let Some(rig_id) = self.active_rig_id() {
-            if let Ok(map) = self.context.rig_vchan_audio_cmd.read() {
+            if let Ok(map) = self.context.vchan.rig_audio_cmd.read() {
                 if let Some(tx) = map.get(&rig_id) {
                     let _ = tx.try_send(cmd);
                     return;
@@ -260,7 +264,7 @@ impl BackgroundDecodeManager {
             }
         }
         // Fall back to global sender.
-        if let Ok(guard) = self.context.vchan_audio_cmd.lock() {
+        if let Ok(guard) = self.context.vchan.audio_cmd.lock() {
             if let Some(tx) = guard.as_ref() {
                 let _ = tx.try_send(cmd);
             }
@@ -316,15 +320,14 @@ impl BackgroundDecodeManager {
             .any(|channel| channel_matches_bookmark(&channel, bookmark))
     }
 
-    fn reconcile(&self, runtime: &mut BackgroundRuntimeState, spectrum: &SharedSpectrum) {
+    async fn reconcile(&self, runtime: &mut BackgroundRuntimeState, spectrum: &SharedSpectrum) {
         let active_rig_id = self.active_rig_id();
 
         if runtime.current_rig_id != active_rig_id {
             if let Some(prev_rig_id) = runtime.current_rig_id.clone() {
-                if let Ok(mut guard) = self.status.write() {
-                    if let Some(prev_status) = guard.get_mut(&prev_rig_id) {
-                        prev_status.active_rig = false;
-                    }
+                let mut guard = self.status.write().await;
+                if let Some(prev_status) = guard.get_mut(&prev_rig_id) {
+                    prev_status.active_rig = false;
                 }
             }
             self.clear_runtime_channels(runtime);
@@ -335,7 +338,7 @@ impl BackgroundDecodeManager {
         };
         runtime.current_rig_id = Some(rig_id.clone());
 
-        let config = self.get_config(&rig_id);
+        let config = self.get_config(&rig_id).await;
         let selected = dedup_ids(&config.bookmark_ids);
         let users_connected = self.context.sse_clients.load(Ordering::Relaxed) > 0;
         let scheduler_has_control = self.scheduler_control.scheduler_allowed() && users_connected;
@@ -467,19 +470,18 @@ impl BackgroundDecodeManager {
             runtime.active_channels.insert(bookmark_id, desired);
         }
 
-        if let Ok(mut guard) = self.status.write() {
-            guard.insert(
-                rig_id.clone(),
-                BackgroundDecodeStatus {
-                    rig_id,
-                    enabled: config.enabled,
-                    active_rig: true,
-                    center_hz,
-                    sample_rate,
-                    entries: statuses,
-                },
-            );
-        }
+        let mut guard = self.status.write().await;
+        guard.insert(
+            rig_id.clone(),
+            BackgroundDecodeStatus {
+                rig_id,
+                enabled: config.enabled,
+                active_rig: true,
+                center_hz,
+                sample_rate,
+                entries: statuses,
+            },
+        );
     }
 
     fn scheduler_bookmark_ids(&self, rig_id: &str) -> Vec<String> {
@@ -513,7 +515,7 @@ impl BackgroundDecodeManager {
         loop {
             let users_connected = self.context.sse_clients.load(Ordering::Relaxed) > 0;
             if users_connected && spectrum_rx.is_none() {
-                spectrum_rx = Some(self.context.spectrum.subscribe());
+                spectrum_rx = Some(self.context.spectrum.sender.subscribe());
             } else if !users_connected {
                 spectrum_rx = None;
             }
@@ -522,7 +524,7 @@ impl BackgroundDecodeManager {
                 .as_ref()
                 .map(|rx| rx.borrow().clone())
                 .unwrap_or_default();
-            self.reconcile(&mut runtime, &spectrum);
+            self.reconcile(&mut runtime, &spectrum).await;
             tokio::select! {
                 changed = async {
                     match spectrum_rx.as_mut() {
@@ -599,7 +601,7 @@ pub async fn get_background_decode(
     path: web::Path<String>,
     manager: web::Data<Arc<BackgroundDecodeManager>>,
 ) -> impl Responder {
-    HttpResponse::Ok().json(manager.get_config(&path.into_inner()))
+    HttpResponse::Ok().json(manager.get_config(&path.into_inner()).await)
 }
 
 #[put("/background-decode/{rig_id}")]
@@ -611,7 +613,7 @@ pub async fn put_background_decode(
     let rig_id = path.into_inner();
     let mut config = body.into_inner();
     config.rig_id = rig_id;
-    match manager.put_config(config) {
+    match manager.put_config(config).await {
         Some(saved) => HttpResponse::Ok().json(saved),
         None => HttpResponse::InternalServerError().body("failed to save background decode config"),
     }
@@ -623,7 +625,7 @@ pub async fn delete_background_decode(
     manager: web::Data<Arc<BackgroundDecodeManager>>,
 ) -> impl Responder {
     let rig_id = path.into_inner();
-    manager.reset_config(&rig_id);
+    manager.reset_config(&rig_id).await;
     HttpResponse::Ok().json(BackgroundDecodeConfig {
         rig_id,
         enabled: false,
@@ -636,5 +638,5 @@ pub async fn get_background_decode_status(
     path: web::Path<String>,
     manager: web::Data<Arc<BackgroundDecodeManager>>,
 ) -> impl Responder {
-    HttpResponse::Ok().json(manager.status(&path.into_inner()))
+    HttpResponse::Ok().json(manager.status(&path.into_inner()).await)
 }

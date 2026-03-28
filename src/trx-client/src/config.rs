@@ -17,7 +17,7 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
-use trx_app::{ConfigError, ConfigFile};
+use trx_app::{validate_log_level, validate_tokens, ConfigError, ConfigFile};
 
 /// Top-level client configuration structure.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -675,28 +675,6 @@ impl ClientConfig {
         };
         toml::to_string_pretty(&Wrapper { inner: example }).unwrap_or_default()
     }
-}
-
-fn validate_log_level(level: Option<&str>) -> Result<(), String> {
-    if let Some(level) = level {
-        match level {
-            "trace" | "debug" | "info" | "warn" | "error" => {}
-            _ => {
-                return Err(format!(
-                    "[general].log_level '{}' is invalid (expected one of: trace, debug, info, warn, error)",
-                    level
-                ))
-            }
-        }
-    }
-    Ok(())
-}
-
-fn validate_tokens(path: &str, tokens: &[String]) -> Result<(), String> {
-    if tokens.iter().any(|t| t.trim().is_empty()) {
-        return Err(format!("{path} must not contain empty tokens"));
-    }
-    Ok(())
 }
 
 fn validate_http_auth(auth: &HttpAuthConfig) -> Result<(), String> {

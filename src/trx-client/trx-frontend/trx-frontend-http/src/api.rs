@@ -211,16 +211,17 @@ fn frontend_meta_from_context(
     let server_connected = rig_id
         .and_then(|rid| {
             context
+                .routing
                 .rig_server_connected
                 .read()
                 .ok()
                 .and_then(|m| m.get(rid).copied())
         })
-        .unwrap_or_else(|| context.server_connected.load(Ordering::Relaxed));
+        .unwrap_or_else(|| context.routing.server_connected.load(Ordering::Relaxed));
     FrontendMeta {
         http_clients,
         rigctl_clients: context.rigctl_clients.load(Ordering::Relaxed),
-        audio_clients: context.audio_clients.load(Ordering::Relaxed),
+        audio_clients: context.audio.clients.load(Ordering::Relaxed),
         rigctl_addr: rigctl_addr_from_context(context),
         active_remote: active_rig_id_from_context(context),
         remotes: rig_ids_from_context(context),
@@ -248,7 +249,8 @@ fn rigctl_addr_from_context(context: &FrontendRuntimeContext) -> Option<String> 
 
 fn active_rig_id_from_context(context: &FrontendRuntimeContext) -> Option<String> {
     context
-        .remote_active_rig_id
+        .routing
+        .active_rig_id
         .lock()
         .ok()
         .and_then(|v| v.clone())
@@ -256,6 +258,7 @@ fn active_rig_id_from_context(context: &FrontendRuntimeContext) -> Option<String
 
 fn rig_ids_from_context(context: &FrontendRuntimeContext) -> Vec<String> {
     context
+        .routing
         .remote_rigs
         .lock()
         .ok()
@@ -264,41 +267,42 @@ fn rig_ids_from_context(context: &FrontendRuntimeContext) -> Vec<String> {
 }
 
 fn owner_callsign_from_context(context: &FrontendRuntimeContext) -> Option<String> {
-    context.owner_callsign.clone()
+    context.owner.callsign.clone()
 }
 
 fn owner_website_url_from_context(context: &FrontendRuntimeContext) -> Option<String> {
-    context.owner_website_url.clone()
+    context.owner.website_url.clone()
 }
 
 fn owner_website_name_from_context(context: &FrontendRuntimeContext) -> Option<String> {
-    context.owner_website_name.clone()
+    context.owner.website_name.clone()
 }
 
 fn ais_vessel_url_base_from_context(context: &FrontendRuntimeContext) -> Option<String> {
-    context.ais_vessel_url_base.clone()
+    context.owner.ais_vessel_url_base.clone()
 }
 
 fn show_sdr_gain_control_from_context(context: &FrontendRuntimeContext) -> bool {
-    context.http_show_sdr_gain_control
+    context.http_ui.show_sdr_gain_control
 }
 
 fn initial_map_zoom_from_context(context: &FrontendRuntimeContext) -> u8 {
-    context.http_initial_map_zoom
+    context.http_ui.initial_map_zoom
 }
 
 fn spectrum_coverage_margin_hz_from_context(context: &FrontendRuntimeContext) -> u32 {
-    context.http_spectrum_coverage_margin_hz
+    context.http_ui.spectrum_coverage_margin_hz
 }
 
 fn spectrum_usable_span_ratio_from_context(context: &FrontendRuntimeContext) -> f32 {
-    context.http_spectrum_usable_span_ratio
+    context.http_ui.spectrum_usable_span_ratio
 }
 
 fn decode_history_retention_min_from_context(context: &FrontendRuntimeContext) -> u64 {
-    let default_minutes = context.http_decode_history_retention_min.max(1);
+    let default_minutes = context.http_ui.decode_history_retention_min.max(1);
     let Some(active_rig_id) = context
-        .remote_active_rig_id
+        .routing
+        .active_rig_id
         .lock()
         .ok()
         .and_then(|v| v.clone())
@@ -306,7 +310,8 @@ fn decode_history_retention_min_from_context(context: &FrontendRuntimeContext) -
         return default_minutes;
     };
     context
-        .http_decode_history_retention_min_by_rig
+        .http_ui
+        .decode_history_retention_min_by_rig
         .get(&active_rig_id)
         .copied()
         .filter(|minutes| *minutes > 0)
@@ -343,7 +348,8 @@ pub async fn events(
     // rig it has selected without mutating global state.
     let active_rig_id = query.remote.clone().filter(|s| !s.is_empty()).or_else(|| {
         context
-            .remote_active_rig_id
+            .routing
+        .active_rig_id
             .lock()
             .ok()
             .and_then(|g| g.clone())
@@ -419,7 +425,8 @@ pub async fn events(
             state.snapshot().and_then(|v| {
                 let rig_id_opt = session_rig_mgr.get_rig(session_id).or_else(|| {
                     context
-                        .remote_active_rig_id
+                        .routing
+        .active_rig_id
                         .lock()
                         .ok()
                         .and_then(|g| g.clone())
@@ -687,7 +694,7 @@ pub async fn decode_history(
     context: web::Data<Arc<FrontendRuntimeContext>>,
     query: web::Query<RemoteQuery>,
 ) -> impl Responder {
-    if context.decode_rx.is_none() {
+    if context.audio.decode_rx.is_none() {
         return HttpResponse::NotFound().body("decode not enabled");
     }
     let rig_filter = query.remote.as_deref().filter(|s| !s.is_empty());
@@ -807,7 +814,7 @@ pub async fn spectrum(
     let rx = if let Some(ref remote) = query.remote {
         context.rig_spectrum_rx(remote)
     } else {
-        context.spectrum.subscribe()
+        context.spectrum.sender.subscribe()
     };
     let mut last_rds_json: Option<String> = None;
     let mut last_vchan_rds_json: Option<String> = None;
@@ -1351,7 +1358,7 @@ struct SatPassesResponse {
 /// are not yet available.
 #[get("/sat_passes")]
 pub async fn sat_passes(context: web::Data<Arc<FrontendRuntimeContext>>) -> impl Responder {
-    let cached = context.sat_passes.read().ok().and_then(|g| g.clone());
+    let cached = context.routing.sat_passes.read().ok().and_then(|g| g.clone());
     match cached {
         Some(result) => {
             let error = match result.tle_source {
@@ -1901,6 +1908,7 @@ struct RigListResponse {
 fn build_rig_list_payload(context: &FrontendRuntimeContext) -> RigListResponse {
     let active_remote = active_rig_id_from_context(context);
     let rigs = context
+        .routing
         .remote_rigs
         .lock()
         .ok()
@@ -1952,6 +1960,7 @@ pub async fn select_rig(
     }
 
     let known = context
+        .routing
         .remote_rigs
         .lock()
         .ok()

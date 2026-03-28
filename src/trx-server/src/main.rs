@@ -39,7 +39,6 @@ use rig_handle::RigHandle;
 use trx_decode_log::DecoderLoggers;
 
 const PKG_DESCRIPTION: &str = concat!(env!("CARGO_PKG_NAME"), " - rig server daemon");
-const RIG_TASK_CHANNEL_BUFFER: usize = 32;
 const RETRY_MAX_DELAY_SECS: u64 = 2;
 
 #[derive(Debug, Parser)]
@@ -322,32 +321,36 @@ fn build_sdr_rig_from_instance(rig_cfg: &RigInstanceConfig) -> SdrRigBuildResult
         ));
     }
     let ais_channel_base_idx = channels.len();
+    let vdes_channel_idx = channels
+        .iter()
+        .position(|(_, mode, _)| matches!(mode, trx_core::rig::state::RigMode::VDES))
+        .unwrap_or(0);
 
-    let sdr_rig = trx_backend::SoapySdrRig::new_with_config(
-        args,
-        &channels,
-        &rig_cfg.sdr.gain.mode,
-        rig_cfg.sdr.gain.value,
-        rig_cfg.sdr.gain.max_value,
-        rig_cfg.audio.sample_rate,
-        rig_cfg.audio.channels as usize,
-        rig_cfg.audio.frame_duration_ms,
-        rig_cfg.sdr.wfm_deemphasis_us,
-        Freq {
+    let sdr_rig = trx_backend::SoapySdrRig::new_from_config(trx_backend::SoapySdrConfig {
+        args: args.to_string(),
+        channels,
+        gain_mode: rig_cfg.sdr.gain.mode.clone(),
+        gain_db: rig_cfg.sdr.gain.value,
+        max_gain_db: rig_cfg.sdr.gain.max_value,
+        audio_sample_rate: rig_cfg.audio.sample_rate,
+        audio_channels: rig_cfg.audio.channels as usize,
+        frame_duration_ms: rig_cfg.audio.frame_duration_ms,
+        wfm_deemphasis_us: rig_cfg.sdr.wfm_deemphasis_us,
+        initial_freq: Freq {
             hz: rig_cfg.rig.initial_freq_hz,
         },
-        rig_cfg.rig.initial_mode.clone(),
-        rig_cfg.sdr.sample_rate,
-        rig_cfg.sdr.bandwidth,
-        rig_cfg.sdr.center_offset_hz,
-        rig_cfg.sdr.squelch.enabled,
-        rig_cfg.sdr.squelch.threshold_db,
-        rig_cfg.sdr.squelch.hysteresis_db,
-        rig_cfg.sdr.squelch.tail_ms,
-        rig_cfg.sdr.max_virtual_channels,
-        rig_cfg.sdr.noise_blanker.enabled,
-        rig_cfg.sdr.noise_blanker.threshold,
-    )?;
+        initial_mode: rig_cfg.rig.initial_mode.clone(),
+        sdr_sample_rate: rig_cfg.sdr.sample_rate,
+        bandwidth_hz: rig_cfg.sdr.bandwidth,
+        center_offset_hz: rig_cfg.sdr.center_offset_hz,
+        squelch_enabled: rig_cfg.sdr.squelch.enabled,
+        squelch_threshold_db: rig_cfg.sdr.squelch.threshold_db,
+        squelch_hysteresis_db: rig_cfg.sdr.squelch.hysteresis_db,
+        squelch_tail_ms: rig_cfg.sdr.squelch.tail_ms,
+        max_virtual_channels: rig_cfg.sdr.max_virtual_channels,
+        nb_enabled: rig_cfg.sdr.noise_blanker.enabled,
+        nb_threshold: rig_cfg.sdr.noise_blanker.threshold,
+    })?;
 
     let pcm_rx = sdr_rig.subscribe_pcm();
     let ais_pcm = (
@@ -357,10 +360,6 @@ fn build_sdr_rig_from_instance(rig_cfg: &RigInstanceConfig) -> SdrRigBuildResult
     // Subscribe to the first channel configured as VDES or MARINE so that the
     // IQ tap in ChannelDsp actually fires.  Fall back to channel 0 when no
     // explicit VDES channel has been configured.
-    let vdes_channel_idx = channels
-        .iter()
-        .position(|(_, mode, _)| matches!(mode, trx_core::rig::state::RigMode::VDES))
-        .unwrap_or(0);
     let vdes_iq = sdr_rig.subscribe_iq_channel(vdes_channel_idx);
     // Extract the virtual channel manager before the rig is consumed by Box.
     let vchan_manager: trx_core::vchan::SharedVChanManager = sdr_rig.channel_manager();
@@ -384,6 +383,7 @@ fn build_rig_task_config(
     longitude: Option<f64>,
     registry: Arc<RegistrationContext>,
     histories: Arc<DecoderHistories>,
+    timeouts: &config::TimeoutsConfig,
 ) -> rig_task::RigTaskConfig {
     let pskreporter_status = if rig_cfg.pskreporter.enabled {
         let has_locator = rig_cfg.pskreporter.receiver_locator.is_some()
@@ -448,6 +448,8 @@ fn build_rig_task_config(
         histories,
         vfo_prime: rig_cfg.behavior.vfo_prime,
         prebuilt_rig: None,
+        command_exec_timeout: Duration::from_millis(timeouts.command_exec_timeout_ms),
+        poll_refresh_timeout: Duration::from_millis(timeouts.poll_refresh_timeout_ms),
     }
 }
 
@@ -1028,7 +1030,7 @@ async fn main() -> DynResult<()> {
         }
         rig_histories_for_flush.push((rig_cfg.id.clone(), histories.clone()));
 
-        let (rig_tx, rig_rx) = mpsc::channel::<RigRequest>(RIG_TASK_CHANNEL_BUFFER);
+        let (rig_tx, rig_rx) = mpsc::channel::<RigRequest>(cfg.timeouts.rig_task_channel_buffer);
         let mut initial_state = RigState::new_with_metadata(
             callsign.clone(),
             Some(env!("CARGO_PKG_VERSION").to_string()),
@@ -1065,6 +1067,7 @@ async fn main() -> DynResult<()> {
             longitude,
             Arc::clone(&registry),
             histories.clone(),
+            &cfg.timeouts,
         );
         if let Some(prebuilt) = sdr_prebuilt_rig {
             task_config.prebuilt_rig = Some(prebuilt);
@@ -1074,13 +1077,31 @@ async fn main() -> DynResult<()> {
                 AdaptivePolling::new(Duration::from_millis(100), Duration::from_millis(100));
         }
 
-        // Spawn rig task.
+        // Spawn rig task with crash detection.
+        // If the task panics or returns an error, emit RigMachineState::Error
+        // on the watch channel so connected clients see the failure instead of
+        // silently losing the rig.
         let rig_shutdown_rx = shutdown_rx.clone();
+        let rig_id_supervisor = rig_cfg.id.clone();
         task_handles.push(tokio::spawn(async move {
-            if let Err(e) =
-                rig_task::run_rig_task(task_config, rig_rx, state_tx, rig_shutdown_rx).await
-            {
-                error!("Rig task error: {:?}", e);
+            let result =
+                rig_task::run_rig_task(task_config, rig_rx, state_tx.clone(), rig_shutdown_rx)
+                    .await;
+            match result {
+                Ok(()) => {
+                    info!("[{}] Rig task exited cleanly", rig_id_supervisor);
+                }
+                Err(e) => {
+                    error!(
+                        "[{}] Rig task crashed: {:?}; signalling error state to clients",
+                        rig_id_supervisor, e
+                    );
+                    let mut err_state = state_tx.borrow().clone();
+                    err_state.machine_state = "Error".to_string();
+                    err_state.error_message =
+                        Some(format!("Rig task terminated unexpectedly: {}", e));
+                    let _ = state_tx.send(err_state);
+                }
             }
         }));
 
@@ -1143,6 +1164,10 @@ async fn main() -> DynResult<()> {
             .collect();
         let rigs_arc = Arc::new(rig_handles);
         let listener_shutdown_rx = shutdown_rx.clone();
+        let listener_timeouts = listener::ListenerTimeouts {
+            io_timeout: Duration::from_millis(cfg.timeouts.io_timeout_ms),
+            request_timeout: Duration::from_millis(cfg.timeouts.request_timeout_ms),
+        };
         task_handles.push(tokio::spawn(async move {
             let station_coords = latitude.zip(longitude);
             if let Err(e) = listener::run_listener(
@@ -1151,6 +1176,7 @@ async fn main() -> DynResult<()> {
                 default_rig_id,
                 auth_tokens,
                 station_coords,
+                listener_timeouts,
                 listener_shutdown_rx,
             )
             .await

@@ -10,152 +10,157 @@ use trx_core::rig::command::RigCommand;
 use crate::codec::{mode_to_string, parse_mode};
 use crate::types::ClientCommand;
 
-/// Convert a ClientCommand to a RigCommand.
+/// Generates `client_command_to_rig` and `rig_command_to_client` from a
+/// single definition table, eliminating the mechanical duplication of
+/// mapping every variant by hand.
 ///
-/// This maps client-side commands to internal rig commands, parsing
-/// mode strings into RigMode values.
-pub fn client_command_to_rig(cmd: ClientCommand) -> RigCommand {
-    match cmd {
-        ClientCommand::GetRigs => {
-            unreachable!("GetRigs is handled in the listener before reaching rig_task")
+/// Supported row forms (each section is introduced by a keyword):
+///
+/// - **`client_only:`** `Name, ...;`
+///   Variants that exist only in `ClientCommand` with no `RigCommand`
+///   counterpart. `client_command_to_rig` panics if called with one.
+///
+/// - **`unit:`** `ClientName <=> RigName, ...;`
+///   Unit variant on both sides, same or different names.
+///
+/// - **`field:`** `Name { field } <=> Name, ...;`
+///   Client struct with one named field mapped to a rig tuple variant.
+///
+/// - **`multi:`** `Name { a, b } <=> Name, ...;`
+///   Both sides use named fields with the same field names.
+///
+/// - **`freq:`** `Name { field } <=> Name, ...;`
+///   Client `u64` field converted to/from `Freq { hz }`.
+///
+/// - **`mode:`** `Name { field } <=> Name, ...;`
+///   Client `String` field converted to/from `RigMode` via
+///   `parse_mode`/`mode_to_string`.
+macro_rules! define_command_mapping {
+    (
+        client_only: $( $co:ident ),* ;
+        unit: $( $cu:ident <=> $ru:ident ),* ;
+        field: $( $cf:ident { $fld:ident } <=> $rf:ident ),* ;
+        multi: $( $cs:ident { $( $sfld:ident ),+ } <=> $rs:ident ),* ;
+        freq: $( $cfq:ident { $ffld:ident } <=> $rfq:ident ),* ;
+        mode: $( $cm:ident { $mfld:ident } <=> $rm:ident ),* ;
+    ) => {
+        /// Convert a [`ClientCommand`] to a [`RigCommand`].
+        ///
+        /// # Panics
+        ///
+        /// Panics if called with a client-only command (e.g. `GetRigs`,
+        /// `GetSatPasses`) that has no `RigCommand` counterpart. Those
+        /// commands must be intercepted by the caller before reaching this
+        /// function.
+        pub fn client_command_to_rig(cmd: ClientCommand) -> RigCommand {
+            match cmd {
+                // Client-only variants -- no RigCommand equivalent.
+                $(
+                    ClientCommand::$co => {
+                        panic!(
+                            "{} has no RigCommand mapping; \
+                             it must be handled before reaching rig_task",
+                            stringify!($co),
+                        );
+                    }
+                )*
+                // Unit <=> Unit
+                $( ClientCommand::$cu => RigCommand::$ru, )*
+                // Single-field struct <=> tuple
+                $( ClientCommand::$cf { $fld } => RigCommand::$rf($fld), )*
+                // Multi-field struct passthrough
+                $( ClientCommand::$cs { $( $sfld ),+ } => RigCommand::$rs { $( $sfld ),+ }, )*
+                // Freq conversion (u64 => Freq)
+                $( ClientCommand::$cfq { $ffld } => RigCommand::$rfq(Freq { hz: $ffld }), )*
+                // Mode conversion (String => RigMode)
+                $( ClientCommand::$cm { $mfld } => RigCommand::$rm(parse_mode(&$mfld)), )*
+            }
         }
-        ClientCommand::GetSatPasses => {
-            unreachable!("GetSatPasses is handled in the listener before reaching rig_task")
+
+        /// Convert a [`RigCommand`] back to a [`ClientCommand`].
+        ///
+        /// This is the inverse of [`client_command_to_rig`], converting
+        /// `RigMode` values back to mode strings.
+        pub fn rig_command_to_client(cmd: RigCommand) -> ClientCommand {
+            match cmd {
+                // Unit <=> Unit
+                $( RigCommand::$ru => ClientCommand::$cu, )*
+                // Single-field struct <=> tuple
+                $( RigCommand::$rf($fld) => ClientCommand::$cf { $fld }, )*
+                // Multi-field struct passthrough
+                $( RigCommand::$rs { $( $sfld ),+ } => ClientCommand::$cs { $( $sfld ),+ }, )*
+                // Freq conversion (Freq => u64)
+                $( RigCommand::$rfq(freq) => ClientCommand::$cfq { $ffld: freq.hz }, )*
+                // Mode conversion (RigMode => String)
+                $( RigCommand::$rm(mode) => ClientCommand::$cm {
+                    $mfld: mode_to_string(&mode).into_owned(),
+                }, )*
+            }
         }
-        ClientCommand::GetState => RigCommand::GetSnapshot,
-        ClientCommand::SetFreq { freq_hz } => RigCommand::SetFreq(Freq { hz: freq_hz }),
-        ClientCommand::SetCenterFreq { freq_hz } => RigCommand::SetCenterFreq(Freq { hz: freq_hz }),
-        ClientCommand::SetMode { mode } => RigCommand::SetMode(parse_mode(&mode)),
-        ClientCommand::SetPtt { ptt } => RigCommand::SetPtt(ptt),
-        ClientCommand::PowerOn => RigCommand::PowerOn,
-        ClientCommand::PowerOff => RigCommand::PowerOff,
-        ClientCommand::ToggleVfo => RigCommand::ToggleVfo,
-        ClientCommand::Lock => RigCommand::Lock,
-        ClientCommand::Unlock => RigCommand::Unlock,
-        ClientCommand::GetTxLimit => RigCommand::GetTxLimit,
-        ClientCommand::SetTxLimit { limit } => RigCommand::SetTxLimit(limit),
-        ClientCommand::SetAprsDecodeEnabled { enabled } => {
-            RigCommand::SetAprsDecodeEnabled(enabled)
-        }
-        ClientCommand::SetHfAprsDecodeEnabled { enabled } => {
-            RigCommand::SetHfAprsDecodeEnabled(enabled)
-        }
-        ClientCommand::SetCwDecodeEnabled { enabled } => RigCommand::SetCwDecodeEnabled(enabled),
-        ClientCommand::SetCwAuto { enabled } => RigCommand::SetCwAuto(enabled),
-        ClientCommand::SetCwWpm { wpm } => RigCommand::SetCwWpm(wpm),
-        ClientCommand::SetCwToneHz { tone_hz } => RigCommand::SetCwToneHz(tone_hz),
-        ClientCommand::SetFt8DecodeEnabled { enabled } => RigCommand::SetFt8DecodeEnabled(enabled),
-        ClientCommand::SetFt4DecodeEnabled { enabled } => RigCommand::SetFt4DecodeEnabled(enabled),
-        ClientCommand::SetFt2DecodeEnabled { enabled } => RigCommand::SetFt2DecodeEnabled(enabled),
-        ClientCommand::SetWsprDecodeEnabled { enabled } => {
-            RigCommand::SetWsprDecodeEnabled(enabled)
-        }
-        ClientCommand::ResetAprsDecoder => RigCommand::ResetAprsDecoder,
-        ClientCommand::ResetHfAprsDecoder => RigCommand::ResetHfAprsDecoder,
-        ClientCommand::ResetCwDecoder => RigCommand::ResetCwDecoder,
-        ClientCommand::ResetFt8Decoder => RigCommand::ResetFt8Decoder,
-        ClientCommand::ResetFt4Decoder => RigCommand::ResetFt4Decoder,
-        ClientCommand::ResetFt2Decoder => RigCommand::ResetFt2Decoder,
-        ClientCommand::ResetWsprDecoder => RigCommand::ResetWsprDecoder,
-        ClientCommand::SetLrptDecodeEnabled { enabled } => {
-            RigCommand::SetLrptDecodeEnabled(enabled)
-        }
-        ClientCommand::ResetLrptDecoder => RigCommand::ResetLrptDecoder,
-        ClientCommand::SetBandwidth { bandwidth_hz } => RigCommand::SetBandwidth(bandwidth_hz),
-        ClientCommand::SetSdrGain { gain_db } => RigCommand::SetSdrGain(gain_db),
-        ClientCommand::SetSdrLnaGain { gain_db } => RigCommand::SetSdrLnaGain(gain_db),
-        ClientCommand::SetSdrAgc { enabled } => RigCommand::SetSdrAgc(enabled),
-        ClientCommand::SetSdrSquelch {
-            enabled,
-            threshold_db,
-        } => RigCommand::SetSdrSquelch {
-            enabled,
-            threshold_db,
-        },
-        ClientCommand::SetSdrNoiseBlanker { enabled, threshold } => {
-            RigCommand::SetSdrNoiseBlanker { enabled, threshold }
-        }
-        ClientCommand::SetWfmDeemphasis { deemphasis_us } => {
-            RigCommand::SetWfmDeemphasis(deemphasis_us)
-        }
-        ClientCommand::SetWfmStereo { enabled } => RigCommand::SetWfmStereo(enabled),
-        ClientCommand::SetWfmDenoise { level } => RigCommand::SetWfmDenoise(level),
-        ClientCommand::SetSamStereoWidth { width } => RigCommand::SetSamStereoWidth(width),
-        ClientCommand::SetSamCarrierSync { enabled } => RigCommand::SetSamCarrierSync(enabled),
-        ClientCommand::GetSpectrum => RigCommand::GetSpectrum,
-    }
+    };
 }
 
-/// Convert a RigCommand back to a ClientCommand.
-///
-/// This is the inverse of client_command_to_rig, converting RigMode
-/// values back to mode strings.
-pub fn rig_command_to_client(cmd: RigCommand) -> ClientCommand {
-    match cmd {
-        RigCommand::GetSnapshot => ClientCommand::GetState,
-        RigCommand::SetFreq(freq) => ClientCommand::SetFreq { freq_hz: freq.hz },
-        RigCommand::SetCenterFreq(freq) => ClientCommand::SetCenterFreq { freq_hz: freq.hz },
-        RigCommand::SetMode(mode) => ClientCommand::SetMode {
-            mode: mode_to_string(&mode).into_owned(),
-        },
-        RigCommand::SetPtt(ptt) => ClientCommand::SetPtt { ptt },
-        RigCommand::PowerOn => ClientCommand::PowerOn,
-        RigCommand::PowerOff => ClientCommand::PowerOff,
-        RigCommand::ToggleVfo => ClientCommand::ToggleVfo,
-        RigCommand::Lock => ClientCommand::Lock,
-        RigCommand::Unlock => ClientCommand::Unlock,
-        RigCommand::GetTxLimit => ClientCommand::GetTxLimit,
-        RigCommand::SetTxLimit(limit) => ClientCommand::SetTxLimit { limit },
-        RigCommand::SetAprsDecodeEnabled(enabled) => {
-            ClientCommand::SetAprsDecodeEnabled { enabled }
-        }
-        RigCommand::SetHfAprsDecodeEnabled(enabled) => {
-            ClientCommand::SetHfAprsDecodeEnabled { enabled }
-        }
-        RigCommand::SetCwDecodeEnabled(enabled) => ClientCommand::SetCwDecodeEnabled { enabled },
-        RigCommand::SetCwAuto(enabled) => ClientCommand::SetCwAuto { enabled },
-        RigCommand::SetCwWpm(wpm) => ClientCommand::SetCwWpm { wpm },
-        RigCommand::SetCwToneHz(tone_hz) => ClientCommand::SetCwToneHz { tone_hz },
-        RigCommand::SetFt8DecodeEnabled(enabled) => ClientCommand::SetFt8DecodeEnabled { enabled },
-        RigCommand::SetFt4DecodeEnabled(enabled) => ClientCommand::SetFt4DecodeEnabled { enabled },
-        RigCommand::SetFt2DecodeEnabled(enabled) => ClientCommand::SetFt2DecodeEnabled { enabled },
-        RigCommand::SetWsprDecodeEnabled(enabled) => {
-            ClientCommand::SetWsprDecodeEnabled { enabled }
-        }
-        RigCommand::ResetAprsDecoder => ClientCommand::ResetAprsDecoder,
-        RigCommand::ResetHfAprsDecoder => ClientCommand::ResetHfAprsDecoder,
-        RigCommand::ResetCwDecoder => ClientCommand::ResetCwDecoder,
-        RigCommand::ResetFt8Decoder => ClientCommand::ResetFt8Decoder,
-        RigCommand::ResetFt4Decoder => ClientCommand::ResetFt4Decoder,
-        RigCommand::ResetFt2Decoder => ClientCommand::ResetFt2Decoder,
-        RigCommand::ResetWsprDecoder => ClientCommand::ResetWsprDecoder,
-        RigCommand::SetLrptDecodeEnabled(enabled) => {
-            ClientCommand::SetLrptDecodeEnabled { enabled }
-        }
-        RigCommand::ResetLrptDecoder => ClientCommand::ResetLrptDecoder,
-        RigCommand::SetBandwidth(bandwidth_hz) => ClientCommand::SetBandwidth { bandwidth_hz },
-        RigCommand::SetSdrGain(gain_db) => ClientCommand::SetSdrGain { gain_db },
-        RigCommand::SetSdrLnaGain(gain_db) => ClientCommand::SetSdrLnaGain { gain_db },
-        RigCommand::SetSdrAgc(enabled) => ClientCommand::SetSdrAgc { enabled },
-        RigCommand::SetSdrSquelch {
-            enabled,
-            threshold_db,
-        } => ClientCommand::SetSdrSquelch {
-            enabled,
-            threshold_db,
-        },
-        RigCommand::SetSdrNoiseBlanker { enabled, threshold } => {
-            ClientCommand::SetSdrNoiseBlanker { enabled, threshold }
-        }
-        RigCommand::SetWfmDeemphasis(deemphasis_us) => {
-            ClientCommand::SetWfmDeemphasis { deemphasis_us }
-        }
-        RigCommand::SetWfmStereo(enabled) => ClientCommand::SetWfmStereo { enabled },
-        RigCommand::SetWfmDenoise(level) => ClientCommand::SetWfmDenoise { level },
-        RigCommand::SetSamStereoWidth(width) => ClientCommand::SetSamStereoWidth { width },
-        RigCommand::SetSamCarrierSync(enabled) => ClientCommand::SetSamCarrierSync { enabled },
-        RigCommand::GetSpectrum => ClientCommand::GetSpectrum,
-    }
+define_command_mapping! {
+    // ── Client-only variants (no RigCommand counterpart) ─────────────
+    client_only: GetRigs, GetSatPasses;
+
+    // ── Unit variants (no payload) ───────────────────────────────────
+    unit:
+        GetState             <=> GetSnapshot,
+        PowerOn              <=> PowerOn,
+        PowerOff             <=> PowerOff,
+        ToggleVfo            <=> ToggleVfo,
+        Lock                 <=> Lock,
+        Unlock               <=> Unlock,
+        GetTxLimit           <=> GetTxLimit,
+        GetSpectrum          <=> GetSpectrum,
+        ResetAprsDecoder     <=> ResetAprsDecoder,
+        ResetHfAprsDecoder   <=> ResetHfAprsDecoder,
+        ResetCwDecoder       <=> ResetCwDecoder,
+        ResetFt8Decoder      <=> ResetFt8Decoder,
+        ResetFt4Decoder      <=> ResetFt4Decoder,
+        ResetFt2Decoder      <=> ResetFt2Decoder,
+        ResetWsprDecoder     <=> ResetWsprDecoder,
+        ResetLrptDecoder     <=> ResetLrptDecoder;
+
+    // ── Single-field struct <=> tuple ────────────────────────────────
+    field:
+        SetPtt                { ptt }            <=> SetPtt,
+        SetTxLimit            { limit }          <=> SetTxLimit,
+        SetAprsDecodeEnabled  { enabled }        <=> SetAprsDecodeEnabled,
+        SetHfAprsDecodeEnabled { enabled }       <=> SetHfAprsDecodeEnabled,
+        SetCwDecodeEnabled    { enabled }        <=> SetCwDecodeEnabled,
+        SetCwAuto             { enabled }        <=> SetCwAuto,
+        SetCwWpm              { wpm }            <=> SetCwWpm,
+        SetCwToneHz           { tone_hz }        <=> SetCwToneHz,
+        SetFt8DecodeEnabled   { enabled }        <=> SetFt8DecodeEnabled,
+        SetFt4DecodeEnabled   { enabled }        <=> SetFt4DecodeEnabled,
+        SetFt2DecodeEnabled   { enabled }        <=> SetFt2DecodeEnabled,
+        SetWsprDecodeEnabled  { enabled }        <=> SetWsprDecodeEnabled,
+        SetLrptDecodeEnabled  { enabled }        <=> SetLrptDecodeEnabled,
+        SetBandwidth          { bandwidth_hz }   <=> SetBandwidth,
+        SetSdrGain            { gain_db }        <=> SetSdrGain,
+        SetSdrLnaGain         { gain_db }        <=> SetSdrLnaGain,
+        SetSdrAgc             { enabled }        <=> SetSdrAgc,
+        SetWfmDeemphasis      { deemphasis_us }  <=> SetWfmDeemphasis,
+        SetWfmStereo          { enabled }        <=> SetWfmStereo,
+        SetWfmDenoise         { level }          <=> SetWfmDenoise,
+        SetSamStereoWidth     { width }          <=> SetSamStereoWidth,
+        SetSamCarrierSync     { enabled }        <=> SetSamCarrierSync;
+
+    // ── Multi-field struct passthrough ───────────────────────────────
+    multi:
+        SetSdrSquelch      { enabled, threshold_db } <=> SetSdrSquelch,
+        SetSdrNoiseBlanker { enabled, threshold }    <=> SetSdrNoiseBlanker;
+
+    // ── Freq conversions (u64 <=> Freq) ──────────────────────────────
+    freq:
+        SetFreq       { freq_hz } <=> SetFreq,
+        SetCenterFreq { freq_hz } <=> SetCenterFreq;
+
+    // ── Mode conversion (String <=> RigMode) ─────────────────────────
+    mode:
+        SetMode { mode } <=> SetMode;
 }
 
 #[cfg(test)]

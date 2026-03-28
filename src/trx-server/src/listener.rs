@@ -32,9 +32,29 @@ use trx_protocol::ClientResponse;
 
 use crate::rig_handle::RigHandle;
 
-const IO_TIMEOUT: Duration = Duration::from_secs(10);
-const REQUEST_TIMEOUT: Duration = Duration::from_secs(12);
+/// Fallback I/O timeout used when no config value is provided.
+const DEFAULT_IO_TIMEOUT: Duration = Duration::from_secs(10);
+/// Fallback request timeout used when no config value is provided.
+const DEFAULT_REQUEST_TIMEOUT: Duration = Duration::from_secs(12);
 const MAX_JSON_LINE_BYTES: usize = 256 * 1024;
+
+/// Configurable timeout values for the listener, threaded from `[timeouts]`.
+#[derive(Debug, Clone, Copy)]
+pub struct ListenerTimeouts {
+    /// Maximum time for low-level I/O operations (read/write/flush).
+    pub io_timeout: Duration,
+    /// Maximum time to wait for a rig command response.
+    pub request_timeout: Duration,
+}
+
+impl Default for ListenerTimeouts {
+    fn default() -> Self {
+        Self {
+            io_timeout: DEFAULT_IO_TIMEOUT,
+            request_timeout: DEFAULT_REQUEST_TIMEOUT,
+        }
+    }
+}
 /// How long to cache satellite pass predictions before recomputing.
 /// SGP4 propagation for 200+ satellites is CPU-intensive; caching avoids
 /// redundant recomputation when multiple clients request passes concurrently.
@@ -56,6 +76,7 @@ pub async fn run_listener(
     default_rig_id: String,
     auth_tokens: HashSet<String>,
     station_coords: Option<(f64, f64)>,
+    timeouts: ListenerTimeouts,
     mut shutdown_rx: watch::Receiver<bool>,
 ) -> std::io::Result<()> {
     let listener = TcpListener::bind(addr).await?;
@@ -75,8 +96,9 @@ pub async fn run_listener(
                 let client_shutdown_rx = shutdown_rx.clone();
                 let coords = station_coords;
                 let cache = Arc::clone(&sat_pass_cache);
+                let client_timeouts = timeouts;
                 tokio::spawn(async move {
-                    if let Err(e) = handle_client(socket, peer, rigs, default_rig_id, validator, coords, cache, client_shutdown_rx).await {
+                    if let Err(e) = handle_client(socket, peer, rigs, default_rig_id, validator, coords, cache, client_timeouts, client_shutdown_rx).await {
                         error!("Client {} error: {:?}", peer, e);
                     }
                 });
@@ -151,14 +173,15 @@ async fn read_limited_line<R: AsyncBufRead + Unpin>(
 async fn send_response(
     writer: &mut tokio::net::tcp::OwnedWriteHalf,
     response: &ClientResponse,
+    io_timeout: Duration,
 ) -> std::io::Result<()> {
     let resp_line = serde_json::to_string(response).map_err(std::io::Error::other)? + "\n";
-    time::timeout(IO_TIMEOUT, writer.write_all(resp_line.as_bytes()))
+    time::timeout(io_timeout, writer.write_all(resp_line.as_bytes()))
         .await
         .map_err(|_| {
             std::io::Error::new(std::io::ErrorKind::TimedOut, "response write timeout")
         })??;
-    time::timeout(IO_TIMEOUT, writer.flush())
+    time::timeout(io_timeout, writer.flush())
         .await
         .map_err(|_| {
             std::io::Error::new(std::io::ErrorKind::TimedOut, "response flush timeout")
@@ -174,6 +197,7 @@ async fn handle_client(
     validator: Arc<SimpleTokenValidator>,
     station_coords: Option<(f64, f64)>,
     sat_pass_cache: Arc<Mutex<Option<SatPassCache>>>,
+    timeouts: ListenerTimeouts,
     mut shutdown_rx: watch::Receiver<bool>,
 ) -> std::io::Result<()> {
     let (reader, mut writer) = socket.into_split();
@@ -181,7 +205,7 @@ async fn handle_client(
 
     loop {
         let line = tokio::select! {
-            read = time::timeout(IO_TIMEOUT, read_limited_line(&mut reader, MAX_JSON_LINE_BYTES)) => {
+            read = time::timeout(timeouts.io_timeout, read_limited_line(&mut reader, MAX_JSON_LINE_BYTES)) => {
                 match read {
                     Ok(Ok(line)) => line,
                     Ok(Err(e)) => return Err(e),
@@ -232,7 +256,7 @@ async fn handle_client(
                     sat_passes: None,
                     error: Some(format!("Invalid JSON: {}", e)),
                 };
-                send_response(&mut writer, &resp).await?;
+                send_response(&mut writer, &resp, timeouts.io_timeout).await?;
                 continue;
             }
         };
@@ -246,7 +270,7 @@ async fn handle_client(
                 sat_passes: None,
                 error: Some(err),
             };
-            send_response(&mut writer, &resp).await?;
+            send_response(&mut writer, &resp, timeouts.io_timeout).await?;
             continue;
         }
 
@@ -279,7 +303,7 @@ async fn handle_client(
                 sat_passes: None,
                 error: None,
             };
-            send_response(&mut writer, &resp).await?;
+            send_response(&mut writer, &resp, timeouts.io_timeout).await?;
             continue;
         }
 
@@ -341,7 +365,7 @@ async fn handle_client(
                 sat_passes: Some(result),
                 error: None,
             };
-            send_response(&mut writer, &resp).await?;
+            send_response(&mut writer, &resp, timeouts.io_timeout).await?;
             continue;
         }
 
@@ -358,7 +382,7 @@ async fn handle_client(
                     sat_passes: None,
                     error: Some(format!("Unknown rig_id: {}", target_rig_id)),
                 };
-                send_response(&mut writer, &resp).await?;
+                send_response(&mut writer, &resp, timeouts.io_timeout).await?;
                 continue;
             }
         };
@@ -377,7 +401,7 @@ async fn handle_client(
                     sat_passes: None,
                     error: None,
                 };
-                send_response(&mut writer, &resp).await?;
+                send_response(&mut writer, &resp, timeouts.io_timeout).await?;
                 continue;
             }
         }
@@ -389,7 +413,7 @@ async fn handle_client(
             rig_id_override: None,
         };
 
-        match time::timeout(IO_TIMEOUT, handle.rig_tx.send(req)).await {
+        match time::timeout(timeouts.io_timeout, handle.rig_tx.send(req)).await {
             Ok(Ok(())) => {}
             Ok(Err(e)) => {
                 error!(
@@ -404,7 +428,7 @@ async fn handle_client(
                     sat_passes: None,
                     error: Some("Internal error: rig task not available".into()),
                 };
-                send_response(&mut writer, &resp).await?;
+                send_response(&mut writer, &resp, timeouts.io_timeout).await?;
                 continue;
             }
             Err(_) => {
@@ -416,13 +440,13 @@ async fn handle_client(
                     sat_passes: None,
                     error: Some("Internal error: request queue timeout".into()),
                 };
-                send_response(&mut writer, &resp).await?;
+                send_response(&mut writer, &resp, timeouts.io_timeout).await?;
                 continue;
             }
         }
 
         match tokio::select! {
-            result = time::timeout(REQUEST_TIMEOUT, resp_rx) => {
+            result = time::timeout(timeouts.request_timeout, resp_rx) => {
                 match result {
                     Ok(inner) => inner,
                     Err(_) => {
@@ -434,7 +458,7 @@ async fn handle_client(
                             sat_passes: None,
                             error: Some("Request timed out waiting for rig response".into()),
                         };
-                        send_response(&mut writer, &resp).await?;
+                        send_response(&mut writer, &resp, timeouts.io_timeout).await?;
                         continue;
                     }
                 }
@@ -459,7 +483,7 @@ async fn handle_client(
                     sat_passes: None,
                     error: None,
                 };
-                send_response(&mut writer, &resp).await?;
+                send_response(&mut writer, &resp, timeouts.io_timeout).await?;
             }
             Ok(Err(err)) => {
                 let resp = ClientResponse {
@@ -470,7 +494,7 @@ async fn handle_client(
                     sat_passes: None,
                     error: Some(err.message),
                 };
-                send_response(&mut writer, &resp).await?;
+                send_response(&mut writer, &resp, timeouts.io_timeout).await?;
             }
             Err(e) => {
                 error!("Rig response oneshot recv error: {:?}", e);
@@ -482,7 +506,7 @@ async fn handle_client(
                     sat_passes: None,
                     error: Some("Internal error waiting for rig response".into()),
                 };
-                send_response(&mut writer, &resp).await?;
+                send_response(&mut writer, &resp, timeouts.io_timeout).await?;
             }
         }
     }

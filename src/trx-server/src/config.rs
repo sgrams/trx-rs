@@ -15,7 +15,7 @@ use std::net::IpAddr;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
-use trx_app::{ConfigError, ConfigFile};
+use trx_app::{validate_log_level, validate_tokens, ConfigError, ConfigFile};
 pub use trx_decode_log::DecodeLogsConfig;
 
 use trx_core::rig::state::RigMode;
@@ -101,6 +101,8 @@ pub struct ServerConfig {
     pub decode_logs: DecodeLogsConfig,
     /// SDR pipeline configuration (legacy flat; used when [rig.access] type = "sdr").
     pub sdr: SdrConfig,
+    /// Timeout and buffer-size tuning knobs.
+    pub timeouts: TimeoutsConfig,
     /// Multi-rig instance list. When non-empty, takes priority over the flat fields.
     #[serde(rename = "rigs", default)]
     pub rigs: Vec<RigInstanceConfig>,
@@ -200,6 +202,37 @@ impl Default for BehaviorConfig {
             max_retries: 3,
             retry_base_delay_ms: 100,
             vfo_prime: true,
+        }
+    }
+}
+
+/// Timeout and buffer-size tuning knobs.
+///
+/// All durations are in milliseconds.  The defaults match the previously
+/// hard-coded values, so existing deployments are unaffected.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct TimeoutsConfig {
+    /// Maximum time (ms) to wait for a single rig command to complete.
+    pub command_exec_timeout_ms: u64,
+    /// Maximum time (ms) for a CAT poll refresh cycle.
+    pub poll_refresh_timeout_ms: u64,
+    /// Maximum time (ms) for low-level listener I/O operations (read/write/flush).
+    pub io_timeout_ms: u64,
+    /// Maximum time (ms) to wait for a rig command response in the listener.
+    pub request_timeout_ms: u64,
+    /// Capacity of the per-rig command channel (number of queued requests).
+    pub rig_task_channel_buffer: usize,
+}
+
+impl Default for TimeoutsConfig {
+    fn default() -> Self {
+        Self {
+            command_exec_timeout_ms: 10_000,
+            poll_refresh_timeout_ms: 8_000,
+            io_timeout_ms: 10_000,
+            request_timeout_ms: 12_000,
+            rig_task_channel_buffer: 32,
         }
     }
 }
@@ -763,21 +796,6 @@ impl ServerConfig {
     }
 }
 
-fn validate_log_level(level: Option<&str>) -> Result<(), String> {
-    if let Some(level) = level {
-        match level {
-            "trace" | "debug" | "info" | "warn" | "error" => {}
-            _ => {
-                return Err(format!(
-                    "[general].log_level '{}' is invalid (expected one of: trace, debug, info, warn, error)",
-                    level
-                ))
-            }
-        }
-    }
-    Ok(())
-}
-
 fn validate_coordinates(latitude: Option<f64>, longitude: Option<f64>) -> Result<(), String> {
     match (latitude, longitude) {
         (Some(lat), Some(lon)) => {
@@ -872,13 +890,6 @@ fn validate_sdr_nb_config(path: &str, nb: &SdrNoiseBlankerConfig) -> Result<(), 
     }
     if !(1.0..=100.0).contains(&nb.threshold) {
         return Err(format!("{path}.threshold must be in range 1..=100"));
-    }
-    Ok(())
-}
-
-fn validate_tokens(path: &str, tokens: &[String]) -> Result<(), String> {
-    if tokens.iter().any(|t| t.trim().is_empty()) {
-        return Err(format!("{path} must not contain empty tokens"));
     }
     Ok(())
 }

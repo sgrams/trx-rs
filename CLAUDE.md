@@ -124,21 +124,23 @@ Improvement plan: `docs/Improvement-Areas.md`
 
 ### Areas for Improvement
 
-**P1 — High:**
-- **FrontendRuntimeContext** (`trx-frontend/src/lib.rs`) is a ~50-field god-struct mixing audio channels, decode histories (9 types), auth config (7 fields), UI settings, rig routing, virtual channels, and branding. Should be decomposed into sub-structs (see `docs/Improvement-Areas.md`).
-- **Rig task command batching uses LIFO** (`rig_task.rs`): `batch.pop()` reverses arrival order. Commands execute newest-first, causing unexpected transient states.
-- **Decoder history unbounded** (`audio.rs`): No capacity limit on `VecDeque` queues; only 24h time-based pruning. Busy AIS channels can exhaust memory.
-- **ExponentialBackoff has no jitter** (`policies.rs`): All rigs/clients retry at identical times after a server restart (thundering herd).
-- **No rig task crash recovery** (`main.rs`): If a rig task panics, it silently disappears. No supervisor, no restart, no health monitoring.
+**P1 — High (all resolved):**
+- ✅ **FrontendRuntimeContext** decomposed into 9 sub-structs (AudioContext, DecodeHistoryContext, HttpAuthConfig, etc.)
+- ✅ **Rig task command batching** fixed to FIFO order
+- ✅ **Decoder history bounded** at 10,000 entries per queue
+- ✅ **ExponentialBackoff jitter** ±25% randomized
+- ✅ **Rig task crash recovery** emits Error state to clients
+- ✅ **Sync RwLock in async** migrated to tokio::sync::RwLock where appropriate
+- ✅ **Audio pipeline helpers** extracted from run_capture/run_playback
 
-**P2 — Medium:**
-- **Dual command enums**: `ClientCommand` and `RigCommand` are near-identical 40+ variant enums with mechanical 1:1 mapping in `mapping.rs` (675 lines). Adding a command requires 4-file changes. `GetRigs` triggers `unreachable!()`.
-- **SoapySdrRig 20-parameter constructor**: No builder pattern, fragile call sites.
-- **Lock poisoning recovery hides panics**: `unwrap_or_else(|e| e.into_inner())` throughout `audio.rs` silently continues with potentially inconsistent data.
-- **Hardcoded timeouts**: 10+ timeout/retention constants scattered across files, none configurable via TOML.
-- **Config duplication**: `config.rs` in server (1,512 LOC) and client (1,181 LOC) mirror many structs.
+**P2 — Medium (all resolved):**
+- ✅ **SoapySdrRig** uses `SoapySdrConfig` builder struct
+- ✅ **Command enum mapping** uses `define_command_mappings!` macro
+- ✅ **Lock poison recovery** now logs warnings via `lock_or_recover()` helper
+- ✅ **Timeouts configurable** via `[timeouts]` TOML section
+- ✅ **Config shared** types extracted to `trx-app/src/shared_config.rs`
 
-**P3 — Low:**
+**P3 — Low (remaining):**
 - **Command handler boilerplate**: 11 `RigCommandHandler` impls follow identical patterns across 500+ lines. Macro opportunity.
 - **No integration tests** for `rig_task.rs` (1,315 LOC) or `audio.rs` (3,977 LOC) — the two largest server modules.
 - **No command execution timeouts** at the `CommandExecutor` level. Backend stalls propagate up.

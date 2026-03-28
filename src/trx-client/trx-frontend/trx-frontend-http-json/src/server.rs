@@ -129,7 +129,7 @@ async fn handle_client(
         }
 
         if let Some(rig_id) = envelope.rig_id.as_ref() {
-            if let Ok(mut active) = context.remote_active_rig_id.lock() {
+            if let Ok(mut active) = context.routing.active_rig_id.lock() {
                 *active = Some(rig_id.clone());
             }
         }
@@ -148,7 +148,8 @@ async fn handle_client(
         }
 
         let active_rig_id = context
-            .remote_active_rig_id
+            .routing
+            .active_rig_id
             .lock()
             .ok()
             .and_then(|v| v.clone());
@@ -245,6 +246,7 @@ async fn handle_client(
 
 fn snapshot_remote_rigs(context: &FrontendRuntimeContext) -> Vec<RigEntry> {
     context
+        .routing
         .remote_rigs
         .lock()
         .ok()
@@ -333,7 +335,7 @@ async fn send_response(
 }
 
 fn authorize(token: &Option<String>, context: &FrontendRuntimeContext) -> Result<(), String> {
-    let validator = SimpleTokenValidator::new(context.auth_tokens.clone());
+    let validator = SimpleTokenValidator::new(context.http_auth.tokens.clone());
     validator.validate(token)
 }
 
@@ -436,7 +438,7 @@ mod tests {
         let addr = loopback_addr();
         let (rig_tx, _rig_rx) = mpsc::channel::<RigRequest>(8);
         let mut runtime = FrontendRuntimeContext::new();
-        runtime.auth_tokens = HashSet::from(["secret".to_string()]);
+        runtime.http_auth.tokens = HashSet::from(["secret".to_string()]);
         let ctx = Arc::new(runtime);
 
         let handle = tokio::spawn(serve(addr, rig_tx, ctx));

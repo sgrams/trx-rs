@@ -73,6 +73,7 @@ async fn serve(
 
     // Collect rig IDs for per-rig store initialisation / migration.
     let rig_ids: Vec<String> = context
+        .routing
         .remote_rigs
         .lock()
         .unwrap_or_else(|e| e.into_inner())
@@ -98,7 +99,7 @@ async fn serve(
     let background_decode_store = Arc::new(BackgroundDecodeStore::open(&background_decode_path));
     let vchan_mgr = Arc::new(ClientChannelManager::new(
         4,
-        context.rig_vchan_audio_cmd.clone(),
+        context.vchan.rig_audio_cmd.clone(),
     ));
     let session_rig_mgr = Arc::new(api::SessionRigManager::default());
     let background_decode_mgr = BackgroundDecodeManager::new(
@@ -113,7 +114,7 @@ async fn serve(
 
     // Wire the audio-command sender so allocate/delete/freq/mode operations on
     // virtual channels are forwarded to the audio-client task.
-    if let Ok(guard) = context.vchan_audio_cmd.lock() {
+    if let Ok(guard) = context.vchan.audio_cmd.lock() {
         if let Some(tx) = guard.as_ref() {
             vchan_mgr.set_audio_cmd(tx.clone());
         }
@@ -121,7 +122,7 @@ async fn serve(
 
     // Spawn a task that removes channels destroyed server-side (OOB) from the
     // client-side registry so the SSE channel list stays in sync.
-    if let Some(ref destroyed_tx) = context.vchan_destroyed {
+    if let Some(ref destroyed_tx) = context.vchan.destroyed {
         let mut destroyed_rx = destroyed_tx.subscribe();
         let mgr_for_destroyed = vchan_mgr.clone();
         tokio::spawn(async move {
@@ -193,18 +194,18 @@ fn build_server(
     let background_decode_mgr = web::Data::new(background_decode_mgr);
 
     // Extract auth config values before moving context
-    let same_site = match context.http_auth_cookie_same_site.as_str() {
+    let same_site = match context.http_auth.cookie_same_site.as_str() {
         "Strict" => SameSite::Strict,
         "None" => SameSite::None,
         _ => SameSite::Lax, // default
     };
     let auth_config = AuthConfig::new(
-        context.http_auth_enabled,
-        context.http_auth_rx_passphrase.clone(),
-        context.http_auth_control_passphrase.clone(),
-        context.http_auth_tx_access_control_enabled,
-        Duration::from_secs(context.http_auth_session_ttl_secs),
-        context.http_auth_cookie_secure,
+        context.http_auth.enabled,
+        context.http_auth.rx_passphrase.clone(),
+        context.http_auth.control_passphrase.clone(),
+        context.http_auth.tx_access_control_enabled,
+        Duration::from_secs(context.http_auth.session_ttl_secs),
+        context.http_auth.cookie_secure,
         same_site,
     );
 

@@ -150,7 +150,7 @@ async fn async_init() -> DynResult<AppState> {
         info!("Loaded configuration from {}", path.display());
     }
 
-    frontend_runtime.auth_tokens = cfg
+    frontend_runtime.http_auth.tokens = cfg
         .frontends
         .http_json
         .auth
@@ -161,28 +161,28 @@ async fn async_init() -> DynResult<AppState> {
         .collect();
 
     // Set HTTP frontend authentication config
-    frontend_runtime.http_auth_enabled = cfg.frontends.http.auth.enabled;
-    frontend_runtime.http_auth_rx_passphrase = cfg.frontends.http.auth.rx_passphrase.clone();
-    frontend_runtime.http_auth_control_passphrase =
+    frontend_runtime.http_auth.enabled = cfg.frontends.http.auth.enabled;
+    frontend_runtime.http_auth.rx_passphrase = cfg.frontends.http.auth.rx_passphrase.clone();
+    frontend_runtime.http_auth.control_passphrase =
         cfg.frontends.http.auth.control_passphrase.clone();
-    frontend_runtime.http_auth_tx_access_control_enabled =
+    frontend_runtime.http_auth.tx_access_control_enabled =
         cfg.frontends.http.auth.tx_access_control_enabled;
-    frontend_runtime.http_auth_session_ttl_secs = cfg.frontends.http.auth.session_ttl_min * 60;
-    frontend_runtime.http_auth_cookie_secure = cfg.frontends.http.auth.cookie_secure;
-    frontend_runtime.http_auth_cookie_same_site = match cfg.frontends.http.auth.cookie_same_site {
+    frontend_runtime.http_auth.session_ttl_secs = cfg.frontends.http.auth.session_ttl_min * 60;
+    frontend_runtime.http_auth.cookie_secure = cfg.frontends.http.auth.cookie_secure;
+    frontend_runtime.http_auth.cookie_same_site = match cfg.frontends.http.auth.cookie_same_site {
         config::CookieSameSite::Strict => "Strict".to_string(),
         config::CookieSameSite::Lax => "Lax".to_string(),
         config::CookieSameSite::None => "None".to_string(),
     };
-    frontend_runtime.http_show_sdr_gain_control = cfg.frontends.http.show_sdr_gain_control;
-    frontend_runtime.http_initial_map_zoom = cfg.frontends.http.initial_map_zoom;
-    frontend_runtime.http_spectrum_coverage_margin_hz =
+    frontend_runtime.http_ui.show_sdr_gain_control = cfg.frontends.http.show_sdr_gain_control;
+    frontend_runtime.http_ui.initial_map_zoom = cfg.frontends.http.initial_map_zoom;
+    frontend_runtime.http_ui.spectrum_coverage_margin_hz =
         cfg.frontends.http.spectrum_coverage_margin_hz;
-    frontend_runtime.http_spectrum_usable_span_ratio =
+    frontend_runtime.http_ui.spectrum_usable_span_ratio =
         cfg.frontends.http.spectrum_usable_span_ratio;
-    frontend_runtime.http_decode_history_retention_min =
+    frontend_runtime.http_ui.decode_history_retention_min =
         cfg.frontends.http.decode_history_retention_min;
-    frontend_runtime.http_decode_history_retention_min_by_rig = cfg
+    frontend_runtime.http_ui.decode_history_retention_min_by_rig = cfg
         .frontends
         .http
         .decode_history_retention_min_by_rig
@@ -219,7 +219,7 @@ async fn async_init() -> DynResult<AppState> {
         .clone()
         .or_else(|| cfg.frontends.http.default_rig_name.clone())
         .or_else(|| resolved_remotes.first().map(|e| e.name.clone()));
-    if let Ok(mut guard) = frontend_runtime.remote_active_rig_id.lock() {
+    if let Ok(mut guard) = frontend_runtime.routing.active_rig_id.lock() {
         *guard = default_rig.clone();
     }
 
@@ -264,10 +264,10 @@ async fn async_init() -> DynResult<AppState> {
         .callsign
         .clone()
         .or_else(|| cfg.general.callsign.clone());
-    frontend_runtime.owner_callsign = callsign.clone();
-    frontend_runtime.owner_website_url = cfg.general.website_url.clone();
-    frontend_runtime.owner_website_name = cfg.general.website_name.clone();
-    frontend_runtime.ais_vessel_url_base = cfg.general.ais_vessel_url_base.clone();
+    frontend_runtime.owner.callsign = callsign.clone();
+    frontend_runtime.owner.website_url = cfg.general.website_url.clone();
+    frontend_runtime.owner.website_name = cfg.general.website_name.clone();
+    frontend_runtime.owner.ais_vessel_url_base = cfg.general.ais_vessel_url_base.clone();
 
     let remote_names: Vec<&str> = resolved_remotes.iter().map(|e| e.name.as_str()).collect();
     info!(
@@ -373,17 +373,17 @@ async fn async_init() -> DynResult<AppState> {
         let remote_cfg = RemoteClientConfig {
             addr: addr.clone(),
             token: token.clone(),
-            selected_rig_id: frontend_runtime.remote_active_rig_id.clone(),
-            known_rigs: frontend_runtime.remote_rigs.clone(),
-            rig_states: frontend_runtime.rig_states.clone(),
+            selected_rig_id: frontend_runtime.routing.active_rig_id.clone(),
+            known_rigs: frontend_runtime.routing.remote_rigs.clone(),
+            rig_states: frontend_runtime.routing.rig_states.clone(),
             poll_interval: Duration::from_millis(poll_interval),
-            spectrum: frontend_runtime.spectrum.clone(),
-            rig_spectrums: frontend_runtime.rig_spectrums.clone(),
-            server_connected: frontend_runtime.server_connected.clone(),
-            rig_server_connected: frontend_runtime.rig_server_connected.clone(),
+            spectrum: frontend_runtime.spectrum.sender.clone(),
+            rig_spectrums: frontend_runtime.spectrum.per_rig.clone(),
+            server_connected: frontend_runtime.routing.server_connected.clone(),
+            rig_server_connected: frontend_runtime.routing.rig_server_connected.clone(),
             rig_id_to_short_name,
             short_name_to_rig_id: Arc::new(RwLock::new(HashMap::new())),
-            sat_passes: frontend_runtime.sat_passes.clone(),
+            sat_passes: frontend_runtime.routing.sat_passes.clone(),
         };
         let state_tx = state_tx.clone();
         let remote_shutdown_rx = shutdown_rx.clone();
@@ -405,7 +405,7 @@ async fn async_init() -> DynResult<AppState> {
     // channel and dispatches to the per-server channel based on rig_id_override
     // (short name).
     let route_map = Arc::new(route_map);
-    let default_rig_for_router = frontend_runtime.remote_active_rig_id.clone();
+    let default_rig_for_router = frontend_runtime.routing.active_rig_id.clone();
     {
         let route_map = route_map.clone();
         let mut frontend_rx = rx;
@@ -446,24 +446,24 @@ async fn async_init() -> DynResult<AppState> {
         let (stream_info_tx, stream_info_rx) = watch::channel::<Option<AudioStreamInfo>>(None);
         let (decode_tx, _) = broadcast::channel::<DecodedMessage>(256);
 
-        frontend_runtime.audio_rx = Some(rx_audio_tx.clone());
-        frontend_runtime.audio_tx = Some(tx_audio_tx);
-        frontend_runtime.audio_info = Some(stream_info_rx);
-        frontend_runtime.decode_rx = Some(decode_tx.clone());
+        frontend_runtime.audio.rx = Some(rx_audio_tx.clone());
+        frontend_runtime.audio.tx = Some(tx_audio_tx);
+        frontend_runtime.audio.info = Some(stream_info_rx);
+        frontend_runtime.audio.decode_rx = Some(decode_tx.clone());
 
         // Virtual-channel audio: shared broadcaster map + command channel.
         let (vchan_cmd_tx, vchan_cmd_rx) = mpsc::channel::<trx_frontend::VChanAudioCmd>(256);
-        *frontend_runtime.vchan_audio_cmd.lock().unwrap() = Some(vchan_cmd_tx);
+        *frontend_runtime.vchan.audio_cmd.lock().unwrap() = Some(vchan_cmd_tx);
 
         let (vchan_destroyed_tx, _) = broadcast::channel::<uuid::Uuid>(64);
-        frontend_runtime.vchan_destroyed = Some(vchan_destroyed_tx.clone());
-        let ais_history = frontend_runtime.ais_history.clone();
-        let vdes_history = frontend_runtime.vdes_history.clone();
-        let aprs_history = frontend_runtime.aprs_history.clone();
-        let hf_aprs_history = frontend_runtime.hf_aprs_history.clone();
-        let cw_history = frontend_runtime.cw_history.clone();
-        let ft8_history = frontend_runtime.ft8_history.clone();
-        let wspr_history = frontend_runtime.wspr_history.clone();
+        frontend_runtime.vchan.destroyed = Some(vchan_destroyed_tx.clone());
+        let ais_history = frontend_runtime.decode_history.ais.clone();
+        let vdes_history = frontend_runtime.decode_history.vdes.clone();
+        let aprs_history = frontend_runtime.decode_history.aprs.clone();
+        let hf_aprs_history = frontend_runtime.decode_history.hf_aprs.clone();
+        let cw_history = frontend_runtime.decode_history.cw.clone();
+        let ft8_history = frontend_runtime.decode_history.ft8.clone();
+        let wspr_history = frontend_runtime.decode_history.wspr.clone();
         let replay_history_sink: Arc<dyn Fn(DecodedMessage) + Send + Sync> = Arc::new(move |msg| {
             let now = std::time::Instant::now();
             match msg {
@@ -527,10 +527,10 @@ async fn async_init() -> DynResult<AppState> {
         info!("Audio enabled: decode channel set");
 
         let audio_shutdown_rx = shutdown_rx.clone();
-        let vchan_audio_map = frontend_runtime.vchan_audio.clone();
-        let rig_audio_rx_map = frontend_runtime.rig_audio_rx.clone();
-        let rig_audio_info_map = frontend_runtime.rig_audio_info.clone();
-        let rig_vchan_cmd_map = frontend_runtime.rig_vchan_audio_cmd.clone();
+        let vchan_audio_map = frontend_runtime.vchan.audio.clone();
+        let rig_audio_rx_map = frontend_runtime.rig_audio.rx.clone();
+        let rig_audio_info_map = frontend_runtime.rig_audio.info.clone();
+        let rig_vchan_cmd_map = frontend_runtime.vchan.rig_audio_cmd.clone();
         let default_audio_connect = if let Some(addr) = global_audio_addr {
             AudioConnectConfig::fixed(addr)
         } else {
@@ -539,8 +539,8 @@ async fn async_init() -> DynResult<AppState> {
         pending_audio_client = Some(tokio::spawn(audio_client::run_multi_rig_audio_manager(
             default_audio_connect,
             audio_connect,
-            frontend_runtime.remote_active_rig_id.clone(),
-            frontend_runtime.remote_rigs.clone(),
+            frontend_runtime.routing.active_rig_id.clone(),
+            frontend_runtime.routing.remote_rigs.clone(),
             rx_audio_tx,
             tx_audio_rx,
             stream_info_tx,
@@ -642,17 +642,20 @@ async fn async_init() -> DynResult<AppState> {
         task_handles.push(audio_bridge::spawn_audio_bridge(
             bridge_cfg,
             frontend_runtime_ctx
-                .audio_rx
+                .audio
+                .rx
                 .as_ref()
                 .expect("audio rx must be set")
                 .clone(),
             frontend_runtime_ctx
-                .audio_tx
+                .audio
+                .tx
                 .as_ref()
                 .expect("audio tx must be set")
                 .clone(),
             frontend_runtime_ctx
-                .audio_info
+                .audio
+                .info
                 .as_ref()
                 .expect("audio info must be set")
                 .clone(),
