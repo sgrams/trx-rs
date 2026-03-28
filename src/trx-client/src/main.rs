@@ -383,6 +383,7 @@ async fn async_init() -> DynResult<AppState> {
             rig_server_connected: frontend_runtime.rig_server_connected.clone(),
             rig_id_to_short_name,
             short_name_to_rig_id: Arc::new(RwLock::new(HashMap::new())),
+            sat_passes: frontend_runtime.sat_passes.clone(),
         };
         let state_tx = state_tx.clone();
         let remote_shutdown_rx = shutdown_rx.clone();
@@ -563,9 +564,6 @@ async fn async_init() -> DynResult<AppState> {
     }
 
     let frontend_runtime_ctx = Arc::new(frontend_runtime);
-
-    // Fetch satellite TLEs from CelesTrak for pass predictions.
-    trx_core::geo::spawn_tle_refresh_task();
 
     // Start decode history collector before audio client starts replay.
     // Frontend tasks are spawned asynchronously, so starting the collector

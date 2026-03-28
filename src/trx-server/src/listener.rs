@@ -45,6 +45,7 @@ pub async fn run_listener(
     rigs: Arc<HashMap<String, RigHandle>>,
     default_rig_id: String,
     auth_tokens: HashSet<String>,
+    station_coords: Option<(f64, f64)>,
     mut shutdown_rx: watch::Receiver<bool>,
 ) -> std::io::Result<()> {
     let listener = TcpListener::bind(addr).await?;
@@ -61,8 +62,9 @@ pub async fn run_listener(
                 let default_rig_id = default_rig_id.clone();
                 let validator = Arc::clone(&validator);
                 let client_shutdown_rx = shutdown_rx.clone();
+                let coords = station_coords;
                 tokio::spawn(async move {
-                    if let Err(e) = handle_client(socket, peer, rigs, default_rig_id, validator, client_shutdown_rx).await {
+                    if let Err(e) = handle_client(socket, peer, rigs, default_rig_id, validator, coords, client_shutdown_rx).await {
                         error!("Client {} error: {:?}", peer, e);
                     }
                 });
@@ -158,6 +160,7 @@ async fn handle_client(
     rigs: Arc<HashMap<String, RigHandle>>,
     default_rig_id: String,
     validator: Arc<SimpleTokenValidator>,
+    station_coords: Option<(f64, f64)>,
     mut shutdown_rx: watch::Receiver<bool>,
 ) -> std::io::Result<()> {
     let (reader, mut writer) = socket.into_split();
@@ -213,6 +216,7 @@ async fn handle_client(
                     rig_id: None,
                     state: None,
                     rigs: None,
+                    sat_passes: None,
                     error: Some(format!("Invalid JSON: {}", e)),
                 };
                 send_response(&mut writer, &resp).await?;
@@ -226,6 +230,7 @@ async fn handle_client(
                 rig_id: None,
                 state: None,
                 rigs: None,
+                sat_passes: None,
                 error: Some(err),
             };
             send_response(&mut writer, &resp).await?;
@@ -258,6 +263,35 @@ async fn handle_client(
                 rig_id: Some("server".to_string()),
                 state: None,
                 rigs: Some(entries),
+                sat_passes: None,
+                error: None,
+            };
+            send_response(&mut writer, &resp).await?;
+            continue;
+        }
+
+        // GetSatPasses: compute satellite passes from the server-side TLE store.
+        if matches!(envelope.cmd, ClientCommand::GetSatPasses) {
+            let result = if let Some((lat, lon)) = station_coords {
+                let now_ms = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_millis() as i64;
+                let window_ms = 24 * 3600 * 1000; // 24 hours
+                trx_core::geo::compute_upcoming_passes(lat, lon, now_ms, window_ms)
+            } else {
+                trx_core::geo::PassPredictionResult {
+                    passes: vec![],
+                    satellite_count: 0,
+                    tle_source: trx_core::geo::TleSource::Unavailable,
+                }
+            };
+            let resp = ClientResponse {
+                success: true,
+                rig_id: Some("server".to_string()),
+                state: None,
+                rigs: None,
+                sat_passes: Some(result),
                 error: None,
             };
             send_response(&mut writer, &resp).await?;
@@ -274,6 +308,7 @@ async fn handle_client(
                     rig_id: Some(target_rig_id.clone()),
                     state: None,
                     rigs: None,
+                    sat_passes: None,
                     error: Some(format!("Unknown rig_id: {}", target_rig_id)),
                 };
                 send_response(&mut writer, &resp).await?;
@@ -292,6 +327,7 @@ async fn handle_client(
                     rig_id: Some(target_rig_id.clone()),
                     state: Some(snapshot),
                     rigs: None,
+                    sat_passes: None,
                     error: None,
                 };
                 send_response(&mut writer, &resp).await?;
@@ -318,6 +354,7 @@ async fn handle_client(
                     rig_id: Some(target_rig_id.clone()),
                     state: None,
                     rigs: None,
+                    sat_passes: None,
                     error: Some("Internal error: rig task not available".into()),
                 };
                 send_response(&mut writer, &resp).await?;
@@ -329,6 +366,7 @@ async fn handle_client(
                     rig_id: Some(target_rig_id.clone()),
                     state: None,
                     rigs: None,
+                    sat_passes: None,
                     error: Some("Internal error: request queue timeout".into()),
                 };
                 send_response(&mut writer, &resp).await?;
@@ -346,6 +384,7 @@ async fn handle_client(
                             rig_id: Some(target_rig_id.clone()),
                             state: None,
                             rigs: None,
+                            sat_passes: None,
                             error: Some("Request timed out waiting for rig response".into()),
                         };
                         send_response(&mut writer, &resp).await?;
@@ -370,6 +409,7 @@ async fn handle_client(
                     rig_id: Some(target_rig_id.clone()),
                     state: Some(snapshot),
                     rigs: None,
+                    sat_passes: None,
                     error: None,
                 };
                 send_response(&mut writer, &resp).await?;
@@ -380,6 +420,7 @@ async fn handle_client(
                     rig_id: Some(target_rig_id.clone()),
                     state: None,
                     rigs: None,
+                    sat_passes: None,
                     error: Some(err.message),
                 };
                 send_response(&mut writer, &resp).await?;
@@ -391,6 +432,7 @@ async fn handle_client(
                     rig_id: Some(target_rig_id.clone()),
                     state: None,
                     rigs: None,
+                    sat_passes: None,
                     error: Some("Internal error waiting for rig response".into()),
                 };
                 send_response(&mut writer, &resp).await?;

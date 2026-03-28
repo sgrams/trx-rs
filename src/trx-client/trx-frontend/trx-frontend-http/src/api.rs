@@ -1384,43 +1384,34 @@ struct SatPassesResponse {
 
 /// Return predicted passes for all known satellites over the next 24 h.
 ///
-/// Requires the server station location to be configured.  Returns an empty
-/// `passes` array with an `error` field if the location is missing or TLE
-/// data has not been fetched yet.
+/// Reads cached predictions from the server (fetched via GetSatPasses).
+/// Returns an empty `passes` array with an `error` field if predictions
+/// are not yet available.
 #[get("/sat_passes")]
-pub async fn sat_passes(state: web::Data<watch::Receiver<RigState>>) -> impl Responder {
-    let rig_state = state.get_ref().borrow().clone();
-    let lat = rig_state.server_latitude;
-    let lon = rig_state.server_longitude;
-
-    let (Some(lat), Some(lon)) = (lat, lon) else {
-        return web::Json(SatPassesResponse {
+pub async fn sat_passes(context: web::Data<Arc<FrontendRuntimeContext>>) -> impl Responder {
+    let cached = context.sat_passes.read().ok().and_then(|g| g.clone());
+    match cached {
+        Some(result) => {
+            let error = match result.tle_source {
+                trx_core::geo::TleSource::Unavailable => {
+                    Some("TLE data not yet available — waiting for CelesTrak fetch".to_string())
+                }
+                trx_core::geo::TleSource::Celestrak => None,
+            };
+            web::Json(SatPassesResponse {
+                passes: result.passes,
+                error,
+                satellite_count: result.satellite_count,
+                tle_source: result.tle_source,
+            })
+        }
+        None => web::Json(SatPassesResponse {
             passes: vec![],
-            error: Some("No station location configured".to_string()),
+            error: Some("Satellite predictions not yet available from server".to_string()),
             satellite_count: 0,
             tle_source: trx_core::geo::TleSource::Unavailable,
-        });
-    };
-
-    let now_ms = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis() as i64;
-    let window_ms = 24 * 60 * 60 * 1000_i64;
-
-    let result = trx_core::geo::compute_upcoming_passes(lat, lon, now_ms, window_ms);
-    let error = match result.tle_source {
-        trx_core::geo::TleSource::Unavailable => {
-            Some("TLE data not yet available — waiting for CelesTrak fetch".to_string())
-        }
-        trx_core::geo::TleSource::Celestrak => None,
-    };
-    web::Json(SatPassesResponse {
-        passes: result.passes,
-        error,
-        satellite_count: result.satellite_count,
-        tle_source: result.tle_source,
-    })
+        }),
+    }
 }
 
 #[post("/clear_ft8_decode")]
@@ -2400,6 +2391,7 @@ async fn send_command(
             rig_id: None,
             state: Some(snapshot),
             rigs: None,
+            sat_passes: None,
             error: None,
         })),
         Ok(Err(err)) => Ok(HttpResponse::BadRequest().json(ClientResponse {
@@ -2407,6 +2399,7 @@ async fn send_command(
             rig_id: None,
             state: None,
             rigs: None,
+            sat_passes: None,
             error: Some(err.message),
         })),
         Err(e) => Err(actix_web::error::ErrorInternalServerError(format!(

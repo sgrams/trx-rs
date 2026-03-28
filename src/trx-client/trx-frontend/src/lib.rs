@@ -260,6 +260,8 @@ pub struct FrontendRuntimeContext {
     pub remote_active_rig_id: Arc<Mutex<Option<String>>>,
     /// Cached remote rig list from GetRigs polling.
     pub remote_rigs: Arc<Mutex<Vec<RemoteRigEntry>>>,
+    /// Cached satellite pass predictions from the server (GetSatPasses).
+    pub sat_passes: Arc<RwLock<Option<trx_core::geo::PassPredictionResult>>>,
     /// Per-rig state watch channels, keyed by rig_id.
     /// Populated by the remote client poll loop so each SSE session can
     /// subscribe to a specific rig's state independently.
@@ -391,6 +393,7 @@ impl FrontendRuntimeContext {
             http_decode_history_retention_min_by_rig: HashMap::new(),
             remote_active_rig_id: Arc::new(Mutex::new(None)),
             remote_rigs: Arc::new(Mutex::new(Vec::new())),
+            sat_passes: Arc::new(RwLock::new(None)),
             rig_states: Arc::new(RwLock::new(HashMap::new())),
             owner_callsign: None,
             owner_website_url: None,

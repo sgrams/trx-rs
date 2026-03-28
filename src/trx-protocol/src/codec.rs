@@ -263,6 +263,7 @@ mod tests {
             rig_id: Some("hf".to_string()),
             state: None,
             rigs: None,
+            sat_passes: None,
             error: None,
         };
         let json = serde_json::to_string(&resp).unwrap();
@@ -279,6 +280,7 @@ mod tests {
             rig_id: None,
             state: None,
             rigs: None,
+            sat_passes: None,
             error: Some("bad".to_string()),
         };
         let json = serde_json::to_string(&resp).unwrap();
@@ -296,6 +298,7 @@ mod tests {
             rig_id: Some("server".to_string()),
             state: None,
             rigs: None,
+            sat_passes: None,
             error: None,
         };
         let json = serde_json::to_string(&resp).unwrap();

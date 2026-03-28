@@ -19,6 +19,9 @@ pub fn client_command_to_rig(cmd: ClientCommand) -> RigCommand {
         ClientCommand::GetRigs => {
             unreachable!("GetRigs is handled in the listener before reaching rig_task")
         }
+        ClientCommand::GetSatPasses => {
+            unreachable!("GetSatPasses is handled in the listener before reaching rig_task")
+        }
         ClientCommand::GetState => RigCommand::GetSnapshot,
         ClientCommand::SetFreq { freq_hz } => RigCommand::SetFreq(Freq { hz: freq_hz }),
         ClientCommand::SetCenterFreq { freq_hz } => RigCommand::SetCenterFreq(Freq { hz: freq_hz }),

@@ -1161,11 +1161,13 @@ async fn main() -> DynResult<()> {
         let rigs_arc = Arc::new(rig_handles);
         let listener_shutdown_rx = shutdown_rx.clone();
         task_handles.push(tokio::spawn(async move {
+            let station_coords = latitude.zip(longitude);
             if let Err(e) = listener::run_listener(
                 listen_addr,
                 rigs_arc,
                 default_rig_id,
                 auth_tokens,
+                station_coords,
                 listener_shutdown_rx,
             )
             .await

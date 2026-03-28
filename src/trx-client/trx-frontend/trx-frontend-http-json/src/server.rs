@@ -107,6 +107,7 @@ async fn handle_client(
                     rig_id: None,
                     state: None,
                     rigs: None,
+                    sat_passes: None,
                     error: Some(format!("Invalid JSON: {}", e)),
                 };
                 send_response(&mut writer, &resp).await?;
@@ -120,6 +121,7 @@ async fn handle_client(
                 rig_id: None,
                 state: None,
                 rigs: None,
+                sat_passes: None,
                 error: Some(err),
             };
             send_response(&mut writer, &resp).await?;
@@ -138,6 +140,7 @@ async fn handle_client(
                 rig_id: Some("client".to_string()),
                 state: None,
                 rigs: Some(snapshot_remote_rigs(context.as_ref())),
+                sat_passes: None,
                 error: None,
             };
             send_response(&mut writer, &resp).await?;
@@ -168,6 +171,7 @@ async fn handle_client(
                     rig_id: active_rig_id.clone(),
                     state: None,
                     rigs: None,
+                    sat_passes: None,
                     error: Some("Internal error: rig task not available".into()),
                 };
                 send_response(&mut writer, &resp).await?;
@@ -179,6 +183,7 @@ async fn handle_client(
                     rig_id: active_rig_id.clone(),
                     state: None,
                     rigs: None,
+                    sat_passes: None,
                     error: Some("Internal error: request queue timeout".into()),
                 };
                 send_response(&mut writer, &resp).await?;
@@ -193,6 +198,7 @@ async fn handle_client(
                     rig_id: active_rig_id.clone(),
                     state: Some(snapshot),
                     rigs: None,
+                    sat_passes: None,
                     error: None,
                 };
                 send_response(&mut writer, &resp).await?;
@@ -203,6 +209,7 @@ async fn handle_client(
                     rig_id: active_rig_id.clone(),
                     state: None,
                     rigs: None,
+                    sat_passes: None,
                     error: Some(err.message),
                 };
                 send_response(&mut writer, &resp).await?;
@@ -214,6 +221,7 @@ async fn handle_client(
                     rig_id: active_rig_id.clone(),
                     state: None,
                     rigs: None,
+                    sat_passes: None,
                     error: Some("Internal error waiting for rig response".into()),
                 };
                 send_response(&mut writer, &resp).await?;
@@ -224,6 +232,7 @@ async fn handle_client(
                     rig_id: active_rig_id.clone(),
                     state: None,
                     rigs: None,
+                    sat_passes: None,
                     error: Some("Request timed out waiting for rig response".into()),
                 };
                 send_response(&mut writer, &resp).await?;

@@ -75,6 +75,8 @@ pub struct RemoteClientConfig {
     /// Dynamically resolved reverse mapping: short_name → server rig_id.
     /// Populated during `refresh_remote_snapshot` when short-name mode is active.
     pub short_name_to_rig_id: Arc<RwLock<HashMap<String, String>>>,
+    /// Cached satellite pass predictions from the server (GetSatPasses).
+    pub sat_passes: Arc<RwLock<Option<trx_core::geo::PassPredictionResult>>>,
 }
 
 pub async fn run_remote_client(
@@ -301,6 +303,18 @@ async fn handle_connection(
         warn!("Initial remote snapshot refresh failed: {}", e);
     }
 
+    // Fetch satellite passes immediately and then every 5 minutes.
+    let sat_pass_interval = Duration::from_secs(5 * 60);
+    let mut last_sat_pass_refresh = Instant::now();
+    match send_get_sat_passes(config, &mut writer, &mut reader).await {
+        Ok(result) => {
+            if let Ok(mut guard) = config.sat_passes.write() {
+                *guard = Some(result);
+            }
+        }
+        Err(e) => warn!("Initial sat passes fetch failed: {}", e),
+    }
+
     loop {
         tokio::select! {
             changed = shutdown_rx.changed() => {
@@ -338,6 +352,19 @@ async fn handle_connection(
                     }
                 } else {
                     poll_failure_streak = 0;
+                }
+
+                // Refresh satellite passes periodically (every 5 minutes).
+                if last_sat_pass_refresh.elapsed() >= sat_pass_interval {
+                    last_sat_pass_refresh = Instant::now();
+                    match send_get_sat_passes(config, &mut writer, &mut reader).await {
+                        Ok(result) => {
+                            if let Ok(mut guard) = config.sat_passes.write() {
+                                *guard = Some(result);
+                            }
+                        }
+                        Err(e) => warn!("Sat passes refresh failed: {}", e),
+                    }
                 }
             }
             req = rx.recv() => {
@@ -584,6 +611,44 @@ async fn send_get_rigs(
         return resp
             .rigs
             .ok_or_else(|| RigError::communication("missing rigs list in GetRigs response"));
+    }
+
+    Err(RigError::communication(
+        resp.error.unwrap_or_else(|| "remote error".into()),
+    ))
+}
+
+async fn send_get_sat_passes(
+    config: &RemoteClientConfig,
+    writer: &mut tokio::net::tcp::OwnedWriteHalf,
+    reader: &mut BufReader<tokio::net::tcp::OwnedReadHalf>,
+) -> RigResult<trx_core::geo::PassPredictionResult> {
+    let envelope = build_envelope(config, ClientCommand::GetSatPasses, None);
+    let mut payload = serde_json::to_string(&envelope)
+        .map_err(|e| RigError::communication(format!("JSON serialize failed: {e}")))?;
+    payload.push('\n');
+
+    time::timeout(IO_TIMEOUT, writer.write_all(payload.as_bytes()))
+        .await
+        .map_err(|_| RigError::communication(format!("write timed out after {:?}", IO_TIMEOUT)))?
+        .map_err(|e| RigError::communication(format!("write failed: {e}")))?;
+    time::timeout(IO_TIMEOUT, writer.flush())
+        .await
+        .map_err(|_| RigError::communication(format!("flush timed out after {:?}", IO_TIMEOUT)))?
+        .map_err(|e| RigError::communication(format!("flush failed: {e}")))?;
+
+    let line = time::timeout(IO_TIMEOUT, read_limited_line(reader, MAX_JSON_LINE_BYTES))
+        .await
+        .map_err(|_| RigError::communication(format!("read timed out after {:?}", IO_TIMEOUT)))?
+        .map_err(|e| RigError::communication(format!("read failed: {e}")))?;
+    let line = line.ok_or_else(|| RigError::communication("connection closed by remote"))?;
+
+    let resp: ClientResponse = serde_json::from_str(line.trim_end())
+        .map_err(|e| RigError::communication(format!("invalid response: {e}")))?;
+    if resp.success {
+        return resp
+            .sat_passes
+            .ok_or_else(|| RigError::communication("missing sat_passes in GetSatPasses response"));
     }
 
     Err(RigError::communication(
@@ -1135,6 +1200,7 @@ mod tests {
                 state: snapshot.clone(),
                 audio_port: Some(4531),
             }]),
+            sat_passes: None,
             error: None,
         })
         .expect("serialize response")
@@ -1181,6 +1247,7 @@ mod tests {
                 rig_spectrums: Arc::new(RwLock::new(HashMap::new())),
                 rig_id_to_short_name: HashMap::new(),
                 short_name_to_rig_id: Arc::new(RwLock::new(HashMap::new())),
+                sat_passes: Arc::new(RwLock::new(None)),
             },
             req_rx,
             state_tx,
@@ -1224,6 +1291,7 @@ mod tests {
             rig_spectrums: Arc::new(RwLock::new(HashMap::new())),
             rig_id_to_short_name: HashMap::new(),
             short_name_to_rig_id: Arc::new(RwLock::new(HashMap::new())),
+            sat_passes: Arc::new(RwLock::new(None)),
         };
         let envelope = super::build_envelope(&config, trx_protocol::ClientCommand::GetState, None);
         assert_eq!(envelope.token.as_deref(), Some("secret"));
@@ -1250,6 +1318,7 @@ mod tests {
             rig_spectrums: Arc::new(RwLock::new(HashMap::new())),
             rig_id_to_short_name: HashMap::from([(Some("hf".to_string()), "home-hf".to_string())]),
             short_name_to_rig_id,
+            sat_passes: Arc::new(RwLock::new(None)),
         };
         // selected_rig_id is "home-hf" (short name), envelope should translate to "hf"
         let envelope = super::build_envelope(&config, trx_protocol::ClientCommand::GetState, None);
@@ -1280,6 +1349,7 @@ mod tests {
             rig_spectrums: Arc::new(RwLock::new(HashMap::new())),
             rig_id_to_short_name: HashMap::new(),
             short_name_to_rig_id: Arc::new(RwLock::new(HashMap::new())),
+            sat_passes: Arc::new(RwLock::new(None)),
         };
         // Legacy mode: rig_id passes through unchanged
         assert!(!has_short_names(&config));
@@ -1305,6 +1375,7 @@ mod tests {
                 (None, "default-rig".to_string()),
             ]),
             short_name_to_rig_id: Arc::new(RwLock::new(HashMap::new())),
+            sat_passes: Arc::new(RwLock::new(None)),
         };
         assert!(has_short_names(&config));
         assert_eq!(
@@ -1340,6 +1411,7 @@ mod tests {
             rig_spectrums: Arc::new(RwLock::new(HashMap::new())),
             rig_id_to_short_name: HashMap::from([(Some("hf".to_string()), "gdansk".to_string())]),
             short_name_to_rig_id: Arc::new(RwLock::new(HashMap::new())),
+            sat_passes: Arc::new(RwLock::new(None)),
         };
         let snapshot = sample_snapshot();
         let rigs = vec![RigEntry {
@@ -1411,6 +1483,7 @@ mod tests {
             rig_spectrums: Arc::new(RwLock::new(HashMap::new())),
             rig_id_to_short_name: HashMap::from([(Some("hf".to_string()), "gdansk".to_string())]),
             short_name_to_rig_id: Arc::new(RwLock::new(HashMap::new())),
+            sat_passes: Arc::new(RwLock::new(None)),
         };
 
         let ids = super::active_spectrum_rig_ids(&config);

@@ -15,6 +15,7 @@ use trx_core::WfmDenoiseLevel;
 pub enum ClientCommand {
     GetState,
     GetRigs,
+    GetSatPasses,
     SetFreq { freq_hz: u64 },
     SetCenterFreq { freq_hz: u64 },
     SetMode { mode: String },
@@ -95,5 +96,8 @@ pub struct ClientResponse {
     /// Populated only for GetRigs responses.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub rigs: Option<Vec<RigEntry>>,
+    /// Populated only for GetSatPasses responses.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sat_passes: Option<trx_core::geo::PassPredictionResult>,
     pub error: Option<String>,
 }
