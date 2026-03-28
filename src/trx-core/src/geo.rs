@@ -9,13 +9,28 @@
 //! and receiver station coordinates.
 
 use sgp4::{Constants, Elements, MinutesSinceEpoch};
+use std::collections::HashMap;
 use std::f64::consts::PI;
+use std::sync::RwLock;
+use std::time::Duration;
 
 /// Half-swath width in km for NOAA APT / Meteor LRPT imagery.
 const SWATH_HALF_WIDTH_KM: f64 = 1400.0;
 
 /// Earth radius in km (WGS84 mean).
 const EARTH_RADIUS_KM: f64 = 6371.0;
+
+/// CelesTrak weather satellite TLE endpoint.
+const CELESTRAK_WEATHER_URL: &str =
+    "https://celestrak.org/NORAD/elements/gp.php?GROUP=weather&FORMAT=tle";
+
+/// How often to refresh TLEs after the initial fetch (24 hours).
+const TLE_REFRESH_INTERVAL: Duration = Duration::from_secs(24 * 60 * 60);
+
+/// Global store for dynamically-fetched TLE data.
+///
+/// Keys are NORAD catalog numbers; values are `(line1, line2)` strings.
+static TLE_STORE: RwLock<Option<HashMap<u32, (String, String)>>> = RwLock::new(None);
 
 /// Geographic bounds for a satellite image overlay: `[south, west, north, east]`.
 pub type GeoBounds = [f64; 4];
@@ -32,44 +47,169 @@ pub struct PassGeo {
     pub ground_track: Vec<TrackPoint>,
 }
 
-/// Hardcoded TLE data for active weather satellites.
-///
-/// These are recent-epoch TLEs.  SGP4 propagation from stale TLEs still
-/// gives sub-degree accuracy for image overlay purposes (drift ~0.1 deg/week).
-fn tle_for_satellite(name: &str) -> Option<(&str, &str)> {
+/// Map satellite name patterns to NORAD catalog numbers.
+fn norad_id_for_satellite(name: &str) -> Option<u32> {
     let upper = name.to_uppercase();
-    // Match by common satellite names from the decoder telemetry output.
-    //
-    // TLE lines must be exactly 69 characters with valid mod-10 checksums.
-    // These are approximate recent-epoch elements for overlay purposes.
     if upper.contains("NOAA") && upper.contains("15") {
-        Some((
-            "1 25338U 98030A   26084.50000000  .00000045  00000-0  36000-4 0  9998",
-            "2 25338  98.7285 114.5200 0010150  45.0000 315.1500 14.25955000  4001",
-        ))
+        Some(25338)
     } else if upper.contains("NOAA") && upper.contains("18") {
-        Some((
-            "1 28654U 05018A   26084.50000000  .00000036  00000-0  28000-4 0  9997",
-            "2 28654  99.0400 162.3000 0013800 290.0000  70.0000 14.12500000  1005",
-        ))
+        Some(28654)
     } else if upper.contains("NOAA") && upper.contains("19") {
-        Some((
-            "1 33591U 09005A   26084.50000000  .00000028  00000-0  20000-4 0  9996",
-            "2 33591  99.1700 050.5000 0014000 100.0000 260.0000 14.12300000  8002",
-        ))
-    } else if upper.contains("METEOR") && (upper.contains("2-3") || upper.contains("N2-3") || upper.contains("2_3")) {
-        Some((
-            "1 57166U 23091A   26084.50000000  .00000020  00000-0  16000-4 0  9998",
-            "2 57166  98.7700 170.0000 0005000  90.0000 270.0000 14.23700000  1502",
-        ))
-    } else if upper.contains("METEOR") && (upper.contains("2-4") || upper.contains("N2-4") || upper.contains("2_4")) {
-        Some((
-            "1 59051U 24044A   26084.50000000  .00000018  00000-0  14000-4 0  9997",
-            "2 59051  98.7700 200.0000 0005000  80.0000 280.0000 14.23700000  1006",
-        ))
+        Some(33591)
+    } else if upper.contains("METEOR")
+        && (upper.contains("2-3") || upper.contains("N2-3") || upper.contains("2_3"))
+    {
+        Some(57166)
+    } else if upper.contains("METEOR")
+        && (upper.contains("2-4") || upper.contains("N2-4") || upper.contains("2_4"))
+    {
+        Some(59051)
     } else {
         None
     }
+}
+
+/// Hardcoded fallback TLE data for active weather satellites.
+///
+/// These are recent-epoch TLEs.  SGP4 propagation from stale TLEs still
+/// gives sub-degree accuracy for image overlay purposes (drift ~0.1 deg/week).
+fn hardcoded_tle(norad_id: u32) -> Option<(&'static str, &'static str)> {
+    match norad_id {
+        25338 => Some((
+            "1 25338U 98030A   26084.50000000  .00000045  00000-0  36000-4 0  9998",
+            "2 25338  98.7285 114.5200 0010150  45.0000 315.1500 14.25955000  4001",
+        )),
+        28654 => Some((
+            "1 28654U 05018A   26084.50000000  .00000036  00000-0  28000-4 0  9997",
+            "2 28654  99.0400 162.3000 0013800 290.0000  70.0000 14.12500000  1005",
+        )),
+        33591 => Some((
+            "1 33591U 09005A   26084.50000000  .00000028  00000-0  20000-4 0  9996",
+            "2 33591  99.1700 050.5000 0014000 100.0000 260.0000 14.12300000  8002",
+        )),
+        57166 => Some((
+            "1 57166U 23091A   26084.50000000  .00000020  00000-0  16000-4 0  9998",
+            "2 57166  98.7700 170.0000 0005000  90.0000 270.0000 14.23700000  1502",
+        )),
+        59051 => Some((
+            "1 59051U 24044A   26084.50000000  .00000018  00000-0  14000-4 0  9997",
+            "2 59051  98.7700 200.0000 0005000  80.0000 280.0000 14.23700000  1006",
+        )),
+        _ => None,
+    }
+}
+
+/// Look up TLE lines for a satellite by name.
+///
+/// Checks the dynamic [`TLE_STORE`] first (populated by [`spawn_tle_refresh_task`]),
+/// falling back to hardcoded TLEs if no fresh data is available.
+fn tle_for_satellite(name: &str) -> Option<(String, String)> {
+    let norad_id = norad_id_for_satellite(name)?;
+
+    // Try dynamic store first.
+    if let Ok(guard) = TLE_STORE.read() {
+        if let Some(store) = guard.as_ref() {
+            if let Some((l1, l2)) = store.get(&norad_id) {
+                return Some((l1.clone(), l2.clone()));
+            }
+        }
+    }
+
+    // Fall back to hardcoded.
+    hardcoded_tle(norad_id).map(|(l1, l2)| (l1.to_string(), l2.to_string()))
+}
+
+// ---------------------------------------------------------------------------
+// CelesTrak TLE refresh
+// ---------------------------------------------------------------------------
+
+/// Parse a CelesTrak 3-line TLE response into a map of NORAD ID → (line1, line2).
+fn parse_tle_response(body: &str) -> HashMap<u32, (String, String)> {
+    let mut result = HashMap::new();
+    let lines: Vec<&str> = body.lines().map(|l| l.trim_end()).collect();
+    let mut i = 0;
+    while i + 2 < lines.len() {
+        let line1 = lines[i + 1];
+        let line2 = lines[i + 2];
+        // Validate TLE line markers
+        if line1.starts_with("1 ") && line2.starts_with("2 ") {
+            // Extract NORAD catalog number from line 1 columns 2-6
+            if let Ok(norad_id) = line1[2..7].trim().parse::<u32>() {
+                result.insert(norad_id, (line1.to_string(), line2.to_string()));
+            }
+        }
+        i += 3;
+    }
+    result
+}
+
+/// Fetch fresh TLE data from CelesTrak and update the global store.
+///
+/// Returns the number of TLEs loaded, or an error description.
+pub async fn refresh_tles_from_celestrak() -> Result<usize, String> {
+    let response = reqwest::Client::builder()
+        .timeout(Duration::from_secs(30))
+        .build()
+        .map_err(|e| format!("HTTP client error: {e}"))?
+        .get(CELESTRAK_WEATHER_URL)
+        .send()
+        .await
+        .map_err(|e| format!("CelesTrak fetch failed: {e}"))?;
+
+    if !response.status().is_success() {
+        return Err(format!("CelesTrak returned HTTP {}", response.status()));
+    }
+
+    let body = response
+        .text()
+        .await
+        .map_err(|e| format!("Failed to read CelesTrak response: {e}"))?;
+
+    let tles = parse_tle_response(&body);
+    let count = tles.len();
+
+    if count == 0 {
+        return Err("CelesTrak response contained no valid TLEs".to_string());
+    }
+
+    match TLE_STORE.write() {
+        Ok(mut guard) => *guard = Some(tles),
+        Err(e) => {
+            // Recover from poisoned lock
+            let mut guard = e.into_inner();
+            *guard = Some(parse_tle_response(&body));
+        }
+    }
+
+    Ok(count)
+}
+
+/// Spawn a background task that fetches TLEs from CelesTrak on start and
+/// then refreshes once per day.
+///
+/// The task runs until the process exits.  Fetch failures are logged but
+/// do not stop the periodic refresh — hardcoded fallback TLEs remain usable.
+pub fn spawn_tle_refresh_task() {
+    tokio::spawn(async {
+        // Initial fetch at startup.
+        match refresh_tles_from_celestrak().await {
+            Ok(n) => tracing::info!("TLE refresh: loaded {n} satellite TLEs from CelesTrak"),
+            Err(e) => tracing::warn!("TLE refresh: initial fetch failed ({e}), using hardcoded TLEs"),
+        }
+
+        // Periodic refresh every 24 hours.
+        let mut interval = tokio::time::interval(TLE_REFRESH_INTERVAL);
+        // The first tick fires immediately; skip it since we just fetched.
+        interval.tick().await;
+
+        loop {
+            interval.tick().await;
+            match refresh_tles_from_celestrak().await {
+                Ok(n) => tracing::info!("TLE refresh: updated {n} satellite TLEs from CelesTrak"),
+                Err(e) => tracing::warn!("TLE refresh: fetch failed ({e}), keeping previous TLEs"),
+            }
+        }
+    });
 }
 
 /// Compute geographic bounds and ground track for a satellite pass.
@@ -88,8 +228,7 @@ pub fn compute_pass_geo(
         Some(satellite.to_string()),
         line1.as_bytes(),
         line2.as_bytes(),
-    )
-    .ok()?;
+    ).ok()?;
 
     let constants = Constants::from_elements(&elements).ok()?;
 
@@ -301,6 +440,40 @@ mod tests {
     }
 
     #[test]
+    fn test_norad_id_mapping() {
+        assert_eq!(norad_id_for_satellite("NOAA-15"), Some(25338));
+        assert_eq!(norad_id_for_satellite("NOAA-18"), Some(28654));
+        assert_eq!(norad_id_for_satellite("NOAA-19"), Some(33591));
+        assert_eq!(norad_id_for_satellite("Meteor-M N2-3"), Some(57166));
+        assert_eq!(norad_id_for_satellite("Meteor-M N2-4"), Some(59051));
+        assert_eq!(norad_id_for_satellite("Unknown"), None);
+    }
+
+    #[test]
+    fn test_parse_tle_response() {
+        let body = "\
+NOAA 15
+1 25338U 98030A   26085.50000000  .00000045  00000-0  36000-4 0  9999
+2 25338  98.7285 114.5200 0010150  45.0000 315.1500 14.25955000  4002
+NOAA 19
+1 33591U 09005A   26085.50000000  .00000028  00000-0  20000-4 0  9997
+2 33591  99.1700 050.5000 0014000 100.0000 260.0000 14.12300000  8003
+";
+        let tles = parse_tle_response(body);
+        assert_eq!(tles.len(), 2);
+        assert!(tles.contains_key(&25338));
+        assert!(tles.contains_key(&33591));
+        assert!(tles[&25338].0.starts_with("1 25338"));
+        assert!(tles[&33591].1.starts_with("2 33591"));
+    }
+
+    #[test]
+    fn test_parse_tle_response_empty() {
+        assert!(parse_tle_response("").is_empty());
+        assert!(parse_tle_response("not a tle\n").is_empty());
+    }
+
+    #[test]
     fn test_compute_pass_geo_noaa19() {
         // Simulate a ~12 minute pass
         let start = 1774800000000_i64; // approx 2026-03-28
@@ -335,7 +508,7 @@ mod tests {
     #[test]
     fn test_elements_epoch_ms() {
         // Parse a TLE and verify the epoch converts to a reasonable timestamp
-        let (line1, line2) = tle_for_satellite("NOAA-19").unwrap();
+        let (line1, line2) = hardcoded_tle(33591).unwrap();
         let elements = Elements::from_tle(
             Some("NOAA-19".to_string()),
             line1.as_bytes(),
