@@ -1027,7 +1027,11 @@ function updateRigSubtitle(activeRigId) {
 
 function applyRigList(activeRigId, rigIds, displayNames) {
   if (!Array.isArray(rigIds)) return;
-  lastRigIds = rigIds.filter((id) => typeof id === "string" && id.length > 0);
+  const nextIds = rigIds.filter((id) => typeof id === "string" && id.length > 0);
+  // Detect whether the rig list or active rig actually changed so we can
+  // skip expensive bookmark re-fetches on every SSE state update.
+  const prevKey = lastRigIds.join("\0") + "|" + (lastActiveRigId || "");
+  lastRigIds = nextIds;
   if (displayNames && typeof displayNames === "object") {
     lastRigDisplayNames = { ...displayNames };
   }
@@ -1045,13 +1049,17 @@ function applyRigList(activeRigId, rigIds, displayNames) {
     const aboutActive = document.getElementById("about-active-rig");
     if (aboutActive) aboutActive.textContent = lastActiveRigId;
   }
+  const nextKey = lastRigIds.join("\0") + "|" + (lastActiveRigId || "");
+  const rigListChanged = prevKey !== nextKey;
   const disableSwitch = lastRigIds.length === 0 || !authRole || authRole === "rx";
   populateRigPicker(headerRigSwitchSelect, lastRigIds, lastActiveRigId, disableSwitch);
   updateRigSubtitle(lastActiveRigId);
-  if (typeof setSchedulerRig === "function") setSchedulerRig(lastActiveRigId);
-  if (typeof setBackgroundDecodeRig === "function") setBackgroundDecodeRig(lastActiveRigId);
-  if (typeof bmPopulateScopePicker === "function") bmPopulateScopePicker();
-  if (typeof bmFetch === "function") bmFetch(document.getElementById("bm-category-filter")?.value || "");
+  if (rigListChanged) {
+    if (typeof setSchedulerRig === "function") setSchedulerRig(lastActiveRigId);
+    if (typeof setBackgroundDecodeRig === "function") setBackgroundDecodeRig(lastActiveRigId);
+    if (typeof bmPopulateScopePicker === "function") bmPopulateScopePicker();
+    if (typeof bmFetch === "function") bmFetch(document.getElementById("bm-category-filter")?.value || "");
+  }
   updateMapRigFilter();
 }
 
