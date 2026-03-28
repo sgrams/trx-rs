@@ -24,6 +24,10 @@ const EARTH_RADIUS_KM: f64 = 6371.0;
 const CELESTRAK_WEATHER_URL: &str =
     "https://celestrak.org/NORAD/elements/gp.php?GROUP=weather&FORMAT=tle";
 
+/// CelesTrak amateur satellite TLE endpoint.
+const CELESTRAK_HAM_URL: &str =
+    "https://celestrak.org/NORAD/elements/gp.php?GROUP=amateur&FORMAT=tle";
+
 /// How often to refresh TLEs after the initial fetch (24 hours).
 const TLE_REFRESH_INTERVAL: Duration = Duration::from_secs(24 * 60 * 60);
 
@@ -46,6 +50,44 @@ pub struct PassGeo {
     /// Ground track points `[[lat, lon], ...]` sampled along the pass.
     pub ground_track: Vec<TrackPoint>,
 }
+
+/// A predicted satellite pass over the observer's location.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct PassPrediction {
+    /// Satellite display name.
+    pub satellite: String,
+    /// NORAD catalog number.
+    pub norad_id: u32,
+    /// Acquisition of Signal: UTC timestamp in milliseconds.
+    pub aos_ms: i64,
+    /// Loss of Signal: UTC timestamp in milliseconds.
+    pub los_ms: i64,
+    /// Maximum elevation angle in degrees above horizon.
+    pub max_elevation_deg: f64,
+    /// Azimuth at AOS in degrees (0 = N, 90 = E).
+    pub azimuth_aos_deg: f64,
+    /// Azimuth at LOS in degrees.
+    pub azimuth_los_deg: f64,
+    /// Pass duration in seconds.
+    pub duration_s: u64,
+}
+
+/// Well-known amateur satellites: (display name, NORAD ID).
+const HAM_SATS: &[(&str, u32)] = &[
+    ("ISS (ARISS)", 25544),
+    ("AO-91 (RadFxSat)", 43017),
+    ("AO-92 (Fox-1D)", 43137),
+    ("SO-50", 27607),
+    ("AO-73 (FUNcube-1)", 39444),
+    ("JO-97 (JY1SAT)", 43803),
+    ("PO-101 (Diwata-2B)", 43678),
+    ("LilacSat-2", 40908),
+    ("CAS-4B", 42759),
+    ("EO-88 (Nayif-1)", 42017),
+    ("RS-44 (Dosaaf-85)", 44909),
+    ("SALSAT", 46926),
+    ("GREENCUBE (IO-117)", 52765),
+];
 
 /// Map satellite name patterns to NORAD catalog numbers.
 fn norad_id_for_satellite(name: &str) -> Option<u32> {
@@ -143,15 +185,13 @@ fn parse_tle_response(body: &str) -> HashMap<u32, (String, String)> {
     result
 }
 
-/// Fetch fresh TLE data from CelesTrak and update the global store.
-///
-/// Returns the number of TLEs loaded, or an error description.
-pub async fn refresh_tles_from_celestrak() -> Result<usize, String> {
+/// Fetch TLEs from a CelesTrak URL and merge them into the global store.
+async fn fetch_and_merge_tles(url: &str) -> Result<usize, String> {
     let response = reqwest::Client::builder()
         .timeout(Duration::from_secs(30))
         .build()
         .map_err(|e| format!("HTTP client error: {e}"))?
-        .get(CELESTRAK_WEATHER_URL)
+        .get(url)
         .send()
         .await
         .map_err(|e| format!("CelesTrak fetch failed: {e}"))?;
@@ -173,15 +213,31 @@ pub async fn refresh_tles_from_celestrak() -> Result<usize, String> {
     }
 
     match TLE_STORE.write() {
-        Ok(mut guard) => *guard = Some(tles),
+        Ok(mut guard) => {
+            if let Some(store) = guard.as_mut() {
+                store.extend(tles);
+            } else {
+                *guard = Some(tles);
+            }
+        }
         Err(e) => {
-            // Recover from poisoned lock
             let mut guard = e.into_inner();
-            *guard = Some(parse_tle_response(&body));
+            if let Some(store) = guard.as_mut() {
+                store.extend(tles);
+            } else {
+                *guard = Some(tles);
+            }
         }
     }
 
     Ok(count)
+}
+
+/// Fetch fresh TLE data from CelesTrak and update the global store.
+///
+/// Returns the number of TLEs loaded, or an error description.
+pub async fn refresh_tles_from_celestrak() -> Result<usize, String> {
+    fetch_and_merge_tles(CELESTRAK_WEATHER_URL).await
 }
 
 /// Spawn a background task that fetches TLEs from CelesTrak on start and
@@ -191,10 +247,20 @@ pub async fn refresh_tles_from_celestrak() -> Result<usize, String> {
 /// do not stop the periodic refresh — hardcoded fallback TLEs remain usable.
 pub fn spawn_tle_refresh_task() {
     tokio::spawn(async {
-        // Initial fetch at startup.
-        match refresh_tles_from_celestrak().await {
-            Ok(n) => tracing::info!("TLE refresh: loaded {n} satellite TLEs from CelesTrak"),
-            Err(e) => tracing::warn!("TLE refresh: initial fetch failed ({e}), using hardcoded TLEs"),
+        // Initial fetch at startup: weather + amateur satellites.
+        match fetch_and_merge_tles(CELESTRAK_WEATHER_URL).await {
+            Ok(n) => {
+                tracing::info!("TLE refresh: loaded {n} weather satellite TLEs from CelesTrak")
+            }
+            Err(e) => {
+                tracing::warn!("TLE refresh: weather fetch failed ({e}), using hardcoded TLEs")
+            }
+        }
+        match fetch_and_merge_tles(CELESTRAK_HAM_URL).await {
+            Ok(n) => {
+                tracing::info!("TLE refresh: loaded {n} amateur satellite TLEs from CelesTrak")
+            }
+            Err(e) => tracing::warn!("TLE refresh: amateur fetch failed ({e})"),
         }
 
         // Periodic refresh every 24 hours.
@@ -204,12 +270,217 @@ pub fn spawn_tle_refresh_task() {
 
         loop {
             interval.tick().await;
-            match refresh_tles_from_celestrak().await {
-                Ok(n) => tracing::info!("TLE refresh: updated {n} satellite TLEs from CelesTrak"),
-                Err(e) => tracing::warn!("TLE refresh: fetch failed ({e}), keeping previous TLEs"),
+            match fetch_and_merge_tles(CELESTRAK_WEATHER_URL).await {
+                Ok(n) => {
+                    tracing::info!("TLE refresh: updated {n} weather satellite TLEs from CelesTrak")
+                }
+                Err(e) => {
+                    tracing::warn!("TLE refresh: weather fetch failed ({e}), keeping previous TLEs")
+                }
+            }
+            match fetch_and_merge_tles(CELESTRAK_HAM_URL).await {
+                Ok(n) => {
+                    tracing::info!("TLE refresh: updated {n} amateur satellite TLEs from CelesTrak")
+                }
+                Err(e) => {
+                    tracing::warn!("TLE refresh: amateur fetch failed ({e}), keeping previous TLEs")
+                }
             }
         }
     });
+}
+
+// ---------------------------------------------------------------------------
+// Pass prediction
+// ---------------------------------------------------------------------------
+
+/// Convert geodetic lat/lon (degrees) to ECEF position (km, spherical).
+fn latlon_to_ecef(lat_deg: f64, lon_deg: f64) -> [f64; 3] {
+    let lat = lat_deg * PI / 180.0;
+    let lon = lon_deg * PI / 180.0;
+    [
+        EARTH_RADIUS_KM * lat.cos() * lon.cos(),
+        EARTH_RADIUS_KM * lat.cos() * lon.sin(),
+        EARTH_RADIUS_KM * lat.sin(),
+    ]
+}
+
+/// Convert ECI position (km) to ECEF using GMST rotation.
+fn eci_to_ecef(x: f64, y: f64, z: f64, time_ms: i64) -> [f64; 3] {
+    let gmst = gmst_from_ms(time_ms);
+    [
+        x * gmst.cos() + y * gmst.sin(),
+        -x * gmst.sin() + y * gmst.cos(),
+        z,
+    ]
+}
+
+/// Compute elevation and azimuth from observer to satellite.
+///
+/// Returns `(elevation_deg, azimuth_deg)` where elevation is degrees above the
+/// horizon and azimuth is clockwise degrees from north.
+fn compute_az_el(
+    sat_ecef: [f64; 3],
+    obs_ecef: [f64; 3],
+    obs_lat_rad: f64,
+    obs_lon_rad: f64,
+) -> (f64, f64) {
+    let dx = sat_ecef[0] - obs_ecef[0];
+    let dy = sat_ecef[1] - obs_ecef[1];
+    let dz = sat_ecef[2] - obs_ecef[2];
+
+    // Transform delta to local East-North-Up frame.
+    let east = -obs_lon_rad.sin() * dx + obs_lon_rad.cos() * dy;
+    let north = -obs_lat_rad.sin() * obs_lon_rad.cos() * dx
+        - obs_lat_rad.sin() * obs_lon_rad.sin() * dy
+        + obs_lat_rad.cos() * dz;
+    let up = obs_lat_rad.cos() * obs_lon_rad.cos() * dx
+        + obs_lat_rad.cos() * obs_lon_rad.sin() * dy
+        + obs_lat_rad.sin() * dz;
+
+    let horiz = (east * east + north * north).sqrt();
+    let el_deg = up.atan2(horiz) * 180.0 / PI;
+    let az_deg = east.atan2(north).to_degrees().rem_euclid(360.0);
+
+    (el_deg, az_deg)
+}
+
+/// Scan for passes of one satellite over a time window.
+fn find_passes_for_sat(
+    name: &str,
+    norad_id: u32,
+    line1: &str,
+    line2: &str,
+    obs_lat: f64,
+    obs_lon: f64,
+    start_ms: i64,
+    window_ms: i64,
+) -> Vec<PassPrediction> {
+    let elements =
+        match Elements::from_tle(Some(name.to_string()), line1.as_bytes(), line2.as_bytes()) {
+            Ok(e) => e,
+            Err(_) => return vec![],
+        };
+    let constants = match Constants::from_elements(&elements) {
+        Ok(c) => c,
+        Err(_) => return vec![],
+    };
+    let epoch_ms = elements_epoch_ms(&elements);
+
+    let obs_ecef = latlon_to_ecef(obs_lat, obs_lon);
+    let obs_lat_rad = obs_lat * PI / 180.0;
+    let obs_lon_rad = obs_lon * PI / 180.0;
+
+    // 30-second scan step; fine enough for pass detection.
+    let step_ms = 30_000_i64;
+    let n_steps = (window_ms / step_ms) as usize + 2;
+
+    let mut passes = Vec::new();
+    let mut in_pass = false;
+    let mut aos_ms = 0_i64;
+    let mut aos_az = 0.0_f64;
+    let mut max_el = 0.0_f64;
+    let mut prev_az = 0.0_f64;
+
+    for i in 0..n_steps {
+        let t_ms = start_ms + i as i64 * step_ms;
+        if t_ms > start_ms + window_ms {
+            break;
+        }
+        let minutes = (t_ms - epoch_ms) as f64 / 60_000.0;
+        let pred = match constants.propagate(MinutesSinceEpoch(minutes)) {
+            Ok(p) => p,
+            Err(_) => continue,
+        };
+        let sat_ecef = eci_to_ecef(pred.position[0], pred.position[1], pred.position[2], t_ms);
+        let (el, az) = compute_az_el(sat_ecef, obs_ecef, obs_lat_rad, obs_lon_rad);
+
+        if el > 0.0 {
+            if !in_pass {
+                in_pass = true;
+                aos_ms = t_ms;
+                aos_az = az;
+                max_el = el;
+            } else if el > max_el {
+                max_el = el;
+            }
+        } else if in_pass {
+            // LOS occurred between previous step and this step.
+            passes.push(PassPrediction {
+                satellite: name.to_string(),
+                norad_id,
+                aos_ms,
+                los_ms: t_ms,
+                max_elevation_deg: (max_el * 10.0).round() / 10.0,
+                azimuth_aos_deg: (aos_az * 10.0).round() / 10.0,
+                azimuth_los_deg: (prev_az * 10.0).round() / 10.0,
+                duration_s: ((t_ms - aos_ms) / 1000) as u64,
+            });
+            in_pass = false;
+            max_el = 0.0;
+        }
+        prev_az = az;
+    }
+
+    // Pass in progress at end of window.
+    if in_pass {
+        passes.push(PassPrediction {
+            satellite: name.to_string(),
+            norad_id,
+            aos_ms,
+            los_ms: start_ms + window_ms,
+            max_elevation_deg: (max_el * 10.0).round() / 10.0,
+            azimuth_aos_deg: (aos_az * 10.0).round() / 10.0,
+            azimuth_los_deg: (prev_az * 10.0).round() / 10.0,
+            duration_s: ((start_ms + window_ms - aos_ms) / 1000) as u64,
+        });
+    }
+
+    passes
+}
+
+/// Compute upcoming passes for all known amateur satellites over the next
+/// `window_ms` milliseconds, starting from `start_ms`.
+///
+/// Satellites without TLE data in the store are silently skipped.
+/// Results are sorted by AOS time.
+pub fn compute_upcoming_passes(
+    station_lat: f64,
+    station_lon: f64,
+    start_ms: i64,
+    window_ms: i64,
+) -> Vec<PassPrediction> {
+    let guard = match TLE_STORE.read() {
+        Ok(g) => g,
+        Err(e) => e.into_inner(),
+    };
+
+    let mut all_passes = Vec::new();
+
+    for &(name, norad_id) in HAM_SATS {
+        let tle = guard
+            .as_ref()
+            .and_then(|s| s.get(&norad_id))
+            .cloned()
+            .or_else(|| hardcoded_tle(norad_id).map(|(l1, l2)| (l1.to_string(), l2.to_string())));
+
+        if let Some((line1, line2)) = tle {
+            let passes = find_passes_for_sat(
+                name,
+                norad_id,
+                &line1,
+                &line2,
+                station_lat,
+                station_lon,
+                start_ms,
+                window_ms,
+            );
+            all_passes.extend(passes);
+        }
+    }
+
+    all_passes.sort_by_key(|p| p.aos_ms);
+    all_passes
 }
 
 /// Compute geographic bounds and ground track for a satellite pass.
@@ -228,7 +499,8 @@ pub fn compute_pass_geo(
         Some(satellite.to_string()),
         line1.as_bytes(),
         line2.as_bytes(),
-    ).ok()?;
+    )
+    .ok()?;
 
     let constants = Constants::from_elements(&elements).ok()?;
 
@@ -249,7 +521,9 @@ pub fn compute_pass_geo(
         let t_ms = pass_start_ms + (i as i64 * duration_ms / (n_points as i64 - 1).max(1));
         let minutes_since_epoch = (t_ms - epoch_ms) as f64 / 60_000.0;
 
-        let prediction = constants.propagate(MinutesSinceEpoch(minutes_since_epoch)).ok()?;
+        let prediction = constants
+            .propagate(MinutesSinceEpoch(minutes_since_epoch))
+            .ok()?;
 
         // Convert ECI position to geodetic lat/lon
         let (lat, lon) = eci_to_geodetic(
@@ -338,12 +612,7 @@ pub fn estimate_pass_geo_from_station(
 /// `x`, `y`, `z` are in km (as returned by sgp4).  `time_ms` is the UTC
 /// timestamp used to compute GMST for the ECI→ECEF rotation.
 fn eci_to_geodetic(x: f64, y: f64, z: f64, time_ms: i64) -> (f64, f64) {
-    let gmst = gmst_from_ms(time_ms);
-
-    // Rotate ECI → ECEF
-    let ecef_x = x * gmst.cos() + y * gmst.sin();
-    let ecef_y = -x * gmst.sin() + y * gmst.cos();
-    let ecef_z = z;
+    let [ecef_x, ecef_y, ecef_z] = eci_to_ecef(x, y, z, time_ms);
 
     // Geodetic latitude (simple spherical approximation, sufficient for overlays)
     let r_xy = (ecef_x * ecef_x + ecef_y * ecef_y).sqrt();
@@ -363,8 +632,7 @@ fn gmst_from_ms(time_ms: i64) -> f64 {
     let t = (jd - 2_451_545.0) / 36_525.0;
 
     // GMST in degrees (IAU formula)
-    let gmst_deg = 280.46061837 + 360.98564736629 * (jd - 2_451_545.0)
-        + 0.000387933 * t * t
+    let gmst_deg = 280.46061837 + 360.98564736629 * (jd - 2_451_545.0) + 0.000387933 * t * t
         - t * t * t / 38_710_000.0;
 
     (gmst_deg % 360.0) * PI / 180.0
@@ -406,20 +674,29 @@ mod tests {
     fn test_km_to_deg_lat() {
         // ~111 km per degree of latitude
         let deg = km_to_deg_lat(111.0);
-        assert!((deg - 1.0).abs() < 0.05, "111 km should be ~1 degree, got {deg}");
+        assert!(
+            (deg - 1.0).abs() < 0.05,
+            "111 km should be ~1 degree, got {deg}"
+        );
     }
 
     #[test]
     fn test_km_to_deg_lon_equator() {
         let deg = km_to_deg_lon(111.0, 0.0);
-        assert!((deg - 1.0).abs() < 0.05, "111 km at equator should be ~1 degree, got {deg}");
+        assert!(
+            (deg - 1.0).abs() < 0.05,
+            "111 km at equator should be ~1 degree, got {deg}"
+        );
     }
 
     #[test]
     fn test_km_to_deg_lon_high_lat() {
         // At 60°, cos(60°) = 0.5, so 111 km ≈ 2 degrees
         let deg = km_to_deg_lon(111.0, 60.0);
-        assert!((deg - 2.0).abs() < 0.1, "111 km at 60° should be ~2 degrees, got {deg}");
+        assert!(
+            (deg - 2.0).abs() < 0.1,
+            "111 km at 60° should be ~2 degrees, got {deg}"
+        );
     }
 
     #[test]
@@ -482,11 +759,17 @@ NOAA 19
         let result = compute_pass_geo("NOAA-19", start, end, Some(48.0), Some(11.0));
         assert!(result.is_some(), "Should produce geo for NOAA-19");
         let geo = result.unwrap();
-        assert!(geo.ground_track.len() >= 3, "Should have at least 3 track points");
+        assert!(
+            geo.ground_track.len() >= 3,
+            "Should have at least 3 track points"
+        );
         assert!(geo.bounds[0] < geo.bounds[2], "south < north");
         // Bounds should cover a reasonable area
         let lat_span = geo.bounds[2] - geo.bounds[0];
-        assert!(lat_span > 10.0, "Pass should span >10 deg lat, got {lat_span}");
+        assert!(
+            lat_span > 10.0,
+            "Pass should span >10 deg lat, got {lat_span}"
+        );
     }
 
     #[test]
@@ -517,7 +800,13 @@ NOAA 19
         .unwrap();
         let ms = elements_epoch_ms(&elements);
         // Should be in the year 2026 range (approx 1.77e12)
-        assert!(ms > 1_700_000_000_000, "Epoch should be after 2023, got {ms}");
-        assert!(ms < 1_900_000_000_000, "Epoch should be before 2030, got {ms}");
+        assert!(
+            ms > 1_700_000_000_000,
+            "Epoch should be after 2023, got {ms}"
+        );
+        assert!(
+            ms < 1_900_000_000_000,
+            "Epoch should be before 2030, got {ms}"
+        );
     }
 }

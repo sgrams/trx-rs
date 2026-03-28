@@ -1371,6 +1371,43 @@ pub async fn clear_lrpt_decode(
     .await
 }
 
+#[derive(serde::Serialize)]
+struct SatPassesResponse {
+    passes: Vec<trx_core::geo::PassPrediction>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    error: Option<String>,
+}
+
+/// Return predicted passes for all known amateur satellites over the next 24 h.
+///
+/// Requires the server station location to be configured.  Returns an empty
+/// `passes` array with an `error` field if the location is missing.
+#[get("/sat_passes")]
+pub async fn sat_passes(state: web::Data<watch::Receiver<RigState>>) -> impl Responder {
+    let rig_state = state.get_ref().borrow().clone();
+    let lat = rig_state.server_latitude;
+    let lon = rig_state.server_longitude;
+
+    let (Some(lat), Some(lon)) = (lat, lon) else {
+        return web::Json(SatPassesResponse {
+            passes: vec![],
+            error: Some("No station location configured".to_string()),
+        });
+    };
+
+    let now_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as i64;
+    let window_ms = 24 * 60 * 60 * 1000_i64;
+
+    let passes = trx_core::geo::compute_upcoming_passes(lat, lon, now_ms, window_ms);
+    web::Json(SatPassesResponse {
+        passes,
+        error: None,
+    })
+}
+
 #[post("/clear_ft8_decode")]
 pub async fn clear_ft8_decode(
     query: web::Query<RemoteQuery>,
@@ -2087,6 +2124,7 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
         .service(toggle_wspr_decode)
         .service(toggle_wxsat_decode)
         .service(toggle_lrpt_decode)
+        .service(sat_passes)
         .service(clear_ais_decode)
         .service(clear_vdes_decode)
         .service(clear_aprs_decode)

@@ -7002,10 +7002,16 @@ function buildDecodeLocatorTooltipHtml(grid, entry, type) {
         Number.isFinite(detail?.dt_s) ? `dt ${Number(detail.dt_s).toFixed(2)}` : null,
         escapeMapHtml(freq),
       ].filter(Boolean).join(" · ");
-      const rxLabel = _receiverLabel(detail?.remote);
-      const rxHtml = rxLabel
-        ? `<div class="decode-locator-tip-rx">${escapeMapHtml(rxLabel)}</div>`
-        : "";
+      const remoteIds = detail?.remotes instanceof Set && detail.remotes.size > 0
+        ? Array.from(detail.remotes)
+        : (detail?.remote ? [detail.remote] : []);
+      const rxHtml = remoteIds
+        .map(rid => {
+          const label = _receiverLabel(rid);
+          return label ? `<div class="decode-locator-tip-rx">${escapeMapHtml(label)}</div>` : "";
+        })
+        .filter(Boolean)
+        .join("");
       const message = detail?.message
         ? `<div class="decode-locator-tip-note">${escapeMapHtml(String(detail.message))}</div>`
         : "";
@@ -7113,6 +7119,7 @@ function _locatorEntryVisibleOnMap(entry) {
 
 function _detailPassesRigFilter(detail) {
   if (!mapRigFilter) return true;
+  if (detail?.remotes instanceof Set) return detail.remotes.has(mapRigFilter);
   return detail?.remote === mapRigFilter;
 }
 
@@ -7603,6 +7610,7 @@ window.mapAddLocator = function(message, grids, type = "ft8", station = null, de
       freq_hz: Number.isFinite(details?.freq_hz) ? Number(details.freq_hz) : null,
       message: String(details?.message || message || "").trim() || null,
       remote: msgRigId || null,
+      remotes: new Set(msgRigId ? [msgRigId] : []),
     };
     const detailKey = detailStationId || `${targetId || "decode"}:${detailEntry.message || "decode"}:${detailEntry.ts_ms || Date.now()}`;
     const key = `${markerType}:${grid}`;
@@ -7614,7 +7622,10 @@ window.mapAddLocator = function(message, grids, type = "ft8", station = null, de
           ? new Map(existing.stationDetails)
           : new Map();
       }
-      existing.allStationDetails.set(detailKey, { ...detailEntry });
+      const prevDetail = existing.allStationDetails.get(detailKey);
+      const mergedRemotes = prevDetail?.remotes instanceof Set ? new Set(prevDetail.remotes) : new Set();
+      if (msgRigId) mergedRemotes.add(msgRigId);
+      existing.allStationDetails.set(detailKey, { ...detailEntry, remotes: mergedRemotes });
       existing.sourceType = markerType;
       if (msgRigId) {
         if (!existing.rigIds) existing.rigIds = new Set();

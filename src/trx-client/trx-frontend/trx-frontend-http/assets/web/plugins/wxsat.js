@@ -1,11 +1,13 @@
-// --- Weather Satellite Decoder Plugin ---
+// --- SAT Plugin ---
 // Live view: decoder state, latest image card
 // History view: filterable table of all decoded images
+// Predictions view: next 24 h passes for ham satellites
 
 // ── DOM references ──────────────────────────────────────────────────
 const wxsatStatus = document.getElementById("wxsat-status");
 const wxsatLiveView = document.getElementById("wxsat-live-view");
 const wxsatHistoryView = document.getElementById("wxsat-history-view");
+const wxsatPredictionsView = document.getElementById("wxsat-predictions-view");
 const wxsatLiveLatest = document.getElementById("wxsat-live-latest");
 const wxsatHistoryList = document.getElementById("wxsat-history-list");
 const wxsatHistoryCount = document.getElementById("wxsat-history-count");
@@ -19,7 +21,7 @@ const wxsatLrptState = document.getElementById("wxsat-lrpt-state");
 let wxsatImageHistory = [];
 const WXSAT_MAX_IMAGES = 100;
 let wxsatFilterText = "";
-let wxsatActiveView = "live"; // "live" | "history"
+let wxsatActiveView = "live"; // "live" | "history" | "predictions"
 
 // ── UI scheduler helper ─────────────────────────────────────────────
 function scheduleWxsatUi(key, job) {
@@ -33,24 +35,26 @@ function scheduleWxsatUi(key, job) {
 // ── View switching ──────────────────────────────────────────────────
 const wxsatViewLiveBtn = document.getElementById("wxsat-view-live");
 const wxsatViewHistoryBtn = document.getElementById("wxsat-view-history");
+const wxsatViewPredictionsBtn = document.getElementById("wxsat-view-predictions");
 
 function switchWxsatView(view) {
   wxsatActiveView = view;
   if (wxsatLiveView) wxsatLiveView.style.display = view === "live" ? "" : "none";
   if (wxsatHistoryView) wxsatHistoryView.style.display = view === "history" ? "" : "none";
-  if (wxsatViewLiveBtn) {
-    wxsatViewLiveBtn.classList.toggle("wxsat-view-active", view === "live");
-  }
-  if (wxsatViewHistoryBtn) {
-    wxsatViewHistoryBtn.classList.toggle("wxsat-view-active", view === "history");
-  }
+  if (wxsatPredictionsView) wxsatPredictionsView.style.display = view === "predictions" ? "" : "none";
+  if (wxsatViewLiveBtn) wxsatViewLiveBtn.classList.toggle("wxsat-view-active", view === "live");
+  if (wxsatViewHistoryBtn) wxsatViewHistoryBtn.classList.toggle("wxsat-view-active", view === "history");
+  if (wxsatViewPredictionsBtn) wxsatViewPredictionsBtn.classList.toggle("wxsat-view-active", view === "predictions");
   if (view === "history") {
     renderWxsatHistoryTable();
+  } else if (view === "predictions") {
+    loadSatPredictions();
   }
 }
 
 wxsatViewLiveBtn?.addEventListener("click", () => switchWxsatView("live"));
 wxsatViewHistoryBtn?.addEventListener("click", () => switchWxsatView("history"));
+wxsatViewPredictionsBtn?.addEventListener("click", () => switchWxsatView("predictions"));
 
 // ── Live view: decoder state ────────────────────────────────────────
 // Updated from app.js render() via window.updateWxsatLiveState
@@ -283,6 +287,89 @@ document
       console.error("Weather satellite history clear failed", e);
     }
   });
+
+// ── Predictions view ────────────────────────────────────────────────
+
+function azToCardinal(deg) {
+  const dirs = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"];
+  return dirs[Math.round(deg / 45) % 8];
+}
+
+function formatPredTime(ms) {
+  const d = new Date(ms);
+  const now = new Date();
+  const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+  const day = d.getUTCDay() !== now.getUTCDay()
+    ? dayNames[d.getUTCDay()] + " "
+    : "";
+  const hh = String(d.getUTCHours()).padStart(2, "0");
+  const mm = String(d.getUTCMinutes()).padStart(2, "0");
+  return `${day}${hh}:${mm}`;
+}
+
+function formatPredDuration(s) {
+  if (s >= 60) return `${Math.round(s / 60)} min`;
+  return `${s}s`;
+}
+
+function renderSatPredictions(passes, error) {
+  const list = document.getElementById("sat-pred-list");
+  const status = document.getElementById("sat-pred-status");
+  if (!list) return;
+
+  if (error) {
+    list.innerHTML = "";
+    if (status) status.textContent = error;
+    return;
+  }
+
+  if (!Array.isArray(passes) || passes.length === 0) {
+    list.innerHTML = "";
+    if (status) status.textContent = "No passes found in the next 24 hours.";
+    return;
+  }
+
+  const fragment = document.createDocumentFragment();
+  for (const pass of passes) {
+    const row = document.createElement("div");
+    row.className = "sat-pred-row";
+    const elClass = pass.max_elevation_deg >= 45
+      ? "sat-pred-el-high"
+      : pass.max_elevation_deg >= 10
+        ? "sat-pred-el-mid"
+        : "sat-pred-el-low";
+    const dir = `${azToCardinal(pass.azimuth_aos_deg)} → ${azToCardinal(pass.azimuth_los_deg)}`;
+    row.innerHTML = [
+      `<span class="sat-pred-col-time">${formatPredTime(pass.aos_ms)}</span>`,
+      `<span class="sat-pred-col-sat">${pass.satellite}</span>`,
+      `<span class="sat-pred-col-el ${elClass}">${pass.max_elevation_deg.toFixed(1)}°</span>`,
+      `<span class="sat-pred-col-dur">${formatPredDuration(pass.duration_s)}</span>`,
+      `<span class="sat-pred-col-dir">${dir}</span>`,
+    ].join("");
+    fragment.appendChild(row);
+  }
+  list.replaceChildren(fragment);
+  if (status) status.textContent = `${passes.length} pass${passes.length === 1 ? "" : "es"} in the next 24 h · times in UTC`;
+}
+
+async function loadSatPredictions() {
+  const status = document.getElementById("sat-pred-status");
+  const list = document.getElementById("sat-pred-list");
+  if (status) status.textContent = "Loading predictions\u2026";
+  if (list) list.innerHTML = "";
+  try {
+    const resp = await fetch("/sat_passes");
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const data = await resp.json();
+    if (data.error) {
+      renderSatPredictions([], data.error);
+    } else {
+      renderSatPredictions(data.passes || []);
+    }
+  } catch (e) {
+    renderSatPredictions([], `Failed to load predictions: ${e.message}`);
+  }
+}
 
 // ── Navigate to map centered on satellite image bounds ──────────────
 window.wxsatShowOnMap = function (south, west, north, east) {

@@ -515,7 +515,7 @@
         <button class="sub-tab" data-subtab="ft2">FT2</button>
         <button class="sub-tab" data-subtab="wspr">WSPR</button>
         <button class="sub-tab" data-subtab="rds">RDS</button>
-        <button class="sub-tab" data-subtab="wxsat">Weather Satellites</button>
+        <button class="sub-tab" data-subtab="wxsat">SAT</button>
       </div>
       <div id="subtab-overview" class="sub-tab-panel">
         <div class="plugin-item">
@@ -811,6 +811,7 @@
         <div class="wxsat-view-bar">
           <button id="wxsat-view-live" class="wxsat-view-btn wxsat-view-active" type="button">Live</button>
           <button id="wxsat-view-history" class="wxsat-view-btn" type="button">History</button>
+          <button id="wxsat-view-predictions" class="wxsat-view-btn" type="button">Predictions</button>
         </div>
         <!-- Live view -->
         <div id="wxsat-live-view">
@@ -860,6 +861,18 @@
           </div>
           <div id="wxsat-history-list"></div>
           <small id="wxsat-history-count" style="color:var(--text-muted);font-size:0.75rem;">No images yet</small>
+        </div>
+        <!-- Predictions view -->
+        <div id="wxsat-predictions-view" style="display:none;">
+          <div class="sat-pred-header">
+            <span class="sat-pred-col-time">AOS (UTC)</span>
+            <span class="sat-pred-col-sat">Satellite</span>
+            <span class="sat-pred-col-el">Max El</span>
+            <span class="sat-pred-col-dur">Duration</span>
+            <span class="sat-pred-col-dir">Direction</span>
+          </div>
+          <div id="sat-pred-list"></div>
+          <small id="sat-pred-status" style="color:var(--text-muted);font-size:0.75rem;">Loading predictions&hellip;</small>
         </div>
       </div>
     </div>
@@ -1109,7 +1122,7 @@
               <button id="settings-clear-ft4-history" class="sch-write sch-reset-btn" type="button">Clear full FT4 history</button>
               <button id="settings-clear-ft2-history" class="sch-write sch-reset-btn" type="button">Clear full FT2 history</button>
               <button id="settings-clear-wspr-history" class="sch-write sch-reset-btn" type="button">Clear full WSPR history</button>
-              <button id="settings-clear-wxsat-history" class="sch-write sch-reset-btn" type="button">Clear full Weather Sat history</button>
+              <button id="settings-clear-wxsat-history" class="sch-write sch-reset-btn" type="button">Clear full Sat history</button>
             </div>
           </div>
         </div>
