@@ -59,6 +59,73 @@ fn default_transition_window() -> u32 {
     20
 }
 
+// ============================================================================
+// Satellite pass scheduling overlay
+// ============================================================================
+
+/// A single satellite to track for automated pass scheduling.
+///
+/// When a configured satellite's pass is in progress (elevation above
+/// `min_elevation_deg`), the scheduler preempts the base Grayline/TimeSpan
+/// mode and tunes to the bookmark specified here.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SatelliteEntry {
+    /// Unique identifier for this entry.
+    pub id: String,
+    /// Satellite name as it appears in TLE data (e.g. "NOAA 19", "METEOR-M2 3").
+    pub satellite: String,
+    /// NORAD catalog number (e.g. 33591 for NOAA-19).  Used to match against
+    /// pass predictions from the TLE store.
+    pub norad_id: u32,
+    /// Bookmark ID to apply during the pass.  The bookmark sets frequency,
+    /// mode, bandwidth, and — critically — the `decoders` list (e.g.
+    /// `["wxsat"]` for NOAA APT, `["lrpt"]` for Meteor LRPT).
+    pub bookmark_id: String,
+    /// Minimum peak elevation in degrees for a pass to trigger scheduling
+    /// (default 5°).  Low-elevation passes produce poor images and may not
+    /// be worth the interruption.
+    #[serde(default = "default_sat_min_elevation")]
+    pub min_elevation_deg: f64,
+    /// Priority (lower = higher priority).  When two satellite passes overlap,
+    /// the entry with the lowest priority value wins.
+    #[serde(default)]
+    pub priority: u32,
+    /// Optional SDR center frequency override during the pass.
+    #[serde(default)]
+    pub center_hz: Option<u64>,
+    /// Additional bookmark IDs for virtual channels during the pass.
+    #[serde(default)]
+    pub bookmark_ids: Vec<String>,
+}
+
+fn default_sat_min_elevation() -> f64 {
+    5.0
+}
+
+/// Configuration for the satellite scheduling overlay.
+///
+/// Satellite entries are checked every scheduler tick.  When an active pass
+/// is detected (using the cached pass predictions from the server's TLE
+/// store), the satellite entry preempts the base scheduler mode.  Once the
+/// pass ends (LOS), the base mode resumes automatically.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct SatelliteSchedulerConfig {
+    /// Whether satellite pass scheduling is enabled.
+    #[serde(default)]
+    pub enabled: bool,
+    /// How many seconds before predicted AOS to pre-tune (default 60).
+    /// Gives the SDR/rig time to settle and the decoder time to lock.
+    #[serde(default = "default_pretune_secs")]
+    pub pretune_secs: u32,
+    /// Satellite entries to schedule.
+    #[serde(default)]
+    pub entries: Vec<SatelliteEntry>,
+}
+
+fn default_pretune_secs() -> u32 {
+    60
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ScheduleEntry {
     pub id: String,
@@ -101,6 +168,11 @@ pub struct SchedulerConfig {
     /// `None` (or 0) disables interleaving — the first matching entry wins.
     #[serde(default)]
     pub interleave_min: Option<u32>,
+    /// Satellite pass scheduling overlay.  When enabled, active satellite
+    /// passes preempt the base Grayline/TimeSpan mode.  After the pass
+    /// ends the base mode resumes automatically.
+    #[serde(default)]
+    pub satellites: Option<SatelliteSchedulerConfig>,
 }
 
 // ============================================================================
@@ -469,6 +541,51 @@ fn utc_minutes_now() -> f64 {
 // Scheduler background task
 // ============================================================================
 
+/// Check whether any configured satellite has an active pass right now,
+/// using the cached pass predictions from the server.
+///
+/// Returns the highest-priority (lowest `.priority` value) satellite entry
+/// whose pass is currently in progress.  A pass is considered "in progress"
+/// from `aos_ms - pretune_secs` through `los_ms`, and only if its peak
+/// elevation meets the entry's `min_elevation_deg` threshold.
+fn active_satellite_entry<'a>(
+    sat_cfg: &'a SatelliteSchedulerConfig,
+    cached_passes: &Option<trx_core::geo::PassPredictionResult>,
+) -> Option<&'a SatelliteEntry> {
+    let predictions = cached_passes.as_ref()?;
+    let now_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as i64;
+    let pretune_ms = sat_cfg.pretune_secs as i64 * 1000;
+
+    let mut best: Option<&SatelliteEntry> = None;
+
+    for entry in &sat_cfg.entries {
+        // Find any pass for this satellite's NORAD ID that is currently active.
+        let pass_active = predictions.passes.iter().any(|pass| {
+            pass.norad_id == entry.norad_id
+                && pass.max_elevation_deg >= entry.min_elevation_deg
+                && now_ms >= (pass.aos_ms - pretune_ms)
+                && now_ms < pass.los_ms
+        });
+
+        if pass_active {
+            match best {
+                Some(current_best) if entry.priority < current_best.priority => {
+                    best = Some(entry);
+                }
+                None => {
+                    best = Some(entry);
+                }
+                _ => {}
+            }
+        }
+    }
+
+    best
+}
+
 /// Status info returned by the `/scheduler/{rig_id}/status` endpoint.
 #[derive(Debug, Clone, Serialize, Default)]
 pub struct SchedulerStatus {
@@ -484,6 +601,12 @@ pub struct SchedulerStatus {
     /// Additional bookmark IDs active alongside the primary (virtual channels).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub last_bookmark_ids: Vec<String>,
+    /// When a satellite pass triggered this status, the satellite name.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub active_satellite: Option<String>,
+    /// NORAD catalog number of the active satellite.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub active_satellite_norad_id: Option<u32>,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -496,6 +619,7 @@ async fn apply_scheduler_target(
     bookmark_id: &str,
     center_hz: Option<u64>,
     extra_bm_ids: &[String],
+    active_satellite: Option<(&str, u32)>,
 ) -> Result<SchedulerStatus, String> {
     let bookmark = bookmarks
         .get_for_rig(remote, bookmark_id)
@@ -559,6 +683,8 @@ async fn apply_scheduler_target(
         ),
         last_center_hz: center_hz,
         last_bookmark_ids: extra_bm_ids.to_vec(),
+        active_satellite: active_satellite.map(|(name, _)| name.to_string()),
+        active_satellite_norad_id: active_satellite.map(|(_, id)| id),
     };
 
     {
@@ -644,7 +770,7 @@ impl SchedulerControlManager {
 pub type SharedSchedulerControlManager = Arc<SchedulerControlManager>;
 
 pub fn spawn_scheduler_task(
-    _context: Arc<FrontendRuntimeContext>,
+    context: Arc<FrontendRuntimeContext>,
     rig_tx: mpsc::Sender<RigRequest>,
     store: Arc<SchedulerStoreMap>,
     bookmarks: Arc<BookmarkStoreMap>,
@@ -674,35 +800,70 @@ pub fn spawn_scheduler_task(
             let configs = store.list_all();
             let now_min = utc_minutes_now();
 
+            // Read cached satellite pass predictions once per tick.
+            let cached_passes = context.sat_passes.read().ok().and_then(|g| g.clone());
+
             for config in configs {
-                if config.mode == SchedulerMode::Disabled {
+                if config.mode == SchedulerMode::Disabled
+                    && config.satellites.as_ref().is_none_or(|s| !s.enabled)
+                {
                     continue;
                 }
 
-                let (entry_id, bm_id, center_hz, extra_bm_ids) = match &config.mode {
-                    SchedulerMode::Disabled => continue,
-                    SchedulerMode::Grayline => {
-                        let Some(bm_id) = config
-                            .grayline
-                            .as_ref()
-                            .and_then(|gl| grayline_bookmark_id(gl, now_min))
-                        else {
-                            continue;
-                        };
-                        (None, bm_id, None, Vec::new())
-                    }
-                    SchedulerMode::TimeSpan => {
-                        let Some(entry) =
-                            timespan_active_entry(&config.entries, now_min, config.interleave_min)
-                        else {
-                            continue;
-                        };
-                        (
-                            Some(entry.id.clone()),
-                            entry.bookmark_id.clone(),
-                            entry.center_hz,
-                            entry.bookmark_ids.clone(),
-                        )
+                // ── Satellite preemption check ──
+                // When a satellite pass is active, it overrides the base mode.
+                let sat_override = config
+                    .satellites
+                    .as_ref()
+                    .filter(|s| s.enabled)
+                    .and_then(|sat_cfg| {
+                        active_satellite_entry(sat_cfg, &cached_passes)
+                    });
+
+                let (entry_id, bm_id, center_hz, extra_bm_ids) = if let Some(sat_entry) =
+                    sat_override
+                {
+                    info!(
+                        "scheduler: satellite pass active for '{}' (NORAD {}), preempting base mode",
+                        sat_entry.satellite, sat_entry.norad_id
+                    );
+                    (
+                        Some(format!("sat:{}", sat_entry.id)),
+                        sat_entry.bookmark_id.clone(),
+                        sat_entry.center_hz,
+                        sat_entry.bookmark_ids.clone(),
+                    )
+                } else if config.mode == SchedulerMode::Disabled {
+                    // Satellites-only config with no active pass — nothing to do.
+                    continue;
+                } else {
+                    match &config.mode {
+                        SchedulerMode::Disabled => continue,
+                        SchedulerMode::Grayline => {
+                            let Some(bm_id) = config
+                                .grayline
+                                .as_ref()
+                                .and_then(|gl| grayline_bookmark_id(gl, now_min))
+                            else {
+                                continue;
+                            };
+                            (None, bm_id, None, Vec::new())
+                        }
+                        SchedulerMode::TimeSpan => {
+                            let Some(entry) = timespan_active_entry(
+                                &config.entries,
+                                now_min,
+                                config.interleave_min,
+                            ) else {
+                                continue;
+                            };
+                            (
+                                Some(entry.id.clone()),
+                                entry.bookmark_id.clone(),
+                                entry.center_hz,
+                                entry.bookmark_ids.clone(),
+                            )
+                        }
                     }
                 };
 
@@ -730,6 +891,9 @@ pub fn spawn_scheduler_task(
                     config.remote, bm.name, bm.freq_hz, bm.mode
                 );
 
+                let sat_info = sat_override
+                    .map(|e| (e.satellite.as_str(), e.norad_id));
+
                 if let Err(e) = apply_scheduler_target(
                     &rig_tx,
                     &config.remote,
@@ -739,6 +903,7 @@ pub fn spawn_scheduler_task(
                     &bm_id,
                     center_hz,
                     &extra_bm_ids,
+                    sat_info,
                 )
                 .await
                 {
@@ -767,6 +932,8 @@ async fn apply_scheduler_decoders(
     let mut want_ft4 = false;
     let mut want_ft2 = false;
     let mut want_wspr = false;
+    let mut want_wxsat = false;
+    let mut want_lrpt = false;
 
     let mut update_from = |bm: &crate::server::bookmarks::Bookmark| {
         for decoder in bm
@@ -781,6 +948,8 @@ async fn apply_scheduler_decoders(
                 "ft4" => want_ft4 = true,
                 "ft2" => want_ft2 = true,
                 "wspr" => want_wspr = true,
+                "wxsat" | "noaa" | "apt" => want_wxsat = true,
+                "lrpt" | "meteor" => want_lrpt = true,
                 _ => {}
             }
         }
@@ -798,6 +967,8 @@ async fn apply_scheduler_decoders(
         ("FT4", RigCommand::SetFt4DecodeEnabled(want_ft4)),
         ("FT2", RigCommand::SetFt2DecodeEnabled(want_ft2)),
         ("WSPR", RigCommand::SetWsprDecodeEnabled(want_wspr)),
+        ("WxSat", RigCommand::SetWxsatDecodeEnabled(want_wxsat)),
+        ("LRPT", RigCommand::SetLrptDecodeEnabled(want_lrpt)),
     ];
 
     for (label, cmd) in desired {
@@ -837,6 +1008,11 @@ async fn apply_last_scheduler_cycle(
         return;
     }
 
+    let sat_info = status
+        .active_satellite
+        .as_deref()
+        .zip(status.active_satellite_norad_id);
+
     if let Err(e) = apply_scheduler_target(
         rig_tx,
         remote,
@@ -846,6 +1022,7 @@ async fn apply_last_scheduler_cycle(
         &bookmark_id,
         status.last_center_hz,
         &status.last_bookmark_ids,
+        sat_info,
     )
     .await
     {
@@ -893,6 +1070,7 @@ pub async fn get_scheduler(
             grayline: None,
             entries: vec![],
             interleave_min: None,
+            satellites: None,
         });
     HttpResponse::Ok().json(config)
 }
@@ -977,6 +1155,7 @@ pub async fn put_scheduler_activate_entry(
         &entry.bookmark_id,
         entry.center_hz,
         &entry.bookmark_ids,
+        None,
     )
     .await
     {
@@ -1033,8 +1212,10 @@ pub async fn put_scheduler_control(
 #[cfg(test)]
 mod tests {
     use super::{
-        timespan_active_entries, timespan_active_entry, timespan_cycle_slot, ScheduleEntry,
+        active_satellite_entry, timespan_active_entries, timespan_active_entry,
+        timespan_cycle_slot, SatelliteEntry, SatelliteSchedulerConfig, ScheduleEntry,
     };
+    use trx_core::geo::{PassPrediction, PassPredictionResult, SatCategory, TleSource};
 
     fn entry(
         id: &str,
@@ -1105,5 +1286,226 @@ mod tests {
 
         let active = timespan_active_entry(&entries, 10.0, None).expect("active entry");
         assert_eq!(active.id, "slot-b");
+    }
+
+    // ── Satellite scheduling tests ─────────────────────────────────
+
+    fn sat_entry(id: &str, satellite: &str, norad_id: u32, min_el: f64, priority: u32) -> SatelliteEntry {
+        SatelliteEntry {
+            id: id.to_string(),
+            satellite: satellite.to_string(),
+            norad_id,
+            bookmark_id: format!("bm-{id}"),
+            min_elevation_deg: min_el,
+            priority,
+            center_hz: None,
+            bookmark_ids: Vec::new(),
+        }
+    }
+
+    fn pass(satellite: &str, norad_id: u32, aos_ms: i64, los_ms: i64, max_el: f64) -> PassPrediction {
+        PassPrediction {
+            satellite: satellite.to_string(),
+            norad_id,
+            category: SatCategory::Weather,
+            aos_ms,
+            los_ms,
+            max_elevation_deg: max_el,
+            azimuth_aos_deg: 0.0,
+            azimuth_los_deg: 180.0,
+            duration_s: ((los_ms - aos_ms) / 1000) as u64,
+        }
+    }
+
+    fn now_ms() -> i64 {
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_millis() as i64
+    }
+
+    #[test]
+    fn satellite_no_active_pass_returns_none() {
+        let cfg = SatelliteSchedulerConfig {
+            enabled: true,
+            pretune_secs: 60,
+            entries: vec![sat_entry("noaa19", "NOAA 19", 33591, 5.0, 0)],
+        };
+        let now = now_ms();
+        // Pass is in the future (starts 1 hour from now).
+        let predictions = Some(PassPredictionResult {
+            passes: vec![pass("NOAA 19", 33591, now + 3_600_000, now + 4_200_000, 45.0)],
+            satellite_count: 1,
+            tle_source: TleSource::Celestrak,
+        });
+
+        assert!(active_satellite_entry(&cfg, &predictions).is_none());
+    }
+
+    #[test]
+    fn satellite_active_pass_returns_entry() {
+        let cfg = SatelliteSchedulerConfig {
+            enabled: true,
+            pretune_secs: 60,
+            entries: vec![sat_entry("noaa19", "NOAA 19", 33591, 5.0, 0)],
+        };
+        let now = now_ms();
+        // Pass is currently active.
+        let predictions = Some(PassPredictionResult {
+            passes: vec![pass("NOAA 19", 33591, now - 300_000, now + 300_000, 45.0)],
+            satellite_count: 1,
+            tle_source: TleSource::Celestrak,
+        });
+
+        let result = active_satellite_entry(&cfg, &predictions);
+        assert!(result.is_some());
+        assert_eq!(result.unwrap().id, "noaa19");
+    }
+
+    #[test]
+    fn satellite_pretune_activates_before_aos() {
+        let cfg = SatelliteSchedulerConfig {
+            enabled: true,
+            pretune_secs: 120, // 2 minutes pretune
+            entries: vec![sat_entry("noaa19", "NOAA 19", 33591, 5.0, 0)],
+        };
+        let now = now_ms();
+        // AOS is 60 seconds from now — within the 120s pretune window.
+        let predictions = Some(PassPredictionResult {
+            passes: vec![pass("NOAA 19", 33591, now + 60_000, now + 660_000, 30.0)],
+            satellite_count: 1,
+            tle_source: TleSource::Celestrak,
+        });
+
+        let result = active_satellite_entry(&cfg, &predictions);
+        assert!(result.is_some(), "should activate during pretune window");
+    }
+
+    #[test]
+    fn satellite_low_elevation_pass_skipped() {
+        let cfg = SatelliteSchedulerConfig {
+            enabled: true,
+            pretune_secs: 60,
+            entries: vec![sat_entry("noaa19", "NOAA 19", 33591, 20.0, 0)], // min 20°
+        };
+        let now = now_ms();
+        // Pass has only 10° max elevation — below threshold.
+        let predictions = Some(PassPredictionResult {
+            passes: vec![pass("NOAA 19", 33591, now - 300_000, now + 300_000, 10.0)],
+            satellite_count: 1,
+            tle_source: TleSource::Celestrak,
+        });
+
+        assert!(
+            active_satellite_entry(&cfg, &predictions).is_none(),
+            "pass below min elevation should be skipped"
+        );
+    }
+
+    #[test]
+    fn satellite_priority_selects_lower_value() {
+        let cfg = SatelliteSchedulerConfig {
+            enabled: true,
+            pretune_secs: 60,
+            entries: vec![
+                sat_entry("noaa19", "NOAA 19", 33591, 5.0, 10),
+                sat_entry("meteor", "METEOR-M2 3", 57166, 5.0, 1), // higher priority
+            ],
+        };
+        let now = now_ms();
+        // Both satellites have active passes.
+        let predictions = Some(PassPredictionResult {
+            passes: vec![
+                pass("NOAA 19", 33591, now - 300_000, now + 300_000, 40.0),
+                pass("METEOR-M2 3", 57166, now - 200_000, now + 400_000, 35.0),
+            ],
+            satellite_count: 2,
+            tle_source: TleSource::Celestrak,
+        });
+
+        let result = active_satellite_entry(&cfg, &predictions);
+        assert!(result.is_some());
+        assert_eq!(result.unwrap().id, "meteor", "lower priority value should win");
+    }
+
+    #[test]
+    fn satellite_no_predictions_returns_none() {
+        let cfg = SatelliteSchedulerConfig {
+            enabled: true,
+            pretune_secs: 60,
+            entries: vec![sat_entry("noaa19", "NOAA 19", 33591, 5.0, 0)],
+        };
+        // No predictions available yet.
+        assert!(active_satellite_entry(&cfg, &None).is_none());
+    }
+
+    #[test]
+    fn satellite_unmatched_norad_id_ignored() {
+        let cfg = SatelliteSchedulerConfig {
+            enabled: true,
+            pretune_secs: 60,
+            entries: vec![sat_entry("noaa19", "NOAA 19", 33591, 5.0, 0)],
+        };
+        let now = now_ms();
+        // Active pass for a different satellite.
+        let predictions = Some(PassPredictionResult {
+            passes: vec![pass("NOAA 18", 28654, now - 300_000, now + 300_000, 50.0)],
+            satellite_count: 1,
+            tle_source: TleSource::Celestrak,
+        });
+
+        assert!(
+            active_satellite_entry(&cfg, &predictions).is_none(),
+            "should not match on different NORAD ID"
+        );
+    }
+
+    #[test]
+    fn satellite_config_deserializes_with_defaults() {
+        let json = r#"{
+            "remote": "rig1",
+            "mode": "grayline"
+        }"#;
+        let config: super::SchedulerConfig = serde_json::from_str(json).unwrap();
+        assert!(config.satellites.is_none());
+    }
+
+    #[test]
+    fn satellite_config_deserializes_full() {
+        let json = r#"{
+            "remote": "rig1",
+            "mode": "disabled",
+            "satellites": {
+                "enabled": true,
+                "pretune_secs": 90,
+                "entries": [
+                    {
+                        "id": "noaa19-apt",
+                        "satellite": "NOAA 19",
+                        "norad_id": 33591,
+                        "bookmark_id": "bm-noaa19",
+                        "min_elevation_deg": 15.0,
+                        "priority": 0
+                    },
+                    {
+                        "id": "meteor-lrpt",
+                        "satellite": "METEOR-M2 3",
+                        "norad_id": 57166,
+                        "bookmark_id": "bm-meteor",
+                        "priority": 1
+                    }
+                ]
+            }
+        }"#;
+        let config: super::SchedulerConfig = serde_json::from_str(json).unwrap();
+        let sat = config.satellites.unwrap();
+        assert!(sat.enabled);
+        assert_eq!(sat.pretune_secs, 90);
+        assert_eq!(sat.entries.len(), 2);
+        assert_eq!(sat.entries[0].satellite, "NOAA 19");
+        assert_eq!(sat.entries[0].norad_id, 33591);
+        assert_eq!(sat.entries[0].min_elevation_deg, 15.0);
+        // Second entry should get default min_elevation_deg.
+        assert_eq!(sat.entries[1].min_elevation_deg, 5.0);
     }
 }
