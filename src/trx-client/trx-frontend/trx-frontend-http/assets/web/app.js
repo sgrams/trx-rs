@@ -10534,6 +10534,14 @@ window.addEventListener("keydown", (event) => {
     return;
   }
 
+  // F — focus frequency input
+  if (key === "f" && !event.ctrlKey && !event.metaKey && !event.altKey && !shouldIgnoreGlobalShortcut(event.target)) {
+    event.preventDefault();
+    const fi = document.getElementById("freq");
+    if (fi) { fi.focus(); fi.select(); }
+    return;
+  }
+
   if (event.ctrlKey || event.metaKey || event.altKey) return;
   if (shouldIgnoreGlobalShortcut(event.target)) return;
 
