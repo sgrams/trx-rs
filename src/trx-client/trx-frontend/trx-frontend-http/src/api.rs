@@ -1689,6 +1689,7 @@ define_gz_cache!(gz_cw_js, status::CW_JS, "cw.js");
 define_gz_cache!(gz_sat_js, status::SAT_JS, "sat.js");
 define_gz_cache!(gz_bookmarks_js, status::BOOKMARKS_JS, "bookmarks.js");
 define_gz_cache!(gz_scheduler_js, status::SCHEDULER_JS, "scheduler.js");
+define_gz_cache!(gz_sat_scheduler_js, status::SAT_SCHEDULER_JS, "sat-scheduler.js");
 define_gz_cache!(gz_background_decode_js, status::BACKGROUND_DECODE_JS, "background-decode.js");
 define_gz_cache!(gz_vchan_js, status::VCHAN_JS, "vchan.js");
 
@@ -2249,6 +2250,7 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
         .service(sat_js)
         .service(bookmarks_js)
         .service(scheduler_js)
+        .service(sat_scheduler_js)
         .service(background_decode_js)
         .service(vchan_js)
         // Virtual channels
@@ -2418,6 +2420,12 @@ async fn bookmarks_js(req: HttpRequest) -> impl Responder {
 #[get("/scheduler.js")]
 async fn scheduler_js(req: HttpRequest) -> impl Responder {
     let c = gz_scheduler_js();
+    static_asset_response(&req, "application/javascript; charset=utf-8", &c.gz, &c.etag)
+}
+
+#[get("/sat-scheduler.js")]
+async fn sat_scheduler_js(req: HttpRequest) -> impl Responder {
+    let c = gz_sat_scheduler_js();
     static_asset_response(&req, "application/javascript; charset=utf-8", &c.gz, &c.etag)
 }
 

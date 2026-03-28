@@ -27,6 +27,7 @@ pub const CW_JS: &str = include_str!("../assets/web/plugins/cw.js");
 pub const SAT_JS: &str = include_str!("../assets/web/plugins/sat.js");
 pub const BOOKMARKS_JS: &str = include_str!("../assets/web/plugins/bookmarks.js");
 pub const SCHEDULER_JS: &str = include_str!("../assets/web/plugins/scheduler.js");
+pub const SAT_SCHEDULER_JS: &str = include_str!("../assets/web/plugins/sat-scheduler.js");
 pub const BACKGROUND_DECODE_JS: &str = include_str!("../assets/web/plugins/background-decode.js");
 pub const VCHAN_JS: &str = include_str!("../assets/web/plugins/vchan.js");
 
