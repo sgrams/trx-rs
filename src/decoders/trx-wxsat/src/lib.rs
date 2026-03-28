@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: BSD-2-Clause
 
-//! NOAA APT satellite image decoder.
+//! Weather satellite APT image decoder.
 //!
 //! Decodes the Automatic Picture Transmission (APT) format broadcast by
 //! NOAA-15 (137.620 MHz), NOAA-18 (137.9125 MHz) and NOAA-19 (137.100 MHz).
@@ -21,8 +21,10 @@
 
 pub mod apt;
 mod image_enc;
+pub mod telemetry;
 
 use apt::{AptDemod, SyncTracker};
+use telemetry::{Satellite, SensorChannel};
 
 /// JPEG encoding quality (0–100).
 const JPEG_QUALITY: u8 = 85;
@@ -35,9 +37,15 @@ pub struct AptImage {
     pub line_count: u32,
     /// Millisecond timestamp when the first line was decoded.
     pub first_line_ms: i64,
+    /// Identified satellite, if telemetry was decodable.
+    pub satellite: Satellite,
+    /// Detected sensor channel for sub-channel A.
+    pub sensor_a: SensorChannel,
+    /// Detected sensor channel for sub-channel B.
+    pub sensor_b: SensorChannel,
 }
 
-/// Top-level NOAA APT decoder.
+/// Top-level weather satellite APT decoder.
 ///
 /// Feed audio samples with [`process_samples`] and call [`finalize`] at
 /// pass end to retrieve the assembled JPEG.
@@ -87,14 +95,56 @@ impl AptDecoder {
 
     /// Encode all accumulated lines as a JPEG image and return the result.
     ///
+    /// Performs telemetry extraction, radiometric calibration (when enough
+    /// lines are available for a full 128-line telemetry frame), and
+    /// histogram equalisation before JPEG encoding.
+    ///
     /// Returns `None` if no lines have been decoded yet.
     /// Does **not** reset the decoder; call [`reset`] afterwards if needed.
     pub fn finalize(&self) -> Option<AptImage> {
-        let jpeg = image_enc::encode_jpeg(&self.sync.lines, JPEG_QUALITY)?;
+        if self.sync.lines.is_empty() {
+            return None;
+        }
+
+        // Extract telemetry for calibration and satellite identification
+        let tel = telemetry::extract_telemetry(&self.sync.lines);
+
+        // Clone lines so we can apply calibration without mutating decoder state
+        let mut lines = self.sync.lines.clone();
+
+        let (satellite, sensor_a, sensor_b) = if let Some(ref tf) = tel {
+            // Apply radiometric calibration using telemetry wedge LUTs
+            for line in &mut lines {
+                telemetry::calibrate_line_a(&mut line.pixels_a, &tf.cal_lut_a);
+                telemetry::calibrate_line_b(&mut line.pixels_b, &tf.cal_lut_b);
+            }
+            (tf.satellite, tf.sensor_a, tf.sensor_b)
+        } else {
+            (Satellite::Unknown, SensorChannel::Unknown, SensorChannel::Unknown)
+        };
+
+        // Apply histogram equalisation per-channel for contrast enhancement
+        let mut all_a: Vec<u8> = lines.iter().flat_map(|l| l.pixels_a.iter().copied()).collect();
+        let mut all_b: Vec<u8> = lines.iter().flat_map(|l| l.pixels_b.iter().copied()).collect();
+        telemetry::histogram_equalize(&mut all_a);
+        telemetry::histogram_equalize(&mut all_b);
+
+        // Write equalised pixels back
+        let width_a = apt::IMAGE_A_LEN;
+        let width_b = apt::IMAGE_B_LEN;
+        for (i, line) in lines.iter_mut().enumerate() {
+            line.pixels_a.copy_from_slice(&all_a[i * width_a..(i + 1) * width_a]);
+            line.pixels_b.copy_from_slice(&all_b[i * width_b..(i + 1) * width_b]);
+        }
+
+        let jpeg = image_enc::encode_jpeg(&lines, JPEG_QUALITY)?;
         Some(AptImage {
             jpeg,
-            line_count: self.sync.lines.len() as u32,
+            line_count: lines.len() as u32,
             first_line_ms: self.first_line_ms.unwrap_or_else(now_ms),
+            satellite,
+            sensor_a,
+            sensor_b,
         })
     }
 

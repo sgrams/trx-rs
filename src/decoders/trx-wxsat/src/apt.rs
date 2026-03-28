@@ -4,7 +4,7 @@
 
 //! APT (Automatic Picture Transmission) demodulator and line decoder.
 //!
-//! NOAA APT signal chain:
+//! Weather satellite APT signal chain:
 //!   FM-demodulated audio → 2400 Hz AM subcarrier → envelope → 4160 Hz image
 //!
 //! Frame layout at 4160 Hz (2080 samples = 0.5 s per line, 2 lines/sec):
@@ -38,11 +38,18 @@ const SYNC_THRESHOLD: f32 = 0.15;
 const SYNC_SEARCH_LOCKED: usize = 12; // ±samples around expected sync position when locked
 const MAX_BAD_SYNC_LINES: u32 = 8; // unlock after this many low-confidence lines
 
-/// A decoded APT line: raw pixel arrays for both image channels.
+/// Telemetry block length (samples per channel).
+pub const TEL_LEN: usize = 45;
+
+/// A decoded APT line: raw pixel arrays for both image channels plus telemetry.
 #[derive(Clone)]
 pub struct RawLine {
     pub pixels_a: Box<[u8; IMAGE_A_LEN]>,
     pub pixels_b: Box<[u8; IMAGE_B_LEN]>,
+    /// Telemetry block A (45 samples, normalised to 0-255).
+    pub tel_a: Box<[u8; TEL_LEN]>,
+    /// Telemetry block B (45 samples, normalised to 0-255).
+    pub tel_b: Box<[u8; TEL_LEN]>,
     pub line_no: u32,
 }
 
@@ -310,9 +317,27 @@ impl SyncTracker {
             *p = norm(samples[IMAGE_B_OFFSET + i]);
         }
 
+        // Extract telemetry blocks (adjacent to image data)
+        let tel_a_offset = IMAGE_A_OFFSET + IMAGE_A_LEN; // right after image A
+        let tel_b_offset = IMAGE_B_OFFSET + IMAGE_B_LEN; // right after image B
+        let mut tel_a = Box::new([0u8; TEL_LEN]);
+        for (i, p) in tel_a.iter_mut().enumerate() {
+            if tel_a_offset + i < LINE_SAMPLES {
+                *p = norm(samples[tel_a_offset + i]);
+            }
+        }
+        let mut tel_b = Box::new([0u8; TEL_LEN]);
+        for (i, p) in tel_b.iter_mut().enumerate() {
+            if tel_b_offset + i < LINE_SAMPLES {
+                *p = norm(samples[tel_b_offset + i]);
+            }
+        }
+
         self.lines.push(RawLine {
             pixels_a,
             pixels_b,
+            tel_a,
+            tel_b,
             line_no: self.line_no,
         });
         self.line_no += 1;

@@ -2785,16 +2785,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "trx-noaa"
-version = "0.1.0"
-dependencies = [
- "image",
- "num-complex",
- "rustfft",
- "trx-core",
-]
-
-[[package]]
 name = "trx-protocol"
 version = "0.1.0"
 dependencies = [
@@ -2848,11 +2838,11 @@ dependencies = [
  "trx-cw",
  "trx-decode-log",
  "trx-ftx",
- "trx-noaa",
  "trx-protocol",
  "trx-reporting",
  "trx-vdes",
  "trx-wspr",
+ "trx-wxsat",
  "uuid",
 ]
 
@@ -2867,6 +2857,16 @@ dependencies = [
 [[package]]
 name = "trx-wspr"
 version = "0.1.0"
+
+[[package]]
+name = "trx-wxsat"
+version = "0.1.0"
+dependencies = [
+ "image",
+ "num-complex",
+ "rustfft",
+ "trx-core",
+]
 
 [[package]]
 name = "typenum"
