@@ -10,7 +10,7 @@
 //! carries the channel ID, and wedges 10-15 carry thermal calibration data.
 //! Wedge 16 is the "zero modulation" reference (black body equivalent).
 
-use super::apt::{IMAGE_A_LEN, IMAGE_B_LEN, RawLine};
+use super::apt::{RawLine, IMAGE_A_LEN, IMAGE_B_LEN};
 
 /// Lines per telemetry frame (128 lines = 16 wedges x 8 lines each).
 pub const FRAME_LINES: usize = 128;
@@ -23,9 +23,7 @@ pub const NUM_WEDGES: usize = 16;
 
 /// The 8 calibration step values defined by the APT spec (wedges 1-8).
 /// These represent known modulation levels from 1/8 to 8/8 of full scale.
-pub const WEDGE_STEPS: [f32; 8] = [
-    0.125, 0.25, 0.375, 0.5, 0.625, 0.75, 0.875, 1.0,
-];
+pub const WEDGE_STEPS: [f32; 8] = [0.125, 0.25, 0.375, 0.5, 0.625, 0.75, 0.875, 1.0];
 
 /// NOAA AVHRR sensor channel assignments.
 ///

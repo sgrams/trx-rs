@@ -26,11 +26,10 @@ use trx_core::audio::{
     write_vchan_uuid_msg, AudioStreamInfo, AUDIO_MSG_AIS_DECODE, AUDIO_MSG_APRS_DECODE,
     AUDIO_MSG_CW_DECODE, AUDIO_MSG_FT2_DECODE, AUDIO_MSG_FT4_DECODE, AUDIO_MSG_FT8_DECODE,
     AUDIO_MSG_HF_APRS_DECODE, AUDIO_MSG_HISTORY_COMPRESSED, AUDIO_MSG_LRPT_IMAGE,
-    AUDIO_MSG_WXSAT_IMAGE,
     AUDIO_MSG_RX_FRAME, AUDIO_MSG_STREAM_INFO, AUDIO_MSG_TX_FRAME, AUDIO_MSG_VCHAN_ALLOCATED,
     AUDIO_MSG_VCHAN_BW, AUDIO_MSG_VCHAN_DESTROYED, AUDIO_MSG_VCHAN_FREQ, AUDIO_MSG_VCHAN_MODE,
     AUDIO_MSG_VCHAN_REMOVE, AUDIO_MSG_VCHAN_SUB, AUDIO_MSG_VCHAN_UNSUB, AUDIO_MSG_VDES_DECODE,
-    AUDIO_MSG_WSPR_DECODE,
+    AUDIO_MSG_WSPR_DECODE, AUDIO_MSG_WXSAT_IMAGE,
 };
 use trx_core::decode::{
     AisMessage, AprsPacket, CwEvent, DecodedMessage, Ft8Message, LrptImage, VdesMessage,
@@ -40,9 +39,9 @@ use trx_core::rig::state::{RigMode, RigState};
 use trx_core::vchan::SharedVChanManager;
 use trx_cw::CwDecoder;
 use trx_ftx::Ft8Decoder;
-use trx_wxsat::noaa::AptDecoder;
 use trx_vdes::VdesDecoder;
 use trx_wspr::WsprDecoder;
+use trx_wxsat::noaa::AptDecoder;
 use uuid::Uuid;
 
 use crate::config::AudioConfig;
