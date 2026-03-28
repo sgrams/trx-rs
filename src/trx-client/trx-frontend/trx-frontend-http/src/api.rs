@@ -1315,6 +1315,66 @@ pub async fn toggle_wspr_decode(
     .await
 }
 
+#[post("/toggle_wxsat_decode")]
+pub async fn toggle_wxsat_decode(
+    query: web::Query<RemoteQuery>,
+    state: web::Data<watch::Receiver<RigState>>,
+    rig_tx: web::Data<mpsc::Sender<RigRequest>>,
+) -> Result<HttpResponse, Error> {
+    let enabled = state.get_ref().borrow().wxsat_decode_enabled;
+    send_command(
+        &rig_tx,
+        RigCommand::SetWxsatDecodeEnabled(!enabled),
+        query.into_inner().remote,
+    )
+    .await
+}
+
+#[post("/toggle_lrpt_decode")]
+pub async fn toggle_lrpt_decode(
+    query: web::Query<RemoteQuery>,
+    state: web::Data<watch::Receiver<RigState>>,
+    rig_tx: web::Data<mpsc::Sender<RigRequest>>,
+) -> Result<HttpResponse, Error> {
+    let enabled = state.get_ref().borrow().lrpt_decode_enabled;
+    send_command(
+        &rig_tx,
+        RigCommand::SetLrptDecodeEnabled(!enabled),
+        query.into_inner().remote,
+    )
+    .await
+}
+
+#[post("/clear_wxsat_decode")]
+pub async fn clear_wxsat_decode(
+    query: web::Query<RemoteQuery>,
+    context: web::Data<Arc<FrontendRuntimeContext>>,
+    rig_tx: web::Data<mpsc::Sender<RigRequest>>,
+) -> Result<HttpResponse, Error> {
+    crate::server::audio::clear_wxsat_history(context.get_ref());
+    send_command(
+        &rig_tx,
+        RigCommand::ResetWxsatDecoder,
+        query.into_inner().remote,
+    )
+    .await
+}
+
+#[post("/clear_lrpt_decode")]
+pub async fn clear_lrpt_decode(
+    query: web::Query<RemoteQuery>,
+    context: web::Data<Arc<FrontendRuntimeContext>>,
+    rig_tx: web::Data<mpsc::Sender<RigRequest>>,
+) -> Result<HttpResponse, Error> {
+    crate::server::audio::clear_lrpt_history(context.get_ref());
+    send_command(
+        &rig_tx,
+        RigCommand::ResetLrptDecoder,
+        query.into_inner().remote,
+    )
+    .await
+}
+
 #[post("/clear_ft8_decode")]
 pub async fn clear_ft8_decode(
     query: web::Query<RemoteQuery>,
@@ -2029,6 +2089,8 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
         .service(toggle_ft4_decode)
         .service(toggle_ft2_decode)
         .service(toggle_wspr_decode)
+        .service(toggle_wxsat_decode)
+        .service(toggle_lrpt_decode)
         .service(clear_ais_decode)
         .service(clear_vdes_decode)
         .service(clear_aprs_decode)
@@ -2038,6 +2100,8 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
         .service(clear_ft4_decode)
         .service(clear_ft2_decode)
         .service(clear_wspr_decode)
+        .service(clear_wxsat_decode)
+        .service(clear_lrpt_decode)
         .service(select_rig)
         // Bookmark CRUD
         .service(list_bookmarks)
@@ -2076,6 +2140,7 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
         .service(ft2_js)
         .service(wspr_js)
         .service(cw_js)
+        .service(wxsat_js)
         .service(bookmarks_js)
         .service(scheduler_js)
         .service(background_decode_js)
@@ -2217,6 +2282,11 @@ async fn wspr_js() -> impl Responder {
 #[get("/cw.js")]
 async fn cw_js() -> impl Responder {
     no_cache_response("application/javascript; charset=utf-8", status::CW_JS)
+}
+
+#[get("/wxsat.js")]
+async fn wxsat_js() -> impl Responder {
+    no_cache_response("application/javascript; charset=utf-8", status::WXSAT_JS)
 }
 
 #[get("/bookmarks.js")]

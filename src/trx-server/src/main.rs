@@ -812,6 +812,25 @@ fn spawn_rig_audio_stack(
                 _ = wait_for_shutdown(wxsat_shutdown_rx) => {}
             }
         }));
+
+        // Spawn Meteor-M LRPT decoder task
+        let lrpt_pcm_rx = pcm_tx.subscribe();
+        let lrpt_state_rx = state_rx.clone();
+        let lrpt_decode_tx = decode_tx.clone();
+        let lrpt_sr = rig_cfg.audio.sample_rate;
+        let lrpt_ch = rig_cfg.audio.channels;
+        let lrpt_shutdown_rx = shutdown_rx.clone();
+        let lrpt_histories = histories.clone();
+        let lrpt_output_dir = dirs::cache_dir()
+            .unwrap_or_else(|| std::path::PathBuf::from(".cache"))
+            .join("trx-rs")
+            .join("lrpt");
+        handles.push(tokio::spawn(async move {
+            tokio::select! {
+                _ = audio::run_lrpt_decoder(lrpt_sr, lrpt_ch as u16, lrpt_pcm_rx, lrpt_state_rx, lrpt_decode_tx, lrpt_histories, lrpt_output_dir) => {}
+                _ = wait_for_shutdown(lrpt_shutdown_rx) => {}
+            }
+        }));
     }
 
     if rig_cfg.audio.tx_enabled {

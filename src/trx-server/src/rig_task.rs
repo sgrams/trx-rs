@@ -545,6 +545,30 @@ async fn process_command(
             let _ = ctx.state_tx.send(ctx.state.clone());
             return snapshot_from(ctx.state);
         }
+        RigCommand::SetWxsatDecodeEnabled(en) => {
+            ctx.state.wxsat_decode_enabled = en;
+            info!("wxsat decode {}", if en { "enabled" } else { "disabled" });
+            let _ = ctx.state_tx.send(ctx.state.clone());
+            return snapshot_from(ctx.state);
+        }
+        RigCommand::SetLrptDecodeEnabled(en) => {
+            ctx.state.lrpt_decode_enabled = en;
+            info!("LRPT decode {}", if en { "enabled" } else { "disabled" });
+            let _ = ctx.state_tx.send(ctx.state.clone());
+            return snapshot_from(ctx.state);
+        }
+        RigCommand::ResetWxsatDecoder => {
+            ctx.histories.clear_wxsat_history();
+            ctx.state.wxsat_decode_reset_seq += 1;
+            let _ = ctx.state_tx.send(ctx.state.clone());
+            return snapshot_from(ctx.state);
+        }
+        RigCommand::ResetLrptDecoder => {
+            ctx.histories.clear_lrpt_history();
+            ctx.state.lrpt_decode_reset_seq += 1;
+            let _ = ctx.state_tx.send(ctx.state.clone());
+            return snapshot_from(ctx.state);
+        }
         RigCommand::SetBandwidth(hz) => {
             if let Some(sdr) = ctx.rig.as_sdr() {
                 if let Err(e) = sdr.set_bandwidth(hz).await {

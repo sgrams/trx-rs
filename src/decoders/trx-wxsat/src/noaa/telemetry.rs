@@ -10,7 +10,7 @@
 //! carries the channel ID, and wedges 10-15 carry thermal calibration data.
 //! Wedge 16 is the "zero modulation" reference (black body equivalent).
 
-use crate::apt::{IMAGE_A_LEN, IMAGE_B_LEN, RawLine};
+use super::apt::{IMAGE_A_LEN, IMAGE_B_LEN, RawLine};
 
 /// Lines per telemetry frame (128 lines = 16 wedges x 8 lines each).
 pub const FRAME_LINES: usize = 128;

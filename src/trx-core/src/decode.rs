@@ -30,6 +30,8 @@ pub enum DecodedMessage {
     Wspr(WsprMessage),
     #[serde(rename = "wxsat_image")]
     WxsatImage(WxsatImage),
+    #[serde(rename = "lrpt_image")]
+    LrptImage(LrptImage),
 }
 
 impl DecodedMessage {
@@ -43,6 +45,7 @@ impl DecodedMessage {
             Self::Ft8(m) | Self::Ft4(m) | Self::Ft2(m) => m.rig_id = Some(id),
             Self::Wspr(m) => m.rig_id = Some(id),
             Self::WxsatImage(m) => m.rig_id = Some(id),
+            Self::LrptImage(m) => m.rig_id = Some(id),
         }
     }
 
@@ -56,6 +59,7 @@ impl DecodedMessage {
             Self::Ft8(m) | Self::Ft4(m) | Self::Ft2(m) => m.rig_id.as_deref(),
             Self::Wspr(m) => m.rig_id.as_deref(),
             Self::WxsatImage(m) => m.rig_id.as_deref(),
+            Self::LrptImage(m) => m.rig_id.as_deref(),
         }
     }
 }
@@ -247,4 +251,27 @@ pub struct WsprMessage {
     pub freq_hz: f32,
     /// Decoded message text
     pub message: String,
+}
+
+/// A completed Meteor-M LRPT satellite image, saved to disk as a PNG.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LrptImage {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rig_id: Option<String>,
+    /// UTC timestamp (milliseconds since epoch) of pass start.
+    pub pass_start_ms: i64,
+    /// UTC timestamp (milliseconds since epoch) when the image was finalised.
+    pub pass_end_ms: i64,
+    /// Number of decoded MCU rows.
+    pub mcu_count: u32,
+    /// Absolute filesystem path to the saved image file.
+    pub path: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ts_ms: Option<i64>,
+    /// Identified satellite (e.g. "Meteor-M N2-3", "Meteor-M N2-4").
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub satellite: Option<String>,
+    /// APID channels decoded (e.g. "64,65,66" for RGB).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub channels: Option<String>,
 }
