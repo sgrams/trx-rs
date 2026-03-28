@@ -4412,6 +4412,56 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   line-height: 1;
 }
 .sch-extra-bm-rm:hover { opacity: 1; }
+/* Satellite scheduler overlay */
+.sch-sat-toggle-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  min-height: var(--control-height);
+  color: var(--text);
+  font-weight: 500;
+}
+.sch-sat-pass-status {
+  font-size: 0.82rem;
+}
+.sch-sat-active-badge {
+  display: inline-block;
+  background: var(--accent-green, #1a7);
+  color: #fff;
+  font-size: 0.78rem;
+  font-weight: 600;
+  padding: 0.2rem 0.6rem;
+  border-radius: 3px;
+  letter-spacing: 0.03em;
+}
+#sch-sat-form-wrap {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.55);
+}
+#sch-sat-form .bm-form-grid {
+  gap: 0.75rem;
+}
+#sch-sat-form .bm-label {
+  min-width: 12rem;
+  flex: 1 1 12rem;
+}
+#sch-sat-form-cancel {
+  cursor: pointer;
+  border: 1px solid var(--border);
+  background: var(--bg-muted);
+  color: var(--text);
+  border-radius: var(--radius);
+  padding: 0.55rem 1rem;
+  font-size: 0.88rem;
+}
+#sch-sat-form-cancel:hover {
+  background: var(--border);
+}
 .bgd-toggle-wrap {
   min-width: 18rem;
   flex: 1 1 20rem;

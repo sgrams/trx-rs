@@ -1052,6 +1052,76 @@
             </table>
           </div>
 
+          <!-- Satellite Overlay section -->
+          <div id="scheduler-sat-section" class="sch-section">
+            <div class="sch-section-title">Satellite Pass Scheduling</div>
+            <div class="sch-row" style="margin-bottom:0.5rem;">
+              <label class="sch-label" style="min-width:auto;">
+                <span class="sch-sat-toggle-row">
+                  <input type="checkbox" id="scheduler-sat-enabled" />
+                  <span>Enable satellite pass preemption</span>
+                </span>
+              </label>
+            </div>
+            <div id="scheduler-sat-body" style="display:none;">
+              <div class="sch-row" style="margin-bottom:0.75rem;">
+                <label class="sch-label">Pre-tune (seconds before AOS)
+                  <input type="number" id="scheduler-sat-pretune" class="status-input" min="0" max="300" value="60" style="width:7rem;" />
+                </label>
+                <small style="color:var(--text-muted);align-self:flex-end;padding-bottom:0.35rem;">Tune to the satellite bookmark this many seconds before acquisition. Gives decoders time to lock.</small>
+              </div>
+              <button id="scheduler-sat-add-btn" class="sch-write" type="button" style="margin-bottom:0.75rem;">+ Add Satellite</button>
+              <table class="sch-ts-table">
+                <thead>
+                  <tr><th>Satellite</th><th>NORAD ID</th><th>Bookmark</th><th>Min elev.</th><th>Priority</th><th></th></tr>
+                </thead>
+                <tbody id="scheduler-sat-tbody"></tbody>
+              </table>
+              <div id="scheduler-sat-pass-status" class="sch-sat-pass-status" style="margin-top:0.5rem;"></div>
+            </div>
+          </div>
+
+          <!-- Satellite entry form modal -->
+          <div id="sch-sat-form-wrap" style="display:none;">
+            <form id="sch-sat-form" class="bm-form">
+              <div class="bm-form-title" id="sch-sat-form-title">Add Satellite</div>
+              <div class="bm-form-grid">
+                <label class="bm-label">Satellite preset
+                  <select id="scheduler-sat-preset" class="status-input" aria-label="Satellite preset">
+                    <option value="">— custom —</option>
+                    <option value="NOAA 15|25338">NOAA 15 (137.620 MHz APT)</option>
+                    <option value="NOAA 18|28654">NOAA 18 (137.9125 MHz APT)</option>
+                    <option value="NOAA 19|33591">NOAA 19 (137.100 MHz APT)</option>
+                    <option value="METEOR-M2 3|57166">Meteor-M2 3 (137.900 MHz LRPT)</option>
+                    <option value="METEOR-M2-4|59051">Meteor-M2-4 (137.900 MHz LRPT)</option>
+                  </select>
+                </label>
+                <label class="bm-label">Satellite name
+                  <input type="text" id="scheduler-sat-name" class="status-input" placeholder="e.g. NOAA 19" required />
+                </label>
+                <label class="bm-label">NORAD catalog number
+                  <input type="number" id="scheduler-sat-norad" class="status-input" min="1" placeholder="e.g. 33591" required />
+                </label>
+                <label class="bm-label bm-label-wide">Bookmark (sets freq, mode, decoders)
+                  <select id="scheduler-sat-bookmark" class="status-input" aria-label="Satellite bookmark"></select>
+                </label>
+                <label class="bm-label">Min elevation (°)
+                  <input type="number" id="scheduler-sat-min-el" class="status-input" min="0" max="90" step="1" value="5" />
+                </label>
+                <label class="bm-label">Priority (lower = higher)
+                  <input type="number" id="scheduler-sat-priority" class="status-input" min="0" value="0" />
+                </label>
+                <label class="bm-label" title="SDR only — sets center frequency before tuning">Center freq (Hz, SDR)
+                  <input type="number" id="scheduler-sat-center-hz" class="status-input" min="0" placeholder="optional" />
+                </label>
+              </div>
+              <div class="bm-form-actions">
+                <button type="submit" class="bm-save-btn">Save</button>
+                <button type="button" id="sch-sat-form-cancel">Cancel</button>
+              </div>
+            </form>
+          </div>
+
           <div id="sch-entry-form-wrap" style="display:none;">
             <form id="sch-entry-form" class="bm-form">
               <div class="bm-form-title" id="sch-entry-form-title">Add Entry</div>

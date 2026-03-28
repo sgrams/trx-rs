@@ -19,6 +19,7 @@
   let interleaveTicker = null;
   let schedulerStepPending = false;
   let schEntryEditIdx = null;     // null = adding, number = editing that index
+  let schSatEditIdx = null;       // null = adding, number = editing satellite entry
 
   // -------------------------------------------------------------------------
   // Init
@@ -315,6 +316,7 @@
         currentSchedulerStatus = st || null;
         renderStatus(st);
         renderSchedulerInterleaveStatus();
+        renderSatPassStatus();
       })
       .catch(function () {});
   }
@@ -338,7 +340,10 @@
       const d = new Date(st.last_applied_utc * 1000);
       ts = " at " + d.toUTCString();
     }
-    el.textContent = "Last applied: " + name + ts;
+    const satLabel = st.active_satellite
+      ? " [SAT: " + st.active_satellite + "]"
+      : "";
+    el.textContent = "Last applied: " + name + satLabel + ts;
   }
 
   // -------------------------------------------------------------------------
@@ -354,15 +359,19 @@
     // Mode selector
     setSelected("scheduler-mode-select", mode);
 
-    // Show/hide main-view scheduler controls
+    // Show/hide main-view scheduler controls (visible when base mode active OR satellites enabled)
+    const satEnabled = currentConfig && currentConfig.satellites && currentConfig.satellites.enabled;
     const controlRow = document.querySelector(".scheduler-control-row");
-    if (controlRow) controlRow.style.display = mode !== "disabled" ? "" : "none";
+    if (controlRow) controlRow.style.display = (mode !== "disabled" || satEnabled) ? "" : "none";
 
     // Show/hide sections
     const glSection = document.getElementById("scheduler-grayline-section");
     const tsSection = document.getElementById("scheduler-timespan-section");
     if (glSection) glSection.style.display = mode === "grayline" ? "" : "none";
     if (tsSection) tsSection.style.display = mode === "time_span" ? "" : "none";
+
+    // Satellite overlay (always visible — independent of mode)
+    renderSatelliteSection();
 
     // Grayline inputs
     if (mode === "grayline" && currentConfig && currentConfig.grayline) {
@@ -697,6 +706,9 @@
       config.interleave_min = isNaN(ilVal) || ilVal <= 0 ? null : ilVal;
     }
 
+    // Satellite overlay — saved regardless of base mode.
+    config.satellites = collectSatelliteConfig();
+
     const btn = document.getElementById("scheduler-save-btn");
     if (btn) btn.disabled = true;
 
@@ -793,6 +805,7 @@
     });
 
     wireExtraBmAdd();
+    wireSatelliteEvents();
   }
 
   function populateTsBookmarkSelect() {
@@ -850,6 +863,228 @@
       }
       pick.value = "";
     });
+  }
+
+  // -------------------------------------------------------------------------
+  // Satellite overlay
+  // -------------------------------------------------------------------------
+  function getSatelliteEntries() {
+    return (currentConfig && currentConfig.satellites && Array.isArray(currentConfig.satellites.entries))
+      ? currentConfig.satellites.entries
+      : [];
+  }
+
+  function ensureSatelliteConfig() {
+    if (!currentConfig) currentConfig = { remote: currentRigId, mode: "disabled", entries: [] };
+    if (!currentConfig.satellites) currentConfig.satellites = { enabled: false, pretune_secs: 60, entries: [] };
+    if (!currentConfig.satellites.entries) currentConfig.satellites.entries = [];
+    return currentConfig.satellites;
+  }
+
+  function collectSatelliteConfig() {
+    const enabledEl = document.getElementById("scheduler-sat-enabled");
+    const pretuneEl = document.getElementById("scheduler-sat-pretune");
+    const enabled = enabledEl ? enabledEl.checked : false;
+    const pretune = pretuneEl ? parseInt(pretuneEl.value, 10) : 60;
+    return {
+      enabled: enabled,
+      pretune_secs: isNaN(pretune) || pretune < 0 ? 60 : pretune,
+      entries: getSatelliteEntries(),
+    };
+  }
+
+  function renderSatelliteSection() {
+    const satCfg = (currentConfig && currentConfig.satellites) || {};
+    const enabled = !!satCfg.enabled;
+    const enabledEl = document.getElementById("scheduler-sat-enabled");
+    if (enabledEl) enabledEl.checked = enabled;
+
+    const pretuneEl = document.getElementById("scheduler-sat-pretune");
+    if (pretuneEl) pretuneEl.value = satCfg.pretune_secs != null ? satCfg.pretune_secs : 60;
+
+    const bodyEl = document.getElementById("scheduler-sat-body");
+    if (bodyEl) bodyEl.style.display = enabled ? "" : "none";
+
+    renderSatelliteEntries();
+    renderSatPassStatus();
+  }
+
+  function renderSatelliteEntries() {
+    const tbody = document.getElementById("scheduler-sat-tbody");
+    if (!tbody) return;
+    tbody.innerHTML = "";
+    const entries = getSatelliteEntries();
+    entries.forEach(function (entry, idx) {
+      const tr = document.createElement("tr");
+      tr.innerHTML =
+        "<td>" + escHtml(entry.satellite || "") + "</td>" +
+        "<td>" + (entry.norad_id || "") + "</td>" +
+        "<td>" + escHtml(bmName(entry.bookmark_id)) + "</td>" +
+        "<td>" + (entry.min_elevation_deg != null ? entry.min_elevation_deg + "\u00B0" : "5\u00B0") + "</td>" +
+        "<td>" + (entry.priority || 0) + "</td>" +
+        '<td>' +
+          '<button class="sch-write sch-sat-edit-btn" data-idx="' + idx + '" type="button">Edit</button>' +
+          '<button class="sch-write sch-sat-remove-btn" data-idx="' + idx + '" type="button">Remove</button>' +
+        '</td>';
+      tbody.appendChild(tr);
+    });
+    tbody.querySelectorAll(".sch-sat-edit-btn").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        const i = parseInt(btn.dataset.idx, 10);
+        const entry = getSatelliteEntries()[i];
+        if (entry) schOpenSatForm(entry, i);
+      });
+    });
+    tbody.querySelectorAll(".sch-sat-remove-btn").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        removeSatEntry(parseInt(btn.dataset.idx, 10));
+      });
+    });
+  }
+
+  function removeSatEntry(idx) {
+    const sat = ensureSatelliteConfig();
+    sat.entries.splice(idx, 1);
+    renderSatelliteEntries();
+  }
+
+  function schOpenSatForm(entry, idx) {
+    schSatEditIdx = (idx != null) ? idx : null;
+
+    const titleEl = document.getElementById("sch-sat-form-title");
+    if (titleEl) titleEl.textContent = entry ? "Edit Satellite" : "Add Satellite";
+
+    const presetEl = document.getElementById("scheduler-sat-preset");
+    const nameEl = document.getElementById("scheduler-sat-name");
+    const noradEl = document.getElementById("scheduler-sat-norad");
+    const bmEl = document.getElementById("scheduler-sat-bookmark");
+    const minElEl = document.getElementById("scheduler-sat-min-el");
+    const prioEl = document.getElementById("scheduler-sat-priority");
+    const centerHzEl = document.getElementById("scheduler-sat-center-hz");
+
+    if (presetEl) presetEl.value = "";
+    if (nameEl) nameEl.value = entry ? (entry.satellite || "") : "";
+    if (noradEl) noradEl.value = entry ? (entry.norad_id || "") : "";
+    if (bmEl) bmEl.value = entry ? (entry.bookmark_id || "") : "";
+    if (minElEl) minElEl.value = entry && entry.min_elevation_deg != null ? entry.min_elevation_deg : 5;
+    if (prioEl) prioEl.value = entry && entry.priority != null ? entry.priority : 0;
+    if (centerHzEl) centerHzEl.value = entry && entry.center_hz ? entry.center_hz : "";
+
+    // Populate bookmark dropdown
+    renderBookmarkSelect("scheduler-sat-bookmark", entry ? entry.bookmark_id : null);
+
+    const wrap = document.getElementById("sch-sat-form-wrap");
+    if (wrap) {
+      wrap.style.display = "flex";
+      if (nameEl) nameEl.focus();
+    }
+  }
+
+  function schCloseSatForm() {
+    const wrap = document.getElementById("sch-sat-form-wrap");
+    if (wrap) wrap.style.display = "none";
+    schSatEditIdx = null;
+  }
+
+  function schSatFormSubmit(e) {
+    e.preventDefault();
+
+    const nameEl = document.getElementById("scheduler-sat-name");
+    const noradEl = document.getElementById("scheduler-sat-norad");
+    const bmEl = document.getElementById("scheduler-sat-bookmark");
+    const minElEl = document.getElementById("scheduler-sat-min-el");
+    const prioEl = document.getElementById("scheduler-sat-priority");
+    const centerHzEl = document.getElementById("scheduler-sat-center-hz");
+
+    const satellite = nameEl ? nameEl.value.trim() : "";
+    const noradId = noradEl ? parseInt(noradEl.value, 10) : NaN;
+    const bmId = bmEl ? bmEl.value : "";
+
+    if (!satellite) { alert("Please enter a satellite name."); return; }
+    if (isNaN(noradId) || noradId <= 0) { alert("Please enter a valid NORAD catalog number."); return; }
+    if (!bmId) { alert("Please select a bookmark."); return; }
+
+    const minEl = minElEl ? parseFloat(minElEl.value) : 5;
+    const prio = prioEl ? parseInt(prioEl.value, 10) : 0;
+    const centerHzRaw = centerHzEl ? parseInt(centerHzEl.value, 10) : NaN;
+
+    const sat = ensureSatelliteConfig();
+
+    const entryData = {
+      satellite: satellite,
+      norad_id: noradId,
+      bookmark_id: bmId,
+      min_elevation_deg: isNaN(minEl) ? 5 : minEl,
+      priority: isNaN(prio) ? 0 : prio,
+      center_hz: !isNaN(centerHzRaw) && centerHzRaw > 0 ? centerHzRaw : null,
+      bookmark_ids: [],
+    };
+
+    if (schSatEditIdx !== null) {
+      const existing = sat.entries[schSatEditIdx];
+      entryData.id = existing ? existing.id : ("sat_" + Date.now().toString(36));
+      sat.entries[schSatEditIdx] = entryData;
+    } else {
+      entryData.id = "sat_" + Date.now().toString(36);
+      sat.entries.push(entryData);
+    }
+
+    schCloseSatForm();
+    renderSatelliteEntries();
+  }
+
+  function wireSatPresetChange() {
+    const presetEl = document.getElementById("scheduler-sat-preset");
+    if (!presetEl || presetEl._wired) return;
+    presetEl._wired = true;
+    presetEl.addEventListener("change", function () {
+      if (!presetEl.value) return;
+      const parts = presetEl.value.split("|");
+      const nameEl = document.getElementById("scheduler-sat-name");
+      const noradEl = document.getElementById("scheduler-sat-norad");
+      if (nameEl) nameEl.value = parts[0] || "";
+      if (noradEl) noradEl.value = parts[1] || "";
+    });
+  }
+
+  function renderSatPassStatus() {
+    const el = document.getElementById("scheduler-sat-pass-status");
+    if (!el) return;
+    const entries = getSatelliteEntries();
+    if (entries.length === 0) {
+      el.innerHTML = "";
+      return;
+    }
+    // Show active satellite from status if available.
+    if (currentSchedulerStatus && currentSchedulerStatus.active_satellite) {
+      el.innerHTML =
+        '<span class="sch-sat-active-badge">PASS ACTIVE: ' +
+        escHtml(currentSchedulerStatus.active_satellite) +
+        '</span>';
+    } else {
+      el.innerHTML = '<span style="color:var(--text-muted);font-size:0.8rem;">No satellite pass active. Predictions available in the SAT tab.</span>';
+    }
+  }
+
+  function wireSatelliteEvents() {
+    const enabledEl = document.getElementById("scheduler-sat-enabled");
+    if (enabledEl) {
+      enabledEl.addEventListener("change", function () {
+        const bodyEl = document.getElementById("scheduler-sat-body");
+        if (bodyEl) bodyEl.style.display = enabledEl.checked ? "" : "none";
+      });
+    }
+
+    const addBtn = document.getElementById("scheduler-sat-add-btn");
+    if (addBtn) addBtn.addEventListener("click", function () { schOpenSatForm(null, null); });
+
+    const satForm = document.getElementById("sch-sat-form");
+    if (satForm) satForm.addEventListener("submit", schSatFormSubmit);
+
+    const cancelBtn = document.getElementById("sch-sat-form-cancel");
+    if (cancelBtn) cancelBtn.addEventListener("click", schCloseSatForm);
+
+    wireSatPresetChange();
   }
 
   // -------------------------------------------------------------------------
