@@ -363,6 +363,41 @@ const headerStylePickSelect = document.getElementById("header-style-pick-select"
 const rdsPsOverlay = document.getElementById("rds-ps-overlay");
 let overviewPeakHoldMs = Number(loadSetting("overviewPeakHoldMs", 2000));
 let decodeHistoryRetentionMin = 24 * 60;
+
+// Cached decoder toggle buttons — avoids 8× getElementById per render() call.
+const _decoderToggles = {
+  ft8:    { el: document.getElementById("ft8-decode-toggle-btn"), last: null },
+  ft4:    { el: document.getElementById("ft4-decode-toggle-btn"), last: null },
+  ft2:    { el: document.getElementById("ft2-decode-toggle-btn"), last: null },
+  wspr:   { el: document.getElementById("wspr-decode-toggle-btn"), last: null },
+  hfAprs: { el: document.getElementById("hf-aprs-decode-toggle-btn"), last: null },
+  sat:    { el: document.getElementById("sat-decode-toggle-btn"), last: null },
+  lrpt:   { el: document.getElementById("lrpt-decode-toggle-btn"), last: null },
+};
+
+function syncDecoderToggle(entry, enabled, label) {
+  if (!entry.el || entry.last === enabled) return;
+  entry.last = enabled;
+  entry.el.dataset.enabled = enabled ? "true" : "false";
+  entry.el.textContent = enabled ? `Disable ${label}` : `Enable ${label}`;
+  entry.el.style.borderColor = enabled ? "#00d17f" : "";
+  entry.el.style.color = enabled ? "#00d17f" : "";
+}
+
+// Cached About-tab decoder status elements — avoids 8× getElementById per render().
+const _aboutDecEls = [
+  "about-dec-ft8", "about-dec-ft4", "about-dec-ft2", "about-dec-wspr",
+  "about-dec-cw", "about-dec-aprs", "about-dec-sat", "about-dec-lrpt",
+].map((id) => ({ el: document.getElementById(id), last: null }));
+
+function syncAboutDecoder(idx, enabled) {
+  const entry = _aboutDecEls[idx];
+  if (!entry || !entry.el || entry.last === enabled) return;
+  entry.last = enabled;
+  entry.el.textContent = enabled ? "Active" : "Off";
+  entry.el.className = enabled ? "about-status-on" : "about-status-off";
+}
+
 let primaryRds = null;
 let vchanRdsById = new Map();
 let vchanSignalDbById = new Map();
@@ -3229,62 +3264,14 @@ function render(update) {
       pttBtn.style.color = "";
     }
   }
-  const ft8ToggleBtn = document.getElementById("ft8-decode-toggle-btn");
-  if (ft8ToggleBtn) {
-    const ft8On = !!update.ft8_decode_enabled;
-    ft8ToggleBtn.dataset.enabled = ft8On ? "true" : "false";
-    ft8ToggleBtn.textContent = ft8On ? "Disable FT8" : "Enable FT8";
-    ft8ToggleBtn.style.borderColor = ft8On ? "#00d17f" : "";
-    ft8ToggleBtn.style.color = ft8On ? "#00d17f" : "";
-  }
-  const ft4ToggleBtn = document.getElementById("ft4-decode-toggle-btn");
-  if (ft4ToggleBtn) {
-    const ft4On = !!update.ft4_decode_enabled;
-    ft4ToggleBtn.dataset.enabled = ft4On ? "true" : "false";
-    ft4ToggleBtn.textContent = ft4On ? "Disable FT4" : "Enable FT4";
-    ft4ToggleBtn.style.borderColor = ft4On ? "#00d17f" : "";
-    ft4ToggleBtn.style.color = ft4On ? "#00d17f" : "";
-  }
-  const ft2ToggleBtn = document.getElementById("ft2-decode-toggle-btn");
-  if (ft2ToggleBtn) {
-    const ft2On = !!update.ft2_decode_enabled;
-    ft2ToggleBtn.dataset.enabled = ft2On ? "true" : "false";
-    ft2ToggleBtn.textContent = ft2On ? "Disable FT2" : "Enable FT2";
-    ft2ToggleBtn.style.borderColor = ft2On ? "#00d17f" : "";
-    ft2ToggleBtn.style.color = ft2On ? "#00d17f" : "";
-  }
-  const wsprToggleBtn = document.getElementById("wspr-decode-toggle-btn");
-  if (wsprToggleBtn) {
-    const wsprOn = !!update.wspr_decode_enabled;
-    wsprToggleBtn.dataset.enabled = wsprOn ? "true" : "false";
-    wsprToggleBtn.textContent = wsprOn ? "Disable WSPR" : "Enable WSPR";
-    wsprToggleBtn.style.borderColor = wsprOn ? "#00d17f" : "";
-    wsprToggleBtn.style.color = wsprOn ? "#00d17f" : "";
-  }
-  const hfAprsToggleBtn = document.getElementById("hf-aprs-decode-toggle-btn");
-  if (hfAprsToggleBtn) {
-    const hfAprsOn = !!update.hf_aprs_decode_enabled;
-    hfAprsToggleBtn.dataset.enabled = hfAprsOn ? "true" : "false";
-    hfAprsToggleBtn.textContent = hfAprsOn ? "Disable HF APRS" : "Enable HF APRS";
-    hfAprsToggleBtn.style.borderColor = hfAprsOn ? "#00d17f" : "";
-    hfAprsToggleBtn.style.color = hfAprsOn ? "#00d17f" : "";
-  }
-  const satToggleBtn = document.getElementById("sat-decode-toggle-btn");
-  if (satToggleBtn) {
-    const satOn = !!update.wxsat_decode_enabled;
-    satToggleBtn.dataset.enabled = satOn ? "true" : "false";
-    satToggleBtn.textContent = satOn ? "Disable NOAA APT" : "Enable NOAA APT";
-    satToggleBtn.style.borderColor = satOn ? "#00d17f" : "";
-    satToggleBtn.style.color = satOn ? "#00d17f" : "";
-  }
-  const lrptToggleBtn = document.getElementById("lrpt-decode-toggle-btn");
-  if (lrptToggleBtn) {
-    const lrptOn = !!update.lrpt_decode_enabled;
-    lrptToggleBtn.dataset.enabled = lrptOn ? "true" : "false";
-    lrptToggleBtn.textContent = lrptOn ? "Disable Meteor LRPT" : "Enable Meteor LRPT";
-    lrptToggleBtn.style.borderColor = lrptOn ? "#00d17f" : "";
-    lrptToggleBtn.style.color = lrptOn ? "#00d17f" : "";
-  }
+  // Decoder toggle buttons: only write DOM when the enabled flag actually changes.
+  syncDecoderToggle(_decoderToggles.ft8,     !!update.ft8_decode_enabled,     "FT8");
+  syncDecoderToggle(_decoderToggles.ft4,     !!update.ft4_decode_enabled,     "FT4");
+  syncDecoderToggle(_decoderToggles.ft2,     !!update.ft2_decode_enabled,     "FT2");
+  syncDecoderToggle(_decoderToggles.wspr,    !!update.wspr_decode_enabled,    "WSPR");
+  syncDecoderToggle(_decoderToggles.hfAprs,  !!update.hf_aprs_decode_enabled, "HF APRS");
+  syncDecoderToggle(_decoderToggles.sat,     !!update.wxsat_decode_enabled,   "NOAA APT");
+  syncDecoderToggle(_decoderToggles.lrpt,    !!update.lrpt_decode_enabled,    "Meteor LRPT");
   if (window.updateSatLiveState) window.updateSatLiveState(update);
   const cwAutoEl = document.getElementById("cw-auto");
   const cwWpmEl = document.getElementById("cw-wpm");
@@ -3453,24 +3440,15 @@ function render(update) {
     document.getElementById("about-audio-streams").textContent = update.audio_clients;
   }
 
-  // About — Decoders card
-  const decMap = [
-    ["about-dec-ft8", update.ft8_decode_enabled],
-    ["about-dec-ft4", update.ft4_decode_enabled],
-    ["about-dec-ft2", update.ft2_decode_enabled],
-    ["about-dec-wspr", update.wspr_decode_enabled],
-    ["about-dec-cw", update.cw_decode_enabled],
-    ["about-dec-aprs", update.aprs_decode_enabled || update.hf_aprs_decode_enabled],
-    ["about-dec-sat", update.wxsat_decode_enabled],
-    ["about-dec-lrpt", update.lrpt_decode_enabled],
-  ];
-  for (const [id, enabled] of decMap) {
-    const el = document.getElementById(id);
-    if (el) {
-      el.textContent = enabled ? "Active" : "Off";
-      el.className = enabled ? "about-status-on" : "about-status-off";
-    }
-  }
+  // About — Decoders card (only update when values change)
+  syncAboutDecoder(0, !!update.ft8_decode_enabled);
+  syncAboutDecoder(1, !!update.ft4_decode_enabled);
+  syncAboutDecoder(2, !!update.ft2_decode_enabled);
+  syncAboutDecoder(3, !!update.wspr_decode_enabled);
+  syncAboutDecoder(4, !!update.cw_decode_enabled);
+  syncAboutDecoder(5, !!(update.aprs_decode_enabled || update.hf_aprs_decode_enabled));
+  syncAboutDecoder(6, !!update.wxsat_decode_enabled);
+  syncAboutDecoder(7, !!update.lrpt_decode_enabled);
 
   // About — Integrations card
   if (update.pskreporter_status) {

@@ -73,15 +73,21 @@ satViewPredictionsBtn?.addEventListener("click", () => switchSatView("prediction
 
 // ── Live view: decoder state ────────────────────────────────────────
 // Updated from app.js render() via window.updateSatLiveState
+let _lastSatAptOn = null, _lastSatLrptOn = null;
 window.updateSatLiveState = function (update) {
   if (!satAptState || !satLrptState) return;
   const aptOn = !!update.wxsat_decode_enabled;
   const lrptOn = !!update.lrpt_decode_enabled;
-
-  satAptState.textContent = aptOn ? "Listening" : "Idle";
-  satAptState.className = "sat-live-value " + (aptOn ? "sat-state-listening" : "sat-state-idle");
-  satLrptState.textContent = lrptOn ? "Listening" : "Idle";
-  satLrptState.className = "sat-live-value " + (lrptOn ? "sat-state-listening" : "sat-state-idle");
+  if (aptOn !== _lastSatAptOn) {
+    _lastSatAptOn = aptOn;
+    satAptState.textContent = aptOn ? "Listening" : "Idle";
+    satAptState.className = "sat-live-value " + (aptOn ? "sat-state-listening" : "sat-state-idle");
+  }
+  if (lrptOn !== _lastSatLrptOn) {
+    _lastSatLrptOn = lrptOn;
+    satLrptState.textContent = lrptOn ? "Listening" : "Idle";
+    satLrptState.className = "sat-live-value " + (lrptOn ? "sat-state-listening" : "sat-state-idle");
+  }
 };
 
 function renderSatLatestCard() {
