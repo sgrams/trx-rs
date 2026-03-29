@@ -1468,6 +1468,7 @@ function drawHeaderSignalGraph() {
   }
   positionRdsPsOverlay();
   drawSignalOverlay();
+  updateBandplanStrip(bandplanComputeRange());
 }
 
 function drawOverviewWaterfall(W, H, pal) {
@@ -1988,6 +1989,9 @@ function applyLocalTunedFrequency(hz, forceDisplay = false) {
   positionFastOverlay(lastFreqHz, currentBandwidthHz);
   if (freqChanged && lastSpectrumData) {
     scheduleSpectrumDraw();
+  }
+  if (freqChanged && !lastSpectrumData) {
+    updateBandplanStrip(bandplanComputeRange());
   }
   positionRdsPsOverlay();
 }
@@ -9908,7 +9912,7 @@ function drawSpectrum(data) {
 
   updateSpectrumFreqAxis(range);
   updateBookmarkAxis(range);
-  updateBandplanStrip(range);
+  updateBandplanStrip(range);  // use precise spectrum range when available
   drawSignalOverlay();
 }
 
@@ -11267,6 +11271,35 @@ if (bandplanLabelsCheck) {
   });
 }
 
+function bandplanComputeRange() {
+  // When spectrum data is available (SDR), use the zoomed visible range
+  if (lastSpectrumData) {
+    return spectrumVisibleRange(lastSpectrumData);
+  }
+  // For non-SDR rigs, derive a range from the current tuned frequency.
+  // Find the band containing the frequency and show that full band.
+  const freq = lastFreqHz;
+  if (!freq || !Number.isFinite(freq)) return null;
+
+  // Check bandplan data for the current region to find the matching band
+  if (bandplanData && bandplanData[bandplanRegion]) {
+    const bands = bandplanData[bandplanRegion].bands;
+    for (const band of bands) {
+      if (freq >= band.low_hz && freq <= band.high_hz) {
+        const margin = (band.high_hz - band.low_hz) * 0.05;
+        return {
+          visLoHz: band.low_hz - margin,
+          visHiHz: band.high_hz + margin,
+          visSpanHz: (band.high_hz - band.low_hz) + 2 * margin,
+        };
+      }
+    }
+  }
+  // Fallback: show a 500 kHz window around the frequency
+  const span = 500000;
+  return { visLoHz: freq - span / 2, visHiHz: freq + span / 2, visSpanHz: span };
+}
+
 function bandplanVisibleSegments(region, loHz, hiHz) {
   if (!bandplanData || !bandplanData[region]) return [];
   const bands = bandplanData[region].bands;
@@ -11289,7 +11322,7 @@ function bandplanVisibleSegments(region, loHz, hiHz) {
 
 function updateBandplanStrip(range) {
   if (!bandplanStripEl) return;
-  if (bandplanRegion === "off" || !bandplanData) {
+  if (!range || bandplanRegion === "off" || !bandplanData) {
     if (bandplanStripEl.classList.contains("bp-visible")) {
       bandplanStripEl.classList.remove("bp-visible");
       bandplanStripEl.innerHTML = "";
