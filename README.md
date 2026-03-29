@@ -67,18 +67,41 @@ brew install soapysdr
 See [Build Requirements](https://github.com/sgrams/trx-rs/wiki/User-Manual#build-requirements)
 in the wiki for details on each library.
 
-### 2. Build and run
+### 2. Build
 
 ```bash
 cargo build --release
-cp trx-rs.toml.example trx-rs.toml   # edit for your environment
-cargo run -p trx-server
-cargo run -p trx-client
+```
+
+Build without SDR support: `cargo build --release --no-default-features`
+
+### 3. Configure
+
+Run the interactive setup wizard to generate config files for your station:
+
+```bash
+./target/release/trx-configurator
+```
+
+The wizard walks you through rig selection, serial port detection, audio
+settings, and frontend options, then writes `trx-server.toml` and
+`trx-client.toml`.
+
+Alternatively, generate example configs and edit them by hand:
+
+```bash
+./target/release/trx-server --print-config > trx-server.toml
+./target/release/trx-client --print-config > trx-client.toml
+```
+
+### 4. Run
+
+```bash
+./target/release/trx-server --config trx-server.toml
+./target/release/trx-client --config trx-client.toml
 ```
 
 Open the configured HTTP frontend address in a browser (default `http://localhost:8080`).
-
-Build without SDR support: `cargo build --release --no-default-features`
 
 ## How It Works
 
