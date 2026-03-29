@@ -10703,7 +10703,7 @@ window.addEventListener("keydown", (event) => {
     return;
   }
 
-  // R — round frequency to nearest jog step boundary, or retune if already round
+  // R — round frequency to nearest jog step boundary
   if (key === "r") {
     event.preventDefault();
     if (lastLocked) { showHint("Locked", 1500); return; }
@@ -10715,8 +10715,7 @@ window.addEventListener("keydown", (event) => {
         setRigFrequency(rounded);
         showHint(`Rounded → ${formatFreq(rounded)}`, 1200);
       } else {
-        setRigFrequency(lastFreqHz);
-        showHint("Retuning…", 1200);
+        showHint("Already on step", 1200);
       }
     }
     return;
