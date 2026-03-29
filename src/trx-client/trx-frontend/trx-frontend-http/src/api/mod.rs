@@ -82,6 +82,8 @@ struct FrontendMeta {
     initial_map_zoom: u8,
     spectrum_coverage_margin_hz: u32,
     spectrum_usable_span_ratio: f32,
+    bandplan_enabled: bool,
+    bandplan_region: String,
     decode_history_retention_min: u64,
     server_connected: bool,
 }
@@ -171,6 +173,8 @@ fn frontend_meta_from_context(
         initial_map_zoom: initial_map_zoom_from_context(context),
         spectrum_coverage_margin_hz: spectrum_coverage_margin_hz_from_context(context),
         spectrum_usable_span_ratio: spectrum_usable_span_ratio_from_context(context),
+        bandplan_enabled: context.http_ui.bandplan_enabled,
+        bandplan_region: context.http_ui.bandplan_region.clone(),
         decode_history_retention_min: decode_history_retention_min_from_context(context),
         server_connected,
     }

@@ -289,6 +289,10 @@ pub struct HttpFrontendConfig {
     pub spectrum_usable_span_ratio: f32,
     /// Whether to expose the RF Gain control in the web UI.
     pub show_sdr_gain_control: bool,
+    /// Whether the bandplan strip is shown by default in the spectrum display.
+    pub bandplan_enabled: bool,
+    /// Default bandplan region: "iaru_r1", "iaru_r2", or "iaru_r3".
+    pub bandplan_region: String,
     /// Default decode history retention in minutes for the active rig.
     pub decode_history_retention_min: u64,
     /// Optional per-rig decode history retention overrides in minutes.
@@ -308,6 +312,8 @@ impl Default for HttpFrontendConfig {
             spectrum_coverage_margin_hz: 50_000,
             spectrum_usable_span_ratio: 0.92,
             show_sdr_gain_control: true,
+            bandplan_enabled: true,
+            bandplan_region: "iaru_r1".to_string(),
             decode_history_retention_min: 24 * 60,
             decode_history_retention_min_by_rig: HashMap::new(),
             auth: HttpAuthConfig::default(),
@@ -507,6 +513,15 @@ impl ClientConfig {
                 "[frontends.http].spectrum_usable_span_ratio must be > 0.0 and <= 1.0".to_string(),
             );
         }
+        match self.frontends.http.bandplan_region.as_str() {
+            "iaru_r1" | "iaru_r2" | "iaru_r3" => {}
+            other => {
+                return Err(format!(
+                    "[frontends.http].bandplan_region must be \"iaru_r1\", \"iaru_r2\", or \"iaru_r3\", got \"{}\"",
+                    other
+                ));
+            }
+        }
         if self.frontends.http.decode_history_retention_min == 0 {
             return Err("[frontends.http].decode_history_retention_min must be > 0".to_string());
         }
@@ -650,6 +665,8 @@ impl ClientConfig {
                     spectrum_coverage_margin_hz: 50_000,
                     spectrum_usable_span_ratio: 0.92,
                     show_sdr_gain_control: true,
+                    bandplan_enabled: true,
+                    bandplan_region: "iaru_r1".to_string(),
                     decode_history_retention_min: 24 * 60,
                     decode_history_retention_min_by_rig: HashMap::new(),
                     auth: HttpAuthConfig {
@@ -731,6 +748,8 @@ mod tests {
         assert_eq!(config.frontends.http.initial_map_zoom, 10);
         assert_eq!(config.frontends.http.spectrum_coverage_margin_hz, 50_000);
         assert_eq!(config.frontends.http.spectrum_usable_span_ratio, 0.92);
+        assert!(config.frontends.http.bandplan_enabled);
+        assert_eq!(config.frontends.http.bandplan_region, "iaru_r1");
         assert_eq!(config.frontends.http.decode_history_retention_min, 1440);
         assert!(config
             .frontends
@@ -807,6 +826,9 @@ uhf = 60
         assert_eq!(config.frontends.http.initial_map_zoom, 12);
         assert_eq!(config.frontends.http.spectrum_coverage_margin_hz, 40_000);
         assert_eq!(config.frontends.http.spectrum_usable_span_ratio, 0.9);
+        // bandplan fields not set in TOML → defaults
+        assert!(config.frontends.http.bandplan_enabled);
+        assert_eq!(config.frontends.http.bandplan_region, "iaru_r1");
         assert_eq!(config.frontends.http.decode_history_retention_min, 720);
         assert_eq!(
             config
@@ -1154,5 +1176,33 @@ url = "remote.example.com:4530"
             .validate()
             .unwrap_err()
             .contains("poll_interval_ms must be > 0"));
+    }
+
+    #[test]
+    fn test_validate_rejects_invalid_bandplan_region() {
+        let mut config = ClientConfig::default();
+        config.frontends.http.bandplan_region = "invalid".to_string();
+        assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn test_validate_accepts_all_bandplan_regions() {
+        for region in &["iaru_r1", "iaru_r2", "iaru_r3"] {
+            let mut config = ClientConfig::default();
+            config.frontends.http.bandplan_region = region.to_string();
+            assert!(config.validate().is_ok(), "region {} should be valid", region);
+        }
+    }
+
+    #[test]
+    fn test_parse_bandplan_config_from_toml() {
+        let toml_str = r#"
+[frontends.http]
+bandplan_enabled = false
+bandplan_region = "iaru_r2"
+"#;
+        let config: ClientConfig = toml::from_str(toml_str).unwrap();
+        assert!(!config.frontends.http.bandplan_enabled);
+        assert_eq!(config.frontends.http.bandplan_region, "iaru_r2");
     }
 }

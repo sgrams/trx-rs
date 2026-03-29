@@ -282,6 +282,8 @@ pub struct HttpUiConfig {
     pub initial_map_zoom: u8,
     pub spectrum_coverage_margin_hz: u32,
     pub spectrum_usable_span_ratio: f32,
+    pub bandplan_enabled: bool,
+    pub bandplan_region: String,
     pub decode_history_retention_min: u64,
     pub decode_history_retention_min_by_rig: HashMap<String, u64>,
 }
@@ -293,6 +295,8 @@ impl Default for HttpUiConfig {
             initial_map_zoom: 10,
             spectrum_coverage_margin_hz: 50_000,
             spectrum_usable_span_ratio: 0.92,
+            bandplan_enabled: true,
+            bandplan_region: "iaru_r1".to_string(),
             decode_history_retention_min: 24 * 60,
             decode_history_retention_min_by_rig: HashMap::new(),
         }

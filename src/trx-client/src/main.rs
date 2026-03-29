@@ -180,6 +180,8 @@ async fn async_init() -> DynResult<AppState> {
         cfg.frontends.http.spectrum_coverage_margin_hz;
     frontend_runtime.http_ui.spectrum_usable_span_ratio =
         cfg.frontends.http.spectrum_usable_span_ratio;
+    frontend_runtime.http_ui.bandplan_enabled = cfg.frontends.http.bandplan_enabled;
+    frontend_runtime.http_ui.bandplan_region = cfg.frontends.http.bandplan_region.clone();
     frontend_runtime.http_ui.decode_history_retention_min =
         cfg.frontends.http.decode_history_retention_min;
     frontend_runtime.http_ui.decode_history_retention_min_by_rig = cfg
