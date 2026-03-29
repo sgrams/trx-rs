@@ -30,7 +30,7 @@ use crate::error::is_invalid_bcd_error;
 /// Fallback poll refresh timeout used when no config value is provided.
 const DEFAULT_POLL_REFRESH_TIMEOUT: Duration = Duration::from_secs(8);
 /// Fallback command execution timeout used when no config value is provided.
-const DEFAULT_COMMAND_EXEC_TIMEOUT: Duration = Duration::from_secs(10);
+const DEFAULT_command_exec_timeout: Duration = Duration::from_secs(10);
 /// Configuration for the rig task.
 pub struct RigTaskConfig {
     pub registry: Arc<RegistrationContext>,
@@ -91,7 +91,7 @@ impl Default for RigTaskConfig {
             histories: DecoderHistories::new(),
             vfo_prime: true,
             prebuilt_rig: None,
-            command_exec_timeout: DEFAULT_COMMAND_EXEC_TIMEOUT,
+            command_exec_timeout: DEFAULT_command_exec_timeout,
             poll_refresh_timeout: DEFAULT_POLL_REFRESH_TIMEOUT,
         }
     }
@@ -368,7 +368,7 @@ pub async fn run_rig_task(
                             histories: &histories,
                         };
                         let result = match time::timeout(
-                            COMMAND_EXEC_TIMEOUT,
+                            command_exec_timeout,
                             process_command(RigCommand::GetSpectrum, &mut cmd_ctx),
                         )
                         .await
@@ -377,11 +377,11 @@ pub async fn run_rig_task(
                             Err(_) => {
                                 error!(
                                     "Rig command GetSpectrum timed out after {:?}",
-                                    COMMAND_EXEC_TIMEOUT
+                                    command_exec_timeout
                                 );
                                 Err(RigError::communication(format!(
                                     "command timed out after {:?}",
-                                    COMMAND_EXEC_TIMEOUT
+                                    command_exec_timeout
                                 )))
                             }
                         };
@@ -408,18 +408,18 @@ pub async fn run_rig_task(
                         histories: &histories,
                     };
                     let result =
-                        match time::timeout(COMMAND_EXEC_TIMEOUT, process_command(cmd, &mut cmd_ctx))
+                        match time::timeout(command_exec_timeout, process_command(cmd, &mut cmd_ctx))
                             .await
                         {
                             Ok(result) => result,
                             Err(_) => {
                                 error!(
                                     "Rig command {} timed out after {:?}",
-                                    cmd_label, COMMAND_EXEC_TIMEOUT
+                                    cmd_label, command_exec_timeout
                                 );
                                 Err(RigError::communication(format!(
                                     "command timed out after {:?}",
-                                    COMMAND_EXEC_TIMEOUT
+                                    command_exec_timeout
                                 )))
                             }
                         };

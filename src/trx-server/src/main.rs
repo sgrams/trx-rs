@@ -1097,9 +1097,7 @@ async fn main() -> DynResult<()> {
                         rig_id_supervisor, e
                     );
                     let mut err_state = state_tx.borrow().clone();
-                    err_state.machine_state = "Error".to_string();
-                    err_state.error_message =
-                        Some(format!("Rig task terminated unexpectedly: {}", e));
+                    err_state.initialized = false;
                     let _ = state_tx.send(err_state);
                 }
             }

@@ -223,8 +223,8 @@ pub struct DecoderHistories {
 }
 
 /// Acquire a mutex, recovering from poisoning with a warning log.
-fn lock_or_recover<T>(mutex: &Mutex<T>, label: &str) -> std::sync::MutexGuard<'_, T> {
-    mutex.unwrap_or_else(|e| {
+fn lock_or_recover<'a, T>(mutex: &'a Mutex<T>, label: &str) -> std::sync::MutexGuard<'a, T> {
+    mutex.lock().unwrap_or_else(|e| {
         tracing::warn!(
             "Mutex for {} was poisoned (prior panic); recovering with potentially inconsistent data",
             label
@@ -383,7 +383,7 @@ impl DecoderHistories {
         let before = h.len();
         Self::prune_aprs(&mut h);
         self.adjust_total_count(before, h.len());
-        h.iter().map(|(_, pkt)| pkt.clone()).collect()
+        h.iter().map(|(_, pkt): &(Instant, AprsPacket)| pkt.clone()).collect()
     }
 
     pub fn clear_aprs_history(&self) {
@@ -426,7 +426,7 @@ impl DecoderHistories {
         let before = h.len();
         Self::prune_hf_aprs(&mut h);
         self.adjust_total_count(before, h.len());
-        h.iter().map(|(_, pkt)| pkt.clone()).collect()
+        h.iter().map(|(_, pkt): &(Instant, AprsPacket)| pkt.clone()).collect()
     }
 
     pub fn clear_hf_aprs_history(&self) {
@@ -463,7 +463,7 @@ impl DecoderHistories {
         let before = h.len();
         Self::prune_cw(&mut h);
         self.adjust_total_count(before, h.len());
-        h.iter().map(|(_, evt)| evt.clone()).collect()
+        h.iter().map(|(_, evt): &(Instant, CwEvent)| evt.clone()).collect()
     }
 
     pub fn clear_cw_history(&self) {
@@ -500,7 +500,7 @@ impl DecoderHistories {
         let before = h.len();
         Self::prune_ft8(&mut h);
         self.adjust_total_count(before, h.len());
-        h.iter().map(|(_, msg)| msg.clone()).collect()
+        h.iter().map(|(_, msg): &(Instant, Ft8Message)| msg.clone()).collect()
     }
 
     pub fn clear_ft8_history(&self) {
@@ -537,7 +537,7 @@ impl DecoderHistories {
         let before = h.len();
         Self::prune_ft4(&mut h);
         self.adjust_total_count(before, h.len());
-        h.iter().map(|(_, msg)| msg.clone()).collect()
+        h.iter().map(|(_, msg): &(Instant, Ft8Message)| msg.clone()).collect()
     }
 
     pub fn clear_ft4_history(&self) {
@@ -574,7 +574,7 @@ impl DecoderHistories {
         let before = h.len();
         Self::prune_ft2(&mut h);
         self.adjust_total_count(before, h.len());
-        h.iter().map(|(_, msg)| msg.clone()).collect()
+        h.iter().map(|(_, msg): &(Instant, Ft8Message)| msg.clone()).collect()
     }
 
     pub fn clear_ft2_history(&self) {
@@ -611,7 +611,7 @@ impl DecoderHistories {
         let before = h.len();
         Self::prune_wspr(&mut h);
         self.adjust_total_count(before, h.len());
-        h.iter().map(|(_, msg)| msg.clone()).collect()
+        h.iter().map(|(_, msg): &(Instant, WsprMessage)| msg.clone()).collect()
     }
 
     pub fn clear_wspr_history(&self) {
@@ -651,7 +651,7 @@ impl DecoderHistories {
         let before = h.len();
         Self::prune_lrpt(&mut h);
         self.adjust_total_count(before, h.len());
-        h.iter().map(|(_, img)| img.clone()).collect()
+        h.iter().map(|(_, img): &(Instant, LrptImage)| img.clone()).collect()
     }
 
     pub fn clear_lrpt_history(&self) {
@@ -981,7 +981,7 @@ fn run_playback(
     mut rx: mpsc::Receiver<Bytes>,
     shutdown_rx: watch::Receiver<bool>,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
+    use cpal::traits::{DeviceTrait, StreamTrait};
     use std::sync::mpsc::TryRecvError as StdTryRecvError;
     use tokio::sync::mpsc::error::TryRecvError as TokioTryRecvError;
 
