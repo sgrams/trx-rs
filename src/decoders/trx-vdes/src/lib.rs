@@ -2,19 +2,23 @@
 //
 // SPDX-License-Identifier: BSD-2-Clause
 
-//! Early VDES 100 kHz decoder scaffold.
+//! VDES 100 kHz decoder for VDE-TER (ITU-R M.2092-1).
 //!
-//! This decoder no longer reuses the AIS FM-audio path. It consumes filtered
-//! complex baseband for a single 100 kHz channel and performs:
+//! This decoder consumes filtered complex baseband for a single 100 kHz
+//! channel and performs:
 //! - burst energy detection
 //! - coarse DC removal / normalization
-//! - differential phase extraction
-//! - coarse symbol timing at the 76.8 ksps VDE-TER baseline
-//! - `pi/4`-QPSK quadrant slicing
-//!
-//! It performs a first hard-decision FEC stage for the `TER-MCS-1.100` 1/2-rate
-//! path after deinterleaving, but full M.2092-1 turbo/puncture handling,
-//! link-layer parsing, and application payload decoding are not implemented yet.
+//! - differential phase extraction (CFO-corrected via 4th-power method)
+//! - symbol timing at the 76.8 ksps VDE-TER baseline
+//! - π/4-QPSK quadrant slicing
+//! - 16-column block deinterleaving
+//! - Turbo FEC decoding (dual 8-state RSC with BCJR/MAP, QPP interleaver)
+//! - CRC-16-CCITT validation
+//! - M.2092-1 link-layer frame parsing (Messages 0–6)
+
+mod crc;
+mod link_layer;
+mod turbo;
 
 use num_complex::Complex;
 use trx_core::decode::VdesMessage;
@@ -172,6 +176,35 @@ impl VdesDecoder {
         let link_id = decode_link_id_from_symbols(&framed.symbols);
         let (fec_input_symbols, fec_tail_symbols) = split_fec_frame(&deinterleaved);
         let coded_bits = dibits_to_bits(fec_input_symbols);
+
+        // --- Turbo FEC decode (primary path) ---
+        // The info block length is half the coded bits for rate 1/2.
+        let info_len = coded_bits.len() / 2;
+        let (turbo_bits, turbo_reliability) = turbo::turbo_decode(&coded_bits, info_len);
+
+        // --- Try link-layer parse on turbo-decoded bits ---
+        let turbo_frame = if !turbo_bits.is_empty() {
+            link_layer::parse_link_layer(&turbo_bits)
+        } else {
+            None
+        };
+
+        // If turbo decode + link-layer parse succeeds with valid CRC, use it.
+        if let Some(ref ll_frame) = turbo_frame {
+            if ll_frame.crc_ok {
+                return Some(build_link_layer_message(
+                    channel,
+                    ll_frame,
+                    &framed,
+                    &mode,
+                    rms,
+                    link_id,
+                    turbo_reliability,
+                ));
+            }
+        }
+
+        // --- Fallback: Viterbi decode (legacy path) ---
         let decoded_bits = viterbi_decode_rate_half(&coded_bits);
         if decoded_bits.is_empty() {
             return Some(build_unsynced_message(
@@ -182,9 +215,38 @@ impl VdesDecoder {
                 &framed.symbols,
             ));
         }
-        let parsed = parse_vdes_payload(&decoded_bits);
+
+        // Try link-layer parse on Viterbi-decoded bits too
+        let viterbi_frame = link_layer::parse_link_layer(&decoded_bits);
+        if let Some(ref ll_frame) = viterbi_frame {
+            if ll_frame.crc_ok {
+                return Some(build_link_layer_message(
+                    channel,
+                    ll_frame,
+                    &framed,
+                    &mode,
+                    rms,
+                    link_id,
+                    0.0,
+                ));
+            }
+        }
+
+        // --- Neither FEC produced a valid CRC: fall back to plausibility scoring ---
+        // Prefer turbo result if it had a valid link-layer parse (even without CRC).
+        let (use_turbo, decoded_ref) = if let Some(ref ll_frame) = turbo_frame {
+            if ll_frame.message_id <= 6 {
+                (true, turbo_bits.as_slice())
+            } else {
+                (false, decoded_bits.as_slice())
+            }
+        } else {
+            (false, decoded_bits.as_slice())
+        };
+
+        let parsed = parse_vdes_payload(decoded_ref);
         let payload_bits = if parsed.payload_bits.is_empty() {
-            decoded_bits.as_slice()
+            decoded_ref
         } else {
             parsed.payload_bits.as_slice()
         };
@@ -206,16 +268,32 @@ impl VdesDecoder {
                 &framed.symbols,
             ));
         }
-        let fec_state = format!(
-            "Hard-decision 1/2 Viterbi, tail {} / {} zero bits{}",
-            tail_zero_bits,
-            TER_MCS1_100_FEC_TAIL_BITS,
-            if plausibility < 15 {
-                " · Low confidence"
-            } else {
-                ""
-            }
-        );
+
+        // Check CRC on decoded bits (no link-layer wrapper)
+        let crc_ok = crc::check_crc16(decoded_ref);
+
+        let fec_label = if use_turbo {
+            format!(
+                "Turbo FEC (8-iter BCJR), reliability {:.2}{}",
+                turbo_reliability,
+                if plausibility < 15 {
+                    " · Low confidence"
+                } else {
+                    ""
+                }
+            )
+        } else {
+            format!(
+                "Hard-decision 1/2 Viterbi, tail {} / {} zero bits{}",
+                tail_zero_bits,
+                TER_MCS1_100_FEC_TAIL_BITS,
+                if plausibility < 15 {
+                    " · Low confidence"
+                } else {
+                    ""
+                }
+            )
+        };
         let destination = parsed.summary.clone().or_else(|| {
             Some(format!(
                 "TER-MCS-1.100 RMS {:.2} sync {:.0}% rot {}",
@@ -232,7 +310,7 @@ impl VdesDecoder {
             message_type: parsed.message_id.unwrap_or(mode.message_type),
             repeat: parsed.repeat,
             mmsi: parsed.source_id.unwrap_or(0),
-            crc_ok: false,
+            crc_ok,
             bit_len: payload_bits.len(),
             raw_bytes,
             lat: parsed.lat,
@@ -264,7 +342,7 @@ impl VdesDecoder {
             sync_score: Some(framed.sync_score),
             sync_errors: Some(framed.sync_errors),
             phase_rotation: Some(framed.phase_rotation),
-            fec_state: Some(fec_state),
+            fec_state: Some(fec_label),
         })
     }
 
@@ -457,6 +535,134 @@ fn build_unsynced_message(
         sync_errors: Some(framed.sync_errors),
         phase_rotation: Some(framed.phase_rotation),
         fec_state: Some("Sync below parse threshold".to_string()),
+    }
+}
+
+fn build_link_layer_message(
+    channel: &str,
+    ll: &link_layer::LinkLayerFrame,
+    framed: &FrameSlice,
+    mode: &BurstMode<'_>,
+    _rms: f32,
+    link_id: Option<u8>,
+    turbo_reliability: f32,
+) -> VdesMessage {
+    let link_text = link_id
+        .map(|value| format!("LID {}", value))
+        .unwrap_or_else(|| "LID ?".to_string());
+
+    let (lat, lon) = match &ll.geo_box {
+        Some(geo) => (Some(geo.center_lat()), Some(geo.center_lon())),
+        None => (None, None),
+    };
+
+    let payload_preview = ascii_preview(&ll.payload_bits);
+    let raw_bytes = pack_bits_msb(&ll.payload_bits);
+
+    let summary = match ll.message_id {
+        0 => format!(
+            "Broadcast from {} · {} data bits",
+            ll.source_id,
+            ll.payload_bits.len()
+        ),
+        1 => format!(
+            "Scheduled ASM {} · {} data bits",
+            ll.asm_identifier.unwrap_or(0),
+            ll.payload_bits.len()
+        ),
+        2 => format!(
+            "Scheduled ITDMA ASM {} · {} data bits",
+            ll.asm_identifier.unwrap_or(0),
+            ll.payload_bits.len()
+        ),
+        3 => format!(
+            "{} -> {} · ASM {} · {} data bits",
+            ll.source_id,
+            ll.destination_id.unwrap_or(0),
+            ll.asm_identifier.unwrap_or(0),
+            ll.payload_bits.len()
+        ),
+        4 => format!(
+            "{} -> {} · ITDMA ASM {} · {} data bits",
+            ll.source_id,
+            ll.destination_id.unwrap_or(0),
+            ll.asm_identifier.unwrap_or(0),
+            ll.payload_bits.len()
+        ),
+        5 => format!(
+            "{} -> {} · ack 0x{:04X} · CQ {}",
+            ll.source_id,
+            ll.destination_id.unwrap_or(0),
+            ll.ack_nack_mask.unwrap_or(0),
+            ll.channel_quality.unwrap_or(0)
+        ),
+        6 => {
+            if let Some(ref geo) = ll.geo_box {
+                format!(
+                    "Geo ASM {} · {} data bits · box {:.3},{:.3} to {:.3},{:.3}",
+                    ll.asm_identifier.unwrap_or(0),
+                    ll.payload_bits.len(),
+                    geo.sw_lat,
+                    geo.sw_lon,
+                    geo.ne_lat,
+                    geo.ne_lon
+                )
+            } else {
+                format!(
+                    "Geo ASM {} · {} data bits",
+                    ll.asm_identifier.unwrap_or(0),
+                    ll.payload_bits.len()
+                )
+            }
+        }
+        _ => format!("Message {} · {} bits", ll.message_id, ll.payload_bits.len()),
+    };
+
+    let fec_state = if turbo_reliability > 0.0 {
+        format!(
+            "Turbo FEC (8-iter BCJR), reliability {:.2}, CRC OK",
+            turbo_reliability
+        )
+    } else {
+        "Viterbi 1/2-rate, CRC OK".to_string()
+    };
+
+    VdesMessage {
+        rig_id: None,
+        ts_ms: None,
+        channel: channel.to_string(),
+        message_type: ll.message_id,
+        repeat: ll.repeat,
+        mmsi: ll.source_id,
+        crc_ok: true,
+        bit_len: ll.payload_bits.len(),
+        raw_bytes,
+        lat,
+        lon,
+        sog_knots: None,
+        cog_deg: None,
+        heading_deg: None,
+        nav_status: None,
+        vessel_name: Some(format!("{} {} sym", ll.label, framed.symbols.len())),
+        callsign: Some(format!(
+            "{} {} @{}",
+            mode.label, link_text, framed.start_offset
+        )),
+        destination: Some(summary),
+        message_label: Some(ll.label.to_string()),
+        session_id: Some(ll.session_id),
+        source_id: Some(ll.source_id),
+        destination_id: ll.destination_id,
+        data_count: ll.data_count,
+        asm_identifier: ll.asm_identifier,
+        ack_nack_mask: ll.ack_nack_mask,
+        channel_quality: ll.channel_quality,
+        payload_preview,
+        link_id,
+        sync_score: Some(framed.sync_score),
+        sync_errors: Some(framed.sync_errors),
+        phase_rotation: Some(framed.phase_rotation),
+        fec_state: Some(fec_state),
     }
 }
 

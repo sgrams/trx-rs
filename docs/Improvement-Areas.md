@@ -125,14 +125,14 @@ differs from the current reading, inference correctly assigns to VFO A. When
 frequencies match (ambiguous), defaults to VFO A — resolved after VFO toggle
 primes both sides. Added detailed comments explaining the inference logic.
 
-### VDES decoder has incomplete FEC
+### ~~VDES decoder has incomplete FEC~~ — RESOLVED
 
-**Location:** `src/decoders/trx-vdes/src/lib.rs`
+**Location:** `src/decoders/trx-vdes/src/`
 
-Burst detection and pi/4-QPSK demodulation work, but Turbo FEC (1/2 rate) and
-link-layer (M.2092-1) parsing are not implemented. CRC validation is stubbed
-(`crc_ok: false`). Output limited to raw symbols. This is a substantial DSP
-implementation task requiring Turbo code decoder research.
+Turbo FEC decoder (dual 8-state RSC with BCJR/MAP iterative decoding, QPP
+interleaver), CRC-16-CCITT validation, and M.2092-1 link-layer frame parsing
+(Messages 0–6) have been implemented.  The decode pipeline now attempts turbo
+decoding first, falls back to Viterbi, and validates CRC on both paths.
 
 ### ~~Plugin system lacks versioning and lifecycle~~ — DROPPED
 
