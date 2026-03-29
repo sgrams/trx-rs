@@ -147,7 +147,7 @@ Improvement plan: `docs/Improvement-Areas.md`
 **P3 — Low:**
 - **Missing tests**: `audio.rs` (3,812 LOC), `api.rs` (2,711 LOC), `main.rs` (1,203 LOC) have 0 tests.
 - **FT-817 VFO inference fragile**: Fails when VFO A and B share the same frequency.
-- **VDES decoder incomplete**: Turbo FEC, CRC, and link-layer parsing not implemented.
+- ~~**VDES decoder incomplete**~~: Turbo FEC, CRC-16, and M.2092-1 link-layer parsing now implemented.
 - **Plugin system lacks versioning**: No API version or reload semantics.
 - **Configurator detection stubbed**: `detect.rs` TODO for `serialport::available_ports()`.
 - **Inconsistent naming**: `freq_hz`/`frequency`/`center_hz`; `rig_id`/`id`; `model`/`rig_model`.
