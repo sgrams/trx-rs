@@ -448,13 +448,27 @@ impl Ft817 {
             Ft817VfoSide::A => self.vfo_a_freq = Some(freq),
             Ft817VfoSide::B => self.vfo_b_freq = Some(freq),
             Ft817VfoSide::Unknown => {
-                // Try to infer which VFO we are on using cached values; default to A only.
-                if self.vfo_b_freq.map(|f| f.hz == freq.hz).unwrap_or(false)
-                    && self.vfo_a_freq.is_none()
-                {
-                    self.vfo_side = Ft817VfoSide::B;
-                    self.vfo_b_freq = Some(freq);
+                // Infer which VFO we are on using cached values.
+                //
+                // When VFO B has a known frequency that differs from the current
+                // reading and VFO A is unset, we can infer VFO A. When frequencies
+                // match (ambiguous case), default to VFO A — the ambiguity is
+                // resolved after the first VFO toggle (see toggle_vfo_side).
+                if let Some(cached_b) = self.vfo_b_freq {
+                    if cached_b.hz == freq.hz && self.vfo_a_freq.is_none() {
+                        // Could be either VFO; default to A (will be corrected
+                        // after toggle_vfo primes both sides).
+                        self.vfo_side = Ft817VfoSide::A;
+                        self.vfo_a_freq = Some(freq);
+                    } else if cached_b.hz != freq.hz {
+                        // Different frequency from cached B → must be A.
+                        self.vfo_side = Ft817VfoSide::A;
+                        self.vfo_a_freq = Some(freq);
+                    } else {
+                        self.vfo_b_freq = Some(freq);
+                    }
                 } else {
+                    // No cached B at all; assume A.
                     self.vfo_side = Ft817VfoSide::A;
                     self.vfo_a_freq = Some(freq);
                 }
@@ -472,6 +486,7 @@ impl Ft817 {
             }
         }
     }
+
 }
 
 impl Rig for Ft817 {

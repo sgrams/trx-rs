@@ -37,6 +37,8 @@ const DEFAULT_IO_TIMEOUT: Duration = Duration::from_secs(10);
 /// Fallback request timeout used when no config value is provided.
 const DEFAULT_REQUEST_TIMEOUT: Duration = Duration::from_secs(12);
 const MAX_JSON_LINE_BYTES: usize = 256 * 1024;
+/// Maximum concurrent connections allowed from a single IP address.
+const MAX_CONNECTIONS_PER_IP: usize = 10;
 
 /// Configurable timeout values for the listener, threaded from `[timeouts]`.
 #[derive(Debug, Clone, Copy)]
@@ -65,6 +67,38 @@ struct SatPassCache {
     result: trx_core::geo::PassPredictionResult,
     computed_at: Instant,
 }
+/// Per-IP connection tracker for rate limiting.
+struct ConnectionTracker {
+    counts: HashMap<std::net::IpAddr, usize>,
+}
+
+impl ConnectionTracker {
+    fn new() -> Self {
+        Self {
+            counts: HashMap::new(),
+        }
+    }
+
+    fn try_acquire(&mut self, ip: std::net::IpAddr) -> bool {
+        let count = self.counts.entry(ip).or_insert(0);
+        if *count >= MAX_CONNECTIONS_PER_IP {
+            false
+        } else {
+            *count += 1;
+            true
+        }
+    }
+
+    fn release(&mut self, ip: std::net::IpAddr) {
+        if let Some(count) = self.counts.get_mut(&ip) {
+            *count = count.saturating_sub(1);
+            if *count == 0 {
+                self.counts.remove(&ip);
+            }
+        }
+    }
+}
+
 /// Shared state passed to each client handler.
 struct ClientContext {
     rigs: Arc<HashMap<String, RigHandle>>,
@@ -93,11 +127,24 @@ pub async fn run_listener(
     info!("Listening on {}", addr);
     let validator = Arc::new(SimpleTokenValidator::new(auth_tokens));
     let sat_pass_cache: Arc<Mutex<Option<SatPassCache>>> = Arc::new(Mutex::new(None));
+    let conn_tracker = Arc::new(Mutex::new(ConnectionTracker::new()));
 
     loop {
         tokio::select! {
             accept = listener.accept() => {
                 let (socket, peer) = accept?;
+
+                // Per-IP connection rate limiting.
+                let peer_ip = peer.ip();
+                {
+                    let mut tracker = conn_tracker.lock().unwrap_or_else(|e| e.into_inner());
+                    if !tracker.try_acquire(peer_ip) {
+                        warn!("Rejecting connection from {} (per-IP limit reached)", peer);
+                        drop(socket);
+                        continue;
+                    }
+                }
+
                 info!("Client connected: {}", peer);
 
                 let ctx = ClientContext {
@@ -109,9 +156,14 @@ pub async fn run_listener(
                     timeouts,
                 };
                 let client_shutdown_rx = shutdown_rx.clone();
+                let tracker_clone = Arc::clone(&conn_tracker);
                 tokio::spawn(async move {
                     if let Err(e) = handle_client(socket, peer, ctx, client_shutdown_rx).await {
                         error!("Client {} error: {:?}", peer, e);
+                    }
+                    // Release connection slot when client disconnects.
+                    if let Ok(mut tracker) = tracker_clone.lock() {
+                        tracker.release(peer_ip);
                     }
                 });
             }
@@ -266,6 +318,7 @@ async fn handle_client(
                 let resp = ClientResponse {
                     success: false,
                     rig_id: None,
+                    protocol_version: None,
                     state: None,
                     rigs: None,
                     sat_passes: None,
@@ -280,6 +333,7 @@ async fn handle_client(
             let resp = ClientResponse {
                 success: false,
                 rig_id: None,
+                protocol_version: None,
                 state: None,
                 rigs: None,
                 sat_passes: None,
@@ -313,6 +367,7 @@ async fn handle_client(
             let resp = ClientResponse {
                 success: true,
                 rig_id: Some("server".to_string()),
+                protocol_version: None,
                 state: None,
                 rigs: Some(entries),
                 sat_passes: None,
@@ -348,15 +403,32 @@ async fn handle_client(
                     .unwrap_or_default()
                     .as_millis() as i64;
                 let window_ms = 24 * 3600 * 1000; // 24 hours
-                let fresh = tokio::task::spawn_blocking(move || {
-                    trx_core::geo::compute_upcoming_passes(lat, lon, now_ms, window_ms)
-                })
+                let fresh = match time::timeout(
+                    Duration::from_secs(30),
+                    tokio::task::spawn_blocking(move || {
+                        trx_core::geo::compute_upcoming_passes(lat, lon, now_ms, window_ms)
+                    }),
+                )
                 .await
-                .unwrap_or_else(|_| trx_core::geo::PassPredictionResult {
-                    passes: vec![],
-                    satellite_count: 0,
-                    tle_source: trx_core::geo::TleSource::Unavailable,
-                });
+                {
+                    Ok(Ok(result)) => result,
+                    Ok(Err(e)) => {
+                        warn!("Satellite pass computation panicked: {:?}", e);
+                        trx_core::geo::PassPredictionResult {
+                            passes: vec![],
+                            satellite_count: 0,
+                            tle_source: trx_core::geo::TleSource::Unavailable,
+                        }
+                    }
+                    Err(_) => {
+                        warn!("Satellite pass computation timed out after 30s");
+                        trx_core::geo::PassPredictionResult {
+                            passes: vec![],
+                            satellite_count: 0,
+                            tle_source: trx_core::geo::TleSource::Unavailable,
+                        }
+                    }
+                };
                 // Update cache.
                 if let Ok(mut guard) = sat_pass_cache.lock() {
                     *guard = Some(SatPassCache {
@@ -375,6 +447,7 @@ async fn handle_client(
             let resp = ClientResponse {
                 success: true,
                 rig_id: Some("server".to_string()),
+                protocol_version: None,
                 state: None,
                 rigs: None,
                 sat_passes: Some(result),
@@ -392,6 +465,7 @@ async fn handle_client(
                 let resp = ClientResponse {
                     success: false,
                     rig_id: Some(target_rig_id.clone()),
+                    protocol_version: None,
                     state: None,
                     rigs: None,
                     sat_passes: None,
@@ -411,6 +485,7 @@ async fn handle_client(
                 let resp = ClientResponse {
                     success: true,
                     rig_id: Some(target_rig_id.clone()),
+                    protocol_version: None,
                     state: Some(snapshot),
                     rigs: None,
                     sat_passes: None,
@@ -438,6 +513,7 @@ async fn handle_client(
                 let resp = ClientResponse {
                     success: false,
                     rig_id: Some(target_rig_id.clone()),
+                    protocol_version: None,
                     state: None,
                     rigs: None,
                     sat_passes: None,
@@ -450,6 +526,7 @@ async fn handle_client(
                 let resp = ClientResponse {
                     success: false,
                     rig_id: Some(target_rig_id.clone()),
+                    protocol_version: None,
                     state: None,
                     rigs: None,
                     sat_passes: None,
@@ -468,6 +545,7 @@ async fn handle_client(
                         let resp = ClientResponse {
                             success: false,
                             rig_id: Some(target_rig_id.clone()),
+                            protocol_version: None,
                             state: None,
                             rigs: None,
                             sat_passes: None,
@@ -493,6 +571,7 @@ async fn handle_client(
                 let resp = ClientResponse {
                     success: true,
                     rig_id: Some(target_rig_id.clone()),
+                    protocol_version: None,
                     state: Some(snapshot),
                     rigs: None,
                     sat_passes: None,
@@ -504,6 +583,7 @@ async fn handle_client(
                 let resp = ClientResponse {
                     success: false,
                     rig_id: Some(target_rig_id.clone()),
+                    protocol_version: None,
                     state: None,
                     rigs: None,
                     sat_passes: None,
@@ -516,6 +596,7 @@ async fn handle_client(
                 let resp = ClientResponse {
                     success: false,
                     rig_id: Some(target_rig_id.clone()),
+                    protocol_version: None,
                     state: None,
                     rigs: None,
                     sat_passes: None,

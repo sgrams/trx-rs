@@ -463,12 +463,12 @@ async fn process_command(
     // Handle decoder commands early — they don't touch the rig CAT.
     match cmd {
         RigCommand::SetAprsDecodeEnabled(en) => {
-            ctx.state.aprs_decode_enabled = en;
+            ctx.state.decoders.aprs_decode_enabled = en;
             let _ = ctx.state_tx.send(ctx.state.clone());
             return snapshot_from(ctx.state);
         }
         RigCommand::SetCwDecodeEnabled(en) => {
-            ctx.state.cw_decode_enabled = en;
+            ctx.state.decoders.cw_decode_enabled = en;
             let _ = ctx.state_tx.send(ctx.state.clone());
             return snapshot_from(ctx.state);
         }
@@ -488,85 +488,85 @@ async fn process_command(
             return snapshot_from(ctx.state);
         }
         RigCommand::SetFt8DecodeEnabled(en) => {
-            ctx.state.ft8_decode_enabled = en;
+            ctx.state.decoders.ft8_decode_enabled = en;
             info!("FT8 decode {}", if en { "enabled" } else { "disabled" });
             let _ = ctx.state_tx.send(ctx.state.clone());
             return snapshot_from(ctx.state);
         }
         RigCommand::SetFt4DecodeEnabled(en) => {
-            ctx.state.ft4_decode_enabled = en;
+            ctx.state.decoders.ft4_decode_enabled = en;
             info!("FT4 decode {}", if en { "enabled" } else { "disabled" });
             let _ = ctx.state_tx.send(ctx.state.clone());
             return snapshot_from(ctx.state);
         }
         RigCommand::SetFt2DecodeEnabled(en) => {
-            ctx.state.ft2_decode_enabled = en;
+            ctx.state.decoders.ft2_decode_enabled = en;
             info!("FT2 decode {}", if en { "enabled" } else { "disabled" });
             let _ = ctx.state_tx.send(ctx.state.clone());
             return snapshot_from(ctx.state);
         }
         RigCommand::SetWsprDecodeEnabled(en) => {
-            ctx.state.wspr_decode_enabled = en;
+            ctx.state.decoders.wspr_decode_enabled = en;
             info!("WSPR decode {}", if en { "enabled" } else { "disabled" });
             let _ = ctx.state_tx.send(ctx.state.clone());
             return snapshot_from(ctx.state);
         }
         RigCommand::ResetAprsDecoder => {
             ctx.histories.clear_aprs_history();
-            ctx.state.aprs_decode_reset_seq += 1;
+            ctx.state.reset_seqs.aprs_decode_reset_seq += 1;
             let _ = ctx.state_tx.send(ctx.state.clone());
             return snapshot_from(ctx.state);
         }
         RigCommand::SetHfAprsDecodeEnabled(en) => {
-            ctx.state.hf_aprs_decode_enabled = en;
+            ctx.state.decoders.hf_aprs_decode_enabled = en;
             let _ = ctx.state_tx.send(ctx.state.clone());
             return snapshot_from(ctx.state);
         }
         RigCommand::ResetHfAprsDecoder => {
             ctx.histories.clear_hf_aprs_history();
-            ctx.state.hf_aprs_decode_reset_seq += 1;
+            ctx.state.reset_seqs.hf_aprs_decode_reset_seq += 1;
             let _ = ctx.state_tx.send(ctx.state.clone());
             return snapshot_from(ctx.state);
         }
         RigCommand::ResetCwDecoder => {
             ctx.histories.clear_cw_history();
-            ctx.state.cw_decode_reset_seq += 1;
+            ctx.state.reset_seqs.cw_decode_reset_seq += 1;
             let _ = ctx.state_tx.send(ctx.state.clone());
             return snapshot_from(ctx.state);
         }
         RigCommand::ResetFt8Decoder => {
             ctx.histories.clear_ft8_history();
-            ctx.state.ft8_decode_reset_seq += 1;
+            ctx.state.reset_seqs.ft8_decode_reset_seq += 1;
             let _ = ctx.state_tx.send(ctx.state.clone());
             return snapshot_from(ctx.state);
         }
         RigCommand::ResetFt4Decoder => {
             ctx.histories.clear_ft4_history();
-            ctx.state.ft4_decode_reset_seq += 1;
+            ctx.state.reset_seqs.ft4_decode_reset_seq += 1;
             let _ = ctx.state_tx.send(ctx.state.clone());
             return snapshot_from(ctx.state);
         }
         RigCommand::ResetFt2Decoder => {
             ctx.histories.clear_ft2_history();
-            ctx.state.ft2_decode_reset_seq += 1;
+            ctx.state.reset_seqs.ft2_decode_reset_seq += 1;
             let _ = ctx.state_tx.send(ctx.state.clone());
             return snapshot_from(ctx.state);
         }
         RigCommand::ResetWsprDecoder => {
             ctx.histories.clear_wspr_history();
-            ctx.state.wspr_decode_reset_seq += 1;
+            ctx.state.reset_seqs.wspr_decode_reset_seq += 1;
             let _ = ctx.state_tx.send(ctx.state.clone());
             return snapshot_from(ctx.state);
         }
         RigCommand::SetLrptDecodeEnabled(en) => {
-            ctx.state.lrpt_decode_enabled = en;
+            ctx.state.decoders.lrpt_decode_enabled = en;
             info!("LRPT decode {}", if en { "enabled" } else { "disabled" });
             let _ = ctx.state_tx.send(ctx.state.clone());
             return snapshot_from(ctx.state);
         }
         RigCommand::ResetLrptDecoder => {
             ctx.histories.clear_lrpt_history();
-            ctx.state.lrpt_decode_reset_seq += 1;
+            ctx.state.reset_seqs.lrpt_decode_reset_seq += 1;
             let _ = ctx.state_tx.send(ctx.state.clone());
             return snapshot_from(ctx.state);
         }
@@ -1065,23 +1065,23 @@ fn invalidate_main_decoder_windows_on_freq_change(state: &mut RigState, prev_fre
 
     match state.status.mode {
         RigMode::PKT => {
-            state.aprs_decode_reset_seq += 1;
+            state.reset_seqs.aprs_decode_reset_seq += 1;
         }
         RigMode::DIG => {
-            state.hf_aprs_decode_reset_seq += 1;
-            state.ft8_decode_reset_seq += 1;
-            state.ft4_decode_reset_seq += 1;
-            state.ft2_decode_reset_seq += 1;
-            state.wspr_decode_reset_seq += 1;
+            state.reset_seqs.hf_aprs_decode_reset_seq += 1;
+            state.reset_seqs.ft8_decode_reset_seq += 1;
+            state.reset_seqs.ft4_decode_reset_seq += 1;
+            state.reset_seqs.ft2_decode_reset_seq += 1;
+            state.reset_seqs.wspr_decode_reset_seq += 1;
         }
         RigMode::USB => {
-            state.ft8_decode_reset_seq += 1;
-            state.ft4_decode_reset_seq += 1;
-            state.ft2_decode_reset_seq += 1;
-            state.wspr_decode_reset_seq += 1;
+            state.reset_seqs.ft8_decode_reset_seq += 1;
+            state.reset_seqs.ft4_decode_reset_seq += 1;
+            state.reset_seqs.ft2_decode_reset_seq += 1;
+            state.reset_seqs.wspr_decode_reset_seq += 1;
         }
         RigMode::CW | RigMode::CWR => {
-            state.cw_decode_reset_seq += 1;
+            state.reset_seqs.cw_decode_reset_seq += 1;
         }
         _ => {}
     }
@@ -1235,13 +1235,13 @@ mod tests {
 
         invalidate_main_decoder_windows_on_freq_change(&mut state, prev_freq_hz);
 
-        assert_eq!(state.aprs_decode_reset_seq, 1);
-        assert_eq!(state.hf_aprs_decode_reset_seq, 0);
-        assert_eq!(state.cw_decode_reset_seq, 0);
-        assert_eq!(state.ft8_decode_reset_seq, 0);
-        assert_eq!(state.ft4_decode_reset_seq, 0);
-        assert_eq!(state.ft2_decode_reset_seq, 0);
-        assert_eq!(state.wspr_decode_reset_seq, 0);
+        assert_eq!(state.reset_seqs.aprs_decode_reset_seq, 1);
+        assert_eq!(state.reset_seqs.hf_aprs_decode_reset_seq, 0);
+        assert_eq!(state.reset_seqs.cw_decode_reset_seq, 0);
+        assert_eq!(state.reset_seqs.ft8_decode_reset_seq, 0);
+        assert_eq!(state.reset_seqs.ft4_decode_reset_seq, 0);
+        assert_eq!(state.reset_seqs.ft2_decode_reset_seq, 0);
+        assert_eq!(state.reset_seqs.wspr_decode_reset_seq, 0);
     }
 
     #[test]
@@ -1255,26 +1255,26 @@ mod tests {
 
         invalidate_main_decoder_windows_on_freq_change(&mut state, prev_freq_hz);
 
-        assert_eq!(state.aprs_decode_reset_seq, 0);
-        assert_eq!(state.hf_aprs_decode_reset_seq, 1);
-        assert_eq!(state.cw_decode_reset_seq, 0);
-        assert_eq!(state.ft8_decode_reset_seq, 1);
-        assert_eq!(state.ft4_decode_reset_seq, 1);
-        assert_eq!(state.ft2_decode_reset_seq, 1);
-        assert_eq!(state.wspr_decode_reset_seq, 1);
+        assert_eq!(state.reset_seqs.aprs_decode_reset_seq, 0);
+        assert_eq!(state.reset_seqs.hf_aprs_decode_reset_seq, 1);
+        assert_eq!(state.reset_seqs.cw_decode_reset_seq, 0);
+        assert_eq!(state.reset_seqs.ft8_decode_reset_seq, 1);
+        assert_eq!(state.reset_seqs.ft4_decode_reset_seq, 1);
+        assert_eq!(state.reset_seqs.ft2_decode_reset_seq, 1);
+        assert_eq!(state.reset_seqs.wspr_decode_reset_seq, 1);
     }
 
     #[test]
     fn wfm_freq_change_does_not_touch_main_decoders() {
         let mut state = RigState::new_uninitialized();
         state.apply_mode(RigMode::WFM);
-        state.aprs_decode_reset_seq = 2;
-        state.hf_aprs_decode_reset_seq = 3;
-        state.cw_decode_reset_seq = 4;
-        state.ft8_decode_reset_seq = 5;
-        state.ft4_decode_reset_seq = 6;
-        state.ft2_decode_reset_seq = 7;
-        state.wspr_decode_reset_seq = 8;
+        state.reset_seqs.aprs_decode_reset_seq = 2;
+        state.reset_seqs.hf_aprs_decode_reset_seq = 3;
+        state.reset_seqs.cw_decode_reset_seq = 4;
+        state.reset_seqs.ft8_decode_reset_seq = 5;
+        state.reset_seqs.ft4_decode_reset_seq = 6;
+        state.reset_seqs.ft2_decode_reset_seq = 7;
+        state.reset_seqs.wspr_decode_reset_seq = 8;
         let prev_freq_hz = state.status.freq.hz;
         state.apply_freq(Freq {
             hz: prev_freq_hz + 200_000,
@@ -1282,35 +1282,35 @@ mod tests {
 
         invalidate_main_decoder_windows_on_freq_change(&mut state, prev_freq_hz);
 
-        assert_eq!(state.aprs_decode_reset_seq, 2);
-        assert_eq!(state.hf_aprs_decode_reset_seq, 3);
-        assert_eq!(state.cw_decode_reset_seq, 4);
-        assert_eq!(state.ft8_decode_reset_seq, 5);
-        assert_eq!(state.ft4_decode_reset_seq, 6);
-        assert_eq!(state.ft2_decode_reset_seq, 7);
-        assert_eq!(state.wspr_decode_reset_seq, 8);
+        assert_eq!(state.reset_seqs.aprs_decode_reset_seq, 2);
+        assert_eq!(state.reset_seqs.hf_aprs_decode_reset_seq, 3);
+        assert_eq!(state.reset_seqs.cw_decode_reset_seq, 4);
+        assert_eq!(state.reset_seqs.ft8_decode_reset_seq, 5);
+        assert_eq!(state.reset_seqs.ft4_decode_reset_seq, 6);
+        assert_eq!(state.reset_seqs.ft2_decode_reset_seq, 7);
+        assert_eq!(state.reset_seqs.wspr_decode_reset_seq, 8);
     }
 
     #[test]
     fn unchanged_freq_keeps_decoder_windows_intact() {
         let mut state = RigState::new_uninitialized();
-        state.aprs_decode_reset_seq = 2;
-        state.hf_aprs_decode_reset_seq = 3;
-        state.cw_decode_reset_seq = 4;
-        state.ft8_decode_reset_seq = 5;
-        state.ft4_decode_reset_seq = 6;
-        state.ft2_decode_reset_seq = 7;
-        state.wspr_decode_reset_seq = 8;
+        state.reset_seqs.aprs_decode_reset_seq = 2;
+        state.reset_seqs.hf_aprs_decode_reset_seq = 3;
+        state.reset_seqs.cw_decode_reset_seq = 4;
+        state.reset_seqs.ft8_decode_reset_seq = 5;
+        state.reset_seqs.ft4_decode_reset_seq = 6;
+        state.reset_seqs.ft2_decode_reset_seq = 7;
+        state.reset_seqs.wspr_decode_reset_seq = 8;
         let prev_freq_hz = state.status.freq.hz;
 
         invalidate_main_decoder_windows_on_freq_change(&mut state, prev_freq_hz);
 
-        assert_eq!(state.aprs_decode_reset_seq, 2);
-        assert_eq!(state.hf_aprs_decode_reset_seq, 3);
-        assert_eq!(state.cw_decode_reset_seq, 4);
-        assert_eq!(state.ft8_decode_reset_seq, 5);
-        assert_eq!(state.ft4_decode_reset_seq, 6);
-        assert_eq!(state.ft2_decode_reset_seq, 7);
-        assert_eq!(state.wspr_decode_reset_seq, 8);
+        assert_eq!(state.reset_seqs.aprs_decode_reset_seq, 2);
+        assert_eq!(state.reset_seqs.hf_aprs_decode_reset_seq, 3);
+        assert_eq!(state.reset_seqs.cw_decode_reset_seq, 4);
+        assert_eq!(state.reset_seqs.ft8_decode_reset_seq, 5);
+        assert_eq!(state.reset_seqs.ft4_decode_reset_seq, 6);
+        assert_eq!(state.reset_seqs.ft2_decode_reset_seq, 7);
+        assert_eq!(state.reset_seqs.wspr_decode_reset_seq, 8);
     }
 }

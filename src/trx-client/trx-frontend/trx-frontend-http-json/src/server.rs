@@ -105,6 +105,7 @@ async fn handle_client(
                 let resp = ClientResponse {
                     success: false,
                     rig_id: None,
+                    protocol_version: None,
                     state: None,
                     rigs: None,
                     sat_passes: None,
@@ -119,6 +120,7 @@ async fn handle_client(
             let resp = ClientResponse {
                 success: false,
                 rig_id: None,
+                protocol_version: None,
                 state: None,
                 rigs: None,
                 sat_passes: None,
@@ -138,6 +140,7 @@ async fn handle_client(
             let resp = ClientResponse {
                 success: true,
                 rig_id: Some("client".to_string()),
+                protocol_version: None,
                 state: None,
                 rigs: Some(snapshot_remote_rigs(context.as_ref())),
                 sat_passes: None,
@@ -170,6 +173,7 @@ async fn handle_client(
                 let resp = ClientResponse {
                     success: false,
                     rig_id: active_rig_id.clone(),
+                    protocol_version: None,
                     state: None,
                     rigs: None,
                     sat_passes: None,
@@ -182,6 +186,7 @@ async fn handle_client(
                 let resp = ClientResponse {
                     success: false,
                     rig_id: active_rig_id.clone(),
+                    protocol_version: None,
                     state: None,
                     rigs: None,
                     sat_passes: None,
@@ -197,6 +202,7 @@ async fn handle_client(
                 let resp = ClientResponse {
                     success: true,
                     rig_id: active_rig_id.clone(),
+                    protocol_version: None,
                     state: Some(snapshot),
                     rigs: None,
                     sat_passes: None,
@@ -208,6 +214,7 @@ async fn handle_client(
                 let resp = ClientResponse {
                     success: false,
                     rig_id: active_rig_id.clone(),
+                    protocol_version: None,
                     state: None,
                     rigs: None,
                     sat_passes: None,
@@ -220,6 +227,7 @@ async fn handle_client(
                 let resp = ClientResponse {
                     success: false,
                     rig_id: active_rig_id.clone(),
+                    protocol_version: None,
                     state: None,
                     rigs: None,
                     sat_passes: None,
@@ -231,6 +239,7 @@ async fn handle_client(
                 let resp = ClientResponse {
                     success: false,
                     rig_id: active_rig_id.clone(),
+                    protocol_version: None,
                     state: None,
                     rigs: None,
                     sat_passes: None,
@@ -415,14 +424,7 @@ mod tests {
             server_longitude: None,
             pskreporter_status: Some("Disabled".to_string()),
             aprs_is_status: Some("Disabled".to_string()),
-            aprs_decode_enabled: false,
-            hf_aprs_decode_enabled: false,
-            cw_decode_enabled: false,
-            ft8_decode_enabled: false,
-            ft4_decode_enabled: false,
-            ft2_decode_enabled: false,
-            wspr_decode_enabled: false,
-            lrpt_decode_enabled: false,
+            decoders: trx_core::DecoderConfig::default(),
             cw_auto: true,
             cw_wpm: 15,
             cw_tone_hz: 700,

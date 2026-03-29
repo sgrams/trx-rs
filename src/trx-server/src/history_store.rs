@@ -191,3 +191,103 @@ pub fn spawn_flush_task(
         }
     });
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn now_unix_ms_returns_positive() {
+        let ms = now_unix_ms();
+        // Should be well past epoch (year 2020+).
+        assert!(ms > 1_577_836_800_000);
+    }
+
+    #[test]
+    fn stored_entry_roundtrip_serde() {
+        let entry = StoredEntry {
+            ts_ms: 1_700_000_000_000i64,
+            data: "test message".to_string(),
+        };
+        let json = serde_json::to_string(&entry).unwrap();
+        let decoded: StoredEntry<String> = serde_json::from_str(&json).unwrap();
+        assert_eq!(decoded.ts_ms, 1_700_000_000_000);
+        assert_eq!(decoded.data, "test message");
+    }
+
+    #[test]
+    fn save_and_load_key_roundtrip() {
+        let dir = std::env::temp_dir().join("trx_history_test");
+        let _ = std::fs::create_dir_all(&dir);
+        let db_file = dir.join("test.db");
+        let mut db = PickleDb::new(
+            &db_file,
+            PickleDbDumpPolicy::DumpUponRequest,
+            SerializationMethod::Json,
+        );
+
+        let mut deque = VecDeque::new();
+        deque.push_back((Instant::now(), "entry_a".to_string()));
+        deque.push_back((Instant::now(), "entry_b".to_string()));
+
+        save_key(&mut db, "test_key", &deque);
+        let loaded: Vec<(Instant, String)> = load_key(&db, "test_key");
+
+        assert_eq!(loaded.len(), 2);
+        assert_eq!(loaded[0].1, "entry_a");
+        assert_eq!(loaded[1].1, "entry_b");
+
+        let _ = std::fs::remove_file(&db_file);
+        let _ = std::fs::remove_dir(&dir);
+    }
+
+    #[test]
+    fn load_key_filters_expired_entries() {
+        let dir = std::env::temp_dir().join("trx_history_test_expired");
+        let _ = std::fs::create_dir_all(&dir);
+        let db_file = dir.join("test.db");
+        let mut db = PickleDb::new(
+            &db_file,
+            PickleDbDumpPolicy::DumpUponRequest,
+            SerializationMethod::Json,
+        );
+
+        // Manually insert an entry with an old timestamp.
+        let entries = vec![
+            StoredEntry {
+                ts_ms: 1_000, // Way in the past
+                data: "old".to_string(),
+            },
+            StoredEntry {
+                ts_ms: now_unix_ms(), // Current
+                data: "fresh".to_string(),
+            },
+        ];
+        let _ = db.set("expiry_test", &entries);
+
+        let loaded: Vec<(Instant, String)> = load_key(&db, "expiry_test");
+        assert_eq!(loaded.len(), 1);
+        assert_eq!(loaded[0].1, "fresh");
+
+        let _ = std::fs::remove_file(&db_file);
+        let _ = std::fs::remove_dir(&dir);
+    }
+
+    #[test]
+    fn load_key_missing_returns_empty() {
+        let dir = std::env::temp_dir().join("trx_history_test_missing");
+        let _ = std::fs::create_dir_all(&dir);
+        let db_file = dir.join("test.db");
+        let db = PickleDb::new(
+            &db_file,
+            PickleDbDumpPolicy::DumpUponRequest,
+            SerializationMethod::Json,
+        );
+
+        let loaded: Vec<(Instant, String)> = load_key(&db, "nonexistent");
+        assert!(loaded.is_empty());
+
+        let _ = std::fs::remove_file(&db_file);
+        let _ = std::fs::remove_dir(&dir);
+    }
+}

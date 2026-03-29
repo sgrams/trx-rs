@@ -67,9 +67,16 @@ pub struct ClientEnvelope {
     /// Target rig ID. When absent, the first/default rig is used (backward compat).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub rig_id: Option<String>,
+    /// Protocol version advertised by the client. Absent for legacy clients.
+    /// Current version: 1.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub protocol_version: Option<u32>,
     #[serde(flatten)]
     pub cmd: ClientCommand,
 }
+
+/// Current protocol version.
+pub const PROTOCOL_VERSION: u32 = 1;
 
 /// One entry in the GetRigs response: a rig's ID and its current snapshot.
 #[derive(Debug, Serialize, Deserialize)]
@@ -90,6 +97,9 @@ pub struct ClientResponse {
     /// The rig this response pertains to. Set by the listener from MR-06 onward.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub rig_id: Option<String>,
+    /// Protocol version of the server. Allows clients to detect capabilities.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub protocol_version: Option<u32>,
     pub state: Option<RigSnapshot>,
     /// Populated only for GetRigs responses.
     #[serde(default, skip_serializing_if = "Option::is_none")]

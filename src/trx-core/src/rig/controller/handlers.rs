@@ -142,7 +142,73 @@ pub enum CommandResult {
 // Concrete Command Implementations
 // ============================================================================
 
-/// Command to set the rig frequency.
+/// Macro to generate unit-struct command implementations with standard
+/// precondition checks, reducing repetitive boilerplate.
+///
+/// # Syntax
+///
+/// ```ignore
+/// rig_command! {
+///     /// Doc comment
+///     UnitCommand("Name") {
+///         preconditions: [initialized, unlocked],
+///         execute: |executor| { executor.method().await?; Ok(CommandResult::Variant) },
+///     }
+/// }
+/// ```
+macro_rules! rig_command {
+    // Unit struct variant (no fields).
+    (
+        $(#[$meta:meta])*
+        $name:ident ($cmd_name:expr) {
+            preconditions: [$($precond:ident),*],
+            execute: |$exec:ident| $body:expr,
+        }
+    ) => {
+        $(#[$meta])*
+        #[derive(Debug, Clone)]
+        pub struct $name;
+
+        impl RigCommandHandler for $name {
+            fn name(&self) -> &'static str {
+                $cmd_name
+            }
+
+            fn can_execute(&self, _ctx: &dyn CommandContext) -> ValidationResult {
+                $(rig_command!(@check _ctx, $precond);)*
+                ValidationResult::Ok
+            }
+
+            fn execute<'a>(
+                &'a self,
+                $exec: &'a mut dyn CommandExecutor,
+            ) -> Pin<Box<dyn Future<Output = DynResult<CommandResult>> + Send + 'a>> {
+                Box::pin(async move { $body })
+            }
+        }
+    };
+
+    // Precondition expansion helpers.
+    (@check $ctx:ident, initialized) => {
+        if !$ctx.is_initialized() {
+            return ValidationResult::InvalidState("Rig not initialized".into());
+        }
+    };
+    (@check $ctx:ident, unlocked) => {
+        if $ctx.is_locked() {
+            return ValidationResult::Locked;
+        }
+    };
+    (@check $ctx:ident, not_transmitting) => {
+        if $ctx.is_transmitting() {
+            return ValidationResult::InvalidState(
+                "Cannot power off while transmitting".into(),
+            );
+        }
+    };
+}
+
+/// Command to set the rig frequency (custom validation for freq != 0).
 #[derive(Debug, Clone)]
 pub struct SetFreqCommand {
     pub freq: Freq,
@@ -258,167 +324,6 @@ impl RigCommandHandler for SetPttCommand {
     }
 }
 
-/// Command to power on the rig.
-#[derive(Debug, Clone)]
-pub struct PowerOnCommand;
-
-impl RigCommandHandler for PowerOnCommand {
-    fn name(&self) -> &'static str {
-        "PowerOn"
-    }
-
-    fn can_execute(&self, _ctx: &dyn CommandContext) -> ValidationResult {
-        // Power on can always be attempted
-        ValidationResult::Ok
-    }
-
-    fn execute<'a>(
-        &'a self,
-        executor: &'a mut dyn CommandExecutor,
-    ) -> Pin<Box<dyn Future<Output = DynResult<CommandResult>> + Send + 'a>> {
-        Box::pin(async move {
-            executor.power_on().await?;
-            Ok(CommandResult::PowerUpdated(true))
-        })
-    }
-}
-
-/// Command to power off the rig.
-#[derive(Debug, Clone)]
-pub struct PowerOffCommand;
-
-impl RigCommandHandler for PowerOffCommand {
-    fn name(&self) -> &'static str {
-        "PowerOff"
-    }
-
-    fn can_execute(&self, ctx: &dyn CommandContext) -> ValidationResult {
-        if ctx.is_transmitting() {
-            return ValidationResult::InvalidState("Cannot power off while transmitting".into());
-        }
-        ValidationResult::Ok
-    }
-
-    fn execute<'a>(
-        &'a self,
-        executor: &'a mut dyn CommandExecutor,
-    ) -> Pin<Box<dyn Future<Output = DynResult<CommandResult>> + Send + 'a>> {
-        Box::pin(async move {
-            executor.power_off().await?;
-            Ok(CommandResult::PowerUpdated(false))
-        })
-    }
-}
-
-/// Command to toggle VFO.
-#[derive(Debug, Clone)]
-pub struct ToggleVfoCommand;
-
-impl RigCommandHandler for ToggleVfoCommand {
-    fn name(&self) -> &'static str {
-        "ToggleVfo"
-    }
-
-    fn can_execute(&self, ctx: &dyn CommandContext) -> ValidationResult {
-        if !ctx.is_initialized() {
-            return ValidationResult::InvalidState("Rig not initialized".into());
-        }
-        if ctx.is_locked() {
-            return ValidationResult::Locked;
-        }
-        ValidationResult::Ok
-    }
-
-    fn execute<'a>(
-        &'a self,
-        executor: &'a mut dyn CommandExecutor,
-    ) -> Pin<Box<dyn Future<Output = DynResult<CommandResult>> + Send + 'a>> {
-        Box::pin(async move {
-            executor.toggle_vfo().await?;
-            Ok(CommandResult::RefreshRequired)
-        })
-    }
-}
-
-/// Command to lock the panel.
-#[derive(Debug, Clone)]
-pub struct LockCommand;
-
-impl RigCommandHandler for LockCommand {
-    fn name(&self) -> &'static str {
-        "Lock"
-    }
-
-    fn can_execute(&self, ctx: &dyn CommandContext) -> ValidationResult {
-        if !ctx.is_initialized() {
-            return ValidationResult::InvalidState("Rig not initialized".into());
-        }
-        ValidationResult::Ok
-    }
-
-    fn execute<'a>(
-        &'a self,
-        executor: &'a mut dyn CommandExecutor,
-    ) -> Pin<Box<dyn Future<Output = DynResult<CommandResult>> + Send + 'a>> {
-        Box::pin(async move {
-            executor.lock().await?;
-            Ok(CommandResult::LockUpdated(true))
-        })
-    }
-}
-
-/// Command to unlock the panel.
-#[derive(Debug, Clone)]
-pub struct UnlockCommand;
-
-impl RigCommandHandler for UnlockCommand {
-    fn name(&self) -> &'static str {
-        "Unlock"
-    }
-
-    fn can_execute(&self, _ctx: &dyn CommandContext) -> ValidationResult {
-        // Unlock can always be attempted
-        ValidationResult::Ok
-    }
-
-    fn execute<'a>(
-        &'a self,
-        executor: &'a mut dyn CommandExecutor,
-    ) -> Pin<Box<dyn Future<Output = DynResult<CommandResult>> + Send + 'a>> {
-        Box::pin(async move {
-            executor.unlock().await?;
-            Ok(CommandResult::LockUpdated(false))
-        })
-    }
-}
-
-/// Command to get TX limit.
-#[derive(Debug, Clone)]
-pub struct GetTxLimitCommand;
-
-impl RigCommandHandler for GetTxLimitCommand {
-    fn name(&self) -> &'static str {
-        "GetTxLimit"
-    }
-
-    fn can_execute(&self, ctx: &dyn CommandContext) -> ValidationResult {
-        if !ctx.is_initialized() {
-            return ValidationResult::InvalidState("Rig not initialized".into());
-        }
-        ValidationResult::Ok
-    }
-
-    fn execute<'a>(
-        &'a self,
-        executor: &'a mut dyn CommandExecutor,
-    ) -> Pin<Box<dyn Future<Output = DynResult<CommandResult>> + Send + 'a>> {
-        Box::pin(async move {
-            let limit = executor.get_tx_limit().await?;
-            Ok(CommandResult::TxLimitUpdated(limit))
-        })
-    }
-}
-
 /// Command to set TX limit.
 #[derive(Debug, Clone)]
 pub struct SetTxLimitCommand {
@@ -455,28 +360,61 @@ impl RigCommandHandler for SetTxLimitCommand {
     }
 }
 
-/// Command to get current state snapshot.
-#[derive(Debug, Clone)]
-pub struct GetSnapshotCommand;
+// --- Macro-generated unit commands ---
 
-impl RigCommandHandler for GetSnapshotCommand {
-    fn name(&self) -> &'static str {
-        "GetSnapshot"
+rig_command! {
+    /// Command to power on the rig.
+    PowerOnCommand("PowerOn") {
+        preconditions: [],
+        execute: |executor| { executor.power_on().await?; Ok(CommandResult::PowerUpdated(true)) },
     }
+}
 
-    fn can_execute(&self, _ctx: &dyn CommandContext) -> ValidationResult {
-        // Getting snapshot can always be attempted
-        ValidationResult::Ok
+rig_command! {
+    /// Command to power off the rig.
+    PowerOffCommand("PowerOff") {
+        preconditions: [not_transmitting],
+        execute: |executor| { executor.power_off().await?; Ok(CommandResult::PowerUpdated(false)) },
     }
+}
 
-    fn execute<'a>(
-        &'a self,
-        executor: &'a mut dyn CommandExecutor,
-    ) -> Pin<Box<dyn Future<Output = DynResult<CommandResult>> + Send + 'a>> {
-        Box::pin(async move {
-            executor.refresh_state().await?;
-            Ok(CommandResult::RefreshRequired)
-        })
+rig_command! {
+    /// Command to toggle VFO.
+    ToggleVfoCommand("ToggleVfo") {
+        preconditions: [initialized, unlocked],
+        execute: |executor| { executor.toggle_vfo().await?; Ok(CommandResult::RefreshRequired) },
+    }
+}
+
+rig_command! {
+    /// Command to lock the panel.
+    LockCommand("Lock") {
+        preconditions: [initialized],
+        execute: |executor| { executor.lock().await?; Ok(CommandResult::LockUpdated(true)) },
+    }
+}
+
+rig_command! {
+    /// Command to unlock the panel.
+    UnlockCommand("Unlock") {
+        preconditions: [],
+        execute: |executor| { executor.unlock().await?; Ok(CommandResult::LockUpdated(false)) },
+    }
+}
+
+rig_command! {
+    /// Command to get TX limit.
+    GetTxLimitCommand("GetTxLimit") {
+        preconditions: [initialized],
+        execute: |executor| { let limit = executor.get_tx_limit().await?; Ok(CommandResult::TxLimitUpdated(limit)) },
+    }
+}
+
+rig_command! {
+    /// Command to get current state snapshot.
+    GetSnapshotCommand("GetSnapshot") {
+        preconditions: [],
+        execute: |executor| { executor.refresh_state().await?; Ok(CommandResult::RefreshRequired) },
     }
 }
 

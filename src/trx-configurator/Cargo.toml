@@ -14,6 +14,7 @@ path = "src/main.rs"
 [dependencies]
 clap = { workspace = true, features = ["derive"] }
 dialoguer = "0.11"
+tokio-serial = { workspace = true }
 toml_edit = "0.22"
 
 [dev-dependencies]
