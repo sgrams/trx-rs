@@ -1113,6 +1113,7 @@ function updateMapRigFilter() {
     el.value = "";
     mapRigFilter = "";
   }
+  updateStatsRigFilter();
 }
 
 async function refreshRigList() {
@@ -4291,7 +4292,7 @@ if (spectrumBwSweetBtn) {
 }
 
 // --- Tab navigation ---
-const TAB_ORDER = ["main", "bookmarks", "digital-modes", "map", "settings", "about"];
+const TAB_ORDER = ["main", "bookmarks", "digital-modes", "map", "statistics", "settings", "about"];
 const TAB_PATHS = {
   main: "/",
   bookmarks: "/bookmarks",
@@ -4340,6 +4341,9 @@ function navigateToTab(name, options = {}) {
     initAprsMap();
     sizeAprsMapToViewport();
     if (aprsMap) setTimeout(() => aprsMap.invalidateSize(), 50);
+  }
+  if (name === "statistics") {
+    scheduleStatsRender();
   }
 }
 
@@ -5291,9 +5295,7 @@ function syncDecodeContactPathVisibility() {
     }
     ensureDecodeContactPathRendered(entry);
   }
-  renderMapQsoSummary();
-  renderMapSignalSummary();
-  renderMapWeakSignalSummary();
+  scheduleStatsRender();
   updateMapPathsAnimationClass();
 }
 
@@ -7171,11 +7173,12 @@ function renderMapQsoSummary() {
   const listEl = document.getElementById("map-qso-summary-list");
   if (!listEl) return;
 
+  const cutoff = _statsHistoryCutoffMs();
   const entries = Array.from(decodeContactPaths.values())
     .filter((entry) => entry
       && Number.isFinite(entry.distanceKm)
-      && decodeContactPathMatchesCurrentMap(entry)
-      && _detailPassesRigFilter(entry))
+      && _statsDetailPassesRigFilter(entry)
+      && (!entry.tsMs || entry.tsMs >= cutoff))
     .sort((a, b) => {
       const distanceDelta = Number(b.distanceKm) - Number(a.distanceKm);
       if (Math.abs(distanceDelta) > 0.001) return distanceDelta;
@@ -7282,14 +7285,15 @@ function renderMapSignalSummary() {
   const listEl = document.getElementById("map-signal-summary-list");
   if (!listEl) return;
 
+  const cutoff = _statsHistoryCutoffMs();
   const bestByStation = new Map();
   for (const entry of locatorMarkers.values()) {
     if (!entry || (entry.sourceType !== "ft8" && entry.sourceType !== "ft4" && entry.sourceType !== "ft2" && entry.sourceType !== "wspr")) continue;
-    if (!_locatorEntryVisibleOnMap(entry)) continue;
     if (!(entry.stationDetails instanceof Map)) continue;
     for (const detail of entry.stationDetails.values()) {
       if (!Number.isFinite(detail?.snr_db)) continue;
-      if (!_detailPassesRigFilter(detail)) continue;
+      if (!_statsDetailPassesRigFilter(detail)) continue;
+      if (detail.ts_ms && detail.ts_ms < cutoff) continue;
       const station = String(detail?.source || detail?.station || "").trim().toUpperCase();
       if (!station) continue;
       const snrDb = Number(detail.snr_db);
@@ -7407,14 +7411,15 @@ function renderMapWeakSignalSummary() {
   const listEl = document.getElementById("map-weak-signal-summary-list");
   if (!listEl) return;
 
+  const cutoff = _statsHistoryCutoffMs();
   const worstByStation = new Map();
   for (const entry of locatorMarkers.values()) {
     if (!entry || (entry.sourceType !== "ft8" && entry.sourceType !== "ft4" && entry.sourceType !== "ft2" && entry.sourceType !== "wspr")) continue;
-    if (!_locatorEntryVisibleOnMap(entry)) continue;
     if (!(entry.stationDetails instanceof Map)) continue;
     for (const detail of entry.stationDetails.values()) {
       if (!Number.isFinite(detail?.snr_db)) continue;
-      if (!_detailPassesRigFilter(detail)) continue;
+      if (!_statsDetailPassesRigFilter(detail)) continue;
+      if (detail.ts_ms && detail.ts_ms < cutoff) continue;
       const station = String(detail?.source || detail?.station || "").trim().toUpperCase();
       if (!station) continue;
       const snrDb = Number(detail.snr_db);
@@ -7527,6 +7532,270 @@ function renderMapWeakSignalSummary() {
   });
   listEl.replaceChildren(fragment);
 }
+
+// ── Statistics panel ─────────────────────────────────────────────────
+let statsRigFilter = "";
+let statsHistoryLimitMinutes = 1440;
+const statsDecodeLog = []; // {type, ts_ms, remote}
+const STATS_LOG_MAX = 50000;
+const STATS_TYPE_COLORS = {
+  ft8: "#4fc3f7", ft4: "#81c784", ft2: "#aed581", wspr: "#ffb74d",
+  aprs: "#ce93d8", hf_aprs: "#ba68c8", ais: "#90a4ae", vdes: "#78909c",
+  cw: "#fff176",
+};
+const STATS_DX_BUCKETS = [
+  { label: "0–500 km", min: 0, max: 500 },
+  { label: "500–1k", min: 500, max: 1000 },
+  { label: "1k–2k", min: 1000, max: 2000 },
+  { label: "2k–5k", min: 2000, max: 5000 },
+  { label: "5k–10k", min: 5000, max: 10000 },
+  { label: "10k+ km", min: 10000, max: Infinity },
+];
+
+function _statsHistoryCutoffMs() {
+  return Date.now() - (statsHistoryLimitMinutes * 60 * 1000);
+}
+
+function _statsDetailPassesRigFilter(detail) {
+  if (!statsRigFilter) return true;
+  if (detail?.remotes instanceof Set) return detail.remotes.has(statsRigFilter);
+  return detail?.remote === statsRigFilter;
+}
+
+function updateStatsRigFilter() {
+  const el = document.getElementById("stats-rig-filter");
+  if (!el) return;
+  const prev = el.value;
+  while (el.options.length > 1) el.remove(1);
+  for (const id of lastRigIds) {
+    const opt = document.createElement("option");
+    opt.value = id;
+    opt.textContent = lastRigDisplayNames[id] || id;
+    el.appendChild(opt);
+  }
+  if (prev && lastRigIds.includes(prev)) {
+    el.value = prev;
+  } else {
+    el.value = "";
+    statsRigFilter = "";
+  }
+}
+
+function statsRecordDecode(type, remote) {
+  statsDecodeLog.push({ type: String(type || "unknown"), ts_ms: Date.now(), remote: remote || null });
+  if (statsDecodeLog.length > STATS_LOG_MAX) {
+    statsDecodeLog.splice(0, statsDecodeLog.length - STATS_LOG_MAX);
+  }
+}
+
+function _statsFilteredLog() {
+  const cutoff = _statsHistoryCutoffMs();
+  return statsDecodeLog.filter((e) => {
+    if (e.ts_ms < cutoff) return false;
+    if (statsRigFilter && e.remote && e.remote !== statsRigFilter) return false;
+    return true;
+  });
+}
+
+function renderStatsCounters() {
+  const cutoff = _statsHistoryCutoffMs();
+  const log = _statsFilteredLog();
+  const totalDecodes = log.length;
+
+  const uniqueStations = new Set();
+  const uniqueGrids = new Set();
+  for (const entry of locatorMarkers.values()) {
+    if (!entry || !(entry.stationDetails instanceof Map)) continue;
+    for (const detail of entry.stationDetails.values()) {
+      if (detail?.ts_ms && detail.ts_ms < cutoff) continue;
+      if (!_statsDetailPassesRigFilter(detail)) continue;
+      const station = String(detail?.source || detail?.station || "").trim().toUpperCase();
+      if (station) uniqueStations.add(station);
+    }
+    if (entry.grid) {
+      const hasVisible = entry.stationDetails instanceof Map && Array.from(entry.stationDetails.values()).some(
+        (d) => (!d.ts_ms || d.ts_ms >= cutoff) && _statsDetailPassesRigFilter(d)
+      );
+      if (hasVisible) uniqueGrids.add(entry.grid);
+    }
+  }
+
+  // Decode rate: decodes in last 60 seconds → per minute
+  const rateWindow = Date.now() - 60000;
+  const recentCount = log.filter((e) => e.ts_ms >= rateWindow).length;
+
+  const setEl = (id, val) => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = String(val);
+  };
+  setEl("stats-total-decodes", totalDecodes.toLocaleString());
+  setEl("stats-unique-stations", uniqueStations.size.toLocaleString());
+  setEl("stats-unique-grids", uniqueGrids.size.toLocaleString());
+  setEl("stats-decode-rate", recentCount.toLocaleString());
+}
+
+function _renderBarChart(containerId, data, emptyMsg) {
+  const el = document.getElementById(containerId);
+  if (!el) return;
+  if (!data || data.length === 0 || data.every((d) => d.count === 0)) {
+    el.innerHTML = "";
+    const empty = document.createElement("div");
+    empty.className = "stats-bar-empty";
+    empty.textContent = emptyMsg || "No data available.";
+    el.appendChild(empty);
+    return;
+  }
+  const maxVal = Math.max(1, ...data.map((d) => d.count));
+  const fragment = document.createDocumentFragment();
+  for (const item of data) {
+    const row = document.createElement("div");
+    row.className = "stats-bar-row";
+
+    const label = document.createElement("span");
+    label.className = "stats-bar-label";
+    label.textContent = item.label;
+    row.appendChild(label);
+
+    const track = document.createElement("div");
+    track.className = "stats-bar-track";
+    const fill = document.createElement("div");
+    fill.className = "stats-bar-fill";
+    fill.style.width = `${(item.count / maxVal) * 100}%`;
+    fill.style.background = item.color || "var(--accent-green)";
+    track.appendChild(fill);
+    row.appendChild(track);
+
+    const count = document.createElement("span");
+    count.className = "stats-bar-count";
+    count.textContent = item.count.toLocaleString();
+    row.appendChild(count);
+
+    fragment.appendChild(row);
+  }
+  el.replaceChildren(fragment);
+}
+
+function renderStatsDecodeTypes() {
+  const log = _statsFilteredLog();
+  const counts = {};
+  for (const e of log) {
+    counts[e.type] = (counts[e.type] || 0) + 1;
+  }
+  const data = Object.entries(counts)
+    .map(([type, count]) => ({
+      label: type.toUpperCase(),
+      count,
+      color: STATS_TYPE_COLORS[type] || "#aaa",
+    }))
+    .sort((a, b) => b.count - a.count);
+  _renderBarChart("stats-decode-type-bars", data, "No decoded signals in the current history.");
+}
+
+function renderStatsBandActivity() {
+  const cutoff = _statsHistoryCutoffMs();
+  const bandCounts = {};
+  for (const entry of locatorMarkers.values()) {
+    if (!entry || !(entry.stationDetails instanceof Map)) continue;
+    for (const detail of entry.stationDetails.values()) {
+      if (detail?.ts_ms && detail.ts_ms < cutoff) continue;
+      if (!_statsDetailPassesRigFilter(detail)) continue;
+      if (!Number.isFinite(detail?.freq_hz)) continue;
+      const band = bandForHz(Number(detail.freq_hz));
+      if (band) {
+        bandCounts[band.label] = (bandCounts[band.label] || 0) + 1;
+      }
+    }
+  }
+  const data = Object.entries(bandCounts)
+    .map(([label, count]) => ({
+      label,
+      count,
+      color: locatorBandChipColor(label),
+    }))
+    .sort((a, b) => b.count - a.count);
+  _renderBarChart("stats-band-activity-bars", data, "No band activity data in the current history.");
+}
+
+function renderStatsRigCompare() {
+  const section = document.getElementById("stats-rig-compare-section");
+  if (!section) return;
+  if (lastRigIds.length < 2) {
+    section.style.display = "none";
+    return;
+  }
+  section.style.display = "";
+  const cutoff = _statsHistoryCutoffMs();
+  const rigCounts = {};
+  for (const e of statsDecodeLog) {
+    if (e.ts_ms < cutoff) continue;
+    const rid = e.remote || "unknown";
+    rigCounts[rid] = (rigCounts[rid] || 0) + 1;
+  }
+  const data = Object.entries(rigCounts)
+    .map(([rid, count]) => ({
+      label: lastRigDisplayNames[rid] || rid,
+      count,
+      color: "var(--accent-green)",
+    }))
+    .sort((a, b) => b.count - a.count);
+  _renderBarChart("stats-rig-compare-bars", data, "No decode data per receiver.");
+}
+
+function renderStatsDxHistogram() {
+  const cutoff = _statsHistoryCutoffMs();
+  const buckets = STATS_DX_BUCKETS.map((b) => ({ ...b, count: 0 }));
+  for (const entry of decodeContactPaths.values()) {
+    if (!entry || !Number.isFinite(entry.distanceKm)) continue;
+    if (entry.tsMs && entry.tsMs < cutoff) continue;
+    if (!_statsDetailPassesRigFilter(entry)) continue;
+    const km = entry.distanceKm;
+    for (const b of buckets) {
+      if (km >= b.min && km < b.max) { b.count++; break; }
+    }
+  }
+  const data = buckets.map((b) => ({
+    label: b.label,
+    count: b.count,
+    color: "#4fc3f7",
+  }));
+  _renderBarChart("stats-dx-histogram-bars", data, "No directed contact paths in the current history.");
+}
+
+let _statsRenderPending = false;
+function scheduleStatsRender() {
+  if (_statsRenderPending) return;
+  _statsRenderPending = true;
+  requestAnimationFrame(() => {
+    _statsRenderPending = false;
+    renderStatsCounters();
+    renderStatsDecodeTypes();
+    renderStatsBandActivity();
+    renderStatsRigCompare();
+    renderStatsDxHistogram();
+    renderMapQsoSummary();
+    renderMapSignalSummary();
+    renderMapWeakSignalSummary();
+  });
+}
+
+// Wire up statistics panel controls
+(function() {
+  const rigEl = document.getElementById("stats-rig-filter");
+  if (rigEl) {
+    rigEl.addEventListener("change", () => {
+      statsRigFilter = rigEl.value;
+      scheduleStatsRender();
+    });
+  }
+  const histEl = document.getElementById("stats-history-limit");
+  if (histEl) {
+    histEl.value = String(statsHistoryLimitMinutes);
+    histEl.addEventListener("change", () => {
+      statsHistoryLimitMinutes = Number(histEl.value) || 1440;
+      scheduleStatsRender();
+    });
+  }
+})();
 
 function buildBookmarkLocatorPopupHtml(grid, bookmarks) {
   const list = Array.isArray(bookmarks) ? bookmarks : [];
@@ -8661,6 +8930,10 @@ function dispatchDecodeMessage(msg) {
   if (msg.type === "ft2" && window.onServerFt2) window.onServerFt2(msg);
   if (msg.type === "wspr" && window.onServerWspr) window.onServerWspr(msg);
   if (msg.type === "lrpt_image" && window.onServerLrptImage) window.onServerLrptImage(msg);
+  if (msg.type && msg.type !== "lrpt_image") {
+    statsRecordDecode(msg.type, msg.rig_id || msg.remote || null);
+    scheduleStatsRender();
+  }
 }
 
 function dispatchDecodeBatch(batch) {
