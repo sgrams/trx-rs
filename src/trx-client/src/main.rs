@@ -167,7 +167,7 @@ async fn async_init() -> DynResult<AppState> {
         cfg.frontends.http.auth.control_passphrase.clone();
     frontend_runtime.http_auth.tx_access_control_enabled =
         cfg.frontends.http.auth.tx_access_control_enabled;
-    frontend_runtime.http_auth.session_ttl_secs = cfg.frontends.http.auth.session_ttl_min * 60;
+    frontend_runtime.http_auth.session_ttl_secs = cfg.frontends.http.auth.session_ttl().as_secs();
     frontend_runtime.http_auth.cookie_secure = cfg.frontends.http.auth.cookie_secure;
     frontend_runtime.http_auth.cookie_same_site = match cfg.frontends.http.auth.cookie_same_site {
         config::CookieSameSite::Strict => "Strict".to_string(),
