@@ -1212,6 +1212,18 @@ const BW_OVERLAY_COLORS = {
   stroke: [240 / 255, 173 / 255, 78 / 255, 0.70],
   hard: [240 / 255, 173 / 255, 78 / 255, 0.38],
 };
+
+// Bandplan mode colours for WebGL rendering (normalised RGBA).
+const BANDPLAN_MODE_COLORS = {
+  CW:        [74 / 255, 144 / 255, 217 / 255, 0.55],
+  Phone:     [76 / 255, 175 / 255, 80 / 255, 0.50],
+  Narrow:    [217 / 255, 74 / 255, 122 / 255, 0.50],
+  FM:        [1, 152 / 255, 0, 0.50],
+  All:       [120 / 255, 120 / 255, 120 / 255, 0.40],
+  Beacon:    [156 / 255, 39 / 255, 176 / 255, 0.50],
+  Satellite: [0, 188 / 255, 212 / 255, 0.50],
+};
+const BANDPLAN_STRIP_CSS_HEIGHT = 18; // CSS pixels
 const BOOKMARK_MARKER_FALLBACK = "#66d9ef";
 
 function overviewWfResetTextureCache() {
@@ -9873,6 +9885,38 @@ function drawSpectrum(data) {
     spectrumGl.drawPoints(spectrumTmpMarkerPoints, Math.max(2, dpr * 1.6), cssColorToRgba(pal.waveformPeak));
   }
 
+  // ── Bandplan WebGL strip (bottom of spectrum, above waterfall) ──
+  if (bandplanRegion !== "off" && bandplanData) {
+    const bpSegs = bandplanVisibleSegments(bandplanRegion, range.visLoHz, range.visHiHz);
+    if (bpSegs.length > 0) {
+      const bpH = Math.round(BANDPLAN_STRIP_CSS_HEIGHT * dpr);
+      const bpY = H - bpH;
+      // Dark backdrop so segments are readable over the spectrum fill.
+      spectrumGl.fillRect(0, bpY, W, bpH, [0.07, 0.09, 0.15, 0.82]);
+      // Thin separator line at top of bandplan strip.
+      spectrumGl.drawSegments([0, bpY, W, bpY],
+        [1, 1, 1, 0.08], Math.max(1, dpr * 0.5));
+      const bpVerts = [];
+      for (const seg of bpSegs) {
+        const l = Math.max(0, (seg.low_hz - range.visLoHz) / range.visSpanHz);
+        const r = Math.min(1, (seg.high_hz - range.visLoHz) / range.visSpanHz);
+        const xL = l * W;
+        const xW = Math.max(1, (r - l) * W);
+        const col = BANDPLAN_MODE_COLORS[seg.mode] || BANDPLAN_MODE_COLORS.All;
+        // Build two triangles per segment (batched into one draw call).
+        bpVerts.push(
+          xL,      bpY,       col[0], col[1], col[2], col[3],
+          xL + xW, bpY,       col[0], col[1], col[2], col[3],
+          xL + xW, bpY + bpH, col[0], col[1], col[2], col[3],
+          xL,      bpY,       col[0], col[1], col[2], col[3],
+          xL + xW, bpY + bpH, col[0], col[1], col[2], col[3],
+          xL,      bpY + bpH, col[0], col[1], col[2], col[3],
+        );
+      }
+      spectrumGl.drawTriangles(bpVerts);
+    }
+  }
+
   // ── Crosshair lines ──
   if (spectrumCrosshairX != null && spectrumCrosshairY != null) {
     const cx = spectrumCrosshairX * dpr;
@@ -11242,6 +11286,10 @@ let bandplanCacheKey = "";
 const bandplanStripEl = document.getElementById("spectrum-bandplan-strip");
 const bandplanRegionSelect = document.getElementById("bandplan-region-select");
 const bandplanLabelsCheck = document.getElementById("bandplan-labels-check");
+// Original parent of bandplan strip (for reparenting between flow and overlay).
+const _bandplanOrigParent = bandplanStripEl ? bandplanStripEl.parentNode : null;
+const _bandplanOrigNext = bandplanStripEl ? bandplanStripEl.nextSibling : null;
+let _bandplanInWebglParent = false;
 
 (function loadBandplanJson() {
   fetch("/bandplan.json")
@@ -11320,30 +11368,60 @@ function bandplanVisibleSegments(region, loHz, hiHz) {
   return result;
 }
 
+function _hideBandplanStrip() {
+  if (!bandplanStripEl) return;
+  bandplanStripEl.classList.remove("bp-visible", "bp-webgl");
+  bandplanStripEl.innerHTML = "";
+  bandplanCacheKey = "";
+  if (_bandplanInWebglParent && _bandplanOrigParent) {
+    _bandplanOrigParent.insertBefore(bandplanStripEl, _bandplanOrigNext);
+    _bandplanInWebglParent = false;
+  }
+}
+
 function updateBandplanStrip(range) {
   if (!bandplanStripEl) return;
   if (!range || bandplanRegion === "off" || !bandplanData) {
-    if (bandplanStripEl.classList.contains("bp-visible")) {
-      bandplanStripEl.classList.remove("bp-visible");
-      bandplanStripEl.innerHTML = "";
-      bandplanCacheKey = "";
-    }
+    if (bandplanStripEl.classList.contains("bp-visible")) _hideBandplanStrip();
     return;
   }
 
   const segments = bandplanVisibleSegments(bandplanRegion, range.visLoHz, range.visHiHz);
   if (segments.length === 0) {
-    if (bandplanStripEl.classList.contains("bp-visible")) {
-      bandplanStripEl.classList.remove("bp-visible");
-      bandplanStripEl.innerHTML = "";
-      bandplanCacheKey = "";
-    }
+    if (bandplanStripEl.classList.contains("bp-visible")) _hideBandplanStrip();
     return;
   }
 
+  // When spectrum canvas is visible the coloured segments are rendered via
+  // WebGL inside drawSpectrum().  The DOM strip then only provides text labels
+  // overlaid at the bottom of the spectrum canvas.  For non-SDR rigs (no
+  // spectrum) the strip falls back to the original DOM-coloured rendering.
+  const spectrumPanelEl = document.getElementById("spectrum-panel");
+  const webglMode = spectrumPanelEl && getComputedStyle(spectrumPanelEl).display !== "none";
+
   bandplanStripEl.classList.add("bp-visible");
+  if (webglMode) {
+    bandplanStripEl.classList.add("bp-webgl");
+    // Reparent into .spectrum-wrap so absolute positioning is relative to the
+    // spectrum canvas rather than the outer flow container.
+    const specWrap = spectrumPanelEl.querySelector(".spectrum-wrap");
+    if (specWrap && !_bandplanInWebglParent) {
+      specWrap.appendChild(bandplanStripEl);
+      _bandplanInWebglParent = true;
+      bandplanCacheKey = ""; // force DOM rebuild after reparent
+    }
+  } else {
+    bandplanStripEl.classList.remove("bp-webgl");
+    // Move back to original document position for non-SDR flow layout.
+    if (_bandplanInWebglParent && _bandplanOrigParent) {
+      _bandplanOrigParent.insertBefore(bandplanStripEl, _bandplanOrigNext);
+      _bandplanInWebglParent = false;
+      bandplanCacheKey = "";
+    }
+  }
 
   const newKey = bandplanRegion + ":" + (bandplanShowLabels ? "L" : "N") + ":" +
+    (webglMode ? "G:" : "D:") +
     segments.map((s) => s.low_hz + "-" + s.high_hz).join(",");
 
   const stripW = bandplanStripEl.clientWidth || 1;
