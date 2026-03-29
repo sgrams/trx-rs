@@ -44,6 +44,17 @@ const BURST_TRIGGER_FLOOR: f32 = 1.0e-10;
 const BURST_SUSTAIN_NOISE_MULT: f32 = 1.15;
 const BURST_SUSTAIN_FLOOR: f32 = 1.0e-11;
 
+/// Plausibility score below which a burst is treated as unsynced noise.
+/// The scoring scale is an integer sum of weighted heuristics (link-ID
+/// validity, tail-zero count, payload structure).  –35 rejects bursts
+/// that fail nearly every plausibility check.
+const PLAUSIBILITY_UNSYNCED_THRESHOLD: i32 = -35;
+
+/// Plausibility score below which the FEC label is annotated with
+/// "Low confidence".  15 corresponds to marginal decodes where enough
+/// heuristics pass to attempt CRC but the result is uncertain.
+const PLAUSIBILITY_LOW_CONFIDENCE_THRESHOLD: i32 = 15;
+
 /// Warmup period: number of samples to observe before burst detection starts.
 /// This allows the noise-floor EMA (α = 0.005, τ ≈ 200 samples) to converge
 /// to the actual SDR noise level.  Without warmup the initial floor of 1e-12
@@ -52,6 +63,22 @@ const BURST_SUSTAIN_FLOOR: f32 = 1.0e-11;
 /// reaches quiet_limit and the burst never terminates.
 const NOISE_FLOOR_WARMUP_SECS: f32 = 0.05; // 50 ms ≈ 10 EMA time-constants
 
+/// VDES (VHF Data Exchange System) TER-MCS-1 decoder for 100 kHz channels.
+///
+/// Consumes complex baseband IQ samples and performs burst detection,
+/// π/4-QPSK demodulation, block deinterleaving, Turbo FEC decoding
+/// (dual 8-state RSC with BCJR/MAP), CRC-16 validation, and ITU-R
+/// M.2092-1 link-layer frame parsing.
+///
+/// # Usage
+///
+/// ```ignore
+/// let mut decoder = VdesDecoder::new(192_000);
+/// let messages = decoder.process_samples(&iq_samples);
+/// ```
+///
+/// Call [`reset()`](Self::reset) when switching frequency to clear burst
+/// detection state and noise-floor estimates.
 #[derive(Debug, Clone)]
 pub struct VdesDecoder {
     sample_rate: f32,
@@ -259,7 +286,7 @@ impl VdesDecoder {
             .filter(|bit| *bit == 0)
             .count();
         let plausibility = vdes_plausibility_score(&parsed, link_id, tail_zero_bits);
-        if plausibility < -35 {
+        if plausibility < PLAUSIBILITY_UNSYNCED_THRESHOLD {
             return Some(build_unsynced_message(
                 channel,
                 &framed,
@@ -276,7 +303,7 @@ impl VdesDecoder {
             format!(
                 "Turbo FEC (8-iter BCJR), reliability {:.2}{}",
                 turbo_reliability,
-                if plausibility < 15 {
+                if plausibility < PLAUSIBILITY_LOW_CONFIDENCE_THRESHOLD {
                     " · Low confidence"
                 } else {
                     ""
@@ -287,7 +314,7 @@ impl VdesDecoder {
                 "Hard-decision 1/2 Viterbi, tail {} / {} zero bits{}",
                 tail_zero_bits,
                 TER_MCS1_100_FEC_TAIL_BITS,
-                if plausibility < 15 {
+                if plausibility < PLAUSIBILITY_LOW_CONFIDENCE_THRESHOLD {
                     " · Low confidence"
                 } else {
                     ""

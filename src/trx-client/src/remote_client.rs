@@ -330,6 +330,8 @@ async fn handle_spectrum_connection(
     let (reader, mut writer) = stream.into_split();
     let mut reader = BufReader::new(reader);
     let mut interval = time::interval(SPECTRUM_POLL_INTERVAL);
+    // Cache the token outside the poll loop to avoid cloning it every 50ms.
+    let cached_token = config.token.clone();
 
     loop {
         tokio::select! {
@@ -360,7 +362,7 @@ async fn handle_spectrum_connection(
                         Some(short_name.clone())
                     };
                     let envelope = ClientEnvelope {
-                        token: config.token.clone(),
+                        token: cached_token.clone(),
                         rig_id: wire_rig_id,
                         cmd: ClientCommand::GetSpectrum,
                         protocol_version: Some(trx_protocol::types::PROTOCOL_VERSION),
@@ -519,15 +521,10 @@ async fn send_command(
     if resp.success {
         if let Some(snapshot) = resp.state {
             let new_state = RigState::from_snapshot(snapshot.clone());
-            let _ = state_tx.send(new_state.clone());
-            // Also update the per-rig watch channel so SSE sessions
+            // Update the per-rig watch channel first so SSE sessions
             // subscribed to a specific rig see the change immediately
             // instead of waiting for the next poll cycle.
-            // The rig_id_override is a short name in multi-server mode;
-            // resolve accordingly for the per-rig channel key.
             let channel_key = channel_key_override
-                .as_deref()
-                .map(String::from)
                 .or_else(|| selected_rig_id(config));
             if let Some(key) = channel_key {
                 if let Ok(map) = config.rig_states.read() {
@@ -543,6 +540,8 @@ async fn send_command(
                     }
                 }
             }
+            // Send to main state channel last (takes ownership, no clone).
+            let _ = state_tx.send(new_state);
             return Ok(snapshot);
         }
         return Err(RigError::communication("missing snapshot"));

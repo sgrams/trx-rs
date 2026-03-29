@@ -206,7 +206,17 @@ pub fn turbo_decode_soft(received_llrs: &[Llr], info_len: usize) -> (Vec<u8>, f3
     }
 
     let interleaver = qpp_interleaver(info_len);
+    debug_assert_eq!(
+        interleaver.len(),
+        info_len,
+        "interleaver length must equal info_len"
+    );
     let deinterleaver = invert_permutation(&interleaver);
+    debug_assert_eq!(
+        deinterleaver.len(),
+        info_len,
+        "deinterleaver length must equal info_len"
+    );
 
     let (sys_llr, par1_llr, par2_llr) = depuncture_rate_half(received_llrs, info_len);
 

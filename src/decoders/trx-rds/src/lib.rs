@@ -787,6 +787,29 @@ fn af_code_to_hz(code: u8) -> Option<u32> {
 // RdsDecoder — main public entry point
 // ---------------------------------------------------------------------------
 
+/// RDS (Radio Data System) decoder for WFM broadcast signals.
+///
+/// Operates on baseband WFM audio at the configured sample rate. The decoder
+/// performs 57 kHz subcarrier recovery (via Costas loop or pilot-derived
+/// reference), RRC matched filtering, biphase (Manchester) clock recovery
+/// with multi-candidate tracking, CRC-10 syndrome checking with OSD(2)
+/// error correction, and full Group A/B parsing (PI, PS, RT, AF, CT, PTY).
+///
+/// # Usage
+///
+/// ```ignore
+/// let mut decoder = RdsDecoder::new(228_000);
+/// // Optionally lock to pilot-derived 57 kHz reference:
+/// // decoder.set_pilot_ref(cos57, sin57);
+/// for &sample in &baseband_samples {
+///     if let Some(rds) = decoder.process_sample(sample, 1.0) {
+///         println!("PI={:04X} PS={}", rds.pi_code, rds.ps_name);
+///     }
+/// }
+/// ```
+///
+/// Call [`clear_pilot_ref()`](Self::clear_pilot_ref) to revert to free-running
+/// Costas loop carrier recovery when the pilot tone is lost.
 #[derive(Debug, Clone)]
 pub struct RdsDecoder {
     sample_rate_hz: u32,

@@ -807,4 +807,407 @@ mod tests {
         handle.abort();
         let _ = handle.await;
     }
+
+    // ========================================================================
+    // Multi-rig integration tests
+    // ========================================================================
+
+    /// Create a sample state with custom model name, frequency, and mode.
+    fn sample_state_custom(model: &str, freq_hz: u64, mode: trx_core::RigMode) -> RigState {
+        let mut state = RigState::new_uninitialized();
+        state.initialized = true;
+        state.status.freq = trx_core::radio::freq::Freq { hz: freq_hz };
+        state.status.mode = mode;
+        state.rig_info = Some(RigInfo {
+            manufacturer: "Test".to_string(),
+            model: model.to_string(),
+            revision: "1".to_string(),
+            capabilities: RigCapabilities {
+                min_freq_step_hz: 1,
+                supported_bands: vec![Band {
+                    low_hz: 1_800_000,
+                    high_hz: 440_000_000,
+                    tx_allowed: true,
+                }],
+                supported_modes: vec![
+                    trx_core::RigMode::USB,
+                    trx_core::RigMode::LSB,
+                    trx_core::RigMode::FM,
+                ],
+                num_vfos: 2,
+                lock: false,
+                lockable: true,
+                attenuator: false,
+                preamp: false,
+                rit: false,
+                rpt: false,
+                split: false,
+                tx: true,
+                tx_limit: true,
+                vfo_switch: true,
+                filter_controls: false,
+                signal_meter: true,
+            },
+            access: RigAccessMethod::Tcp {
+                addr: "127.0.0.1:0".to_string(),
+            },
+        });
+        state
+    }
+
+    /// Build a multi-rig HashMap with two rigs having independent state and
+    /// command channels. Returns the map, default rig id, and the mpsc
+    /// receivers for each rig so tests can inspect routed commands.
+    fn make_two_rigs(
+        state_a: RigState,
+        state_b: RigState,
+    ) -> (
+        Arc<HashMap<String, RigHandle>>,
+        String,
+        mpsc::Receiver<RigRequest>,
+        mpsc::Receiver<RigRequest>,
+    ) {
+        let (tx_a, rx_a) = mpsc::channel::<RigRequest>(8);
+        let (_state_tx_a, state_rx_a) = watch::channel(state_a);
+        let handle_a = RigHandle {
+            rig_id: "rig_hf".to_string(),
+            display_name: "HF Rig".to_string(),
+            rig_tx: tx_a,
+            state_rx: state_rx_a,
+            audio_port: 4531,
+        };
+
+        let (tx_b, rx_b) = mpsc::channel::<RigRequest>(8);
+        let (_state_tx_b, state_rx_b) = watch::channel(state_b);
+        let handle_b = RigHandle {
+            rig_id: "rig_vhf".to_string(),
+            display_name: "VHF Rig".to_string(),
+            rig_tx: tx_b,
+            state_rx: state_rx_b,
+            audio_port: 4532,
+        };
+
+        let mut map = HashMap::new();
+        map.insert("rig_hf".to_string(), handle_a);
+        map.insert("rig_vhf".to_string(), handle_b);
+        (Arc::new(map), "rig_hf".to_string(), rx_a, rx_b)
+    }
+
+    /// Helper: send a JSON line and read one response line from the stream.
+    async fn send_and_recv(
+        writer: &mut tokio::net::tcp::OwnedWriteHalf,
+        reader: &mut BufReader<tokio::net::tcp::OwnedReadHalf>,
+        json: &[u8],
+    ) -> ClientResponse {
+        writer.write_all(json).await.expect("write");
+        writer.write_all(b"\n").await.expect("newline");
+        writer.flush().await.expect("flush");
+        let mut line = String::new();
+        reader.read_line(&mut line).await.expect("read");
+        serde_json::from_str(line.trim_end()).expect("response json")
+    }
+
+    #[tokio::test]
+    #[ignore = "requires TCP bind permissions"]
+    async fn multi_rig_state_isolation() {
+        // Two rigs with different frequencies and modes.
+        let state_hf =
+            sample_state_custom("HF-Dummy", 14_200_000, trx_core::RigMode::USB);
+        let state_vhf =
+            sample_state_custom("VHF-Dummy", 145_500_000, trx_core::RigMode::FM);
+
+        let (rigs, default_id, _rx_a, _rx_b) = make_two_rigs(state_hf, state_vhf);
+        let addr = loopback_addr();
+        let (shutdown_tx, shutdown_rx) = watch::channel(false);
+
+        let handle = tokio::spawn(run_listener(
+            addr,
+            rigs,
+            default_id,
+            HashSet::new(),
+            None,
+            ListenerTimeouts::default(),
+            shutdown_rx,
+        ));
+
+        // Allow listener to bind.
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+
+        let stream = TcpStream::connect(addr).await.expect("connect");
+        let (read_half, mut writer) = stream.into_split();
+        let mut reader = BufReader::new(read_half);
+
+        // Query rig_hf — should return HF state.
+        let resp = send_and_recv(
+            &mut writer,
+            &mut reader,
+            br#"{"rig_id":"rig_hf","cmd":"get_state"}"#,
+        )
+        .await;
+        assert!(resp.success, "rig_hf get_state should succeed");
+        assert_eq!(resp.rig_id.as_deref(), Some("rig_hf"));
+        let snap_hf = resp.state.expect("rig_hf snapshot");
+        assert_eq!(snap_hf.info.model, "HF-Dummy");
+        assert_eq!(snap_hf.status.freq.hz, 14_200_000);
+
+        // Query rig_vhf — should return VHF state.
+        let resp = send_and_recv(
+            &mut writer,
+            &mut reader,
+            br#"{"rig_id":"rig_vhf","cmd":"get_state"}"#,
+        )
+        .await;
+        assert!(resp.success, "rig_vhf get_state should succeed");
+        assert_eq!(resp.rig_id.as_deref(), Some("rig_vhf"));
+        let snap_vhf = resp.state.expect("rig_vhf snapshot");
+        assert_eq!(snap_vhf.info.model, "VHF-Dummy");
+        assert_eq!(snap_vhf.status.freq.hz, 145_500_000);
+
+        // Verify the two snapshots have different modes.
+        assert_ne!(
+            snap_hf.status.mode, snap_vhf.status.mode,
+            "Rig states should be independent"
+        );
+
+        let _ = shutdown_tx.send(true);
+        handle.abort();
+        let _ = handle.await;
+    }
+
+    #[tokio::test]
+    #[ignore = "requires TCP bind permissions"]
+    async fn multi_rig_default_fallback() {
+        // When rig_id is omitted, the default rig (rig_hf) should be used.
+        let state_hf =
+            sample_state_custom("HF-Dummy", 14_200_000, trx_core::RigMode::USB);
+        let state_vhf =
+            sample_state_custom("VHF-Dummy", 145_500_000, trx_core::RigMode::FM);
+
+        let (rigs, default_id, _rx_a, _rx_b) = make_two_rigs(state_hf, state_vhf);
+        let addr = loopback_addr();
+        let (shutdown_tx, shutdown_rx) = watch::channel(false);
+
+        let handle = tokio::spawn(run_listener(
+            addr,
+            rigs,
+            default_id,
+            HashSet::new(),
+            None,
+            ListenerTimeouts::default(),
+            shutdown_rx,
+        ));
+
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+
+        let stream = TcpStream::connect(addr).await.expect("connect");
+        let (read_half, mut writer) = stream.into_split();
+        let mut reader = BufReader::new(read_half);
+
+        // No rig_id — should resolve to default (rig_hf).
+        let resp = send_and_recv(
+            &mut writer,
+            &mut reader,
+            br#"{"cmd":"get_state"}"#,
+        )
+        .await;
+        assert!(resp.success, "default get_state should succeed");
+        assert_eq!(resp.rig_id.as_deref(), Some("rig_hf"));
+        let snap = resp.state.expect("default snapshot");
+        assert_eq!(snap.info.model, "HF-Dummy");
+
+        let _ = shutdown_tx.send(true);
+        handle.abort();
+        let _ = handle.await;
+    }
+
+    #[tokio::test]
+    #[ignore = "requires TCP bind permissions"]
+    async fn multi_rig_get_rigs_returns_all() {
+        let state_hf =
+            sample_state_custom("HF-Dummy", 14_200_000, trx_core::RigMode::USB);
+        let state_vhf =
+            sample_state_custom("VHF-Dummy", 145_500_000, trx_core::RigMode::FM);
+
+        let (rigs, default_id, _rx_a, _rx_b) = make_two_rigs(state_hf, state_vhf);
+        let addr = loopback_addr();
+        let (shutdown_tx, shutdown_rx) = watch::channel(false);
+
+        let handle = tokio::spawn(run_listener(
+            addr,
+            rigs,
+            default_id,
+            HashSet::new(),
+            None,
+            ListenerTimeouts::default(),
+            shutdown_rx,
+        ));
+
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+
+        let stream = TcpStream::connect(addr).await.expect("connect");
+        let (read_half, mut writer) = stream.into_split();
+        let mut reader = BufReader::new(read_half);
+
+        let resp = send_and_recv(
+            &mut writer,
+            &mut reader,
+            br#"{"cmd":"get_rigs"}"#,
+        )
+        .await;
+        assert!(resp.success, "get_rigs should succeed");
+        let entries = resp.rigs.expect("rigs list");
+        assert_eq!(entries.len(), 2, "should return both rigs");
+
+        // Collect rig_ids from the entries.
+        let ids: HashSet<String> = entries.iter().map(|e| e.rig_id.clone()).collect();
+        assert!(ids.contains("rig_hf"), "should contain rig_hf");
+        assert!(ids.contains("rig_vhf"), "should contain rig_vhf");
+
+        // Verify each entry has the correct frequency.
+        for entry in &entries {
+            match entry.rig_id.as_str() {
+                "rig_hf" => {
+                    assert_eq!(entry.state.status.freq.hz, 14_200_000);
+                    assert_eq!(entry.state.info.model, "HF-Dummy");
+                    assert_eq!(entry.audio_port, Some(4531));
+                }
+                "rig_vhf" => {
+                    assert_eq!(entry.state.status.freq.hz, 145_500_000);
+                    assert_eq!(entry.state.info.model, "VHF-Dummy");
+                    assert_eq!(entry.audio_port, Some(4532));
+                }
+                other => panic!("Unexpected rig_id: {}", other),
+            }
+        }
+
+        let _ = shutdown_tx.send(true);
+        handle.abort();
+        let _ = handle.await;
+    }
+
+    #[tokio::test]
+    #[ignore = "requires TCP bind permissions"]
+    async fn multi_rig_command_routing() {
+        // Verify that a set_freq command targeting rig_vhf is delivered to the
+        // VHF rig's mpsc channel and not to the HF rig's channel.
+        let state_hf =
+            sample_state_custom("HF-Dummy", 14_200_000, trx_core::RigMode::USB);
+        let state_vhf =
+            sample_state_custom("VHF-Dummy", 145_500_000, trx_core::RigMode::FM);
+
+        let (rigs, default_id, mut rx_hf, mut rx_vhf) =
+            make_two_rigs(state_hf, state_vhf);
+        let addr = loopback_addr();
+        let (shutdown_tx, shutdown_rx) = watch::channel(false);
+
+        let handle = tokio::spawn(run_listener(
+            addr,
+            rigs,
+            default_id,
+            HashSet::new(),
+            None,
+            ListenerTimeouts::default(),
+            shutdown_rx,
+        ));
+
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+
+        let stream = TcpStream::connect(addr).await.expect("connect");
+        let (_read_half, mut writer) = stream.into_split();
+
+        // Send set_freq targeting rig_vhf. The listener will forward the
+        // command to the VHF rig's mpsc channel.
+        writer
+            .write_all(br#"{"rig_id":"rig_vhf","cmd":"set_freq","freq_hz":146000000}"#)
+            .await
+            .expect("write");
+        writer.write_all(b"\n").await.expect("newline");
+        writer.flush().await.expect("flush");
+
+        // The VHF channel should receive the command.
+        let req = tokio::time::timeout(
+            std::time::Duration::from_secs(2),
+            rx_vhf.recv(),
+        )
+        .await
+        .expect("timeout waiting for VHF command")
+        .expect("VHF channel closed");
+        assert!(
+            matches!(req.cmd, trx_core::rig::command::RigCommand::SetFreq(f) if f.hz == 146_000_000),
+            "VHF rig should receive SetFreq(146 MHz), got {:?}",
+            req.cmd
+        );
+
+        // The HF channel should NOT have received anything.
+        assert!(
+            rx_hf.try_recv().is_err(),
+            "HF rig should not receive commands targeting VHF"
+        );
+
+        let _ = shutdown_tx.send(true);
+        handle.abort();
+        let _ = handle.await;
+    }
+
+    #[tokio::test]
+    #[ignore = "requires TCP bind permissions"]
+    async fn multi_rig_command_routing_to_default() {
+        // When rig_id is omitted, commands should go to the default rig (HF).
+        let state_hf =
+            sample_state_custom("HF-Dummy", 14_200_000, trx_core::RigMode::USB);
+        let state_vhf =
+            sample_state_custom("VHF-Dummy", 145_500_000, trx_core::RigMode::FM);
+
+        let (rigs, default_id, mut rx_hf, mut rx_vhf) =
+            make_two_rigs(state_hf, state_vhf);
+        let addr = loopback_addr();
+        let (shutdown_tx, shutdown_rx) = watch::channel(false);
+
+        let handle = tokio::spawn(run_listener(
+            addr,
+            rigs,
+            default_id,
+            HashSet::new(),
+            None,
+            ListenerTimeouts::default(),
+            shutdown_rx,
+        ));
+
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+
+        let stream = TcpStream::connect(addr).await.expect("connect");
+        let (_read_half, mut writer) = stream.into_split();
+
+        // No rig_id — should route to default (rig_hf).
+        writer
+            .write_all(br#"{"cmd":"set_freq","freq_hz":7100000}"#)
+            .await
+            .expect("write");
+        writer.write_all(b"\n").await.expect("newline");
+        writer.flush().await.expect("flush");
+
+        // The HF channel should receive the command.
+        let req = tokio::time::timeout(
+            std::time::Duration::from_secs(2),
+            rx_hf.recv(),
+        )
+        .await
+        .expect("timeout waiting for HF command")
+        .expect("HF channel closed");
+        assert!(
+            matches!(req.cmd, trx_core::rig::command::RigCommand::SetFreq(f) if f.hz == 7_100_000),
+            "HF rig should receive SetFreq(7.1 MHz), got {:?}",
+            req.cmd
+        );
+
+        // VHF should not receive anything.
+        assert!(
+            rx_vhf.try_recv().is_err(),
+            "VHF rig should not receive commands with no rig_id"
+        );
+
+        let _ = shutdown_tx.send(true);
+        handle.abort();
+        let _ = handle.await;
+    }
 }
