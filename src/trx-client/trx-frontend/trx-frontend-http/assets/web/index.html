@@ -47,6 +47,10 @@
             <svg class="tab-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 2a4 4 0 0 1 4 4c0 3-4 8-4 8S4 9 4 6a4 4 0 0 1 4-4z"/><circle cx="8" cy="6" r="1.2" fill="currentColor" stroke="none"/></svg>
             <span class="tab-label">Map</span>
           </button>
+          <button class="tab" data-tab="statistics">
+            <svg class="tab-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 14h12"/><rect x="3" y="8" width="2" height="6" rx="0.4" fill="currentColor" stroke="none" opacity="0.6"/><rect x="7" y="5" width="2" height="9" rx="0.4" fill="currentColor" stroke="none" opacity="0.75"/><rect x="11" y="2" width="2" height="12" rx="0.4" fill="currentColor" stroke="none" opacity="0.9"/></svg>
+            <span class="tab-label">Statistics</span>
+          </button>
           <button class="tab" data-tab="settings">
             <svg class="tab-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9.8 3.1a2.6 2.6 0 0 0-2.2 3.9L3.4 11.2a1.2 1.2 0 1 0 1.7 1.7l4.2-4.2a2.6 2.6 0 0 0 3.9-2.2l-1.8.6-1.2-1.2z"/><path d="M10.2 5.8 12 4"/></svg>
             <span class="tab-label">Settings</span>
@@ -959,11 +963,85 @@
         <div id="map-band-legend" class="map-band-legend" aria-label="Band color legend"></div>
         <div id="aprs-map"></div>
       </div>
+    </div>
+    <div id="tab-statistics" class="tab-panel" style="display:none;">
+      <div class="stats-controls">
+        <div class="stats-control-group">
+          <label class="stats-control-label" for="stats-rig-filter">Receiver</label>
+          <select id="stats-rig-filter" class="stats-select">
+            <option value="">All receivers</option>
+          </select>
+        </div>
+        <div class="stats-control-group">
+          <label class="stats-control-label" for="stats-history-limit">History</label>
+          <select id="stats-history-limit" class="stats-select">
+            <option value="15">15 min</option>
+            <option value="30">30 min</option>
+            <option value="60">1 hr</option>
+            <option value="180">3 hrs</option>
+            <option value="360">6 hrs</option>
+            <option value="720">12 hrs</option>
+            <option value="1440" selected>24 hrs</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="stats-counters" id="stats-counters">
+        <div class="stats-counter-card">
+          <div class="stats-counter-value" id="stats-total-decodes">0</div>
+          <div class="stats-counter-label">Total decodes</div>
+        </div>
+        <div class="stats-counter-card">
+          <div class="stats-counter-value" id="stats-unique-stations">0</div>
+          <div class="stats-counter-label">Unique stations</div>
+        </div>
+        <div class="stats-counter-card">
+          <div class="stats-counter-value" id="stats-unique-grids">0</div>
+          <div class="stats-counter-label">Unique grids</div>
+        </div>
+        <div class="stats-counter-card">
+          <div class="stats-counter-value" id="stats-decode-rate">0</div>
+          <div class="stats-counter-label">Decodes / min</div>
+        </div>
+      </div>
+
+      <section class="stats-section" aria-labelledby="stats-decode-type-title">
+        <div class="stats-section-head">
+          <div id="stats-decode-type-title" class="stats-section-title">Decodes by type</div>
+          <div class="stats-section-subtitle">Breakdown of decoded signals by decoder type</div>
+        </div>
+        <div id="stats-decode-type-bars" class="stats-bar-chart"></div>
+      </section>
+
+      <section class="stats-section" aria-labelledby="stats-band-activity-title">
+        <div class="stats-section-head">
+          <div id="stats-band-activity-title" class="stats-section-title">Band activity</div>
+          <div class="stats-section-subtitle">Decode volume per amateur band</div>
+        </div>
+        <div id="stats-band-activity-bars" class="stats-bar-chart"></div>
+      </section>
+
+      <section class="stats-section" aria-labelledby="stats-rig-compare-title" id="stats-rig-compare-section" style="display:none;">
+        <div class="stats-section-head">
+          <div id="stats-rig-compare-title" class="stats-section-title">Per-receiver comparison</div>
+          <div class="stats-section-subtitle">Decode counts across connected receivers</div>
+        </div>
+        <div id="stats-rig-compare-bars" class="stats-bar-chart"></div>
+      </section>
+
+      <section class="stats-section" aria-labelledby="stats-dx-histogram-title">
+        <div class="stats-section-head">
+          <div id="stats-dx-histogram-title" class="stats-section-title">DX distance distribution</div>
+          <div class="stats-section-subtitle">Contact path distance histogram</div>
+        </div>
+        <div id="stats-dx-histogram-bars" class="stats-bar-chart"></div>
+      </section>
+
       <section class="map-qso-summary" aria-labelledby="map-qso-summary-title">
         <div class="map-qso-summary-head">
           <div>
             <div id="map-qso-summary-title" class="map-qso-summary-title">Longest decode paths</div>
-            <div class="map-qso-summary-subtitle">Top 5 directed decode paths in the current map view</div>
+            <div class="map-qso-summary-subtitle">Top 5 directed decode paths by distance</div>
           </div>
         </div>
         <div id="map-qso-summary-list" class="map-qso-summary-list"></div>
@@ -972,7 +1050,7 @@
         <div class="map-qso-summary-head">
           <div>
             <div id="map-signal-summary-title" class="map-qso-summary-title">Strongest decoded signal</div>
-            <div class="map-qso-summary-subtitle">Top 5 strongest signals in the current map history</div>
+            <div class="map-qso-summary-subtitle">Top 5 strongest signals by SNR</div>
           </div>
         </div>
         <div id="map-signal-summary-list" class="map-qso-summary-list"></div>
@@ -981,7 +1059,7 @@
         <div class="map-qso-summary-head">
           <div>
             <div id="map-weak-signal-summary-title" class="map-qso-summary-title">Weakest decoded signal</div>
-            <div class="map-qso-summary-subtitle">Top 5 weakest signals in the current map history</div>
+            <div class="map-qso-summary-subtitle">Top 5 weakest signals by SNR</div>
           </div>
         </div>
         <div id="map-weak-signal-summary-list" class="map-qso-summary-list"></div>

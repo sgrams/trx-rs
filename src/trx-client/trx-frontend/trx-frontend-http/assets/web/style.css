@@ -2736,6 +2736,7 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   /* Shorten long tab labels to keep bottom nav compact */
   .tab[data-tab="bookmarks"] .tab-label { font-size: 0.6rem; }
   .tab[data-tab="digital-modes"] .tab-label  { font-size: 0.6rem; }
+  .tab[data-tab="statistics"] .tab-label { font-size: 0.6rem; }
   .top-bar-actions {
     width: 100%;
     justify-content: flex-start;
@@ -4938,4 +4939,156 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   .sat-pred-header, .sat-pred-row { grid-template-columns: 5.5rem 1fr 4rem 4.5rem; font-size: 0.75rem; }
   .sat-pred-header-current, .sat-pred-row-current { grid-template-columns: 1fr 4rem 5rem 5rem 4.5rem; font-size: 0.75rem; }
   .sat-pred-col-dir { display: none; }
+}
+
+/* ── Statistics panel ──────────────────────────────────────────────── */
+#tab-statistics {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  padding: 1rem;
+  max-width: 72rem;
+}
+.stats-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: flex-end;
+}
+.stats-control-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+.stats-control-label {
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+}
+.stats-select {
+  padding: 0.35rem 0.5rem;
+  border-radius: 0.5rem;
+  border: 1px solid var(--border-light);
+  background: var(--input-bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.82rem;
+}
+.stats-counters {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+  gap: 0.65rem;
+}
+.stats-counter-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.9rem 0.7rem;
+  border-radius: 0.75rem;
+  border: 1px solid color-mix(in srgb, var(--border-light) 76%, transparent);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--card-bg) 90%, transparent), color-mix(in srgb, var(--input-bg) 82%, transparent));
+  box-shadow: inset 0 1px 0 color-mix(in srgb, white 5%, transparent);
+}
+.stats-counter-value {
+  font-size: 1.6rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-heading);
+  line-height: 1.1;
+}
+.stats-counter-label {
+  font-size: 0.74rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+}
+.stats-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 0.9rem 1rem 1rem;
+  border-radius: 0.8rem;
+  border: 1px solid color-mix(in srgb, var(--border-light) 76%, transparent);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--card-bg) 90%, transparent), color-mix(in srgb, var(--input-bg) 82%, transparent));
+  box-shadow: inset 0 1px 0 color-mix(in srgb, white 5%, transparent);
+}
+.stats-section-head {
+  display: flex;
+  flex-direction: column;
+  gap: 0.18rem;
+}
+.stats-section-title {
+  font-size: 0.88rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-heading);
+}
+.stats-section-subtitle {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+.stats-bar-chart {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+.stats-bar-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.82rem;
+}
+.stats-bar-label {
+  min-width: 5.5rem;
+  text-align: right;
+  font-weight: 600;
+  font-size: 0.78rem;
+  color: var(--text);
+  flex-shrink: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.stats-bar-track {
+  flex: 1;
+  height: 1.15rem;
+  border-radius: 0.4rem;
+  background: color-mix(in srgb, var(--input-bg) 84%, transparent);
+  overflow: hidden;
+  position: relative;
+}
+.stats-bar-fill {
+  height: 100%;
+  border-radius: 0.4rem;
+  min-width: 2px;
+  transition: width 300ms ease;
+}
+.stats-bar-count {
+  min-width: 3.2rem;
+  font-variant-numeric: tabular-nums;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+.stats-bar-empty {
+  padding: 0.85rem 0.9rem;
+  border-radius: 0.75rem;
+  border: 1px dashed color-mix(in srgb, var(--border-light) 76%, transparent);
+  background: color-mix(in srgb, var(--input-bg) 84%, transparent);
+  color: var(--text-muted);
+  font-size: 0.82rem;
+}
+@media (max-width: 600px) {
+  #tab-statistics { padding: 0.75rem; }
+  .stats-counters { grid-template-columns: repeat(2, 1fr); }
+  .stats-counter-value { font-size: 1.3rem; }
+  .stats-bar-label { min-width: 4rem; font-size: 0.72rem; }
+  .stats-section { padding: 0.8rem 0.85rem 0.9rem; }
 }
