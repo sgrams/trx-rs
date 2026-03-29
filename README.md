@@ -84,17 +84,22 @@ Build without SDR support: `cargo build --release --no-default-features`
 
 ```mermaid
 graph TD
-    Radio["Radio / SDR Hardware"] <-->|"serial or USB"| Server["trx-server<br/>rig control, DSP, decoders, audio capture"]
-    Server <-->|"JSON-TCP :4530"| Client["trx-client<br/>remote connection, audio relay"]
-    Server -->|"Opus-TCP :4531"| Client
-    Client <-->|internal channels| F1["Web UI :8080"]
-    Client <-->|internal channels| F2["rigctl :4532"]
-    Client <-->|internal channels| F3["JSON-TCP"]
+    SDR1["SDR #1"] & SDR2["SDR #2"] <-->|USB| S1["trx-server A"]
+    SDR3["SDR #3"] & FT817["FT-817"] <-->|USB / serial| S2["trx-server B"]
+
+    S1 <-->|"JSON-TCP :4530"| C1["trx-client"]
+    S1 -->|"Opus-TCP :4531"| C1
+    S2 <-->|"JSON-TCP :4530"| C1
+    S2 -->|"Opus-TCP :4531"| C1
+
+    C1 <-->|internal channels| F1["Web UI :8080"]
+    C1 <-->|internal channels| F2["rigctl :4532"]
+    C1 <-->|internal channels| F3["JSON-TCP"]
 ```
 
-`trx-server` owns hardware access and runs the DSP pipeline.
-`trx-client` connects over TCP and exposes user-facing frontends.
-This keeps hardware local to one host while making control available over the network.
+Each `trx-server` owns one or more rigs and runs DSP, decoding, and audio capture locally.
+A `trx-client` connects to any number of servers over TCP and exposes them through
+a unified set of frontends.
 
 ## Documentation
 
