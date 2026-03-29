@@ -128,26 +128,24 @@ Improvement plan: `docs/Improvement-Areas.md`
 
 ### Areas for Improvement
 
-**P0 — Critical:**
-- **Plugin signing**: No SHA-256 checksum verification, no per-plugin scoping, no Windows validation.
+All previous P0 items resolved or dropped. See `docs/Improvement-Areas.md` for
+resolved item details.
 
 **P1 — High:**
-- **Session store unwrap()**: 7 `.write().unwrap()` in `auth.rs` — mutex poisoning crashes server.
-- **No TCP listener rate limiting**: Raw protocol listener accepts unlimited connections per IP.
-- **RigState 33-field flat struct**: Decoder bools/reset seqs should be sub-structs. Cloned on every broadcast.
-- **No `spawn_blocking` timeout**: Satellite pass computation in `listener.rs` can hang indefinitely.
+- **Decoder task duplication**: 9 decoder tasks in `audio.rs` (3,826 LOC) share ~1,000 lines of near-identical boilerplate. Extract a generic `DecoderTask<D>`.
+- **Missing tests**: `audio.rs` (3,826 LOC), `api.rs` (2,831 LOC), `main.rs` (679 LOC) have 0 tests.
+- **No multi-rig integration tests**: State isolation and command routing between rigs untested.
 
 **P2 — Medium:**
-- **Command handler boilerplate**: 11 `RigCommandHandler` impls across 500+ lines. Macro opportunity.
-- **No command execution timeouts** at `CommandExecutor` level. Backend stalls propagate up.
-- **No protocol versioning**: Unknown commands cause parse errors with no graceful degradation.
-- **Unsafe string in spectrum encoding**: `from_utf8_unchecked` in `api.rs:63`.
-- **6 `#[allow(dead_code)]`** annotations to review/clean up.
+- **Decode log silent failures**: `let _ = flush()` discards errors; rotation failure has no fallback writer.
+- **`api.rs` size**: 2,831 LOC with ~25 endpoint handlers and no logical separation.
+- **Background decode state complexity**: 8+ nested conditionals in `run()` inner loop (~95 lines).
+- **Actix-web pinned**: `=4.4.1` prevents patch-level security updates.
+- **VDES magic numbers**: Plausibility thresholds (`-35`, `15`) are undocumented inline constants.
 
 **P3 — Low:**
-- **Missing tests**: `audio.rs` (3,812 LOC), `api.rs` (2,711 LOC), `main.rs` (1,203 LOC) have 0 tests.
-- **FT-817 VFO inference fragile**: Fails when VFO A and B share the same frequency.
-- ~~**VDES decoder incomplete**~~: Turbo FEC, CRC-16, and M.2092-1 link-layer parsing now implemented.
-- **Plugin system lacks versioning**: No API version or reload semantics.
-- **Configurator detection stubbed**: `detect.rs` TODO for `serialport::available_ports()`.
-- **Inconsistent naming**: `freq_hz`/`frequency`/`center_hz`; `rig_id`/`id`; `model`/`rig_model`.
+- **FT-817 VFO inference fragile**: Defaults to VFO A when both share the same frequency.
+- **String cloning in remote client**: ~105 `.clone()` calls, some in hot poll loops.
+- **Missing decoder doc comments**: `AisDecoder`, `VdesDecoder`, `RdsDecoder` lack public API docs.
+- **Turbo decoder precondition**: `turbo_decode_soft()` lacks debug assertions on interleaver length.
+- **No decoder tracing spans**: No `info_span!` for measuring per-decoder latency.

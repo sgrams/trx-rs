@@ -8,152 +8,258 @@ a suggested fix.
 
 ---
 
-## Critical (P0)
+## Resolved Items
 
-### ~~Plugin signing and cross-platform validation~~ — DROPPED
+<details>
+<summary>Click to expand resolved items from previous audits</summary>
+
+### Plugin signing and cross-platform validation — DROPPED
 
 Plugin system has been removed from the codebase. No longer applicable.
+
+### Session store mutex poisoning (auth.rs) — RESOLVED
+
+**Location:** `src/trx-client/trx-frontend/trx-frontend-http/src/auth.rs`
+
+All 6 `.write().unwrap()` / `.lock().unwrap()` calls replaced with
+`.unwrap_or_else(|e| { warn!(...); e.into_inner() })` pattern. Lock poisoning now
+logs a warning and recovers the inner data instead of crashing.
+
+### No rate limiting on TCP listener — RESOLVED
+
+**Location:** `src/trx-server/src/listener.rs`
+
+Added `ConnectionTracker` with per-IP connection limiting (default: 10 concurrent
+connections per IP). Connections exceeding the limit are rejected with a log warning.
+Slots are released when clients disconnect.
+
+### RigState is a 33-field flat struct — RESOLVED
+
+**Location:** `src/trx-core/src/rig/state.rs`
+
+Decoder fields grouped into `DecoderConfig` (8 bools) and `DecoderResetSeqs`
+(8 u64 counters). Both use `#[serde(flatten)]` for backward-compatible JSON wire
+format. Updated across all consumers.
+
+### No `spawn_blocking` timeout — RESOLVED
+
+**Location:** `src/trx-server/src/listener.rs`
+
+Satellite pass computation wrapped in `tokio::time::timeout(30s, ...)` with
+graceful fallback to empty results on timeout or panic.
+
+### Command handler boilerplate — RESOLVED
+
+**Location:** `src/trx-core/src/rig/controller/handlers.rs`
+
+Created `rig_command!` declarative macro. 7 unit commands use the macro; 4 commands
+with custom fields/validation remain as explicit impls.
+
+### No command execution timeouts at CommandExecutor level — RESOLVED
+
+**Location:** `src/trx-server/src/rig_task.rs`
+
+`tokio::time::timeout(command_exec_timeout, process_command(...))` wraps all
+command execution. Default timeout: 10s, configurable via `RigTaskConfig`.
+
+### No forward compatibility in protocol — RESOLVED
+
+**Location:** `src/trx-protocol/src/types.rs`, `src/trx-protocol/src/codec.rs`
+
+Added optional `protocol_version: Option<u32>` to `ClientEnvelope` and
+`ClientResponse`. `parse_envelope()` distinguishes malformed JSON from
+unrecognised `cmd` values.
+
+### `unsafe` string construction in spectrum encoding — RESOLVED
+
+**Location:** `src/trx-client/trx-frontend/trx-frontend-http/src/api.rs`
+
+Replaced `unsafe { String::from_utf8_unchecked(out) }` with safe
+`String::from_utf8(out).expect(...)`.
+
+### `#[allow(dead_code)]` cleanup — RESOLVED
+
+Reduced from 6 to 4 annotations, all in trx-backend-soapysdr where fields serve
+as lifetime anchors (`device`, `iq_tx`) or document reserved capacity
+(`fixed_slot_count`, `process_pair`).
+
+### VDES decoder incomplete FEC — RESOLVED
+
+Turbo FEC decoder, CRC-16-CCITT validation, and M.2092-1 link-layer frame parsing
+implemented.
+
+### Plugin system lacks versioning — DROPPED
+
+Plugin system removed from the codebase.
+
+### Configurator serial detection stubbed — RESOLVED
+
+Implemented using `tokio_serial::available_ports()` with USB, Bluetooth, PCI, and
+Unknown port type descriptions.
+
+### Inconsistent frequency/rig naming — DOCUMENTED AS INTENTIONAL
+
+Field names reflect distinct semantic contexts: `freq_hz` (dial), `center_hz`
+(SDR capture center), `cw_center_hz` (CW tone); `rig_id` (config key), `id`
+(runtime UUID); `model` (hardware string), `rig_model` (config parameter).
+
+</details>
 
 ---
 
 ## High Priority (P1)
 
-### ~~Session store mutex poisoning (auth.rs)~~ — RESOLVED
+### Decoder task duplication in audio.rs
 
-**Location:** `src/trx-client/trx-frontend/trx-frontend-http/src/auth.rs`
+**Location:** `src/trx-server/src/audio.rs` (3,826 LOC)
 
-**Resolution:** All 6 `.write().unwrap()` / `.lock().unwrap()` calls replaced with
-`.unwrap_or_else(|e| { warn!(...); e.into_inner() })` pattern. Lock poisoning now
-logs a warning and recovers the inner data instead of crashing.
+Nine decoder tasks (APRS, AIS, VDES, CW, FT2, FT4, FT8, WSPR, LRPT) each
+implement the same pattern: subscribe to PCM broadcast, watch for state changes
+(mode/frequency/reset), call `block_in_place()` for synchronous decoding, record
+to history, and forward to `decode_tx`. This results in ~1,000 lines of
+near-identical boilerplate with 14+ `block_in_place()` calls and 12+
+`.resubscribe()` calls.
 
-### ~~No rate limiting on TCP listener~~ — RESOLVED
+**Risk:** A bug fix or behavior change (e.g., lag handling, error recovery) must
+be replicated across all 9 decoders manually.
 
-**Location:** `src/trx-server/src/listener.rs`
+**Suggestion:** Extract a `DecoderTask<D>` generic that encapsulates the
+subscribe → watch → decode → record → forward lifecycle. Each decoder implements
+a trait with `process_block()` and `reset()` methods. Estimated reduction: ~500
+lines.
 
-**Resolution:** Added `ConnectionTracker` with per-IP connection limiting
-(default: 10 concurrent connections per IP). Connections exceeding the limit
-are rejected with a log warning. Slots are released when clients disconnect.
+### Missing tests for critical modules
 
-### ~~RigState is a 33-field flat struct~~ — RESOLVED
+**Location:** `src/trx-server/src/audio.rs` (3,826 LOC, 0 tests),
+`src/trx-client/trx-frontend/trx-frontend-http/src/api.rs` (2,831 LOC, 0 tests),
+`src/trx-client/src/main.rs` (679 LOC, 0 tests)
 
-**Location:** `src/trx-core/src/rig/state.rs`
+These are among the largest files in the codebase and have zero unit tests.
+`history_store.rs` and `auth.rs` now have good coverage; `handlers.rs` has 4
+tests. The remaining files require ALSA/hardware mocking infrastructure or HTTP
+test harnesses.
 
-**Resolution:** Decoder fields grouped into two sub-structs:
-- `DecoderConfig`: 8 `*_decode_enabled` bool fields
-- `DecoderResetSeqs`: 8 `*_decode_reset_seq` u64 counters
+**Suggestion:** Start with `api.rs` — actix-web's `test::TestRequest` makes
+endpoint testing feasible without hardware. Extract pure logic from `audio.rs`
+into testable helpers where possible.
 
-Both use `#[serde(flatten)]` to maintain backward-compatible JSON wire format.
-Updated across all consumers: `rig_task.rs`, `audio.rs`, `api.rs`,
-`remote_client.rs`, `server.rs` (rigctl, http-json), `codec.rs`.
+### Missing integration tests for multi-rig scenarios
 
-### ~~No `spawn_blocking` timeout~~ — RESOLVED
+No tests verify state isolation or command routing between rigs in multi-rig
+configurations, despite the codebase supporting per-rig task isolation with
+`HashMap<rig_id, RigHandle>` routing.
 
-**Location:** `src/trx-server/src/listener.rs`
+**Risk:** Cross-rig state pollution on refactors.
 
-**Resolution:** Satellite pass computation wrapped in `tokio::time::timeout(30s, ...)`
-with graceful fallback to empty results on timeout or panic.
+**Suggestion:** Add integration test covering simultaneous frequency/mode changes
+on two rigs with a dummy backend.
 
 ---
 
 ## Medium Priority (P2)
 
-### ~~Command handler boilerplate~~ — RESOLVED
+### Decode log silent failures
 
-**Location:** `src/trx-core/src/rig/controller/handlers.rs`
+**Location:** `src/decoders/trx-decode-log/src/lib.rs`
 
-**Resolution:** Created `rig_command!` declarative macro that generates unit-struct
-command implementations from a concise table of (name, preconditions, execute body).
-7 unit commands (PowerOn, PowerOff, ToggleVfo, Lock, Unlock, GetTxLimit,
-GetSnapshot) now use the macro. Commands with custom fields/validation (SetFreq,
-SetMode, SetPtt, SetTxLimit) remain as explicit impls.
+- Line 160: `let _ = state.writer.flush();` silently discards flush errors. Disk
+  full or permission changes cause silent data loss.
+- Lines 137–150: If file rotation fails (open error), subsequent writes retry the
+  same path indefinitely with no fallback writer or degradation logging.
 
-### ~~No command execution timeouts at CommandExecutor level~~ — ALREADY RESOLVED
+**Suggestion:** Log flush errors via `warn!`. On rotation failure, keep the old
+writer and log a degradation warning rather than silently failing.
 
-**Location:** `src/trx-server/src/rig_task.rs`
+### `api.rs` file size and organization
 
-`tokio::time::timeout(command_exec_timeout, process_command(...))` already wraps
-all command execution (lines 370–425). Default timeout: 10s. No further changes
-needed.
+**Location:** `src/trx-client/trx-frontend/trx-frontend-http/src/api.rs` (2,831 LOC)
 
-### ~~No forward compatibility in protocol~~ — RESOLVED
+Contains ~25+ endpoint handlers spanning decoder history, frequency/mode control,
+virtual channel management, spectrum, and SSE streams with no logical separation.
 
-**Location:** `src/trx-protocol/src/types.rs`, `src/trx-protocol/src/codec.rs`
+**Suggestion:** Consider splitting into `decoder_api.rs`, `vchan_api.rs`,
+`rig_api.rs` in a future refactor.
 
-**Resolution:**
-- Added optional `protocol_version: Option<u32>` to both `ClientEnvelope` and
-  `ClientResponse` (current version: 1, defined as `PROTOCOL_VERSION` constant).
-- `parse_envelope()` now distinguishes between truly malformed JSON and valid
-  JSON with an unrecognised `cmd` value, enabling clearer error messages.
+### Background decode state complexity
 
-### ~~`unsafe` string construction in spectrum encoding~~ — RESOLVED
+**Location:** `src/trx-client/trx-frontend/trx-frontend-http/src/background_decode.rs:350–444`
 
-**Location:** `src/trx-client/trx-frontend/trx-frontend-http/src/api.rs:63`
+The `run()` method's inner loop contains 8+ nested conditional branches
+(users_connected, scheduler_has_control, scheduled_bookmark_ids, virtual channel
+coverage, spectrum availability, offset bounds). Correct but difficult to modify
+or extend.
 
-**Resolution:** Replaced `unsafe { String::from_utf8_unchecked(out) }` with
-`String::from_utf8(out).expect("base64 output is always valid ASCII")`.
+**Suggestion:** Extract the decision logic into a pure function returning a
+`ChannelAction` enum. Improves testability and makes the state machine explicit.
 
-### ~~6 `#[allow(dead_code)]` annotations~~ — RESOLVED
+### Actix-web pinned to exact version
 
-**Resolution:**
-- `is_tx_endpoint` in auth.rs: made `pub` and removed annotation (used in tests,
-  available for TX access control integration).
-- `session_ttl()` in config.rs: removed annotation (public API method).
-- `device` in real_iq_source.rs: annotation kept (lifetime anchor for stream).
-- `iq_tx` in vchan_impl.rs: annotation kept (broadcast sender kept alive).
-- `fixed_slot_count` in vchan_impl.rs: annotation kept (documents reserved slots).
-- `process_pair` in demod.rs: annotation kept (stereo AGC variant for future use).
+**Location:** `src/trx-client/trx-frontend/trx-frontend-http/Cargo.toml`
+
+`actix-web = "=4.4.1"` prevents automatic patch-level security updates. Later
+4.x releases may include security fixes.
+
+**Suggestion:** Relax to `actix-web = "4.4"` to allow patch updates, or
+periodically review and bump the pinned version.
+
+### Magic numbers in VDES plausibility scoring
+
+**Location:** `src/decoders/trx-vdes/src/lib.rs:261–280`
+
+Plausibility thresholds (`-35`, `15`) are inline magic numbers with no
+documentation of the scoring scale or units.
+
+**Suggestion:** Define named constants:
+```rust
+const PLAUSIBILITY_UNSYNCED_THRESHOLD: i32 = -35;
+const PLAUSIBILITY_LOW_CONFIDENCE_THRESHOLD: i32 = 15;
+```
 
 ---
 
 ## Low Priority (P3)
 
-### ~~Missing tests for critical modules~~ — PARTIALLY RESOLVED
+### FT-817 VFO inference fragile with same frequency
 
-- `history_store.rs`: Added 4 unit tests covering timestamp generation,
-  serde round-trip, save/load round-trip, and expiry filtering.
-- `audio.rs`, `api.rs`, `main.rs`: Remain without tests (require ALSA/hardware
-  mocking infrastructure that is beyond the scope of this pass).
-- `rig_task.rs`: Existing 4 tests adequate; integration tests deferred.
+**Location:** `src/trx-server/trx-backend/trx-backend-ft817/src/lib.rs:233–265`
 
-### ~~FT-817 VFO state inference is fragile~~ — IMPROVED
+When both VFOs share the same frequency, inference defaults to VFO A. Resolved
+after VFO toggle primes both sides. Well-documented in code comments but remains
+a known limitation.
 
-**Location:** `src/trx-server/trx-backend/trx-backend-ft817/src/lib.rs`
+### Excessive string cloning in remote client
 
-**Resolution:** Improved `update_vfo_freq()` to handle the ambiguous case where
-both VFOs share the same frequency. When VFO B has a cached frequency that
-differs from the current reading, inference correctly assigns to VFO A. When
-frequencies match (ambiguous), defaults to VFO A — resolved after VFO toggle
-primes both sides. Added detailed comments explaining the inference logic.
+**Location:** `src/trx-client/src/remote_client.rs`
 
-### ~~VDES decoder has incomplete FEC~~ — RESOLVED
+~105 `.clone()` calls on String fields, many in hot paths during poll loops
+(spectrum, state updates). Most are necessary for ownership across async
+boundaries, but some could use borrowed references or `Cow<str>`.
 
-**Location:** `src/decoders/trx-vdes/src/`
+**Suggestion:** Audit hot-path clones in `run_remote_client`, particularly around
+spectrum polling loops. Low priority unless profiling shows allocation pressure.
 
-Turbo FEC decoder (dual 8-state RSC with BCJR/MAP iterative decoding, QPP
-interleaver), CRC-16-CCITT validation, and M.2092-1 link-layer frame parsing
-(Messages 0–6) have been implemented.  The decode pipeline now attempts turbo
-decoding first, falls back to Viterbi, and validates CRC on both paths.
+### Missing doc comments on public decoder structs
 
-### ~~Plugin system lacks versioning and lifecycle~~ — DROPPED
+**Location:** `src/decoders/trx-ais/src/lib.rs`, `src/decoders/trx-vdes/src/lib.rs`,
+`src/decoders/trx-rds/src/lib.rs`
 
-Plugin system has been removed from the codebase. No longer applicable.
+Public decoder structs (`AisDecoder`, `VdesDecoder`, `RdsDecoder`) lack doc
+comments describing valid sample rates, preconditions, and guarantees.
 
-### ~~Configurator serial detection is stubbed~~ — RESOLVED
+### Turbo decoder precondition not asserted
 
-**Location:** `src/trx-configurator/src/detect.rs`
+**Location:** `src/decoders/trx-vdes/src/turbo.rs:208–249`
 
-**Resolution:** Implemented `detect_serial_ports()` using `tokio_serial::available_ports()`.
-Returns `(port_name, description)` pairs with USB vendor/product info, Bluetooth,
-PCI, and Unknown port type descriptions.
+`turbo_decode_soft()` accesses interleaver/deinterleaver vectors without bounds
+checks. The precondition `interleaver.len() == info_len` is clear from context
+and enforced by the caller, but not formally documented or debug-asserted.
 
-### Inconsistent frequency/rig naming across crates
+### No tracing spans for decoder performance
 
-Field naming varies across the codebase (`freq_hz` vs `center_hz`, `rig_id` vs
-`id`, `model` vs `rig_model`). Analysis shows these reflect distinct semantic
-contexts rather than true inconsistencies:
-- `freq_hz`: dial frequency; `center_hz`: SDR capture center; `cw_center_hz`: CW tone
-- `rig_id`: stable config key; `id`: runtime UUID
-- `model`: hardware model string; `rig_model`: config parameter
+**Location:** `src/trx-server/src/audio.rs`
 
-**Decision:** Documented as intentional. Renaming would break the wire protocol
-and provide minimal benefit. The `_hz` suffix convention is consistently applied.
+Decoders use `info!`/`warn!` logs but don't emit tracing spans. No way to
+measure per-decoder latency without sampling logs.
+
+**Suggestion:** Add `tracing::info_span!` around `block_in_place()` calls for
+opt-in performance measurement.
