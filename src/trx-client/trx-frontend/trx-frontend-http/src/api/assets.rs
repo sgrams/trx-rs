@@ -355,10 +355,5 @@ pub(crate) async fn vchan_js(req: HttpRequest) -> impl Responder {
 #[get("/bandplan.json")]
 pub(crate) async fn bandplan_json(req: HttpRequest) -> impl Responder {
     let c = gz_bandplan_json();
-    static_asset_response(
-        &req,
-        "application/json; charset=utf-8",
-        &c.gz,
-        &c.etag,
-    )
+    static_asset_response(&req, "application/json; charset=utf-8", &c.gz, &c.etag)
 }

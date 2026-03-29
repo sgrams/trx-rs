@@ -727,11 +727,7 @@ pub fn spawn_scheduler_task(
                 // above its minimum elevation, we retune to the
                 // satellite's bookmark and enable its decoders (e.g.
                 // LRPT).
-                if let Some(sat_target) = find_active_satellite_target(
-                    &config,
-                    &context,
-                    now_ms,
-                ) {
+                if let Some(sat_target) = find_active_satellite_target(&config, &context, now_ms) {
                     let target = AppliedTarget {
                         bookmark_id: sat_target.bookmark_id.clone(),
                         center_hz: sat_target.center_hz,
@@ -743,8 +739,7 @@ pub fn spawn_scheduler_task(
                         continue;
                     }
 
-                    let Some(bm) =
-                        bookmarks.get_for_rig(&config.remote, &sat_target.bookmark_id)
+                    let Some(bm) = bookmarks.get_for_rig(&config.remote, &sat_target.bookmark_id)
                     else {
                         warn!(
                             "scheduler: satellite bookmark '{}' not found for remote '{}'",
@@ -790,9 +785,7 @@ pub fn spawn_scheduler_task(
                 {
                     last_applied.remove(&config.remote);
                     // Clear the active_satellite from status.
-                    if let Ok(mut map) =
-                        status_map.write()
-                    {
+                    if let Ok(mut map) = status_map.write() {
                         if let Some(st) = map.get_mut(&config.remote) {
                             st.active_satellite = None;
                         }
@@ -940,9 +933,7 @@ fn find_active_satellite_target(
         // Check for active pass or imminent pass within pretune window.
         let pass = active_passes.get(&entry.norad_id).copied().or_else(|| {
             passes.passes.iter().find(|p| {
-                p.norad_id == entry.norad_id
-                    && p.aos_ms > now_ms
-                    && p.aos_ms <= now_ms + pretune_ms
+                p.norad_id == entry.norad_id && p.aos_ms > now_ms && p.aos_ms <= now_ms + pretune_ms
             })
         });
 
