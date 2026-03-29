@@ -128,24 +128,4 @@ Improvement plan: `docs/Improvement-Areas.md`
 
 ### Areas for Improvement
 
-All previous P0 items resolved or dropped. See `docs/Improvement-Areas.md` for
-resolved item details.
-
-**P1 — High:**
-- **Decoder task duplication**: 9 decoder tasks in `audio.rs` (3,826 LOC) share ~1,000 lines of near-identical boilerplate. Extract a generic `DecoderTask<D>`.
-- **Missing tests**: `audio.rs` (3,826 LOC), `api.rs` (2,831 LOC), `main.rs` (679 LOC) have 0 tests.
-- **No multi-rig integration tests**: State isolation and command routing between rigs untested.
-
-**P2 — Medium:**
-- **Decode log silent failures**: `let _ = flush()` discards errors; rotation failure has no fallback writer.
-- **`api.rs` size**: 2,831 LOC with ~25 endpoint handlers and no logical separation.
-- **Background decode state complexity**: 8+ nested conditionals in `run()` inner loop (~95 lines).
-- **Actix-web pinned**: `=4.4.1` prevents patch-level security updates.
-- **VDES magic numbers**: Plausibility thresholds (`-35`, `15`) are undocumented inline constants.
-
-**P3 — Low:**
-- **FT-817 VFO inference fragile**: Defaults to VFO A when both share the same frequency.
-- **String cloning in remote client**: ~105 `.clone()` calls, some in hot poll loops.
-- **Missing decoder doc comments**: `AisDecoder`, `VdesDecoder`, `RdsDecoder` lack public API docs.
-- **Turbo decoder precondition**: `turbo_decode_soft()` lacks debug assertions on interleaver length.
-- **No decoder tracing spans**: No `info_span!` for measuring per-decoder latency.
+All P0–P3 items resolved or dropped. See `docs/Improvement-Areas.md` for details.

@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: BSD-2-Clause
 
-#[path = "api.rs"]
+#[path = "api/mod.rs"]
 pub mod api;
 #[path = "audio.rs"]
 pub mod audio;

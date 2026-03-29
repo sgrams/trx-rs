@@ -143,8 +143,11 @@ impl DecoderFileLogger {
                     state.writer = next_writer;
                 }
                 Err(e) => {
-                    warn!("decode log reopen failed for {}: {}", self.label, e);
-                    return;
+                    warn!(
+                        "decode log rotation failed for {}, keeping current writer: {}",
+                        self.label, e
+                    );
+                    // Keep the old writer rather than silently dropping writes.
                 }
             }
         }
@@ -157,7 +160,9 @@ impl DecoderFileLogger {
             warn!("decode log write failed for {}", self.label);
             return;
         }
-        let _ = state.writer.flush();
+        if let Err(e) = state.writer.flush() {
+            warn!("decode log flush failed for {}: {}", self.label, e);
+        }
     }
 }
 

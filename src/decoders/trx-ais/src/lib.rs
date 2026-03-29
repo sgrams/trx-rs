@@ -47,6 +47,22 @@ struct RawFrame {
     crc_ok: bool,
 }
 
+/// AIS (Automatic Identification System) GMSK/HDLC decoder.
+///
+/// Operates on narrowband FM-demodulated audio at any sample rate (internally
+/// resampled to the 9,600 baud AIS symbol rate). The decoder performs sign
+/// slicing, NRZI decoding, HDLC flag detection with bit de-stuffing, CRC-16
+/// validation, and parsing of common AIS message types (1–3, 5, 18, 19).
+///
+/// # Usage
+///
+/// ```ignore
+/// let mut decoder = AisDecoder::new(48_000);
+/// let messages = decoder.process_samples(&pcm_samples, "A");
+/// ```
+///
+/// Call [`reset()`](Self::reset) when switching frequency or restarting
+/// reception to clear internal symbol-tracking state.
 #[derive(Debug, Clone)]
 pub struct AisDecoder {
     sample_rate: f32,

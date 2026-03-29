@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: BSD-2-Clause
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
@@ -363,6 +363,13 @@ impl BackgroundDecodeManager {
         let sample_rate = frame.map(|frame| frame.sample_rate);
         let half_span_hz = frame.map(|frame| i64::from(frame.sample_rate) / 2);
 
+        let spectrum_span = match (center_hz, half_span_hz) {
+            (Some(c), Some(h)) => Some((c as i64, h)),
+            _ => None,
+        };
+
+        let scheduled_set: HashSet<String> = scheduled_bookmark_ids.into_iter().collect();
+
         let mut statuses = Vec::new();
         let mut desired_channels = HashMap::new();
 
@@ -387,59 +394,35 @@ impl BackgroundDecodeManager {
                 channel_kind: None,
             };
 
-            if decoder_kinds.is_empty() {
-                status.state = "no_supported_decoders".to_string();
-                statuses.push(status);
-                continue;
+            let vchan_covers = self.virtual_channels_cover_bookmark(&rig_id, bookmark);
+
+            let action = evaluate_bookmark(
+                decoder_kinds.is_empty(),
+                config.enabled,
+                users_connected,
+                scheduler_has_control,
+                &scheduled_set,
+                &bookmark.id,
+                vchan_covers,
+                spectrum_span,
+                bookmark.freq_hz,
+            );
+
+            match action {
+                ChannelAction::Active => {
+                    status.state = "active".to_string();
+                    status.channel_kind = Some(CHANNEL_KIND_NAME.to_string());
+                    let desired = self.desired_channel(&rig_id, bookmark, decoder_kinds);
+                    desired_channels.insert(bookmark.id.clone(), desired);
+                }
+                ChannelAction::Skip { reason } => {
+                    status.state = reason.to_string();
+                    if reason == "handled_by_virtual_channel" {
+                        status.channel_kind = Some(VISIBLE_CHANNEL_KIND_NAME.to_string());
+                    }
+                }
             }
 
-            if !config.enabled {
-                statuses.push(status);
-                continue;
-            }
-
-            if !users_connected {
-                status.state = "waiting_for_user".to_string();
-                statuses.push(status);
-                continue;
-            }
-
-            if scheduler_has_control {
-                status.state = "scheduler_has_control".to_string();
-                statuses.push(status);
-                continue;
-            }
-
-            if scheduled_bookmark_ids.iter().any(|id| id == &bookmark.id) {
-                status.state = "handled_by_scheduler".to_string();
-                statuses.push(status);
-                continue;
-            }
-
-            if self.virtual_channels_cover_bookmark(&rig_id, bookmark) {
-                status.state = "handled_by_virtual_channel".to_string();
-                status.channel_kind = Some(VISIBLE_CHANNEL_KIND_NAME.to_string());
-                statuses.push(status);
-                continue;
-            }
-
-            let (Some(center_hz), Some(half_span_hz)) = (center_hz, half_span_hz) else {
-                status.state = "waiting_for_spectrum".to_string();
-                statuses.push(status);
-                continue;
-            };
-
-            let offset_hz = bookmark.freq_hz as i64 - center_hz as i64;
-            if offset_hz.abs() > half_span_hz {
-                status.state = "out_of_span".to_string();
-                statuses.push(status);
-                continue;
-            }
-
-            status.state = "active".to_string();
-            status.channel_kind = Some(CHANNEL_KIND_NAME.to_string());
-            let desired = self.desired_channel(&rig_id, bookmark, decoder_kinds);
-            desired_channels.insert(bookmark.id.clone(), desired);
             statuses.push(status);
         }
 
@@ -554,6 +537,70 @@ impl BackgroundDecodeManager {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum ChannelAction {
+    Active,
+    Skip { reason: &'static str },
+}
+
+/// Pure decision function that determines whether a bookmark should produce an
+/// active background-decode channel or be skipped (with a reason).
+#[allow(clippy::too_many_arguments)]
+fn evaluate_bookmark(
+    decoder_kinds_empty: bool,
+    enabled: bool,
+    users_connected: bool,
+    scheduler_has_control: bool,
+    scheduled_bookmark_ids: &HashSet<String>,
+    bookmark_id: &str,
+    vchan_covers_bookmark: bool,
+    spectrum_span: Option<(i64, i64)>,
+    freq_hz: u64,
+) -> ChannelAction {
+    if decoder_kinds_empty {
+        return ChannelAction::Skip {
+            reason: "no_supported_decoders",
+        };
+    }
+    if !enabled {
+        return ChannelAction::Skip {
+            reason: "disabled",
+        };
+    }
+    if !users_connected {
+        return ChannelAction::Skip {
+            reason: "waiting_for_user",
+        };
+    }
+    if scheduler_has_control {
+        return ChannelAction::Skip {
+            reason: "scheduler_has_control",
+        };
+    }
+    if scheduled_bookmark_ids.contains(bookmark_id) {
+        return ChannelAction::Skip {
+            reason: "handled_by_scheduler",
+        };
+    }
+    if vchan_covers_bookmark {
+        return ChannelAction::Skip {
+            reason: "handled_by_virtual_channel",
+        };
+    }
+    let Some((center_hz, half_span_hz)) = spectrum_span else {
+        return ChannelAction::Skip {
+            reason: "waiting_for_spectrum",
+        };
+    };
+    let offset_hz = freq_hz as i64 - center_hz;
+    if offset_hz.abs() > half_span_hz {
+        return ChannelAction::Skip {
+            reason: "out_of_span",
+        };
+    }
+    ChannelAction::Active
+}
+
 fn dedup_ids(ids: &[String]) -> Vec<String> {
     let mut out = Vec::new();
     for id in ids {
@@ -642,4 +689,164 @@ pub async fn get_background_decode_status(
     manager: web::Data<Arc<BackgroundDecodeManager>>,
 ) -> impl Responder {
     HttpResponse::Ok().json(manager.status(&path.into_inner()).await)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn empty_scheduled() -> HashSet<String> {
+        HashSet::new()
+    }
+
+    #[test]
+    fn active_when_all_conditions_met() {
+        let action = evaluate_bookmark(
+            false,                // decoder_kinds_empty
+            true,                 // enabled
+            true,                 // users_connected
+            false,                // scheduler_has_control
+            &empty_scheduled(),
+            "bm1",
+            false,                // vchan_covers_bookmark
+            Some((14_074_000, 96_000)), // spectrum_span (center, half)
+            14_074_000,           // freq_hz
+        );
+        assert_eq!(action, ChannelAction::Active);
+    }
+
+    #[test]
+    fn skip_no_supported_decoders() {
+        let action = evaluate_bookmark(
+            true, true, true, false, &empty_scheduled(), "bm1", false,
+            Some((14_074_000, 96_000)), 14_074_000,
+        );
+        assert_eq!(
+            action,
+            ChannelAction::Skip {
+                reason: "no_supported_decoders"
+            }
+        );
+    }
+
+    #[test]
+    fn skip_disabled() {
+        let action = evaluate_bookmark(
+            false, false, true, false, &empty_scheduled(), "bm1", false,
+            Some((14_074_000, 96_000)), 14_074_000,
+        );
+        assert_eq!(action, ChannelAction::Skip { reason: "disabled" });
+    }
+
+    #[test]
+    fn skip_waiting_for_user() {
+        let action = evaluate_bookmark(
+            false, true, false, false, &empty_scheduled(), "bm1", false,
+            Some((14_074_000, 96_000)), 14_074_000,
+        );
+        assert_eq!(
+            action,
+            ChannelAction::Skip {
+                reason: "waiting_for_user"
+            }
+        );
+    }
+
+    #[test]
+    fn skip_scheduler_has_control() {
+        let action = evaluate_bookmark(
+            false, true, true, true, &empty_scheduled(), "bm1", false,
+            Some((14_074_000, 96_000)), 14_074_000,
+        );
+        assert_eq!(
+            action,
+            ChannelAction::Skip {
+                reason: "scheduler_has_control"
+            }
+        );
+    }
+
+    #[test]
+    fn skip_handled_by_scheduler() {
+        let mut scheduled = HashSet::new();
+        scheduled.insert("bm1".to_string());
+        let action = evaluate_bookmark(
+            false, true, true, false, &scheduled, "bm1", false,
+            Some((14_074_000, 96_000)), 14_074_000,
+        );
+        assert_eq!(
+            action,
+            ChannelAction::Skip {
+                reason: "handled_by_scheduler"
+            }
+        );
+    }
+
+    #[test]
+    fn skip_handled_by_virtual_channel() {
+        let action = evaluate_bookmark(
+            false, true, true, false, &empty_scheduled(), "bm1", true,
+            Some((14_074_000, 96_000)), 14_074_000,
+        );
+        assert_eq!(
+            action,
+            ChannelAction::Skip {
+                reason: "handled_by_virtual_channel"
+            }
+        );
+    }
+
+    #[test]
+    fn skip_waiting_for_spectrum() {
+        let action = evaluate_bookmark(
+            false, true, true, false, &empty_scheduled(), "bm1", false,
+            None, 14_074_000,
+        );
+        assert_eq!(
+            action,
+            ChannelAction::Skip {
+                reason: "waiting_for_spectrum"
+            }
+        );
+    }
+
+    #[test]
+    fn skip_out_of_span() {
+        let action = evaluate_bookmark(
+            false, true, true, false, &empty_scheduled(), "bm1", false,
+            Some((14_074_000, 96_000)), // center 14.074 MHz, half span 96 kHz
+            7_074_000,                   // way outside the span
+        );
+        assert_eq!(
+            action,
+            ChannelAction::Skip {
+                reason: "out_of_span"
+            }
+        );
+    }
+
+    #[test]
+    fn active_at_edge_of_span() {
+        let action = evaluate_bookmark(
+            false, true, true, false, &empty_scheduled(), "bm1", false,
+            Some((14_074_000, 96_000)),
+            14_074_000 + 96_000, // exactly at the edge
+        );
+        assert_eq!(action, ChannelAction::Active);
+    }
+
+    #[test]
+    fn priority_no_decoders_over_disabled() {
+        // Even if disabled, "no_supported_decoders" should take precedence
+        let action = evaluate_bookmark(
+            true, false, true, false, &empty_scheduled(), "bm1", false,
+            Some((14_074_000, 96_000)), 14_074_000,
+        );
+        assert_eq!(
+            action,
+            ChannelAction::Skip {
+                reason: "no_supported_decoders"
+            }
+        );
+    }
 }
