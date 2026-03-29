@@ -520,6 +520,9 @@ pub struct SchedulerStatus {
     /// Additional bookmark IDs active alongside the primary (virtual channels).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub last_bookmark_ids: Vec<String>,
+    /// Name of the satellite whose pass is currently active (if any).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub active_satellite: Option<String>,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -532,6 +535,7 @@ async fn apply_scheduler_target(
     bookmark_id: &str,
     center_hz: Option<u64>,
     extra_bm_ids: &[String],
+    satellite_name: Option<&str>,
 ) -> Result<SchedulerStatus, String> {
     let bookmark = bookmarks
         .get_for_rig(remote, bookmark_id)
@@ -595,6 +599,7 @@ async fn apply_scheduler_target(
         ),
         last_center_hz: center_hz,
         last_bookmark_ids: extra_bm_ids.to_vec(),
+        active_satellite: satellite_name.map(str::to_string),
     };
 
     {
@@ -613,6 +618,7 @@ struct AppliedTarget {
     bookmark_id: String,
     center_hz: Option<u64>,
     extra_bookmark_ids: Vec<String>,
+    satellite: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Default)]
@@ -680,7 +686,7 @@ impl SchedulerControlManager {
 pub type SharedSchedulerControlManager = Arc<SchedulerControlManager>;
 
 pub fn spawn_scheduler_task(
-    _context: Arc<FrontendRuntimeContext>,
+    context: Arc<FrontendRuntimeContext>,
     rig_tx: mpsc::Sender<RigRequest>,
     store: Arc<SchedulerStoreMap>,
     bookmarks: Arc<BookmarkStoreMap>,
@@ -709,8 +715,91 @@ pub fn spawn_scheduler_task(
 
             let configs = store.list_all();
             let now_min = utc_minutes_now();
+            let now_ms = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_millis() as i64;
 
             for config in configs {
+                // ── Satellite pass scheduling ──────────────────────────
+                // Satellite passes take priority over the base scheduler
+                // mode.  When a configured satellite has an active pass
+                // above its minimum elevation, we retune to the
+                // satellite's bookmark and enable its decoders (e.g.
+                // LRPT).
+                if let Some(sat_target) = find_active_satellite_target(
+                    &config,
+                    &context,
+                    now_ms,
+                ) {
+                    let target = AppliedTarget {
+                        bookmark_id: sat_target.bookmark_id.clone(),
+                        center_hz: sat_target.center_hz,
+                        extra_bookmark_ids: sat_target.extra_bm_ids.clone(),
+                        satellite: Some(sat_target.satellite.clone()),
+                    };
+
+                    if last_applied.get(&config.remote) == Some(&target) {
+                        continue;
+                    }
+
+                    let Some(bm) =
+                        bookmarks.get_for_rig(&config.remote, &sat_target.bookmark_id)
+                    else {
+                        warn!(
+                            "scheduler: satellite bookmark '{}' not found for remote '{}'",
+                            sat_target.bookmark_id, config.remote
+                        );
+                        continue;
+                    };
+
+                    info!(
+                        "scheduler: remote '{}' → satellite '{}' → bookmark '{}' ({} Hz {})",
+                        config.remote, sat_target.satellite, bm.name, bm.freq_hz, bm.mode
+                    );
+
+                    if let Err(e) = apply_scheduler_target(
+                        &rig_tx,
+                        &config.remote,
+                        &status_map,
+                        &bookmarks,
+                        Some(&sat_target.entry_id),
+                        &sat_target.bookmark_id,
+                        sat_target.center_hz,
+                        &sat_target.extra_bm_ids,
+                        Some(&sat_target.satellite),
+                    )
+                    .await
+                    {
+                        warn!(
+                            "scheduler: failed to apply satellite target for '{}': {e}",
+                            config.remote
+                        );
+                        continue;
+                    }
+
+                    last_applied.insert(config.remote.clone(), target);
+                    continue;
+                }
+
+                // If the previous target was a satellite pass that has
+                // ended, clear it so the base mode can resume.
+                if last_applied
+                    .get(&config.remote)
+                    .is_some_and(|t| t.satellite.is_some())
+                {
+                    last_applied.remove(&config.remote);
+                    // Clear the active_satellite from status.
+                    if let Ok(mut map) =
+                        status_map.write()
+                    {
+                        if let Some(st) = map.get_mut(&config.remote) {
+                            st.active_satellite = None;
+                        }
+                    }
+                }
+
+                // ── Base scheduler mode ───────────────────────────────
                 if config.mode == SchedulerMode::Disabled {
                     continue;
                 }
@@ -746,6 +835,7 @@ pub fn spawn_scheduler_task(
                     bookmark_id: bm_id.clone(),
                     center_hz,
                     extra_bookmark_ids: extra_bm_ids.clone(),
+                    satellite: None,
                 };
 
                 // Already at this exact scheduled target — skip.
@@ -775,6 +865,7 @@ pub fn spawn_scheduler_task(
                     &bm_id,
                     center_hz,
                     &extra_bm_ids,
+                    None,
                 )
                 .await
                 {
@@ -789,6 +880,93 @@ pub fn spawn_scheduler_task(
             }
         }
     });
+}
+
+// ============================================================================
+// Satellite pass helpers
+// ============================================================================
+
+struct SatelliteTarget {
+    entry_id: String,
+    satellite: String,
+    bookmark_id: String,
+    center_hz: Option<u64>,
+    extra_bm_ids: Vec<String>,
+}
+
+/// Check if any configured satellite has an active pass right now.
+///
+/// Returns the highest-priority (lowest `priority` value) satellite entry
+/// whose NORAD ID has a pass in progress with max elevation above the
+/// entry's configured minimum.
+fn find_active_satellite_target(
+    config: &SchedulerConfig,
+    context: &FrontendRuntimeContext,
+    now_ms: i64,
+) -> Option<SatelliteTarget> {
+    let sat_cfg = config.satellites.as_ref().filter(|s| s.enabled)?;
+    if sat_cfg.entries.is_empty() {
+        return None;
+    }
+
+    let passes = context
+        .routing
+        .sat_passes
+        .read()
+        .ok()
+        .and_then(|g| g.clone())?;
+
+    // Build a lookup: NORAD ID → active pass (AOS ≤ now ≤ LOS).
+    let active_passes: HashMap<u32, &trx_core::geo::PassPrediction> = passes
+        .passes
+        .iter()
+        .filter(|p| now_ms >= p.aos_ms && now_ms <= p.los_ms)
+        .map(|p| (p.norad_id, p))
+        .collect();
+
+    if active_passes.is_empty() {
+        return None;
+    }
+
+    // Among configured satellites with an active pass that meets the
+    // minimum elevation requirement, pick the one with the best (lowest)
+    // priority.  Pre-tune window: accept passes that are about to start
+    // within `pretune_secs`.
+    let pretune_ms = (sat_cfg.pretune_secs as i64) * 1000;
+
+    let mut best: Option<(&SatelliteEntry, &trx_core::geo::PassPrediction)> = None;
+
+    for entry in &sat_cfg.entries {
+        // Check for active pass or imminent pass within pretune window.
+        let pass = active_passes.get(&entry.norad_id).copied().or_else(|| {
+            passes.passes.iter().find(|p| {
+                p.norad_id == entry.norad_id
+                    && p.aos_ms > now_ms
+                    && p.aos_ms <= now_ms + pretune_ms
+            })
+        });
+
+        let Some(pass) = pass else { continue };
+
+        if pass.max_elevation_deg < entry.min_elevation_deg {
+            continue;
+        }
+
+        match &best {
+            Some((prev_entry, _)) if entry.priority >= prev_entry.priority => {}
+            _ => best = Some((entry, pass)),
+        }
+    }
+
+    let (entry, _pass) = best?;
+
+    Some(SatelliteTarget {
+        entry_id: entry.id.clone(),
+        satellite: entry.satellite.clone(),
+        bookmark_id: entry.bookmark_id.clone(),
+        center_hz: entry.center_hz,
+        extra_bm_ids: entry.bookmark_ids.clone(),
+    })
 }
 
 async fn apply_scheduler_decoders(
@@ -885,6 +1063,7 @@ async fn apply_last_scheduler_cycle(
         &bookmark_id,
         status.last_center_hz,
         &status.last_bookmark_ids,
+        status.active_satellite.as_deref(),
     )
     .await
     {
@@ -1017,6 +1196,7 @@ pub async fn put_scheduler_activate_entry(
         &entry.bookmark_id,
         entry.center_hz,
         &entry.bookmark_ids,
+        None,
     )
     .await
     {

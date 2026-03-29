@@ -236,7 +236,6 @@ function bmReadDecoders() {
   if (document.getElementById("bm-dec-ft2").checked) decoders.push("ft2");
   if (document.getElementById("bm-dec-wspr").checked) decoders.push("wspr");
   if (document.getElementById("bm-dec-hf-aprs").checked) decoders.push("hf-aprs");
-  if (document.getElementById("bm-dec-wxsat").checked) decoders.push("wxsat");
   if (document.getElementById("bm-dec-lrpt").checked) decoders.push("lrpt");
   return decoders;
 }
@@ -251,7 +250,6 @@ function bmWriteDecoders(decoders) {
   document.getElementById("bm-dec-ft2").checked = list.includes("ft2");
   document.getElementById("bm-dec-wspr").checked = list.includes("wspr");
   document.getElementById("bm-dec-hf-aprs").checked = list.includes("hf-aprs");
-  document.getElementById("bm-dec-wxsat").checked = list.includes("wxsat");
   document.getElementById("bm-dec-lrpt").checked = list.includes("lrpt");
 }
 
@@ -430,8 +428,10 @@ async function bmApply(bm) {
         await postPath("/set_freq?hz=" + bm.freq_hz);
       }
     })();
-    // Decoder toggles (DIG mode) — also fire-and-forget.
-    const decoderPromise = (bm.mode === "DIG" && Array.isArray(bm.decoders)) ? (async () => {
+    // Decoder toggles (DIG / FM modes) — also fire-and-forget.
+    const hasDecoders = Array.isArray(bm.decoders) && bm.decoders.length > 0;
+    const decoderMode = bm.mode === "DIG" || bm.mode === "FM";
+    const decoderPromise = (hasDecoders && decoderMode) ? (async () => {
       const statusResp = await fetch("/status");
       if (statusResp.ok) {
         const st = await statusResp.json();
@@ -441,7 +441,7 @@ async function bmApply(bm) {
             toggles.push(postPath("/toggle_" + key.replace(/-/g, "_") + "_decode"));
           }
         };
-        check("ft8"); check("ft4"); check("ft2"); check("wspr"); check("hf-aprs"); check("wxsat"); check("lrpt");
+        check("ft8"); check("ft4"); check("ft2"); check("wspr"); check("hf-aprs"); check("lrpt");
         if (toggles.length) await Promise.all(toggles);
       }
     })() : Promise.resolve();
