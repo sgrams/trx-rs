@@ -30,7 +30,7 @@ use crate::error::is_invalid_bcd_error;
 /// Fallback poll refresh timeout used when no config value is provided.
 const DEFAULT_POLL_REFRESH_TIMEOUT: Duration = Duration::from_secs(8);
 /// Fallback command execution timeout used when no config value is provided.
-const DEFAULT_command_exec_timeout: Duration = Duration::from_secs(10);
+const DEFAULT_COMMAND_EXEC_TIMEOUT: Duration = Duration::from_secs(10);
 /// Configuration for the rig task.
 pub struct RigTaskConfig {
     pub registry: Arc<RegistrationContext>,
@@ -91,7 +91,7 @@ impl Default for RigTaskConfig {
             histories: DecoderHistories::new(),
             vfo_prime: true,
             prebuilt_rig: None,
-            command_exec_timeout: DEFAULT_command_exec_timeout,
+            command_exec_timeout: DEFAULT_COMMAND_EXEC_TIMEOUT,
             poll_refresh_timeout: DEFAULT_POLL_REFRESH_TIMEOUT,
         }
     }
