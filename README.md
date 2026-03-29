@@ -94,7 +94,6 @@ graph TD
 
     C1 <-->|internal channels| F1["Web UI :8080"]
     C1 <-->|internal channels| F2["rigctl :4532"]
-    C1 <-->|internal channels| F3["JSON-TCP"]
 ```
 
 Each `trx-server` owns one or more rigs and runs DSP, decoding, and audio capture locally.
