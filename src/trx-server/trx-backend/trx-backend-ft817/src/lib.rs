@@ -486,7 +486,6 @@ impl Ft817 {
             }
         }
     }
-
 }
 
 impl Rig for Ft817 {

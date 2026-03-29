@@ -126,7 +126,8 @@ fn record_ais(context: &FrontendRuntimeContext, mut msg: AisMessage) {
     }
     let rig_id = msg.rig_id.clone().or_else(|| active_rig_id(context));
     let mut history = context
-        .decode_history.ais
+        .decode_history
+        .ais
         .lock()
         .expect("ais history mutex poisoned");
     history.push_back((Instant::now(), rig_id, msg));
@@ -139,7 +140,8 @@ fn record_vdes(context: &FrontendRuntimeContext, mut msg: VdesMessage) {
     }
     let rig_id = msg.rig_id.clone().or_else(|| active_rig_id(context));
     let mut history = context
-        .decode_history.vdes
+        .decode_history
+        .vdes
         .lock()
         .expect("vdes history mutex poisoned");
     history.push_back((Instant::now(), rig_id, msg));
@@ -217,7 +219,8 @@ fn record_aprs(context: &FrontendRuntimeContext, mut pkt: AprsPacket) {
     }
     let rig_id = pkt.rig_id.clone().or_else(|| active_rig_id(context));
     let mut history = context
-        .decode_history.aprs
+        .decode_history
+        .aprs
         .lock()
         .expect("aprs history mutex poisoned");
     history.push_back((Instant::now(), rig_id, pkt));
@@ -230,7 +233,8 @@ fn record_hf_aprs(context: &FrontendRuntimeContext, mut pkt: AprsPacket) {
     }
     let rig_id = pkt.rig_id.clone().or_else(|| active_rig_id(context));
     let mut history = context
-        .decode_history.hf_aprs
+        .decode_history
+        .hf_aprs
         .lock()
         .expect("hf_aprs history mutex poisoned");
     history.push_back((Instant::now(), rig_id, pkt));
@@ -240,7 +244,8 @@ fn record_hf_aprs(context: &FrontendRuntimeContext, mut pkt: AprsPacket) {
 fn record_cw(context: &FrontendRuntimeContext, event: CwEvent) {
     let rig_id = event.rig_id.clone().or_else(|| active_rig_id(context));
     let mut history = context
-        .decode_history.cw
+        .decode_history
+        .cw
         .lock()
         .expect("cw history mutex poisoned");
     history.push_back((Instant::now(), rig_id, event));
@@ -250,7 +255,8 @@ fn record_cw(context: &FrontendRuntimeContext, event: CwEvent) {
 fn record_ft8(context: &FrontendRuntimeContext, msg: Ft8Message) {
     let rig_id = msg.rig_id.clone().or_else(|| active_rig_id(context));
     let mut history = context
-        .decode_history.ft8
+        .decode_history
+        .ft8
         .lock()
         .expect("ft8 history mutex poisoned");
     history.push_back((Instant::now(), rig_id, msg));
@@ -260,7 +266,8 @@ fn record_ft8(context: &FrontendRuntimeContext, msg: Ft8Message) {
 fn record_ft4(context: &FrontendRuntimeContext, msg: Ft8Message) {
     let rig_id = msg.rig_id.clone().or_else(|| active_rig_id(context));
     let mut history = context
-        .decode_history.ft4
+        .decode_history
+        .ft4
         .lock()
         .expect("ft4 history mutex poisoned");
     history.push_back((Instant::now(), rig_id, msg));
@@ -270,7 +277,8 @@ fn record_ft4(context: &FrontendRuntimeContext, msg: Ft8Message) {
 fn record_ft2(context: &FrontendRuntimeContext, msg: Ft8Message) {
     let rig_id = msg.rig_id.clone().or_else(|| active_rig_id(context));
     let mut history = context
-        .decode_history.ft2
+        .decode_history
+        .ft2
         .lock()
         .expect("ft2 history mutex poisoned");
     history.push_back((Instant::now(), rig_id, msg));
@@ -280,7 +288,8 @@ fn record_ft2(context: &FrontendRuntimeContext, msg: Ft8Message) {
 fn record_wspr(context: &FrontendRuntimeContext, msg: WsprMessage) {
     let rig_id = msg.rig_id.clone().or_else(|| active_rig_id(context));
     let mut history = context
-        .decode_history.wspr
+        .decode_history
+        .wspr
         .lock()
         .expect("wspr history mutex poisoned");
     history.push_back((Instant::now(), rig_id, msg));
@@ -301,7 +310,8 @@ pub fn snapshot_aprs_history(
     rig_filter: Option<&str>,
 ) -> Vec<AprsPacket> {
     let mut history = context
-        .decode_history.aprs
+        .decode_history
+        .aprs
         .lock()
         .expect("aprs history mutex poisoned");
     prune_aprs_history(context, &mut history);
@@ -317,7 +327,8 @@ pub fn snapshot_hf_aprs_history(
     rig_filter: Option<&str>,
 ) -> Vec<AprsPacket> {
     let mut history = context
-        .decode_history.hf_aprs
+        .decode_history
+        .hf_aprs
         .lock()
         .expect("hf_aprs history mutex poisoned");
     prune_hf_aprs_history(context, &mut history);
@@ -340,7 +351,8 @@ pub fn snapshot_ais_history(
     rig_filter: Option<&str>,
 ) -> Vec<AisMessage> {
     let mut history = context
-        .decode_history.ais
+        .decode_history
+        .ais
         .lock()
         .expect("ais history mutex poisoned");
     prune_ais_history(context, &mut history);
@@ -362,7 +374,8 @@ pub fn snapshot_vdes_history(
     rig_filter: Option<&str>,
 ) -> Vec<VdesMessage> {
     let mut history = context
-        .decode_history.vdes
+        .decode_history
+        .vdes
         .lock()
         .expect("vdes history mutex poisoned");
     prune_vdes_history(context, &mut history);
@@ -378,7 +391,8 @@ pub fn snapshot_cw_history(
     rig_filter: Option<&str>,
 ) -> Vec<CwEvent> {
     let mut history = context
-        .decode_history.cw
+        .decode_history
+        .cw
         .lock()
         .expect("cw history mutex poisoned");
     prune_cw_history(context, &mut history);
@@ -394,7 +408,8 @@ pub fn snapshot_ft8_history(
     rig_filter: Option<&str>,
 ) -> Vec<Ft8Message> {
     let mut history = context
-        .decode_history.ft8
+        .decode_history
+        .ft8
         .lock()
         .expect("ft8 history mutex poisoned");
     prune_ft8_history(context, &mut history);
@@ -410,7 +425,8 @@ pub fn snapshot_ft4_history(
     rig_filter: Option<&str>,
 ) -> Vec<Ft8Message> {
     let mut history = context
-        .decode_history.ft4
+        .decode_history
+        .ft4
         .lock()
         .expect("ft4 history mutex poisoned");
     prune_ft4_history(context, &mut history);
@@ -426,7 +442,8 @@ pub fn snapshot_ft2_history(
     rig_filter: Option<&str>,
 ) -> Vec<Ft8Message> {
     let mut history = context
-        .decode_history.ft2
+        .decode_history
+        .ft2
         .lock()
         .expect("ft2 history mutex poisoned");
     prune_ft2_history(context, &mut history);
@@ -442,7 +459,8 @@ pub fn snapshot_wspr_history(
     rig_filter: Option<&str>,
 ) -> Vec<WsprMessage> {
     let mut history = context
-        .decode_history.wspr
+        .decode_history
+        .wspr
         .lock()
         .expect("wspr history mutex poisoned");
     prune_wspr_history(context, &mut history);
@@ -455,7 +473,8 @@ pub fn snapshot_wspr_history(
 
 pub fn clear_aprs_history(context: &FrontendRuntimeContext) {
     let mut history = context
-        .decode_history.aprs
+        .decode_history
+        .aprs
         .lock()
         .expect("aprs history mutex poisoned");
     history.clear();
@@ -463,7 +482,8 @@ pub fn clear_aprs_history(context: &FrontendRuntimeContext) {
 
 pub fn clear_hf_aprs_history(context: &FrontendRuntimeContext) {
     let mut history = context
-        .decode_history.hf_aprs
+        .decode_history
+        .hf_aprs
         .lock()
         .expect("hf_aprs history mutex poisoned");
     history.clear();
@@ -471,7 +491,8 @@ pub fn clear_hf_aprs_history(context: &FrontendRuntimeContext) {
 
 pub fn clear_ais_history(context: &FrontendRuntimeContext) {
     let mut history = context
-        .decode_history.ais
+        .decode_history
+        .ais
         .lock()
         .expect("ais history mutex poisoned");
     history.clear();
@@ -479,7 +500,8 @@ pub fn clear_ais_history(context: &FrontendRuntimeContext) {
 
 pub fn clear_vdes_history(context: &FrontendRuntimeContext) {
     let mut history = context
-        .decode_history.vdes
+        .decode_history
+        .vdes
         .lock()
         .expect("vdes history mutex poisoned");
     history.clear();
@@ -487,7 +509,8 @@ pub fn clear_vdes_history(context: &FrontendRuntimeContext) {
 
 pub fn clear_cw_history(context: &FrontendRuntimeContext) {
     let mut history = context
-        .decode_history.cw
+        .decode_history
+        .cw
         .lock()
         .expect("cw history mutex poisoned");
     history.clear();
@@ -495,7 +518,8 @@ pub fn clear_cw_history(context: &FrontendRuntimeContext) {
 
 pub fn clear_ft8_history(context: &FrontendRuntimeContext) {
     let mut history = context
-        .decode_history.ft8
+        .decode_history
+        .ft8
         .lock()
         .expect("ft8 history mutex poisoned");
     history.clear();
@@ -503,7 +527,8 @@ pub fn clear_ft8_history(context: &FrontendRuntimeContext) {
 
 pub fn clear_ft4_history(context: &FrontendRuntimeContext) {
     let mut history = context
-        .decode_history.ft4
+        .decode_history
+        .ft4
         .lock()
         .expect("ft4 history mutex poisoned");
     history.clear();
@@ -511,7 +536,8 @@ pub fn clear_ft4_history(context: &FrontendRuntimeContext) {
 
 pub fn clear_ft2_history(context: &FrontendRuntimeContext) {
     let mut history = context
-        .decode_history.ft2
+        .decode_history
+        .ft2
         .lock()
         .expect("ft2 history mutex poisoned");
     history.clear();
@@ -519,7 +545,8 @@ pub fn clear_ft2_history(context: &FrontendRuntimeContext) {
 
 pub fn clear_wspr_history(context: &FrontendRuntimeContext) {
     let mut history = context
-        .decode_history.wspr
+        .decode_history
+        .wspr
         .lock()
         .expect("wspr history mutex poisoned");
     history.clear();

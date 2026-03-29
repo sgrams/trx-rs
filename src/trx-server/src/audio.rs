@@ -383,7 +383,9 @@ impl DecoderHistories {
         let before = h.len();
         Self::prune_aprs(&mut h);
         self.adjust_total_count(before, h.len());
-        h.iter().map(|(_, pkt): &(Instant, AprsPacket)| pkt.clone()).collect()
+        h.iter()
+            .map(|(_, pkt): &(Instant, AprsPacket)| pkt.clone())
+            .collect()
     }
 
     pub fn clear_aprs_history(&self) {
@@ -426,7 +428,9 @@ impl DecoderHistories {
         let before = h.len();
         Self::prune_hf_aprs(&mut h);
         self.adjust_total_count(before, h.len());
-        h.iter().map(|(_, pkt): &(Instant, AprsPacket)| pkt.clone()).collect()
+        h.iter()
+            .map(|(_, pkt): &(Instant, AprsPacket)| pkt.clone())
+            .collect()
     }
 
     pub fn clear_hf_aprs_history(&self) {
@@ -463,7 +467,9 @@ impl DecoderHistories {
         let before = h.len();
         Self::prune_cw(&mut h);
         self.adjust_total_count(before, h.len());
-        h.iter().map(|(_, evt): &(Instant, CwEvent)| evt.clone()).collect()
+        h.iter()
+            .map(|(_, evt): &(Instant, CwEvent)| evt.clone())
+            .collect()
     }
 
     pub fn clear_cw_history(&self) {
@@ -500,7 +506,9 @@ impl DecoderHistories {
         let before = h.len();
         Self::prune_ft8(&mut h);
         self.adjust_total_count(before, h.len());
-        h.iter().map(|(_, msg): &(Instant, Ft8Message)| msg.clone()).collect()
+        h.iter()
+            .map(|(_, msg): &(Instant, Ft8Message)| msg.clone())
+            .collect()
     }
 
     pub fn clear_ft8_history(&self) {
@@ -537,7 +545,9 @@ impl DecoderHistories {
         let before = h.len();
         Self::prune_ft4(&mut h);
         self.adjust_total_count(before, h.len());
-        h.iter().map(|(_, msg): &(Instant, Ft8Message)| msg.clone()).collect()
+        h.iter()
+            .map(|(_, msg): &(Instant, Ft8Message)| msg.clone())
+            .collect()
     }
 
     pub fn clear_ft4_history(&self) {
@@ -574,7 +584,9 @@ impl DecoderHistories {
         let before = h.len();
         Self::prune_ft2(&mut h);
         self.adjust_total_count(before, h.len());
-        h.iter().map(|(_, msg): &(Instant, Ft8Message)| msg.clone()).collect()
+        h.iter()
+            .map(|(_, msg): &(Instant, Ft8Message)| msg.clone())
+            .collect()
     }
 
     pub fn clear_ft2_history(&self) {
@@ -611,7 +623,9 @@ impl DecoderHistories {
         let before = h.len();
         Self::prune_wspr(&mut h);
         self.adjust_total_count(before, h.len());
-        h.iter().map(|(_, msg): &(Instant, WsprMessage)| msg.clone()).collect()
+        h.iter()
+            .map(|(_, msg): &(Instant, WsprMessage)| msg.clone())
+            .collect()
     }
 
     pub fn clear_wspr_history(&self) {
@@ -651,7 +665,9 @@ impl DecoderHistories {
         let before = h.len();
         Self::prune_lrpt(&mut h);
         self.adjust_total_count(before, h.len());
-        h.iter().map(|(_, img): &(Instant, LrptImage)| img.clone()).collect()
+        h.iter()
+            .map(|(_, img): &(Instant, LrptImage)| img.clone())
+            .collect()
     }
 
     pub fn clear_lrpt_history(&self) {
@@ -735,15 +751,13 @@ fn find_device(
             host.output_devices()
         };
         match devices_result {
-            Ok(mut devs) => {
-                match devs.find(|d| d.name().map(|n| n == *name).unwrap_or(false)) {
-                    Some(d) => Some(d),
-                    None => {
-                        warn!("Audio {}: device '{}' not found, retrying", direction, name);
-                        None
-                    }
+            Ok(mut devs) => match devs.find(|d| d.name().map(|n| n == *name).unwrap_or(false)) {
+                Some(d) => Some(d),
+                None => {
+                    warn!("Audio {}: device '{}' not found, retrying", direction, name);
+                    None
                 }
-            }
+            },
             Err(e) => {
                 warn!(
                     "Audio {}: failed to enumerate devices, retrying: {}",

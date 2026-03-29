@@ -382,18 +382,15 @@ async fn handle_client(
         // SGP4 propagation when multiple clients request passes concurrently.
         if matches!(envelope.cmd, ClientCommand::GetSatPasses) {
             // Check cache first.
-            let cached = sat_pass_cache
-                .lock()
-                .ok()
-                .and_then(|guard| {
-                    guard.as_ref().and_then(|c| {
-                        if c.computed_at.elapsed() < SAT_PASS_CACHE_TTL {
-                            Some(c.result.clone())
-                        } else {
-                            None
-                        }
-                    })
-                });
+            let cached = sat_pass_cache.lock().ok().and_then(|guard| {
+                guard.as_ref().and_then(|c| {
+                    if c.computed_at.elapsed() < SAT_PASS_CACHE_TTL {
+                        Some(c.result.clone())
+                    } else {
+                        None
+                    }
+                })
+            });
 
             let result = if let Some(cached_result) = cached {
                 cached_result
@@ -693,7 +690,15 @@ mod tests {
 
         let mut auth = HashSet::new();
         auth.insert("secret".to_string());
-        let handle = tokio::spawn(run_listener(addr, rigs, default_id, auth, None, ListenerTimeouts::default(), shutdown_rx));
+        let handle = tokio::spawn(run_listener(
+            addr,
+            rigs,
+            default_id,
+            auth,
+            None,
+            ListenerTimeouts::default(),
+            shutdown_rx,
+        ));
 
         let stream = TcpStream::connect(addr).await.expect("connect");
         let (reader, mut writer) = stream.into_split();

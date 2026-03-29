@@ -348,7 +348,7 @@ pub async fn events(
     let active_rig_id = query.remote.clone().filter(|s| !s.is_empty()).or_else(|| {
         context
             .routing
-        .active_rig_id
+            .active_rig_id
             .lock()
             .ok()
             .and_then(|g| g.clone())
@@ -425,7 +425,7 @@ pub async fn events(
                 let rig_id_opt = session_rig_mgr.get_rig(session_id).or_else(|| {
                     context
                         .routing
-        .active_rig_id
+                        .active_rig_id
                         .lock()
                         .ok()
                         .and_then(|g| g.clone())
@@ -448,9 +448,9 @@ pub async fn events(
                         rig_id_opt.as_deref(),
                     ),
                 };
-                serde_json::to_string(&combined).ok().map(|json| {
-                    Ok::<Bytes, Error>(Bytes::from(format!("data: {json}\n\n")))
-                })
+                serde_json::to_string(&combined)
+                    .ok()
+                    .map(|json| Ok::<Bytes, Error>(Bytes::from(format!("data: {json}\n\n"))))
             })
         }
     });
@@ -1357,7 +1357,12 @@ struct SatPassesResponse {
 /// are not yet available.
 #[get("/sat_passes")]
 pub async fn sat_passes(context: web::Data<Arc<FrontendRuntimeContext>>) -> impl Responder {
-    let cached = context.routing.sat_passes.read().ok().and_then(|g| g.clone());
+    let cached = context
+        .routing
+        .sat_passes
+        .read()
+        .ok()
+        .and_then(|g| g.clone());
     match cached {
         Some(result) => {
             let error = match result.tle_source {
@@ -1612,7 +1617,10 @@ fn static_asset_response(
             if val == etag || val == "*" {
                 return HttpResponse::NotModified()
                     .insert_header((header::ETAG, etag.to_owned()))
-                    .insert_header((header::CACHE_CONTROL, "public, max-age=86400, must-revalidate"))
+                    .insert_header((
+                        header::CACHE_CONTROL,
+                        "public, max-age=86400, must-revalidate",
+                    ))
                     .finish();
             }
         }
@@ -1621,7 +1629,10 @@ fn static_asset_response(
         .insert_header((header::CONTENT_TYPE, content_type))
         .insert_header((header::CONTENT_ENCODING, "gzip"))
         .insert_header((header::ETAG, etag.to_owned()))
-        .insert_header((header::CACHE_CONTROL, "public, max-age=86400, must-revalidate"))
+        .insert_header((
+            header::CACHE_CONTROL,
+            "public, max-age=86400, must-revalidate",
+        ))
         .body(Bytes::copy_from_slice(gz_bytes))
 }
 
@@ -1652,9 +1663,21 @@ macro_rules! define_gz_cache {
 define_gz_cache!(gz_index_html, status::index_html(), "index.html");
 define_gz_cache!(gz_style_css, status::STYLE_CSS, "style.css");
 define_gz_cache!(gz_app_js, status::APP_JS, "app.js");
-define_gz_cache!(gz_decode_history_worker_js, status::DECODE_HISTORY_WORKER_JS, "decode-history-worker.js");
-define_gz_cache!(gz_webgl_renderer_js, status::WEBGL_RENDERER_JS, "webgl-renderer.js");
-define_gz_cache!(gz_leaflet_ais_tracksymbol_js, status::LEAFLET_AIS_TRACKSYMBOL_JS, "leaflet-ais-tracksymbol.js");
+define_gz_cache!(
+    gz_decode_history_worker_js,
+    status::DECODE_HISTORY_WORKER_JS,
+    "decode-history-worker.js"
+);
+define_gz_cache!(
+    gz_webgl_renderer_js,
+    status::WEBGL_RENDERER_JS,
+    "webgl-renderer.js"
+);
+define_gz_cache!(
+    gz_leaflet_ais_tracksymbol_js,
+    status::LEAFLET_AIS_TRACKSYMBOL_JS,
+    "leaflet-ais-tracksymbol.js"
+);
 define_gz_cache!(gz_ais_js, status::AIS_JS, "ais.js");
 define_gz_cache!(gz_vdes_js, status::VDES_JS, "vdes.js");
 define_gz_cache!(gz_aprs_js, status::APRS_JS, "aprs.js");
@@ -1667,8 +1690,16 @@ define_gz_cache!(gz_cw_js, status::CW_JS, "cw.js");
 define_gz_cache!(gz_sat_js, status::SAT_JS, "sat.js");
 define_gz_cache!(gz_bookmarks_js, status::BOOKMARKS_JS, "bookmarks.js");
 define_gz_cache!(gz_scheduler_js, status::SCHEDULER_JS, "scheduler.js");
-define_gz_cache!(gz_sat_scheduler_js, status::SAT_SCHEDULER_JS, "sat-scheduler.js");
-define_gz_cache!(gz_background_decode_js, status::BACKGROUND_DECODE_JS, "background-decode.js");
+define_gz_cache!(
+    gz_sat_scheduler_js,
+    status::SAT_SCHEDULER_JS,
+    "sat-scheduler.js"
+);
+define_gz_cache!(
+    gz_background_decode_js,
+    status::BACKGROUND_DECODE_JS,
+    "background-decode.js"
+);
 define_gz_cache!(gz_vchan_js, status::VCHAN_JS, "vchan.js");
 
 /// A bookmark with its owning scope tag for the list response.
@@ -2308,115 +2339,210 @@ async fn style_css(req: HttpRequest) -> impl Responder {
 #[get("/app.js")]
 async fn app_js(req: HttpRequest) -> impl Responder {
     let c = gz_app_js();
-    static_asset_response(&req, "application/javascript; charset=utf-8", &c.gz, &c.etag)
+    static_asset_response(
+        &req,
+        "application/javascript; charset=utf-8",
+        &c.gz,
+        &c.etag,
+    )
 }
 
 #[get("/decode-history-worker.js")]
 async fn decode_history_worker_js(req: HttpRequest) -> impl Responder {
     let c = gz_decode_history_worker_js();
-    static_asset_response(&req, "application/javascript; charset=utf-8", &c.gz, &c.etag)
+    static_asset_response(
+        &req,
+        "application/javascript; charset=utf-8",
+        &c.gz,
+        &c.etag,
+    )
 }
 
 #[get("/webgl-renderer.js")]
 async fn webgl_renderer_js(req: HttpRequest) -> impl Responder {
     let c = gz_webgl_renderer_js();
-    static_asset_response(&req, "application/javascript; charset=utf-8", &c.gz, &c.etag)
+    static_asset_response(
+        &req,
+        "application/javascript; charset=utf-8",
+        &c.gz,
+        &c.etag,
+    )
 }
 
 #[get("/leaflet-ais-tracksymbol.js")]
 async fn leaflet_ais_tracksymbol_js(req: HttpRequest) -> impl Responder {
     let c = gz_leaflet_ais_tracksymbol_js();
-    static_asset_response(&req, "application/javascript; charset=utf-8", &c.gz, &c.etag)
+    static_asset_response(
+        &req,
+        "application/javascript; charset=utf-8",
+        &c.gz,
+        &c.etag,
+    )
 }
 
 #[get("/aprs.js")]
 async fn aprs_js(req: HttpRequest) -> impl Responder {
     let c = gz_aprs_js();
-    static_asset_response(&req, "application/javascript; charset=utf-8", &c.gz, &c.etag)
+    static_asset_response(
+        &req,
+        "application/javascript; charset=utf-8",
+        &c.gz,
+        &c.etag,
+    )
 }
 
 #[get("/hf-aprs.js")]
 async fn hf_aprs_js(req: HttpRequest) -> impl Responder {
     let c = gz_hf_aprs_js();
-    static_asset_response(&req, "application/javascript; charset=utf-8", &c.gz, &c.etag)
+    static_asset_response(
+        &req,
+        "application/javascript; charset=utf-8",
+        &c.gz,
+        &c.etag,
+    )
 }
 
 #[get("/ais.js")]
 async fn ais_js(req: HttpRequest) -> impl Responder {
     let c = gz_ais_js();
-    static_asset_response(&req, "application/javascript; charset=utf-8", &c.gz, &c.etag)
+    static_asset_response(
+        &req,
+        "application/javascript; charset=utf-8",
+        &c.gz,
+        &c.etag,
+    )
 }
 
 #[get("/vdes.js")]
 async fn vdes_js(req: HttpRequest) -> impl Responder {
     let c = gz_vdes_js();
-    static_asset_response(&req, "application/javascript; charset=utf-8", &c.gz, &c.etag)
+    static_asset_response(
+        &req,
+        "application/javascript; charset=utf-8",
+        &c.gz,
+        &c.etag,
+    )
 }
 
 #[get("/ft8.js")]
 async fn ft8_js(req: HttpRequest) -> impl Responder {
     let c = gz_ft8_js();
-    static_asset_response(&req, "application/javascript; charset=utf-8", &c.gz, &c.etag)
+    static_asset_response(
+        &req,
+        "application/javascript; charset=utf-8",
+        &c.gz,
+        &c.etag,
+    )
 }
 
 #[get("/ft4.js")]
 async fn ft4_js(req: HttpRequest) -> impl Responder {
     let c = gz_ft4_js();
-    static_asset_response(&req, "application/javascript; charset=utf-8", &c.gz, &c.etag)
+    static_asset_response(
+        &req,
+        "application/javascript; charset=utf-8",
+        &c.gz,
+        &c.etag,
+    )
 }
 
 #[get("/ft2.js")]
 async fn ft2_js(req: HttpRequest) -> impl Responder {
     let c = gz_ft2_js();
-    static_asset_response(&req, "application/javascript; charset=utf-8", &c.gz, &c.etag)
+    static_asset_response(
+        &req,
+        "application/javascript; charset=utf-8",
+        &c.gz,
+        &c.etag,
+    )
 }
 
 #[get("/wspr.js")]
 async fn wspr_js(req: HttpRequest) -> impl Responder {
     let c = gz_wspr_js();
-    static_asset_response(&req, "application/javascript; charset=utf-8", &c.gz, &c.etag)
+    static_asset_response(
+        &req,
+        "application/javascript; charset=utf-8",
+        &c.gz,
+        &c.etag,
+    )
 }
 
 #[get("/cw.js")]
 async fn cw_js(req: HttpRequest) -> impl Responder {
     let c = gz_cw_js();
-    static_asset_response(&req, "application/javascript; charset=utf-8", &c.gz, &c.etag)
+    static_asset_response(
+        &req,
+        "application/javascript; charset=utf-8",
+        &c.gz,
+        &c.etag,
+    )
 }
 
 #[get("/sat.js")]
 async fn sat_js(req: HttpRequest) -> impl Responder {
     let c = gz_sat_js();
-    static_asset_response(&req, "application/javascript; charset=utf-8", &c.gz, &c.etag)
+    static_asset_response(
+        &req,
+        "application/javascript; charset=utf-8",
+        &c.gz,
+        &c.etag,
+    )
 }
 
 #[get("/bookmarks.js")]
 async fn bookmarks_js(req: HttpRequest) -> impl Responder {
     let c = gz_bookmarks_js();
-    static_asset_response(&req, "application/javascript; charset=utf-8", &c.gz, &c.etag)
+    static_asset_response(
+        &req,
+        "application/javascript; charset=utf-8",
+        &c.gz,
+        &c.etag,
+    )
 }
 
 #[get("/scheduler.js")]
 async fn scheduler_js(req: HttpRequest) -> impl Responder {
     let c = gz_scheduler_js();
-    static_asset_response(&req, "application/javascript; charset=utf-8", &c.gz, &c.etag)
+    static_asset_response(
+        &req,
+        "application/javascript; charset=utf-8",
+        &c.gz,
+        &c.etag,
+    )
 }
 
 #[get("/sat-scheduler.js")]
 async fn sat_scheduler_js(req: HttpRequest) -> impl Responder {
     let c = gz_sat_scheduler_js();
-    static_asset_response(&req, "application/javascript; charset=utf-8", &c.gz, &c.etag)
+    static_asset_response(
+        &req,
+        "application/javascript; charset=utf-8",
+        &c.gz,
+        &c.etag,
+    )
 }
 
 #[get("/background-decode.js")]
 async fn background_decode_js(req: HttpRequest) -> impl Responder {
     let c = gz_background_decode_js();
-    static_asset_response(&req, "application/javascript; charset=utf-8", &c.gz, &c.etag)
+    static_asset_response(
+        &req,
+        "application/javascript; charset=utf-8",
+        &c.gz,
+        &c.etag,
+    )
 }
 
 #[get("/vchan.js")]
 async fn vchan_js(req: HttpRequest) -> impl Responder {
     let c = gz_vchan_js();
-    static_asset_response(&req, "application/javascript; charset=utf-8", &c.gz, &c.etag)
+    static_asset_response(
+        &req,
+        "application/javascript; charset=utf-8",
+        &c.gz,
+        &c.etag,
+    )
 }
 
 /// Generic query extractor for endpoints that only need the optional remote.

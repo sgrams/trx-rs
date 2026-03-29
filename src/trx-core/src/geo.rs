@@ -468,11 +468,14 @@ fn find_passes_for_sat(
     start_ms: i64,
     window_ms: i64,
 ) -> Vec<PassPrediction> {
-    let elements =
-        match Elements::from_tle(Some(entry.name.clone()), entry.line1.as_bytes(), entry.line2.as_bytes()) {
-            Ok(e) => e,
-            Err(_) => return vec![],
-        };
+    let elements = match Elements::from_tle(
+        Some(entry.name.clone()),
+        entry.line1.as_bytes(),
+        entry.line2.as_bytes(),
+    ) {
+        Ok(e) => e,
+        Err(_) => return vec![],
+    };
     let constants = match Constants::from_elements(&elements) {
         Ok(c) => c,
         Err(_) => return vec![],

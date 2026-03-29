@@ -337,7 +337,6 @@ pub struct OwnerInfo {
     pub ais_vessel_url_base: Option<String>,
 }
 
-
 /// Virtual channel audio management.
 pub struct VChanContext {
     /// Per-virtual-channel Opus audio senders.

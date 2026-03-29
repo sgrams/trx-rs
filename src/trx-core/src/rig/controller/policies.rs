@@ -15,15 +15,12 @@ use crate::rig::response::RigError;
 fn apply_jitter(delay: Duration) -> Duration {
     // Simple deterministic-ish jitter using the current instant's low bits.
     // We avoid pulling in `rand` for this single use.
-    let nanos = std::time::Instant::now()
-        .elapsed()
-        .as_nanos()
-        .wrapping_add(
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_nanos(),
-        );
+    let nanos = std::time::Instant::now().elapsed().as_nanos().wrapping_add(
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos(),
+    );
     // Map to range [0.75, 1.25]
     let frac = (nanos % 1000) as f64 / 1000.0; // 0.0 .. 1.0
     let factor = 0.75 + frac * 0.5; // 0.75 .. 1.25

@@ -6,8 +6,8 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
-use tokio::sync::RwLock;
 use std::time::Duration;
+use tokio::sync::RwLock;
 
 use actix_web::{delete, get, put, web, HttpResponse, Responder};
 use pickledb::{PickleDb, PickleDbDumpPolicy, SerializationMethod};
@@ -183,7 +183,10 @@ impl BackgroundDecodeManager {
             })
     }
 
-    pub async fn put_config(&self, mut config: BackgroundDecodeConfig) -> Option<BackgroundDecodeConfig> {
+    pub async fn put_config(
+        &self,
+        mut config: BackgroundDecodeConfig,
+    ) -> Option<BackgroundDecodeConfig> {
         config.bookmark_ids = dedup_ids(&config.bookmark_ids);
         if self.store.upsert(&config).await {
             self.trigger();
