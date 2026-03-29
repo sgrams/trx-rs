@@ -115,6 +115,7 @@
       </div>
       <div id="spectrum-panel" style="display:none;">
         <div class="spectrum-wrap">
+          <div id="spectrum-bandplan-strip" aria-label="Band plan allocations"></div>
           <div id="spectrum-bookmark-axis"></div>
           <div id="spectrum-bookmark-side-left" class="spectrum-bookmark-side spectrum-bookmark-side-left" aria-hidden="true"></div>
           <canvas id="spectrum-canvas"></canvas>
@@ -991,6 +992,7 @@
       <div class="sub-tab-bar">
         <button class="sub-tab active" data-subtab="settings-scheduler">Scheduler</button>
         <button class="sub-tab" data-subtab="settings-background-decode">Background Decode</button>
+        <button class="sub-tab" data-subtab="settings-bandplan">Bandplan</button>
         <button class="sub-tab" data-subtab="settings-history">History</button>
       </div>
       <div id="subtab-settings-scheduler" class="sub-tab-panel">
@@ -1201,6 +1203,43 @@
           <div class="sch-actions">
             <button id="background-decode-save-btn" class="sch-write sch-save-btn" type="button" style="display:none;">Save</button>
             <button id="background-decode-reset-btn" class="sch-write sch-reset-btn" type="button" style="display:none;">Reset</button>
+          </div>
+        </div>
+      </div>
+      <div id="subtab-settings-bandplan" class="sub-tab-panel" style="display:none;">
+        <div class="sch-panel">
+          <div class="sch-section">
+            <div class="sch-section-title">Bandplan Display</div>
+            <div class="sch-row">
+              <label class="sch-label">Region
+                <select id="bandplan-region-select" class="status-input" aria-label="Bandplan region">
+                  <option value="off">Off</option>
+                  <option value="iaru_r1">IARU Region 1 (Europe, Africa, Middle East, N. Asia)</option>
+                  <option value="iaru_r2">IARU Region 2 (Americas)</option>
+                  <option value="iaru_r3">IARU Region 3 (S/E Asia, Pacific)</option>
+                </select>
+              </label>
+            </div>
+            <div class="sch-row">
+              <label class="sch-label">Show Labels
+                <input type="checkbox" id="bandplan-labels-check" checked aria-label="Show segment labels on bandplan strip" />
+              </label>
+            </div>
+            <div class="sch-row">
+              <small style="color:var(--text-muted);">The bandplan strip is shown above the spectrum plot when a region is selected and the visible frequency range overlaps a band allocation.</small>
+            </div>
+            <div class="sch-section" id="bandplan-legend" style="margin-top:0.5rem;">
+              <div class="sch-section-title">Legend</div>
+              <div class="bandplan-legend-grid">
+                <span class="bandplan-legend-item"><span class="bandplan-legend-swatch" data-mode="CW"></span> CW</span>
+                <span class="bandplan-legend-item"><span class="bandplan-legend-swatch" data-mode="Phone"></span> Phone / SSB</span>
+                <span class="bandplan-legend-item"><span class="bandplan-legend-swatch" data-mode="Narrow"></span> Narrow / Digital</span>
+                <span class="bandplan-legend-item"><span class="bandplan-legend-swatch" data-mode="FM"></span> FM</span>
+                <span class="bandplan-legend-item"><span class="bandplan-legend-swatch" data-mode="All"></span> All Modes</span>
+                <span class="bandplan-legend-item"><span class="bandplan-legend-swatch" data-mode="Beacon"></span> Beacon</span>
+                <span class="bandplan-legend-item"><span class="bandplan-legend-swatch" data-mode="Satellite"></span> Satellite</span>
+              </div>
+            </div>
           </div>
         </div>
       </div>

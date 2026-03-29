@@ -1,0 +1,408 @@
+{
+  "iaru_r1": {
+    "name": "IARU Region 1",
+    "bands": [
+      {
+        "name": "160m", "low_hz": 1810000, "high_hz": 2000000,
+        "segments": [
+          { "low_hz": 1810000, "high_hz": 1838000, "mode": "CW", "label": "CW" },
+          { "low_hz": 1838000, "high_hz": 1840000, "mode": "Narrow", "label": "Narrow" },
+          { "low_hz": 1840000, "high_hz": 2000000, "mode": "All", "label": "All Modes" }
+        ]
+      },
+      {
+        "name": "80m", "low_hz": 3500000, "high_hz": 3800000,
+        "segments": [
+          { "low_hz": 3500000, "high_hz": 3570000, "mode": "CW", "label": "CW" },
+          { "low_hz": 3570000, "high_hz": 3600000, "mode": "Narrow", "label": "Narrow/Digi" },
+          { "low_hz": 3600000, "high_hz": 3620000, "mode": "All", "label": "All Modes" },
+          { "low_hz": 3620000, "high_hz": 3800000, "mode": "Phone", "label": "Phone" }
+        ]
+      },
+      {
+        "name": "60m", "low_hz": 5351500, "high_hz": 5366500,
+        "segments": [
+          { "low_hz": 5351500, "high_hz": 5354000, "mode": "CW", "label": "CW" },
+          { "low_hz": 5354000, "high_hz": 5366500, "mode": "All", "label": "All Modes" }
+        ]
+      },
+      {
+        "name": "40m", "low_hz": 7000000, "high_hz": 7200000,
+        "segments": [
+          { "low_hz": 7000000, "high_hz": 7040000, "mode": "CW", "label": "CW" },
+          { "low_hz": 7040000, "high_hz": 7060000, "mode": "Narrow", "label": "Narrow/Digi" },
+          { "low_hz": 7060000, "high_hz": 7100000, "mode": "All", "label": "All Modes" },
+          { "low_hz": 7100000, "high_hz": 7200000, "mode": "Phone", "label": "Phone" }
+        ]
+      },
+      {
+        "name": "30m", "low_hz": 10100000, "high_hz": 10150000,
+        "segments": [
+          { "low_hz": 10100000, "high_hz": 10140000, "mode": "CW", "label": "CW" },
+          { "low_hz": 10140000, "high_hz": 10150000, "mode": "Narrow", "label": "Narrow/Digi" }
+        ]
+      },
+      {
+        "name": "20m", "low_hz": 14000000, "high_hz": 14350000,
+        "segments": [
+          { "low_hz": 14000000, "high_hz": 14070000, "mode": "CW", "label": "CW" },
+          { "low_hz": 14070000, "high_hz": 14099000, "mode": "Narrow", "label": "Narrow/Digi" },
+          { "low_hz": 14099000, "high_hz": 14101000, "mode": "Beacon", "label": "Beacon" },
+          { "low_hz": 14101000, "high_hz": 14112000, "mode": "All", "label": "All Modes" },
+          { "low_hz": 14112000, "high_hz": 14350000, "mode": "Phone", "label": "Phone" }
+        ]
+      },
+      {
+        "name": "17m", "low_hz": 18068000, "high_hz": 18168000,
+        "segments": [
+          { "low_hz": 18068000, "high_hz": 18095000, "mode": "CW", "label": "CW" },
+          { "low_hz": 18095000, "high_hz": 18109000, "mode": "Narrow", "label": "Narrow/Digi" },
+          { "low_hz": 18109000, "high_hz": 18111000, "mode": "Beacon", "label": "Beacon" },
+          { "low_hz": 18111000, "high_hz": 18168000, "mode": "Phone", "label": "Phone" }
+        ]
+      },
+      {
+        "name": "15m", "low_hz": 21000000, "high_hz": 21450000,
+        "segments": [
+          { "low_hz": 21000000, "high_hz": 21070000, "mode": "CW", "label": "CW" },
+          { "low_hz": 21070000, "high_hz": 21149000, "mode": "Narrow", "label": "Narrow/Digi" },
+          { "low_hz": 21149000, "high_hz": 21151000, "mode": "Beacon", "label": "Beacon" },
+          { "low_hz": 21151000, "high_hz": 21450000, "mode": "Phone", "label": "Phone" }
+        ]
+      },
+      {
+        "name": "12m", "low_hz": 24890000, "high_hz": 24990000,
+        "segments": [
+          { "low_hz": 24890000, "high_hz": 24915000, "mode": "CW", "label": "CW" },
+          { "low_hz": 24915000, "high_hz": 24929000, "mode": "Narrow", "label": "Narrow/Digi" },
+          { "low_hz": 24929000, "high_hz": 24931000, "mode": "Beacon", "label": "Beacon" },
+          { "low_hz": 24931000, "high_hz": 24990000, "mode": "Phone", "label": "Phone" }
+        ]
+      },
+      {
+        "name": "10m", "low_hz": 28000000, "high_hz": 29700000,
+        "segments": [
+          { "low_hz": 28000000, "high_hz": 28070000, "mode": "CW", "label": "CW" },
+          { "low_hz": 28070000, "high_hz": 28190000, "mode": "Narrow", "label": "Narrow/Digi" },
+          { "low_hz": 28190000, "high_hz": 28225000, "mode": "Beacon", "label": "Beacon" },
+          { "low_hz": 28225000, "high_hz": 28320000, "mode": "All", "label": "All Modes" },
+          { "low_hz": 28320000, "high_hz": 29100000, "mode": "Phone", "label": "Phone" },
+          { "low_hz": 29100000, "high_hz": 29510000, "mode": "FM", "label": "FM" },
+          { "low_hz": 29510000, "high_hz": 29700000, "mode": "Satellite", "label": "Satellite" }
+        ]
+      },
+      {
+        "name": "6m", "low_hz": 50000000, "high_hz": 54000000,
+        "segments": [
+          { "low_hz": 50000000, "high_hz": 50100000, "mode": "CW", "label": "CW/Beacon" },
+          { "low_hz": 50100000, "high_hz": 50500000, "mode": "Phone", "label": "SSB" },
+          { "low_hz": 50500000, "high_hz": 51000000, "mode": "All", "label": "All Modes" },
+          { "low_hz": 51000000, "high_hz": 52000000, "mode": "FM", "label": "FM Repeaters" },
+          { "low_hz": 52000000, "high_hz": 54000000, "mode": "All", "label": "All Modes" }
+        ]
+      },
+      {
+        "name": "2m", "low_hz": 144000000, "high_hz": 146000000,
+        "segments": [
+          { "low_hz": 144000000, "high_hz": 144150000, "mode": "CW", "label": "CW/EME" },
+          { "low_hz": 144150000, "high_hz": 144400000, "mode": "Phone", "label": "SSB" },
+          { "low_hz": 144400000, "high_hz": 144490000, "mode": "Beacon", "label": "Beacon" },
+          { "low_hz": 144490000, "high_hz": 144500000, "mode": "Beacon", "label": "NCDXF Beacon" },
+          { "low_hz": 144500000, "high_hz": 144794000, "mode": "All", "label": "All Modes" },
+          { "low_hz": 144794000, "high_hz": 144990000, "mode": "Narrow", "label": "Digital/APRS" },
+          { "low_hz": 144990000, "high_hz": 145194000, "mode": "FM", "label": "FM Simplex" },
+          { "low_hz": 145194000, "high_hz": 145806000, "mode": "FM", "label": "FM Repeaters" },
+          { "low_hz": 145806000, "high_hz": 146000000, "mode": "Satellite", "label": "Satellite" }
+        ]
+      },
+      {
+        "name": "70cm", "low_hz": 430000000, "high_hz": 440000000,
+        "segments": [
+          { "low_hz": 430000000, "high_hz": 432000000, "mode": "FM", "label": "FM Repeaters" },
+          { "low_hz": 432000000, "high_hz": 432150000, "mode": "CW", "label": "CW/EME" },
+          { "low_hz": 432150000, "high_hz": 432500000, "mode": "Phone", "label": "SSB" },
+          { "low_hz": 432500000, "high_hz": 432800000, "mode": "All", "label": "All Modes" },
+          { "low_hz": 432800000, "high_hz": 433000000, "mode": "Beacon", "label": "Beacon" },
+          { "low_hz": 433000000, "high_hz": 435000000, "mode": "FM", "label": "FM" },
+          { "low_hz": 435000000, "high_hz": 438000000, "mode": "Satellite", "label": "Satellite" },
+          { "low_hz": 438000000, "high_hz": 440000000, "mode": "FM", "label": "FM" }
+        ]
+      },
+      {
+        "name": "23cm", "low_hz": 1240000000, "high_hz": 1300000000,
+        "segments": [
+          { "low_hz": 1240000000, "high_hz": 1243000000, "mode": "All", "label": "All Modes" },
+          { "low_hz": 1243000000, "high_hz": 1260000000, "mode": "Narrow", "label": "Digital/ATV" },
+          { "low_hz": 1260000000, "high_hz": 1270000000, "mode": "Satellite", "label": "Satellite" },
+          { "low_hz": 1270000000, "high_hz": 1300000000, "mode": "All", "label": "All Modes" }
+        ]
+      }
+    ]
+  },
+  "iaru_r2": {
+    "name": "IARU Region 2",
+    "bands": [
+      {
+        "name": "160m", "low_hz": 1800000, "high_hz": 2000000,
+        "segments": [
+          { "low_hz": 1800000, "high_hz": 1840000, "mode": "CW", "label": "CW" },
+          { "low_hz": 1840000, "high_hz": 1850000, "mode": "Narrow", "label": "CW/Digi" },
+          { "low_hz": 1850000, "high_hz": 2000000, "mode": "Phone", "label": "Phone" }
+        ]
+      },
+      {
+        "name": "80m", "low_hz": 3500000, "high_hz": 4000000,
+        "segments": [
+          { "low_hz": 3500000, "high_hz": 3570000, "mode": "CW", "label": "CW" },
+          { "low_hz": 3570000, "high_hz": 3600000, "mode": "Narrow", "label": "Narrow/Digi" },
+          { "low_hz": 3600000, "high_hz": 3700000, "mode": "All", "label": "All Modes" },
+          { "low_hz": 3700000, "high_hz": 4000000, "mode": "Phone", "label": "Phone" }
+        ]
+      },
+      {
+        "name": "60m", "low_hz": 5330500, "high_hz": 5403500,
+        "segments": [
+          { "low_hz": 5330500, "high_hz": 5403500, "mode": "All", "label": "All Modes" }
+        ]
+      },
+      {
+        "name": "40m", "low_hz": 7000000, "high_hz": 7300000,
+        "segments": [
+          { "low_hz": 7000000, "high_hz": 7040000, "mode": "CW", "label": "CW" },
+          { "low_hz": 7040000, "high_hz": 7060000, "mode": "Narrow", "label": "Narrow/Digi" },
+          { "low_hz": 7060000, "high_hz": 7100000, "mode": "All", "label": "All Modes" },
+          { "low_hz": 7100000, "high_hz": 7125000, "mode": "All", "label": "All Modes" },
+          { "low_hz": 7125000, "high_hz": 7300000, "mode": "Phone", "label": "Phone" }
+        ]
+      },
+      {
+        "name": "30m", "low_hz": 10100000, "high_hz": 10150000,
+        "segments": [
+          { "low_hz": 10100000, "high_hz": 10140000, "mode": "CW", "label": "CW" },
+          { "low_hz": 10140000, "high_hz": 10150000, "mode": "Narrow", "label": "Narrow/Digi" }
+        ]
+      },
+      {
+        "name": "20m", "low_hz": 14000000, "high_hz": 14350000,
+        "segments": [
+          { "low_hz": 14000000, "high_hz": 14070000, "mode": "CW", "label": "CW" },
+          { "low_hz": 14070000, "high_hz": 14099000, "mode": "Narrow", "label": "Narrow/Digi" },
+          { "low_hz": 14099000, "high_hz": 14101000, "mode": "Beacon", "label": "Beacon" },
+          { "low_hz": 14101000, "high_hz": 14112000, "mode": "All", "label": "All Modes" },
+          { "low_hz": 14112000, "high_hz": 14350000, "mode": "Phone", "label": "Phone" }
+        ]
+      },
+      {
+        "name": "17m", "low_hz": 18068000, "high_hz": 18168000,
+        "segments": [
+          { "low_hz": 18068000, "high_hz": 18095000, "mode": "CW", "label": "CW" },
+          { "low_hz": 18095000, "high_hz": 18109000, "mode": "Narrow", "label": "Narrow/Digi" },
+          { "low_hz": 18109000, "high_hz": 18111000, "mode": "Beacon", "label": "Beacon" },
+          { "low_hz": 18111000, "high_hz": 18168000, "mode": "Phone", "label": "Phone" }
+        ]
+      },
+      {
+        "name": "15m", "low_hz": 21000000, "high_hz": 21450000,
+        "segments": [
+          { "low_hz": 21000000, "high_hz": 21070000, "mode": "CW", "label": "CW" },
+          { "low_hz": 21070000, "high_hz": 21149000, "mode": "Narrow", "label": "Narrow/Digi" },
+          { "low_hz": 21149000, "high_hz": 21151000, "mode": "Beacon", "label": "Beacon" },
+          { "low_hz": 21151000, "high_hz": 21450000, "mode": "Phone", "label": "Phone" }
+        ]
+      },
+      {
+        "name": "12m", "low_hz": 24890000, "high_hz": 24990000,
+        "segments": [
+          { "low_hz": 24890000, "high_hz": 24915000, "mode": "CW", "label": "CW" },
+          { "low_hz": 24915000, "high_hz": 24929000, "mode": "Narrow", "label": "Narrow/Digi" },
+          { "low_hz": 24929000, "high_hz": 24931000, "mode": "Beacon", "label": "Beacon" },
+          { "low_hz": 24931000, "high_hz": 24990000, "mode": "Phone", "label": "Phone" }
+        ]
+      },
+      {
+        "name": "10m", "low_hz": 28000000, "high_hz": 29700000,
+        "segments": [
+          { "low_hz": 28000000, "high_hz": 28070000, "mode": "CW", "label": "CW" },
+          { "low_hz": 28070000, "high_hz": 28190000, "mode": "Narrow", "label": "Narrow/Digi" },
+          { "low_hz": 28190000, "high_hz": 28225000, "mode": "Beacon", "label": "Beacon" },
+          { "low_hz": 28225000, "high_hz": 28300000, "mode": "All", "label": "All Modes" },
+          { "low_hz": 28300000, "high_hz": 29100000, "mode": "Phone", "label": "Phone" },
+          { "low_hz": 29100000, "high_hz": 29510000, "mode": "FM", "label": "FM" },
+          { "low_hz": 29510000, "high_hz": 29700000, "mode": "Satellite", "label": "Satellite" }
+        ]
+      },
+      {
+        "name": "6m", "low_hz": 50000000, "high_hz": 54000000,
+        "segments": [
+          { "low_hz": 50000000, "high_hz": 50100000, "mode": "CW", "label": "CW/Beacon" },
+          { "low_hz": 50100000, "high_hz": 50300000, "mode": "Phone", "label": "SSB" },
+          { "low_hz": 50300000, "high_hz": 50600000, "mode": "All", "label": "All Modes" },
+          { "low_hz": 50600000, "high_hz": 51000000, "mode": "Narrow", "label": "Digital" },
+          { "low_hz": 51000000, "high_hz": 54000000, "mode": "FM", "label": "FM" }
+        ]
+      },
+      {
+        "name": "2m", "low_hz": 144000000, "high_hz": 148000000,
+        "segments": [
+          { "low_hz": 144000000, "high_hz": 144100000, "mode": "CW", "label": "CW/EME" },
+          { "low_hz": 144100000, "high_hz": 144275000, "mode": "Phone", "label": "SSB" },
+          { "low_hz": 144275000, "high_hz": 144400000, "mode": "Beacon", "label": "Beacon/Packet" },
+          { "low_hz": 144400000, "high_hz": 145500000, "mode": "FM", "label": "FM Simplex" },
+          { "low_hz": 145500000, "high_hz": 146000000, "mode": "FM", "label": "FM Repeaters" },
+          { "low_hz": 146000000, "high_hz": 148000000, "mode": "FM", "label": "FM Repeaters" }
+        ]
+      },
+      {
+        "name": "70cm", "low_hz": 420000000, "high_hz": 450000000,
+        "segments": [
+          { "low_hz": 420000000, "high_hz": 426000000, "mode": "All", "label": "All Modes" },
+          { "low_hz": 426000000, "high_hz": 432000000, "mode": "FM", "label": "FM Repeaters" },
+          { "low_hz": 432000000, "high_hz": 432100000, "mode": "CW", "label": "CW/EME" },
+          { "low_hz": 432100000, "high_hz": 433000000, "mode": "Phone", "label": "SSB/All" },
+          { "low_hz": 433000000, "high_hz": 435000000, "mode": "FM", "label": "FM/Links" },
+          { "low_hz": 435000000, "high_hz": 438000000, "mode": "Satellite", "label": "Satellite" },
+          { "low_hz": 438000000, "high_hz": 444000000, "mode": "FM", "label": "FM Repeaters" },
+          { "low_hz": 444000000, "high_hz": 450000000, "mode": "FM", "label": "FM Repeaters" }
+        ]
+      },
+      {
+        "name": "23cm", "low_hz": 1240000000, "high_hz": 1300000000,
+        "segments": [
+          { "low_hz": 1240000000, "high_hz": 1260000000, "mode": "All", "label": "All Modes/ATV" },
+          { "low_hz": 1260000000, "high_hz": 1270000000, "mode": "Satellite", "label": "Satellite" },
+          { "low_hz": 1270000000, "high_hz": 1295000000, "mode": "FM", "label": "FM Repeaters" },
+          { "low_hz": 1295000000, "high_hz": 1300000000, "mode": "Narrow", "label": "Narrowband" }
+        ]
+      }
+    ]
+  },
+  "iaru_r3": {
+    "name": "IARU Region 3",
+    "bands": [
+      {
+        "name": "160m", "low_hz": 1800000, "high_hz": 2000000,
+        "segments": [
+          { "low_hz": 1800000, "high_hz": 1840000, "mode": "CW", "label": "CW" },
+          { "low_hz": 1840000, "high_hz": 1850000, "mode": "Narrow", "label": "CW/Digi" },
+          { "low_hz": 1850000, "high_hz": 2000000, "mode": "Phone", "label": "Phone" }
+        ]
+      },
+      {
+        "name": "80m", "low_hz": 3500000, "high_hz": 3900000,
+        "segments": [
+          { "low_hz": 3500000, "high_hz": 3570000, "mode": "CW", "label": "CW" },
+          { "low_hz": 3570000, "high_hz": 3600000, "mode": "Narrow", "label": "Narrow/Digi" },
+          { "low_hz": 3600000, "high_hz": 3620000, "mode": "All", "label": "All Modes" },
+          { "low_hz": 3620000, "high_hz": 3900000, "mode": "Phone", "label": "Phone" }
+        ]
+      },
+      {
+        "name": "40m", "low_hz": 7000000, "high_hz": 7300000,
+        "segments": [
+          { "low_hz": 7000000, "high_hz": 7040000, "mode": "CW", "label": "CW" },
+          { "low_hz": 7040000, "high_hz": 7060000, "mode": "Narrow", "label": "Narrow/Digi" },
+          { "low_hz": 7060000, "high_hz": 7100000, "mode": "All", "label": "All Modes" },
+          { "low_hz": 7100000, "high_hz": 7300000, "mode": "Phone", "label": "Phone" }
+        ]
+      },
+      {
+        "name": "30m", "low_hz": 10100000, "high_hz": 10150000,
+        "segments": [
+          { "low_hz": 10100000, "high_hz": 10140000, "mode": "CW", "label": "CW" },
+          { "low_hz": 10140000, "high_hz": 10150000, "mode": "Narrow", "label": "Narrow/Digi" }
+        ]
+      },
+      {
+        "name": "20m", "low_hz": 14000000, "high_hz": 14350000,
+        "segments": [
+          { "low_hz": 14000000, "high_hz": 14070000, "mode": "CW", "label": "CW" },
+          { "low_hz": 14070000, "high_hz": 14099000, "mode": "Narrow", "label": "Narrow/Digi" },
+          { "low_hz": 14099000, "high_hz": 14101000, "mode": "Beacon", "label": "Beacon" },
+          { "low_hz": 14101000, "high_hz": 14112000, "mode": "All", "label": "All Modes" },
+          { "low_hz": 14112000, "high_hz": 14350000, "mode": "Phone", "label": "Phone" }
+        ]
+      },
+      {
+        "name": "17m", "low_hz": 18068000, "high_hz": 18168000,
+        "segments": [
+          { "low_hz": 18068000, "high_hz": 18095000, "mode": "CW", "label": "CW" },
+          { "low_hz": 18095000, "high_hz": 18109000, "mode": "Narrow", "label": "Narrow/Digi" },
+          { "low_hz": 18109000, "high_hz": 18111000, "mode": "Beacon", "label": "Beacon" },
+          { "low_hz": 18111000, "high_hz": 18168000, "mode": "Phone", "label": "Phone" }
+        ]
+      },
+      {
+        "name": "15m", "low_hz": 21000000, "high_hz": 21450000,
+        "segments": [
+          { "low_hz": 21000000, "high_hz": 21070000, "mode": "CW", "label": "CW" },
+          { "low_hz": 21070000, "high_hz": 21149000, "mode": "Narrow", "label": "Narrow/Digi" },
+          { "low_hz": 21149000, "high_hz": 21151000, "mode": "Beacon", "label": "Beacon" },
+          { "low_hz": 21151000, "high_hz": 21450000, "mode": "Phone", "label": "Phone" }
+        ]
+      },
+      {
+        "name": "12m", "low_hz": 24890000, "high_hz": 24990000,
+        "segments": [
+          { "low_hz": 24890000, "high_hz": 24915000, "mode": "CW", "label": "CW" },
+          { "low_hz": 24915000, "high_hz": 24929000, "mode": "Narrow", "label": "Narrow/Digi" },
+          { "low_hz": 24929000, "high_hz": 24931000, "mode": "Beacon", "label": "Beacon" },
+          { "low_hz": 24931000, "high_hz": 24990000, "mode": "Phone", "label": "Phone" }
+        ]
+      },
+      {
+        "name": "10m", "low_hz": 28000000, "high_hz": 29700000,
+        "segments": [
+          { "low_hz": 28000000, "high_hz": 28070000, "mode": "CW", "label": "CW" },
+          { "low_hz": 28070000, "high_hz": 28190000, "mode": "Narrow", "label": "Narrow/Digi" },
+          { "low_hz": 28190000, "high_hz": 28225000, "mode": "Beacon", "label": "Beacon" },
+          { "low_hz": 28225000, "high_hz": 28300000, "mode": "All", "label": "All Modes" },
+          { "low_hz": 28300000, "high_hz": 29100000, "mode": "Phone", "label": "Phone" },
+          { "low_hz": 29100000, "high_hz": 29510000, "mode": "FM", "label": "FM" },
+          { "low_hz": 29510000, "high_hz": 29700000, "mode": "Satellite", "label": "Satellite" }
+        ]
+      },
+      {
+        "name": "6m", "low_hz": 50000000, "high_hz": 54000000,
+        "segments": [
+          { "low_hz": 50000000, "high_hz": 50100000, "mode": "CW", "label": "CW/Beacon" },
+          { "low_hz": 50100000, "high_hz": 50300000, "mode": "Phone", "label": "SSB" },
+          { "low_hz": 50300000, "high_hz": 50600000, "mode": "All", "label": "All Modes" },
+          { "low_hz": 50600000, "high_hz": 51000000, "mode": "Narrow", "label": "Digital" },
+          { "low_hz": 51000000, "high_hz": 54000000, "mode": "FM", "label": "FM" }
+        ]
+      },
+      {
+        "name": "2m", "low_hz": 144000000, "high_hz": 148000000,
+        "segments": [
+          { "low_hz": 144000000, "high_hz": 144100000, "mode": "CW", "label": "CW/EME" },
+          { "low_hz": 144100000, "high_hz": 144400000, "mode": "Phone", "label": "SSB" },
+          { "low_hz": 144400000, "high_hz": 144500000, "mode": "Beacon", "label": "Beacon" },
+          { "low_hz": 144500000, "high_hz": 145000000, "mode": "All", "label": "All Modes" },
+          { "low_hz": 145000000, "high_hz": 146000000, "mode": "FM", "label": "FM Simplex" },
+          { "low_hz": 146000000, "high_hz": 148000000, "mode": "FM", "label": "FM Repeaters" }
+        ]
+      },
+      {
+        "name": "70cm", "low_hz": 430000000, "high_hz": 450000000,
+        "segments": [
+          { "low_hz": 430000000, "high_hz": 432000000, "mode": "FM", "label": "FM Repeaters" },
+          { "low_hz": 432000000, "high_hz": 432100000, "mode": "CW", "label": "CW/EME" },
+          { "low_hz": 432100000, "high_hz": 432400000, "mode": "Phone", "label": "SSB" },
+          { "low_hz": 432400000, "high_hz": 432500000, "mode": "Beacon", "label": "Beacon" },
+          { "low_hz": 432500000, "high_hz": 435000000, "mode": "All", "label": "All Modes" },
+          { "low_hz": 435000000, "high_hz": 438000000, "mode": "Satellite", "label": "Satellite" },
+          { "low_hz": 438000000, "high_hz": 440000000, "mode": "FM", "label": "FM" },
+          { "low_hz": 440000000, "high_hz": 450000000, "mode": "FM", "label": "FM Repeaters" }
+        ]
+      },
+      {
+        "name": "23cm", "low_hz": 1240000000, "high_hz": 1300000000,
+        "segments": [
+          { "low_hz": 1240000000, "high_hz": 1260000000, "mode": "All", "label": "All Modes" },
+          { "low_hz": 1260000000, "high_hz": 1270000000, "mode": "Satellite", "label": "Satellite" },
+          { "low_hz": 1270000000, "high_hz": 1300000000, "mode": "FM", "label": "FM/ATV" }
+        ]
+      }
+    ]
+  }
+}

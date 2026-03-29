@@ -9908,6 +9908,7 @@ function drawSpectrum(data) {
 
   updateSpectrumFreqAxis(range);
   updateBookmarkAxis(range);
+  updateBandplanStrip(range);
   drawSignalOverlay();
 }
 
@@ -11226,4 +11227,150 @@ if (spectrumCenterRightBtn) {
       if (lastSpectrumData) scheduleSpectrumDraw();
     });
   }
+
+// ── Bandplan strip ──────────────────────────────────────────────────────────
+let bandplanData = null;
+let bandplanRegion = loadSetting("bandplanRegion", "off");
+let bandplanShowLabels = loadSetting("bandplanLabels", true);
+let bandplanSegmentsCache = null;
+let bandplanCacheKey = "";
+
+const bandplanStripEl = document.getElementById("spectrum-bandplan-strip");
+const bandplanRegionSelect = document.getElementById("bandplan-region-select");
+const bandplanLabelsCheck = document.getElementById("bandplan-labels-check");
+
+(function loadBandplanJson() {
+  fetch("/bandplan.json")
+    .then((r) => { if (!r.ok) throw new Error(r.status); return r.json(); })
+    .then((d) => { bandplanData = d; bandplanSegmentsCache = null; bandplanCacheKey = ""; })
+    .catch(() => {});
+})();
+
+if (bandplanRegionSelect) {
+  bandplanRegionSelect.value = bandplanRegion;
+  bandplanRegionSelect.addEventListener("change", () => {
+    bandplanRegion = bandplanRegionSelect.value;
+    saveSetting("bandplanRegion", bandplanRegion);
+    bandplanSegmentsCache = null;
+    bandplanCacheKey = "";
+    if (lastSpectrumData) scheduleSpectrumDraw();
+  });
+}
+if (bandplanLabelsCheck) {
+  bandplanLabelsCheck.checked = bandplanShowLabels;
+  bandplanLabelsCheck.addEventListener("change", () => {
+    bandplanShowLabels = bandplanLabelsCheck.checked;
+    saveSetting("bandplanLabels", bandplanShowLabels);
+    bandplanSegmentsCache = null;
+    bandplanCacheKey = "";
+    if (lastSpectrumData) scheduleSpectrumDraw();
+  });
+}
+
+function bandplanVisibleSegments(region, loHz, hiHz) {
+  if (!bandplanData || !bandplanData[region]) return [];
+  const bands = bandplanData[region].bands;
+  const result = [];
+  for (const band of bands) {
+    if (band.high_hz < loHz || band.low_hz > hiHz) continue;
+    for (const seg of band.segments) {
+      if (seg.high_hz <= loHz || seg.low_hz >= hiHz) continue;
+      result.push({
+        low_hz: seg.low_hz,
+        high_hz: seg.high_hz,
+        mode: seg.mode,
+        label: seg.label,
+        band: band.name,
+      });
+    }
+  }
+  return result;
+}
+
+function updateBandplanStrip(range) {
+  if (!bandplanStripEl) return;
+  if (bandplanRegion === "off" || !bandplanData) {
+    if (bandplanStripEl.classList.contains("bp-visible")) {
+      bandplanStripEl.classList.remove("bp-visible");
+      bandplanStripEl.innerHTML = "";
+      bandplanCacheKey = "";
+    }
+    return;
+  }
+
+  const segments = bandplanVisibleSegments(bandplanRegion, range.visLoHz, range.visHiHz);
+  if (segments.length === 0) {
+    if (bandplanStripEl.classList.contains("bp-visible")) {
+      bandplanStripEl.classList.remove("bp-visible");
+      bandplanStripEl.innerHTML = "";
+      bandplanCacheKey = "";
+    }
+    return;
+  }
+
+  bandplanStripEl.classList.add("bp-visible");
+
+  const newKey = bandplanRegion + ":" + (bandplanShowLabels ? "L" : "N") + ":" +
+    segments.map((s) => s.low_hz + "-" + s.high_hz).join(",");
+
+  const stripW = bandplanStripEl.clientWidth || 1;
+
+  if (bandplanCacheKey !== newKey) {
+    bandplanCacheKey = newKey;
+    bandplanStripEl.innerHTML = "";
+
+    const seenBands = new Set();
+    for (const seg of segments) {
+      const el = document.createElement("div");
+      el.className = "bp-segment";
+      el.dataset.mode = seg.mode;
+      el.title = seg.band + " \u2013 " + seg.label + " (" + seg.mode + ")";
+      if (bandplanShowLabels) {
+        const lbl = document.createElement("span");
+        lbl.className = "bp-segment-label";
+        lbl.textContent = seg.label;
+        el.appendChild(lbl);
+      }
+      bandplanStripEl.appendChild(el);
+
+      if (!seenBands.has(seg.band)) {
+        seenBands.add(seg.band);
+        const bandLbl = document.createElement("div");
+        bandLbl.className = "bp-band-label";
+        bandLbl.textContent = seg.band;
+        bandLbl.dataset.bandLow = seg.low_hz;
+        bandplanStripEl.appendChild(bandLbl);
+      }
+    }
+    bandplanSegmentsCache = segments;
+  }
+
+  const children = bandplanStripEl.querySelectorAll(".bp-segment");
+  const bandLabels = bandplanStripEl.querySelectorAll(".bp-band-label");
+  const segs = bandplanSegmentsCache || segments;
+
+  segs.forEach((seg, i) => {
+    const el = children[i];
+    if (!el) return;
+    const l = Math.max(0, (seg.low_hz - range.visLoHz) / range.visSpanHz);
+    const r = Math.min(1, (seg.high_hz - range.visLoHz) / range.visSpanHz);
+    const leftPx = l * stripW;
+    const widthPx = Math.max(1, (r - l) * stripW);
+    el.style.left = leftPx + "px";
+    el.style.width = widthPx + "px";
+
+    const lbl = el.querySelector(".bp-segment-label");
+    if (lbl) {
+      lbl.style.display = widthPx < 20 ? "none" : "";
+    }
+  });
+
+  bandLabels.forEach((lbl) => {
+    const bandLow = Number(lbl.dataset.bandLow);
+    const frac = (bandLow - range.visLoHz) / range.visSpanHz;
+    const px = Math.max(2, frac * stripW);
+    lbl.style.left = px + "px";
+    lbl.style.display = (frac < -0.1 || frac > 1.05) ? "none" : "";
+  });
+}
 })();

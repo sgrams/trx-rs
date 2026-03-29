@@ -65,6 +65,7 @@ define_gz_cache!(
     "background-decode.js"
 );
 define_gz_cache!(gz_vchan_js, status::VCHAN_JS, "vchan.js");
+define_gz_cache!(gz_bandplan_json, status::BANDPLAN_JSON, "bandplan.json");
 
 // ---------------------------------------------------------------------------
 // HTML page routes (all serve the SPA index)
@@ -346,6 +347,17 @@ pub(crate) async fn vchan_js(req: HttpRequest) -> impl Responder {
     static_asset_response(
         &req,
         "application/javascript; charset=utf-8",
+        &c.gz,
+        &c.etag,
+    )
+}
+
+#[get("/bandplan.json")]
+pub(crate) async fn bandplan_json(req: HttpRequest) -> impl Responder {
+    let c = gz_bandplan_json();
+    static_asset_response(
+        &req,
+        "application/json; charset=utf-8",
         &c.gz,
         &c.etag,
     )
