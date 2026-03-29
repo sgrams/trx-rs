@@ -59,8 +59,7 @@ fn base64_encode(data: &[u8]) -> String {
             b'='
         });
     }
-    // SAFETY: output contains only ASCII base64 characters.
-    unsafe { String::from_utf8_unchecked(out) }
+    String::from_utf8(out).expect("base64 output is always valid ASCII")
 }
 
 /// Encode spectrum bins as a compact base64 string of i8 values (1 dB/step).
@@ -1168,7 +1167,7 @@ pub async fn toggle_aprs_decode(
     state: web::Data<watch::Receiver<RigState>>,
     rig_tx: web::Data<mpsc::Sender<RigRequest>>,
 ) -> Result<HttpResponse, Error> {
-    let enabled = state.get_ref().borrow().aprs_decode_enabled;
+    let enabled = state.get_ref().borrow().decoders.aprs_decode_enabled;
     send_command(
         &rig_tx,
         RigCommand::SetAprsDecodeEnabled(!enabled),
@@ -1183,7 +1182,7 @@ pub async fn toggle_hf_aprs_decode(
     state: web::Data<watch::Receiver<RigState>>,
     rig_tx: web::Data<mpsc::Sender<RigRequest>>,
 ) -> Result<HttpResponse, Error> {
-    let enabled = state.get_ref().borrow().hf_aprs_decode_enabled;
+    let enabled = state.get_ref().borrow().decoders.hf_aprs_decode_enabled;
     send_command(
         &rig_tx,
         RigCommand::SetHfAprsDecodeEnabled(!enabled),
@@ -1198,7 +1197,7 @@ pub async fn toggle_cw_decode(
     state: web::Data<watch::Receiver<RigState>>,
     rig_tx: web::Data<mpsc::Sender<RigRequest>>,
 ) -> Result<HttpResponse, Error> {
-    let enabled = state.get_ref().borrow().cw_decode_enabled;
+    let enabled = state.get_ref().borrow().decoders.cw_decode_enabled;
     send_command(
         &rig_tx,
         RigCommand::SetCwDecodeEnabled(!enabled),
@@ -1258,7 +1257,7 @@ pub async fn toggle_ft8_decode(
     state: web::Data<watch::Receiver<RigState>>,
     rig_tx: web::Data<mpsc::Sender<RigRequest>>,
 ) -> Result<HttpResponse, Error> {
-    let enabled = state.get_ref().borrow().ft8_decode_enabled;
+    let enabled = state.get_ref().borrow().decoders.ft8_decode_enabled;
     send_command(
         &rig_tx,
         RigCommand::SetFt8DecodeEnabled(!enabled),
@@ -1273,7 +1272,7 @@ pub async fn toggle_ft4_decode(
     state: web::Data<watch::Receiver<RigState>>,
     rig_tx: web::Data<mpsc::Sender<RigRequest>>,
 ) -> Result<HttpResponse, Error> {
-    let enabled = state.get_ref().borrow().ft4_decode_enabled;
+    let enabled = state.get_ref().borrow().decoders.ft4_decode_enabled;
     send_command(
         &rig_tx,
         RigCommand::SetFt4DecodeEnabled(!enabled),
@@ -1288,7 +1287,7 @@ pub async fn toggle_ft2_decode(
     state: web::Data<watch::Receiver<RigState>>,
     rig_tx: web::Data<mpsc::Sender<RigRequest>>,
 ) -> Result<HttpResponse, Error> {
-    let enabled = state.get_ref().borrow().ft2_decode_enabled;
+    let enabled = state.get_ref().borrow().decoders.ft2_decode_enabled;
     send_command(
         &rig_tx,
         RigCommand::SetFt2DecodeEnabled(!enabled),
@@ -1303,7 +1302,7 @@ pub async fn toggle_wspr_decode(
     state: web::Data<watch::Receiver<RigState>>,
     rig_tx: web::Data<mpsc::Sender<RigRequest>>,
 ) -> Result<HttpResponse, Error> {
-    let enabled = state.get_ref().borrow().wspr_decode_enabled;
+    let enabled = state.get_ref().borrow().decoders.wspr_decode_enabled;
     send_command(
         &rig_tx,
         RigCommand::SetWsprDecodeEnabled(!enabled),
@@ -1318,7 +1317,7 @@ pub async fn toggle_lrpt_decode(
     state: web::Data<watch::Receiver<RigState>>,
     rig_tx: web::Data<mpsc::Sender<RigRequest>>,
 ) -> Result<HttpResponse, Error> {
-    let enabled = state.get_ref().borrow().lrpt_decode_enabled;
+    let enabled = state.get_ref().borrow().decoders.lrpt_decode_enabled;
     send_command(
         &rig_tx,
         RigCommand::SetLrptDecodeEnabled(!enabled),
@@ -2451,6 +2450,7 @@ async fn send_command(
         Ok(Ok(snapshot)) => Ok(HttpResponse::Ok().json(ClientResponse {
             success: true,
             rig_id: None,
+            protocol_version: None,
             state: Some(snapshot),
             rigs: None,
             sat_passes: None,
@@ -2459,6 +2459,7 @@ async fn send_command(
         Ok(Err(err)) => Ok(HttpResponse::BadRequest().json(ClientResponse {
             success: false,
             rig_id: None,
+            protocol_version: None,
             state: None,
             rigs: None,
             sat_passes: None,
@@ -2653,17 +2654,10 @@ async fn wait_for_view(mut rx: watch::Receiver<RigState>) -> Result<RigSnapshot,
         server_longitude: state.server_longitude,
         pskreporter_status: state.pskreporter_status,
         aprs_is_status: state.aprs_is_status,
-        aprs_decode_enabled: state.aprs_decode_enabled,
-        hf_aprs_decode_enabled: state.hf_aprs_decode_enabled,
-        cw_decode_enabled: state.cw_decode_enabled,
+        decoders: state.decoders.clone(),
         cw_auto: state.cw_auto,
         cw_wpm: state.cw_wpm,
         cw_tone_hz: state.cw_tone_hz,
-        ft8_decode_enabled: state.ft8_decode_enabled,
-        ft4_decode_enabled: state.ft4_decode_enabled,
-        ft2_decode_enabled: state.ft2_decode_enabled,
-        wspr_decode_enabled: state.wspr_decode_enabled,
-        lrpt_decode_enabled: state.lrpt_decode_enabled,
         filter: state.filter.clone(),
         spectrum: None,
         vchan_rds: None,

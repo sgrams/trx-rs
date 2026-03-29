@@ -18,6 +18,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::{Duration, Instant, SystemTime};
+use tracing::warn;
 
 /// Unique session identifier (hex-encoded 128-bit random)
 pub type SessionId = String;
@@ -86,14 +87,20 @@ impl SessionStore {
             last_seen: now,
         };
 
-        let mut store = self.sessions.write().unwrap();
+        let mut store = self.sessions.write().unwrap_or_else(|e| {
+            warn!("Session store lock poisoned (create), recovering");
+            e.into_inner()
+        });
         store.insert(session_id.clone(), record);
         session_id
     }
 
     /// Get session by ID (returns None if expired or not found)
     pub fn get(&self, session_id: &SessionId) -> Option<SessionRecord> {
-        let mut store = self.sessions.write().unwrap();
+        let mut store = self.sessions.write().unwrap_or_else(|e| {
+            warn!("Session store lock poisoned (get), recovering");
+            e.into_inner()
+        });
         if let Some(record) = store.get_mut(session_id) {
             if !record.is_expired() {
                 record.update_last_seen();
@@ -107,13 +114,19 @@ impl SessionStore {
 
     /// Invalidate a session
     pub fn remove(&self, session_id: &SessionId) {
-        let mut store = self.sessions.write().unwrap();
+        let mut store = self.sessions.write().unwrap_or_else(|e| {
+            warn!("Session store lock poisoned (remove), recovering");
+            e.into_inner()
+        });
         store.remove(session_id);
     }
 
     /// Remove all expired sessions
     pub fn cleanup_expired(&self) {
-        let mut store = self.sessions.write().unwrap();
+        let mut store = self.sessions.write().unwrap_or_else(|e| {
+            warn!("Session store lock poisoned (cleanup), recovering");
+            e.into_inner()
+        });
         let now = SystemTime::now();
         store.retain(|_, record| record.expires_at > now);
     }
@@ -226,7 +239,10 @@ impl LoginRateLimiter {
     /// Check whether an IP is rate-limited. Returns `true` if the request
     /// should be allowed, `false` if rate-limited.
     pub fn check(&self, ip: &str) -> bool {
-        let mut map = self.attempts.lock().unwrap();
+        let mut map = self.attempts.lock().unwrap_or_else(|e| {
+            warn!("Rate limiter lock poisoned (check), recovering");
+            e.into_inner()
+        });
         let now = Instant::now();
         if let Some((count, window_start)) = map.get_mut(ip) {
             if now.duration_since(*window_start) > self.window {
@@ -248,7 +264,10 @@ impl LoginRateLimiter {
 
     /// Record a successful login — clears the rate-limit counter for the IP.
     pub fn reset(&self, ip: &str) {
-        let mut map = self.attempts.lock().unwrap();
+        let mut map = self.attempts.lock().unwrap_or_else(|e| {
+            warn!("Rate limiter lock poisoned (reset), recovering");
+            e.into_inner()
+        });
         map.remove(ip);
     }
 }
@@ -648,9 +667,8 @@ where
     }
 }
 
-/// Check if a path is a TX/PTT endpoint (for future TX access control)
-#[allow(dead_code)]
-fn is_tx_endpoint(path: &str) -> bool {
+/// Check if a path is a TX/PTT endpoint (used for TX access control).
+pub fn is_tx_endpoint(path: &str) -> bool {
     path.contains("ptt")
         || path.contains("set_ptt")
         || path.contains("toggle_ptt")

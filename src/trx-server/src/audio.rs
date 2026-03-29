@@ -1194,8 +1194,8 @@ pub async fn run_aprs_decoder(
                     if active {
                         pcm_rx = pcm_rx.resubscribe();
                     }
-                    if state.aprs_decode_reset_seq != last_reset_seq {
-                        last_reset_seq = state.aprs_decode_reset_seq;
+                    if state.reset_seqs.aprs_decode_reset_seq != last_reset_seq {
+                        last_reset_seq = state.reset_seqs.aprs_decode_reset_seq;
                         decoder.reset();
                         info!("APRS decoder reset (seq={})", last_reset_seq);
                     }
@@ -1211,7 +1211,7 @@ pub async fn run_aprs_decoder(
                     Ok(frame) => {
                         let reset_seq = {
                             let state = state_rx.borrow();
-                            state.aprs_decode_reset_seq
+                            state.reset_seqs.aprs_decode_reset_seq
                         };
                         if reset_seq != last_reset_seq {
                             last_reset_seq = reset_seq;
@@ -1236,7 +1236,7 @@ pub async fn run_aprs_decoder(
 
                         was_active = true;
                         let packets = tokio::task::block_in_place(|| decoder.process_samples(&mono));
-                        let latest_reset_seq = state_rx.borrow().aprs_decode_reset_seq;
+                        let latest_reset_seq = state_rx.borrow().reset_seqs.aprs_decode_reset_seq;
                         if latest_reset_seq != reset_seq {
                             last_reset_seq = latest_reset_seq;
                             decoder.reset();
@@ -1269,8 +1269,8 @@ pub async fn run_aprs_decoder(
                     Ok(()) => {
                         let state = state_rx.borrow();
                         active = matches!(state.status.mode, RigMode::PKT);
-                        if state.aprs_decode_reset_seq != last_reset_seq {
-                            last_reset_seq = state.aprs_decode_reset_seq;
+                        if state.reset_seqs.aprs_decode_reset_seq != last_reset_seq {
+                            last_reset_seq = state.reset_seqs.aprs_decode_reset_seq;
                             decoder.reset();
                             info!("APRS decoder reset (seq={})", last_reset_seq);
                         }
@@ -1316,8 +1316,8 @@ pub async fn run_hf_aprs_decoder(
                     if active {
                         pcm_rx = pcm_rx.resubscribe();
                     }
-                    if state.hf_aprs_decode_reset_seq != last_reset_seq {
-                        last_reset_seq = state.hf_aprs_decode_reset_seq;
+                    if state.reset_seqs.hf_aprs_decode_reset_seq != last_reset_seq {
+                        last_reset_seq = state.reset_seqs.hf_aprs_decode_reset_seq;
                         decoder.reset();
                         info!("HF APRS decoder reset (seq={})", last_reset_seq);
                     }
@@ -1333,7 +1333,7 @@ pub async fn run_hf_aprs_decoder(
                     Ok(frame) => {
                         let reset_seq = {
                             let state = state_rx.borrow();
-                            state.hf_aprs_decode_reset_seq
+                            state.reset_seqs.hf_aprs_decode_reset_seq
                         };
                         if reset_seq != last_reset_seq {
                             last_reset_seq = reset_seq;
@@ -1348,7 +1348,7 @@ pub async fn run_hf_aprs_decoder(
 
                         was_active = true;
                         let packets = tokio::task::block_in_place(|| decoder.process_samples(&mono));
-                        let latest_reset_seq = state_rx.borrow().hf_aprs_decode_reset_seq;
+                        let latest_reset_seq = state_rx.borrow().reset_seqs.hf_aprs_decode_reset_seq;
                         if latest_reset_seq != reset_seq {
                             last_reset_seq = latest_reset_seq;
                             decoder.reset();
@@ -1381,8 +1381,8 @@ pub async fn run_hf_aprs_decoder(
                     Ok(()) => {
                         let state = state_rx.borrow();
                         active = matches!(state.status.mode, RigMode::DIG);
-                        if state.hf_aprs_decode_reset_seq != last_reset_seq {
-                            last_reset_seq = state.hf_aprs_decode_reset_seq;
+                        if state.reset_seqs.hf_aprs_decode_reset_seq != last_reset_seq {
+                            last_reset_seq = state.reset_seqs.hf_aprs_decode_reset_seq;
                             decoder.reset();
                             info!("HF APRS decoder reset (seq={})", last_reset_seq);
                         }
@@ -1594,7 +1594,7 @@ pub async fn run_cw_decoder(
     let mut decoder = CwDecoder::new(sample_rate);
     let mut was_active = false;
     let mut last_reset_seq: u64 = 0;
-    let mut active = state_rx.borrow().cw_decode_enabled
+    let mut active = state_rx.borrow().decoders.cw_decode_enabled
         && matches!(state_rx.borrow().status.mode, RigMode::CW | RigMode::CWR);
     let mut last_auto = state_rx.borrow().cw_auto;
     let mut last_wpm = state_rx.borrow().cw_wpm;
@@ -1608,7 +1608,7 @@ pub async fn run_cw_decoder(
             match state_rx.changed().await {
                 Ok(()) => {
                     let state = state_rx.borrow();
-                    active = state.cw_decode_enabled
+                    active = state.decoders.cw_decode_enabled
                         && matches!(state.status.mode, RigMode::CW | RigMode::CWR);
                     if active {
                         pcm_rx = pcm_rx.resubscribe();
@@ -1625,8 +1625,8 @@ pub async fn run_cw_decoder(
                         last_tone = state.cw_tone_hz;
                         decoder.set_tone_hz(last_tone);
                     }
-                    if state.cw_decode_reset_seq != last_reset_seq {
-                        last_reset_seq = state.cw_decode_reset_seq;
+                    if state.reset_seqs.cw_decode_reset_seq != last_reset_seq {
+                        last_reset_seq = state.reset_seqs.cw_decode_reset_seq;
                         decoder.reset();
                         info!("CW decoder reset (seq={})", last_reset_seq);
                     }
@@ -1643,12 +1643,12 @@ pub async fn run_cw_decoder(
                         let (process_enabled, cw_auto, cw_wpm, cw_tone_hz, reset_seq) = {
                             let state = state_rx.borrow();
                             (
-                                state.cw_decode_enabled
+                                state.decoders.cw_decode_enabled
                                     && matches!(state.status.mode, RigMode::CW | RigMode::CWR),
                                 state.cw_auto,
                                 state.cw_wpm,
                                 state.cw_tone_hz,
-                                state.cw_decode_reset_seq,
+                                state.reset_seqs.cw_decode_reset_seq,
                             )
                         };
                         if cw_auto != last_auto {
@@ -1692,7 +1692,7 @@ pub async fn run_cw_decoder(
                         };
                         was_active = true;
                         let events = tokio::task::block_in_place(|| decoder.process_samples(&mono));
-                        let latest_reset_seq = state_rx.borrow().cw_decode_reset_seq;
+                        let latest_reset_seq = state_rx.borrow().reset_seqs.cw_decode_reset_seq;
                         if latest_reset_seq != reset_seq {
                             last_reset_seq = latest_reset_seq;
                             decoder.reset();
@@ -1718,7 +1718,7 @@ pub async fn run_cw_decoder(
                 match changed {
                     Ok(()) => {
                         let state = state_rx.borrow();
-                        active = state.cw_decode_enabled
+                        active = state.decoders.cw_decode_enabled
                             && matches!(state.status.mode, RigMode::CW | RigMode::CWR);
                         if state.cw_auto != last_auto {
                             last_auto = state.cw_auto;
@@ -1732,8 +1732,8 @@ pub async fn run_cw_decoder(
                             last_tone = state.cw_tone_hz;
                             decoder.set_tone_hz(last_tone);
                         }
-                        if state.cw_decode_reset_seq != last_reset_seq {
-                            last_reset_seq = state.cw_decode_reset_seq;
+                        if state.reset_seqs.cw_decode_reset_seq != last_reset_seq {
+                            last_reset_seq = state.reset_seqs.cw_decode_reset_seq;
                             decoder.reset();
                             info!("CW decoder reset (seq={})", last_reset_seq);
                         }
@@ -1826,7 +1826,7 @@ pub async fn run_ft8_decoder(
         }
     };
     let mut last_reset_seq: u64 = 0;
-    let mut active = state_rx.borrow().ft8_decode_enabled
+    let mut active = state_rx.borrow().decoders.ft8_decode_enabled
         && matches!(state_rx.borrow().status.mode, RigMode::DIG | RigMode::USB);
     let mut ft8_buf: Vec<f32> = Vec::new();
     let mut last_slot: i64 = -1;
@@ -1837,13 +1837,13 @@ pub async fn run_ft8_decoder(
             match state_rx.changed().await {
                 Ok(()) => {
                     let state = state_rx.borrow();
-                    active = state.ft8_decode_enabled
+                    active = state.decoders.ft8_decode_enabled
                         && matches!(state.status.mode, RigMode::DIG | RigMode::USB);
                     if active {
                         pcm_rx = pcm_rx.resubscribe();
                     }
-                    if state.ft8_decode_reset_seq != last_reset_seq {
-                        last_reset_seq = state.ft8_decode_reset_seq;
+                    if state.reset_seqs.ft8_decode_reset_seq != last_reset_seq {
+                        last_reset_seq = state.reset_seqs.ft8_decode_reset_seq;
                         decoder.reset();
                         ft8_buf.clear();
                     }
@@ -1871,7 +1871,7 @@ pub async fn run_ft8_decoder(
 
                         let reset_seq = {
                             let state = state_rx.borrow();
-                            state.ft8_decode_reset_seq
+                            state.reset_seqs.ft8_decode_reset_seq
                         };
                         if reset_seq != last_reset_seq {
                             last_reset_seq = reset_seq;
@@ -1895,7 +1895,7 @@ pub async fn run_ft8_decoder(
                                 decoder.process_block(&block);
                                 decoder.decode_if_ready(100)
                             });
-                            let latest_reset_seq = state_rx.borrow().ft8_decode_reset_seq;
+                            let latest_reset_seq = state_rx.borrow().reset_seqs.ft8_decode_reset_seq;
                             if latest_reset_seq != reset_seq {
                                 last_reset_seq = latest_reset_seq;
                                 decoder.reset();
@@ -1942,10 +1942,10 @@ pub async fn run_ft8_decoder(
                 match changed {
                     Ok(()) => {
                         let state = state_rx.borrow();
-                        active = state.ft8_decode_enabled
+                        active = state.decoders.ft8_decode_enabled
                             && matches!(state.status.mode, RigMode::DIG | RigMode::USB);
-                        if state.ft8_decode_reset_seq != last_reset_seq {
-                            last_reset_seq = state.ft8_decode_reset_seq;
+                        if state.reset_seqs.ft8_decode_reset_seq != last_reset_seq {
+                            last_reset_seq = state.reset_seqs.ft8_decode_reset_seq;
                             decoder.reset();
                             ft8_buf.clear();
                         }
@@ -1982,7 +1982,7 @@ pub async fn run_ft4_decoder(
         }
     };
     let mut last_reset_seq: u64 = 0;
-    let mut active = state_rx.borrow().ft4_decode_enabled
+    let mut active = state_rx.borrow().decoders.ft4_decode_enabled
         && matches!(state_rx.borrow().status.mode, RigMode::DIG | RigMode::USB);
     let mut ft4_buf: Vec<f32> = Vec::new();
     let mut last_slot: i64 = -1;
@@ -1992,13 +1992,13 @@ pub async fn run_ft4_decoder(
             match state_rx.changed().await {
                 Ok(()) => {
                     let state = state_rx.borrow();
-                    active = state.ft4_decode_enabled
+                    active = state.decoders.ft4_decode_enabled
                         && matches!(state.status.mode, RigMode::DIG | RigMode::USB);
                     if active {
                         pcm_rx = pcm_rx.resubscribe();
                     }
-                    if state.ft4_decode_reset_seq != last_reset_seq {
-                        last_reset_seq = state.ft4_decode_reset_seq;
+                    if state.reset_seqs.ft4_decode_reset_seq != last_reset_seq {
+                        last_reset_seq = state.reset_seqs.ft4_decode_reset_seq;
                         decoder.reset();
                         ft4_buf.clear();
                     }
@@ -2027,7 +2027,7 @@ pub async fn run_ft4_decoder(
 
                         let reset_seq = {
                             let state = state_rx.borrow();
-                            state.ft4_decode_reset_seq
+                            state.reset_seqs.ft4_decode_reset_seq
                         };
                         if reset_seq != last_reset_seq {
                             last_reset_seq = reset_seq;
@@ -2051,7 +2051,7 @@ pub async fn run_ft4_decoder(
                                 decoder.process_block(&block);
                                 decoder.decode_if_ready(100)
                             });
-                            let latest_reset_seq = state_rx.borrow().ft4_decode_reset_seq;
+                            let latest_reset_seq = state_rx.borrow().reset_seqs.ft4_decode_reset_seq;
                             if latest_reset_seq != reset_seq {
                                 last_reset_seq = latest_reset_seq;
                                 decoder.reset();
@@ -2095,10 +2095,10 @@ pub async fn run_ft4_decoder(
                 match changed {
                     Ok(()) => {
                         let state = state_rx.borrow();
-                        active = state.ft4_decode_enabled
+                        active = state.decoders.ft4_decode_enabled
                             && matches!(state.status.mode, RigMode::DIG | RigMode::USB);
-                        if state.ft4_decode_reset_seq != last_reset_seq {
-                            last_reset_seq = state.ft4_decode_reset_seq;
+                        if state.reset_seqs.ft4_decode_reset_seq != last_reset_seq {
+                            last_reset_seq = state.reset_seqs.ft4_decode_reset_seq;
                             decoder.reset();
                             ft4_buf.clear();
                         }
@@ -2135,7 +2135,7 @@ pub async fn run_ft2_decoder(
         }
     };
     let mut last_reset_seq: u64 = 0;
-    let mut active = state_rx.borrow().ft2_decode_enabled
+    let mut active = state_rx.borrow().decoders.ft2_decode_enabled
         && matches!(state_rx.borrow().status.mode, RigMode::DIG | RigMode::USB);
     let mut ft2_buf: Vec<f32> = Vec::new();
     let mut pending_decode_samples: usize = 0;
@@ -2146,13 +2146,13 @@ pub async fn run_ft2_decoder(
             match state_rx.changed().await {
                 Ok(()) => {
                     let state = state_rx.borrow();
-                    active = state.ft2_decode_enabled
+                    active = state.decoders.ft2_decode_enabled
                         && matches!(state.status.mode, RigMode::DIG | RigMode::USB);
                     if active {
                         pcm_rx = pcm_rx.resubscribe();
                     }
-                    if state.ft2_decode_reset_seq != last_reset_seq {
-                        last_reset_seq = state.ft2_decode_reset_seq;
+                    if state.reset_seqs.ft2_decode_reset_seq != last_reset_seq {
+                        last_reset_seq = state.reset_seqs.ft2_decode_reset_seq;
                         decoder.reset();
                         ft2_buf.clear();
                         pending_decode_samples = 0;
@@ -2170,7 +2170,7 @@ pub async fn run_ft2_decoder(
                     Ok(frame) => {
                         let reset_seq = {
                             let state = state_rx.borrow();
-                            state.ft2_decode_reset_seq
+                            state.reset_seqs.ft2_decode_reset_seq
                         };
                         if reset_seq != last_reset_seq {
                             last_reset_seq = reset_seq;
@@ -2199,7 +2199,7 @@ pub async fn run_ft2_decoder(
                             let results = tokio::task::block_in_place(|| {
                                 decode_ft2_window(&mut decoder, &ft2_buf, 100)
                             });
-                            let latest_reset_seq = state_rx.borrow().ft2_decode_reset_seq;
+                            let latest_reset_seq = state_rx.borrow().reset_seqs.ft2_decode_reset_seq;
                             if latest_reset_seq != reset_seq {
                                 last_reset_seq = latest_reset_seq;
                                 decoder.reset();
@@ -2252,10 +2252,10 @@ pub async fn run_ft2_decoder(
                 match changed {
                     Ok(()) => {
                         let state = state_rx.borrow();
-                        active = state.ft2_decode_enabled
+                        active = state.decoders.ft2_decode_enabled
                             && matches!(state.status.mode, RigMode::DIG | RigMode::USB);
-                        if state.ft2_decode_reset_seq != last_reset_seq {
-                            last_reset_seq = state.ft2_decode_reset_seq;
+                        if state.reset_seqs.ft2_decode_reset_seq != last_reset_seq {
+                            last_reset_seq = state.reset_seqs.ft2_decode_reset_seq;
                             decoder.reset();
                             ft2_buf.clear();
                             pending_decode_samples = 0;
@@ -2299,7 +2299,7 @@ pub async fn run_wspr_decoder(
         }
     };
     let mut last_reset_seq: u64 = 0;
-    let mut active = state_rx.borrow().wspr_decode_enabled
+    let mut active = state_rx.borrow().decoders.wspr_decode_enabled
         && matches!(state_rx.borrow().status.mode, RigMode::DIG | RigMode::USB);
     let mut slot_buf: Vec<f32> = Vec::new();
     let mut last_slot: i64 = -1;
@@ -2310,13 +2310,13 @@ pub async fn run_wspr_decoder(
             match state_rx.changed().await {
                 Ok(()) => {
                     let state = state_rx.borrow();
-                    active = state.wspr_decode_enabled
+                    active = state.decoders.wspr_decode_enabled
                         && matches!(state.status.mode, RigMode::DIG | RigMode::USB);
                     if active {
                         pcm_rx = pcm_rx.resubscribe();
                     }
-                    if state.wspr_decode_reset_seq != last_reset_seq {
-                        last_reset_seq = state.wspr_decode_reset_seq;
+                    if state.reset_seqs.wspr_decode_reset_seq != last_reset_seq {
+                        last_reset_seq = state.reset_seqs.wspr_decode_reset_seq;
                     }
                     slot_buf.clear();
                     last_slot = -1;
@@ -2337,7 +2337,7 @@ pub async fn run_wspr_decoder(
                         let slot = now / slot_len_s;
                         let reset_seq = {
                             let state = state_rx.borrow();
-                            state.wspr_decode_reset_seq
+                            state.reset_seqs.wspr_decode_reset_seq
                         };
                         if reset_seq != last_reset_seq {
                             last_reset_seq = reset_seq;
@@ -2353,7 +2353,7 @@ pub async fn run_wspr_decoder(
                             let decode_results = tokio::task::block_in_place(|| {
                                 decoder.decode_slot(&slot_buf, Some(base_freq))
                             });
-                            let latest_reset_seq = state_rx.borrow().wspr_decode_reset_seq;
+                            let latest_reset_seq = state_rx.borrow().reset_seqs.wspr_decode_reset_seq;
                             if latest_reset_seq != reset_seq {
                                 last_reset_seq = latest_reset_seq;
                                 slot_buf.clear();
@@ -2388,7 +2388,7 @@ pub async fn run_wspr_decoder(
                             slot_buf.clear();
                             last_slot = slot;
                         }
-                        let latest_reset_seq = state_rx.borrow().wspr_decode_reset_seq;
+                        let latest_reset_seq = state_rx.borrow().reset_seqs.wspr_decode_reset_seq;
                         if latest_reset_seq != last_reset_seq {
                             last_reset_seq = latest_reset_seq;
                             slot_buf.clear();
@@ -2422,10 +2422,10 @@ pub async fn run_wspr_decoder(
                 match changed {
                     Ok(()) => {
                         let state = state_rx.borrow();
-                        active = state.wspr_decode_enabled
+                        active = state.decoders.wspr_decode_enabled
                             && matches!(state.status.mode, RigMode::DIG | RigMode::USB);
-                        if state.wspr_decode_reset_seq != last_reset_seq {
-                            last_reset_seq = state.wspr_decode_reset_seq;
+                        if state.reset_seqs.wspr_decode_reset_seq != last_reset_seq {
+                            last_reset_seq = state.reset_seqs.wspr_decode_reset_seq;
                             slot_buf.clear();
                             last_slot = -1;
                         }
@@ -2449,7 +2449,7 @@ pub async fn run_wspr_decoder(
 
 /// Decode Meteor-M LRPT satellite images from QPSK-demodulated baseband.
 ///
-/// The task is idle until `state.lrpt_decode_enabled` becomes `true`.
+/// The task is idle until `state.decoders.lrpt_decode_enabled` becomes `true`.
 /// When disabled (or 30 s of silence elapses with no new MCUs), the
 /// accumulated image is saved and broadcast.
 pub async fn run_lrpt_decoder(
@@ -2466,7 +2466,7 @@ pub async fn run_lrpt_decoder(
     info!("LRPT decoder started ({}Hz, {} ch)", sample_rate, channels);
     let mut decoder = LrptDecoder::new(sample_rate);
     let mut last_reset_seq: u64 = 0;
-    let mut active = state_rx.borrow().lrpt_decode_enabled;
+    let mut active = state_rx.borrow().decoders.lrpt_decode_enabled;
     let mut pass_start_ms: i64 = 0;
     let mut last_mcu_at = tokio::time::Instant::now();
 
@@ -2475,15 +2475,15 @@ pub async fn run_lrpt_decoder(
             match state_rx.changed().await {
                 Ok(()) => {
                     let state = state_rx.borrow();
-                    active = state.lrpt_decode_enabled;
+                    active = state.decoders.lrpt_decode_enabled;
                     if active {
                         decoder.reset();
                         pass_start_ms = current_timestamp_ms();
                         last_mcu_at = tokio::time::Instant::now();
                         pcm_rx = pcm_rx.resubscribe();
                     }
-                    if state.lrpt_decode_reset_seq != last_reset_seq {
-                        last_reset_seq = state.lrpt_decode_reset_seq;
+                    if state.reset_seqs.lrpt_decode_reset_seq != last_reset_seq {
+                        last_reset_seq = state.reset_seqs.lrpt_decode_reset_seq;
                         decoder.reset();
                     }
                 }
@@ -2498,7 +2498,7 @@ pub async fn run_lrpt_decoder(
             recv = pcm_rx.recv() => {
                 match recv {
                     Ok(frame) => {
-                        let reset_seq = state_rx.borrow().lrpt_decode_reset_seq;
+                        let reset_seq = state_rx.borrow().reset_seqs.lrpt_decode_reset_seq;
                         if reset_seq != last_reset_seq {
                             last_reset_seq = reset_seq;
                             decoder.reset();
@@ -2523,7 +2523,7 @@ pub async fn run_lrpt_decoder(
                 if changed.is_ok() {
                     let (new_active, new_reset_seq) = {
                         let state = state_rx.borrow();
-                        (state.lrpt_decode_enabled, state.lrpt_decode_reset_seq)
+                        (state.decoders.lrpt_decode_enabled, state.reset_seqs.lrpt_decode_reset_seq)
                     };
                     let was_active = active;
                     active = new_active;

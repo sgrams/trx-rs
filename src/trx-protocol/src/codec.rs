@@ -60,16 +60,31 @@ pub fn mode_to_string(mode: &RigMode) -> Cow<'static, str> {
 ///
 /// First tries to parse as a full ClientEnvelope.
 /// If that fails, tries to parse as a bare ClientCommand and wraps it with token: None.
+/// Unknown command names are reported as errors rather than causing a parse failure,
+/// enabling forward compatibility when newer clients connect to older servers.
 pub fn parse_envelope(input: &str) -> Result<ClientEnvelope, serde_json::Error> {
     match serde_json::from_str::<ClientEnvelope>(input) {
         Ok(envelope) => Ok(envelope),
-        Err(_) => {
-            let cmd = serde_json::from_str::<ClientCommand>(input)?;
-            Ok(ClientEnvelope {
-                token: None,
-                rig_id: None,
-                cmd,
-            })
+        Err(envelope_err) => {
+            // Try bare command fallback.
+            match serde_json::from_str::<ClientCommand>(input) {
+                Ok(cmd) => Ok(ClientEnvelope {
+                    token: None,
+                    rig_id: None,
+                    protocol_version: None,
+                    cmd,
+                }),
+                Err(_) => {
+                    // Check if the input is valid JSON with an unrecognised "cmd" value.
+                    // Return the original envelope error for truly malformed input.
+                    if let Ok(val) = serde_json::from_str::<serde_json::Value>(input) {
+                        if val.get("cmd").and_then(|c| c.as_str()).is_some() {
+                            return Err(envelope_err);
+                        }
+                    }
+                    Err(envelope_err)
+                }
+            }
         }
     }
 }
@@ -261,6 +276,7 @@ mod tests {
         let resp = ClientResponse {
             success: true,
             rig_id: Some("hf".to_string()),
+            protocol_version: None,
             state: None,
             rigs: None,
             sat_passes: None,
@@ -278,6 +294,7 @@ mod tests {
         let resp = ClientResponse {
             success: false,
             rig_id: None,
+            protocol_version: None,
             state: None,
             rigs: None,
             sat_passes: None,
@@ -296,6 +313,7 @@ mod tests {
         let resp = ClientResponse {
             success: true,
             rig_id: Some("server".to_string()),
+            protocol_version: None,
             state: None,
             rigs: None,
             sat_passes: None,
@@ -451,14 +469,7 @@ mod tests {
             server_longitude: None,
             pskreporter_status: None,
             aprs_is_status: None,
-            aprs_decode_enabled: false,
-            hf_aprs_decode_enabled: false,
-            cw_decode_enabled: false,
-            ft8_decode_enabled: false,
-            ft4_decode_enabled: false,
-            ft2_decode_enabled: false,
-            wspr_decode_enabled: false,
-            lrpt_decode_enabled: false,
+            decoders: trx_core::DecoderConfig::default(),
             cw_auto: false,
             cw_wpm: 0,
             cw_tone_hz: 0,

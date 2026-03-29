@@ -8,6 +8,55 @@ use uuid::Uuid;
 use crate::radio::freq::Freq;
 use crate::rig::{RigControl, RigInfo, RigRxStatus, RigStatus, RigStatusProvider, RigTxStatus};
 
+/// Decoder enable/disable flags grouped for cleaner state management.
+///
+/// Flattened into `RigState` and `RigSnapshot` so the JSON wire format is
+/// unchanged (backward compatible with existing clients).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+pub struct DecoderConfig {
+    #[serde(default)]
+    pub aprs_decode_enabled: bool,
+    #[serde(default)]
+    pub hf_aprs_decode_enabled: bool,
+    #[serde(default)]
+    pub cw_decode_enabled: bool,
+    #[serde(default)]
+    pub ft8_decode_enabled: bool,
+    #[serde(default)]
+    pub ft4_decode_enabled: bool,
+    #[serde(default)]
+    pub ft2_decode_enabled: bool,
+    #[serde(default)]
+    pub wspr_decode_enabled: bool,
+    #[serde(default)]
+    pub lrpt_decode_enabled: bool,
+}
+
+/// Decoder reset sequence counters for invalidating decoder windows.
+///
+/// Each counter is incremented when the corresponding decoder is reset
+/// (e.g. frequency change, explicit reset command). Decoder tasks compare
+/// against a cached value to detect resets without being fully disabled.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+pub struct DecoderResetSeqs {
+    #[serde(default, skip_serializing)]
+    pub aprs_decode_reset_seq: u64,
+    #[serde(default, skip_serializing)]
+    pub hf_aprs_decode_reset_seq: u64,
+    #[serde(default, skip_serializing)]
+    pub cw_decode_reset_seq: u64,
+    #[serde(default, skip_serializing)]
+    pub ft8_decode_reset_seq: u64,
+    #[serde(default, skip_serializing)]
+    pub ft4_decode_reset_seq: u64,
+    #[serde(default, skip_serializing)]
+    pub ft2_decode_reset_seq: u64,
+    #[serde(default, skip_serializing)]
+    pub wspr_decode_reset_seq: u64,
+    #[serde(default, skip_serializing)]
+    pub lrpt_decode_reset_seq: u64,
+}
+
 /// Simple transceiver state representation held by the rig task.
 #[derive(Debug, Clone, Serialize, PartialEq)]
 pub struct RigState {
@@ -31,22 +80,9 @@ pub struct RigState {
     pub pskreporter_status: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub aprs_is_status: Option<String>,
-    #[serde(default)]
-    pub aprs_decode_enabled: bool,
-    #[serde(default)]
-    pub hf_aprs_decode_enabled: bool,
-    #[serde(default)]
-    pub cw_decode_enabled: bool,
-    #[serde(default)]
-    pub ft8_decode_enabled: bool,
-    #[serde(default)]
-    pub ft4_decode_enabled: bool,
-    #[serde(default)]
-    pub ft2_decode_enabled: bool,
-    #[serde(default)]
-    pub wspr_decode_enabled: bool,
-    #[serde(default)]
-    pub lrpt_decode_enabled: bool,
+    /// Decoder enable/disable flags.
+    #[serde(flatten)]
+    pub decoders: DecoderConfig,
     #[serde(default)]
     pub cw_auto: bool,
     #[serde(default)]
@@ -65,22 +101,9 @@ pub struct RigState {
     /// Skipped in serde (not part of persistent state); flows into RigSnapshot on demand.
     #[serde(skip)]
     pub vchan_rds: Option<Vec<VchanRdsEntry>>,
-    #[serde(default, skip_serializing)]
-    pub aprs_decode_reset_seq: u64,
-    #[serde(default, skip_serializing)]
-    pub hf_aprs_decode_reset_seq: u64,
-    #[serde(default, skip_serializing)]
-    pub cw_decode_reset_seq: u64,
-    #[serde(default, skip_serializing)]
-    pub ft8_decode_reset_seq: u64,
-    #[serde(default, skip_serializing)]
-    pub ft4_decode_reset_seq: u64,
-    #[serde(default, skip_serializing)]
-    pub ft2_decode_reset_seq: u64,
-    #[serde(default, skip_serializing)]
-    pub wspr_decode_reset_seq: u64,
-    #[serde(default, skip_serializing)]
-    pub lrpt_decode_reset_seq: u64,
+    /// Decoder reset sequence counters.
+    #[serde(flatten)]
+    pub reset_seqs: DecoderResetSeqs,
 }
 
 /// Mode supported by the rig.
@@ -156,30 +179,14 @@ impl RigState {
             server_longitude: None,
             pskreporter_status: None,
             aprs_is_status: None,
-            aprs_decode_enabled: false,
-            hf_aprs_decode_enabled: false,
-            cw_decode_enabled: false,
-            ft8_decode_enabled: false,
-            ft4_decode_enabled: false,
-            ft2_decode_enabled: false,
-            wspr_decode_enabled: false,
-
-            lrpt_decode_enabled: false,
+            decoders: DecoderConfig::default(),
             cw_auto: true,
             cw_wpm: 15,
             cw_tone_hz: 700,
             filter: None,
             spectrum: None,
             vchan_rds: None,
-            aprs_decode_reset_seq: 0,
-            hf_aprs_decode_reset_seq: 0,
-            cw_decode_reset_seq: 0,
-            ft8_decode_reset_seq: 0,
-            ft4_decode_reset_seq: 0,
-            ft2_decode_reset_seq: 0,
-            wspr_decode_reset_seq: 0,
-
-            lrpt_decode_reset_seq: 0,
+            reset_seqs: DecoderResetSeqs::default(),
         }
     }
 
@@ -229,29 +236,14 @@ impl RigState {
             server_longitude: snapshot.server_longitude,
             pskreporter_status: snapshot.pskreporter_status,
             aprs_is_status: snapshot.aprs_is_status,
-            aprs_decode_enabled: snapshot.aprs_decode_enabled,
-            hf_aprs_decode_enabled: snapshot.hf_aprs_decode_enabled,
-            cw_decode_enabled: snapshot.cw_decode_enabled,
+            decoders: snapshot.decoders,
             cw_auto: snapshot.cw_auto,
             cw_wpm: snapshot.cw_wpm,
             cw_tone_hz: snapshot.cw_tone_hz,
-            ft8_decode_enabled: snapshot.ft8_decode_enabled,
-            ft4_decode_enabled: snapshot.ft4_decode_enabled,
-            ft2_decode_enabled: snapshot.ft2_decode_enabled,
-            wspr_decode_enabled: snapshot.wspr_decode_enabled,
-            lrpt_decode_enabled: snapshot.lrpt_decode_enabled,
             filter: snapshot.filter,
             spectrum: None, // spectrum flows through /api/spectrum, not persistent state
             vchan_rds: None, // vchan RDS flows through /api/spectrum, not persistent state
-            aprs_decode_reset_seq: 0,
-            hf_aprs_decode_reset_seq: 0,
-            cw_decode_reset_seq: 0,
-            ft8_decode_reset_seq: 0,
-            ft4_decode_reset_seq: 0,
-            ft2_decode_reset_seq: 0,
-            wspr_decode_reset_seq: 0,
-
-            lrpt_decode_reset_seq: 0,
+            reset_seqs: DecoderResetSeqs::default(),
         }
     }
 
@@ -279,17 +271,10 @@ impl RigState {
             server_longitude: self.server_longitude,
             pskreporter_status: self.pskreporter_status.clone(),
             aprs_is_status: self.aprs_is_status.clone(),
-            aprs_decode_enabled: self.aprs_decode_enabled,
-            hf_aprs_decode_enabled: self.hf_aprs_decode_enabled,
-            cw_decode_enabled: self.cw_decode_enabled,
+            decoders: self.decoders.clone(),
             cw_auto: self.cw_auto,
             cw_wpm: self.cw_wpm,
             cw_tone_hz: self.cw_tone_hz,
-            ft8_decode_enabled: self.ft8_decode_enabled,
-            ft4_decode_enabled: self.ft4_decode_enabled,
-            ft2_decode_enabled: self.ft2_decode_enabled,
-            wspr_decode_enabled: self.wspr_decode_enabled,
-            lrpt_decode_enabled: self.lrpt_decode_enabled,
             filter: self.filter.clone(),
             spectrum: self.spectrum.clone(),
             vchan_rds: self.vchan_rds.clone(),
@@ -306,7 +291,7 @@ impl RigState {
         let cw_mode = matches!(mode, RigMode::CW | RigMode::CWR);
         self.status.mode = mode;
         if cw_mode {
-            self.cw_decode_enabled = true;
+            self.decoders.cw_decode_enabled = true;
         }
     }
 
@@ -486,22 +471,9 @@ pub struct RigSnapshot {
     pub pskreporter_status: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub aprs_is_status: Option<String>,
-    #[serde(default)]
-    pub aprs_decode_enabled: bool,
-    #[serde(default)]
-    pub hf_aprs_decode_enabled: bool,
-    #[serde(default)]
-    pub cw_decode_enabled: bool,
-    #[serde(default)]
-    pub ft8_decode_enabled: bool,
-    #[serde(default)]
-    pub ft4_decode_enabled: bool,
-    #[serde(default)]
-    pub ft2_decode_enabled: bool,
-    #[serde(default)]
-    pub wspr_decode_enabled: bool,
-    #[serde(default)]
-    pub lrpt_decode_enabled: bool,
+    /// Decoder enable/disable flags.
+    #[serde(flatten)]
+    pub decoders: DecoderConfig,
     #[serde(default)]
     pub cw_auto: bool,
     #[serde(default)]

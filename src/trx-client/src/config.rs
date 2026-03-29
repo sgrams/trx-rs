@@ -262,8 +262,7 @@ impl Default for HttpAuthConfig {
 }
 
 impl HttpAuthConfig {
-    /// Convert session TTL from minutes to Duration
-    #[allow(dead_code)]
+    /// Convert session TTL from minutes to Duration.
     pub fn session_ttl(&self) -> Duration {
         Duration::from_secs(self.session_ttl_min * 60)
     }
