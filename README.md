@@ -76,21 +76,76 @@ making control and monitoring available elsewhere on the network.
 
 ## Build Requirements
 
-You will need Rust plus a few system libraries.
+You will need a Rust toolchain (stable) plus a few system libraries.
 
-### Common dependencies
+### Common (all builds)
 
-- `libopus`
-- `pkg-config` or `pkgconf`
-- `cmake`
+| Library | Purpose |
+|---------|---------|
+| **libopus** (dev) | Opus audio codec for streaming between server, client, and browser |
+| **pkg-config** or **pkgconf** | Locates system libraries at build time |
+| **cmake** | Builds the vendored Opus C source (`audiopus_sys`) when a system copy is not found |
 
-### SDR builds
+### Platform audio
 
-- `libsoapysdr`
+| Platform | Library | Purpose |
+|----------|---------|---------|
+| **Linux** | **libasound2** (dev) | ALSA backend for `cpal` audio capture/playback |
+| **macOS** | Core Audio (ships with Xcode) | No extra packages needed |
 
-### Audio builds
+### SDR support (optional)
 
-- Core Audio on macOS, or ALSA development packages on Linux
+| Library | Purpose |
+|---------|---------|
+| **libsoapysdr** (dev) | SDR device abstraction used by the `trx-backend-soapysdr` crate |
+
+SoapySDR is enabled by default. Build without it using `--no-default-features`:
+
+```bash
+cargo build --release --no-default-features
+```
+
+### Install commands
+
+**Debian / Ubuntu:**
+
+```bash
+# Required
+sudo apt install build-essential pkg-config cmake libopus-dev libasound2-dev
+
+# Optional — SDR support
+sudo apt install libsoapysdr-dev
+```
+
+**Fedora:**
+
+```bash
+# Required
+sudo dnf install gcc pkg-config cmake opus-devel alsa-lib-devel
+
+# Optional — SDR support
+sudo dnf install SoapySDR-devel
+```
+
+**Arch Linux:**
+
+```bash
+# Required
+sudo pacman -S base-devel pkgconf cmake opus alsa-lib
+
+# Optional — SDR support
+sudo pacman -S soapysdr
+```
+
+**macOS (Homebrew):**
+
+```bash
+# Required
+brew install cmake opus
+
+# Optional — SDR support
+brew install soapysdr
+```
 
 ## Configuration
 
