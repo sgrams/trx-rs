@@ -107,7 +107,7 @@ Types: `feat`, `fix`, `docs`, `style`, `refactor`, `test`, `chore`. Use `(trx-rs
 Full architecture documentation: `docs/Architecture.md`
 Improvement plan: `docs/Improvement-Areas.md`
 
-*Last reviewed: 2026-03-28*
+*Last reviewed: 2026-03-29*
 
 ### Strengths
 
@@ -124,26 +124,26 @@ Improvement plan: `docs/Improvement-Areas.md`
 
 ### Areas for Improvement
 
-**P1 — High (all resolved):**
-- ✅ **FrontendRuntimeContext** decomposed into 9 sub-structs (AudioContext, DecodeHistoryContext, HttpAuthConfig, etc.)
-- ✅ **Rig task command batching** fixed to FIFO order
-- ✅ **Decoder history bounded** at 10,000 entries per queue
-- ✅ **ExponentialBackoff jitter** ±25% randomized
-- ✅ **Rig task crash recovery** emits Error state to clients
-- ✅ **Sync RwLock in async** migrated to tokio::sync::RwLock where appropriate
-- ✅ **Audio pipeline helpers** extracted from run_capture/run_playback
+**P0 — Critical:**
+- **Plugin signing**: No SHA-256 checksum verification, no per-plugin scoping, no Windows validation.
 
-**P2 — Medium (all resolved):**
-- ✅ **SoapySdrRig** uses `SoapySdrConfig` builder struct
-- ✅ **Command enum mapping** uses `define_command_mappings!` macro
-- ✅ **Lock poison recovery** now logs warnings via `lock_or_recover()` helper
-- ✅ **Timeouts configurable** via `[timeouts]` TOML section
-- ✅ **Config shared** types extracted to `trx-app/src/shared_config.rs`
+**P1 — High:**
+- **Session store unwrap()**: 7 `.write().unwrap()` in `auth.rs` — mutex poisoning crashes server.
+- **No TCP listener rate limiting**: Raw protocol listener accepts unlimited connections per IP.
+- **RigState 33-field flat struct**: Decoder bools/reset seqs should be sub-structs. Cloned on every broadcast.
+- **No `spawn_blocking` timeout**: Satellite pass computation in `listener.rs` can hang indefinitely.
 
-**P3 — Low (remaining):**
-- **Command handler boilerplate**: 11 `RigCommandHandler` impls follow identical patterns across 500+ lines. Macro opportunity.
-- **No integration tests** for `rig_task.rs` (1,315 LOC) or `audio.rs` (3,977 LOC) — the two largest server modules.
-- **No command execution timeouts** at the `CommandExecutor` level. Backend stalls propagate up.
-- **FT-817 VFO inference fragile**: Fails when VFO A and B share the same frequency.
-- **VDES decoder incomplete**: Turbo FEC and link-layer parsing not implemented.
+**P2 — Medium:**
+- **Command handler boilerplate**: 11 `RigCommandHandler` impls across 500+ lines. Macro opportunity.
+- **No command execution timeouts** at `CommandExecutor` level. Backend stalls propagate up.
 - **No protocol versioning**: Unknown commands cause parse errors with no graceful degradation.
+- **Unsafe string in spectrum encoding**: `from_utf8_unchecked` in `api.rs:63`.
+- **6 `#[allow(dead_code)]`** annotations to review/clean up.
+
+**P3 — Low:**
+- **Missing tests**: `audio.rs` (3,812 LOC), `api.rs` (2,711 LOC), `main.rs` (1,203 LOC) have 0 tests.
+- **FT-817 VFO inference fragile**: Fails when VFO A and B share the same frequency.
+- **VDES decoder incomplete**: Turbo FEC, CRC, and link-layer parsing not implemented.
+- **Plugin system lacks versioning**: No API version or reload semantics.
+- **Configurator detection stubbed**: `detect.rs` TODO for `serialport::available_ports()`.
+- **Inconsistent naming**: `freq_hz`/`frequency`/`center_hz`; `rig_id`/`id`; `model`/`rig_model`.
