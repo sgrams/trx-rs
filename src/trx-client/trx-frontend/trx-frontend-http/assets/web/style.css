@@ -3300,6 +3300,32 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   z-index: 1;
 }
 
+/* ── WebGL overlay mode ── When the spectrum canvas is visible the coloured
+   segments are rendered via WebGL.  The DOM strip repositions itself as a
+   transparent label overlay at the bottom of the spectrum canvas. */
+#spectrum-bandplan-strip.bp-webgl {
+  position: absolute;
+  top: calc(var(--spectrum-plot-height) - 18px);
+  left: 0;
+  right: 0;
+  background: transparent;
+  border-bottom: none;
+  z-index: 6;
+  pointer-events: none;
+}
+#spectrum-bandplan-strip.bp-webgl .bp-segment {
+  background: transparent !important;
+  border-right-color: transparent;
+}
+#spectrum-bandplan-strip.bp-webgl .bp-segment-label {
+  color: rgba(255,255,255,0.92);
+  text-shadow: 0 0 3px rgba(0,0,0,0.8), 0 1px 2px rgba(0,0,0,0.6);
+}
+#spectrum-bandplan-strip.bp-webgl .bp-band-label {
+  color: rgba(255,255,255,0.65);
+  text-shadow: 0 0 3px rgba(0,0,0,0.8);
+}
+
 /* Legend in settings */
 .bandplan-legend-grid {
   display: flex;
