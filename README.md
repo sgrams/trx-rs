@@ -88,9 +88,9 @@ graph TD
     SDR3["SDR #3"] & FT817["FT-817"] <-->|USB / serial| S2["trx-server B"]
 
     S1 <-->|"JSON-TCP :4530"| C1["trx-client"]
-    S1 -->|"Opus-TCP :4531"| C1
+    S1 -->|"Opus-TCP per rig"| C1
     S2 <-->|"JSON-TCP :4530"| C1
-    S2 -->|"Opus-TCP :4531"| C1
+    S2 -->|"Opus-TCP per rig"| C1
 
     C1 <-->|internal channels| F1["Web UI :8080"]
     C1 <-->|internal channels| F2["rigctl :4532"]
