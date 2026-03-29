@@ -4,7 +4,6 @@
 
 pub mod config;
 pub mod logging;
-pub mod plugins;
 pub mod shared_config;
 pub mod util;
 
