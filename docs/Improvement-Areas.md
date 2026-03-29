@@ -10,18 +10,9 @@ a suggested fix.
 
 ## Critical (P0)
 
-### ~~Plugin signing and cross-platform validation~~ — RESOLVED
+### ~~Plugin signing and cross-platform validation~~ — DROPPED
 
-**Location:** `src/trx-app/src/plugins.rs`
-
-**Resolution:** Created `plugins.rs` module with:
-- SHA-256 checksum verification via `plugins.toml` manifest
-- Per-plugin filename allowlisting
-- Plugin API version compatibility check (rejects incompatible versions)
-- Unix: file permission validation (rejects world-writable, wrong-owner files)
-- Windows: basic permission warning
-- `TRX_PLUGINS_DISABLED` environment variable support
-- Full test coverage for checksum, allowlist, version, and success paths
+Plugin system has been removed from the codebase. No longer applicable.
 
 ---
 
@@ -143,12 +134,9 @@ link-layer (M.2092-1) parsing are not implemented. CRC validation is stubbed
 (`crc_ok: false`). Output limited to raw symbols. This is a substantial DSP
 implementation task requiring Turbo code decoder research.
 
-### ~~Plugin system lacks versioning and lifecycle~~ — RESOLVED
+### ~~Plugin system lacks versioning and lifecycle~~ — DROPPED
 
-**Location:** `src/trx-app/src/plugins.rs`
-
-**Resolution:** Plugin manifest includes `api_version` field. `validate_plugin()`
-rejects plugins with incompatible API versions. Current API version: 1.
+Plugin system has been removed from the codebase. No longer applicable.
 
 ### ~~Configurator serial detection is stubbed~~ — RESOLVED
 
