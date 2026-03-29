@@ -6,8 +6,8 @@
 
 use std::sync::Arc;
 
-use actix_web::{delete, get, post, put, web, HttpRequest, HttpResponse};
 use actix_web::Error;
+use actix_web::{delete, get, post, put, web, HttpRequest, HttpResponse};
 
 use super::{no_cache_response, request_accepts_html, require_control};
 use crate::server::status;

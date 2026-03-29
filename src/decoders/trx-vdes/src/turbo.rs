@@ -101,8 +101,8 @@ fn find_qpp_params(block_size: usize) -> (usize, usize) {
 fn is_valid_qpp(block_size: usize, f1: usize, f2: usize) -> bool {
     let mut seen = vec![false; block_size];
     for i in 0..block_size {
-        let idx = ((f1 as u64 * i as u64 + f2 as u64 * (i as u64 * i as u64))
-            % block_size as u64) as usize;
+        let idx = ((f1 as u64 * i as u64 + f2 as u64 * (i as u64 * i as u64)) % block_size as u64)
+            as usize;
         if seen[idx] {
             return false;
         }
@@ -143,7 +143,10 @@ fn gcd(mut a: usize, mut b: usize) -> usize {
 ///
 /// Input: received LLRs (positive = likely 0, negative = likely 1)
 /// Output: (systematic, parity1, parity2) LLR vectors
-pub fn depuncture_rate_half(received_llrs: &[Llr], info_len: usize) -> (Vec<Llr>, Vec<Llr>, Vec<Llr>) {
+pub fn depuncture_rate_half(
+    received_llrs: &[Llr],
+    info_len: usize,
+) -> (Vec<Llr>, Vec<Llr>, Vec<Llr>) {
     let mut systematic = vec![0.0; info_len];
     let mut parity1 = vec![0.0; info_len];
     let mut parity2 = vec![0.0; info_len];
@@ -231,10 +234,7 @@ pub fn turbo_decode_soft(received_llrs: &[Llr], info_len: usize) -> (Vec<u8>, f3
 
     for _iter in 0..TURBO_ITERATIONS {
         // --- Decoder 1 (natural order) ---
-        let apriori_1: Vec<Llr> = deinterleaver
-            .iter()
-            .map(|&i| extrinsic_2_to_1[i])
-            .collect();
+        let apriori_1: Vec<Llr> = deinterleaver.iter().map(|&i| extrinsic_2_to_1[i]).collect();
         let aposteriori_1 = bcjr_decode(&sys_llr, &par1_llr, &apriori_1);
         // Extrinsic = aposteriori - systematic - apriori
         for k in 0..info_len {
@@ -242,10 +242,7 @@ pub fn turbo_decode_soft(received_llrs: &[Llr], info_len: usize) -> (Vec<u8>, f3
         }
 
         // --- Decoder 2 (interleaved order) ---
-        let apriori_2: Vec<Llr> = interleaver
-            .iter()
-            .map(|&i| extrinsic_1_to_2[i])
-            .collect();
+        let apriori_2: Vec<Llr> = interleaver.iter().map(|&i| extrinsic_1_to_2[i]).collect();
         let aposteriori_2 = bcjr_decode(&sys_interleaved, &par2_llr, &apriori_2);
         for k in 0..info_len {
             extrinsic_2_to_1[k] = aposteriori_2[k] - sys_interleaved[k] - apriori_2[k];
@@ -254,11 +251,11 @@ pub fn turbo_decode_soft(received_llrs: &[Llr], info_len: usize) -> (Vec<u8>, f3
         // Combine for final decision (deinterleave decoder 2 output)
         for k in 0..info_len {
             let deint_apost2 = aposteriori_2[deinterleaver[k]];
-            final_llr[k] = sys_llr[k] + extrinsic_1_to_2[k] + deint_apost2
-                - sys_llr[k]
-                - extrinsic_1_to_2[k];
+            final_llr[k] =
+                sys_llr[k] + extrinsic_1_to_2[k] + deint_apost2 - sys_llr[k] - extrinsic_1_to_2[k];
             // Simplified: final = systematic + extrinsic from both decoders
-            final_llr[k] = sys_llr[k] + apriori_1[k] + (aposteriori_1[k] - sys_llr[k] - apriori_1[k]);
+            final_llr[k] =
+                sys_llr[k] + apriori_1[k] + (aposteriori_1[k] - sys_llr[k] - apriori_1[k]);
         }
     }
 
@@ -348,7 +345,8 @@ fn bcjr_decode(systematic: &[Llr], parity: &[Llr], apriori: &[Llr]) -> Vec<Llr> 
                     -par_ext[t] / 2.0
                 };
                 let branch = sys_metric + par_metric;
-                alpha[t + 1][next_state] = log_sum_exp(alpha[t + 1][next_state], alpha[t][s] + branch);
+                alpha[t + 1][next_state] =
+                    log_sum_exp(alpha[t + 1][next_state], alpha[t][s] + branch);
             }
         }
     }
@@ -543,7 +541,12 @@ mod tests {
         let b = 3.0f32;
         let expected = (a.exp() + b.exp()).ln();
         let result = log_sum_exp(a, b);
-        assert!((result - expected).abs() < 0.01, "got {}, expected {}", result, expected);
+        assert!(
+            (result - expected).abs() < 0.01,
+            "got {}, expected {}",
+            result,
+            expected
+        );
     }
 
     #[test]

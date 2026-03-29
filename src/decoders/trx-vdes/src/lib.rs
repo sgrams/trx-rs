@@ -248,13 +248,7 @@ impl VdesDecoder {
         if let Some(ref ll_frame) = viterbi_frame {
             if ll_frame.crc_ok {
                 return Some(build_link_layer_message(
-                    channel,
-                    ll_frame,
-                    &framed,
-                    &mode,
-                    rms,
-                    link_id,
-                    0.0,
+                    channel, ll_frame, &framed, &mode, rms, link_id, 0.0,
                 ));
             }
         }

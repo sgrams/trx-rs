@@ -524,8 +524,7 @@ async fn send_command(
             // Update the per-rig watch channel first so SSE sessions
             // subscribed to a specific rig see the change immediately
             // instead of waiting for the next poll cycle.
-            let channel_key = channel_key_override
-                .or_else(|| selected_rig_id(config));
+            let channel_key = channel_key_override.or_else(|| selected_rig_id(config));
             if let Some(key) = channel_key {
                 if let Ok(map) = config.rig_states.read() {
                     if let Some(tx) = map.get(&key) {

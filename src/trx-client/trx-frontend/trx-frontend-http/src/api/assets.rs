@@ -4,15 +4,12 @@
 
 //! Static asset serving endpoints (HTML pages, JS, CSS, favicon, logo).
 
-use actix_web::{get, HttpRequest, HttpResponse, Responder};
 use actix_web::http::header;
+use actix_web::{get, HttpRequest, HttpResponse, Responder};
 use std::sync::OnceLock;
 
+use super::{gz_cache_entry, static_asset_response, GzCacheEntry, FAVICON_BYTES, LOGO_BYTES};
 use crate::server::status;
-use super::{
-    static_asset_response, GzCacheEntry, gz_cache_entry,
-    FAVICON_BYTES, LOGO_BYTES,
-};
 
 // ---------------------------------------------------------------------------
 // Pre-compressed asset caches

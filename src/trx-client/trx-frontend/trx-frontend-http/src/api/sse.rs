@@ -7,9 +7,9 @@
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
-use actix_web::{get, web, HttpResponse};
-use actix_web::Error;
 use actix_web::http::header;
+use actix_web::Error;
+use actix_web::{get, web, HttpResponse};
 use bytes::Bytes;
 use futures_util::stream::{select, StreamExt};
 use tokio::sync::{broadcast, watch};
@@ -23,8 +23,8 @@ use trx_frontend::FrontendRuntimeContext;
 use crate::server::vchan::ClientChannelManager;
 
 use super::{
-    base64_encode, frontend_meta_from_context, wait_for_view,
-    RemoteQuery, SessionRigManager, SnapshotWithMeta,
+    base64_encode, frontend_meta_from_context, wait_for_view, RemoteQuery, SessionRigManager,
+    SnapshotWithMeta,
 };
 
 // ============================================================================

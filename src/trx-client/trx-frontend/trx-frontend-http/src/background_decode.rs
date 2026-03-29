@@ -563,9 +563,7 @@ fn evaluate_bookmark(
         };
     }
     if !enabled {
-        return ChannelAction::Skip {
-            reason: "disabled",
-        };
+        return ChannelAction::Skip { reason: "disabled" };
     }
     if !users_connected {
         return ChannelAction::Skip {
@@ -702,15 +700,15 @@ mod tests {
     #[test]
     fn active_when_all_conditions_met() {
         let action = evaluate_bookmark(
-            false,                // decoder_kinds_empty
-            true,                 // enabled
-            true,                 // users_connected
-            false,                // scheduler_has_control
+            false, // decoder_kinds_empty
+            true,  // enabled
+            true,  // users_connected
+            false, // scheduler_has_control
             &empty_scheduled(),
             "bm1",
-            false,                // vchan_covers_bookmark
+            false,                      // vchan_covers_bookmark
             Some((14_074_000, 96_000)), // spectrum_span (center, half)
-            14_074_000,           // freq_hz
+            14_074_000,                 // freq_hz
         );
         assert_eq!(action, ChannelAction::Active);
     }
@@ -718,8 +716,15 @@ mod tests {
     #[test]
     fn skip_no_supported_decoders() {
         let action = evaluate_bookmark(
-            true, true, true, false, &empty_scheduled(), "bm1", false,
-            Some((14_074_000, 96_000)), 14_074_000,
+            true,
+            true,
+            true,
+            false,
+            &empty_scheduled(),
+            "bm1",
+            false,
+            Some((14_074_000, 96_000)),
+            14_074_000,
         );
         assert_eq!(
             action,
@@ -732,8 +737,15 @@ mod tests {
     #[test]
     fn skip_disabled() {
         let action = evaluate_bookmark(
-            false, false, true, false, &empty_scheduled(), "bm1", false,
-            Some((14_074_000, 96_000)), 14_074_000,
+            false,
+            false,
+            true,
+            false,
+            &empty_scheduled(),
+            "bm1",
+            false,
+            Some((14_074_000, 96_000)),
+            14_074_000,
         );
         assert_eq!(action, ChannelAction::Skip { reason: "disabled" });
     }
@@ -741,8 +753,15 @@ mod tests {
     #[test]
     fn skip_waiting_for_user() {
         let action = evaluate_bookmark(
-            false, true, false, false, &empty_scheduled(), "bm1", false,
-            Some((14_074_000, 96_000)), 14_074_000,
+            false,
+            true,
+            false,
+            false,
+            &empty_scheduled(),
+            "bm1",
+            false,
+            Some((14_074_000, 96_000)),
+            14_074_000,
         );
         assert_eq!(
             action,
@@ -755,8 +774,15 @@ mod tests {
     #[test]
     fn skip_scheduler_has_control() {
         let action = evaluate_bookmark(
-            false, true, true, true, &empty_scheduled(), "bm1", false,
-            Some((14_074_000, 96_000)), 14_074_000,
+            false,
+            true,
+            true,
+            true,
+            &empty_scheduled(),
+            "bm1",
+            false,
+            Some((14_074_000, 96_000)),
+            14_074_000,
         );
         assert_eq!(
             action,
@@ -771,8 +797,15 @@ mod tests {
         let mut scheduled = HashSet::new();
         scheduled.insert("bm1".to_string());
         let action = evaluate_bookmark(
-            false, true, true, false, &scheduled, "bm1", false,
-            Some((14_074_000, 96_000)), 14_074_000,
+            false,
+            true,
+            true,
+            false,
+            &scheduled,
+            "bm1",
+            false,
+            Some((14_074_000, 96_000)),
+            14_074_000,
         );
         assert_eq!(
             action,
@@ -785,8 +818,15 @@ mod tests {
     #[test]
     fn skip_handled_by_virtual_channel() {
         let action = evaluate_bookmark(
-            false, true, true, false, &empty_scheduled(), "bm1", true,
-            Some((14_074_000, 96_000)), 14_074_000,
+            false,
+            true,
+            true,
+            false,
+            &empty_scheduled(),
+            "bm1",
+            true,
+            Some((14_074_000, 96_000)),
+            14_074_000,
         );
         assert_eq!(
             action,
@@ -799,8 +839,15 @@ mod tests {
     #[test]
     fn skip_waiting_for_spectrum() {
         let action = evaluate_bookmark(
-            false, true, true, false, &empty_scheduled(), "bm1", false,
-            None, 14_074_000,
+            false,
+            true,
+            true,
+            false,
+            &empty_scheduled(),
+            "bm1",
+            false,
+            None,
+            14_074_000,
         );
         assert_eq!(
             action,
@@ -813,9 +860,15 @@ mod tests {
     #[test]
     fn skip_out_of_span() {
         let action = evaluate_bookmark(
-            false, true, true, false, &empty_scheduled(), "bm1", false,
+            false,
+            true,
+            true,
+            false,
+            &empty_scheduled(),
+            "bm1",
+            false,
             Some((14_074_000, 96_000)), // center 14.074 MHz, half span 96 kHz
-            7_074_000,                   // way outside the span
+            7_074_000,                  // way outside the span
         );
         assert_eq!(
             action,
@@ -828,7 +881,13 @@ mod tests {
     #[test]
     fn active_at_edge_of_span() {
         let action = evaluate_bookmark(
-            false, true, true, false, &empty_scheduled(), "bm1", false,
+            false,
+            true,
+            true,
+            false,
+            &empty_scheduled(),
+            "bm1",
+            false,
             Some((14_074_000, 96_000)),
             14_074_000 + 96_000, // exactly at the edge
         );
@@ -839,8 +898,15 @@ mod tests {
     fn priority_no_decoders_over_disabled() {
         // Even if disabled, "no_supported_decoders" should take precedence
         let action = evaluate_bookmark(
-            true, false, true, false, &empty_scheduled(), "bm1", false,
-            Some((14_074_000, 96_000)), 14_074_000,
+            true,
+            false,
+            true,
+            false,
+            &empty_scheduled(),
+            "bm1",
+            false,
+            Some((14_074_000, 96_000)),
+            14_074_000,
         );
         assert_eq!(
             action,

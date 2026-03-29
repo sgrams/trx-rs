@@ -6,8 +6,8 @@
 
 use std::sync::Arc;
 
-use actix_web::{delete, get, post, put, web, HttpResponse, Responder};
 use actix_web::Error;
+use actix_web::{delete, get, post, put, web, HttpResponse, Responder};
 use tokio::sync::mpsc;
 use uuid::Uuid;
 

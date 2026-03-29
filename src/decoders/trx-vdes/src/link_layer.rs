@@ -345,7 +345,7 @@ mod tests {
         write_bits(&mut bits, 6, 6, 5); // session_id = 5
         write_bits(&mut bits, 12, 32, 123456); // source_id
         write_bits(&mut bits, 44, 11, 20); // data_count = 20
-        // Fill some payload
+                                           // Fill some payload
         for i in 55..75 {
             bits[i] = (i % 2) as u8;
         }

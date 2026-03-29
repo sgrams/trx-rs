@@ -1242,7 +1242,10 @@ async fn run_aprs_decoder_inner(
     histories: Arc<DecoderHistories>,
     is_hf: bool,
 ) {
-    info!("{} decoder started ({}Hz, {} ch)", label, sample_rate, channels);
+    info!(
+        "{} decoder started ({}Hz, {} ch)",
+        label, sample_rate, channels
+    );
 
     let mut decoder = if is_hf {
         AprsDecoder::new_hf(sample_rate)
@@ -1266,7 +1269,11 @@ async fn run_aprs_decoder_inner(
             state.reset_seqs.aprs_decode_reset_seq
         }
     };
-    let span_name = if is_hf { "hf_aprs_decode" } else { "aprs_decode" };
+    let span_name = if is_hf {
+        "hf_aprs_decode"
+    } else {
+        "aprs_decode"
+    };
 
     let mut active = mode_match(&state_rx.borrow());
 
@@ -1849,7 +1856,10 @@ async fn run_ftx_decoder_inner(
     histories: Arc<DecoderHistories>,
     is_ft4: bool,
 ) {
-    info!("{} decoder started ({}Hz, {} ch)", label, sample_rate, channels);
+    info!(
+        "{} decoder started ({}Hz, {} ch)",
+        label, sample_rate, channels
+    );
 
     let mut decoder = {
         let result = if is_ft4 {

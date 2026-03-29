@@ -902,7 +902,9 @@ mod tests {
         )
         .await;
 
-        let req = actix_test::TestRequest::post().uri("/set_freq").to_request();
+        let req = actix_test::TestRequest::post()
+            .uri("/set_freq")
+            .to_request();
         let resp = actix_test::call_service(&app, req).await;
         assert_eq!(resp.status(), 400);
     }
