@@ -27,16 +27,16 @@ can be projected as semi-transparent overlays on the same Leaflet map.
 
 ### Data flow
 
-```
-Pass decoded (APT / LRPT)
-  ↓ finalize_wxsat_pass / finalize_lrpt_pass  (trx-server/audio.rs)
-  ↓ SGP4 propagation using satellite TLE + pass timestamps
-  ↓ Compute geo_bounds [[south, west], [north, east]]
-  ↓ Compute ground_track [[lat, lon], ...]
-  ↓ Attach to WxsatImage / LrptImage
-  ↓ Broadcast via DecodedMessage
-  ↓ SSE → browser
-  ↓ wxsat.js: L.imageOverlay() + L.polyline() on aprsMap
+```mermaid
+graph TD
+    A["Pass decoded (APT / LRPT)"] --> B["finalize_wxsat_pass / finalize_lrpt_pass<br/>(trx-server/audio.rs)"]
+    B --> C["SGP4 propagation using satellite TLE + pass timestamps"]
+    C --> D["Compute geo_bounds<br/>[[south, west], [north, east]]"]
+    D --> E["Compute ground_track<br/>[[lat, lon], ...]"]
+    E --> F["Attach to WxsatImage / LrptImage"]
+    F --> G["Broadcast via DecodedMessage"]
+    G --> H["SSE → browser"]
+    H --> I["wxsat.js: L.imageOverlay() + L.polyline() on aprsMap"]
 ```
 
 ### Geo-referencing strategy

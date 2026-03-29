@@ -71,14 +71,14 @@ The project is split into a **server** (connects to the radio hardware) and a **
 
 ### Data flow
 
-```
-Radio hardware
-    ↕ serial/TCP
-trx-server (rig_task.rs)
-    ↕ trx-protocol JSON-TCP (port 4530)
-trx-client (remote_client.rs)
-    ↕ internal channels
-Frontends: HTTP (8080), rigctl (4532), http-json (ephemeral)
+```mermaid
+graph TD
+    Radio["Radio Hardware"] <-->|serial / TCP| Server["trx-server (rig_task.rs)"]
+    Server <-->|"JSON-TCP :4530"| Client["trx-client (remote_client.rs)"]
+    Server -->|"Opus-TCP :4531"| Client
+    Client <-->|internal channels| F1["HTTP Frontend :8080"]
+    Client <-->|internal channels| F2["rigctl Frontend :4532"]
+    Client <-->|internal channels| F3["JSON-TCP Frontend"]
 ```
 
 ### trx-core controller
@@ -93,6 +93,10 @@ The rig controller (`src/trx-core/src/rig/controller/`) is the central state man
 ### Decoders
 
 Signal decoders run as background tasks in `trx-server`, consuming decoded audio. `trx-ftx` provides the FT8/FT4/FT2 decoder in pure Rust. Decoded frames can be forwarded to PSKReporter and APRS-IS (IGate) uplinks, or logged via `trx-decode-log`.
+
+## Diagrams
+
+Always use [Mermaid](https://mermaid.js.org/) for diagrams in Markdown files. Never use ASCII art, box-drawing characters, or plain-text diagrams. GitHub renders Mermaid natively in ```mermaid fenced code blocks.
 
 ## Commit Format
 

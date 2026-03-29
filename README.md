@@ -82,14 +82,14 @@ Build without SDR support: `cargo build --release --no-default-features`
 
 ## How It Works
 
-```
-Radio / SDR hardware
-    |  serial or USB
-trx-server          rig control, DSP, decoders, audio capture
-    |  JSON-TCP (4530) + Opus-TCP (4531)
-trx-client          remote connection, audio relay
-    |
-Frontends           Web UI (8080), rigctl (4532), JSON-TCP
+```mermaid
+graph TD
+    Radio["Radio / SDR Hardware"] <-->|"serial or USB"| Server["trx-server<br/>rig control, DSP, decoders, audio capture"]
+    Server <-->|"JSON-TCP :4530"| Client["trx-client<br/>remote connection, audio relay"]
+    Server -->|"Opus-TCP :4531"| Client
+    Client <-->|internal channels| F1["Web UI :8080"]
+    Client <-->|internal channels| F2["rigctl :4532"]
+    Client <-->|internal channels| F3["JSON-TCP"]
 ```
 
 `trx-server` owns hardware access and runs the DSP pipeline.

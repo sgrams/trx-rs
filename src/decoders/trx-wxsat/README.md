@@ -34,17 +34,11 @@ trx-wxsat/src/
 
 ### NOAA APT
 
-```
-FM-demodulated audio (any sample rate)
-  │  AptDemod: FFT Hilbert transform, bandpass @ 2400 Hz ±1040 Hz
-  ▼
-AM envelope resampled to 4160 Hz
-  │  SyncTracker: 1040 Hz sync-A marker correlation
-  ▼
-Aligned 2080-sample lines → [SyncA 39][SpaceA 47][ImageA 909][TelA 45][SyncB 39][SpaceB 47][ImageB 909][TelB 45]
-  │  Telemetry extraction, wedge-based radiometric calibration, histogram EQ
-  ▼
-PNG image (1818 × N pixels, dual-channel side-by-side)
+```mermaid
+graph TD
+    A["FM-demodulated audio<br/>(any sample rate)"] -->|"AptDemod: FFT Hilbert transform,<br/>bandpass @ 2400 Hz ±1040 Hz"| B["AM envelope<br/>resampled to 4160 Hz"]
+    B -->|"SyncTracker: 1040 Hz<br/>sync-A marker correlation"| C["Aligned 2080-sample lines<br/>[SyncA 39][SpaceA 47][ImageA 909][TelA 45]<br/>[SyncB 39][SpaceB 47][ImageB 909][TelB 45]"]
+    C -->|"Telemetry extraction,<br/>wedge-based radiometric calibration,<br/>histogram EQ"| D["PNG image<br/>(1818 x N pixels, dual-channel side-by-side)"]
 ```
 
 **Key DSP details:**
@@ -62,20 +56,12 @@ PNG image (1818 × N pixels, dual-channel side-by-side)
 
 ### Meteor-M LRPT
 
-```
-Baseband samples (any sample rate)
-  │  QpskDemod: Costas loop carrier recovery + Gardner TED symbol timing
-  ▼
-Soft symbols (±1.0, I/Q interleaved) @ 72 ksym/s
-  │  CaduFramer: hard-decision, ASM (0x1ACFFC1D) search, frame lock
-  ▼
-1024-byte CADUs (CCSDS transfer frames)
-  │  ChannelAssembler: VCID → APID routing, MCU extraction
-  ▼
-Per-APID pixel rows (1568 px wide)
-  │  RGB composite (APIDs 64/65/66) or grayscale fallback
-  ▼
-PNG image (1568 × N pixels)
+```mermaid
+graph TD
+    A["Baseband samples<br/>(any sample rate)"] -->|"QpskDemod: Costas loop carrier recovery<br/>+ Gardner TED symbol timing"| B["Soft symbols (±1.0, I/Q interleaved)<br/>@ 72 ksym/s"]
+    B -->|"CaduFramer: hard-decision,<br/>ASM (0x1ACFFC1D) search, frame lock"| C["1024-byte CADUs<br/>(CCSDS transfer frames)"]
+    C -->|"ChannelAssembler:<br/>VCID → APID routing, MCU extraction"| D["Per-APID pixel rows<br/>(1568 px wide)"]
+    D -->|"RGB composite (APIDs 64/65/66)<br/>or grayscale fallback"| E["PNG image<br/>(1568 x N pixels)"]
 ```
 
 **LRPT channel mapping:**

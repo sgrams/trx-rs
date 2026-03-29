@@ -58,36 +58,28 @@ Target users are amateur radio operators who want networked, automated, or multi
 
 ## High-Level Architecture
 
-```
-┌──────────────────────────────────────────────────────────┐
-│                        trx-server                        │
-│                                                          │
-│  Radio Hardware (serial/TCP)                             │
-│       ↕  CAT protocol                                    │
-│  Rig Backend ──────── rig_task.rs ─── listener.rs        │
-│  (ft817/ft450d/sdr)   (state machine)   (JSON TCP :4530) │
-│                            │                             │
-│                       audio.rs                           │
-│                     (Opus :4531)                         │
-│                            │                             │
-│                      Decoders                            │
-│               (APRS, CW, FT8, WSPR, RDS)                │
-│                  PSKReporter / APRS-IS                   │
-└──────────────────────────────────────────────────────────┘
-                   ↕  JSON TCP (port 4530)
-                   ↕  Opus audio TCP (port 4531)
-┌──────────────────────────────────────────────────────────┐
-│                        trx-client                        │
-│                                                          │
-│  remote_client.rs (polls state, routes commands)         │
-│       ↕  internal mpsc/watch channels                    │
-│  Frontends:                                              │
-│    trx-frontend-http      (Web UI    :8080)              │
-│    trx-frontend-rigctl    (rigctl    :4532)              │
-│    trx-frontend-http-json (JSON/TCP  ephemeral)          │
-└──────────────────────────────────────────────────────────┘
-                   ↕  Browser / Hamlib / Custom tools
-                        End Users
+```mermaid
+graph TD
+    subgraph server["trx-server"]
+        HW["Radio Hardware"] <-->|"CAT protocol<br/>serial / TCP"| Backend["Rig Backend<br/>(ft817 / ft450d / sdr)"]
+        Backend --> RigTask["rig_task.rs<br/>(state machine)"]
+        RigTask --> Listener["listener.rs<br/>(JSON TCP :4530)"]
+        RigTask --> Audio["audio.rs<br/>(Opus :4531)"]
+        Audio --> Decoders["Decoders<br/>(APRS, CW, FT8, WSPR, RDS)"]
+        Decoders --> Uplinks["PSKReporter / APRS-IS"]
+    end
+
+    subgraph client["trx-client"]
+        Remote["remote_client.rs<br/>(polls state, routes commands)"]
+        Remote <-->|"mpsc / watch channels"| HTTP["trx-frontend-http<br/>(Web UI :8080)"]
+        Remote <-->|"mpsc / watch channels"| Rigctl["trx-frontend-rigctl<br/>(rigctl :4532)"]
+        Remote <-->|"mpsc / watch channels"| JSON["trx-frontend-http-json<br/>(JSON/TCP)"]
+    end
+
+    Listener <-->|"JSON TCP :4530"| Remote
+    Audio -->|"Opus TCP :4531"| Remote
+
+    HTTP & Rigctl & JSON <--> Users["End Users<br/>(Browser / Hamlib / Custom tools)"]
 ```
 
 The server and client are separate binaries. They communicate over **JSON-over-TCP** (control) and **Opus-encoded TCP** (audio). Both binaries can load shared-library plugins at startup.
