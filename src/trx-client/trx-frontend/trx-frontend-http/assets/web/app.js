@@ -3177,6 +3177,22 @@ function render(update) {
   if (typeof update.show_sdr_gain_control === "boolean") {
     if (sdrSettingsRowEl) sdrSettingsRowEl.style.display = update.show_sdr_gain_control ? "" : "none";
   }
+  // Apply server-configured bandplan defaults once, only when the user has not
+  // previously overridden the setting via the UI (localStorage).
+  if (!_bandplanServerDefaultApplied && typeof update.bandplan_enabled === "boolean"
+      && typeof update.bandplan_region === "string") {
+    _bandplanServerDefaultApplied = true;
+    const hasUserOverride = localStorage.getItem(STORAGE_PREFIX + "bandplanRegion") !== null;
+    if (!hasUserOverride) {
+      const region = update.bandplan_enabled ? update.bandplan_region : "off";
+      bandplanRegion = region;
+      saveSetting("bandplanRegion", region);
+      if (bandplanRegionSelect) bandplanRegionSelect.value = region;
+      bandplanSegmentsCache = null;
+      bandplanCacheKey = "";
+      if (lastSpectrumData) scheduleSpectrumDraw();
+    }
+  }
   if (update.filter && sdrAgcEl && typeof update.filter.sdr_agc_enabled === "boolean") {
     sdrAgcEl.checked = update.filter.sdr_agc_enabled;
     updateSdrGainInputState();
@@ -11279,6 +11295,7 @@ if (spectrumCenterRightBtn) {
 let bandplanData = null;
 let bandplanRegion = loadSetting("bandplanRegion", "off");
 let bandplanShowLabels = loadSetting("bandplanLabels", true);
+let _bandplanServerDefaultApplied = false;
 let bandplanSegmentsCache = null;
 let bandplanCacheKey = "";
 
