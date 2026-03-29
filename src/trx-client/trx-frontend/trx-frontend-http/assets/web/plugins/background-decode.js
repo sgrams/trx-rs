@@ -76,7 +76,6 @@
       .then(function ([config, bookmarks]) {
         currentConfig = config || { remote: rigId, enabled: false, bookmark_ids: [] };
         bookmarkList = Array.isArray(bookmarks) ? bookmarks : [];
-        renderBookmarkPick();
         renderBackgroundDecode();
         pollBackgroundDecodeStatus();
       })
@@ -105,26 +104,12 @@
     return supported;
   }
 
-  function renderBookmarkPick() {
-    const sel = document.getElementById("background-decode-bookmark-pick");
-    if (!sel) return;
-    const selectedIds = new Set(currentConfig && Array.isArray(currentConfig.bookmark_ids) ? currentConfig.bookmark_ids : []);
-    sel.innerHTML = '<option value="">- select bookmark -</option>';
-    supportedBookmarks().forEach(function (bookmark) {
-      if (selectedIds.has(bookmark.id)) return;
-      const opt = document.createElement("option");
-      opt.value = bookmark.id;
-      opt.textContent = bookmark.name + " (" + formatFreq(bookmark.freq_hz) + " " + bookmark.mode + ")";
-      sel.appendChild(opt);
-    });
-  }
-
   function renderBackgroundDecode() {
     if (!currentConfig) {
       currentConfig = { remote: currentRigId, enabled: false, bookmark_ids: [] };
     }
     setCheckbox("background-decode-enabled", !!currentConfig.enabled);
-    renderBookmarkList();
+    renderBookmarkChecklist();
 
     const isControl = backgroundDecodeRole === "control" || (typeof authEnabled !== "undefined" && !authEnabled);
     const panel = document.getElementById("background-decode-panel");
@@ -139,52 +124,57 @@
     if (resetBtn) resetBtn.style.display = isControl ? "" : "none";
   }
 
-  function renderBookmarkList() {
-    const container = document.getElementById("background-decode-bookmark-list");
+  function renderBookmarkChecklist(filterText) {
+    const container = document.getElementById("bgd-bookmark-checklist");
     if (!container) return;
     container.innerHTML = "";
-    const ids = currentConfig && Array.isArray(currentConfig.bookmark_ids) ? currentConfig.bookmark_ids : [];
-    if (!ids.length) {
-      container.textContent = "No background decode bookmarks selected.";
+
+    const selectedIds = new Set(
+      currentConfig && Array.isArray(currentConfig.bookmark_ids) ? currentConfig.bookmark_ids : []
+    );
+    const all = supportedBookmarks();
+    const filter = (filterText || "").trim().toLowerCase();
+
+    const filtered = filter
+      ? all.filter(function (bm) {
+          var text = (bm.name + " " + formatFreq(bm.freq_hz) + " " + bm.mode).toLowerCase();
+          return text.indexOf(filter) >= 0;
+        })
+      : all;
+
+    if (filtered.length === 0) {
+      container.innerHTML = '<div class="bgd-checklist-empty">' +
+        (all.length === 0 ? "No supported bookmarks available." : "No bookmarks match filter.") +
+        '</div>';
       return;
     }
-    ids.forEach(function (id) {
-      const bookmark = bookmarkList.find(function (item) { return item.id === id; });
-      const chip = document.createElement("div");
-      chip.className = "sch-extra-bm-tag bgd-bookmark-tag";
-      const decoders = bookmarkDecoderKinds(bookmark);
-      chip.innerHTML =
-        '<span>' + escHtml(bookmark ? bookmark.name : id) + '</span>' +
-        '<span class="bgd-bookmark-meta">' + escHtml(bookmark ? (formatFreq(bookmark.freq_hz) + " " + bookmark.mode + " · " + decoders.join("/").toUpperCase()) : "Missing bookmark") + '</span>';
-      const btn = document.createElement("span");
-      btn.className = "sch-extra-bm-rm";
-      btn.textContent = "×";
-      btn.addEventListener("click", function () {
-        removeBookmark(id);
+
+    filtered.forEach(function (bookmark) {
+      var row = document.createElement("label");
+      row.className = "bgd-checklist-row";
+      var decoders = bookmarkDecoderKinds(bookmark);
+      var checked = selectedIds.has(bookmark.id) ? " checked" : "";
+      row.innerHTML =
+        '<input type="checkbox"' + checked + ' data-bm-id="' + escHtml(bookmark.id) + '" />' +
+        '<span class="bgd-checklist-name">' + escHtml(bookmark.name) + '</span>' +
+        '<span class="bgd-checklist-meta">' + escHtml(formatFreq(bookmark.freq_hz) + " " + bookmark.mode + " · " + decoders.join("/").toUpperCase()) + '</span>';
+      row.querySelector("input").addEventListener("change", function (e) {
+        onChecklistToggle(bookmark.id, e.target.checked);
       });
-      chip.appendChild(btn);
-      container.appendChild(chip);
+      container.appendChild(row);
     });
   }
 
-  function removeBookmark(id) {
-    if (!currentConfig || !Array.isArray(currentConfig.bookmark_ids)) return;
-    currentConfig.bookmark_ids = currentConfig.bookmark_ids.filter(function (item) { return item !== id; });
-    renderBookmarkPick();
-    renderBackgroundDecode();
-  }
-
-  function addBookmark() {
-    const sel = document.getElementById("background-decode-bookmark-pick");
-    if (!sel || !sel.value) return;
+  function onChecklistToggle(bookmarkId, checked) {
     if (!currentConfig) {
       currentConfig = { remote: currentRigId, enabled: false, bookmark_ids: [] };
     }
     if (!Array.isArray(currentConfig.bookmark_ids)) currentConfig.bookmark_ids = [];
-    if (!currentConfig.bookmark_ids.includes(sel.value)) currentConfig.bookmark_ids.push(sel.value);
-    sel.value = "";
-    renderBookmarkPick();
-    renderBackgroundDecode();
+    if (checked && !currentConfig.bookmark_ids.includes(bookmarkId)) {
+      currentConfig.bookmark_ids.push(bookmarkId);
+    } else if (!checked) {
+      currentConfig.bookmark_ids = currentConfig.bookmark_ids.filter(function (id) { return id !== bookmarkId; });
+    }
   }
 
   function saveBackgroundDecode() {
@@ -200,7 +190,6 @@
     apiPutConfig(rigId, payload)
       .then(function (saved) {
         currentConfig = saved;
-        renderBookmarkPick();
         renderBackgroundDecode();
         pollBackgroundDecodeStatus();
         showToast("Background decode saved.");
@@ -219,7 +208,6 @@
     apiResetConfig(rigId)
       .then(function (saved) {
         currentConfig = saved;
-        renderBookmarkPick();
         renderBackgroundDecode();
         pollBackgroundDecodeStatus();
         showToast("Background decode reset.");
@@ -273,7 +261,9 @@
             '<div class="bgd-status-name">' + escHtml(name) + '</div>' +
             '<div class="bgd-status-meta">' + escHtml(parts.join(" · ")) + '</div>' +
           '</div>' +
-          '<div class="bgd-status-state" data-state="' + escHtml(entry.state || "inactive") + '">' + escHtml(prettyState(entry.state)) + '</div>' +
+          '<div class="bgd-status-state" data-state="' + escHtml(entry.state || "inactive") + '">' +
+            '<svg class="bgd-state-dot" viewBox="0 0 8 8"><circle cx="4" cy="4" r="3.5"/></svg>' +
+            escHtml(prettyState(entry.state)) + '</div>' +
         '</div>';
     });
     html += "</div>";
@@ -328,10 +318,12 @@
   }
 
   function wireBackgroundDecodeEvents() {
-    const addBtn = document.getElementById("background-decode-bookmark-add");
-    if (addBtn && !addBtn._wired) {
-      addBtn._wired = true;
-      addBtn.addEventListener("click", addBookmark);
+    const filterInput = document.getElementById("bgd-bookmark-filter");
+    if (filterInput && !filterInput._wired) {
+      filterInput._wired = true;
+      filterInput.addEventListener("input", function () {
+        renderBookmarkChecklist(filterInput.value);
+      });
     }
 
     const saveBtn = document.getElementById("background-decode-save-btn");

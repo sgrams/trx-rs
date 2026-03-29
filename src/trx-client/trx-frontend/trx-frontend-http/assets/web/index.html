@@ -344,7 +344,17 @@
                       <button id="scheduler-next-btn" type="button">Next Entry</button>
                     </div>
                     <div id="scheduler-release-status" class="scheduler-release-status">Scheduler is controlling the rig.</div>
-                    <div id="scheduler-cycle-status" class="scheduler-cycle-status">Interleaving: --</div>
+                    <div id="scheduler-cycle-status" class="interleave-ring-wrap" style="display:none;">
+                      <svg class="interleave-ring" viewBox="0 0 36 36">
+                        <circle class="interleave-ring-bg" cx="18" cy="18" r="15.915" />
+                        <circle class="interleave-ring-fill" id="interleave-ring-fill" cx="18" cy="18" r="15.915"
+                                stroke-dasharray="100" stroke-dashoffset="100" />
+                      </svg>
+                      <div class="interleave-ring-text">
+                        <div class="interleave-ring-label" id="interleave-active-name">--</div>
+                        <div class="interleave-ring-sub" id="interleave-countdown">--</div>
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -986,6 +996,10 @@
       <div id="subtab-settings-scheduler" class="sub-tab-panel">
         <div id="scheduler-panel" class="sch-panel">
           <div class="sch-toast" id="scheduler-toast" style="display:none;"></div>
+          <!-- Now Playing status card (moved to top) -->
+          <div class="now-playing-card">
+            <div id="scheduler-status-card" class="sch-status-card">No activity yet.</div>
+          </div>
           <div class="sch-row">
             <label class="sch-label">Mode
               <select id="scheduler-mode-select" class="status-input" aria-label="Scheduler mode">
@@ -1035,13 +1049,53 @@
               </label>
               <small style="color:var(--text-muted);align-self:flex-end;padding-bottom:0.35rem;">When multiple entries overlap, spend this many minutes at each before cycling. Leave blank to disable.</small>
             </div>
+            <div id="scheduler-ts-timeline" class="sch-timeline-wrap"></div>
             <button id="scheduler-ts-add-btn" class="sch-write" type="button" style="margin-bottom:0.75rem;">+ Add Entry</button>
-            <table class="sch-ts-table">
-              <thead>
-                <tr><th>Start</th><th>End</th><th>Center freq</th><th>Primary bookmark</th><th>Extra channels</th><th>Label</th><th>Interleave (min)</th><th></th></tr>
-              </thead>
-              <tbody id="scheduler-ts-tbody"></tbody>
-            </table>
+            <div id="sch-entry-form-wrap" style="display:none;">
+              <form id="sch-entry-form" class="bm-form">
+                <div class="bm-form-title" id="sch-entry-form-title">Add Entry</div>
+                <div class="bm-form-grid">
+                  <label class="bm-label">Start (UTC)
+                    <input type="time" id="scheduler-ts-start" class="status-input" title="Set both to 00:00 for all-day" />
+                  </label>
+                  <label class="bm-label">End (UTC)
+                    <input type="time" id="scheduler-ts-end" class="status-input" title="Set both to 00:00 for all-day" />
+                  </label>
+                  <label class="bm-label" id="scheduler-ts-center-hz-wrap" title="SDR only — sets center frequency before tuning">Center freq (Hz, SDR)
+                    <input type="number" id="scheduler-ts-center-hz" class="status-input" min="0" placeholder="optional" />
+                  </label>
+                  <label class="bm-label bm-label-wide">Primary bookmark
+                    <select id="scheduler-ts-bookmark" class="status-input" aria-label="Entry bookmark"></select>
+                  </label>
+                  <label class="bm-label">Extra channels (virtual)
+                    <div id="scheduler-ts-extra-bm-list" class="sch-extra-bm-list"></div>
+                    <div style="display:flex;gap:0.4rem;margin-top:0.3rem;">
+                      <select id="scheduler-ts-extra-bm-pick" class="status-input" aria-label="Extra bookmark"></select>
+                      <button id="scheduler-ts-extra-bm-add" type="button" class="sch-write" style="padding:0 0.7rem;">+</button>
+                    </div>
+                  </label>
+                  <label class="bm-label">Label (optional)
+                    <input type="text" id="scheduler-ts-label" class="status-input" placeholder="e.g. 40m FT8" />
+                  </label>
+                  <label class="bm-label">Interleave (min, optional)
+                    <input type="number" id="scheduler-ts-entry-interleave" class="status-input" min="1" max="60" placeholder="default" />
+                  </label>
+                </div>
+                <div class="bm-form-actions">
+                  <button type="submit" class="bm-save-btn">Save</button>
+                  <button type="button" id="sch-entry-form-cancel">Cancel</button>
+                </div>
+              </form>
+            </div>
+            <details class="sch-ts-details">
+              <summary>Entry details</summary>
+              <table class="sch-ts-table">
+                <thead>
+                  <tr><th>Start</th><th>End</th><th>Center freq</th><th>Primary bookmark</th><th>Extra channels</th><th>Label</th><th>Interleave (min)</th><th></th></tr>
+                </thead>
+                <tbody id="scheduler-ts-tbody"></tbody>
+              </table>
+            </details>
           </div>
 
           <!-- Satellite Overlay section -->
@@ -1111,59 +1165,21 @@
             </form>
           </div>
 
-          <div id="sch-entry-form-wrap" style="display:none;">
-            <form id="sch-entry-form" class="bm-form">
-              <div class="bm-form-title" id="sch-entry-form-title">Add Entry</div>
-              <div class="bm-form-grid">
-                <label class="bm-label">Start (UTC)
-                  <input type="time" id="scheduler-ts-start" class="status-input" title="Set both to 00:00 for all-day" />
-                </label>
-                <label class="bm-label">End (UTC)
-                  <input type="time" id="scheduler-ts-end" class="status-input" title="Set both to 00:00 for all-day" />
-                </label>
-                <label class="bm-label" id="scheduler-ts-center-hz-wrap" title="SDR only — sets center frequency before tuning">Center freq (Hz, SDR)
-                  <input type="number" id="scheduler-ts-center-hz" class="status-input" min="0" placeholder="optional" />
-                </label>
-                <label class="bm-label bm-label-wide">Primary bookmark
-                  <select id="scheduler-ts-bookmark" class="status-input" aria-label="Entry bookmark"></select>
-                </label>
-                <label class="bm-label">Extra channels (virtual)
-                  <div id="scheduler-ts-extra-bm-list" class="sch-extra-bm-list"></div>
-                  <div style="display:flex;gap:0.4rem;margin-top:0.3rem;">
-                    <select id="scheduler-ts-extra-bm-pick" class="status-input" aria-label="Extra bookmark"></select>
-                    <button id="scheduler-ts-extra-bm-add" type="button" class="sch-write" style="padding:0 0.7rem;">+</button>
-                  </div>
-                </label>
-                <label class="bm-label">Label (optional)
-                  <input type="text" id="scheduler-ts-label" class="status-input" placeholder="e.g. 40m FT8" />
-                </label>
-                <label class="bm-label">Interleave (min, optional)
-                  <input type="number" id="scheduler-ts-entry-interleave" class="status-input" min="1" max="60" placeholder="default" />
-                </label>
-              </div>
-              <div class="bm-form-actions">
-                <button type="submit" class="bm-save-btn">Save</button>
-                <button type="button" id="sch-entry-form-cancel">Cancel</button>
-              </div>
-            </form>
-          </div>
-
           <!-- Actions -->
           <div class="sch-actions">
             <button id="scheduler-save-btn" class="sch-write sch-save-btn" type="button" style="display:none;">Save</button>
             <button id="scheduler-reset-btn" class="sch-write sch-reset-btn" type="button" style="display:none;">Reset to Disabled</button>
           </div>
 
-          <!-- Status -->
-          <div class="sch-section">
-            <div class="sch-section-title">Last Activity</div>
-            <div id="scheduler-status-card" class="sch-status-card">No activity yet.</div>
-          </div>
         </div>
       </div>
       <div id="subtab-settings-background-decode" class="sub-tab-panel" style="display:none;">
         <div id="background-decode-panel" class="sch-panel">
           <div class="sch-toast" id="background-decode-toast" style="display:none;"></div>
+          <!-- Now Playing status card (moved to top) -->
+          <div class="now-playing-card">
+            <div id="background-decode-status-card" class="sch-status-card">No background decode bookmarks configured.</div>
+          </div>
           <div class="sch-section">
             <div class="sch-section-title">Configuration</div>
             <div class="sch-row">
@@ -1174,25 +1190,17 @@
                 </span>
               </label>
             </div>
-            <div class="sch-row">
-              <label class="sch-label bgd-bookmark-pick">Bookmark
-                <div class="bgd-add-row">
-                  <select id="background-decode-bookmark-pick" class="status-input" aria-label="Background decode bookmark"></select>
-                  <button id="background-decode-bookmark-add" type="button" class="sch-write">+ Add</button>
-                </div>
+            <div class="sch-row" style="flex-direction:column;gap:0.5rem;">
+              <label class="sch-label" style="min-width:100%;">Bookmarks
+                <input type="text" id="bgd-bookmark-filter" class="bgd-checklist-filter" placeholder="Filter bookmarks..." />
               </label>
+              <div id="bgd-bookmark-checklist" class="bgd-checklist"></div>
             </div>
-            <div id="background-decode-bookmark-list" class="sch-extra-bm-list bgd-bookmark-list"></div>
           </div>
 
           <div class="sch-actions">
             <button id="background-decode-save-btn" class="sch-write sch-save-btn" type="button" style="display:none;">Save</button>
             <button id="background-decode-reset-btn" class="sch-write sch-reset-btn" type="button" style="display:none;">Reset</button>
-          </div>
-
-          <div class="sch-section">
-            <div class="sch-section-title">Runtime Status</div>
-            <div id="background-decode-status-card" class="sch-status-card">No background decode bookmarks configured.</div>
           </div>
         </div>
       </div>

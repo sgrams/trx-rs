@@ -275,17 +275,36 @@
     };
   }
 
-  function schedulerInterleaveSummary(config) {
-    const state = schedulerInterleaveState(config);
-    if (state.activeEntries.length <= 1 || !(state.cycleMin > 0)) return "Interleaving: off";
-    const activeName = schedulerEntryDisplayName(state.activeEntries[state.currentIndex]);
-    return "Interleaving: " + activeName + " · next switch in " + state.remainingSec + "s (" + state.cycleMin + " min cycle)";
-  }
-
   function renderSchedulerInterleaveStatus() {
-    const el = document.getElementById("scheduler-cycle-status");
-    if (!el) return;
-    el.textContent = schedulerInterleaveSummary(currentConfig);
+    const wrap = document.getElementById("scheduler-cycle-status");
+    if (!wrap) return;
+
+    const state = schedulerInterleaveState(currentConfig);
+    const isActive = state.activeEntries.length > 1 && state.cycleMin > 0;
+
+    wrap.style.display = isActive ? "" : "none";
+
+    if (isActive) {
+      var activeName = schedulerEntryDisplayName(state.activeEntries[state.currentIndex]);
+      var totalSlotSec = state.cycleMin > 0
+        ? (state.cycleMin * 60) / state.activeEntries.length
+        : 0;
+      var elapsedPct = totalSlotSec > 0
+        ? Math.min(100, Math.max(0, ((totalSlotSec - state.remainingSec) / totalSlotSec) * 100))
+        : 0;
+
+      var ringFill = document.getElementById("interleave-ring-fill");
+      if (ringFill) ringFill.setAttribute("stroke-dashoffset", String(100 - elapsedPct));
+
+      var nameEl = document.getElementById("interleave-active-name");
+      if (nameEl) nameEl.textContent = activeName;
+
+      var countdownEl = document.getElementById("interleave-countdown");
+      if (countdownEl) countdownEl.textContent = "next in " + state.remainingSec + "s · " + state.cycleMin + "m cycle";
+    }
+
+    // Also update the timeline needle if visible
+    renderTimelineNeedle();
     renderSchedulerStepControls();
   }
 
@@ -459,7 +478,7 @@
   }
 
   // -------------------------------------------------------------------------
-  // Entry form (modal — mirrors bookmark add/edit modal)
+  // Entry form (inline card below Add Entry button)
   // -------------------------------------------------------------------------
   function schOpenEntryForm(entry, idx) {
     schEntryEditIdx = (idx != null) ? idx : null;
@@ -486,7 +505,7 @@
 
     const wrap = document.getElementById("sch-entry-form-wrap");
     if (wrap) {
-      wrap.style.display = "flex";
+      wrap.style.display = "block";
       if (startEl) startEl.focus();
     }
   }
@@ -553,6 +572,100 @@
   }
 
   // -------------------------------------------------------------------------
+  // 24h Timeline Bar
+  // -------------------------------------------------------------------------
+  var TIMELINE_COLORS = ["#38bdf8", "#f59e0b", "#a78bfa", "#34d399", "#fb7185", "#60a5fa"];
+
+  function renderTimeline() {
+    var container = document.getElementById("scheduler-ts-timeline");
+    if (!container) return;
+    var entries = currentConfig && Array.isArray(currentConfig.entries) ? currentConfig.entries : [];
+    if (entries.length === 0) {
+      container.innerHTML = "";
+      return;
+    }
+
+    var W = 1000;
+    var H = 62;
+    var BAR_Y = 6;
+    var BAR_H = 30;
+    var TICK_Y = BAR_Y + BAR_H + 2;
+
+    var svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="none">';
+
+    // Background bar
+    svg += '<rect x="0" y="' + BAR_Y + '" width="' + W + '" height="' + BAR_H + '" rx="3" fill="var(--btn-bg)" />';
+
+    // Entry segments
+    entries.forEach(function (entry, idx) {
+      var start = Number(entry.start_min);
+      var end = Number(entry.end_min);
+      if (!Number.isFinite(start) || !Number.isFinite(end)) return;
+      var color = TIMELINE_COLORS[idx % TIMELINE_COLORS.length];
+
+      if (start === end) {
+        // All-day entry
+        svg += '<rect class="sch-timeline-seg" x="0" y="' + BAR_Y + '" width="' + W + '" height="' + BAR_H +
+          '" rx="3" fill="' + color + '" data-idx="' + idx + '" />';
+      } else if (start < end) {
+        var x = (start / 1440) * W;
+        var w = ((end - start) / 1440) * W;
+        svg += '<rect class="sch-timeline-seg" x="' + x.toFixed(1) + '" y="' + BAR_Y + '" width="' + w.toFixed(1) +
+          '" height="' + BAR_H + '" fill="' + color + '" data-idx="' + idx + '" />';
+      } else {
+        // Wrap-around: two segments
+        var x1 = (start / 1440) * W;
+        var w1 = W - x1;
+        svg += '<rect class="sch-timeline-seg" x="' + x1.toFixed(1) + '" y="' + BAR_Y + '" width="' + w1.toFixed(1) +
+          '" height="' + BAR_H + '" fill="' + color + '" data-idx="' + idx + '" />';
+        var w2 = (end / 1440) * W;
+        svg += '<rect class="sch-timeline-seg" x="0" y="' + BAR_Y + '" width="' + w2.toFixed(1) +
+          '" height="' + BAR_H + '" fill="' + color + '" data-idx="' + idx + '" />';
+      }
+    });
+
+    // Tick marks every 3 hours
+    for (var h = 0; h <= 24; h += 3) {
+      var tx = (h / 24) * W;
+      svg += '<line x1="' + tx.toFixed(1) + '" y1="' + TICK_Y + '" x2="' + tx.toFixed(1) + '" y2="' + (TICK_Y + 5) +
+        '" stroke="var(--border-light)" stroke-width="1" />';
+      if (h < 24) {
+        svg += '<text class="sch-timeline-tick-label" x="' + (tx + 3).toFixed(1) + '" y="' + (TICK_Y + 16) +
+          '">' + String(h).padStart(2, "0") + '</text>';
+      }
+    }
+
+    // Current time needle
+    svg += '<g id="sch-timeline-needle-g">' + timelineNeedleSvg() + '</g>';
+
+    svg += '</svg>';
+    container.innerHTML = svg;
+
+    // Wire click events on segments
+    container.querySelectorAll(".sch-timeline-seg").forEach(function (seg) {
+      seg.addEventListener("click", function () {
+        var i = parseInt(seg.getAttribute("data-idx"), 10);
+        var entry = currentConfig && currentConfig.entries ? currentConfig.entries[i] : null;
+        if (entry) schOpenEntryForm(entry, i);
+      });
+    });
+  }
+
+  function timelineNeedleSvg() {
+    var info = schedulerUtcMinuteInfo();
+    var nowMin = info.minuteOfDay + (info.secondOfMinute / 60);
+    var x = (nowMin / 1440) * 1000;
+    return '<line class="sch-timeline-needle" x1="' + x.toFixed(1) + '" y1="2" x2="' + x.toFixed(1) + '" y2="38" />' +
+      '<polygon class="sch-timeline-needle-head" points="' +
+      (x - 3).toFixed(1) + ',2 ' + (x + 3).toFixed(1) + ',2 ' + x.toFixed(1) + ',6" />';
+  }
+
+  function renderTimelineNeedle() {
+    var g = document.getElementById("sch-timeline-needle-g");
+    if (g) g.innerHTML = timelineNeedleSvg();
+  }
+
+  // -------------------------------------------------------------------------
   // TimeSpan entries table
   // -------------------------------------------------------------------------
   function renderTimespanEntries() {
@@ -598,6 +711,7 @@
         removeEntry(parseInt(btn.dataset.idx, 10));
       });
     });
+    renderTimeline();
   }
 
   function bmName(id) {

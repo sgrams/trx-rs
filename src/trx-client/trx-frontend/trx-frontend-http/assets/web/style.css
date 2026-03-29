@@ -3814,8 +3814,7 @@ button:focus-visible, input:focus-visible, select:focus-visible {
 #sch-entry-form .bm-label {
   gap: 0.35rem;
 }
-#bm-form-wrap,
-#sch-entry-form-wrap {
+#bm-form-wrap {
   position: fixed;
   inset: 0;
   z-index: 120;
@@ -4539,6 +4538,187 @@ button:focus-visible, input:focus-visible, select:focus-visible {
 .bgd-status-state[data-state="no_supported_decoders"] {
   color: var(--accent-red);
 }
+/* ── "Now Playing" status card (top of scheduler & bgd panels) ──── */
+.now-playing-card {
+  border-left: 3px solid var(--accent-green);
+  padding: 0.75rem 1rem;
+  margin-bottom: 1.25rem;
+  background: var(--bg-secondary);
+  border-radius: 0 0.5rem 0.5rem 0;
+  font-size: 0.9rem;
+}
+/* ── 24h Timeline Bar ─────────────────────────────────────────────── */
+.sch-timeline-wrap {
+  margin-bottom: 1rem;
+  overflow: hidden;
+  border-radius: 0.4rem;
+  border: 1px solid var(--border-light);
+  background: var(--bg-secondary);
+}
+.sch-timeline-wrap svg {
+  display: block;
+  width: 100%;
+  height: 62px;
+}
+.sch-timeline-seg {
+  cursor: pointer;
+  opacity: 0.82;
+  transition: opacity 0.12s;
+}
+.sch-timeline-seg:hover {
+  opacity: 1;
+}
+.sch-timeline-tick-label {
+  fill: var(--text-muted);
+  font-size: 9px;
+  font-family: inherit;
+}
+.sch-timeline-needle {
+  stroke: var(--accent-red);
+  stroke-width: 1.5;
+}
+.sch-timeline-needle-head {
+  fill: var(--accent-red);
+}
+/* Details toggle for entry table */
+.sch-ts-details {
+  margin-top: 0.5rem;
+}
+.sch-ts-details summary {
+  cursor: pointer;
+  font-size: 0.82rem;
+  color: var(--text-muted);
+  font-weight: 600;
+  padding: 0.3rem 0;
+  user-select: none;
+}
+/* ── Inline Entry Editor (replaces modal overlay) ─────────────────── */
+#sch-entry-form-wrap {
+  position: static;
+  z-index: auto;
+  display: none;
+  align-items: stretch;
+  justify-content: stretch;
+  background: none;
+  margin-bottom: 1rem;
+}
+#sch-entry-form-wrap .bm-form {
+  max-width: 100%;
+  width: 100%;
+  border: 1px solid var(--border-light);
+  border-radius: 0.5rem;
+  background: var(--bg-secondary);
+}
+/* ── Interleave Progress Ring ─────────────────────────────────────── */
+.interleave-ring-wrap {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.interleave-ring {
+  width: 32px;
+  height: 32px;
+  transform: rotate(-90deg);
+  flex-shrink: 0;
+}
+.interleave-ring-bg {
+  fill: none;
+  stroke: var(--border-light);
+  stroke-width: 3;
+}
+.interleave-ring-fill {
+  fill: none;
+  stroke: var(--accent-green);
+  stroke-width: 3;
+  stroke-linecap: round;
+  transition: stroke-dashoffset 0.9s linear;
+}
+.interleave-ring-text {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  min-width: 0;
+}
+.interleave-ring-label {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 14rem;
+}
+.interleave-ring-sub {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  opacity: 0.88;
+}
+/* ── Background Decode Checkbox List ──────────────────────────────── */
+.bgd-checklist-filter {
+  width: 100%;
+  margin-bottom: 0.5rem;
+  padding: 0.4rem 0.6rem;
+  font-size: 0.85rem;
+  background: var(--input-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius, 4px);
+  color: var(--text);
+}
+.bgd-checklist-filter::placeholder {
+  color: var(--text-muted);
+  opacity: 0.7;
+}
+.bgd-checklist {
+  max-height: 16rem;
+  overflow-y: auto;
+  border: 1px solid var(--border-light);
+  border-radius: 0.4rem;
+  background: var(--bg-secondary);
+}
+.bgd-checklist-row {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.45rem 0.65rem;
+  border-bottom: 1px solid var(--border-light);
+  cursor: pointer;
+  font-size: 0.85rem;
+  transition: background 0.1s;
+}
+.bgd-checklist-row:last-child {
+  border-bottom: none;
+}
+.bgd-checklist-row:hover {
+  background: color-mix(in srgb, var(--card-bg) 60%, transparent);
+}
+.bgd-checklist-row input[type="checkbox"] {
+  flex-shrink: 0;
+}
+.bgd-checklist-name {
+  font-weight: 600;
+  color: var(--text);
+}
+.bgd-checklist-meta {
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  margin-left: auto;
+  white-space: nowrap;
+}
+.bgd-checklist-empty {
+  padding: 0.75rem;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+/* ── SVG State Dot Badges ─────────────────────────────────────────── */
+.bgd-state-dot {
+  width: 8px;
+  height: 8px;
+  display: inline-block;
+  vertical-align: middle;
+  margin-right: 4px;
+  fill: currentColor;
+}
 @media (max-width: 600px) {
   .channel-scheduler-controls {
     flex-direction: column;
@@ -4586,6 +4766,13 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   }
   .bgd-add-row button {
     width: 100%;
+  }
+  .interleave-ring-label {
+    max-width: 8rem;
+  }
+  .bgd-checklist-meta {
+    margin-left: 0;
+    font-size: 0.72rem;
   }
 }
 /* ── SAT panel ──────────────────────────────────────────────────────── */
