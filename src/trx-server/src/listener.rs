@@ -65,6 +65,16 @@ struct SatPassCache {
     result: trx_core::geo::PassPredictionResult,
     computed_at: Instant,
 }
+/// Shared state passed to each client handler.
+struct ClientContext {
+    rigs: Arc<HashMap<String, RigHandle>>,
+    default_rig_id: String,
+    validator: Arc<SimpleTokenValidator>,
+    station_coords: Option<(f64, f64)>,
+    sat_pass_cache: Arc<Mutex<Option<SatPassCache>>>,
+    timeouts: ListenerTimeouts,
+}
+
 /// Run the JSON TCP listener, accepting client connections.
 ///
 /// `rigs` is a shared map from rig_id → `RigHandle`.  The first entry (by
@@ -90,15 +100,17 @@ pub async fn run_listener(
                 let (socket, peer) = accept?;
                 info!("Client connected: {}", peer);
 
-                let rigs = Arc::clone(&rigs);
-                let default_rig_id = default_rig_id.clone();
-                let validator = Arc::clone(&validator);
+                let ctx = ClientContext {
+                    rigs: Arc::clone(&rigs),
+                    default_rig_id: default_rig_id.clone(),
+                    validator: Arc::clone(&validator),
+                    station_coords,
+                    sat_pass_cache: Arc::clone(&sat_pass_cache),
+                    timeouts,
+                };
                 let client_shutdown_rx = shutdown_rx.clone();
-                let coords = station_coords;
-                let cache = Arc::clone(&sat_pass_cache);
-                let client_timeouts = timeouts;
                 tokio::spawn(async move {
-                    if let Err(e) = handle_client(socket, peer, rigs, default_rig_id, validator, coords, cache, client_timeouts, client_shutdown_rx).await {
+                    if let Err(e) = handle_client(socket, peer, ctx, client_shutdown_rx).await {
                         error!("Client {} error: {:?}", peer, e);
                     }
                 });
@@ -192,14 +204,17 @@ async fn send_response(
 async fn handle_client(
     socket: TcpStream,
     addr: SocketAddr,
-    rigs: Arc<HashMap<String, RigHandle>>,
-    default_rig_id: String,
-    validator: Arc<SimpleTokenValidator>,
-    station_coords: Option<(f64, f64)>,
-    sat_pass_cache: Arc<Mutex<Option<SatPassCache>>>,
-    timeouts: ListenerTimeouts,
+    ctx: ClientContext,
     mut shutdown_rx: watch::Receiver<bool>,
 ) -> std::io::Result<()> {
+    let ClientContext {
+        rigs,
+        default_rig_id,
+        validator,
+        station_coords,
+        sat_pass_cache,
+        timeouts,
+    } = ctx;
     let (reader, mut writer) = socket.into_split();
     let mut reader = BufReader::new(reader);
 

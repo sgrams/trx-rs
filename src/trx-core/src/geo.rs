@@ -461,18 +461,15 @@ fn compute_az_el(
 
 /// Scan for passes of one satellite over a time window.
 fn find_passes_for_sat(
-    name: &str,
     norad_id: u32,
-    category: SatCategory,
-    line1: &str,
-    line2: &str,
+    entry: &TleEntry,
     obs_lat: f64,
     obs_lon: f64,
     start_ms: i64,
     window_ms: i64,
 ) -> Vec<PassPrediction> {
     let elements =
-        match Elements::from_tle(Some(name.to_string()), line1.as_bytes(), line2.as_bytes()) {
+        match Elements::from_tle(Some(entry.name.clone()), entry.line1.as_bytes(), entry.line2.as_bytes()) {
             Ok(e) => e,
             Err(_) => return vec![],
         };
@@ -522,9 +519,9 @@ fn find_passes_for_sat(
         } else if in_pass {
             // LOS occurred between previous step and this step.
             passes.push(PassPrediction {
-                satellite: name.to_string(),
+                satellite: entry.name.clone(),
                 norad_id,
-                category,
+                category: entry.category,
                 aos_ms,
                 los_ms: t_ms,
                 max_elevation_deg: (max_el * 10.0).round() / 10.0,
@@ -541,9 +538,9 @@ fn find_passes_for_sat(
     // Pass in progress at end of window.
     if in_pass {
         passes.push(PassPrediction {
-            satellite: name.to_string(),
+            satellite: entry.name.clone(),
             norad_id,
-            category,
+            category: entry.category,
             aos_ms,
             los_ms: start_ms + window_ms,
             max_elevation_deg: (max_el * 10.0).round() / 10.0,
@@ -580,11 +577,8 @@ pub fn compute_upcoming_passes(
         let mut all_passes = Vec::new();
         for (&norad_id, entry) in store {
             let passes = find_passes_for_sat(
-                &entry.name,
                 norad_id,
-                entry.category,
-                &entry.line1,
-                &entry.line2,
+                entry,
                 station_lat,
                 station_lon,
                 start_ms,
@@ -946,17 +940,13 @@ NOAA 19
         let start = 1774800000000_i64; // 2026-03-28
         let window = 24 * 60 * 60 * 1000_i64;
         let (l1, l2) = hardcoded_tle(33591).unwrap();
-        let passes = find_passes_for_sat(
-            "NOAA 19",
-            33591,
-            SatCategory::Weather,
-            l1,
-            l2,
-            48.0,
-            11.0,
-            start,
-            window,
-        );
+        let entry = TleEntry {
+            name: "NOAA 19".to_string(),
+            line1: l1.to_string(),
+            line2: l2.to_string(),
+            category: SatCategory::Weather,
+        };
+        let passes = find_passes_for_sat(33591, &entry, 48.0, 11.0, start, window);
         assert!(
             passes.len() >= 2 && passes.len() <= 10,
             "Expected 2-10 passes for NOAA-19 in 24h, got {}",
@@ -981,17 +971,13 @@ NOAA 19
         let start = 1774800000000_i64;
         let window = 24 * 60 * 60 * 1000_i64;
         let (l1, l2) = hardcoded_tle(25338).unwrap();
-        let passes = find_passes_for_sat(
-            "NOAA 15",
-            25338,
-            SatCategory::Weather,
-            l1,
-            l2,
-            48.0,
-            11.0,
-            start,
-            window,
-        );
+        let entry = TleEntry {
+            name: "NOAA 15".to_string(),
+            line1: l1.to_string(),
+            line2: l2.to_string(),
+            category: SatCategory::Weather,
+        };
+        let passes = find_passes_for_sat(25338, &entry, 48.0, 11.0, start, window);
         assert!(
             passes.len() >= 2,
             "Expected at least 2 passes for NOAA-15 in 24h, got {}",
@@ -1008,17 +994,13 @@ NOAA 19
         let start = 1774800000000_i64;
         let window = 24 * 60 * 60 * 1000_i64;
         let (l1, l2) = hardcoded_tle(28654).unwrap();
-        let passes = find_passes_for_sat(
-            "NOAA 18",
-            28654,
-            SatCategory::Weather,
-            l1,
-            l2,
-            48.0,
-            11.0,
-            start,
-            window,
-        );
+        let entry = TleEntry {
+            name: "NOAA 18".to_string(),
+            line1: l1.to_string(),
+            line2: l2.to_string(),
+            category: SatCategory::Weather,
+        };
+        let passes = find_passes_for_sat(28654, &entry, 48.0, 11.0, start, window);
         assert!(
             passes.len() >= 2,
             "Expected at least 2 passes for NOAA-18 in 24h, got {}",
