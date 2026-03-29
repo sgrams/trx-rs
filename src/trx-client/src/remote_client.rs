@@ -363,6 +363,7 @@ async fn handle_spectrum_connection(
                         token: config.token.clone(),
                         rig_id: wire_rig_id,
                         cmd: ClientCommand::GetSpectrum,
+                        protocol_version: Some(trx_protocol::types::PROTOCOL_VERSION),
                     };
                     match send_envelope_no_state_update(&mut writer, &mut reader, envelope).await {
                         Ok(snapshot) => {
@@ -569,6 +570,7 @@ fn build_envelope(
         token: config.token.clone(),
         rig_id: wire_rig_id,
         cmd,
+        protocol_version: Some(trx_protocol::types::PROTOCOL_VERSION),
     }
 }
 
