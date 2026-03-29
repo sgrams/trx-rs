@@ -630,6 +630,7 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
         .service(assets::sat_scheduler_js)
         .service(assets::background_decode_js)
         .service(assets::vchan_js)
+        .service(assets::bandplan_json)
         // Virtual channels
         .service(vchan::list_channels)
         .service(vchan::allocate_channel)
