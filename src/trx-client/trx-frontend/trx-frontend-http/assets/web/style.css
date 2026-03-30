@@ -3303,11 +3303,10 @@ button:focus-visible, input:focus-visible, select:focus-visible {
 
 /* ── WebGL overlay mode ── When the spectrum canvas is visible the coloured
    segments are rendered via WebGL.  The DOM strip repositions itself as a
-   transparent label overlay at the bottom of the spectrum canvas, just above
-   the waterfall. */
+   transparent label overlay at the top of the spectrum canvas. */
 #spectrum-bandplan-strip.bp-webgl {
   position: absolute;
-  top: calc(var(--spectrum-plot-height) - 18px);
+  top: 0;
   left: 0;
   right: 0;
   background: transparent;
