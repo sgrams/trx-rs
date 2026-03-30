@@ -723,7 +723,7 @@ mod tests {
 
         mgr.init_rig(rig_id, 14_074_000, "USB");
         let channel = mgr
-            .allocate(session_id, rig_id, 14_075_000, "DIG")
+            .allocate(session_id, rig_id, 14_075_000, "USB")
             .expect("allocate vchan");
 
         assert_eq!(mgr.channels(rig_id).len(), 2);
@@ -747,7 +747,7 @@ mod tests {
             &[(
                 "bm-ft8".to_string(),
                 14_074_000,
-                "DIG".to_string(),
+                "USB".to_string(),
                 3_000,
                 vec!["ft8".to_string()],
             )],
@@ -756,7 +756,7 @@ mod tests {
         let channels = mgr.channels(rig_id);
         assert_eq!(channels.len(), 2);
         assert_eq!(channels[1].freq_hz, 14_074_000);
-        assert_eq!(channels[1].mode, "DIG");
+        assert_eq!(channels[1].mode, "USB");
         assert_eq!(channels[1].bandwidth_hz, 3_000);
         assert_eq!(channels[1].subscribers, 0);
         assert!(channels[1].permanent);
@@ -770,14 +770,14 @@ mod tests {
 
         mgr.init_rig(rig_id, 14_074_000, "USB");
         let _channel = mgr
-            .allocate(session_id, rig_id, 14_075_000, "DIG")
+            .allocate(session_id, rig_id, 14_075_000, "USB")
             .expect("allocate vchan");
         mgr.sync_scheduler_channels(
             rig_id,
             &[(
                 "bm-ft8".to_string(),
                 14_074_000,
-                "DIG".to_string(),
+                "USB".to_string(),
                 3_000,
                 vec!["ft8".to_string()],
             )],
@@ -787,7 +787,7 @@ mod tests {
 
         let channels = mgr.channels(rig_id);
         assert_eq!(channels.len(), 2);
-        assert_eq!(channels[1].mode, "DIG");
+        assert_eq!(channels[1].mode, "USB");
         assert_eq!(channels[1].subscribers, 0);
     }
 
@@ -803,7 +803,7 @@ mod tests {
             &[(
                 "bm-aprs".to_string(),
                 144_800_000,
-                "PKT".to_string(),
+                "FM".to_string(),
                 12_500,
                 vec!["aprs".to_string()],
             )],

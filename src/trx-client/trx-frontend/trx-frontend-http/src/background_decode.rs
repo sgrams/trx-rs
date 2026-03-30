@@ -630,7 +630,7 @@ fn bookmark_supported_decoder_kinds(bookmark: &Bookmark) -> Vec<String> {
 
     match bookmark.mode.trim().to_ascii_uppercase().as_str() {
         "AIS" => vec!["ais".to_string()],
-        "PKT" => vec!["aprs".to_string()],
+        "PKT" | "FM" => vec!["aprs".to_string()],
         _ => Vec::new(),
     }
 }

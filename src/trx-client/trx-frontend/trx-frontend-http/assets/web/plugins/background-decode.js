@@ -102,7 +102,7 @@
     if (supported.length > 0) return supported;
     const mode = String(bookmark && bookmark.mode || "").trim().toUpperCase();
     if (mode === "AIS") return ["ais"];
-    if (mode === "PKT") return ["aprs"];
+    if (mode === "PKT" || mode === "FM") return ["aprs"];
     return supported;
   }
 

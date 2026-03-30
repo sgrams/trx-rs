@@ -428,9 +428,9 @@ async function bmApply(bm) {
         await postPath("/set_freq?hz=" + bm.freq_hz);
       }
     })();
-    // Decoder toggles (DIG / FM modes) — also fire-and-forget.
+    // Decoder toggles (USB / DIG / FM / PKT modes) — also fire-and-forget.
     const hasDecoders = Array.isArray(bm.decoders) && bm.decoders.length > 0;
-    const decoderMode = bm.mode === "DIG" || bm.mode === "FM";
+    const decoderMode = bm.mode === "USB" || bm.mode === "DIG" || bm.mode === "FM" || bm.mode === "PKT";
     const decoderPromise = (hasDecoders && decoderMode) ? (async () => {
       const statusResp = await fetch("/status");
       if (statusResp.ok) {

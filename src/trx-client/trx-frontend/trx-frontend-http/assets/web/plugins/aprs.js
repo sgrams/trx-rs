@@ -322,7 +322,8 @@ function renderAprsHistory() {
 
 function updateAprsBar() {
   if (!aprsBarOverlay) return;
-  const isPkt = (document.getElementById("mode")?.value || "").toUpperCase() === "PKT";
+  const modeVal = (document.getElementById("mode")?.value || "").toUpperCase();
+  const isPkt = modeVal === "PKT" || modeVal === "FM";
   const cutoffMs = Date.now() - APRS_BAR_WINDOW_MS;
   const okFrames = aprsPacketHistory.filter((p) => p.crcOk && p._tsMs >= cutoffMs);
   const frames = collapseAprsDuplicates(okFrames).slice(0, 8);

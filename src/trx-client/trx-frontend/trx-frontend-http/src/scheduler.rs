@@ -966,7 +966,8 @@ async fn apply_scheduler_decoders(
     bookmark: &crate::server::bookmarks::Bookmark,
     extra_bookmarks: &[crate::server::bookmarks::Bookmark],
 ) {
-    let mut want_aprs = bookmark.mode.trim().eq_ignore_ascii_case("PKT");
+    let mut want_aprs = bookmark.mode.trim().eq_ignore_ascii_case("PKT")
+        || bookmark.mode.trim().eq_ignore_ascii_case("FM");
     let mut want_hf_aprs = false;
     let mut want_ft8 = false;
     let mut want_ft4 = false;
