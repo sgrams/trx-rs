@@ -11577,6 +11577,7 @@ if (spectrumCenterRightBtn) {
       if (lastSpectrumData) scheduleSpectrumDraw();
     });
   }
+})();
 
 // ── Bandplan strip ──────────────────────────────────────────────────────────
 let bandplanData = null;
@@ -11787,4 +11788,3 @@ function updateBandplanStrip(range) {
     lbl.style.display = (frac < -0.1 || frac > 1.05) ? "none" : "";
   });
 }
-})();
