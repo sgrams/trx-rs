@@ -228,29 +228,36 @@ function bmChangePage(delta) {
 
 // Read decoder checkboxes and return an array of selected decoder names.
 function bmReadDecoders() {
-  const decoders = [];
-  if (document.getElementById("bm-dec-aprs").checked) decoders.push("aprs");
-  if (document.getElementById("bm-dec-ais").checked) decoders.push("ais");
-  if (document.getElementById("bm-dec-ft8").checked) decoders.push("ft8");
-  if (document.getElementById("bm-dec-ft4").checked) decoders.push("ft4");
-  if (document.getElementById("bm-dec-ft2").checked) decoders.push("ft2");
-  if (document.getElementById("bm-dec-wspr").checked) decoders.push("wspr");
-  if (document.getElementById("bm-dec-hf-aprs").checked) decoders.push("hf-aprs");
-  if (document.getElementById("bm-dec-lrpt").checked) decoders.push("lrpt");
-  return decoders;
+  return (window.decoderRegistry || [])
+    .filter(d => d.bookmark_selectable)
+    .filter(d => document.getElementById("bm-dec-" + d.id)?.checked)
+    .map(d => d.id);
 }
 
 // Set decoder checkboxes to match the given array.
 function bmWriteDecoders(decoders) {
-  const list = decoders || [];
-  document.getElementById("bm-dec-aprs").checked = list.includes("aprs");
-  document.getElementById("bm-dec-ais").checked = list.includes("ais");
-  document.getElementById("bm-dec-ft8").checked = list.includes("ft8");
-  document.getElementById("bm-dec-ft4").checked = list.includes("ft4");
-  document.getElementById("bm-dec-ft2").checked = list.includes("ft2");
-  document.getElementById("bm-dec-wspr").checked = list.includes("wspr");
-  document.getElementById("bm-dec-hf-aprs").checked = list.includes("hf-aprs");
-  document.getElementById("bm-dec-lrpt").checked = list.includes("lrpt");
+  const set = new Set(decoders || []);
+  (window.decoderRegistry || [])
+    .filter(d => d.bookmark_selectable)
+    .forEach(d => {
+      const el = document.getElementById("bm-dec-" + d.id);
+      if (el) el.checked = set.has(d.id);
+    });
+}
+
+// Build decoder checkboxes dynamically from the registry.
+function bmBuildDecoderCheckboxes() {
+  const container = document.getElementById("bm-decoder-checkboxes");
+  if (!container) return;
+  container.innerHTML = "";
+  (window.decoderRegistry || [])
+    .filter(d => d.bookmark_selectable)
+    .forEach(d => {
+      const label = document.createElement("label");
+      label.className = "bm-decoder-check";
+      label.innerHTML = '<input type="checkbox" id="bm-dec-' + d.id + '" value="' + d.id + '" /> ' + d.label;
+      container.appendChild(label);
+    });
 }
 
 function bmOpenForm(bm) {
@@ -428,20 +435,27 @@ async function bmApply(bm) {
         await postPath("/set_freq?hz=" + bm.freq_hz);
       }
     })();
-    // Decoder toggles (DIG / FM modes) — also fire-and-forget.
+    // Decoder toggles — fire-and-forget.
+    // Only toggle decoders that are toggle-gated and whose active modes
+    // include the bookmark's mode (driven by the decoder registry).
     const hasDecoders = Array.isArray(bm.decoders) && bm.decoders.length > 0;
-    const decoderMode = bm.mode === "DIG" || bm.mode === "FM";
-    const decoderPromise = (hasDecoders && decoderMode) ? (async () => {
+    const modeUp = (bm.mode || "").toUpperCase();
+    const toggleDecoders = (window.decoderRegistry || []).filter(d =>
+      d.activation === "toggle" && d.active_modes.includes(modeUp)
+    );
+    const shouldToggle = hasDecoders && toggleDecoders.length > 0;
+    const decoderPromise = shouldToggle ? (async () => {
       const statusResp = await fetch("/status");
       if (statusResp.ok) {
         const st = await statusResp.json();
         const toggles = [];
-        const check = (key) => {
-          if (bm.decoders.includes(key) !== !!st[key.replace(/-/g, "_") + "_decode_enabled"]) {
-            toggles.push(postPath("/toggle_" + key.replace(/-/g, "_") + "_decode"));
+        for (const d of toggleDecoders) {
+          const statusKey = d.id.replace(/-/g, "_") + "_decode_enabled";
+          const wanted = bm.decoders.includes(d.id);
+          if (wanted !== !!st[statusKey]) {
+            toggles.push(postPath("/toggle_" + d.id.replace(/-/g, "_") + "_decode"));
           }
-        };
-        check("ft8"); check("ft4"); check("ft2"); check("wspr"); check("hf-aprs"); check("lrpt");
+        }
         if (toggles.length) await Promise.all(toggles);
       }
     })() : Promise.resolve();
@@ -603,6 +617,13 @@ function bmPopulateScopePicker() {
   // Set initial button visibility (auth may already be resolved by the time
   // scripts run if auth is disabled; otherwise bmFetch() will sync it).
   bmSyncAccess();
+
+  // Build decoder checkboxes from registry.  The registry is fetched async
+  // so we rebuild once it arrives to ensure checkboxes are present.
+  bmBuildDecoderCheckboxes();
+  if (typeof window.onDecoderRegistryReady === "function") {
+    window.onDecoderRegistryReady(bmBuildDecoderCheckboxes);
+  }
 
   // Scope picker
   bmPopulateScopePicker();

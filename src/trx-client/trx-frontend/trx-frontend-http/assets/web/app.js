@@ -1,3 +1,29 @@
+// --- Decoder registry (fetched from /decoders on load) ---
+/** @type {Array<{id:string,label:string,activation:string,active_modes:string[],background_decode:boolean,bookmark_selectable:boolean}>} */
+let decoderRegistry = [];
+window.decoderRegistry = decoderRegistry;
+
+/** Callbacks invoked once the decoder registry is fetched. */
+const _decoderRegistryReadyCallbacks = [];
+window.onDecoderRegistryReady = function (fn) {
+  if (decoderRegistry.length > 0) fn();
+  else _decoderRegistryReadyCallbacks.push(fn);
+};
+
+(async function fetchDecoderRegistry() {
+  try {
+    const resp = await fetch("/decoders");
+    if (resp.ok) {
+      decoderRegistry = await resp.json();
+      window.decoderRegistry = decoderRegistry;
+      for (const fn of _decoderRegistryReadyCallbacks) fn();
+      _decoderRegistryReadyCallbacks.length = 0;
+    }
+  } catch (e) {
+    console.error("Failed to fetch decoder registry:", e);
+  }
+})();
+
 // --- Persistent settings (localStorage) ---
 const STORAGE_PREFIX = "trx_";
 function saveSetting(key, value) {
@@ -363,15 +389,18 @@ const rdsPsOverlay = document.getElementById("rds-ps-overlay");
 let overviewPeakHoldMs = Number(loadSetting("overviewPeakHoldMs", 2000));
 let decodeHistoryRetentionMin = 24 * 60;
 
-// Cached decoder toggle buttons — avoids 8× getElementById per render() call.
-const _decoderToggles = {
-  ft8:    { el: document.getElementById("ft8-decode-toggle-btn"), last: null },
-  ft4:    { el: document.getElementById("ft4-decode-toggle-btn"), last: null },
-  ft2:    { el: document.getElementById("ft2-decode-toggle-btn"), last: null },
-  wspr:   { el: document.getElementById("wspr-decode-toggle-btn"), last: null },
-  hfAprs: { el: document.getElementById("hf-aprs-decode-toggle-btn"), last: null },
-  lrpt:   { el: document.getElementById("lrpt-decode-toggle-btn"), last: null },
-};
+// Cached decoder toggle buttons — built from the registry, keyed by status
+// field name (e.g. "ft8_decode_enabled").  Lazily populated on first SSE.
+const _decoderToggles = {};
+function _ensureDecoderToggles() {
+  if (Object.keys(_decoderToggles).length > 0) return;
+  for (const d of decoderRegistry) {
+    if (d.activation !== "toggle") continue;
+    const key = d.id.replace(/-/g, "_") + "_decode_enabled";
+    const el = document.getElementById(d.id + "-decode-toggle-btn");
+    if (el) _decoderToggles[key] = { el, last: null, label: d.label };
+  }
+}
 
 function syncDecoderToggle(entry, enabled, label) {
   if (!entry.el || entry.last === enabled) return;
@@ -3233,47 +3262,28 @@ function render(update) {
     updateSdrSquelchControlVisibility();
   }
   const modeUpper = update.status && update.status.mode ? normalizeMode(update.status.mode).toUpperCase() : "";
-  const aisStatus = document.getElementById("ais-status");
-  const vdesStatus = document.getElementById("vdes-status");
-  const aprsStatus = document.getElementById("aprs-status");
-  const cwStatus = document.getElementById("cw-status");
-  const ft8Status = document.getElementById("ft8-status");
-  const wsprStatus = document.getElementById("wspr-status");
-  setModeBoundDecodeStatus(
-    aisStatus,
-    ["AIS"],
-    "Select AIS mode to decode",
-    "Connected, listening for packets",
-  );
+  // Mode-bound decoder status (driven by registry).
+  for (const d of decoderRegistry) {
+    if (d.activation !== "mode_bound") continue;
+    const el = document.getElementById(d.id + "-status");
+    if (!el) continue;
+    const connText = _decodeConnectedText[d.id] || "Connected, listening for packets";
+    setModeBoundDecodeStatus(el, d.active_modes, "Select " + d.active_modes[0] + " mode to decode", connText);
+  }
   if (window.updateAisBar) window.updateAisBar();
-  setModeBoundDecodeStatus(
-    vdesStatus,
-    ["VDES"],
-    "Select VDES mode to decode",
-    "Connected, listening for bursts",
-  );
   if (window.updateVdesBar) window.updateVdesBar();
-  setModeBoundDecodeStatus(
-    aprsStatus,
-    ["PKT"],
-    "Select PKT mode to decode",
-    "Connected, listening for packets",
-  );
   if (window.updateAprsBar) window.updateAprsBar();
   if (window.updateFt8Bar) window.updateFt8Bar();
-  setModeBoundDecodeStatus(
-    cwStatus,
-    ["CW", "CWR"],
-    "Select CW mode to decode",
-    "Connected, listening for CW",
-  );
-  const ft8Enabled = !!update.ft8_decode_enabled;
-  if (ft8Status && (!ft8Enabled || (modeUpper !== "DIG" && modeUpper !== "USB")) && ft8Status.textContent === "Receiving") {
-    ft8Status.textContent = "Connected, listening for packets";
-  }
-  const wsprEnabled = !!update.wspr_decode_enabled;
-  if (wsprStatus && (!wsprEnabled || (modeUpper !== "DIG" && modeUpper !== "USB")) && wsprStatus.textContent === "Receiving") {
-    wsprStatus.textContent = "Connected, listening for packets";
+  // Toggle-gated decoder status: clear "Receiving" when decoder disabled or mode wrong.
+  for (const d of decoderRegistry) {
+    if (d.activation !== "toggle") continue;
+    const key = d.id.replace(/-/g, "_") + "_decode_enabled";
+    const enabled = !!update[key];
+    const modeMatch = d.active_modes.includes(modeUpper);
+    const el = document.getElementById(d.id + "-status");
+    if (el && (!enabled || !modeMatch) && el.textContent === "Receiving") {
+      el.textContent = "Connected, listening for packets";
+    }
   }
   if (update.status && typeof update.status.tx_en === "boolean") {
     lastTxEn = update.status.tx_en;
@@ -3289,12 +3299,10 @@ function render(update) {
     }
   }
   // Decoder toggle buttons: only write DOM when the enabled flag actually changes.
-  syncDecoderToggle(_decoderToggles.ft8,     !!update.ft8_decode_enabled,     "FT8");
-  syncDecoderToggle(_decoderToggles.ft4,     !!update.ft4_decode_enabled,     "FT4");
-  syncDecoderToggle(_decoderToggles.ft2,     !!update.ft2_decode_enabled,     "FT2");
-  syncDecoderToggle(_decoderToggles.wspr,    !!update.wspr_decode_enabled,    "WSPR");
-  syncDecoderToggle(_decoderToggles.hfAprs,  !!update.hf_aprs_decode_enabled, "HF APRS");
-  syncDecoderToggle(_decoderToggles.lrpt,    !!update.lrpt_decode_enabled,    "Meteor LRPT");
+  _ensureDecoderToggles();
+  for (const [key, entry] of Object.entries(_decoderToggles)) {
+    syncDecoderToggle(entry, !!update[key], entry.label);
+  }
   if (window.updateSatLiveState) window.updateSatLiveState(update);
   const cwAutoEl = document.getElementById("cw-auto");
   const cwWpmEl = document.getElementById("cw-wpm");
@@ -8895,23 +8903,26 @@ function setModeBoundDecodeStatus(el, activeModes, inactiveText, connectedText) 
   if (el.textContent === "Receiving" && isActiveMode) return;
   el.textContent = isActiveMode ? connectedText : inactiveText;
 }
+// Custom connected-state text overrides per decoder.
+const _decodeConnectedText = {
+  vdes: "Connected, listening for bursts",
+  cw: "Connected, listening for CW",
+};
 function updateDecodeStatus(text) {
-  const ais = document.getElementById("ais-status");
-  const vdes = document.getElementById("vdes-status");
-  const aprs = document.getElementById("aprs-status");
-  const cw = document.getElementById("cw-status");
-  const ft8 = document.getElementById("ft8-status");
-  const ft4 = document.getElementById("ft4-status");
-  const ft2 = document.getElementById("ft2-status");
-  setModeBoundDecodeStatus(ais, ["AIS"], "Select AIS mode to decode", text);
-  const vdesText = text === "Connected, listening for packets" ? "Connected, listening for bursts" : text;
-  setModeBoundDecodeStatus(vdes, ["VDES"], "Select VDES mode to decode", vdesText);
-  setModeBoundDecodeStatus(aprs, ["PKT"], "Select PKT mode to decode", text);
-  const cwText = text === "Connected, listening for packets" ? "Connected, listening for CW" : text;
-  setModeBoundDecodeStatus(cw, ["CW", "CWR"], "Select CW mode to decode", cwText);
-  if (ft8 && ft8.textContent !== "Receiving") ft8.textContent = text;
-  if (ft4 && ft4.textContent !== "Receiving") ft4.textContent = text;
-  if (ft2 && ft2.textContent !== "Receiving") ft2.textContent = text;
+  // Mode-bound decoders: show mode-gated status text.
+  for (const d of decoderRegistry) {
+    if (d.activation !== "mode_bound") continue;
+    const el = document.getElementById(d.id + "-status");
+    if (!el) continue;
+    const connText = _decodeConnectedText[d.id] || text;
+    setModeBoundDecodeStatus(el, d.active_modes, "Select " + d.active_modes[0] + " mode to decode", connText);
+  }
+  // Toggle-gated decoders: update status text if not currently receiving.
+  for (const d of decoderRegistry) {
+    if (d.activation !== "toggle") continue;
+    const el = document.getElementById(d.id + "-status");
+    if (el && el.textContent !== "Receiving") el.textContent = text;
+  }
 }
 function dispatchDecodeMessage(msg, skipStats) {
   if (msg.type === "ais" && window.onServerAis) window.onServerAis(msg);

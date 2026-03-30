@@ -5,7 +5,11 @@
 (function () {
   "use strict";
 
-  const SUPPORTED_DECODERS = ["aprs", "ais", "ft8", "wspr", "hf-aprs"];
+  function bgdSupportedIds() {
+    return (window.decoderRegistry || [])
+      .filter(function (d) { return d.background_decode; })
+      .map(function (d) { return d.id; });
+  }
 
   let backgroundDecodeRole = null;
   let currentRigId = null;
@@ -93,17 +97,22 @@
   }
 
   function bookmarkDecoderKinds(bookmark) {
-    const decoders = Array.isArray(bookmark && bookmark.decoders) ? bookmark.decoders : [];
-    const supported = decoders
+    var ids = bgdSupportedIds();
+    var decoders = Array.isArray(bookmark && bookmark.decoders) ? bookmark.decoders : [];
+    var explicit = decoders
       .map(function (item) { return String(item || "").trim().toLowerCase(); })
       .filter(function (item, index, arr) {
-        return SUPPORTED_DECODERS.includes(item) && arr.indexOf(item) === index;
+        return ids.indexOf(item) >= 0 && arr.indexOf(item) === index;
       });
-    if (supported.length > 0) return supported;
-    const mode = String(bookmark && bookmark.mode || "").trim().toUpperCase();
-    if (mode === "AIS") return ["ais"];
-    if (mode === "PKT") return ["aprs"];
-    return supported;
+    if (explicit.length > 0) return explicit;
+    // Fall back: infer from mode via mode-bound entries in the registry.
+    var mode = String(bookmark && bookmark.mode || "").trim().toUpperCase();
+    return (window.decoderRegistry || [])
+      .filter(function (d) {
+        return d.activation === "mode_bound" && d.background_decode
+          && d.active_modes.indexOf(mode) >= 0;
+      })
+      .map(function (d) { return d.id; });
   }
 
   function renderBackgroundDecode() {

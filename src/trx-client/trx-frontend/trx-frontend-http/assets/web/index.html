@@ -468,15 +468,8 @@
               <input type="text" id="bm-locator" class="status-input" maxlength="6" placeholder="e.g. JO93" />
             </label>
             <div class="bm-label">Digital modes
-              <div class="bm-decoder-checks">
-                <label class="bm-decoder-check"><input type="checkbox" id="bm-dec-aprs" value="aprs" /> APRS</label>
-                <label class="bm-decoder-check"><input type="checkbox" id="bm-dec-ais" value="ais" /> AIS</label>
-                <label class="bm-decoder-check"><input type="checkbox" id="bm-dec-ft8" value="ft8" /> FT8</label>
-                <label class="bm-decoder-check"><input type="checkbox" id="bm-dec-ft4" value="ft4" /> FT4</label>
-                <label class="bm-decoder-check"><input type="checkbox" id="bm-dec-ft2" value="ft2" /> FT2</label>
-                <label class="bm-decoder-check"><input type="checkbox" id="bm-dec-wspr" value="wspr" /> WSPR</label>
-                <label class="bm-decoder-check"><input type="checkbox" id="bm-dec-hf-aprs" value="hf-aprs" /> HF APRS</label>
-                <label class="bm-decoder-check"><input type="checkbox" id="bm-dec-lrpt" value="lrpt" /> Meteor LRPT</label>
+              <div class="bm-decoder-checks" id="bm-decoder-checkboxes">
+                <!-- Populated dynamically from /decoders registry -->
               </div>
             </div>
             <label class="bm-label bm-label-wide">Comment
