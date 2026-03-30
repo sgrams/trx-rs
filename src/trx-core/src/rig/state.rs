@@ -30,6 +30,8 @@ pub struct DecoderConfig {
     pub wspr_decode_enabled: bool,
     #[serde(default)]
     pub lrpt_decode_enabled: bool,
+    #[serde(default)]
+    pub recorder_enabled: bool,
 }
 
 /// Decoder reset sequence counters for invalidating decoder windows.

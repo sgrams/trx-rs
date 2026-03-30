@@ -1142,6 +1142,31 @@ small { color: var(--text-muted); }
   color: #00d17f;
   border-color: #00d17f;
 }
+.header-bar-btn.header-rec-btn {
+  height: 2rem;
+  min-height: 0;
+  padding: 0 0.5rem;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  border: 1px solid var(--border-light);
+  border-radius: 6px;
+  background: var(--input-bg);
+  color: var(--text-muted);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
+}
+.header-rec-btn.rec-active {
+  color: #ff3b30;
+  border-color: #ff3b30;
+  background: rgba(255, 59, 48, 0.12);
+  animation: rec-pulse 1.5s ease-in-out infinite;
+}
+@keyframes rec-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
 .header-rig-switch {
   display: flex;
   align-items: center;

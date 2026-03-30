@@ -7,6 +7,7 @@
 mod assets;
 mod bookmarks;
 mod decoder;
+pub mod recorder;
 mod rig;
 mod sse;
 mod vchan;
@@ -606,6 +607,11 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
         .service(crate::server::background_decode::delete_background_decode)
         .service(crate::server::background_decode::get_background_decode_status)
         .service(crate::server::audio::audio_ws)
+        // Recorder
+        .service(recorder::recorder_start)
+        .service(recorder::recorder_stop)
+        .service(recorder::recorder_status)
+        .service(recorder::recorder_files)
         // Static assets
         .service(assets::index)
         .service(assets::map_index)

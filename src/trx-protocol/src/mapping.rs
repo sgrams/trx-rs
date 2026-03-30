@@ -146,7 +146,8 @@ define_command_mapping! {
         SetWfmStereo          { enabled }        <=> SetWfmStereo,
         SetWfmDenoise         { level }          <=> SetWfmDenoise,
         SetSamStereoWidth     { width }          <=> SetSamStereoWidth,
-        SetSamCarrierSync     { enabled }        <=> SetSamCarrierSync;
+        SetSamCarrierSync     { enabled }        <=> SetSamCarrierSync,
+        SetRecorderEnabled    { enabled }        <=> SetRecorderEnabled;
 
     // ── Multi-field struct passthrough ───────────────────────────────
     multi:
@@ -668,6 +669,39 @@ mod tests {
 
         if let ClientCommand::SetPtt { ptt } = client_cmd {
             assert!(!ptt);
+        } else {
+            panic!("Round trip failed");
+        }
+    }
+
+    #[test]
+    fn test_client_command_to_rig_set_recorder_enabled() {
+        let cmd = ClientCommand::SetRecorderEnabled { enabled: true };
+        if let RigCommand::SetRecorderEnabled(enabled) = client_command_to_rig(cmd) {
+            assert!(enabled);
+        } else {
+            panic!("Expected SetRecorderEnabled");
+        }
+    }
+
+    #[test]
+    fn test_rig_command_to_client_set_recorder_enabled() {
+        let cmd = RigCommand::SetRecorderEnabled(true);
+        if let ClientCommand::SetRecorderEnabled { enabled } = rig_command_to_client(cmd) {
+            assert!(enabled);
+        } else {
+            panic!("Expected SetRecorderEnabled");
+        }
+    }
+
+    #[test]
+    fn test_round_trip_set_recorder_enabled() {
+        let original = ClientCommand::SetRecorderEnabled { enabled: false };
+        let rig_cmd = client_command_to_rig(original);
+        let client_cmd = rig_command_to_client(rig_cmd);
+
+        if let ClientCommand::SetRecorderEnabled { enabled } = client_cmd {
+            assert!(!enabled);
         } else {
             panic!("Round trip failed");
         }

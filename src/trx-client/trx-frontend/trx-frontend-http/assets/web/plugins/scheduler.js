@@ -502,6 +502,9 @@
     if (ilEl) ilEl.value = entry && entry.interleave_min ? entry.interleave_min : "";
     if (centerHzEl) centerHzEl.value = entry && entry.center_hz ? entry.center_hz : "";
 
+    const recordEl = document.getElementById("scheduler-ts-entry-record");
+    if (recordEl) recordEl.checked = !!(entry && entry.record);
+
     pendingExtraBmIds = entry && Array.isArray(entry.bookmark_ids) ? entry.bookmark_ids.slice() : [];
     renderExtraBmList();
 
@@ -550,6 +553,9 @@
     }
     if (!currentConfig.entries) currentConfig.entries = [];
 
+    const recordCb = document.getElementById("scheduler-ts-entry-record");
+    const entryRecord = recordCb ? recordCb.checked : false;
+
     const entryData = {
       start_min: startMin,
       end_min: endMin,
@@ -558,6 +564,7 @@
       interleave_min: entryInterleave,
       center_hz: centerHz,
       bookmark_ids: extraBmIds,
+      record: entryRecord,
     };
 
     if (schEntryEditIdx !== null) {
@@ -696,6 +703,7 @@
         '<td>' + extraCell + '</td>' +
         '<td>' + escHtml(entry.label || "") + '</td>' +
         '<td>' + il + '</td>' +
+        '<td>' + (entry.record ? 'Yes' : '') + '</td>' +
         '<td>' +
           '<button class="sch-write sch-edit-btn" data-idx="' + idx + '" type="button">Edit</button>' +
           '<button class="sch-write sch-remove-btn" data-idx="' + idx + '" type="button">Remove</button>' +

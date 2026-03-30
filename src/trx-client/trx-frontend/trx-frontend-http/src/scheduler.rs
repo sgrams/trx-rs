@@ -86,6 +86,9 @@ pub struct ScheduleEntry {
     /// frontend can allocate the corresponding virtual channels on connect.
     #[serde(default)]
     pub bookmark_ids: Vec<String>,
+    /// Whether to auto-record audio when this entry is active.
+    #[serde(default)]
+    pub record: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -102,6 +105,9 @@ pub struct SatelliteEntry {
     pub center_hz: Option<u64>,
     #[serde(default)]
     pub bookmark_ids: Vec<String>,
+    /// Whether to auto-record audio when this satellite pass is active.
+    #[serde(default)]
+    pub record: bool,
 }
 
 fn default_min_elevation() -> f64 {
@@ -619,6 +625,7 @@ struct AppliedTarget {
     center_hz: Option<u64>,
     extra_bookmark_ids: Vec<String>,
     satellite: Option<String>,
+    record: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Default)]
@@ -692,6 +699,7 @@ pub fn spawn_scheduler_task(
     bookmarks: Arc<BookmarkStoreMap>,
     status_map: SchedulerStatusMap,
     control: SharedSchedulerControlManager,
+    recorder_mgr: Option<Arc<super::recorder::RecorderManager>>,
 ) {
     tokio::spawn(async move {
         let mut interval = time::interval(Duration::from_secs(30));
@@ -733,6 +741,7 @@ pub fn spawn_scheduler_task(
                         center_hz: sat_target.center_hz,
                         extra_bookmark_ids: sat_target.extra_bm_ids.clone(),
                         satellite: Some(sat_target.satellite.clone()),
+                        record: sat_target.record,
                     };
 
                     if last_applied.get(&config.remote) == Some(&target) {
@@ -773,6 +782,18 @@ pub fn spawn_scheduler_task(
                         continue;
                     }
 
+                    // Manage scheduler-driven recording on target transition.
+                    if let Some(ref mgr) = recorder_mgr {
+                        manage_scheduler_recording(
+                            mgr,
+                            &context,
+                            &config.remote,
+                            last_applied.get(&config.remote),
+                            &target,
+                        )
+                        .await;
+                    }
+
                     last_applied.insert(config.remote.clone(), target);
                     continue;
                 }
@@ -797,7 +818,7 @@ pub fn spawn_scheduler_task(
                     continue;
                 }
 
-                let (entry_id, bm_id, center_hz, extra_bm_ids) = match &config.mode {
+                let (entry_id, bm_id, center_hz, extra_bm_ids, entry_record) = match &config.mode {
                     SchedulerMode::Disabled => continue,
                     SchedulerMode::Grayline => {
                         let Some(bm_id) = config
@@ -807,7 +828,7 @@ pub fn spawn_scheduler_task(
                         else {
                             continue;
                         };
-                        (None, bm_id, None, Vec::new())
+                        (None, bm_id, None, Vec::new(), false)
                     }
                     SchedulerMode::TimeSpan => {
                         let Some(entry) =
@@ -820,6 +841,7 @@ pub fn spawn_scheduler_task(
                             entry.bookmark_id.clone(),
                             entry.center_hz,
                             entry.bookmark_ids.clone(),
+                            entry.record,
                         )
                     }
                 };
@@ -829,6 +851,7 @@ pub fn spawn_scheduler_task(
                     center_hz,
                     extra_bookmark_ids: extra_bm_ids.clone(),
                     satellite: None,
+                    record: entry_record,
                 };
 
                 // Already at this exact scheduled target — skip.
@@ -869,6 +892,18 @@ pub fn spawn_scheduler_task(
                     continue;
                 }
 
+                // Manage scheduler-driven recording on target transition.
+                if let Some(ref mgr) = recorder_mgr {
+                    manage_scheduler_recording(
+                        mgr,
+                        &context,
+                        &config.remote,
+                        last_applied.get(&config.remote),
+                        &target,
+                    )
+                    .await;
+                }
+
                 last_applied.insert(config.remote.clone(), target);
             }
         }
@@ -885,6 +920,7 @@ struct SatelliteTarget {
     bookmark_id: String,
     center_hz: Option<u64>,
     extra_bm_ids: Vec<String>,
+    record: bool,
 }
 
 /// Check if any configured satellite has an active pass right now.
@@ -957,6 +993,7 @@ fn find_active_satellite_target(
         bookmark_id: entry.bookmark_id.clone(),
         center_hz: entry.center_hz,
         extra_bm_ids: entry.bookmark_ids.clone(),
+        record: entry.record,
     })
 }
 
@@ -1080,6 +1117,83 @@ async fn scheduler_send(
 
     let _ = tokio::time::timeout(Duration::from_secs(10), resp_rx).await;
     Ok(())
+}
+
+// ============================================================================
+// Scheduler-driven recording
+// ============================================================================
+
+/// Manage recording state when the scheduler transitions between targets.
+///
+/// Stops any existing scheduler recording for the rig, then starts a new one
+/// if the new target has `record: true`.
+async fn manage_scheduler_recording(
+    mgr: &super::recorder::RecorderManager,
+    context: &FrontendRuntimeContext,
+    remote: &str,
+    prev: Option<&AppliedTarget>,
+    next: &AppliedTarget,
+) {
+    // Stop any existing scheduler recording for this rig.
+    let was_recording = prev.is_some_and(|t| t.record);
+    if was_recording && mgr.is_recording(remote, None) {
+        match mgr.stop(remote, None).await {
+            Ok(result) => {
+                info!(
+                    "scheduler: stopped recording for '{}' — {:.1}s, {} bytes",
+                    remote, result.duration_secs, result.bytes_written
+                );
+            }
+            Err(e) => {
+                warn!("scheduler: failed to stop recording for '{}': {e}", remote);
+            }
+        }
+    }
+
+    // Start recording if the new target requests it.
+    if next.record {
+        let audio_tx = context
+            .rig_audio
+            .rx
+            .read()
+            .ok()
+            .and_then(|map| map.get(remote).cloned())
+            .or_else(|| context.audio.rx.clone());
+
+        if let Some(tx) = audio_tx {
+            let (sr, ch, fd) = stream_info(context, remote);
+            let params = super::recorder::AudioParams {
+                sample_rate: sr,
+                channels: ch,
+                frame_duration_ms: fd,
+            };
+            match mgr.start(remote, None, tx, params, None, None) {
+                Ok(info) => {
+                    info!(
+                        "scheduler: started recording for '{}' → {}",
+                        remote, info.path
+                    );
+                }
+                Err(e) => {
+                    warn!("scheduler: failed to start recording for '{}': {e}", remote);
+                }
+            }
+        }
+    }
+}
+
+fn stream_info(context: &FrontendRuntimeContext, rig_id: &str) -> (u32, u8, u16) {
+    if let Some(rx) = context.rig_audio_info_rx(rig_id) {
+        if let Some(info) = rx.borrow().as_ref() {
+            return (info.sample_rate, info.channels, info.frame_duration_ms);
+        }
+    }
+    if let Some(ref info_rx) = context.audio.info {
+        if let Some(info) = info_rx.borrow().as_ref() {
+            return (info.sample_rate, info.channels, info.frame_duration_ms);
+        }
+    }
+    (48000, 2, 20)
 }
 
 // ============================================================================
@@ -1264,6 +1378,7 @@ mod tests {
             interleave_min,
             center_hz,
             bookmark_ids: Vec::new(),
+            record: false,
         }
     }
 

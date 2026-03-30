@@ -471,6 +471,7 @@ pub fn command_from_rig_command(cmd: RigCommand) -> Box<dyn RigCommandHandler> {
         | RigCommand::SetWfmDenoise(_)
         | RigCommand::SetSamStereoWidth(_)
         | RigCommand::SetSamCarrierSync(_)
+        | RigCommand::SetRecorderEnabled(_)
         | RigCommand::GetSpectrum => Box::new(GetSnapshotCommand),
     }
 }

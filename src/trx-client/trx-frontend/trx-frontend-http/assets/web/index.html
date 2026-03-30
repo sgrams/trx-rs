@@ -65,6 +65,7 @@
         <button id="header-audio-toggle" class="header-bar-btn header-audio-btn" aria-label="Toggle audio playback" title="Toggle audio playback">
           <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M5 3v10l8-5z"/></svg>
         </button>
+        <button id="header-rec-btn" class="header-bar-btn header-rec-btn" type="button" aria-label="Toggle recording" title="Toggle recording">REC</button>
         <div class="header-rig-switch">
           <select id="header-rig-switch-select" aria-label="Select active rig"></select>
         </div>
@@ -1152,6 +1153,10 @@
                   <label class="bm-label">Interleave (min, optional)
                     <input type="number" id="scheduler-ts-entry-interleave" class="status-input" min="1" max="60" placeholder="default" />
                   </label>
+                  <label class="bm-label" style="flex-direction:row;align-items:center;gap:0.5rem;">
+                    <input type="checkbox" id="scheduler-ts-entry-record" />
+                    Record audio
+                  </label>
                 </div>
                 <div class="bm-form-actions">
                   <button type="submit" class="bm-save-btn">Save</button>
@@ -1163,7 +1168,7 @@
               <summary>Entry details</summary>
               <table class="sch-ts-table">
                 <thead>
-                  <tr><th>Start</th><th>End</th><th>Center freq</th><th>Primary bookmark</th><th>Extra channels</th><th>Label</th><th>Interleave (min)</th><th></th></tr>
+                  <tr><th>Start</th><th>End</th><th>Center freq</th><th>Primary bookmark</th><th>Extra channels</th><th>Label</th><th>Interleave (min)</th><th>REC</th><th></th></tr>
                 </thead>
                 <tbody id="scheduler-ts-tbody"></tbody>
               </table>

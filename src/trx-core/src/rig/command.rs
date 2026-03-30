@@ -51,5 +51,6 @@ pub enum RigCommand {
     SetWfmDenoise(WfmDenoiseLevel),
     SetSamStereoWidth(f32),
     SetSamCarrierSync(bool),
+    SetRecorderEnabled(bool),
     GetSpectrum,
 }

@@ -253,7 +253,8 @@ function applyAuthRestrictions() {
       "settings-clear-ft4-history",
       "settings-clear-ft2-history",
       "settings-clear-wspr-history",
-      "settings-clear-sat-history"
+      "settings-clear-sat-history",
+      "header-rec-btn"
     ];
     pluginToggleBtns.forEach(id => {
       const btn = document.getElementById(id);
@@ -3304,6 +3305,10 @@ function render(update) {
   _ensureDecoderToggles();
   for (const [key, entry] of Object.entries(_decoderToggles)) {
     syncDecoderToggle(entry, !!update[key], entry.label);
+  }
+  // Recorder state sync.
+  if (typeof update.recorder_enabled === "boolean" && window._syncRecorderState) {
+    window._syncRecorderState(update.recorder_enabled);
   }
   if (window.updateSatLiveState) window.updateSatLiveState(update);
   const cwAutoEl = document.getElementById("cw-auto");
@@ -8851,6 +8856,31 @@ function syncHeaderAudioBtn() {
 if (headerAudioToggle) {
   headerAudioToggle.addEventListener("click", startRxAudio);
 }
+
+// ── Recorder button ────────────────────────────────────────────────────────
+const headerRecBtn = document.getElementById("header-rec-btn");
+let recorderActive = false;
+function syncRecorderBtn() {
+  if (!headerRecBtn) return;
+  headerRecBtn.classList.toggle("rec-active", recorderActive);
+}
+if (headerRecBtn) {
+  headerRecBtn.addEventListener("click", async () => {
+    try {
+      if (recorderActive) {
+        await postPath("/api/recorder/stop");
+      } else {
+        await postPath("/api/recorder/start");
+      }
+    } catch (e) {
+      console.error("Recorder toggle failed", e);
+    }
+  });
+}
+window._syncRecorderState = function (enabled) {
+  recorderActive = enabled;
+  syncRecorderBtn();
+};
 
 const rxVolPct = document.getElementById("rx-vol-pct");
 const txVolPct = document.getElementById("tx-vol-pct");

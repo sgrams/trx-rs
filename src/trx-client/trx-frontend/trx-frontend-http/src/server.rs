@@ -12,6 +12,8 @@ pub mod auth;
 pub mod background_decode;
 #[path = "bookmarks.rs"]
 pub mod bookmarks;
+#[path = "recorder.rs"]
+pub mod recorder;
 #[path = "scheduler.rs"]
 pub mod scheduler;
 #[path = "status.rs"]
@@ -40,6 +42,7 @@ use trx_frontend::{FrontendRuntimeContext, FrontendSpawner};
 
 use auth::{AuthConfig, AuthState, SameSite};
 use background_decode::{BackgroundDecodeManager, BackgroundDecodeStore};
+use recorder::{RecorderConfig, RecorderManager};
 use scheduler::{SchedulerControlManager, SchedulerStatusMap, SchedulerStoreMap};
 use vchan::ClientChannelManager;
 
@@ -86,6 +89,9 @@ async fn serve(
     let scheduler_status: SchedulerStatusMap = Arc::new(RwLock::new(HashMap::new()));
     let scheduler_control = Arc::new(SchedulerControlManager::default());
 
+    let recorder_config = RecorderConfig::default();
+    let recorder_mgr = Arc::new(RecorderManager::new(recorder_config));
+
     scheduler::spawn_scheduler_task(
         context.clone(),
         rig_tx.clone(),
@@ -93,6 +99,7 @@ async fn serve(
         bookmark_store_map.clone(),
         scheduler_status.clone(),
         scheduler_control.clone(),
+        Some(recorder_mgr.clone()),
     );
 
     let background_decode_path = BackgroundDecodeStore::default_path();
@@ -151,6 +158,7 @@ async fn serve(
         vchan_mgr,
         session_rig_mgr,
         background_decode_mgr,
+        recorder_mgr,
     )?;
     let handle = server.handle();
     tokio::spawn(async move {
@@ -177,6 +185,7 @@ fn build_server(
     vchan_mgr: Arc<ClientChannelManager>,
     session_rig_mgr: Arc<api::SessionRigManager>,
     background_decode_mgr: Arc<BackgroundDecodeManager>,
+    recorder_mgr: Arc<RecorderManager>,
 ) -> Result<Server, actix_web::Error> {
     let state_data = web::Data::new(state_rx);
     let rig_tx = web::Data::new(rig_tx);
@@ -192,6 +201,7 @@ fn build_server(
     let vchan_mgr = web::Data::new(vchan_mgr);
     let session_rig_mgr = web::Data::new(session_rig_mgr);
     let background_decode_mgr = web::Data::new(background_decode_mgr);
+    let recorder_mgr = web::Data::new(recorder_mgr);
 
     // Extract auth config values before moving context
     let same_site = match context.http_auth.cookie_same_site.as_str() {
@@ -248,6 +258,7 @@ fn build_server(
             .app_data(vchan_mgr.clone())
             .app_data(session_rig_mgr.clone())
             .app_data(background_decode_mgr.clone())
+            .app_data(recorder_mgr.clone())
             .wrap(Compress::default())
             .wrap(
                 DefaultHeaders::new()

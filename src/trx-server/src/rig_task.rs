@@ -589,6 +589,12 @@ async fn process_command(
             let _ = ctx.state_tx.send(ctx.state.clone());
             return snapshot_from(ctx.state);
         }
+        RigCommand::SetRecorderEnabled(en) => {
+            ctx.state.decoders.recorder_enabled = en;
+            info!("Recorder {}", if en { "enabled" } else { "disabled" });
+            let _ = ctx.state_tx.send(ctx.state.clone());
+            return snapshot_from(ctx.state);
+        }
         RigCommand::ResetLrptDecoder => {
             ctx.histories.clear_lrpt_history();
             ctx.state.reset_seqs.lrpt_decode_reset_seq += 1;

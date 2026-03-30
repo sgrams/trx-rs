@@ -57,6 +57,7 @@ pub enum ClientCommand {
     SetWfmDenoise { level: WfmDenoiseLevel },
     SetSamStereoWidth { width: f32 },
     SetSamCarrierSync { enabled: bool },
+    SetRecorderEnabled { enabled: bool },
     GetSpectrum,
 }
 
