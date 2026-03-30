@@ -254,6 +254,18 @@ pub async fn run_rig_task(
     );
     let _ = state_tx.send(state.clone());
 
+    // SDR backends can refresh signal strength cheaply (cached DSP value),
+    // so we run a fast meter tick between full polls to keep the S-meter
+    // responsive — at least half the spectrum redraw rate (~100 ms).
+    let is_sdr = rig.as_sdr_ref().is_some();
+    let meter_tick_duration = Duration::from_millis(100);
+    let mut meter_tick: std::pin::Pin<Box<tokio::time::Sleep>> = if is_sdr {
+        Box::pin(tokio::time::sleep(meter_tick_duration))
+    } else {
+        // Park indefinitely for non-SDR backends; the branch will never fire.
+        Box::pin(tokio::time::sleep(Duration::from_secs(86400)))
+    };
+
     // Main task loop
     let mut current_poll_duration = polling.interval(state.status.tx_en);
     let mut poll_sleep: std::pin::Pin<Box<tokio::time::Sleep>> =
@@ -275,6 +287,19 @@ pub async fn run_rig_task(
                     }
                     Ok(()) => {}
                     Err(_) => break,
+                }
+            }
+            // Fast meter-only refresh for SDR backends (cheap cached read).
+            _ = &mut meter_tick, if is_sdr => {
+                meter_tick = Box::pin(tokio::time::sleep(meter_tick_duration));
+                if !matches!(state.control.enabled, Some(false)) {
+                    if let Some(db) = rig.get_signal_strength_db().await {
+                        let prev = state.status.rx.as_ref().and_then(|r| r.sig);
+                        if prev != Some(db) {
+                            state.status.rx.get_or_insert(RigRxStatus { sig: None }).sig = Some(db);
+                            let _ = state_tx.send(state.clone());
+                        }
+                    }
                 }
             }
             _ = &mut poll_sleep => {
