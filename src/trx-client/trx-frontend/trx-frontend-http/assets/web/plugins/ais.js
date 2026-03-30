@@ -378,6 +378,7 @@ window.pruneAisHistoryView = function() {
 };
 
 document.getElementById("settings-clear-ais-history")?.addEventListener("click", async () => {
+  if (!confirm("Clear all AIS decode history? This cannot be undone.")) return;
   try {
     await postPath("/clear_ais_decode");
     window.resetAisHistoryView();

@@ -190,6 +190,7 @@ ft2DecodeToggleBtn?.addEventListener("click", async () => {
 });
 
 document.getElementById("settings-clear-ft2-history")?.addEventListener("click", async () => {
+  if (!confirm("Clear all FT2 decode history? This cannot be undone.")) return;
   try {
     await postPath("/clear_ft2_decode");
     window.resetFt2HistoryView();

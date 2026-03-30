@@ -4502,6 +4502,21 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   border-color: var(--accent-green);
   font-weight: 700;
 }
+.sch-save-btn.sch-dirty::after {
+  content: "";
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #fff;
+  margin-left: 0.45rem;
+  vertical-align: middle;
+  animation: sch-dirty-pulse 1.5s ease-in-out infinite;
+}
+@keyframes sch-dirty-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
 .sch-status-card {
   font-size: 0.9rem;
   color: var(--text-muted);
@@ -4828,6 +4843,26 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   text-align: center;
   color: var(--text-muted);
   font-size: 0.85rem;
+}
+/* ── Select All / Deselect All buttons ────────────────────────────── */
+.bgd-select-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+.bgd-select-btn {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-light);
+  border-radius: 0.3rem;
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  font-weight: 600;
+  padding: 0.25rem 0.65rem;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.bgd-select-btn:hover {
+  background: var(--card-bg);
+  color: var(--text);
 }
 /* ── SVG State Dot Badges ─────────────────────────────────────────── */
 .bgd-state-dot {

@@ -438,6 +438,7 @@ window.restoreAprsHistory = function(packets) {
 };
 
 document.getElementById("settings-clear-aprs-history")?.addEventListener("click", async () => {
+  if (!confirm("Clear all APRS decode history? This cannot be undone.")) return;
   try {
     await postPath("/clear_aprs_decode");
     window.resetAprsHistoryView();

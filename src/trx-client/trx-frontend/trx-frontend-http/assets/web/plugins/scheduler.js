@@ -19,6 +19,7 @@
   let interleaveTicker = null;
   let schedulerStepPending = false;
   let schEntryEditIdx = null;     // null = adding, number = editing that index
+  let schedulerDirty = false;     // true when unsaved changes exist
   // Satellite entry editing state moved to sat-scheduler.js
 
   // -------------------------------------------------------------------------
@@ -127,6 +128,7 @@
         bookmarkList = Array.isArray(bms) ? bms : [];
         populateTsBookmarkSelect();
         renderScheduler();
+        clearSchedulerDirty();
         renderSchedulerInterleaveStatus();
       })
       .catch(function (e) {
@@ -569,6 +571,7 @@
 
     schCloseEntryForm();
     renderTimespanEntries();
+    markSchedulerDirty();
   }
 
   // -------------------------------------------------------------------------
@@ -781,6 +784,7 @@
     if (!currentConfig || !currentConfig.entries) return;
     currentConfig.entries.splice(idx, 1);
     renderTimespanEntries();
+    markSchedulerDirty();
   }
 
   // -------------------------------------------------------------------------
@@ -830,6 +834,7 @@
       .then(function (saved) {
         currentConfig = saved;
         renderScheduler();
+        clearSchedulerDirty();
         showSchedulerToast("Scheduler saved.");
       })
       .catch(function (e) {
@@ -859,11 +864,28 @@
           entries: [],
         };
         renderScheduler();
+        clearSchedulerDirty();
         showSchedulerToast("Scheduler reset.");
       })
       .catch(function (e) {
         showSchedulerToast("Reset failed: " + e.message, true);
       });
+  }
+
+  // -------------------------------------------------------------------------
+  // Dirty-state tracking
+  // -------------------------------------------------------------------------
+  function markSchedulerDirty() {
+    if (schedulerDirty) return;
+    schedulerDirty = true;
+    var btn = document.getElementById("scheduler-save-btn");
+    if (btn) btn.classList.add("sch-dirty");
+  }
+
+  function clearSchedulerDirty() {
+    schedulerDirty = false;
+    var btn = document.getElementById("scheduler-save-btn");
+    if (btn) btn.classList.remove("sch-dirty");
   }
 
   // -------------------------------------------------------------------------
@@ -917,6 +939,21 @@
     if (nextBtn) nextBtn.addEventListener("click", function () {
       schedulerSelectRelativeEntry(1);
     });
+
+    // Dirty-state: mark dirty on any user input/change within the scheduler panel
+    var schPanel = document.getElementById("scheduler-panel");
+    if (schPanel && !schPanel._dirtyWired) {
+      schPanel._dirtyWired = true;
+      schPanel.addEventListener("input", function (e) {
+        // Ignore the entry-form inputs (they don't affect saved config until submitted)
+        if (e.target.closest("#sch-entry-form") || e.target.closest("#sch-sat-form")) return;
+        markSchedulerDirty();
+      });
+      schPanel.addEventListener("change", function (e) {
+        if (e.target.closest("#sch-entry-form") || e.target.closest("#sch-sat-form")) return;
+        markSchedulerDirty();
+      });
+    }
 
     wireExtraBmAdd();
     wireSatelliteEvents();
