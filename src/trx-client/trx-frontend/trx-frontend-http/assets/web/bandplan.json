@@ -123,6 +123,12 @@
         ]
       },
       {
+        "name": "FM Broadcast", "low_hz": 87500000, "high_hz": 108000000,
+        "segments": [
+          { "low_hz": 87500000, "high_hz": 108000000, "mode": "FM", "label": "FM Broadcasting" }
+        ]
+      },
+      {
         "name": "2m", "low_hz": 144000000, "high_hz": 146000000,
         "segments": [
           { "low_hz": 144000000, "high_hz": 144150000, "mode": "CW", "label": "CW/EME" },
@@ -272,6 +278,12 @@
           { "low_hz": 50300000, "high_hz": 50600000, "mode": "All", "label": "All Modes" },
           { "low_hz": 50600000, "high_hz": 51000000, "mode": "Narrow", "label": "Digital" },
           { "low_hz": 51000000, "high_hz": 54000000, "mode": "FM", "label": "FM" }
+        ]
+      },
+      {
+        "name": "FM Broadcast", "low_hz": 87500000, "high_hz": 108000000,
+        "segments": [
+          { "low_hz": 87500000, "high_hz": 108000000, "mode": "FM", "label": "FM Broadcasting" }
         ]
       },
       {
@@ -436,6 +448,12 @@
           { "low_hz": 50300000, "high_hz": 50600000, "mode": "All", "label": "All Modes" },
           { "low_hz": 50600000, "high_hz": 51000000, "mode": "Narrow", "label": "Digital" },
           { "low_hz": 51000000, "high_hz": 54000000, "mode": "FM", "label": "FM" }
+        ]
+      },
+      {
+        "name": "FM Broadcast", "low_hz": 87500000, "high_hz": 108000000,
+        "segments": [
+          { "low_hz": 87500000, "high_hz": 108000000, "mode": "FM", "label": "FM Broadcasting" }
         ]
       },
       {
