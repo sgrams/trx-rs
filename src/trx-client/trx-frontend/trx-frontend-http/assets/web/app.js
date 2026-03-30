@@ -10188,16 +10188,16 @@ function drawSpectrum(data) {
     spectrumGl.drawPoints(spectrumTmpMarkerPoints, Math.max(2, dpr * 1.6), cssColorToRgba(pal.waveformPeak));
   }
 
-  // ── Bandplan WebGL strip (bottom of spectrum, above waterfall) ──
+  // ── Bandplan WebGL strip (top of spectrum, above waterfall) ──
   if (bandplanRegion !== "off" && bandplanData) {
     const bpSegs = bandplanVisibleSegments(bandplanRegion, range.visLoHz, range.visHiHz);
     if (bpSegs.length > 0) {
       const bpH = Math.round(BANDPLAN_STRIP_CSS_HEIGHT * dpr);
-      const bpY = H - bpH;
+      const bpY = 0;
       // Dark backdrop so segments are readable over the spectrum fill.
       spectrumGl.fillRect(0, bpY, W, bpH, [0.07, 0.09, 0.15, 0.82]);
-      // Thin separator line at top of bandplan strip.
-      spectrumGl.drawSegments([0, bpY, W, bpY],
+      // Thin separator line at bottom of bandplan strip.
+      spectrumGl.drawSegments([0, bpY + bpH, W, bpY + bpH],
         [1, 1, 1, 0.08], Math.max(1, dpr * 0.5));
       const bpVerts = [];
       for (const seg of bpSegs) {
