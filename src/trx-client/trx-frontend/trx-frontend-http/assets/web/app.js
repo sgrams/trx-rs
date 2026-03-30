@@ -7581,8 +7581,8 @@ function updateStatsRigFilter() {
   }
 }
 
-function statsRecordDecode(type, remote) {
-  statsDecodeLog.push({ type: String(type || "unknown"), ts_ms: Date.now(), remote: remote || null });
+function statsRecordDecode(type, remote, tsMs) {
+  statsDecodeLog.push({ type: String(type || "unknown"), ts_ms: tsMs || Date.now(), remote: remote || null });
   if (statsDecodeLog.length > STATS_LOG_MAX) {
     statsDecodeLog.splice(0, statsDecodeLog.length - STATS_LOG_MAX);
   }
@@ -8919,7 +8919,7 @@ function updateDecodeStatus(text) {
   if (ft4 && ft4.textContent !== "Receiving") ft4.textContent = text;
   if (ft2 && ft2.textContent !== "Receiving") ft2.textContent = text;
 }
-function dispatchDecodeMessage(msg) {
+function dispatchDecodeMessage(msg, skipStats) {
   if (msg.type === "ais" && window.onServerAis) window.onServerAis(msg);
   if (msg.type === "vdes" && window.onServerVdes) window.onServerVdes(msg);
   if (msg.type === "aprs" && window.onServerAprs) window.onServerAprs(msg);
@@ -8930,7 +8930,7 @@ function dispatchDecodeMessage(msg) {
   if (msg.type === "ft2" && window.onServerFt2) window.onServerFt2(msg);
   if (msg.type === "wspr" && window.onServerWspr) window.onServerWspr(msg);
   if (msg.type === "lrpt_image" && window.onServerLrptImage) window.onServerLrptImage(msg);
-  if (msg.type && msg.type !== "lrpt_image") {
+  if (!skipStats && msg.type && msg.type !== "lrpt_image") {
     statsRecordDecode(msg.type, msg.rig_id || msg.remote || null);
     scheduleStatsRender();
   }
@@ -8938,6 +8938,13 @@ function dispatchDecodeMessage(msg) {
 
 function dispatchDecodeBatch(batch) {
   if (!Array.isArray(batch) || batch.length === 0) return;
+  // Record statistics for every message in the batch regardless of dispatch path.
+  for (const msg of batch) {
+    if (msg.type && msg.type !== "lrpt_image") {
+      statsRecordDecode(msg.type, msg.rig_id || msg.remote || null);
+    }
+  }
+  scheduleStatsRender();
   const type = String(batch[0]?.type || "");
   const uniformType = batch.every((msg) => String(msg?.type || "") === type);
   if (uniformType) {
@@ -8975,7 +8982,7 @@ function dispatchDecodeBatch(batch) {
     }
   }
   for (const msg of batch) {
-    dispatchDecodeMessage(msg);
+    dispatchDecodeMessage(msg, true);
   }
 }
 
@@ -9019,6 +9026,13 @@ function loadDecodeHistoryOnMainThread(onReady, onError) {
 
 function restoreDecodeHistoryGroup(kind, messages) {
   if (!Array.isArray(messages) || messages.length === 0) return;
+  // Record statistics for restored history messages.
+  if (kind !== "lrpt_image") {
+    for (const msg of messages) {
+      statsRecordDecode(kind, msg.rig_id || msg.remote || null, msg.ts_ms || undefined);
+    }
+    scheduleStatsRender();
+  }
   if (kind === "ais" && window.restoreAisHistory) {
     window.restoreAisHistory(messages);
     return;
