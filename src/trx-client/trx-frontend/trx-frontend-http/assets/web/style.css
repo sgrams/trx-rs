@@ -4385,7 +4385,6 @@ button:focus-visible, input:focus-visible, select:focus-visible {
    ========================================================================= */
 .sch-panel {
   padding: 1rem;
-  max-width: 900px;
 }
 .sch-toast {
   position: fixed;
