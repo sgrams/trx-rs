@@ -3301,14 +3301,6 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   z-index: 1;
 }
 
-/* ── WebGL overlay mode ── When the spectrum canvas is visible the coloured
-   segments are also rendered via WebGL inside drawSpectrum().  The DOM strip
-   stays above the waterfall with its own coloured segments visible. */
-#spectrum-bandplan-strip.bp-webgl {
-  /* No repositioning needed – the strip lives above the overview strip
-     in the .signal-visual-block flex flow. */
-}
-
 /* Legend in settings */
 .bandplan-legend-grid {
   display: flex;
