@@ -2712,10 +2712,11 @@ function dbmToSUnits(dbm) {
 }
 
 function formatSignal(sUnits) {
-  if (!Number.isFinite(sUnits) || sUnits <= 9) return `S${Math.max(0, sUnits || 0).toFixed(1)}`;
-  // S9+60dB is already extremely strong; cap anything beyond that.
-  const overDb = Math.min(60, (sUnits - 9) * 10);
-  return `S9 + ${overDb.toFixed(0)}dB`;
+  if (!Number.isFinite(sUnits) || sUnits <= 0) return "S0";
+  if (sUnits <= 9) return `S${Math.round(sUnits)}`;
+  // S9+xdB: round to nearest 10 dB step, cap at +60.
+  const overDb = Math.min(60, Math.round((sUnits - 9) * 10 / 10) * 10);
+  return overDb === 0 ? "S9" : `S9+${overDb}dB`;
 }
 
 function setDisabled(disabled) {
