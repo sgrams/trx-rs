@@ -6030,6 +6030,7 @@ function materializeBufferedMapLayers() {
 }
 
 function initAprsMap() {
+  if (typeof L === "undefined") return;
   const mapEl = document.getElementById("aprs-map");
   if (!mapEl) return;
   sizeAprsMapToViewport();
