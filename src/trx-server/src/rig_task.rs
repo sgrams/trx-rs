@@ -256,7 +256,7 @@ pub async fn run_rig_task(
 
     // SDR backends can refresh signal strength cheaply (cached DSP value),
     // so we run a fast meter tick between full polls to keep the S-meter
-    // responsive — at least half the spectrum redraw rate (~100 ms).
+    // responsive — matching the spectrum redraw rate (~100 ms).
     let is_sdr = rig.as_sdr_ref().is_some();
     let meter_tick_duration = Duration::from_millis(100);
     let mut meter_tick: std::pin::Pin<Box<tokio::time::Sleep>> = if is_sdr {
