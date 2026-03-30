@@ -1263,6 +1263,10 @@ function ensureOverviewCanvasBackingStore() {
 function signalOverlayHeight() {
   if (!overviewCanvas) return 0;
   let height = overviewCanvas.clientHeight || 0;
+  // Include the bandplan strip height when it sits above the overview.
+  if (bandplanStripEl && bandplanStripEl.classList.contains("bp-visible")) {
+    height += bandplanStripEl.clientHeight || 0;
+  }
   const spectrumCanvasEl = document.getElementById("spectrum-canvas");
   const spectrumPanelEl = document.getElementById("spectrum-panel");
   const spectrumVisible =
