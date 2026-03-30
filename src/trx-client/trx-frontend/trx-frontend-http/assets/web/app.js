@@ -641,12 +641,13 @@ let hintTimer = null;
 let sigMeasuring = false;
 let sigLastSUnits = null;
 let sigLastDbm = null;
-const SIG_STRENGTH_UNITS = ["dBFS", "dBf", "dBm"];
+const SIG_STRENGTH_UNITS = ["dBFS", "dBf", "dBm", "S"];
 let sigStrengthUnitIdx = loadSetting("sigStrengthUnit", 0);
 
 function formatSigStrength(dbm) {
   if (!Number.isFinite(dbm)) return "--";
   const unit = SIG_STRENGTH_UNITS[sigStrengthUnitIdx] || "dBFS";
+  if (unit === "S") return formatSignal(dbmToSUnits(dbm));
   if (unit === "dBm") return `${dbm.toFixed(1)} dBm`;
   if (unit === "dBf") {
     // dBf = dBm + 107 (referenced to 1 femtowatt across 50 Ω)
