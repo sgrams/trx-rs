@@ -22,7 +22,7 @@ use crate::server::bookmarks::{Bookmark, BookmarkStoreMap};
 use crate::server::scheduler::{SchedulerStatusMap, SharedSchedulerControlManager};
 use crate::server::vchan::{ClientChannel, ClientChannelManager};
 
-const SUPPORTED_DECODER_KINDS: &[&str] = &["aprs", "ais", "ft8", "ft4", "ft2", "wspr", "hf-aprs"];
+use trx_protocol::decoders::resolve_bookmark_decoders;
 const CHANNEL_KIND_NAME: &str = "VirtualBackgroundDecodeChannel";
 const VISIBLE_CHANNEL_KIND_NAME: &str = "VirtualChannel";
 
@@ -233,7 +233,7 @@ impl BackgroundDecodeManager {
                         freq_hz: bookmark.map(|item| item.freq_hz),
                         mode: bookmark.map(|item| item.mode.clone()),
                         decoder_kinds: bookmark
-                            .map(bookmark_supported_decoder_kinds)
+                            .map(bookmark_decoder_kinds)
                             .unwrap_or_default(),
                         state: "inactive".to_string(),
                         channel_kind: None,
@@ -383,7 +383,7 @@ impl BackgroundDecodeManager {
                 continue;
             };
 
-            let decoder_kinds = bookmark_supported_decoder_kinds(bookmark);
+            let decoder_kinds = bookmark_decoder_kinds(bookmark);
             let mut status = BackgroundDecodeBookmarkStatus {
                 bookmark_id: bookmark.id.clone(),
                 bookmark_name: Some(bookmark.name.clone()),
@@ -609,30 +609,8 @@ fn dedup_ids(ids: &[String]) -> Vec<String> {
     out
 }
 
-fn supported_decoder_kinds(decoders: &[String]) -> Vec<String> {
-    let mut out = Vec::new();
-    for decoder in decoders {
-        let decoder = decoder.trim().to_ascii_lowercase();
-        if SUPPORTED_DECODER_KINDS.contains(&decoder.as_str())
-            && !out.iter().any(|existing| existing == &decoder)
-        {
-            out.push(decoder);
-        }
-    }
-    out
-}
-
-fn bookmark_supported_decoder_kinds(bookmark: &Bookmark) -> Vec<String> {
-    let explicit = supported_decoder_kinds(&bookmark.decoders);
-    if !explicit.is_empty() {
-        return explicit;
-    }
-
-    match bookmark.mode.trim().to_ascii_uppercase().as_str() {
-        "AIS" => vec!["ais".to_string()],
-        "PKT" | "FM" => vec!["aprs".to_string()],
-        _ => Vec::new(),
-    }
+fn bookmark_decoder_kinds(bookmark: &Bookmark) -> Vec<String> {
+    resolve_bookmark_decoders(&bookmark.decoders, &bookmark.mode, true)
 }
 
 fn channel_matches_bookmark(channel: &ClientChannel, bookmark: &Bookmark) -> bool {

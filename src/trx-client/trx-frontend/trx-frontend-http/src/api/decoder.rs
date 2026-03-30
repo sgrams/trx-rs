@@ -21,6 +21,15 @@ use trx_frontend::FrontendRuntimeContext;
 use super::{gzip_bytes, send_command, RemoteQuery};
 
 // ============================================================================
+// Decoder registry
+// ============================================================================
+
+#[get("/decoders")]
+pub async fn decoder_registry() -> impl Responder {
+    HttpResponse::Ok().json(trx_protocol::DECODER_REGISTRY)
+}
+
+// ============================================================================
 // Decode history types and helpers
 // ============================================================================
 

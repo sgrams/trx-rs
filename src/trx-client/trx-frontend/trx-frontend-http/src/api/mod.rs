@@ -562,6 +562,7 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
         .service(sse::events)
         .service(sse::spectrum)
         // Decoder endpoints
+        .service(decoder::decoder_registry)
         .service(decoder::decode_history)
         .service(decoder::decode_events)
         .service(decoder::toggle_aprs_decode)

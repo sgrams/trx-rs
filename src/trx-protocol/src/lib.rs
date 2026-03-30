@@ -9,11 +9,13 @@
 
 pub mod auth;
 pub mod codec;
+pub mod decoders;
 pub mod mapping;
 pub mod types;
 
 // Re-export commonly used items
 pub use auth::{NoAuthValidator, SimpleTokenValidator, TokenValidator};
 pub use codec::{mode_to_string, parse_envelope, parse_mode};
+pub use decoders::{DecoderActivation, DecoderDescriptor, DECODER_REGISTRY};
 pub use mapping::{client_command_to_rig, rig_command_to_client};
 pub use types::{ClientCommand, ClientEnvelope, ClientResponse, RigEntry};

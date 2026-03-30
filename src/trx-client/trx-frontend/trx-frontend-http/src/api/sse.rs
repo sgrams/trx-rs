@@ -135,30 +135,11 @@ fn sync_scheduler_vchannels(
 }
 
 fn bookmark_decoder_kinds(bookmark: &crate::server::bookmarks::Bookmark) -> Vec<String> {
-    let mut out = Vec::new();
-    for decoder in bookmark
-        .decoders
-        .iter()
-        .map(|item| item.trim().to_ascii_lowercase())
-    {
-        if matches!(
-            decoder.as_str(),
-            "aprs" | "ais" | "ft8" | "ft4" | "ft2" | "wspr" | "hf-aprs"
-        ) && !out.iter().any(|existing| existing == &decoder)
-        {
-            out.push(decoder);
-        }
-    }
-
-    if !out.is_empty() {
-        return out;
-    }
-
-    match bookmark.mode.trim().to_ascii_uppercase().as_str() {
-        "AIS" => vec!["ais".to_string()],
-        "PKT" => vec!["aprs".to_string()],
-        _ => Vec::new(),
-    }
+    trx_protocol::decoders::resolve_bookmark_decoders(
+        &bookmark.decoders,
+        &bookmark.mode,
+        true,
+    )
 }
 
 // ============================================================================
