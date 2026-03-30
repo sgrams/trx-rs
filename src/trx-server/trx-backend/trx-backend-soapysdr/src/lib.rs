@@ -158,7 +158,8 @@ impl SoapySdrRig {
     fn default_bandwidth_for_mode(mode: &RigMode) -> u32 {
         match mode {
             RigMode::LSB | RigMode::USB | RigMode::DIG => 3_000,
-            RigMode::PKT | RigMode::AIS => 25_000,
+            RigMode::AIS => 25_000,
+            RigMode::PKT => 25_000,
             RigMode::VDES => 100_000,
             RigMode::CW | RigMode::CWR => 500,
             RigMode::AM | RigMode::SAM => 9_000,
@@ -317,8 +318,6 @@ impl SoapySdrRig {
                     RigMode::FM,
                     RigMode::AIS,
                     RigMode::VDES,
-                    RigMode::DIG,
-                    RigMode::PKT,
                 ],
                 num_vfos: 1,
                 lock: false,

@@ -3241,22 +3241,22 @@ function render(update) {
   const wsprStatus = document.getElementById("wspr-status");
   setModeBoundDecodeStatus(
     aisStatus,
-    ["AIS"],
-    "Select AIS mode to decode",
+    ["AIS", "FM", "PKT"],
+    "Select AIS or FM mode to decode",
     "Connected, listening for packets",
   );
   if (window.updateAisBar) window.updateAisBar();
   setModeBoundDecodeStatus(
     vdesStatus,
-    ["VDES"],
-    "Select VDES mode to decode",
+    ["VDES", "FM"],
+    "Select VDES or FM mode to decode",
     "Connected, listening for bursts",
   );
   if (window.updateVdesBar) window.updateVdesBar();
   setModeBoundDecodeStatus(
     aprsStatus,
-    ["PKT"],
-    "Select PKT mode to decode",
+    ["PKT", "FM"],
+    "Select FM mode to decode",
     "Connected, listening for packets",
   );
   if (window.updateAprsBar) window.updateAprsBar();
@@ -8903,10 +8903,10 @@ function updateDecodeStatus(text) {
   const ft8 = document.getElementById("ft8-status");
   const ft4 = document.getElementById("ft4-status");
   const ft2 = document.getElementById("ft2-status");
-  setModeBoundDecodeStatus(ais, ["AIS"], "Select AIS mode to decode", text);
+  setModeBoundDecodeStatus(ais, ["AIS", "FM", "PKT"], "Select AIS or FM mode to decode", text);
   const vdesText = text === "Connected, listening for packets" ? "Connected, listening for bursts" : text;
-  setModeBoundDecodeStatus(vdes, ["VDES"], "Select VDES mode to decode", vdesText);
-  setModeBoundDecodeStatus(aprs, ["PKT"], "Select PKT mode to decode", text);
+  setModeBoundDecodeStatus(vdes, ["VDES", "FM"], "Select VDES or FM mode to decode", vdesText);
+  setModeBoundDecodeStatus(aprs, ["PKT", "FM"], "Select FM mode to decode", text);
   const cwText = text === "Connected, listening for packets" ? "Connected, listening for CW" : text;
   setModeBoundDecodeStatus(cw, ["CW", "CWR"], "Select CW mode to decode", cwText);
   if (ft8 && ft8.textContent !== "Receiving") ft8.textContent = text;

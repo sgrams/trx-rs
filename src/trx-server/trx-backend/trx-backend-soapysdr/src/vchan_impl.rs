@@ -504,7 +504,7 @@ mod tests {
 
         mgr.add_channel(14_074_000, &RigMode::USB).unwrap();
         let hidden_id = Uuid::new_v4();
-        mgr.ensure_background_channel_pcm(hidden_id, 14_075_000, &RigMode::DIG)
+        mgr.ensure_background_channel_pcm(hidden_id, 14_075_000, &RigMode::USB)
             .unwrap();
 
         let visible = mgr.channels();

@@ -1183,7 +1183,7 @@ fn run_playback(
     }
 }
 
-/// Run the APRS decoder task. Only processes PCM when rig mode is PKT.
+/// Run the APRS decoder task. Only processes PCM when rig mode is FM or PKT.
 pub async fn run_aprs_decoder(
     sample_rate: u32,
     channels: u16,
@@ -1257,9 +1257,9 @@ async fn run_aprs_decoder_inner(
 
     let mode_match = |state: &RigState| -> bool {
         if is_hf {
-            matches!(state.status.mode, RigMode::DIG)
+            matches!(state.status.mode, RigMode::USB | RigMode::DIG)
         } else {
-            matches!(state.status.mode, RigMode::PKT)
+            matches!(state.status.mode, RigMode::FM | RigMode::PKT)
         }
     };
     let get_reset_seq = |state: &RigState| -> u64 {
@@ -1405,14 +1405,14 @@ pub async fn run_ais_decoder(
     let mut decoder_a = AisDecoder::new(sample_rate);
     let mut decoder_b = AisDecoder::new(sample_rate);
     let mut was_active = false;
-    let mut active = matches!(state_rx.borrow().status.mode, RigMode::AIS);
+    let mut active = matches!(state_rx.borrow().status.mode, RigMode::AIS | RigMode::FM | RigMode::PKT);
 
     loop {
         if !active {
             match state_rx.changed().await {
                 Ok(()) => {
                     let state = state_rx.borrow();
-                    active = matches!(state.status.mode, RigMode::AIS);
+                    active = matches!(state.status.mode, RigMode::AIS | RigMode::FM | RigMode::PKT);
                     if active {
                         pcm_a_rx = pcm_a_rx.resubscribe();
                         pcm_b_rx = pcm_b_rx.resubscribe();
@@ -1476,7 +1476,7 @@ pub async fn run_ais_decoder(
                 match changed {
                     Ok(()) => {
                         let state = state_rx.borrow();
-                        active = matches!(state.status.mode, RigMode::AIS);
+                        active = matches!(state.status.mode, RigMode::AIS | RigMode::FM | RigMode::PKT);
                         if !active && was_active {
                             decoder_a.reset();
                             decoder_b.reset();
@@ -1505,14 +1505,14 @@ pub async fn run_vdes_decoder(
     info!("VDES decoder started ({}Hz complex baseband)", sample_rate);
     let mut decoder = VdesDecoder::new(sample_rate);
     let mut was_active = false;
-    let mut active = matches!(state_rx.borrow().status.mode, RigMode::VDES);
+    let mut active = matches!(state_rx.borrow().status.mode, RigMode::VDES | RigMode::FM);
 
     loop {
         if !active {
             match state_rx.changed().await {
                 Ok(()) => {
                     let state = state_rx.borrow();
-                    active = matches!(state.status.mode, RigMode::VDES);
+                    active = matches!(state.status.mode, RigMode::VDES | RigMode::FM);
                     if active {
                         iq_rx = iq_rx.resubscribe();
                     }
@@ -1550,7 +1550,7 @@ pub async fn run_vdes_decoder(
                 match changed {
                     Ok(()) => {
                         let state = state_rx.borrow();
-                        active = matches!(state.status.mode, RigMode::VDES);
+                        active = matches!(state.status.mode, RigMode::VDES | RigMode::FM);
                         if !active && was_active {
                             decoder.reset();
                             was_active = false;
