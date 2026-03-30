@@ -3,6 +3,18 @@
     "name": "IARU Region 1",
     "bands": [
       {
+        "name": "2200m", "low_hz": 135700, "high_hz": 137800,
+        "segments": [
+          { "low_hz": 135700, "high_hz": 137800, "mode": "CW", "label": "CW/Narrow" }
+        ]
+      },
+      {
+        "name": "630m", "low_hz": 472000, "high_hz": 479000,
+        "segments": [
+          { "low_hz": 472000, "high_hz": 479000, "mode": "CW", "label": "CW/Narrow" }
+        ]
+      },
+      {
         "name": "160m", "low_hz": 1810000, "high_hz": 2000000,
         "segments": [
           { "low_hz": 1810000, "high_hz": 1838000, "mode": "CW", "label": "CW" },
@@ -102,6 +114,15 @@
         ]
       },
       {
+        "name": "4m", "low_hz": 70000000, "high_hz": 70500000,
+        "segments": [
+          { "low_hz": 70000000, "high_hz": 70100000, "mode": "CW", "label": "CW/Beacon" },
+          { "low_hz": 70100000, "high_hz": 70250000, "mode": "Phone", "label": "SSB" },
+          { "low_hz": 70250000, "high_hz": 70300000, "mode": "All", "label": "All Modes" },
+          { "low_hz": 70300000, "high_hz": 70500000, "mode": "FM", "label": "FM" }
+        ]
+      },
+      {
         "name": "2m", "low_hz": 144000000, "high_hz": 146000000,
         "segments": [
           { "low_hz": 144000000, "high_hz": 144150000, "mode": "CW", "label": "CW/EME" },
@@ -142,6 +163,18 @@
   "iaru_r2": {
     "name": "IARU Region 2",
     "bands": [
+      {
+        "name": "2200m", "low_hz": 135700, "high_hz": 137800,
+        "segments": [
+          { "low_hz": 135700, "high_hz": 137800, "mode": "CW", "label": "CW/Narrow" }
+        ]
+      },
+      {
+        "name": "630m", "low_hz": 472000, "high_hz": 479000,
+        "segments": [
+          { "low_hz": 472000, "high_hz": 479000, "mode": "CW", "label": "CW/Narrow" }
+        ]
+      },
       {
         "name": "160m", "low_hz": 1800000, "high_hz": 2000000,
         "segments": [
@@ -253,6 +286,16 @@
         ]
       },
       {
+        "name": "1.25m", "low_hz": 222000000, "high_hz": 225000000,
+        "segments": [
+          { "low_hz": 222000000, "high_hz": 222150000, "mode": "CW", "label": "CW/EME" },
+          { "low_hz": 222150000, "high_hz": 222250000, "mode": "Phone", "label": "SSB" },
+          { "low_hz": 222250000, "high_hz": 223380000, "mode": "All", "label": "All Modes" },
+          { "low_hz": 223380000, "high_hz": 223520000, "mode": "Narrow", "label": "Digital" },
+          { "low_hz": 223520000, "high_hz": 225000000, "mode": "FM", "label": "FM Repeaters" }
+        ]
+      },
+      {
         "name": "70cm", "low_hz": 420000000, "high_hz": 450000000,
         "segments": [
           { "low_hz": 420000000, "high_hz": 426000000, "mode": "All", "label": "All Modes" },
@@ -263,6 +306,18 @@
           { "low_hz": 435000000, "high_hz": 438000000, "mode": "Satellite", "label": "Satellite" },
           { "low_hz": 438000000, "high_hz": 444000000, "mode": "FM", "label": "FM Repeaters" },
           { "low_hz": 444000000, "high_hz": 450000000, "mode": "FM", "label": "FM Repeaters" }
+        ]
+      },
+      {
+        "name": "33cm", "low_hz": 902000000, "high_hz": 928000000,
+        "segments": [
+          { "low_hz": 902000000, "high_hz": 903000000, "mode": "Narrow", "label": "Narrowband/Digital" },
+          { "low_hz": 903000000, "high_hz": 906000000, "mode": "Narrow", "label": "Digital/Spread Spectrum" },
+          { "low_hz": 906000000, "high_hz": 909000000, "mode": "FM", "label": "FM Repeaters" },
+          { "low_hz": 909000000, "high_hz": 915000000, "mode": "All", "label": "All Modes" },
+          { "low_hz": 915000000, "high_hz": 921000000, "mode": "All", "label": "All Modes" },
+          { "low_hz": 921000000, "high_hz": 927000000, "mode": "FM", "label": "FM Repeaters" },
+          { "low_hz": 927000000, "high_hz": 928000000, "mode": "FM", "label": "FM Simplex" }
         ]
       },
       {
@@ -279,6 +334,18 @@
   "iaru_r3": {
     "name": "IARU Region 3",
     "bands": [
+      {
+        "name": "2200m", "low_hz": 135700, "high_hz": 137800,
+        "segments": [
+          { "low_hz": 135700, "high_hz": 137800, "mode": "CW", "label": "CW/Narrow" }
+        ]
+      },
+      {
+        "name": "630m", "low_hz": 472000, "high_hz": 479000,
+        "segments": [
+          { "low_hz": 472000, "high_hz": 479000, "mode": "CW", "label": "CW/Narrow" }
+        ]
+      },
       {
         "name": "160m", "low_hz": 1800000, "high_hz": 2000000,
         "segments": [
