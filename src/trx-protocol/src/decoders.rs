@@ -149,9 +149,9 @@ pub fn resolve_bookmark_decoders(
         .iter()
         .map(|s| s.trim().to_ascii_lowercase())
         .filter(|s| {
-            DECODER_REGISTRY.iter().any(|d| {
-                d.id == s.as_str() && (!background_only || d.background_decode)
-            })
+            DECODER_REGISTRY
+                .iter()
+                .any(|d| d.id == s.as_str() && (!background_only || d.background_decode))
         })
         .fold(Vec::new(), |mut acc, s| {
             if !acc.contains(&s) {
@@ -187,21 +187,14 @@ mod tests {
 
     #[test]
     fn explicit_decoders_filtered() {
-        let result = resolve_bookmark_decoders(
-            &["ft8".into(), "bogus".into(), "ft4".into()],
-            "USB",
-            false,
-        );
+        let result =
+            resolve_bookmark_decoders(&["ft8".into(), "bogus".into(), "ft4".into()], "USB", false);
         assert_eq!(result, vec!["ft8", "ft4"]);
     }
 
     #[test]
     fn explicit_decoders_deduped() {
-        let result = resolve_bookmark_decoders(
-            &["ft8".into(), "FT8".into()],
-            "USB",
-            false,
-        );
+        let result = resolve_bookmark_decoders(&["ft8".into(), "FT8".into()], "USB", false);
         assert_eq!(result, vec!["ft8"]);
     }
 
@@ -225,11 +218,7 @@ mod tests {
 
     #[test]
     fn background_only_filters_lrpt() {
-        let result = resolve_bookmark_decoders(
-            &["lrpt".into(), "ft8".into()],
-            "DIG",
-            true,
-        );
+        let result = resolve_bookmark_decoders(&["lrpt".into(), "ft8".into()], "DIG", true);
         assert_eq!(result, vec!["ft8"]);
     }
 

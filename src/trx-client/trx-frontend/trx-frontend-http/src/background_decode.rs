@@ -232,9 +232,7 @@ impl BackgroundDecodeManager {
                         bookmark_name: bookmark.map(|item| item.name.clone()),
                         freq_hz: bookmark.map(|item| item.freq_hz),
                         mode: bookmark.map(|item| item.mode.clone()),
-                        decoder_kinds: bookmark
-                            .map(bookmark_decoder_kinds)
-                            .unwrap_or_default(),
+                        decoder_kinds: bookmark.map(bookmark_decoder_kinds).unwrap_or_default(),
                         state: "inactive".to_string(),
                         channel_kind: None,
                     }

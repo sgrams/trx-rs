@@ -1190,7 +1190,11 @@ url = "remote.example.com:4530"
         for region in &["iaru_r1", "iaru_r2", "iaru_r3"] {
             let mut config = ClientConfig::default();
             config.frontends.http.bandplan_region = region.to_string();
-            assert!(config.validate().is_ok(), "region {} should be valid", region);
+            assert!(
+                config.validate().is_ok(),
+                "region {} should be valid",
+                region
+            );
         }
     }
 

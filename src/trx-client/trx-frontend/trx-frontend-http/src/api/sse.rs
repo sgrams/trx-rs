@@ -135,11 +135,7 @@ fn sync_scheduler_vchannels(
 }
 
 fn bookmark_decoder_kinds(bookmark: &crate::server::bookmarks::Bookmark) -> Vec<String> {
-    trx_protocol::decoders::resolve_bookmark_decoders(
-        &bookmark.decoders,
-        &bookmark.mode,
-        true,
-    )
+    trx_protocol::decoders::resolve_bookmark_decoders(&bookmark.decoders, &bookmark.mode, true)
 }
 
 // ============================================================================
