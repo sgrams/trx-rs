@@ -360,6 +360,7 @@ window.resetCwHistoryView = function() {
 };
 
 document.getElementById("settings-clear-cw-history")?.addEventListener("click", async () => {
+  if (!confirm("Clear all CW decode history? This cannot be undone.")) return;
   try {
     await postPath("/clear_cw_decode");
     window.resetCwHistoryView();

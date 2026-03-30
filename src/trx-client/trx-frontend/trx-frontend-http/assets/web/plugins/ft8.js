@@ -458,6 +458,7 @@ ft8DecodeToggleBtn?.addEventListener("click", async () => {
 });
 
 document.getElementById("settings-clear-ft8-history")?.addEventListener("click", async () => {
+  if (!confirm("Clear all FT8 decode history? This cannot be undone.")) return;
   try {
     await postPath("/clear_ft8_decode");
     window.resetFt8HistoryView();

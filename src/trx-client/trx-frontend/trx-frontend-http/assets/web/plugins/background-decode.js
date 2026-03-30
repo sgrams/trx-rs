@@ -12,6 +12,7 @@
   let currentConfig = null;
   let bookmarkList = [];
   let statusInterval = null;
+  let bgdDirty = false;
 
   function initBackgroundDecode(rigId, role) {
     backgroundDecodeRole = role;
@@ -77,6 +78,7 @@
         currentConfig = config || { remote: rigId, enabled: false, bookmark_ids: [] };
         bookmarkList = Array.isArray(bookmarks) ? bookmarks : [];
         renderBackgroundDecode();
+        clearBgdDirty();
         pollBackgroundDecodeStatus();
       })
       .catch(function (err) {
@@ -175,6 +177,7 @@
     } else if (!checked) {
       currentConfig.bookmark_ids = currentConfig.bookmark_ids.filter(function (id) { return id !== bookmarkId; });
     }
+    markBgdDirty();
   }
 
   function saveBackgroundDecode() {
@@ -191,6 +194,7 @@
       .then(function (saved) {
         currentConfig = saved;
         renderBackgroundDecode();
+        clearBgdDirty();
         pollBackgroundDecodeStatus();
         showToast("Background decode saved.");
       })
@@ -205,10 +209,12 @@
   function resetBackgroundDecode() {
     const rigId = currentRigId;
     if (!rigId) return;
+    if (!confirm("Reset background decode configuration? This cannot be undone.")) return;
     apiResetConfig(rigId)
       .then(function (saved) {
         currentConfig = saved;
         renderBackgroundDecode();
+        clearBgdDirty();
         pollBackgroundDecodeStatus();
         showToast("Background decode reset.");
       })
@@ -272,17 +278,17 @@
 
   function prettyState(state) {
     switch (state) {
-      case "active": return "Active";
-      case "out_of_span": return "Out of span";
-      case "waiting_for_spectrum": return "Waiting";
-      case "waiting_for_user": return "No user";
-      case "missing_bookmark": return "Missing";
-      case "no_supported_decoders": return "Unsupported";
-      case "disabled": return "Disabled";
-      case "handled_by_scheduler": return "Scheduler";
-      case "scheduler_has_control": return "Scheduler";
-      case "handled_by_virtual_channel": return "VChan";
-      default: return "Inactive";
+      case "active": return "\u2713 Active";
+      case "out_of_span": return "\u25B3 Out of span";
+      case "waiting_for_spectrum": return "\u25B3 Waiting";
+      case "waiting_for_user": return "\u25B3 No user";
+      case "missing_bookmark": return "\u2717 Missing";
+      case "no_supported_decoders": return "\u2717 Unsupported";
+      case "disabled": return "\u25B3 Disabled";
+      case "handled_by_scheduler": return "\u25B3 Scheduler";
+      case "scheduler_has_control": return "\u25B3 Scheduler";
+      case "handled_by_virtual_channel": return "\u25B3 VChan";
+      default: return "\u25B3 Inactive";
     }
   }
 
@@ -306,6 +312,19 @@
       .replace(/"/g, "&quot;");
   }
 
+  function markBgdDirty() {
+    if (bgdDirty) return;
+    bgdDirty = true;
+    var btn = document.getElementById("background-decode-save-btn");
+    if (btn) btn.classList.add("sch-dirty");
+  }
+
+  function clearBgdDirty() {
+    bgdDirty = false;
+    var btn = document.getElementById("background-decode-save-btn");
+    if (btn) btn.classList.remove("sch-dirty");
+  }
+
   function showToast(msg, isError) {
     const el = document.getElementById("background-decode-toast");
     if (!el) return;
@@ -317,6 +336,25 @@
     }, 3000);
   }
 
+  function selectAllBookmarks() {
+    if (!currentConfig) {
+      currentConfig = { remote: currentRigId, enabled: false, bookmark_ids: [] };
+    }
+    var ids = supportedBookmarks().map(function (bm) { return bm.id; });
+    currentConfig.bookmark_ids = ids;
+    renderBookmarkChecklist(document.getElementById("bgd-bookmark-filter")?.value);
+    markBgdDirty();
+  }
+
+  function deselectAllBookmarks() {
+    if (!currentConfig) {
+      currentConfig = { remote: currentRigId, enabled: false, bookmark_ids: [] };
+    }
+    currentConfig.bookmark_ids = [];
+    renderBookmarkChecklist(document.getElementById("bgd-bookmark-filter")?.value);
+    markBgdDirty();
+  }
+
   function wireBackgroundDecodeEvents() {
     const filterInput = document.getElementById("bgd-bookmark-filter");
     if (filterInput && !filterInput._wired) {
@@ -324,6 +362,24 @@
       filterInput.addEventListener("input", function () {
         renderBookmarkChecklist(filterInput.value);
       });
+    }
+
+    const enabledCb = document.getElementById("background-decode-enabled");
+    if (enabledCb && !enabledCb._wired) {
+      enabledCb._wired = true;
+      enabledCb.addEventListener("change", function () { markBgdDirty(); });
+    }
+
+    const selectAllBtn = document.getElementById("bgd-select-all-btn");
+    if (selectAllBtn && !selectAllBtn._wired) {
+      selectAllBtn._wired = true;
+      selectAllBtn.addEventListener("click", selectAllBookmarks);
+    }
+
+    const deselectAllBtn = document.getElementById("bgd-deselect-all-btn");
+    if (deselectAllBtn && !deselectAllBtn._wired) {
+      deselectAllBtn._wired = true;
+      deselectAllBtn.addEventListener("click", deselectAllBookmarks);
     }
 
     const saveBtn = document.getElementById("background-decode-save-btn");

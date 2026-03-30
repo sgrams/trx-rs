@@ -266,6 +266,7 @@ wsprDecodeToggleBtn?.addEventListener("click", async () => {
 });
 
 document.getElementById("settings-clear-wspr-history")?.addEventListener("click", async () => {
+  if (!confirm("Clear all WSPR decode history? This cannot be undone.")) return;
   try {
     await postPath("/clear_wspr_decode");
     window.resetWsprHistoryView();

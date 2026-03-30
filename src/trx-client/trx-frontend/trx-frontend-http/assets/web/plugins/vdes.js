@@ -313,6 +313,7 @@ window.restoreVdesHistory = function(messages) {
 };
 
 document.getElementById("settings-clear-vdes-history")?.addEventListener("click", async () => {
+  if (!confirm("Clear all VDES decode history? This cannot be undone.")) return;
   try {
     await postPath("/clear_vdes_decode");
     window.resetVdesHistoryView();

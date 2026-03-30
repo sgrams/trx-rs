@@ -1074,7 +1074,7 @@
       </div>
       <div id="subtab-settings-scheduler" class="sub-tab-panel">
         <div id="scheduler-panel" class="sch-panel">
-          <div class="sch-toast" id="scheduler-toast" style="display:none;"></div>
+          <div class="sch-toast" id="scheduler-toast" role="alert" aria-live="polite" style="display:none;"></div>
           <!-- Now Playing status card (moved to top) -->
           <div class="now-playing-card">
             <div id="scheduler-status-card" class="sch-status-card">No activity yet.</div>
@@ -1254,7 +1254,7 @@
       </div>
       <div id="subtab-settings-background-decode" class="sub-tab-panel" style="display:none;">
         <div id="background-decode-panel" class="sch-panel">
-          <div class="sch-toast" id="background-decode-toast" style="display:none;"></div>
+          <div class="sch-toast" id="background-decode-toast" role="alert" aria-live="polite" style="display:none;"></div>
           <!-- Now Playing status card (moved to top) -->
           <div class="now-playing-card">
             <div id="background-decode-status-card" class="sch-status-card">No background decode bookmarks configured.</div>
@@ -1273,6 +1273,10 @@
               <label class="sch-label" style="min-width:100%;">Bookmarks
                 <input type="text" id="bgd-bookmark-filter" class="bgd-checklist-filter" placeholder="Filter bookmarks..." />
               </label>
+              <div class="bgd-select-actions">
+                <button type="button" id="bgd-select-all-btn" class="bgd-select-btn" aria-label="Select all bookmarks">Select All</button>
+                <button type="button" id="bgd-deselect-all-btn" class="bgd-select-btn" aria-label="Deselect all bookmarks">Deselect All</button>
+              </div>
               <div id="bgd-bookmark-checklist" class="bgd-checklist"></div>
             </div>
           </div>

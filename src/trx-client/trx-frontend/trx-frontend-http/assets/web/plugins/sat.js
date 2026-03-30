@@ -278,6 +278,7 @@ satDom.typeFilter?.addEventListener("change", () => renderSatHistoryTable());
 document
   .getElementById("settings-clear-sat-history")
   ?.addEventListener("click", async () => {
+    if (!confirm("Clear all satellite decode history? This cannot be undone.")) return;
     try {
       await postPath("/clear_lrpt_decode");
       window.resetSatHistoryView();

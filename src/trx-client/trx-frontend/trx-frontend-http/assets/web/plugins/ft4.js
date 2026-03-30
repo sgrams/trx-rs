@@ -190,6 +190,7 @@ ft4DecodeToggleBtn?.addEventListener("click", async () => {
 });
 
 document.getElementById("settings-clear-ft4-history")?.addEventListener("click", async () => {
+  if (!confirm("Clear all FT4 decode history? This cannot be undone.")) return;
   try {
     await postPath("/clear_ft4_decode");
     window.resetFt4HistoryView();

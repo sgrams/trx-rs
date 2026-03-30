@@ -384,6 +384,7 @@ hfAprsDecodeToggleBtn?.addEventListener("click", async () => {
 });
 
 document.getElementById("settings-clear-hf-aprs-history")?.addEventListener("click", async () => {
+  if (!confirm("Clear all HF APRS decode history? This cannot be undone.")) return;
   try {
     await postPath("/clear_hf_aprs_decode");
     window.resetHfAprsHistoryView();
