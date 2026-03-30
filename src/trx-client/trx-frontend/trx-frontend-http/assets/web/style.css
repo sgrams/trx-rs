@@ -4982,7 +4982,6 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   flex-direction: column;
   gap: 1rem;
   padding: 1rem;
-  max-width: 72rem;
 }
 .stats-controls {
   display: flex;
