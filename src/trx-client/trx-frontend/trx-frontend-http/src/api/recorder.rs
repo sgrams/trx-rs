@@ -6,7 +6,9 @@
 
 use std::sync::Arc;
 
-use actix_web::{get, post, web, Error, HttpResponse};
+use actix_web::http::header;
+use actix_web::{delete, get, post, web, Error, HttpResponse};
+use bytes::Bytes;
 use tokio::sync::{mpsc, watch};
 
 use trx_core::{RigCommand, RigState};
@@ -131,6 +133,43 @@ pub async fn recorder_files(
 ) -> Result<HttpResponse, Error> {
     let files = recorder_mgr.list_files();
     Ok(HttpResponse::Ok().json(files))
+}
+
+/// Download a recorded file.
+#[get("/api/recorder/download/{filename}")]
+pub async fn recorder_download(
+    path: web::Path<String>,
+    recorder_mgr: web::Data<Arc<RecorderManager>>,
+) -> Result<HttpResponse, Error> {
+    let filename = path.into_inner();
+    let file_path = recorder_mgr
+        .file_path(&filename)
+        .map_err(actix_web::error::ErrorNotFound)?;
+
+    let data = tokio::fs::read(&file_path)
+        .await
+        .map_err(|e| actix_web::error::ErrorInternalServerError(format!("read error: {e}")))?;
+
+    Ok(HttpResponse::Ok()
+        .insert_header((header::CONTENT_TYPE, "audio/ogg"))
+        .insert_header((
+            header::CONTENT_DISPOSITION,
+            format!("attachment; filename=\"{filename}\""),
+        ))
+        .body(Bytes::from(data)))
+}
+
+/// Delete a recorded file.
+#[delete("/api/recorder/files/{filename}")]
+pub async fn recorder_delete(
+    path: web::Path<String>,
+    recorder_mgr: web::Data<Arc<RecorderManager>>,
+) -> Result<HttpResponse, Error> {
+    let filename = path.into_inner();
+    match recorder_mgr.delete_file(&filename) {
+        Ok(()) => Ok(HttpResponse::Ok().json(serde_json::json!({ "deleted": filename }))),
+        Err(e) => Ok(HttpResponse::BadRequest().json(serde_json::json!({ "error": e }))),
+    }
 }
 
 // ============================================================================

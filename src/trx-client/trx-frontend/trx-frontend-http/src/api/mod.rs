@@ -612,6 +612,8 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
         .service(recorder::recorder_stop)
         .service(recorder::recorder_status)
         .service(recorder::recorder_files)
+        .service(recorder::recorder_download)
+        .service(recorder::recorder_delete)
         // Static assets
         .service(assets::index)
         .service(assets::map_index)

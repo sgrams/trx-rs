@@ -254,6 +254,7 @@ function applyAuthRestrictions() {
       "settings-clear-ft2-history",
       "settings-clear-wspr-history",
       "settings-clear-sat-history",
+      "header-rec-btn",
       "recorder-start-btn",
       "recorder-stop-btn"
     ];
@@ -8862,11 +8863,12 @@ if (headerAudioToggle) {
   headerAudioToggle.addEventListener("click", startRxAudio);
 }
 
-// ── Recorder page ──────────────────────────────────────────────────────────
+// ── Recorder ───────────────────────────────────────────────────────────────
 let recorderActive = false;
 const recorderStartBtn = document.getElementById("recorder-start-btn");
 const recorderStopBtn = document.getElementById("recorder-stop-btn");
 const recorderStatusInd = document.getElementById("recorder-status-indicator");
+const headerRecBtn = document.getElementById("header-rec-btn");
 
 function syncRecorderUi() {
   if (recorderStartBtn) recorderStartBtn.disabled = recorderActive;
@@ -8875,27 +8877,27 @@ function syncRecorderUi() {
     recorderStatusInd.textContent = recorderActive ? "Recording" : "";
     recorderStatusInd.classList.toggle("rec-active", recorderActive);
   }
-  // Sync the tab icon indicator.
+  if (headerRecBtn) headerRecBtn.classList.toggle("rec-active", recorderActive);
   const tabBtn = document.querySelector('.tab[data-tab="recorder"]');
   if (tabBtn) tabBtn.classList.toggle("rec-active", recorderActive);
 }
 
 if (recorderStartBtn) {
   recorderStartBtn.addEventListener("click", async () => {
-    try {
-      await postPath("/api/recorder/start");
-    } catch (e) {
-      console.error("Recorder start failed", e);
-    }
+    try { await postPath("/api/recorder/start"); } catch (e) { console.error("Recorder start failed", e); }
   });
 }
 if (recorderStopBtn) {
   recorderStopBtn.addEventListener("click", async () => {
+    try { await postPath("/api/recorder/stop"); } catch (e) { console.error("Recorder stop failed", e); }
+  });
+}
+if (headerRecBtn) {
+  headerRecBtn.addEventListener("click", async () => {
     try {
-      await postPath("/api/recorder/stop");
-    } catch (e) {
-      console.error("Recorder stop failed", e);
-    }
+      if (recorderActive) { await postPath("/api/recorder/stop"); }
+      else { await postPath("/api/recorder/start"); }
+    } catch (e) { console.error("Recorder toggle failed", e); }
   });
 }
 
@@ -8903,6 +8905,10 @@ window._syncRecorderState = function (enabled) {
   recorderActive = enabled;
   syncRecorderUi();
 };
+
+let _recorderFiles = [];
+let _recFilesPage = 0;
+const REC_PAGE_SIZE = 15;
 
 async function refreshRecorderStatus() {
   try {
@@ -8915,8 +8921,8 @@ async function refreshRecorderStatus() {
       renderRecorderActive(active);
     }
     if (filesResp.ok) {
-      const files = await filesResp.json();
-      renderRecorderFiles(files);
+      _recorderFiles = await filesResp.json();
+      renderRecorderFiles();
     }
   } catch (e) {
     console.error("Recorder status fetch failed", e);
@@ -8940,21 +8946,108 @@ function renderRecorderActive(list) {
   el.innerHTML = html;
 }
 
-function renderRecorderFiles(list) {
+function recorderFormatSize(bytes) {
+  if (bytes < 1024) return bytes + " B";
+  if (bytes < 1048576) return (bytes / 1024).toFixed(1) + " KB";
+  return (bytes / 1048576).toFixed(1) + " MB";
+}
+
+function recFilterAndSort() {
+  const filterEl = document.getElementById("recorder-filter");
+  const sortEl = document.getElementById("recorder-sort");
+  const filter = (filterEl ? filterEl.value : "").toLowerCase();
+  const sortMode = sortEl ? sortEl.value : "name-desc";
+
+  let filtered = _recorderFiles;
+  if (filter) {
+    filtered = filtered.filter(function (f) {
+      return f.name.toLowerCase().includes(filter);
+    });
+  }
+
+  const sorted = filtered.slice();
+  switch (sortMode) {
+    case "name-asc":  sorted.sort(function (a, b) { return a.name.localeCompare(b.name); }); break;
+    case "name-desc": sorted.sort(function (a, b) { return b.name.localeCompare(a.name); }); break;
+    case "size-asc":  sorted.sort(function (a, b) { return a.size - b.size; }); break;
+    case "size-desc": sorted.sort(function (a, b) { return b.size - a.size; }); break;
+  }
+  return sorted;
+}
+
+function renderRecorderFiles() {
   const el = document.getElementById("recorder-files-list");
   if (!el) return;
-  if (!list.length) {
-    el.innerHTML = '<p class="recorder-empty">No recorded files.</p>';
+
+  const sorted = recFilterAndSort();
+  const total = sorted.length;
+  const totalPages = Math.max(1, Math.ceil(total / REC_PAGE_SIZE));
+  if (_recFilesPage >= totalPages) _recFilesPage = totalPages - 1;
+  if (_recFilesPage < 0) _recFilesPage = 0;
+  const start = _recFilesPage * REC_PAGE_SIZE;
+  const page = sorted.slice(start, start + REC_PAGE_SIZE);
+
+  const summaryEl = document.getElementById("rec-page-summary");
+  const indicatorEl = document.getElementById("rec-page-indicator");
+  const prevBtn = document.getElementById("rec-page-prev");
+  const nextBtn = document.getElementById("rec-page-next");
+
+  if (summaryEl) {
+    summaryEl.textContent = total ? "Showing " + (start + 1) + "-" + Math.min(start + REC_PAGE_SIZE, total) + " of " + total : "Showing 0-0 of 0";
+  }
+  if (indicatorEl) indicatorEl.textContent = "Page " + (_recFilesPage + 1) + " of " + totalPages;
+  if (prevBtn) prevBtn.disabled = _recFilesPage <= 0;
+  if (nextBtn) nextBtn.disabled = _recFilesPage >= totalPages - 1;
+
+  const filterEl = document.getElementById("recorder-filter");
+  const filter = filterEl ? filterEl.value : "";
+
+  if (!page.length) {
+    el.innerHTML = '<p class="recorder-empty">' + (filter ? "No files match filter." : "No recorded files.") + "</p>";
     return;
   }
-  let html = '<table class="recorder-table"><thead><tr><th>File</th><th>Size</th></tr></thead><tbody>';
-  for (const f of list) {
-    const size = f.size < 1048576 ? (f.size / 1024).toFixed(1) + " KB" : (f.size / 1048576).toFixed(1) + " MB";
-    html += `<tr><td>${escapeMapHtml(f.name)}</td><td>${size}</td></tr>`;
+
+  let html = '<table class="recorder-table"><thead><tr><th>File</th><th>Size</th><th></th></tr></thead><tbody>';
+  for (const f of page) {
+    const safeName = escapeMapHtml(f.name);
+    const encodedName = encodeURIComponent(f.name);
+    html += "<tr>"
+      + "<td>" + safeName + "</td>"
+      + "<td>" + recorderFormatSize(f.size) + "</td>"
+      + '<td><div class="rec-file-actions">'
+      + '<a class="rec-file-btn" href="/api/recorder/download/' + encodedName + '" download="' + safeName + '">Download</a>'
+      + '<button class="rec-file-btn rec-delete-btn" data-name="' + safeName + '" type="button">Remove</button>'
+      + "</div></td></tr>";
   }
   html += "</tbody></table>";
   el.innerHTML = html;
+
+  el.querySelectorAll(".rec-delete-btn").forEach(function (btn) {
+    btn.addEventListener("click", async function () {
+      const name = btn.dataset.name;
+      if (!confirm("Delete recording " + name + "?")) return;
+      try {
+        const resp = await fetch("/api/recorder/files/" + encodeURIComponent(name), { method: "DELETE" });
+        if (!resp.ok) throw new Error("HTTP " + resp.status);
+        _recorderFiles = _recorderFiles.filter(function (f) { return f.name !== name; });
+        renderRecorderFiles();
+      } catch (e) {
+        console.error("Delete failed", e);
+      }
+    });
+  });
 }
+
+(function () {
+  const filterEl = document.getElementById("recorder-filter");
+  const sortEl = document.getElementById("recorder-sort");
+  if (filterEl) filterEl.addEventListener("input", function () { _recFilesPage = 0; renderRecorderFiles(); });
+  if (sortEl) sortEl.addEventListener("change", function () { _recFilesPage = 0; renderRecorderFiles(); });
+  const prevBtn = document.getElementById("rec-page-prev");
+  const nextBtn = document.getElementById("rec-page-next");
+  if (prevBtn) prevBtn.addEventListener("click", function () { _recFilesPage--; renderRecorderFiles(); });
+  if (nextBtn) nextBtn.addEventListener("click", function () { _recFilesPage++; renderRecorderFiles(); });
+})();
 
 const rxVolPct = document.getElementById("rx-vol-pct");
 const txVolPct = document.getElementById("tx-vol-pct");

@@ -411,6 +411,35 @@ impl RecorderManager {
         files
     }
 
+    /// Resolve and validate a filename, returning the full path.
+    ///
+    /// Rejects path traversal attempts and files outside the output directory.
+    fn validate_filename(&self, filename: &str) -> Result<PathBuf, String> {
+        if filename.contains('/') || filename.contains('\\') || filename.contains("..") {
+            return Err("invalid filename".into());
+        }
+        if !filename.ends_with(".ogg") {
+            return Err("only .ogg files are accessible".into());
+        }
+        let dir = self.config.resolve_output_dir();
+        let path = dir.join(filename);
+        if !path.exists() {
+            return Err(format!("file not found: {filename}"));
+        }
+        Ok(path)
+    }
+
+    /// Get the full path to a recorded file for download.
+    pub fn file_path(&self, filename: &str) -> Result<PathBuf, String> {
+        self.validate_filename(filename)
+    }
+
+    /// Delete a recorded file.
+    pub fn delete_file(&self, filename: &str) -> Result<(), String> {
+        let path = self.validate_filename(filename)?;
+        std::fs::remove_file(&path).map_err(|e| format!("failed to delete: {e}"))
+    }
+
     /// Check if a recording is active for the given key.
     pub fn is_recording(&self, rig_id: &str, vchan_id: Option<&str>) -> bool {
         let key = Self::make_key(rig_id, vchan_id);

@@ -68,6 +68,7 @@
         <button id="header-audio-toggle" class="header-bar-btn header-audio-btn" aria-label="Toggle audio playback" title="Toggle audio playback">
           <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M5 3v10l8-5z"/></svg>
         </button>
+        <button id="header-rec-btn" class="header-bar-btn header-rec-btn" type="button" aria-label="Toggle recording" title="Toggle recording">REC</button>
         <div class="header-rig-switch">
           <select id="header-rig-switch-select" aria-label="Select active rig"></select>
         </div>
@@ -1076,8 +1077,25 @@
       </section>
       <section class="recorder-section">
         <h3 class="recorder-section-heading">Recorded files</h3>
+        <div class="recorder-filter-bar">
+          <input id="recorder-filter" type="text" class="status-input recorder-filter-input" placeholder="Filter by filename..." />
+          <select id="recorder-sort" class="status-input recorder-sort-select">
+            <option value="name-desc">Newest first</option>
+            <option value="name-asc">Oldest first</option>
+            <option value="size-desc">Largest first</option>
+            <option value="size-asc">Smallest first</option>
+          </select>
+        </div>
         <div id="recorder-files-list" class="recorder-list">
           <p class="recorder-empty">No recorded files.</p>
+        </div>
+        <div class="recorder-page-bar">
+          <div id="rec-page-summary" class="bm-page-summary">Showing 0-0 of 0</div>
+          <div class="bm-page-controls">
+            <button id="rec-page-prev" type="button" disabled>Previous</button>
+            <span id="rec-page-indicator" class="bm-page-indicator">Page 1 of 1</span>
+            <button id="rec-page-next" type="button" disabled>Next</button>
+          </div>
         </div>
       </section>
     </div>
