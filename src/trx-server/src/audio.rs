@@ -2395,7 +2395,8 @@ pub async fn run_lrpt_decoder(
     info!("LRPT decoder started ({}Hz, {} ch)", sample_rate, channels);
     let mut decoder = LrptDecoder::new(sample_rate);
     let mut last_reset_seq: u64 = 0;
-    let mut active = state_rx.borrow().decoders.lrpt_decode_enabled;
+    let mut active = state_rx.borrow().decoders.lrpt_decode_enabled
+        && matches!(state_rx.borrow().status.mode, RigMode::FM);
     let mut pass_start_ms: i64 = 0;
     let mut last_mcu_at = tokio::time::Instant::now();
 
@@ -2404,7 +2405,8 @@ pub async fn run_lrpt_decoder(
             match state_rx.changed().await {
                 Ok(()) => {
                     let state = state_rx.borrow();
-                    active = state.decoders.lrpt_decode_enabled;
+                    active = state.decoders.lrpt_decode_enabled
+                        && matches!(state.status.mode, RigMode::FM);
                     if active {
                         decoder.reset();
                         pass_start_ms = current_timestamp_ms();
@@ -2455,7 +2457,9 @@ pub async fn run_lrpt_decoder(
                 if changed.is_ok() {
                     let (new_active, new_reset_seq) = {
                         let state = state_rx.borrow();
-                        (state.decoders.lrpt_decode_enabled, state.reset_seqs.lrpt_decode_reset_seq)
+                        (state.decoders.lrpt_decode_enabled
+                            && matches!(state.status.mode, RigMode::FM),
+                         state.reset_seqs.lrpt_decode_reset_seq)
                     };
                     let was_active = active;
                     active = new_active;
