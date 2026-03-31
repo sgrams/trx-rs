@@ -89,6 +89,12 @@ pub(crate) async fn digital_modes_index(req: HttpRequest) -> impl Responder {
     static_asset_response(&req, "text/html; charset=utf-8", &c.gz, &c.etag)
 }
 
+#[get("/recorder")]
+pub(crate) async fn recorder_index(req: HttpRequest) -> impl Responder {
+    let c = gz_index_html();
+    static_asset_response(&req, "text/html; charset=utf-8", &c.gz, &c.etag)
+}
+
 #[get("/settings")]
 pub(crate) async fn settings_index(req: HttpRequest) -> impl Responder {
     let c = gz_index_html();

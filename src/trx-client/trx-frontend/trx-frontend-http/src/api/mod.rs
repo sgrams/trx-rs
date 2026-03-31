@@ -618,6 +618,7 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
         .service(assets::index)
         .service(assets::map_index)
         .service(assets::digital_modes_index)
+        .service(assets::recorder_index)
         .service(assets::settings_index)
         .service(assets::about_index)
         .service(assets::favicon)

@@ -1116,9 +1116,9 @@ small { color: var(--text-muted); }
 .top-bar-actions {
   display: flex;
   align-items: center;
-  gap: 0.6rem;
+  gap: 0.45rem 0.6rem;
   min-width: 0;
-  overflow: hidden;
+  flex-wrap: wrap;
 }
 .header-bar-btn.header-audio-btn {
   width: 2rem;
