@@ -254,7 +254,8 @@ function applyAuthRestrictions() {
       "settings-clear-ft2-history",
       "settings-clear-wspr-history",
       "settings-clear-sat-history",
-      "header-rec-btn"
+      "recorder-start-btn",
+      "recorder-stop-btn"
     ];
     pluginToggleBtns.forEach(id => {
       const btn = document.getElementById(id);
@@ -4300,12 +4301,13 @@ if (spectrumBwSweetBtn) {
 }
 
 // --- Tab navigation ---
-const TAB_ORDER = ["main", "bookmarks", "digital-modes", "map", "statistics", "settings", "about"];
+const TAB_ORDER = ["main", "bookmarks", "digital-modes", "map", "statistics", "recorder", "settings", "about"];
 const TAB_PATHS = {
   main: "/",
   bookmarks: "/bookmarks",
   "digital-modes": "/digital-modes",
   map: "/map",
+  recorder: "/recorder",
   settings: "/settings",
   about: "/about",
 };
@@ -4352,6 +4354,9 @@ function navigateToTab(name, options = {}) {
   }
   if (name === "statistics") {
     scheduleStatsRender();
+  }
+  if (name === "recorder") {
+    refreshRecorderStatus();
   }
 }
 
@@ -8857,30 +8862,99 @@ if (headerAudioToggle) {
   headerAudioToggle.addEventListener("click", startRxAudio);
 }
 
-// ── Recorder button ────────────────────────────────────────────────────────
-const headerRecBtn = document.getElementById("header-rec-btn");
+// ── Recorder page ──────────────────────────────────────────────────────────
 let recorderActive = false;
-function syncRecorderBtn() {
-  if (!headerRecBtn) return;
-  headerRecBtn.classList.toggle("rec-active", recorderActive);
+const recorderStartBtn = document.getElementById("recorder-start-btn");
+const recorderStopBtn = document.getElementById("recorder-stop-btn");
+const recorderStatusInd = document.getElementById("recorder-status-indicator");
+
+function syncRecorderUi() {
+  if (recorderStartBtn) recorderStartBtn.disabled = recorderActive;
+  if (recorderStopBtn) recorderStopBtn.disabled = !recorderActive;
+  if (recorderStatusInd) {
+    recorderStatusInd.textContent = recorderActive ? "Recording" : "";
+    recorderStatusInd.classList.toggle("rec-active", recorderActive);
+  }
+  // Sync the tab icon indicator.
+  const tabBtn = document.querySelector('.tab[data-tab="recorder"]');
+  if (tabBtn) tabBtn.classList.toggle("rec-active", recorderActive);
 }
-if (headerRecBtn) {
-  headerRecBtn.addEventListener("click", async () => {
+
+if (recorderStartBtn) {
+  recorderStartBtn.addEventListener("click", async () => {
     try {
-      if (recorderActive) {
-        await postPath("/api/recorder/stop");
-      } else {
-        await postPath("/api/recorder/start");
-      }
+      await postPath("/api/recorder/start");
     } catch (e) {
-      console.error("Recorder toggle failed", e);
+      console.error("Recorder start failed", e);
     }
   });
 }
+if (recorderStopBtn) {
+  recorderStopBtn.addEventListener("click", async () => {
+    try {
+      await postPath("/api/recorder/stop");
+    } catch (e) {
+      console.error("Recorder stop failed", e);
+    }
+  });
+}
+
 window._syncRecorderState = function (enabled) {
   recorderActive = enabled;
-  syncRecorderBtn();
+  syncRecorderUi();
 };
+
+async function refreshRecorderStatus() {
+  try {
+    const [statusResp, filesResp] = await Promise.all([
+      fetch("/api/recorder/status"),
+      fetch("/api/recorder/files"),
+    ]);
+    if (statusResp.ok) {
+      const active = await statusResp.json();
+      renderRecorderActive(active);
+    }
+    if (filesResp.ok) {
+      const files = await filesResp.json();
+      renderRecorderFiles(files);
+    }
+  } catch (e) {
+    console.error("Recorder status fetch failed", e);
+  }
+}
+
+function renderRecorderActive(list) {
+  const el = document.getElementById("recorder-active-list");
+  if (!el) return;
+  if (!list.length) {
+    el.innerHTML = '<p class="recorder-empty">No active recordings.</p>';
+    return;
+  }
+  let html = '<table class="recorder-table"><thead><tr><th>Rig</th><th>VChan</th><th>File</th><th>Started</th></tr></thead><tbody>';
+  for (const r of list) {
+    const started = new Date(r.started_at * 1000).toLocaleTimeString();
+    const fname = r.path.split("/").pop();
+    html += `<tr><td>${escapeMapHtml(r.rig_id)}</td><td>${r.vchan_id ? escapeMapHtml(r.vchan_id) : "-"}</td><td>${escapeMapHtml(fname)}</td><td>${started}</td></tr>`;
+  }
+  html += "</tbody></table>";
+  el.innerHTML = html;
+}
+
+function renderRecorderFiles(list) {
+  const el = document.getElementById("recorder-files-list");
+  if (!el) return;
+  if (!list.length) {
+    el.innerHTML = '<p class="recorder-empty">No recorded files.</p>';
+    return;
+  }
+  let html = '<table class="recorder-table"><thead><tr><th>File</th><th>Size</th></tr></thead><tbody>';
+  for (const f of list) {
+    const size = f.size < 1048576 ? (f.size / 1024).toFixed(1) + " KB" : (f.size / 1048576).toFixed(1) + " MB";
+    html += `<tr><td>${escapeMapHtml(f.name)}</td><td>${size}</td></tr>`;
+  }
+  html += "</tbody></table>";
+  el.innerHTML = html;
+}
 
 const rxVolPct = document.getElementById("rx-vol-pct");
 const txVolPct = document.getElementById("tx-vol-pct");
@@ -10513,14 +10587,14 @@ function createBookmarkChip(bm, colorMap, options = {}) {
       `<svg class='bm-icon-svg' viewBox='0 0 8 12' width='8' height='12' aria-hidden='true'>` +
       "<path d='M0,0 h8 v10 l-4,2 l-4,-2 Z'/>" +
       `</svg>` +
-      `<span class="spectrum-bookmark-freq">${esc(freqStr)}</span>` +
+      `<span class="spectrum-bookmark-freq">${escapeMapHtml(freqStr)}</span>` +
       `</span>` +
-      `<span class="spectrum-bookmark-name">${esc(bm.name)}</span>`
+      `<span class="spectrum-bookmark-name">${escapeMapHtml(bm.name)}</span>`
     )
     : (
       "<svg class='bm-icon-svg' viewBox='0 0 8 12' width='8' height='12' aria-hidden='true'>" +
       "<path d='M0,0 h8 v10 l-4,2 l-4,-2 Z'/>" +
-      "</svg>\u00a0<span class='spectrum-bookmark-name'>" + esc(bm.name) + "</span>"
+      "</svg>\u00a0<span class='spectrum-bookmark-name'>" + escapeMapHtml(bm.name) + "</span>"
     );
   span.innerHTML =
     labelHtml;

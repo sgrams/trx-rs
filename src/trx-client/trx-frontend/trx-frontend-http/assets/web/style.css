@@ -1142,30 +1142,67 @@ small { color: var(--text-muted); }
   color: #00d17f;
   border-color: #00d17f;
 }
-.header-bar-btn.header-rec-btn {
-  height: 2rem;
-  min-height: 0;
-  padding: 0 0.5rem;
-  font-size: 0.7rem;
-  font-weight: 700;
-  letter-spacing: 0.04em;
+/* ── Recorder page ──────────────────────────────────────────────────────── */
+.recorder-controls-bar {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+  margin-bottom: 1.25rem;
+}
+.recorder-action-btn {
+  padding: 0.45rem 1rem;
   border: 1px solid var(--border-light);
   border-radius: 6px;
   background: var(--input-bg);
-  color: var(--text-muted);
+  color: var(--text-primary);
+  font-size: 0.85rem;
   cursor: pointer;
-  flex-shrink: 0;
-  transition: color 0.15s, border-color 0.15s, background 0.15s;
+  transition: border-color 0.15s, color 0.15s, background 0.15s;
 }
-.header-rec-btn.rec-active {
+.recorder-action-btn:hover:not(:disabled) { border-color: var(--accent-green); color: var(--accent-green); }
+.recorder-action-btn:disabled { opacity: 0.4; cursor: default; }
+.recorder-action-btn.recorder-stop:not(:disabled) { border-color: #ff3b30; color: #ff3b30; }
+.recorder-action-btn.recorder-stop:hover:not(:disabled) { background: rgba(255,59,48,0.1); }
+.recorder-status-indicator {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+.recorder-status-indicator.rec-active {
   color: #ff3b30;
-  border-color: #ff3b30;
-  background: rgba(255, 59, 48, 0.12);
+  font-weight: 600;
   animation: rec-pulse 1.5s ease-in-out infinite;
 }
 @keyframes rec-pulse {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.6; }
+}
+.tab.rec-active .tab-icon { color: #ff3b30; }
+.recorder-section { margin-bottom: 1.5rem; }
+.recorder-section-heading {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  margin-bottom: 0.5rem;
+}
+.recorder-list { font-size: 0.82rem; }
+.recorder-empty { color: var(--text-muted); font-style: italic; margin: 0; }
+.recorder-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.82rem;
+}
+.recorder-table th,
+.recorder-table td {
+  padding: 0.35rem 0.6rem;
+  text-align: left;
+  border-bottom: 1px solid var(--border-light);
+}
+.recorder-table th {
+  font-weight: 600;
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
 }
 .header-rig-switch {
   display: flex;

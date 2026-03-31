@@ -51,6 +51,9 @@
             <svg class="tab-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 14h12"/><rect x="3" y="8" width="2" height="6" rx="0.4" fill="currentColor" stroke="none" opacity="0.6"/><rect x="7" y="5" width="2" height="9" rx="0.4" fill="currentColor" stroke="none" opacity="0.75"/><rect x="11" y="2" width="2" height="12" rx="0.4" fill="currentColor" stroke="none" opacity="0.9"/></svg>
             <span class="tab-label">Statistics</span>
           </button>
+          <button class="tab" data-tab="recorder">
+            <svg class="tab-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="8" r="6"/><circle cx="8" cy="8" r="2.5" fill="currentColor" stroke="none"/></svg>
+            <span class="tab-label">Recorder</span>
           <button class="tab" data-tab="settings">
             <svg class="tab-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9.8 3.1a2.6 2.6 0 0 0-2.2 3.9L3.4 11.2a1.2 1.2 0 1 0 1.7 1.7l4.2-4.2a2.6 2.6 0 0 0 3.9-2.2l-1.8.6-1.2-1.2z"/><path d="M10.2 5.8 12 4"/></svg>
             <span class="tab-label">Settings</span>
@@ -65,7 +68,6 @@
         <button id="header-audio-toggle" class="header-bar-btn header-audio-btn" aria-label="Toggle audio playback" title="Toggle audio playback">
           <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M5 3v10l8-5z"/></svg>
         </button>
-        <button id="header-rec-btn" class="header-bar-btn header-rec-btn" type="button" aria-label="Toggle recording" title="Toggle recording">REC</button>
         <div class="header-rig-switch">
           <select id="header-rig-switch-select" aria-label="Select active rig"></select>
         </div>
@@ -1057,6 +1059,26 @@
           </div>
         </div>
         <div id="map-weak-signal-summary-list" class="map-qso-summary-list"></div>
+      </section>
+    </div>
+    <div id="tab-recorder" class="tab-panel" style="display:none;">
+      <h2 class="section-heading">Recorder</h2>
+      <div class="recorder-controls-bar">
+        <button id="recorder-start-btn" class="recorder-action-btn" type="button">Start recording</button>
+        <button id="recorder-stop-btn" class="recorder-action-btn recorder-stop" type="button" disabled>Stop recording</button>
+        <span id="recorder-status-indicator" class="recorder-status-indicator"></span>
+      </div>
+      <section class="recorder-section">
+        <h3 class="recorder-section-heading">Active recordings</h3>
+        <div id="recorder-active-list" class="recorder-list">
+          <p class="recorder-empty">No active recordings.</p>
+        </div>
+      </section>
+      <section class="recorder-section">
+        <h3 class="recorder-section-heading">Recorded files</h3>
+        <div id="recorder-files-list" class="recorder-list">
+          <p class="recorder-empty">No recorded files.</p>
+        </div>
       </section>
     </div>
     <div id="tab-settings" class="tab-panel" style="display:none;">
