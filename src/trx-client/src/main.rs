@@ -523,6 +523,7 @@ async fn async_init() -> DynResult<AppState> {
                     }
                 }
                 DecodedMessage::LrptImage(_) => {}
+                DecodedMessage::LrptProgress(_) => {}
             }
         });
 
