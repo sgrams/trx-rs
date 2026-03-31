@@ -125,7 +125,7 @@ pub const DECODER_REGISTRY: &[DecoderDescriptor] = &[
         id: "lrpt",
         label: "Meteor LRPT",
         activation: DecoderActivation::Toggle,
-        active_modes: &["DIG", "USB"],
+        active_modes: &["FM"],
         background_decode: false,
         bookmark_selectable: true,
     },

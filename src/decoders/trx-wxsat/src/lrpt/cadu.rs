@@ -22,6 +22,22 @@ pub const CADU_LEN: usize = 1024;
 /// CADU payload length (excluding ASM).
 pub const CADU_PAYLOAD_LEN: usize = CADU_LEN - 4;
 
+/// Generate the CCSDS pseudo-random derandomization sequence.
+///
+/// Polynomial: x^8 + x^7 + x^5 + x^3 + 1, initial state 0xFF.
+/// The sequence is XOR'd with CADU bytes after the ASM to undo the
+/// on-board randomization applied before transmission.
+fn ccsds_derandomize(data: &mut [u8]) {
+    let mut sr: u8 = 0xFF;
+    for byte in data.iter_mut() {
+        *byte ^= sr;
+        for _ in 0..8 {
+            let feedback = ((sr >> 7) ^ (sr >> 5) ^ (sr >> 3) ^ sr) & 1;
+            sr = (sr << 1) | feedback;
+        }
+    }
+}
+
 /// A complete CADU frame (1024 bytes including ASM).
 #[derive(Clone)]
 pub struct Cadu {
@@ -131,6 +147,8 @@ impl CaduFramer {
                     let mut data = ASM.to_vec();
                     data.extend_from_slice(&frame_bytes);
                     if data.len() == CADU_LEN {
+                        // Derandomize payload (everything after 4-byte ASM)
+                        ccsds_derandomize(&mut data[4..]);
                         cadus.push(Cadu { data });
                     }
                     self.locked = false;
@@ -200,6 +218,19 @@ mod tests {
     fn test_find_asm_not_found() {
         let buf = [0x00, 0x01, 0x02, 0x03, 0x04];
         assert_eq!(find_asm(&buf), None);
+    }
+
+    #[test]
+    fn test_derandomize_roundtrip() {
+        let original = vec![0xAB; CADU_PAYLOAD_LEN];
+        let mut data = original.clone();
+        // Randomize
+        ccsds_derandomize(&mut data);
+        // Should differ from original
+        assert_ne!(data, original);
+        // Derandomize again (same sequence) should restore
+        ccsds_derandomize(&mut data);
+        assert_eq!(data, original);
     }
 
     #[test]
