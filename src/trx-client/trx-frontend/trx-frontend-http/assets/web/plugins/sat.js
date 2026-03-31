@@ -91,6 +91,13 @@ window.updateSatLiveState = function (update) {
     _lastSatLrptOn = lrptOn;
     satDom.lrptState.textContent = lrptOn ? "Listening" : "Idle";
     satDom.lrptState.className = "sat-live-value " + (lrptOn ? "sat-state-listening" : "sat-state-idle");
+    if (satDom.status) {
+      if (lrptOn) {
+        satDom.status.textContent = "Decoder active \u2014 waiting for signal";
+      } else {
+        satDom.status.textContent = "Decoder idle";
+      }
+    }
   }
 };
 
@@ -233,6 +240,12 @@ function addSatImage(img, decoder) {
 }
 
 // ── Server callbacks ────────────────────────────────────────────────
+window.onServerLrptProgress = function (msg) {
+  if (satDom.status && msg.mcu_count > 0) {
+    satDom.status.textContent = "Receiving \u2014 " + msg.mcu_count + " MCU rows decoded";
+  }
+};
+
 window.onServerLrptImage = function (msg) {
   if (satDom.status) satDom.status.textContent = "Image received (Meteor LRPT)";
   addSatImage(msg, "lrpt");

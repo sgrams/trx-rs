@@ -30,6 +30,8 @@ pub enum DecodedMessage {
     Wspr(WsprMessage),
     #[serde(rename = "lrpt_image")]
     LrptImage(LrptImage),
+    #[serde(rename = "lrpt_progress")]
+    LrptProgress(LrptProgress),
 }
 
 impl DecodedMessage {
@@ -43,6 +45,7 @@ impl DecodedMessage {
             Self::Ft8(m) | Self::Ft4(m) | Self::Ft2(m) => m.rig_id = Some(id),
             Self::Wspr(m) => m.rig_id = Some(id),
             Self::LrptImage(m) => m.rig_id = Some(id),
+            Self::LrptProgress(m) => m.rig_id = Some(id),
         }
     }
 
@@ -56,6 +59,7 @@ impl DecodedMessage {
             Self::Ft8(m) | Self::Ft4(m) | Self::Ft2(m) => m.rig_id.as_deref(),
             Self::Wspr(m) => m.rig_id.as_deref(),
             Self::LrptImage(m) => m.rig_id.as_deref(),
+            Self::LrptProgress(m) => m.rig_id.as_deref(),
         }
     }
 }
@@ -221,6 +225,15 @@ pub struct WsprMessage {
     pub freq_hz: f32,
     /// Decoded message text
     pub message: String,
+}
+
+/// Live LRPT decode progress update, sent periodically during active decoding.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LrptProgress {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rig_id: Option<String>,
+    /// Number of MCU rows decoded so far in this pass.
+    pub mcu_count: u32,
 }
 
 /// A completed Meteor-M LRPT satellite image, saved to disk as a PNG.

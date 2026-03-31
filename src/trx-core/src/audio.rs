@@ -68,6 +68,8 @@ pub const AUDIO_MSG_FT4_DECODE: u8 = 0x14;
 pub const AUDIO_MSG_FT2_DECODE: u8 = 0x15;
 /// Server → client: Meteor-M LRPT image complete (JSON `DecodedMessage::LrptImage`).
 pub const AUDIO_MSG_LRPT_IMAGE: u8 = 0x17;
+/// Server → client: LRPT decode progress update (JSON `DecodedMessage::LrptProgress`).
+pub const AUDIO_MSG_LRPT_PROGRESS: u8 = 0x18;
 
 /// Maximum payload size for normal messages (1 MB).
 const MAX_PAYLOAD_SIZE: u32 = 1_048_576;

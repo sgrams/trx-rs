@@ -9134,7 +9134,8 @@ function dispatchDecodeMessage(msg, skipStats) {
   if (msg.type === "ft2" && window.onServerFt2) window.onServerFt2(msg);
   if (msg.type === "wspr" && window.onServerWspr) window.onServerWspr(msg);
   if (msg.type === "lrpt_image" && window.onServerLrptImage) window.onServerLrptImage(msg);
-  if (!skipStats && msg.type && msg.type !== "lrpt_image") {
+  if (msg.type === "lrpt_progress" && window.onServerLrptProgress) window.onServerLrptProgress(msg);
+  if (!skipStats && msg.type && msg.type !== "lrpt_image" && msg.type !== "lrpt_progress") {
     statsRecordDecode(msg.type, msg.rig_id || msg.remote || null);
     scheduleStatsRender();
   }
@@ -9144,7 +9145,7 @@ function dispatchDecodeBatch(batch) {
   if (!Array.isArray(batch) || batch.length === 0) return;
   // Record statistics for every message in the batch regardless of dispatch path.
   for (const msg of batch) {
-    if (msg.type && msg.type !== "lrpt_image") {
+    if (msg.type && msg.type !== "lrpt_image" && msg.type !== "lrpt_progress") {
       statsRecordDecode(msg.type, msg.rig_id || msg.remote || null);
     }
   }
@@ -9231,7 +9232,7 @@ function loadDecodeHistoryOnMainThread(onReady, onError) {
 function restoreDecodeHistoryGroup(kind, messages) {
   if (!Array.isArray(messages) || messages.length === 0) return;
   // Record statistics for restored history messages.
-  if (kind !== "lrpt_image") {
+  if (kind !== "lrpt_image" && kind !== "lrpt_progress") {
     for (const msg of messages) {
       statsRecordDecode(kind, msg.rig_id || msg.remote || null, msg.ts_ms || undefined);
     }

@@ -26,13 +26,15 @@ use trx_core::audio::{
     write_vchan_uuid_msg, AudioStreamInfo, AUDIO_MSG_AIS_DECODE, AUDIO_MSG_APRS_DECODE,
     AUDIO_MSG_CW_DECODE, AUDIO_MSG_FT2_DECODE, AUDIO_MSG_FT4_DECODE, AUDIO_MSG_FT8_DECODE,
     AUDIO_MSG_HF_APRS_DECODE, AUDIO_MSG_HISTORY_COMPRESSED, AUDIO_MSG_LRPT_IMAGE,
+    AUDIO_MSG_LRPT_PROGRESS,
     AUDIO_MSG_RX_FRAME, AUDIO_MSG_STREAM_INFO, AUDIO_MSG_TX_FRAME, AUDIO_MSG_VCHAN_ALLOCATED,
     AUDIO_MSG_VCHAN_BW, AUDIO_MSG_VCHAN_DESTROYED, AUDIO_MSG_VCHAN_FREQ, AUDIO_MSG_VCHAN_MODE,
     AUDIO_MSG_VCHAN_REMOVE, AUDIO_MSG_VCHAN_SUB, AUDIO_MSG_VCHAN_UNSUB, AUDIO_MSG_VDES_DECODE,
     AUDIO_MSG_WSPR_DECODE,
 };
 use trx_core::decode::{
-    AisMessage, AprsPacket, CwEvent, DecodedMessage, Ft8Message, LrptImage, VdesMessage,
+    AisMessage, AprsPacket, CwEvent, DecodedMessage, Ft8Message, LrptImage, LrptProgress,
+    VdesMessage,
     WsprMessage,
 };
 use trx_core::rig::state::{RigMode, RigState};
@@ -2445,6 +2447,12 @@ pub async fn run_lrpt_decoder(
                         };
                         if new_mcus > 0 {
                             last_mcu_at = tokio::time::Instant::now();
+                            let _ = decode_tx.send(DecodedMessage::LrptProgress(
+                                LrptProgress {
+                                    rig_id: None,
+                                    mcu_count: decoder.mcu_count(),
+                                },
+                            ));
                         }
                     }
                     Err(broadcast::error::RecvError::Lagged(n)) => {
@@ -3301,6 +3309,7 @@ async fn handle_audio_client(
                                 DecodedMessage::Wspr(_) => AUDIO_MSG_WSPR_DECODE,
 
                                 DecodedMessage::LrptImage(_) => AUDIO_MSG_LRPT_IMAGE,
+                                DecodedMessage::LrptProgress(_) => AUDIO_MSG_LRPT_PROGRESS,
                             };
                             if let Ok(json) = serde_json::to_vec(&msg) {
                                 if let Err(e) = write_audio_msg(&mut writer_for_rx, msg_type, &json).await {
@@ -3330,6 +3339,7 @@ async fn handle_audio_client(
                                 DecodedMessage::Wspr(_) => AUDIO_MSG_WSPR_DECODE,
 
                                 DecodedMessage::LrptImage(_) => AUDIO_MSG_LRPT_IMAGE,
+                                DecodedMessage::LrptProgress(_) => AUDIO_MSG_LRPT_PROGRESS,
                             };
                             if let Ok(json) = serde_json::to_vec(&msg) {
                                 if let Err(e) = write_audio_msg(&mut writer_for_rx, msg_type, &json).await {
