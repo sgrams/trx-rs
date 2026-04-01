@@ -5,7 +5,7 @@
   const T = window.trx;
 
   // Destructure shared utility functions for convenience
-  const { saveSetting, loadSetting, showHint, formatFreq, formatFreqForHumans,
+  const { saveSetting, loadSetting, showHint, escapeMapHtml, formatFreq, formatFreqForHumans,
           postPath, scheduleUiFrameJob, navigateToTab, rigBadgeColor,
           formatUptime, latLonToMaidenhead, locatorToLatLon, haversineKm,
           formatDistanceKm, formatTimeAgo, currentDecodeHistoryRetentionMs,
@@ -2428,14 +2428,6 @@
       rebuildMapLocatorFilters();
       applyMapFilter();
     });
-  }
-
-  function escapeMapHtml(input) {
-    return String(input)
-      .replaceAll("&", "&amp;")
-      .replaceAll("<", "&lt;")
-      .replaceAll(">", "&gt;")
-      .replaceAll("\"", "&quot;");
   }
 
   function formatDecodeLocatorTime(tsMs) {
