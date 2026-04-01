@@ -1244,8 +1244,12 @@ small { color: var(--text-muted); }
   gap: 0.4rem;
 }
 .recorder-table .rec-file-btn {
+  display: inline-block;
   padding: 0.2rem 0.5rem;
   font-size: 0.75rem;
+  font-family: inherit;
+  line-height: 1.4;
+  text-decoration: none;
   border: 1px solid var(--border-light);
   border-radius: 4px;
   background: var(--input-bg);
