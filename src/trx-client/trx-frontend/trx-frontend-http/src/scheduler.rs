@@ -529,6 +529,15 @@ pub struct SchedulerStatus {
     /// Name of the satellite whose pass is currently active (if any).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub active_satellite: Option<String>,
+    /// Frequency in Hz of the active bookmark.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub freq_hz: Option<u64>,
+    /// Mode string of the active bookmark.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mode: Option<String>,
+    /// Decoders active from the primary and extra bookmarks.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub active_decoders: Vec<String>,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -542,6 +551,7 @@ async fn apply_scheduler_target(
     center_hz: Option<u64>,
     extra_bm_ids: &[String],
     satellite_name: Option<&str>,
+    log_map: &SharedActivityLogMap,
 ) -> Result<SchedulerStatus, String> {
     let bookmark = bookmarks
         .get_for_rig(remote, bookmark_id)
@@ -592,6 +602,15 @@ async fn apply_scheduler_target(
 
     apply_scheduler_decoders(rig_tx, remote, &bookmark, &extra_bookmarks).await;
 
+    let mut all_decoders: Vec<String> = bookmark.decoders.clone();
+    for ebm in &extra_bookmarks {
+        for d in &ebm.decoders {
+            if !all_decoders.contains(d) {
+                all_decoders.push(d.clone());
+            }
+        }
+    }
+
     let status = SchedulerStatus {
         active: true,
         last_entry_id: entry_id.map(str::to_string),
@@ -606,6 +625,9 @@ async fn apply_scheduler_target(
         last_center_hz: center_hz,
         last_bookmark_ids: extra_bm_ids.to_vec(),
         active_satellite: satellite_name.map(str::to_string),
+        freq_hz: Some(bookmark.freq_hz),
+        mode: Some(bookmark.mode.clone()),
+        active_decoders: all_decoders,
     };
 
     {
@@ -613,11 +635,81 @@ async fn apply_scheduler_target(
         map.insert(remote.to_string(), status.clone());
     }
 
+    {
+        let log = {
+            let mut map = log_map.write().unwrap_or_else(|e| e.into_inner());
+            map.entry(remote.to_string())
+                .or_insert_with(|| Arc::new(ActivityLog::new()))
+                .clone()
+        };
+        log.push(ActivityLogEntry {
+            utc: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs() as i64,
+            action: if satellite_name.is_some() {
+                "satellite_aos".to_string()
+            } else {
+                "applied".to_string()
+            },
+            entry_label: entry_id.map(|s| s.to_string()),
+            bookmark_name: Some(bookmark.name.clone()),
+        });
+    }
+
     Ok(status)
 }
 
 /// Shared mutable state for scheduler status (one entry per rig).
 pub type SchedulerStatusMap = Arc<RwLock<HashMap<String, SchedulerStatus>>>;
+
+// ============================================================================
+// Activity log
+// ============================================================================
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ActivityLogEntry {
+    pub utc: i64,
+    pub action: String,
+    pub entry_label: Option<String>,
+    pub bookmark_name: Option<String>,
+}
+
+pub struct ActivityLog {
+    entries: std::sync::Mutex<std::collections::VecDeque<ActivityLogEntry>>,
+}
+
+impl Default for ActivityLog {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl ActivityLog {
+    pub fn new() -> Self {
+        Self {
+            entries: std::sync::Mutex::new(std::collections::VecDeque::with_capacity(101)),
+        }
+    }
+
+    pub fn push(&self, entry: ActivityLogEntry) {
+        if let Ok(mut entries) = self.entries.lock() {
+            if entries.len() >= 100 {
+                entries.pop_front();
+            }
+            entries.push_back(entry);
+        }
+    }
+
+    pub fn entries(&self) -> Vec<ActivityLogEntry> {
+        self.entries
+            .lock()
+            .map(|e| e.iter().cloned().collect())
+            .unwrap_or_default()
+    }
+}
+
+pub type SharedActivityLogMap = Arc<RwLock<HashMap<String, Arc<ActivityLog>>>>;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct AppliedTarget {
@@ -692,6 +784,7 @@ impl SchedulerControlManager {
 
 pub type SharedSchedulerControlManager = Arc<SchedulerControlManager>;
 
+#[allow(clippy::too_many_arguments)]
 pub fn spawn_scheduler_task(
     context: Arc<FrontendRuntimeContext>,
     rig_tx: mpsc::Sender<RigRequest>,
@@ -700,6 +793,7 @@ pub fn spawn_scheduler_task(
     status_map: SchedulerStatusMap,
     control: SharedSchedulerControlManager,
     recorder_mgr: Option<Arc<super::recorder::RecorderManager>>,
+    log_map: SharedActivityLogMap,
 ) {
     tokio::spawn(async move {
         let mut interval = time::interval(Duration::from_secs(30));
@@ -772,6 +866,7 @@ pub fn spawn_scheduler_task(
                         sat_target.center_hz,
                         &sat_target.extra_bm_ids,
                         Some(&sat_target.satellite),
+                        &log_map,
                     )
                     .await
                     {
@@ -882,6 +977,7 @@ pub fn spawn_scheduler_task(
                     center_hz,
                     &extra_bm_ids,
                     None,
+                    &log_map,
                 )
                 .await
                 {
@@ -1060,6 +1156,7 @@ async fn apply_last_scheduler_cycle(
     remote: &str,
     status_map: &SchedulerStatusMap,
     bookmarks: &BookmarkStoreMap,
+    log_map: &SharedActivityLogMap,
 ) {
     let status = {
         let Ok(map) = status_map.read() else {
@@ -1092,6 +1189,7 @@ async fn apply_last_scheduler_cycle(
         status.last_center_hz,
         &status.last_bookmark_ids,
         status.active_satellite.as_deref(),
+        log_map,
     )
     .await
     {
@@ -1275,6 +1373,7 @@ pub async fn put_scheduler_activate_entry(
     status_map: web::Data<SchedulerStatusMap>,
     bookmarks: web::Data<Arc<BookmarkStoreMap>>,
     rig_tx: web::Data<mpsc::Sender<RigRequest>>,
+    log_map: web::Data<SharedActivityLogMap>,
 ) -> impl Responder {
     let rig_id = path.into_inner();
     let Some(config) = store_map.store_for(&rig_id).get_config() else {
@@ -1302,6 +1401,7 @@ pub async fn put_scheduler_activate_entry(
         entry.center_hz,
         &entry.bookmark_ids,
         None,
+        log_map.get_ref(),
     )
     .await
     {
@@ -1338,6 +1438,7 @@ pub async fn put_scheduler_control(
     rig_tx: web::Data<mpsc::Sender<RigRequest>>,
     status_map: web::Data<SchedulerStatusMap>,
     bookmarks: web::Data<Arc<BookmarkStoreMap>>,
+    log_map: web::Data<SharedActivityLogMap>,
 ) -> impl Responder {
     let body = body.into_inner();
     let summary = control.set_released(body.session_id, body.released);
@@ -1348,11 +1449,28 @@ pub async fn put_scheduler_control(
                 remote,
                 status_map.get_ref(),
                 bookmarks.get_ref().as_ref(),
+                log_map.get_ref(),
             )
             .await;
         }
     }
     HttpResponse::Ok().json(summary)
+}
+
+/// GET /scheduler/{remote}/log
+#[get("/scheduler/{remote}/log")]
+pub async fn get_scheduler_log(
+    path: web::Path<String>,
+    log_map: web::Data<SharedActivityLogMap>,
+) -> impl Responder {
+    let remote = path.into_inner();
+    let entries = {
+        let map = log_map.read().unwrap_or_else(|e| e.into_inner());
+        map.get(&remote)
+            .map(|log| log.entries())
+            .unwrap_or_default()
+    };
+    HttpResponse::Ok().json(entries)
 }
 
 #[cfg(test)]

@@ -55,6 +55,11 @@
     return typeof b.getBookmarks === "function" ? b.getBookmarks() : [];
   }
 
+  function markDirty() {
+    var b = getBridge();
+    if (typeof b.markDirty === "function") b.markDirty();
+  }
+
   function bmName(id) {
     const bm = getBookmarks().find(function (b) { return b.id === id; });
     return bm ? bm.name : String(id || "");
@@ -208,6 +213,7 @@
     var sat = ensureSatelliteConfig();
     sat.entries.splice(idx, 1);
     renderEntries();
+    markDirty();
   }
 
   // ── Form: open ────────────────────────────────────────────────────
@@ -275,6 +281,7 @@
 
     closeForm();
     renderEntries();
+    markDirty();
   }
 
   // ── Preset change handler ─────────────────────────────────────────
@@ -290,6 +297,12 @@
     if (dom.enabled) {
       dom.enabled.addEventListener("change", function () {
         if (dom.body) dom.body.style.display = dom.enabled.checked ? "" : "none";
+        markDirty();
+      });
+    }
+    if (dom.pretune) {
+      dom.pretune.addEventListener("input", function () {
+        markDirty();
       });
     }
     if (dom.addBtn)     dom.addBtn.addEventListener("click", function () { openForm(null, null); });

@@ -43,7 +43,9 @@ use trx_frontend::{FrontendRuntimeContext, FrontendSpawner};
 use auth::{AuthConfig, AuthState, SameSite};
 use background_decode::{BackgroundDecodeManager, BackgroundDecodeStore};
 use recorder::{RecorderConfig, RecorderManager};
-use scheduler::{SchedulerControlManager, SchedulerStatusMap, SchedulerStoreMap};
+use scheduler::{
+    SchedulerControlManager, SchedulerStatusMap, SchedulerStoreMap, SharedActivityLogMap,
+};
 use vchan::ClientChannelManager;
 
 /// HTTP frontend implementation.
@@ -88,6 +90,7 @@ async fn serve(
     let bookmark_store_map = Arc::new(bookmarks::BookmarkStoreMap::new());
     let scheduler_status: SchedulerStatusMap = Arc::new(RwLock::new(HashMap::new()));
     let scheduler_control = Arc::new(SchedulerControlManager::default());
+    let activity_log_map: SharedActivityLogMap = Arc::new(RwLock::new(HashMap::new()));
 
     let recorder_config = RecorderConfig::default();
     let recorder_mgr = Arc::new(RecorderManager::new(recorder_config));
@@ -100,6 +103,7 @@ async fn serve(
         scheduler_status.clone(),
         scheduler_control.clone(),
         Some(recorder_mgr.clone()),
+        activity_log_map.clone(),
     );
 
     let background_decode_path = BackgroundDecodeStore::default_path();
@@ -155,6 +159,7 @@ async fn serve(
         scheduler_store,
         scheduler_status,
         scheduler_control,
+        activity_log_map,
         vchan_mgr,
         session_rig_mgr,
         background_decode_mgr,
@@ -182,6 +187,7 @@ fn build_server(
     scheduler_store: Arc<SchedulerStoreMap>,
     scheduler_status: SchedulerStatusMap,
     scheduler_control: Arc<SchedulerControlManager>,
+    activity_log_map: SharedActivityLogMap,
     vchan_mgr: Arc<ClientChannelManager>,
     session_rig_mgr: Arc<api::SessionRigManager>,
     background_decode_mgr: Arc<BackgroundDecodeManager>,
@@ -198,6 +204,7 @@ fn build_server(
     let scheduler_store = web::Data::new(scheduler_store);
     let scheduler_status = web::Data::new(scheduler_status);
     let scheduler_control = web::Data::new(scheduler_control);
+    let activity_log_map = web::Data::new(activity_log_map);
     let vchan_mgr = web::Data::new(vchan_mgr);
     let session_rig_mgr = web::Data::new(session_rig_mgr);
     let background_decode_mgr = web::Data::new(background_decode_mgr);
@@ -255,6 +262,7 @@ fn build_server(
             .app_data(scheduler_store.clone())
             .app_data(scheduler_status.clone())
             .app_data(scheduler_control.clone())
+            .app_data(activity_log_map.clone())
             .app_data(vchan_mgr.clone())
             .app_data(session_rig_mgr.clone())
             .app_data(background_decode_mgr.clone())

@@ -337,6 +337,7 @@
         currentSchedulerStatus = st || null;
         renderStatus(st);
         renderSchedulerInterleaveStatus();
+        renderActivityLog();
         renderSatPassStatus();
       })
       .catch(function () {});
@@ -364,7 +365,57 @@
     const satLabel = st.active_satellite
       ? " [SAT: " + st.active_satellite + "]"
       : "";
-    el.textContent = "Last applied: " + name + satLabel + ts;
+    var details = "";
+    if (st.freq_hz) {
+      details += formatFreq(st.freq_hz);
+      if (st.mode) details += " \u00B7 " + st.mode;
+      if (st.active_decoders && st.active_decoders.length > 0) {
+        details += " \u00B7 " + st.active_decoders.join(", ") + " active";
+      }
+    }
+    if (details) {
+      el.innerHTML = "Last applied: " + escHtml(name) + satLabel + ts +
+        '<br><span class="sch-status-detail">' + escHtml(details) + '</span>';
+    } else {
+      el.textContent = "Last applied: " + name + satLabel + ts;
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // Activity log
+  // -------------------------------------------------------------------------
+  function apiGetSchedulerLog(rigId) {
+    return fetch("/scheduler/" + encodeURIComponent(rigId) + "/log").then(function (r) {
+      return r.ok ? r.json() : [];
+    });
+  }
+
+  function renderActivityLog() {
+    var wrap = document.getElementById("scheduler-activity-log-wrap");
+    var container = document.getElementById("scheduler-activity-log");
+    if (!wrap || !container || !currentRigId) return;
+
+    apiGetSchedulerLog(currentRigId).then(function (entries) {
+      if (!entries || entries.length === 0) {
+        wrap.style.display = "none";
+        return;
+      }
+      wrap.style.display = "";
+      var html = entries.slice().reverse().map(function (e) {
+        var d = new Date(e.utc * 1000);
+        var ts = d.toUTCString();
+        var action = e.action || "unknown";
+        var label = e.entry_label || "";
+        var bm = e.bookmark_name || "";
+        return '<div class="sch-log-entry">' +
+          '<span class="sch-log-time">' + escHtml(ts) + '</span> ' +
+          '<span class="sch-log-action">' + escHtml(action) + '</span> ' +
+          (bm ? '<span class="sch-log-bm">' + escHtml(bm) + '</span>' : '') +
+          (label ? ' <span class="sch-log-label">(' + escHtml(label) + ')</span>' : '') +
+          '</div>';
+      }).join("");
+      container.innerHTML = html;
+    }).catch(function () {});
   }
 
   // -------------------------------------------------------------------------
@@ -402,6 +453,10 @@
       const lon = gl.lon != null ? gl.lon : (typeof serverLon !== "undefined" ? serverLon : "");
       setInputValue("scheduler-gl-lat", lat != null ? lat : "");
       setInputValue("scheduler-gl-lon", lon != null ? lon : "");
+      var gridEl = document.getElementById("scheduler-gl-grid");
+      if (gridEl && lat !== "" && lon !== "") {
+        gridEl.value = latLonToGrid(lat, lon);
+      }
       setInputValue("scheduler-gl-window", gl.transition_window_min != null ? gl.transition_window_min : 20);
       renderBookmarkSelect("scheduler-gl-dawn", gl.dawn_bookmark_id);
       renderBookmarkSelect("scheduler-gl-day", gl.day_bookmark_id);
@@ -413,6 +468,10 @@
       const lon = typeof serverLon !== "undefined" ? serverLon : "";
       setInputValue("scheduler-gl-lat", lat != null ? lat : "");
       setInputValue("scheduler-gl-lon", lon != null ? lon : "");
+      var gridEl2 = document.getElementById("scheduler-gl-grid");
+      if (gridEl2 && lat !== "" && lon !== "") {
+        gridEl2.value = latLonToGrid(lat, lon);
+      }
       setInputValue("scheduler-gl-window", 20);
       renderBookmarkSelect("scheduler-gl-dawn", null);
       renderBookmarkSelect("scheduler-gl-day", null);
@@ -596,7 +655,7 @@
     }
 
     var W = 1000;
-    var H = 62;
+    var H = 80;
     var BAR_Y = 6;
     var BAR_H = 30;
     var TICK_Y = BAR_Y + BAR_H + 2;
@@ -634,6 +693,31 @@
       }
     });
 
+    // Interleave stripes for overlapping entries
+    var interleaveMin = currentConfig && currentConfig.interleave_min ? Number(currentConfig.interleave_min) : 0;
+    if (interleaveMin > 0 && entries.length > 1) {
+      // Find overlap regions where 2+ entries are active
+      for (var m = 0; m < 1440; m += interleaveMin) {
+        var overlapping = [];
+        entries.forEach(function (entry, idx) {
+          if (schedulerEntryIsActive(entry, m)) {
+            overlapping.push(idx);
+          }
+        });
+        if (overlapping.length > 1) {
+          var stripeX = (m / 1440) * W;
+          var stripeW = Math.max(1, (interleaveMin / 1440) * W);
+          // Determine which entry "owns" this stripe via cycle position
+          var cyclePos = m % (interleaveMin * overlapping.length);
+          var ownerSlot = Math.floor(cyclePos / interleaveMin);
+          var ownerIdx = overlapping[ownerSlot % overlapping.length];
+          var stripeColor = TIMELINE_COLORS[ownerIdx % TIMELINE_COLORS.length];
+          svg += '<rect x="' + stripeX.toFixed(1) + '" y="' + (BAR_Y + BAR_H - 5) + '" width="' + stripeW.toFixed(1) +
+            '" height="5" fill="' + stripeColor + '" opacity="0.9" />';
+        }
+      }
+    }
+
     // Tick marks every 3 hours
     for (var h = 0; h <= 24; h += 3) {
       var tx = (h / 24) * W;
@@ -643,6 +727,17 @@
         svg += '<text class="sch-timeline-tick-label" x="' + (tx + 3).toFixed(1) + '" y="' + (TICK_Y + 16) +
           '">' + String(h).padStart(2, "0") + '</text>';
       }
+    }
+
+    // Local time ticks
+    var LOCAL_TICK_Y = TICK_Y + 18;
+    for (var h = 0; h < 24; h += 3) {
+      var localMin = h * 60;
+      var utcOffset = new Date().getTimezoneOffset(); // offset in minutes (negative for east of UTC)
+      var utcMin = (localMin + utcOffset + 1440) % 1440;
+      var tx = (utcMin / 1440) * W;
+      svg += '<text class="sch-timeline-tick-label sch-timeline-local-tick" x="' + (tx + 3).toFixed(1) + '" y="' + (LOCAL_TICK_Y + 10) +
+        '">' + String(h).padStart(2, "0") + 'L</text>';
     }
 
     // Current time needle
@@ -659,6 +754,29 @@
         if (entry) schOpenEntryForm(entry, i);
       });
     });
+
+    // Click-to-add on empty timeline region
+    var svgEl = container.querySelector('svg');
+    if (svgEl) {
+      svgEl.addEventListener('click', function (e) {
+        // Only trigger if clicking on the background bar, not on a segment
+        if (e.target.classList.contains('sch-timeline-seg')) return;
+        var rect = svgEl.getBoundingClientRect();
+        var xPct = (e.clientX - rect.left) / rect.width;
+        var clickMin = Math.floor(xPct * 1440);
+        var startHour = Math.floor(clickMin / 60);
+        var startMin = startHour * 60;
+        var endMin = ((startHour + 1) % 24) * 60;
+
+        // Pre-fill the entry form with the clicked hour
+        schOpenEntryForm(null, null);
+        var startEl = document.getElementById('scheduler-ts-start');
+        var endEl = document.getElementById('scheduler-ts-end');
+        if (startEl) startEl.value = minToHHMM(startMin);
+        if (endEl) endEl.value = minToHHMM(endMin);
+      });
+      svgEl.style.cursor = 'crosshair';
+    }
   }
 
   function timelineNeedleSvg() {
@@ -676,6 +794,57 @@
   }
 
   // -------------------------------------------------------------------------
+  // Inline row editing
+  // -------------------------------------------------------------------------
+  function schInlineEdit(tr, entry, idx) {
+    var bmOptions = bookmarkList.map(function (bm) {
+      var sel = bm.id === entry.bookmark_id ? ' selected' : '';
+      return '<option value="' + escHtml(bm.id) + '"' + sel + '>' + escHtml(bm.name) + '</option>';
+    }).join('');
+
+    tr.innerHTML =
+      '<td class="sch-drag-handle" draggable="true" title="Drag to reorder">\u2807</td>' +
+      '<td><input type="time" class="status-input sch-inline-input" value="' + minToHHMM(entry.start_min) + '" data-field="start" /></td>' +
+      '<td><input type="time" class="status-input sch-inline-input" value="' + minToHHMM(entry.end_min) + '" data-field="end" /></td>' +
+      '<td>' + (entry.center_hz ? formatFreq(entry.center_hz) : '\u2014') + '</td>' +
+      '<td><select class="status-input sch-inline-input" data-field="bookmark">' + bmOptions + '</select></td>' +
+      '<td>' + (Array.isArray(entry.bookmark_ids) && entry.bookmark_ids.length ? entry.bookmark_ids.map(function(id) { return escHtml(bmName(id)); }).join(', ') : '\u2014') + '</td>' +
+      '<td><input type="text" class="status-input sch-inline-input" value="' + escHtml(entry.label || '') + '" data-field="label" /></td>' +
+      '<td><input type="number" class="status-input sch-inline-input" value="' + (entry.interleave_min || '') + '" min="1" max="60" placeholder="\u2014" data-field="interleave" style="width:4rem;" /></td>' +
+      '<td><input type="checkbox" ' + (entry.record ? 'checked' : '') + ' data-field="record" /></td>' +
+      '<td><button class="sch-write sch-inline-save" type="button">Save</button><button class="sch-write sch-inline-cancel" type="button">Cancel</button></td>';
+
+    tr.classList.add('sch-inline-editing');
+
+    tr.querySelector('.sch-inline-save').addEventListener('click', function () {
+      var startEl = tr.querySelector('[data-field="start"]');
+      var endEl = tr.querySelector('[data-field="end"]');
+      var bmEl = tr.querySelector('[data-field="bookmark"]');
+      var labelEl = tr.querySelector('[data-field="label"]');
+      var ilEl = tr.querySelector('[data-field="interleave"]');
+      var recEl = tr.querySelector('[data-field="record"]');
+
+      if (bmEl && !bmEl.value) { alert('Please select a bookmark.'); return; }
+
+      entry.start_min = hhmmToMin(startEl.value);
+      entry.end_min = hhmmToMin(endEl.value);
+      entry.bookmark_id = bmEl.value;
+      entry.label = labelEl.value.trim() || null;
+      var ilVal = parseInt(ilEl.value, 10);
+      entry.interleave_min = (!isNaN(ilVal) && ilVal > 0) ? ilVal : null;
+      entry.record = recEl.checked;
+
+      currentConfig.entries[idx] = entry;
+      renderTimespanEntries();
+      markSchedulerDirty();
+    });
+
+    tr.querySelector('.sch-inline-cancel').addEventListener('click', function () {
+      renderTimespanEntries();
+    });
+  }
+
+  // -------------------------------------------------------------------------
   // TimeSpan entries table
   // -------------------------------------------------------------------------
   function renderTimespanEntries() {
@@ -688,6 +857,10 @@
         : [];
     entries.forEach(function (entry, idx) {
       const tr = document.createElement("tr");
+      if (currentSchedulerStatus && currentSchedulerStatus.last_entry_id &&
+          entry.id && String(entry.id) === String(currentSchedulerStatus.last_entry_id)) {
+        tr.classList.add("sch-active");
+      }
       const il = entry.interleave_min ? String(entry.interleave_min) + " min" : "—";
       const allDay = entry.start_min === entry.end_min;
       const centerCell = entry.center_hz ? formatFreq(entry.center_hz) : "—";
@@ -696,8 +869,9 @@
         ? extraIds.map(function (id) { return escHtml(bmName(id)); }).join(", ")
         : "—";
       tr.innerHTML =
-        '<td>' + (allDay ? "All day" : minToHHMM(entry.start_min)) + '</td>' +
-        '<td>' + (allDay ? "—" : minToHHMM(entry.end_min)) + '</td>' +
+        '<td class="sch-drag-handle" draggable="true" title="Drag to reorder">\u2807</td>' +
+        '<td>' + (allDay ? "All day" : minToHHMM(entry.start_min) + ' <span class="sch-local-time">(' + minToLocal(entry.start_min) + ')</span>') + '</td>' +
+        '<td>' + (allDay ? "\u2014" : minToHHMM(entry.end_min) + ' <span class="sch-local-time">(' + minToLocal(entry.end_min) + ')</span>') + '</td>' +
         '<td>' + centerCell + '</td>' +
         '<td>' + escHtml(bmName(entry.bookmark_id)) + '</td>' +
         '<td>' + extraCell + '</td>' +
@@ -714,7 +888,7 @@
       btn.addEventListener("click", function () {
         const i = parseInt(btn.dataset.idx, 10);
         const entry = currentConfig && currentConfig.entries ? currentConfig.entries[i] : null;
-        if (entry) schOpenEntryForm(entry, i);
+        if (entry) schInlineEdit(btn.closest('tr'), entry, i);
       });
     });
     tbody.querySelectorAll(".sch-remove-btn").forEach(function (btn) {
@@ -722,12 +896,65 @@
         removeEntry(parseInt(btn.dataset.idx, 10));
       });
     });
+
+    // Drag-to-reorder
+    (function () {
+      var handles = tbody.querySelectorAll('.sch-drag-handle');
+      var dragIdx = null;
+
+      handles.forEach(function (handle, idx) {
+        var row = handle.parentElement;
+
+        handle.addEventListener('dragstart', function (e) {
+          dragIdx = idx;
+          row.classList.add('sch-dragging');
+          e.dataTransfer.effectAllowed = 'move';
+          e.dataTransfer.setData('text/plain', String(idx));
+        });
+
+        row.addEventListener('dragover', function (e) {
+          e.preventDefault();
+          e.dataTransfer.dropEffect = 'move';
+          row.classList.add('sch-drag-over');
+        });
+
+        row.addEventListener('dragleave', function () {
+          row.classList.remove('sch-drag-over');
+        });
+
+        row.addEventListener('drop', function (e) {
+          e.preventDefault();
+          row.classList.remove('sch-drag-over');
+          if (dragIdx === null || dragIdx === idx) return;
+          var entries = currentConfig.entries;
+          var moved = entries.splice(dragIdx, 1)[0];
+          entries.splice(idx, 0, moved);
+          renderTimespanEntries();
+          markSchedulerDirty();
+        });
+
+        handle.addEventListener('dragend', function () {
+          row.classList.remove('sch-dragging');
+          dragIdx = null;
+        });
+      });
+    })();
+
     renderTimeline();
   }
 
   function bmName(id) {
     const bm = bookmarkList.find(function (b) { return b.id === id; });
     return bm ? bm.name : String(id || "");
+  }
+
+  function minToLocal(min) {
+    // Convert UTC minutes-since-midnight to local time string
+    var now = new Date();
+    var utcMidnight = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+    var utcMs = utcMidnight.getTime() + min * 60000;
+    var local = new Date(utcMs);
+    return String(local.getHours()).padStart(2, "0") + ":" + String(local.getMinutes()).padStart(2, "0");
   }
 
   function minToHHMM(min) {
@@ -739,6 +966,43 @@
   function hhmmToMin(str) {
     const parts = str.split(":");
     return parseInt(parts[0] || "0", 10) * 60 + parseInt(parts[1] || "0", 10);
+  }
+
+  function gridToLatLon(grid) {
+    grid = String(grid).toUpperCase().trim();
+    if (grid.length < 4) return null;
+    var lonField = grid.charCodeAt(0) - 65;
+    var latField = grid.charCodeAt(1) - 65;
+    var lonSquare = parseInt(grid.charAt(2), 10);
+    var latSquare = parseInt(grid.charAt(3), 10);
+    if (isNaN(lonSquare) || isNaN(latSquare) || lonField < 0 || lonField > 17 || latField < 0 || latField > 17) return null;
+    var lon = lonField * 20 + lonSquare * 2 - 180;
+    var lat = latField * 10 + latSquare * 1 - 90;
+    if (grid.length >= 6) {
+      var lonSub = grid.charCodeAt(4) - 65;
+      var latSub = grid.charCodeAt(5) - 65;
+      if (lonSub >= 0 && lonSub < 24 && latSub >= 0 && latSub < 24) {
+        lon += lonSub * (2 / 24) + (1 / 24);
+        lat += latSub * (1 / 24) + (0.5 / 24);
+      }
+    } else {
+      lon += 1; // center of square
+      lat += 0.5;
+    }
+    return { lat: lat, lon: lon };
+  }
+
+  function latLonToGrid(lat, lon) {
+    lon = parseFloat(lon) + 180;
+    lat = parseFloat(lat) + 90;
+    if (isNaN(lon) || isNaN(lat)) return "";
+    var lonField = String.fromCharCode(65 + Math.floor(lon / 20));
+    var latField = String.fromCharCode(65 + Math.floor(lat / 10));
+    var lonSquare = Math.floor((lon % 20) / 2);
+    var latSquare = Math.floor(lat % 10);
+    var lonSub = String.fromCharCode(97 + Math.floor(((lon % 2) / 2) * 24));
+    var latSub = String.fromCharCode(97 + Math.floor((lat % 1) * 24));
+    return lonField + latField + lonSquare + latSquare + lonSub + latSub;
   }
 
   function escHtml(s) {
@@ -796,6 +1060,14 @@
   }
 
   // -------------------------------------------------------------------------
+  // Bookmark existence check
+  // -------------------------------------------------------------------------
+  function bookmarkExists(id) {
+    if (!id) return true; // null/empty is allowed
+    return bookmarkList.some(function (bm) { return bm.id === id; });
+  }
+
+  // -------------------------------------------------------------------------
   // Save
   // -------------------------------------------------------------------------
   function saveScheduler() {
@@ -834,6 +1106,47 @@
 
     // Satellite overlay — saved regardless of base mode.
     config.satellites = collectSatelliteConfig();
+
+    // Validate bookmark existence before saving
+    var missingBmErrors = [];
+    if (mode === "grayline" && config.grayline) {
+      var gl = config.grayline;
+      var glFields = [
+        ["dawn_bookmark_id", "Grayline dawn"],
+        ["day_bookmark_id", "Grayline day"],
+        ["dusk_bookmark_id", "Grayline dusk"],
+        ["night_bookmark_id", "Grayline night"],
+      ];
+      glFields.forEach(function (pair) {
+        if (!bookmarkExists(gl[pair[0]])) missingBmErrors.push(pair[1] + " (bookmark " + gl[pair[0]] + ")");
+      });
+    }
+    if (mode === "time_span" && Array.isArray(config.entries)) {
+      config.entries.forEach(function (entry, idx) {
+        var label = entry.label || "Entry #" + (idx + 1);
+        if (!bookmarkExists(entry.bookmark_id)) {
+          missingBmErrors.push(label + " primary bookmark (" + entry.bookmark_id + ")");
+        }
+        var extras = Array.isArray(entry.bookmark_ids) ? entry.bookmark_ids : [];
+        extras.forEach(function (id) {
+          if (!bookmarkExists(id)) {
+            missingBmErrors.push(label + " extra channel (" + id + ")");
+          }
+        });
+      });
+    }
+    if (config.satellites && Array.isArray(config.satellites.entries)) {
+      config.satellites.entries.forEach(function (sat, idx) {
+        var satLabel = sat.name || "Satellite #" + (idx + 1);
+        if (!bookmarkExists(sat.bookmark_id)) {
+          missingBmErrors.push(satLabel + " bookmark (" + sat.bookmark_id + ")");
+        }
+      });
+    }
+    if (missingBmErrors.length > 0) {
+      showSchedulerToast("Missing bookmarks: " + missingBmErrors.join("; "), true);
+      return;
+    }
 
     const btn = document.getElementById("scheduler-save-btn");
     if (btn) btn.disabled = true;
@@ -963,6 +1276,33 @@
       });
     }
 
+    // Grid square ↔ lat/lon sync
+    var gridEl = document.getElementById("scheduler-gl-grid");
+    if (gridEl) {
+      gridEl.addEventListener("input", function () {
+        var ll = gridToLatLon(gridEl.value);
+        if (ll) {
+          setInputValue("scheduler-gl-lat", ll.lat.toFixed(3));
+          setInputValue("scheduler-gl-lon", ll.lon.toFixed(3));
+          markSchedulerDirty();
+        }
+      });
+    }
+    var latEl = document.getElementById("scheduler-gl-lat");
+    var lonEl = document.getElementById("scheduler-gl-lon");
+    [latEl, lonEl].forEach(function (el) {
+      if (el) {
+        el.addEventListener("input", function () {
+          var la = parseFloat(document.getElementById("scheduler-gl-lat").value);
+          var lo = parseFloat(document.getElementById("scheduler-gl-lon").value);
+          var gEl = document.getElementById("scheduler-gl-grid");
+          if (gEl && !isNaN(la) && !isNaN(lo)) {
+            gEl.value = latLonToGrid(la, lo);
+          }
+        });
+      }
+    });
+
     wireExtraBmAdd();
     wireSatelliteEvents();
   }
@@ -988,25 +1328,36 @@
   let pendingExtraBmIds = [];
 
   function renderExtraBmList() {
-    const container = document.getElementById("scheduler-ts-extra-bm-list");
+    var container = document.getElementById("scheduler-ts-extra-bm-list");
     if (!container) return;
     container.innerHTML = "";
     pendingExtraBmIds.forEach(function (id, idx) {
-      const bm = bookmarkList.find(function (b) { return b.id === id; });
-      const tag = document.createElement("span");
-      tag.className = "sch-extra-bm-tag";
-      tag.textContent = bm ? bm.name : id;
-      const rm = document.createElement("span");
-      rm.className = "sch-extra-bm-rm";
-      rm.textContent = "×";
-      rm.title = "Remove";
-      rm.addEventListener("click", function () {
+      var bm = bookmarkList.find(function (b) { return b.id === id; });
+      var chip = document.createElement("span");
+      chip.className = "sch-extra-bm-chip";
+      var rmBtn = document.createElement("span");
+      rmBtn.className = "sch-extra-bm-chip-rm";
+      rmBtn.textContent = "\u00D7";
+      rmBtn.title = "Remove";
+      rmBtn.addEventListener("click", function () {
         pendingExtraBmIds.splice(idx, 1);
         renderExtraBmList();
       });
-      tag.appendChild(rm);
-      container.appendChild(tag);
+      chip.appendChild(rmBtn);
+      var label = document.createTextNode(" " + (bm ? bm.name : id));
+      chip.appendChild(label);
+      container.appendChild(chip);
     });
+
+    // Disable already-added bookmarks in dropdown
+    var pick = document.getElementById("scheduler-ts-extra-bm-pick");
+    if (pick) {
+      Array.from(pick.options).forEach(function (opt) {
+        if (opt.value) {
+          opt.disabled = pendingExtraBmIds.includes(opt.value);
+        }
+      });
+    }
   }
 
   function wireExtraBmAdd() {
@@ -1047,13 +1398,53 @@
       getConfig:    function () { return currentConfig; },
       getStatus:    function () { return currentSchedulerStatus; },
       getBookmarks: function () { return bookmarkList; },
+      markDirty:    function () { markSchedulerDirty(); },
     };
     if (window.satScheduler) window.satScheduler.wireEvents();
   }
 
   // -------------------------------------------------------------------------
+  // Keyboard shortcuts for scheduler control
+  // -------------------------------------------------------------------------
+  function isInputFocused() {
+    var el = document.activeElement;
+    if (!el) return false;
+    var tag = el.tagName;
+    return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || el.isContentEditable;
+  }
+
+  document.addEventListener("keydown", function (e) {
+    if (isInputFocused()) return;
+
+    if (e.shiftKey && e.key === "R") {
+      e.preventDefault();
+      // Toggle release to scheduler
+      var releaseBtn = document.getElementById("scheduler-release-btn");
+      if (releaseBtn && !releaseBtn.disabled) releaseBtn.click();
+    } else if (e.shiftKey && e.key === "N") {
+      e.preventDefault();
+      schedulerSelectRelativeEntry(1);
+    } else if (e.shiftKey && e.key === "P") {
+      e.preventDefault();
+      schedulerSelectRelativeEntry(-1);
+    }
+  });
+
+  // -------------------------------------------------------------------------
   // Public API
   // -------------------------------------------------------------------------
+  // Persist details open/closed state
+  (function () {
+    var details = document.querySelector(".sch-ts-details");
+    if (!details) return;
+    var key = "sch-details-open";
+    var saved = localStorage.getItem(key);
+    if (saved !== null) details.open = saved === "1";
+    details.addEventListener("toggle", function () {
+      localStorage.setItem(key, details.open ? "1" : "0");
+    });
+  })();
+
   window.initScheduler = initScheduler;
   window.destroyScheduler = destroyScheduler;
   window.wireSchedulerEvents = wireSchedulerEvents;
