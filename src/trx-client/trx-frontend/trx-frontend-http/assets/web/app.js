@@ -174,14 +174,14 @@ function updateAuthUI() {
   }
 
   if (authRole) {
-    badge.style.display = "block";
-    badgeRole.textContent = authRole === "control" ? "Control (full access)" : "RX (read-only)";
+    if (badge) badge.style.display = "block";
+    if (badgeRole) badgeRole.textContent = authRole === "control" ? "Control (full access)" : "RX (read-only)";
     if (headerAuthBtn) {
       headerAuthBtn.textContent = "Logout";
       headerAuthBtn.style.display = "block";
     }
   } else {
-    badge.style.display = "none";
+    if (badge) badge.style.display = "none";
     if (headerAuthBtn) {
       headerAuthBtn.textContent = "Login";
       headerAuthBtn.style.display = "block";
