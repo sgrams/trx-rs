@@ -327,21 +327,32 @@ quadrantChart
 ```
 
 ### Quick wins (low effort, high impact)
-1. Reduce `backdrop-filter` usage (13 blur instances) -- immediate paint perf gain
-2. Add `contain: content` / `content-visibility: auto` to inactive tabs
-3. Add `Cache-Control` headers to static assets
-4. Cache remaining DOM references in the render path
+1. ~~Reduce `backdrop-filter` usage (13 blur instances)~~ **DONE** -- replaced with solid backgrounds, blur preserved for modals only, `prefers-reduced-motion` gate added
+2. ~~Add `contain: content` / `content-visibility: auto` to inactive tabs~~ **DONE** -- containment added for inactive tabs, spectrum/waterfall containers, map, statistics
+3. ~~Add `Cache-Control` headers to static assets~~ **DONE** -- upgraded to `public, max-age=31536000, immutable`
+4. ~~Cache remaining DOM references in the render path~~ **DONE** -- `tabMainEl` and other hot-path refs cached at module level
 
 ### Next phase (moderate effort)
-5. Split theme CSS into a separate lazy-loaded file
-6. Self-host DSEG14 font
-7. Pre-compute `color-mix` results as CSS variables
-8. Field-level diffing in the SSE render function
-9. Replace `innerHTML` with DOM APIs in hot paths
+5. ~~Split theme CSS into a separate lazy-loaded file~~ **DONE** -- theme blocks extracted to `/themes.css`, lazy-loaded via `<link rel="preload">`
+6. ~~Self-host DSEG14 font~~ **DONE** -- `@font-face` with `font-display: swap` added to `style.css`, CDN preconnect/preload removed from HTML
+7. ~~Pre-compute `color-mix` results as CSS variables~~ **DONE** -- common mixes pre-computed as `--btn-hover-bg`, `--btn-active-bg`, etc.
+8. ~~Field-level diffing in the SSE render function~~ **DONE** -- `prevRenderData` tracks freq/mode/ptt/meter, active-tab-aware skip logic added
+9. ~~Replace `innerHTML` with DOM APIs in hot paths~~ **DONE** -- 15+ `innerHTML = ""` replaced with `replaceChildren()`
 
 ### Longer-term
-10. Split `app.js` into ES modules with lazy loading
-11. Lazy-load plugin scripts and Leaflet on demand
-12. Use `<template>` elements for deferred tab content
-13. Migrate to Brotli compression
-14. Move SSE parsing and spectrum processing to Web Workers
+10. Split `app.js` into ES modules with lazy loading -- **DEFERRED** (requires major refactor, tracked separately)
+11. ~~Lazy-load plugin scripts and Leaflet on demand~~ **DONE** -- plugin scripts loaded on tab activation, core plugins loaded immediately
+12. ~~Use `<template>` elements for deferred tab content~~ **DONE** -- map, statistics, about tabs wrapped in `<template>`, cloned on first activation
+13. ~~Migrate to Brotli compression~~ **DONE** -- Brotli added alongside gzip, preferred when `Accept-Encoding: br` present
+14. Move SSE parsing and spectrum processing to Web Workers -- **DEFERRED** (requires SharedWorker + MessagePort plumbing, tracked separately)
+
+### Additional improvements implemented
+15. ~~Optimize CSS transitions~~ **DONE** -- `background` shorthand → `background-color` for GPU compositing
+16. ~~Add `defer` to script tags~~ **DONE** -- all external script tags use `defer`
+17. ~~SVG sprite sheet~~ **DONE** -- inline SVGs moved to `<symbol>` defs, referenced via `<use>`
+18. ~~aria-live regions~~ **DONE** -- `aria-live` added to power hint, loading indicator
+19. ~~Keyboard navigation~~ **DONE** -- `tabindex`/`role`/`aria-label` on spectrum/waterfall canvases
+20. ~~Colour contrast~~ **DONE** -- dark theme `--text-muted` improved to `#9bb0ca`
+21. ~~WebGL colour cache invalidation~~ **DONE** -- `trxClearCssColorCache()` called on theme switch
+22. ~~Container queries~~ **DONE** -- controls tray and decode history table respond to container size
+23. ~~Cache-Control immutable~~ **DONE** -- versioned assets use `immutable` directive

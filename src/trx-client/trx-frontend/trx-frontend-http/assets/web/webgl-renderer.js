@@ -4,6 +4,10 @@
   const cssColorCache = new Map();
   let cssColorProbe = null;
 
+  function clearCssColorCache() {
+    cssColorCache.clear();
+  }
+
   function ensureCssColorProbe() {
     if (cssColorProbe) return cssColorProbe;
     const el = document.createElement("span");
@@ -523,4 +527,5 @@
   global.trxParseCssColor = parseCssColor;
   global.trxHslToRgba = hslToRgba;
   global.createTrxWebGlRenderer = createRenderer;
+  global.trxClearCssColorCache = clearCssColorCache;
 })(window);

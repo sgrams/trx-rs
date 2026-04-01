@@ -22,6 +22,7 @@ tokio-stream = { version = "0.1", features = ["sync"] }
 futures-util = "0.3"
 bytes = "1"
 flate2 = { workspace = true }
+brotli = "7"
 rand = "0.8"
 hex = "0.4"
 pickledb = "0.5"

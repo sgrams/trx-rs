@@ -26,6 +26,7 @@ macro_rules! define_gz_cache {
 
 define_gz_cache!(gz_index_html, status::index_html(), "index.html");
 define_gz_cache!(gz_style_css, status::STYLE_CSS, "style.css");
+define_gz_cache!(gz_themes_css, status::THEMES_CSS, "themes.css");
 define_gz_cache!(gz_app_js, status::APP_JS, "app.js");
 define_gz_cache!(
     gz_decode_history_worker_js,
@@ -74,37 +75,37 @@ define_gz_cache!(gz_bandplan_json, status::BANDPLAN_JSON, "bandplan.json");
 #[get("/")]
 pub(crate) async fn index(req: HttpRequest) -> impl Responder {
     let c = gz_index_html();
-    static_asset_response(&req, "text/html; charset=utf-8", &c.gz, &c.etag)
+    static_asset_response(&req, "text/html; charset=utf-8", c)
 }
 
 #[get("/map")]
 pub(crate) async fn map_index(req: HttpRequest) -> impl Responder {
     let c = gz_index_html();
-    static_asset_response(&req, "text/html; charset=utf-8", &c.gz, &c.etag)
+    static_asset_response(&req, "text/html; charset=utf-8", c)
 }
 
 #[get("/digital-modes")]
 pub(crate) async fn digital_modes_index(req: HttpRequest) -> impl Responder {
     let c = gz_index_html();
-    static_asset_response(&req, "text/html; charset=utf-8", &c.gz, &c.etag)
+    static_asset_response(&req, "text/html; charset=utf-8", c)
 }
 
 #[get("/recorder")]
 pub(crate) async fn recorder_index(req: HttpRequest) -> impl Responder {
     let c = gz_index_html();
-    static_asset_response(&req, "text/html; charset=utf-8", &c.gz, &c.etag)
+    static_asset_response(&req, "text/html; charset=utf-8", c)
 }
 
 #[get("/settings")]
 pub(crate) async fn settings_index(req: HttpRequest) -> impl Responder {
     let c = gz_index_html();
-    static_asset_response(&req, "text/html; charset=utf-8", &c.gz, &c.etag)
+    static_asset_response(&req, "text/html; charset=utf-8", c)
 }
 
 #[get("/about")]
 pub(crate) async fn about_index(req: HttpRequest) -> impl Responder {
     let c = gz_index_html();
-    static_asset_response(&req, "text/html; charset=utf-8", &c.gz, &c.etag)
+    static_asset_response(&req, "text/html; charset=utf-8", c)
 }
 
 // ---------------------------------------------------------------------------
@@ -142,7 +143,13 @@ pub(crate) async fn logo() -> impl Responder {
 #[get("/style.css")]
 pub(crate) async fn style_css(req: HttpRequest) -> impl Responder {
     let c = gz_style_css();
-    static_asset_response(&req, "text/css; charset=utf-8", &c.gz, &c.etag)
+    static_asset_response(&req, "text/css; charset=utf-8", c)
+}
+
+#[get("/themes.css")]
+pub(crate) async fn themes_css(req: HttpRequest) -> impl Responder {
+    let c = gz_themes_css();
+    static_asset_response(&req, "text/css; charset=utf-8", c)
 }
 
 // ---------------------------------------------------------------------------
@@ -155,8 +162,7 @@ pub(crate) async fn app_js(req: HttpRequest) -> impl Responder {
     static_asset_response(
         &req,
         "application/javascript; charset=utf-8",
-        &c.gz,
-        &c.etag,
+        c,
     )
 }
 
@@ -166,8 +172,7 @@ pub(crate) async fn decode_history_worker_js(req: HttpRequest) -> impl Responder
     static_asset_response(
         &req,
         "application/javascript; charset=utf-8",
-        &c.gz,
-        &c.etag,
+        c,
     )
 }
 
@@ -177,8 +182,7 @@ pub(crate) async fn webgl_renderer_js(req: HttpRequest) -> impl Responder {
     static_asset_response(
         &req,
         "application/javascript; charset=utf-8",
-        &c.gz,
-        &c.etag,
+        c,
     )
 }
 
@@ -188,8 +192,7 @@ pub(crate) async fn leaflet_ais_tracksymbol_js(req: HttpRequest) -> impl Respond
     static_asset_response(
         &req,
         "application/javascript; charset=utf-8",
-        &c.gz,
-        &c.etag,
+        c,
     )
 }
 
@@ -199,8 +202,7 @@ pub(crate) async fn aprs_js(req: HttpRequest) -> impl Responder {
     static_asset_response(
         &req,
         "application/javascript; charset=utf-8",
-        &c.gz,
-        &c.etag,
+        c,
     )
 }
 
@@ -210,8 +212,7 @@ pub(crate) async fn hf_aprs_js(req: HttpRequest) -> impl Responder {
     static_asset_response(
         &req,
         "application/javascript; charset=utf-8",
-        &c.gz,
-        &c.etag,
+        c,
     )
 }
 
@@ -221,8 +222,7 @@ pub(crate) async fn ais_js(req: HttpRequest) -> impl Responder {
     static_asset_response(
         &req,
         "application/javascript; charset=utf-8",
-        &c.gz,
-        &c.etag,
+        c,
     )
 }
 
@@ -232,8 +232,7 @@ pub(crate) async fn vdes_js(req: HttpRequest) -> impl Responder {
     static_asset_response(
         &req,
         "application/javascript; charset=utf-8",
-        &c.gz,
-        &c.etag,
+        c,
     )
 }
 
@@ -243,8 +242,7 @@ pub(crate) async fn ft8_js(req: HttpRequest) -> impl Responder {
     static_asset_response(
         &req,
         "application/javascript; charset=utf-8",
-        &c.gz,
-        &c.etag,
+        c,
     )
 }
 
@@ -254,8 +252,7 @@ pub(crate) async fn ft4_js(req: HttpRequest) -> impl Responder {
     static_asset_response(
         &req,
         "application/javascript; charset=utf-8",
-        &c.gz,
-        &c.etag,
+        c,
     )
 }
 
@@ -265,8 +262,7 @@ pub(crate) async fn ft2_js(req: HttpRequest) -> impl Responder {
     static_asset_response(
         &req,
         "application/javascript; charset=utf-8",
-        &c.gz,
-        &c.etag,
+        c,
     )
 }
 
@@ -276,8 +272,7 @@ pub(crate) async fn wspr_js(req: HttpRequest) -> impl Responder {
     static_asset_response(
         &req,
         "application/javascript; charset=utf-8",
-        &c.gz,
-        &c.etag,
+        c,
     )
 }
 
@@ -287,8 +282,7 @@ pub(crate) async fn cw_js(req: HttpRequest) -> impl Responder {
     static_asset_response(
         &req,
         "application/javascript; charset=utf-8",
-        &c.gz,
-        &c.etag,
+        c,
     )
 }
 
@@ -298,8 +292,7 @@ pub(crate) async fn sat_js(req: HttpRequest) -> impl Responder {
     static_asset_response(
         &req,
         "application/javascript; charset=utf-8",
-        &c.gz,
-        &c.etag,
+        c,
     )
 }
 
@@ -309,8 +302,7 @@ pub(crate) async fn bookmarks_js(req: HttpRequest) -> impl Responder {
     static_asset_response(
         &req,
         "application/javascript; charset=utf-8",
-        &c.gz,
-        &c.etag,
+        c,
     )
 }
 
@@ -320,8 +312,7 @@ pub(crate) async fn scheduler_js(req: HttpRequest) -> impl Responder {
     static_asset_response(
         &req,
         "application/javascript; charset=utf-8",
-        &c.gz,
-        &c.etag,
+        c,
     )
 }
 
@@ -331,8 +322,7 @@ pub(crate) async fn sat_scheduler_js(req: HttpRequest) -> impl Responder {
     static_asset_response(
         &req,
         "application/javascript; charset=utf-8",
-        &c.gz,
-        &c.etag,
+        c,
     )
 }
 
@@ -342,8 +332,7 @@ pub(crate) async fn background_decode_js(req: HttpRequest) -> impl Responder {
     static_asset_response(
         &req,
         "application/javascript; charset=utf-8",
-        &c.gz,
-        &c.etag,
+        c,
     )
 }
 
@@ -353,13 +342,12 @@ pub(crate) async fn vchan_js(req: HttpRequest) -> impl Responder {
     static_asset_response(
         &req,
         "application/javascript; charset=utf-8",
-        &c.gz,
-        &c.etag,
+        c,
     )
 }
 
 #[get("/bandplan.json")]
 pub(crate) async fn bandplan_json(req: HttpRequest) -> impl Responder {
     let c = gz_bandplan_json();
-    static_asset_response(&req, "application/json; charset=utf-8", &c.gz, &c.etag)
+    static_asset_response(&req, "application/json; charset=utf-8", c)
 }
