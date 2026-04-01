@@ -2646,7 +2646,7 @@ body.map-fake-fullscreen-active {
 .rds-field { display: contents; }
 .rds-label { color: var(--text-muted); font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.06em; white-space: nowrap; }
 .rds-value { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; font-size: 0.95rem; color: var(--text); }
-.rds-ps { font-size: 1.1rem; font-weight: 600; letter-spacing: 0.08em; color: var(--accent-green); }
+.rds-ps { font-family: 'DSEG14 Classic', monospace; font-size: 1.1rem; font-weight: 600; letter-spacing: 0.08em; color: var(--accent-green); }
 .rds-text { white-space: normal; overflow-wrap: anywhere; line-height: 1.35; }
 .rds-af-list { display: flex; flex-wrap: wrap; gap: 0.35rem; align-items: center; }
 .rds-af-btn {
