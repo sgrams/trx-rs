@@ -802,19 +802,65 @@
       return '<option value="' + escHtml(bm.id) + '"' + sel + '>' + escHtml(bm.name) + '</option>';
     }).join('');
 
+    var extraBmOptions = '<option value="">— add channel —</option>' + bookmarkList.map(function (bm) {
+      return '<option value="' + escHtml(bm.id) + '">' + escHtml(bm.name) + '</option>';
+    }).join('');
+
+    var inlineExtraIds = Array.isArray(entry.bookmark_ids) ? entry.bookmark_ids.slice() : [];
+
     tr.innerHTML =
       '<td class="sch-drag-handle" draggable="true" title="Drag to reorder">\u2807</td>' +
       '<td><input type="time" class="status-input sch-inline-input" value="' + minToHHMM(entry.start_min) + '" data-field="start" /></td>' +
       '<td><input type="time" class="status-input sch-inline-input" value="' + minToHHMM(entry.end_min) + '" data-field="end" /></td>' +
       '<td>' + (entry.center_hz ? formatFreq(entry.center_hz) : '\u2014') + '</td>' +
       '<td><select class="status-input sch-inline-input" data-field="bookmark">' + bmOptions + '</select></td>' +
-      '<td>' + (Array.isArray(entry.bookmark_ids) && entry.bookmark_ids.length ? entry.bookmark_ids.map(function(id) { return escHtml(bmName(id)); }).join(', ') : '\u2014') + '</td>' +
+      '<td><div class="sch-inline-extra-chips"></div>' +
+        '<div style="display:flex;gap:0.4rem;margin-top:0.3rem;">' +
+          '<select class="status-input sch-inline-extra-pick">' + extraBmOptions + '</select>' +
+          '<button class="sch-write sch-inline-extra-add" type="button" style="padding:0 0.7rem;">+</button>' +
+        '</div></td>' +
       '<td><input type="text" class="status-input sch-inline-input" value="' + escHtml(entry.label || '') + '" data-field="label" /></td>' +
       '<td><input type="number" class="status-input sch-inline-input" value="' + (entry.interleave_min || '') + '" min="1" max="60" placeholder="\u2014" data-field="interleave" style="width:4rem;" /></td>' +
       '<td><input type="checkbox" ' + (entry.record ? 'checked' : '') + ' data-field="record" /></td>' +
       '<td><button class="sch-write sch-inline-save" type="button">Save</button><button class="sch-write sch-inline-cancel" type="button">Cancel</button></td>';
 
     tr.classList.add('sch-inline-editing');
+
+    var chipsContainer = tr.querySelector('.sch-inline-extra-chips');
+    var extraPick = tr.querySelector('.sch-inline-extra-pick');
+    var extraAddBtn = tr.querySelector('.sch-inline-extra-add');
+
+    function renderInlineExtraChips() {
+      chipsContainer.innerHTML = '';
+      inlineExtraIds.forEach(function (id, i) {
+        var chip = document.createElement('span');
+        chip.className = 'sch-extra-bm-chip';
+        var rmBtn = document.createElement('span');
+        rmBtn.className = 'sch-extra-bm-chip-rm';
+        rmBtn.textContent = '\u00D7';
+        rmBtn.title = 'Remove';
+        rmBtn.addEventListener('click', function () {
+          inlineExtraIds.splice(i, 1);
+          renderInlineExtraChips();
+        });
+        chip.appendChild(rmBtn);
+        chip.appendChild(document.createTextNode(' ' + bmName(id)));
+        chipsContainer.appendChild(chip);
+      });
+      Array.from(extraPick.options).forEach(function (opt) {
+        if (opt.value) opt.disabled = inlineExtraIds.includes(opt.value);
+      });
+    }
+    renderInlineExtraChips();
+
+    extraAddBtn.addEventListener('click', function () {
+      if (!extraPick.value) return;
+      if (!inlineExtraIds.includes(extraPick.value)) {
+        inlineExtraIds.push(extraPick.value);
+        renderInlineExtraChips();
+      }
+      extraPick.value = '';
+    });
 
     tr.querySelector('.sch-inline-save').addEventListener('click', function () {
       var startEl = tr.querySelector('[data-field="start"]');
@@ -832,6 +878,7 @@
       entry.label = labelEl.value.trim() || null;
       var ilVal = parseInt(ilEl.value, 10);
       entry.interleave_min = (!isNaN(ilVal) && ilVal > 0) ? ilVal : null;
+      entry.bookmark_ids = inlineExtraIds.slice();
       entry.record = recEl.checked;
 
       currentConfig.entries[idx] = entry;
