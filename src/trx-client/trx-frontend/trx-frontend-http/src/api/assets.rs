@@ -28,6 +28,8 @@ define_gz_cache!(gz_index_html, status::index_html(), "index.html");
 define_gz_cache!(gz_style_css, status::STYLE_CSS, "style.css");
 define_gz_cache!(gz_themes_css, status::THEMES_CSS, "themes.css");
 define_gz_cache!(gz_app_js, status::APP_JS, "app.js");
+define_gz_cache!(gz_map_core_js, status::MAP_CORE_JS, "map-core.js");
+define_gz_cache!(gz_screenshot_js, status::SCREENSHOT_JS, "screenshot.js");
 define_gz_cache!(
     gz_decode_history_worker_js,
     status::DECODE_HISTORY_WORKER_JS,
@@ -159,6 +161,26 @@ pub(crate) async fn themes_css(req: HttpRequest) -> impl Responder {
 #[get("/app.js")]
 pub(crate) async fn app_js(req: HttpRequest) -> impl Responder {
     let c = gz_app_js();
+    static_asset_response(
+        &req,
+        "application/javascript; charset=utf-8",
+        c,
+    )
+}
+
+#[get("/map-core.js")]
+pub(crate) async fn map_core_js(req: HttpRequest) -> impl Responder {
+    let c = gz_map_core_js();
+    static_asset_response(
+        &req,
+        "application/javascript; charset=utf-8",
+        c,
+    )
+}
+
+#[get("/screenshot.js")]
+pub(crate) async fn screenshot_js(req: HttpRequest) -> impl Responder {
+    let c = gz_screenshot_js();
     static_asset_response(
         &req,
         "application/javascript; charset=utf-8",
