@@ -35,6 +35,20 @@ pub const BACKGROUND_DECODE_JS: &str = include_str!("../assets/web/plugins/backg
 pub const VCHAN_JS: &str = include_str!("../assets/web/plugins/vchan.js");
 pub const BANDPLAN_JSON: &str = include_str!("../assets/web/bandplan.json");
 
+// Vendored Leaflet 1.9.4
+pub const LEAFLET_JS: &str = include_str!("../assets/web/vendor/leaflet.js");
+pub const LEAFLET_CSS: &str = include_str!("../assets/web/vendor/leaflet.css");
+pub const LEAFLET_MARKER_ICON: &[u8] =
+    include_bytes!("../assets/web/vendor/marker-icon.png");
+pub const LEAFLET_MARKER_ICON_2X: &[u8] =
+    include_bytes!("../assets/web/vendor/marker-icon-2x.png");
+pub const LEAFLET_MARKER_SHADOW: &[u8] =
+    include_bytes!("../assets/web/vendor/marker-shadow.png");
+pub const LEAFLET_LAYERS: &[u8] =
+    include_bytes!("../assets/web/vendor/layers.png");
+pub const LEAFLET_LAYERS_2X: &[u8] =
+    include_bytes!("../assets/web/vendor/layers-2x.png");
+
 /// Build version tag used for cache-busting asset URLs and ETag headers.
 /// Computed once from `PKG_VERSION` + `CLIENT_BUILD_DATE`.
 pub fn build_version_tag() -> &'static str {

@@ -667,6 +667,14 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
         .service(assets::background_decode_js)
         .service(assets::vchan_js)
         .service(assets::bandplan_json)
+        // Vendored Leaflet 1.9.4
+        .service(assets::leaflet_js)
+        .service(assets::leaflet_css)
+        .service(assets::leaflet_marker_icon)
+        .service(assets::leaflet_marker_icon_2x)
+        .service(assets::leaflet_marker_shadow)
+        .service(assets::leaflet_layers)
+        .service(assets::leaflet_layers_2x)
         // Virtual channels
         .service(vchan::list_channels)
         .service(vchan::allocate_channel)

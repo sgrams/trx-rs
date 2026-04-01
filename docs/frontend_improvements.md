@@ -196,19 +196,20 @@ rendering, map marker management) runs on the main thread.
 
 ### 3.1 CDN dependencies (P2)
 
-The page loads two external resources at startup:
+The page loads one external resource at startup:
 - `@fontsource/dseg14-classic/400.css` from `cdn.jsdelivr.net`
-- `leaflet@1.9.4/dist/leaflet.css` from `unpkg.com`
 
-Both use `rel="preload" as="style"` with an `onload` trick to make them
+~~`leaflet@1.9.4` was previously loaded from `unpkg.com` but is now bundled
+as a vendored asset (`/vendor/leaflet.{js,css}` + marker/layer images),
+eliminating the CDN dependency.~~
+
+The font uses `rel="preload" as="style"` with an `onload` trick to make it
 non-blocking, which is good. However:
 - If CDN is unreachable (offline/firewalled deployments common in ham radio),
   the font never loads and the frequency display falls back to the system font.
-- Leaflet is always loaded even if the user never opens the Map tab.
 
 **Recommendations:**
 - Self-host the DSEG14 font as an embedded asset (it is small, ~30 KB woff2). This eliminates the CDN dependency entirely and ensures the frequency display always renders correctly.
-- Defer Leaflet CSS loading until the Map tab is first opened.
 
 ### 3.2 Inline SVG icons (P3)
 

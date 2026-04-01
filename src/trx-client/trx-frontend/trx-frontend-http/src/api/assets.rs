@@ -70,6 +70,10 @@ define_gz_cache!(
 define_gz_cache!(gz_vchan_js, status::VCHAN_JS, "vchan.js");
 define_gz_cache!(gz_bandplan_json, status::BANDPLAN_JSON, "bandplan.json");
 
+// Vendored Leaflet 1.9.4
+define_gz_cache!(gz_leaflet_js, status::LEAFLET_JS, "leaflet.js");
+define_gz_cache!(gz_leaflet_css, status::LEAFLET_CSS, "leaflet.css");
+
 // ---------------------------------------------------------------------------
 // HTML page routes (all serve the SPA index)
 // ---------------------------------------------------------------------------
@@ -372,4 +376,64 @@ pub(crate) async fn vchan_js(req: HttpRequest) -> impl Responder {
 pub(crate) async fn bandplan_json(req: HttpRequest) -> impl Responder {
     let c = gz_bandplan_json();
     static_asset_response(&req, "application/json; charset=utf-8", c)
+}
+
+// ---------------------------------------------------------------------------
+// Vendored Leaflet 1.9.4
+// ---------------------------------------------------------------------------
+
+#[get("/vendor/leaflet.js")]
+pub(crate) async fn leaflet_js(req: HttpRequest) -> impl Responder {
+    let c = gz_leaflet_js();
+    static_asset_response(
+        &req,
+        "application/javascript; charset=utf-8",
+        c,
+    )
+}
+
+#[get("/vendor/leaflet.css")]
+pub(crate) async fn leaflet_css(req: HttpRequest) -> impl Responder {
+    let c = gz_leaflet_css();
+    static_asset_response(&req, "text/css; charset=utf-8", c)
+}
+
+#[get("/vendor/marker-icon.png")]
+pub(crate) async fn leaflet_marker_icon() -> impl Responder {
+    HttpResponse::Ok()
+        .insert_header((header::CONTENT_TYPE, "image/png"))
+        .insert_header((header::CACHE_CONTROL, "public, max-age=604800, immutable"))
+        .body(status::LEAFLET_MARKER_ICON)
+}
+
+#[get("/vendor/marker-icon-2x.png")]
+pub(crate) async fn leaflet_marker_icon_2x() -> impl Responder {
+    HttpResponse::Ok()
+        .insert_header((header::CONTENT_TYPE, "image/png"))
+        .insert_header((header::CACHE_CONTROL, "public, max-age=604800, immutable"))
+        .body(status::LEAFLET_MARKER_ICON_2X)
+}
+
+#[get("/vendor/marker-shadow.png")]
+pub(crate) async fn leaflet_marker_shadow() -> impl Responder {
+    HttpResponse::Ok()
+        .insert_header((header::CONTENT_TYPE, "image/png"))
+        .insert_header((header::CACHE_CONTROL, "public, max-age=604800, immutable"))
+        .body(status::LEAFLET_MARKER_SHADOW)
+}
+
+#[get("/vendor/layers.png")]
+pub(crate) async fn leaflet_layers() -> impl Responder {
+    HttpResponse::Ok()
+        .insert_header((header::CONTENT_TYPE, "image/png"))
+        .insert_header((header::CACHE_CONTROL, "public, max-age=604800, immutable"))
+        .body(status::LEAFLET_LAYERS)
+}
+
+#[get("/vendor/layers-2x.png")]
+pub(crate) async fn leaflet_layers_2x() -> impl Responder {
+    HttpResponse::Ok()
+        .insert_header((header::CONTENT_TYPE, "image/png"))
+        .insert_header((header::CACHE_CONTROL, "public, max-age=604800, immutable"))
+        .body(status::LEAFLET_LAYERS_2X)
 }
