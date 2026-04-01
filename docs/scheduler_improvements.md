@@ -155,9 +155,6 @@ NOAA, ISS, or amateur satellites requires looking up NORAD IDs externally.
 weather satellites:
 
 ```
-NOAA 15 (137.620 MHz APT)  — 25338
-NOAA 18 (137.9125 MHz APT) — 28654
-NOAA 19 (137.100 MHz APT)  — 33591
 ISS (145.825 MHz APRS)     — 25544
 SO-50 (436.795 MHz FM)     — 27607
 ```
