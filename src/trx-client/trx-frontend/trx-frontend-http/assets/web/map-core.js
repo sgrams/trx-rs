@@ -3481,6 +3481,7 @@
     materializeBufferedMapLayers,
     flushDeferredDecodeMapSync,
     bandForHz,
+    reverseGeocodeLocation,
   };
 
   // If the map tab is already visible (direct /map URL), init immediately.
