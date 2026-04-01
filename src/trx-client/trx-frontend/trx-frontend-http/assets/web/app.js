@@ -18,11 +18,49 @@ window.onDecoderRegistryReady = function (fn) {
       window.decoderRegistry = decoderRegistry;
       for (const fn of _decoderRegistryReadyCallbacks) fn();
       _decoderRegistryReadyCallbacks.length = 0;
+      hideUnsupportedDecoderTabs();
     }
   } catch (e) {
     console.error("Failed to fetch decoder registry:", e);
   }
 })();
+
+/** Hide decoder sub-tabs, panels, about rows, and settings buttons
+ *  for decoders not present in the server's registry. */
+function hideUnsupportedDecoderTabs() {
+  const knownIds = new Set(decoderRegistry.map(function (d) { return d.id; }));
+  // Sub-tabs that are not decoders and should always be visible.
+  const alwaysShow = new Set(["overview", "rds", "sat"]);
+  document.querySelectorAll("#tab-digital-modes > .sub-tab-bar > .sub-tab[data-subtab]").forEach(function (btn) {
+    const id = btn.dataset.subtab;
+    if (alwaysShow.has(id) || knownIds.has(id)) return;
+    btn.style.display = "none";
+    var panel = document.getElementById("subtab-" + id);
+    if (panel) panel.style.display = "none";
+  });
+  // About-tab decoder status rows: <td>LABEL</td><td id="about-dec-ID">
+  document.querySelectorAll('[id^="about-dec-"]').forEach(function (el) {
+    var id = el.id.replace("about-dec-", "");
+    if (!alwaysShow.has(id) && !knownIds.has(id)) {
+      var row = el.closest("tr");
+      if (row) row.style.display = "none";
+    }
+  });
+  // Settings clear-history buttons
+  document.querySelectorAll('[id^="settings-clear-"][id$="-history"]').forEach(function (el) {
+    var m = el.id.match(/^settings-clear-(.+)-history$/);
+    if (m && !alwaysShow.has(m[1]) && !knownIds.has(m[1])) {
+      el.style.display = "none";
+    }
+  });
+  // Overview decoder descriptions
+  document.querySelectorAll("#subtab-overview .plugin-item[data-decoder]").forEach(function (el) {
+    var id = el.dataset.decoder;
+    if (!alwaysShow.has(id) && !knownIds.has(id)) {
+      el.style.display = "none";
+    }
+  });
+}
 
 // --- Persistent settings (localStorage) ---
 const STORAGE_PREFIX = "trx_";

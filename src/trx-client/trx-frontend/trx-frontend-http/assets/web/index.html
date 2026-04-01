@@ -539,61 +539,61 @@
         <button class="sub-tab" data-subtab="sat">SAT</button>
       </div>
       <div id="subtab-overview" class="sub-tab-panel">
-        <div class="plugin-item">
+        <div class="plugin-item" data-decoder="ais">
           <strong>AIS Decoder</strong>
           <div style="color:var(--text-muted); font-size:0.85rem; margin-top:0.2rem;">
             Decodes dual-channel AIS traffic from RX audio using 9.6 kbit/s GMSK and HDLC.
           </div>
         </div>
-        <div class="plugin-item">
+        <div class="plugin-item" data-decoder="vdes">
           <strong>VDES Decoder</strong>
           <div style="color:var(--text-muted); font-size:0.85rem; margin-top:0.2rem;">
             Decodes single-channel 100 kHz VDES bursts from SDR IQ using the dedicated VDES path.
           </div>
         </div>
-        <div class="plugin-item">
+        <div class="plugin-item" data-decoder="aprs">
           <strong>APRS Decoder</strong>
           <div style="color:var(--text-muted); font-size:0.85rem; margin-top:0.2rem;">
             Decodes APRS packets from RX audio using Bell 202 AFSK (1200 baud).
           </div>
         </div>
-        <div class="plugin-item">
+        <div class="plugin-item" data-decoder="cw">
           <strong>CW Decoder</strong>
           <div style="color:var(--text-muted); font-size:0.85rem; margin-top:0.2rem;">
             Decodes CW (Morse code) from RX audio.
           </div>
         </div>
-        <div class="plugin-item">
+        <div class="plugin-item" data-decoder="ft8">
           <strong>FT8 Decoder</strong>
           <div style="color:var(--text-muted); font-size:0.85rem; margin-top:0.2rem;">
             Decodes FT8 messages from RX audio (DIG/USB only, toggle required).
           </div>
         </div>
-        <div class="plugin-item">
+        <div class="plugin-item" data-decoder="ft4">
           <strong>FT4 Decoder</strong>
           <div style="color:var(--text-muted); font-size:0.85rem; margin-top:0.2rem;">
             Decodes FT4 messages from RX audio (DIG/USB only, toggle required). 7.5-second slots.
           </div>
         </div>
-        <div class="plugin-item">
+        <div class="plugin-item" data-decoder="ft2">
           <strong>FT2 Decoder</strong>
           <div style="color:var(--text-muted); font-size:0.85rem; margin-top:0.2rem;">
             Decodes FT2 messages from RX audio (DIG/USB only, toggle required). 3.75-second slots.
           </div>
         </div>
-        <div class="plugin-item">
+        <div class="plugin-item" data-decoder="wspr">
           <strong>WSPR Decoder</strong>
           <div style="color:var(--text-muted); font-size:0.85rem; margin-top:0.2rem;">
             Decodes WSPR messages from RX audio (DIG/USB only, toggle required).
           </div>
         </div>
-        <div class="plugin-item">
+        <div class="plugin-item" data-decoder="rds">
           <strong>RDS Decoder</strong>
           <div style="color:var(--text-muted); font-size:0.85rem; margin-top:0.2rem;">
             Decodes Radio Data System (RDS) metadata from WFM broadcasts (57 kHz subcarrier).
           </div>
         </div>
-        <div class="plugin-item">
+        <div class="plugin-item" data-decoder="lrpt">
           <strong>Weather Satellite Decoder</strong>
           <div style="color:var(--text-muted); font-size:0.85rem; margin-top:0.2rem;">
             Decodes Meteor-M LRPT (137 MHz QPSK) weather satellite imagery.
