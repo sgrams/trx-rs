@@ -1113,6 +1113,10 @@
           <div class="now-playing-card">
             <div id="scheduler-status-card" class="sch-status-card">No activity yet.</div>
           </div>
+          <details class="sch-activity-log-details" id="scheduler-activity-log-wrap" style="display:none;">
+            <summary>Activity Log</summary>
+            <div id="scheduler-activity-log" class="sch-activity-log"></div>
+          </details>
           <div class="sch-row">
             <label class="sch-label">Mode
               <select id="scheduler-mode-select" class="status-input" aria-label="Scheduler mode">
@@ -1132,6 +1136,9 @@
               </label>
               <label class="sch-label">Longitude (°)
                 <input type="number" id="scheduler-gl-lon" class="status-input" step="0.001" placeholder="e.g. 18.646" />
+              </label>
+              <label class="sch-label">Grid square
+                <input type="text" id="scheduler-gl-grid" class="status-input" placeholder="e.g. JO94" maxlength="8" style="width:7rem;" />
               </label>
               <label class="sch-label">Transition window (min)
                 <input type="number" id="scheduler-gl-window" class="status-input" min="5" max="120" value="20" />
@@ -1204,11 +1211,11 @@
                 </div>
               </form>
             </div>
-            <details class="sch-ts-details">
+            <details class="sch-ts-details" open>
               <summary>Entry details</summary>
               <table class="sch-ts-table">
                 <thead>
-                  <tr><th>Start</th><th>End</th><th>Center freq</th><th>Primary bookmark</th><th>Extra channels</th><th>Label</th><th>Interleave (min)</th><th>REC</th><th></th></tr>
+                  <tr><th class="sch-drag-th"></th><th>Start</th><th>End</th><th>Center freq</th><th>Primary bookmark</th><th>Extra channels</th><th>Label</th><th>Interleave (min)</th><th>REC</th><th></th></tr>
                 </thead>
                 <tbody id="scheduler-ts-tbody"></tbody>
               </table>
@@ -1254,6 +1261,11 @@
                     <option value="">— custom —</option>
                     <option value="METEOR-M2 3|57166">Meteor-M2 3 (137.900 MHz LRPT)</option>
                     <option value="METEOR-M2-4|59051">Meteor-M2-4 (137.900 MHz LRPT)</option>
+                    <option value="NOAA 15|25338">NOAA 15 (137.620 MHz APT)</option>
+                    <option value="NOAA 18|28654">NOAA 18 (137.9125 MHz APT)</option>
+                    <option value="NOAA 19|33591">NOAA 19 (137.100 MHz APT)</option>
+                    <option value="ISS|25544">ISS (145.825 MHz APRS)</option>
+                    <option value="SO-50|27607">SO-50 (436.795 MHz FM)</option>
                   </select>
                 </label>
                 <label class="bm-label">Satellite name

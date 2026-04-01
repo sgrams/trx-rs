@@ -4573,6 +4573,25 @@ button:focus-visible, input:focus-visible, select:focus-visible {
 .sch-ts-table td:last-child button:last-child {
   margin-right: 0;
 }
+.sch-ts-table tr.sch-active {
+  border-left: 3px solid var(--accent);
+}
+.sch-ts-table tr.sch-active td:first-child {
+  padding-left: calc(0.6rem - 3px);
+}
+.sch-local-time {
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  opacity: 0.7;
+}
+.sch-timeline-local-tick {
+  opacity: 0.6;
+}
+.sch-status-detail {
+  font-size: 0.82rem;
+  color: var(--accent);
+  font-weight: 600;
+}
 .sch-add-row {
   align-items: flex-end;
 }
@@ -4778,7 +4797,7 @@ button:focus-visible, input:focus-visible, select:focus-visible {
 .sch-timeline-wrap svg {
   display: block;
   width: 100%;
-  height: 62px;
+  height: 80px;
 }
 .sch-timeline-seg {
   cursor: pointer;
@@ -4811,6 +4830,91 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   font-weight: 600;
   padding: 0.3rem 0;
   user-select: none;
+}
+/* ── Inline Row Editing ──────────────────────────────────────────── */
+.sch-inline-editing td {
+  padding: 0.25rem 0.4rem;
+}
+.sch-inline-input {
+  font-size: 0.8rem;
+  padding: 0.15rem 0.3rem;
+  width: 100%;
+  min-width: 0;
+}
+.sch-inline-save, .sch-inline-cancel {
+  font-size: 0.75rem !important;
+  padding: 0.15rem 0.4rem !important;
+}
+/* ── Drag-to-reorder ─────────────────────────────────────────────── */
+.sch-drag-handle {
+  cursor: grab;
+  user-select: none;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 1rem;
+  width: 1.5rem;
+  padding: 0.3rem !important;
+}
+.sch-drag-handle:active { cursor: grabbing; }
+.sch-drag-th { width: 1.5rem; }
+.sch-dragging { opacity: 0.5; }
+.sch-drag-over { border-top: 2px solid var(--accent); }
+/* ── Extra Bookmark Chips ────────────────────────────────────────── */
+.sch-extra-bm-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  padding: 0.15rem 0.5rem;
+  border-radius: 1rem;
+  background: var(--accent);
+  color: #fff;
+  font-size: 0.78rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.sch-extra-bm-chip-rm {
+  cursor: pointer;
+  font-size: 0.9rem;
+  opacity: 0.8;
+  font-weight: 700;
+  line-height: 1;
+}
+.sch-extra-bm-chip-rm:hover { opacity: 1; }
+/* ── Activity Log ────────────────────────────────────────────────── */
+.sch-activity-log-details {
+  margin-bottom: 1rem;
+}
+.sch-activity-log-details summary {
+  cursor: pointer;
+  font-size: 0.82rem;
+  color: var(--text-muted);
+  font-weight: 600;
+  padding: 0.3rem 0;
+}
+.sch-activity-log {
+  max-height: 12rem;
+  overflow-y: auto;
+  font-size: 0.78rem;
+  padding: 0.3rem 0;
+}
+.sch-log-entry {
+  padding: 0.15rem 0;
+  border-bottom: 1px solid var(--border-light);
+}
+.sch-log-time {
+  color: var(--text-muted);
+}
+.sch-log-action {
+  font-weight: 600;
+  text-transform: uppercase;
+  font-size: 0.72rem;
+}
+.sch-log-bm {
+  color: var(--accent);
+}
+.sch-log-label {
+  color: var(--text-muted);
+  font-style: italic;
 }
 /* ── Inline Entry Editor (replaces modal overlay) ─────────────────── */
 #sch-entry-form-wrap {
