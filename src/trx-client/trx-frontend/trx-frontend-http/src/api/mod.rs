@@ -646,6 +646,8 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
         .service(assets::style_css)
         .service(assets::themes_css)
         .service(assets::app_js)
+        .service(assets::map_core_js)
+        .service(assets::screenshot_js)
         .service(assets::decode_history_worker_js)
         .service(assets::webgl_renderer_js)
         .service(assets::leaflet_ais_tracksymbol_js)

@@ -12,7 +12,9 @@ caching) from the Actix-Web server.
 | File | Lines | Size |
 |------|------:|-----:|
 | `style.css` | 5,318 | 144 KB |
-| `app.js` | 11,928 | 428 KB |
+| `app.js` | 8,427 | 306 KB |
+| `map-core.js` | 3,483 | 127 KB |
+| `screenshot.js` | 261 | 10 KB |
 | `index.html` | 1,564 | 96 KB |
 | `webgl-renderer.js` | 526 | 20 KB |
 | `decode-history-worker.js` | 176 | 8 KB |
@@ -340,7 +342,7 @@ quadrantChart
 9. ~~Replace `innerHTML` with DOM APIs in hot paths~~ **DONE** -- 15+ `innerHTML = ""` replaced with `replaceChildren()`
 
 ### Longer-term
-10. Split `app.js` into ES modules with lazy loading -- **DEFERRED** (requires major refactor, tracked separately)
+10. ~~Split `app.js` into modules with lazy loading~~ **DONE** -- `map-core.js` (3,480 lines, map/stats/geo) and `screenshot.js` (260 lines) extracted as IIFE modules communicating via `window.trx` namespace; lazy-loaded on tab activation and on-demand respectively; `app.js` reduced from 11,967 to 8,420 lines (30% reduction)
 11. ~~Lazy-load plugin scripts and Leaflet on demand~~ **DONE** -- plugin scripts loaded on tab activation, core plugins loaded immediately
 12. ~~Use `<template>` elements for deferred tab content~~ **DONE** -- map, statistics, about tabs wrapped in `<template>`, cloned on first activation
 13. ~~Migrate to Brotli compression~~ **DONE** -- Brotli added alongside gzip, preferred when `Accept-Encoding: br` present
