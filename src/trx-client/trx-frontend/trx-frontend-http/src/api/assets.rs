@@ -70,6 +70,9 @@ define_gz_cache!(
 define_gz_cache!(gz_vchan_js, status::VCHAN_JS, "vchan.js");
 define_gz_cache!(gz_bandplan_json, status::BANDPLAN_JSON, "bandplan.json");
 
+// Vendored DSEG14 Classic font
+// (binary woff2 — served directly, not through gz_cache)
+
 // Vendored Leaflet 1.9.4
 define_gz_cache!(gz_leaflet_js, status::LEAFLET_JS, "leaflet.js");
 define_gz_cache!(gz_leaflet_css, status::LEAFLET_CSS, "leaflet.css");
@@ -376,6 +379,18 @@ pub(crate) async fn vchan_js(req: HttpRequest) -> impl Responder {
 pub(crate) async fn bandplan_json(req: HttpRequest) -> impl Responder {
     let c = gz_bandplan_json();
     static_asset_response(&req, "application/json; charset=utf-8", c)
+}
+
+// ---------------------------------------------------------------------------
+// Vendored DSEG14 Classic font
+// ---------------------------------------------------------------------------
+
+#[get("/vendor/dseg14-classic-latin-400-normal.woff2")]
+pub(crate) async fn dseg14_classic_woff2() -> impl Responder {
+    HttpResponse::Ok()
+        .insert_header((header::CONTENT_TYPE, "font/woff2"))
+        .insert_header((header::CACHE_CONTROL, "public, max-age=604800, immutable"))
+        .body(status::DSEG14_CLASSIC_WOFF2)
 }
 
 // ---------------------------------------------------------------------------

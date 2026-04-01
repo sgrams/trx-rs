@@ -667,6 +667,8 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
         .service(assets::background_decode_js)
         .service(assets::vchan_js)
         .service(assets::bandplan_json)
+        // Vendored DSEG14 Classic font
+        .service(assets::dseg14_classic_woff2)
         // Vendored Leaflet 1.9.4
         .service(assets::leaflet_js)
         .service(assets::leaflet_css)

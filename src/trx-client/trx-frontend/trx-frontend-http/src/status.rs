@@ -35,6 +35,10 @@ pub const BACKGROUND_DECODE_JS: &str = include_str!("../assets/web/plugins/backg
 pub const VCHAN_JS: &str = include_str!("../assets/web/plugins/vchan.js");
 pub const BANDPLAN_JSON: &str = include_str!("../assets/web/bandplan.json");
 
+// Vendored DSEG14 Classic font
+pub const DSEG14_CLASSIC_WOFF2: &[u8] =
+    include_bytes!("../assets/web/vendor/dseg14-classic-latin-400-normal.woff2");
+
 // Vendored Leaflet 1.9.4
 pub const LEAFLET_JS: &str = include_str!("../assets/web/vendor/leaflet.js");
 pub const LEAFLET_CSS: &str = include_str!("../assets/web/vendor/leaflet.css");

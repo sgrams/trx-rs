@@ -77,7 +77,7 @@
   font-style: normal;
   font-weight: 400;
   font-display: swap;
-  src: url('https://cdn.jsdelivr.net/npm/@fontsource/dseg14-classic/files/dseg14-classic-latin-400-normal.woff2') format('woff2');
+  src: url('/vendor/dseg14-classic-latin-400-normal.woff2') format('woff2');
   unicode-range: U+0030-0039, U+002E, U+002D, U+0020, U+002B;
 }
 
