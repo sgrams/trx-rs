@@ -1583,7 +1583,7 @@
     });
   }
   // Load core plugins immediately (needed on main tab)
-  ['digital-modes', 'bookmarks'].forEach(loadPlugins);
+  ['digital-modes', 'bookmarks', 'settings'].forEach(loadPlugins);
   // Load others on tab switch
   document.addEventListener('click', function(e) {
     var tab = e.target.closest('[data-tab]');

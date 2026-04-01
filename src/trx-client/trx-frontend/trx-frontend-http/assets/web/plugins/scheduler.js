@@ -1449,4 +1449,13 @@
   window.destroyScheduler = destroyScheduler;
   window.wireSchedulerEvents = wireSchedulerEvents;
   window.setSchedulerRig = setSchedulerRig;
+
+  // Auto-initialize if the app has already booted (lazy-load case).
+  // When loaded eagerly, initSettingsUI() in app.js calls initScheduler();
+  // when loaded lazily (e.g. settings tab click after boot), the app has
+  // already passed that point, so we must self-initialize here.
+  if (typeof authRole !== "undefined" && authRole !== null) {
+    initScheduler(typeof lastActiveRigId !== "undefined" ? lastActiveRigId : null, authRole);
+    wireSchedulerEvents();
+  }
 })();
