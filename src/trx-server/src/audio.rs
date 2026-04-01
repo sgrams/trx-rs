@@ -4,7 +4,9 @@
 
 //! Audio capture, playback, and TCP streaming for trx-server.
 
-use std::collections::{HashMap, HashSet, VecDeque};
+#[cfg(feature = "ft2")]
+use std::collections::HashMap;
+use std::collections::{HashSet, VecDeque};
 use std::net::SocketAddr;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
@@ -63,8 +65,11 @@ const MAX_HISTORY_ENTRIES: usize = 10_000;
 /// Silence timeout before auto-finalising an LRPT pass (30 s without new MCUs).
 const LRPT_PASS_SILENCE_TIMEOUT: Duration = Duration::from_secs(30);
 const FT8_SAMPLE_RATE: u32 = 12_000;
+#[cfg(feature = "ft2")]
 const FT2_ASYNC_BUFFER_SAMPLES: usize = 45_000;
+#[cfg(feature = "ft2")]
 const FT2_ASYNC_TRIGGER_SAMPLES: usize = 9_000;
+#[cfg(feature = "ft2")]
 const FT2_DEDUPE_RETENTION: Duration = Duration::from_secs(8);
 const DECODE_AUDIO_GATE_RMS: f32 = 2.5e-4;
 const AUDIO_STREAM_ERROR_LOG_INTERVAL: Duration = Duration::from_secs(60);
@@ -77,6 +82,7 @@ fn current_timestamp_ms() -> i64 {
     }
 }
 
+#[cfg(feature = "ft2")]
 fn retain_ft2_window(buf: &mut Vec<f32>) {
     if buf.len() > FT2_ASYNC_BUFFER_SAMPLES {
         let excess = buf.len() - FT2_ASYNC_BUFFER_SAMPLES;
@@ -84,10 +90,12 @@ fn retain_ft2_window(buf: &mut Vec<f32>) {
     }
 }
 
+#[cfg(feature = "ft2")]
 fn prune_recent_ft2_decodes(recent: &mut HashMap<String, Instant>, now: Instant) {
     recent.retain(|_, seen_at| now.duration_since(*seen_at) <= FT2_DEDUPE_RETENTION);
 }
 
+#[cfg(feature = "ft2")]
 fn should_emit_ft2_decode(recent: &mut HashMap<String, Instant>, text: &str, freq_hz: f32) -> bool {
     let now = Instant::now();
     prune_recent_ft2_decodes(recent, now);
@@ -99,6 +107,7 @@ fn should_emit_ft2_decode(recent: &mut HashMap<String, Instant>, text: &str, fre
     true
 }
 
+#[cfg(feature = "ft2")]
 fn decode_ft2_window(
     decoder: &mut Ft8Decoder,
     samples: &[f32],
@@ -561,6 +570,7 @@ impl DecoderHistories {
 
     // --- FT2 ---
 
+    #[cfg_attr(not(feature = "ft2"), allow(dead_code))]
     fn prune_ft2(history: &mut VecDeque<(Instant, Ft8Message)>) {
         let cutoff = Instant::now() - FT8_HISTORY_RETENTION;
         while let Some((ts, _)) = history.front() {
@@ -572,6 +582,7 @@ impl DecoderHistories {
         }
     }
 
+    #[cfg_attr(not(feature = "ft2"), allow(dead_code))]
     pub fn record_ft2_message(&self, msg: Ft8Message) {
         let mut h = lock_or_recover(&self.ft2, "ft2_history");
         let before = h.len();
@@ -581,6 +592,7 @@ impl DecoderHistories {
         self.adjust_total_count(before, h.len());
     }
 
+    #[cfg_attr(not(feature = "ft2"), allow(dead_code))]
     pub fn snapshot_ft2_history(&self) -> Vec<Ft8Message> {
         let mut h = lock_or_recover(&self.ft2, "ft2_history");
         let before = h.len();
@@ -2047,6 +2059,7 @@ async fn run_ftx_decoder_inner(
 }
 
 /// Run the FT2 decoder task. Mirrors FT4 but uses FT2 protocol timing.
+#[cfg(feature = "ft2")]
 pub async fn run_ft2_decoder(
     sample_rate: u32,
     channels: u16,
@@ -2902,6 +2915,7 @@ async fn run_background_ft4_decoder(
     }
 }
 
+#[cfg(feature = "ft2")]
 async fn run_background_ft2_decoder(
     sample_rate: u32,
     channels: u16,
@@ -3204,6 +3218,7 @@ async fn handle_audio_client(
             DecodedMessage::Ft4,
             AUDIO_MSG_FT4_DECODE
         );
+        #[cfg(feature = "ft2")]
         push_history!(
             histories.snapshot_ft2_history(),
             DecodedMessage::Ft2,
@@ -3479,6 +3494,7 @@ async fn handle_audio_client(
                                             )
                                             .await;
                                         }),
+                                        #[cfg(feature = "ft2")]
                                         "ft2" => tokio::spawn(async move {
                                             run_background_ft2_decoder(
                                                 sr,

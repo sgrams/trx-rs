@@ -267,6 +267,7 @@ mod tests {
         assert_eq!(mon.block_size, 576); // 12000 * 0.048
     }
 
+    #[cfg(feature = "ft2")]
     #[test]
     fn monitor_block_size_ft2() {
         let cfg = MonitorConfig {

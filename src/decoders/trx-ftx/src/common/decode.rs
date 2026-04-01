@@ -6,6 +6,7 @@
 //!
 //! Ports `decode.c` from ft8_lib.
 
+#[cfg(feature = "ft2")]
 use num_complex::Complex32;
 
 use super::constants::*;
@@ -37,6 +38,7 @@ pub struct FtxMessage {
     pub hash: u16,
 }
 
+#[cfg(feature = "ft2")]
 pub(crate) fn wf_elem_to_complex(elem: WfElem) -> Complex32 {
     Complex32::new(elem.re, elem.im)
 }
@@ -104,12 +106,20 @@ pub fn ftx_find_candidates(
     max_candidates: usize,
     min_score: i32,
 ) -> Vec<Candidate> {
+    #[cfg(feature = "ft2")]
     let is_ft2 = wf.protocol == FtxProtocol::Ft2;
+    #[cfg(not(feature = "ft2"))]
+    let is_ft2 = false;
     let num_tones = if wf.protocol.uses_ft4_layout() { 4 } else { 8 };
 
     let (time_offset_min, time_offset_max) = if is_ft2 {
-        let max = (wf.num_blocks as i32 - FT2_NN as i32 + 2).max(-1);
-        (-2i16, max as i16)
+        #[cfg(feature = "ft2")]
+        {
+            let max = (wf.num_blocks as i32 - FT2_NN as i32 + 2).max(-1);
+            (-2i16, max as i16)
+        }
+        #[cfg(not(feature = "ft2"))]
+        unreachable!()
     } else if wf.protocol == FtxProtocol::Ft4 {
         let max = (wf.num_blocks as i32 - FT4_NN as i32 + 34).max(-33);
         (-34i16, max as i16)
@@ -135,7 +145,10 @@ pub fn ftx_find_candidates(
                     };
 
                     let score = if is_ft2 {
-                        crate::ft2::ft2_sync_score(wf, &cand)
+                        #[cfg(feature = "ft2")]
+                        { crate::ft2::ft2_sync_score(wf, &cand) }
+                        #[cfg(not(feature = "ft2"))]
+                        unreachable!()
                     } else if wf.protocol.uses_ft4_layout() {
                         crate::ft4::ft4_sync_score(wf, &cand)
                     } else {
@@ -267,9 +280,16 @@ pub fn ftx_decode_candidate(
 ) -> Option<FtxMessage> {
     let mut log174 = [0.0f32; FTX_LDPC_N];
 
+    #[cfg(feature = "ft2")]
     if wf.protocol == FtxProtocol::Ft2 {
         crate::ft2::ft2_extract_likelihood(wf, cand, &mut log174);
     } else if wf.protocol.uses_ft4_layout() {
+        crate::ft4::ft4_extract_likelihood(wf, cand, &mut log174);
+    } else {
+        crate::ft8::ft8_extract_likelihood(wf, cand, &mut log174);
+    }
+    #[cfg(not(feature = "ft2"))]
+    if wf.protocol.uses_ft4_layout() {
         crate::ft4::ft4_extract_likelihood(wf, cand, &mut log174);
     } else {
         crate::ft8::ft8_extract_likelihood(wf, cand, &mut log174);

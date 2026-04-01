@@ -7,6 +7,7 @@
 pub enum FtxProtocol {
     Ft4,
     Ft8,
+    #[cfg(feature = "ft2")]
     Ft2,
 }
 
@@ -16,6 +17,7 @@ impl FtxProtocol {
         match self {
             Self::Ft8 => FT8_SYMBOL_PERIOD,
             Self::Ft4 => FT4_SYMBOL_PERIOD,
+            #[cfg(feature = "ft2")]
             Self::Ft2 => FT2_SYMBOL_PERIOD,
         }
     }
@@ -25,13 +27,18 @@ impl FtxProtocol {
         match self {
             Self::Ft8 => FT8_SLOT_TIME,
             Self::Ft4 => FT4_SLOT_TIME,
+            #[cfg(feature = "ft2")]
             Self::Ft2 => FT2_SLOT_TIME,
         }
     }
 
     /// Whether this protocol uses FT4-style channel layout (FT4 and FT2).
     pub fn uses_ft4_layout(self) -> bool {
-        matches!(self, Self::Ft4 | Self::Ft2)
+        #[cfg(feature = "ft2")]
+        if matches!(self, Self::Ft2) {
+            return true;
+        }
+        matches!(self, Self::Ft4)
     }
 
     /// Number of data symbols.
@@ -98,7 +105,9 @@ pub const FT4_SYMBOL_PERIOD: f32 = 0.048;
 pub const FT4_SLOT_TIME: f32 = 7.5;
 
 // FT2 timing
+#[cfg(feature = "ft2")]
 pub const FT2_SYMBOL_PERIOD: f32 = 0.024;
+#[cfg(feature = "ft2")]
 pub const FT2_SLOT_TIME: f32 = 3.75;
 
 // FT8 symbol counts
@@ -117,11 +126,17 @@ pub const FT4_NUM_SYNC: usize = 4;
 pub const FT4_SYNC_OFFSET: usize = 33;
 
 // FT2 reuses FT4 layout
+#[cfg(feature = "ft2")]
 pub const FT2_ND: usize = FT4_ND;
+#[cfg(feature = "ft2")]
 pub const FT2_NR: usize = FT4_NR;
+#[cfg(feature = "ft2")]
 pub const FT2_NN: usize = FT4_NN;
+#[cfg(feature = "ft2")]
 pub const FT2_LENGTH_SYNC: usize = FT4_LENGTH_SYNC;
+#[cfg(feature = "ft2")]
 pub const FT2_NUM_SYNC: usize = FT4_NUM_SYNC;
+#[cfg(feature = "ft2")]
 pub const FT2_SYNC_OFFSET: usize = FT4_SYNC_OFFSET;
 
 // LDPC parameters
@@ -147,12 +162,14 @@ mod tests {
     fn protocol_timing() {
         assert!((FtxProtocol::Ft8.symbol_period() - 0.160).abs() < 1e-6);
         assert!((FtxProtocol::Ft4.symbol_period() - 0.048).abs() < 1e-6);
+        #[cfg(feature = "ft2")]
         assert!((FtxProtocol::Ft2.symbol_period() - 0.024).abs() < 1e-6);
     }
 
     #[test]
     fn ft4_layout() {
         assert!(FtxProtocol::Ft4.uses_ft4_layout());
+        #[cfg(feature = "ft2")]
         assert!(FtxProtocol::Ft2.uses_ft4_layout());
         assert!(!FtxProtocol::Ft8.uses_ft4_layout());
     }
@@ -161,6 +178,7 @@ mod tests {
     fn symbol_counts() {
         assert_eq!(FtxProtocol::Ft8.nn(), 79);
         assert_eq!(FtxProtocol::Ft4.nn(), 105);
+        #[cfg(feature = "ft2")]
         assert_eq!(FtxProtocol::Ft2.nn(), 105);
     }
 }

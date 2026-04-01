@@ -7,6 +7,10 @@ name = "trx-protocol"
 version.workspace = true
 edition = "2021"
 
+[features]
+default = []
+ft2 = []
+
 [dependencies]
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }

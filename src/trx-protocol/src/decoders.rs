@@ -97,6 +97,7 @@ pub const DECODER_REGISTRY: &[DecoderDescriptor] = &[
         background_decode: true,
         bookmark_selectable: true,
     },
+    #[cfg(feature = "ft2")]
     DecoderDescriptor {
         id: "ft2",
         label: "FT2",

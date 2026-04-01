@@ -10,6 +10,7 @@ build = "build.rs"
 
 [features]
 default = ["soapysdr"]
+ft2 = ["trx-ftx/ft2", "trx-protocol/ft2"]
 soapysdr = ["trx-backend/soapysdr"]
 
 [dependencies]

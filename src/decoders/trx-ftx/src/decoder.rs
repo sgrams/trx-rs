@@ -19,9 +19,13 @@ const DEFAULT_F_MAX_HZ: f32 = 3000.0;
 const DEFAULT_TIME_OSR: i32 = 2;
 const DEFAULT_FREQ_OSR: i32 = 2;
 
+#[cfg(feature = "ft2")]
 const FT2_F_MIN_HZ: f32 = 200.0;
+#[cfg(feature = "ft2")]
 const FT2_F_MAX_HZ: f32 = 5000.0;
+#[cfg(feature = "ft2")]
 const FT2_TIME_OSR: i32 = 8;
+#[cfg(feature = "ft2")]
 const FT2_FREQ_OSR: i32 = 4;
 
 const MAX_LDPC_ITERATIONS: usize = 20;
@@ -37,7 +41,7 @@ pub struct Ft8DecodeResult {
     pub freq_hz: f32,
 }
 
-/// FTx decoder instance supporting FT8, FT4, and FT2 protocols.
+/// FTx decoder instance supporting FT8, FT4, and (optionally) FT2 protocols.
 pub struct Ft8Decoder {
     protocol: FtxProtocol,
     sample_rate: u32,
@@ -46,6 +50,7 @@ pub struct Ft8Decoder {
     monitor: Monitor,
     callsign_hash: CallsignHashTable,
     // FT2-specific pipeline
+    #[cfg(feature = "ft2")]
     ft2_pipeline: Option<crate::ft2::Ft2Pipeline>,
 }
 
@@ -61,12 +66,14 @@ impl Ft8Decoder {
     }
 
     /// Create a new FT2 decoder.
+    #[cfg(feature = "ft2")]
     pub fn new_ft2(sample_rate: u32) -> Result<Self, String> {
         Self::new_with_protocol(sample_rate, FtxProtocol::Ft2)
     }
 
     fn new_with_protocol(sample_rate: u32, protocol: FtxProtocol) -> Result<Self, String> {
         let (f_min, f_max, time_osr, freq_osr) = match protocol {
+            #[cfg(feature = "ft2")]
             FtxProtocol::Ft2 => (FT2_F_MIN_HZ, FT2_F_MAX_HZ, FT2_TIME_OSR, FT2_FREQ_OSR),
             _ => (
                 DEFAULT_F_MIN_HZ,
@@ -92,9 +99,16 @@ impl Ft8Decoder {
             return Err(format!("invalid {:?} block size", protocol));
         }
 
-        let window_samples = match protocol {
-            FtxProtocol::Ft2 => crate::ft2::FT2_NMAX,
-            _ => {
+        let window_samples = {
+            #[cfg(feature = "ft2")]
+            if protocol == FtxProtocol::Ft2 {
+                crate::ft2::FT2_NMAX
+            } else {
+                let slot_time = protocol.slot_time();
+                (sample_rate as f32 * slot_time) as usize
+            }
+            #[cfg(not(feature = "ft2"))]
+            {
                 let slot_time = protocol.slot_time();
                 (sample_rate as f32 * slot_time) as usize
             }
@@ -104,6 +118,7 @@ impl Ft8Decoder {
             return Err(format!("invalid {:?} analysis window", protocol));
         }
 
+        #[cfg(feature = "ft2")]
         let ft2_pipeline = if protocol == FtxProtocol::Ft2 {
             Some(crate::ft2::Ft2Pipeline::new(sample_rate as i32))
         } else {
@@ -117,6 +132,7 @@ impl Ft8Decoder {
             window_samples,
             monitor,
             callsign_hash: CallsignHashTable::new(),
+            #[cfg(feature = "ft2")]
             ft2_pipeline,
         })
     }
@@ -140,6 +156,7 @@ impl Ft8Decoder {
     pub fn reset(&mut self) {
         self.monitor.reset();
         self.callsign_hash.cleanup(10);
+        #[cfg(feature = "ft2")]
         if let Some(ref mut pipe) = self.ft2_pipeline {
             pipe.reset();
         }
@@ -151,6 +168,7 @@ impl Ft8Decoder {
             return;
         }
 
+        #[cfg(feature = "ft2")]
         if self.protocol == FtxProtocol::Ft2 {
             // FT2: accumulate raw audio and also feed the monitor
             if let Some(ref mut pipe) = self.ft2_pipeline {
@@ -164,6 +182,7 @@ impl Ft8Decoder {
     /// Check if enough data has been collected and run the decode.
     /// Returns decoded messages, or empty if not ready yet.
     pub fn decode_if_ready(&mut self, max_results: usize) -> Vec<Ft8DecodeResult> {
+        #[cfg(feature = "ft2")]
         if self.protocol == FtxProtocol::Ft2 {
             return self.decode_ft2(max_results);
         }
@@ -232,6 +251,7 @@ impl Ft8Decoder {
     }
 
     /// FT2-specific decode pipeline.
+    #[cfg(feature = "ft2")]
     fn decode_ft2(&mut self, max_results: usize) -> Vec<Ft8DecodeResult> {
         let ft2_results = {
             let pipe = match self.ft2_pipeline.as_mut() {
@@ -295,6 +315,7 @@ mod tests {
         assert_eq!(dec.block_size(), 576); // 12000 * 0.048
     }
 
+    #[cfg(feature = "ft2")]
     #[test]
     fn ft2_uses_distinct_block_size() {
         let ft4 = Ft8Decoder::new_ft4(12_000).expect("ft4 decoder");

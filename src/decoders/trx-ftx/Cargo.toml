@@ -7,6 +7,10 @@ name = "trx-ftx"
 version.workspace = true
 edition = "2021"
 
+[features]
+default = []
+ft2 = []
+
 [dependencies]
 rustfft = "6"
 realfft = "3"

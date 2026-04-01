@@ -4,6 +4,7 @@
 
 pub mod common;
 mod decoder;
+#[cfg(feature = "ft2")]
 pub mod ft2;
 pub mod ft4;
 pub mod ft8;
