@@ -35,6 +35,13 @@ function loadSetting(key, fallback) {
     return v !== null ? JSON.parse(v) : fallback;
   } catch(e) { return fallback; }
 }
+function escapeMapHtml(input) {
+  return String(input)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll("\"", "&quot;");
+}
 
 // --- Authentication ---
 let authRole = null;  // null (not authenticated), "rx" (read-only), or "control" (full access)
@@ -4591,7 +4598,7 @@ Object.defineProperties(window.trx, {
 });
 // -- Shared utility functions --
 Object.assign(window.trx, {
-  saveSetting, loadSetting, showHint, formatFreq, formatFreqForHumans,
+  saveSetting, loadSetting, showHint, escapeMapHtml, formatFreq, formatFreqForHumans,
   formatWavelength, formatBwLabel, formatUptime, formatSigStrength, formatSignal,
   postPath, scheduleUiFrameJob, navigateToTab, rigBadgeColor,
   latLonToMaidenhead, locatorToLatLon, haversineKm, formatDistanceKm,
