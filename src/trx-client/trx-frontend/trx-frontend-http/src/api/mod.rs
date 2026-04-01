@@ -306,13 +306,13 @@ where
         .body(body)
 }
 
-/// Pre-compressed (gzip) + ETag-aware response for immutable embedded assets.
+/// Pre-compressed (gzip + brotli) + ETag-aware response for immutable embedded assets.
 fn static_asset_response(
     req: &HttpRequest,
     content_type: &'static str,
-    gz_bytes: &[u8],
-    etag: &str,
+    entry: &GzCacheEntry,
 ) -> HttpResponse {
+    let etag = &entry.etag;
     // Check If-None-Match for conditional GET.
     if let Some(inm) = req.headers().get(header::IF_NONE_MATCH) {
         if let Ok(val) = inm.to_str() {
@@ -321,36 +321,54 @@ fn static_asset_response(
                     .insert_header((header::ETAG, etag.to_owned()))
                     .insert_header((
                         header::CACHE_CONTROL,
-                        "public, max-age=86400, must-revalidate",
+                        "public, max-age=31536000, immutable",
                     ))
                     .finish();
             }
         }
     }
+    // Prefer brotli if client supports it.
+    let accept_enc = req
+        .headers()
+        .get(header::ACCEPT_ENCODING)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
+    let (body, encoding) = if accept_enc.contains("br") {
+        (&entry.br, "br")
+    } else {
+        (&entry.gz, "gzip")
+    };
     HttpResponse::Ok()
         .insert_header((header::CONTENT_TYPE, content_type))
-        .insert_header((header::CONTENT_ENCODING, "gzip"))
+        .insert_header((header::CONTENT_ENCODING, encoding))
         .insert_header((header::ETAG, etag.to_owned()))
         .insert_header((
             header::CACHE_CONTROL,
-            "public, max-age=86400, must-revalidate",
+            "public, max-age=31536000, immutable",
         ))
-        .body(Bytes::copy_from_slice(gz_bytes))
+        .body(Bytes::copy_from_slice(body))
 }
 
-/// Cache entry for a pre-compressed asset: gzip bytes + ETag string.
+/// Cache entry for a pre-compressed asset: gzip + brotli bytes + ETag string.
 struct GzCacheEntry {
     gz: Vec<u8>,
+    br: Vec<u8>,
     etag: String,
 }
 
-/// Compress `src` with gzip and build an ETag from the build version + asset name.
+/// Compress `src` with gzip and brotli, and build an ETag from the build version + asset name.
 fn gz_cache_entry(src: &[u8], name: &str) -> GzCacheEntry {
+    // gzip
     let mut encoder = GzEncoder::new(Vec::with_capacity(src.len() / 2), Compression::best());
     encoder.write_all(src).expect("gzip compress");
     let gz = encoder.finish().expect("gzip finish");
+    // brotli
+    let mut br = Vec::with_capacity(src.len() / 2);
+    let mut br_encoder = brotli::CompressorWriter::new(&mut br, 4096, 11, 22);
+    br_encoder.write_all(src).expect("brotli compress");
+    drop(br_encoder);
     let etag = format!("\"{}:{}\"", status::build_version_tag(), name);
-    GzCacheEntry { gz, etag }
+    GzCacheEntry { gz, br, etag }
 }
 
 fn require_control(
@@ -626,6 +644,7 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
         .service(assets::favicon_png)
         .service(assets::logo)
         .service(assets::style_css)
+        .service(assets::themes_css)
         .service(assets::app_js)
         .service(assets::decode_history_worker_js)
         .service(assets::webgl_renderer_js)

@@ -7,15 +7,24 @@
   <link rel="icon" type="image/png" sizes="any" href="/favicon.ico?v=5" />
   <link rel="shortcut icon" href="/favicon.ico?v=5" />
   <link rel="apple-touch-icon" sizes="180x180" href="/favicon.png?v=5" />
-  <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
   <link rel="preconnect" href="https://unpkg.com" crossorigin />
-  <link rel="preload" as="style" href="https://cdn.jsdelivr.net/npm/@fontsource/dseg14-classic/400.css" onload="this.onload=null;this.rel='stylesheet'" />
-  <noscript><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fontsource/dseg14-classic/400.css" /></noscript>
   <link rel="stylesheet" href="/style.css" />
+  <link rel="preload" as="style" href="/themes.css" onload="this.onload=null;this.rel='stylesheet'" />
+  <noscript><link rel="stylesheet" href="/themes.css" /></noscript>
   <link rel="preload" as="style" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" onload="this.onload=null;this.rel='stylesheet'" />
   <noscript><link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" /></noscript>
 </head>
 <body>
+  <svg xmlns="http://www.w3.org/2000/svg" style="display:none">
+    <symbol id="icon-home" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2.8 7 8 2.9 13.2 7"/><path d="M4.3 5.9V13h7.4V5.9"/><path d="M6.8 13V9.3h2.4V13"/></symbol>
+    <symbol id="icon-bookmark" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 2h8v12l-4-2.5L4 14V2z"/></symbol>
+    <symbol id="icon-signal" viewBox="0 0 16 16" fill="currentColor"><rect x="1" y="11" width="2.5" height="4" rx="0.5"/><rect x="4.75" y="8" width="2.5" height="7" rx="0.5"/><rect x="8.5" y="5" width="2.5" height="10" rx="0.5"/><rect x="12.25" y="2" width="2.5" height="13" rx="0.5"/></symbol>
+    <symbol id="icon-map" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2a4 4 0 0 1 4 4c0 3-4 8-4 8S4 9 4 6a4 4 0 0 1 4-4z"/><circle cx="8" cy="6" r="1.2" fill="currentColor" stroke="none"/></symbol>
+    <symbol id="icon-stats" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M2 14h12"/><rect x="3" y="8" width="2" height="6" rx="0.4" fill="currentColor" stroke="none" opacity="0.6"/><rect x="7" y="5" width="2" height="9" rx="0.4" fill="currentColor" stroke="none" opacity="0.75"/><rect x="11" y="2" width="2" height="12" rx="0.4" fill="currentColor" stroke="none" opacity="0.9"/></symbol>
+    <symbol id="icon-record" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="6"/><circle cx="8" cy="8" r="2.5" fill="currentColor" stroke="none"/></symbol>
+    <symbol id="icon-settings" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9.8 3.1a2.6 2.6 0 0 0-2.2 3.9L3.4 11.2a1.2 1.2 0 1 0 1.7 1.7l4.2-4.2a2.6 2.6 0 0 0 3.9-2.2l-1.8.6-1.2-1.2z"/><path d="M10.2 5.8 12 4"/></symbol>
+    <symbol id="icon-about" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="8" cy="8" r="6"/><path d="M8 7v5"/><circle cx="8" cy="5" r="0.5" fill="currentColor" stroke="none"/></symbol>
+  </svg>
   <div class="card" id="card">
     <div class="tab-bar" style="display:none;" id="tab-bar">
       <div class="tab-bar-left">
@@ -32,34 +41,34 @@
         </div>
         <div class="tab-bar-nav">
           <button class="tab active" data-tab="main">
-            <svg class="tab-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.8 7 8 2.9 13.2 7"/><path d="M4.3 5.9V13h7.4V5.9"/><path d="M6.8 13V9.3h2.4V13"/></svg>
+            <svg class="tab-icon" aria-hidden="true"><use href="#icon-home"/></svg>
             <span class="tab-label">Main</span>
           </button>
           <button class="tab" data-tab="bookmarks">
-            <svg class="tab-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 2h8v12l-4-2.5L4 14V2z"/></svg>
+            <svg class="tab-icon" aria-hidden="true"><use href="#icon-bookmark"/></svg>
             <span class="tab-label">Bookmarks</span>
           </button>
           <button class="tab" data-tab="digital-modes">
-            <svg class="tab-icon" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><rect x="1" y="11" width="2.5" height="4" rx="0.5"/><rect x="4.75" y="8" width="2.5" height="7" rx="0.5"/><rect x="8.5" y="5" width="2.5" height="10" rx="0.5"/><rect x="12.25" y="2" width="2.5" height="13" rx="0.5"/></svg>
+            <svg class="tab-icon" aria-hidden="true"><use href="#icon-signal"/></svg>
             <span class="tab-label">Digital modes</span>
           </button>
           <button class="tab" data-tab="map">
-            <svg class="tab-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 2a4 4 0 0 1 4 4c0 3-4 8-4 8S4 9 4 6a4 4 0 0 1 4-4z"/><circle cx="8" cy="6" r="1.2" fill="currentColor" stroke="none"/></svg>
+            <svg class="tab-icon" aria-hidden="true"><use href="#icon-map"/></svg>
             <span class="tab-label">Map</span>
           </button>
           <button class="tab" data-tab="statistics">
-            <svg class="tab-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 14h12"/><rect x="3" y="8" width="2" height="6" rx="0.4" fill="currentColor" stroke="none" opacity="0.6"/><rect x="7" y="5" width="2" height="9" rx="0.4" fill="currentColor" stroke="none" opacity="0.75"/><rect x="11" y="2" width="2" height="12" rx="0.4" fill="currentColor" stroke="none" opacity="0.9"/></svg>
+            <svg class="tab-icon" aria-hidden="true"><use href="#icon-stats"/></svg>
             <span class="tab-label">Statistics</span>
           </button>
           <button class="tab" data-tab="recorder">
-            <svg class="tab-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="8" r="6"/><circle cx="8" cy="8" r="2.5" fill="currentColor" stroke="none"/></svg>
+            <svg class="tab-icon" aria-hidden="true"><use href="#icon-record"/></svg>
             <span class="tab-label">Recorder</span>
           <button class="tab" data-tab="settings">
-            <svg class="tab-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9.8 3.1a2.6 2.6 0 0 0-2.2 3.9L3.4 11.2a1.2 1.2 0 1 0 1.7 1.7l4.2-4.2a2.6 2.6 0 0 0 3.9-2.2l-1.8.6-1.2-1.2z"/><path d="M10.2 5.8 12 4"/></svg>
+            <svg class="tab-icon" aria-hidden="true"><use href="#icon-settings"/></svg>
             <span class="tab-label">Settings</span>
           </button>
           <button class="tab" data-tab="about">
-            <svg class="tab-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><circle cx="8" cy="8" r="6"/><path d="M8 7v5"/><circle cx="8" cy="5" r="0.5" fill="currentColor" stroke="none"/></svg>
+            <svg class="tab-icon" aria-hidden="true"><use href="#icon-about"/></svg>
             <span class="tab-label">About</span>
           </button>
         </div>
@@ -105,7 +114,7 @@
     </div>
     <div id="tab-main" class="tab-panel">
     <div id="server-lost-banner" aria-live="assertive"><span class="banner-dot"></span>trx-server connection lost — waiting for reconnect</div>
-    <div id="loading" style="text-align:center; padding:2rem 0;">
+    <div id="loading" role="status" aria-live="polite" style="text-align:center; padding:2rem 0;">
       <div id="loading-title" style="margin-bottom:0.4rem; font-size:1.1rem; font-weight:600;">Initializing (rig)…</div>
       <div id="loading-sub" style="color:#9aa4b5;"></div>
     </div>
@@ -126,13 +135,13 @@
         <div class="spectrum-wrap">
           <div id="spectrum-bookmark-axis"></div>
           <div id="spectrum-bookmark-side-left" class="spectrum-bookmark-side spectrum-bookmark-side-left" aria-hidden="true"></div>
-          <canvas id="spectrum-canvas"></canvas>
+          <canvas id="spectrum-canvas" tabindex="0" role="img" aria-label="Spectrum display"></canvas>
           <div id="spectrum-zoom-indicator" aria-hidden="true"></div>
           <div id="spectrum-minimap" aria-hidden="true"><div class="minimap-view"></div></div>
           <div id="spectrum-db-axis" aria-hidden="true"></div>
           <div id="spectrum-bookmark-side-right" class="spectrum-bookmark-side spectrum-bookmark-side-right" aria-hidden="true"></div>
           <div id="spectrum-tooltip"></div>
-          <canvas id="spectrum-waterfall-canvas" style="display:none;"></canvas>
+          <canvas id="spectrum-waterfall-canvas" tabindex="0" role="img" aria-label="Waterfall display" style="display:none;"></canvas>
           <div id="spectrum-freq-axis">
             <button id="spectrum-center-left-btn" class="spectrum-edge-shift spectrum-edge-shift-left" type="button" aria-label="Shift spectrum center left">&lsaquo;</button>
             <button id="spectrum-center-right-btn" class="spectrum-edge-shift spectrum-edge-shift-right" type="button" aria-label="Shift spectrum center right">&rsaquo;</button>
@@ -911,7 +920,8 @@
         </div>
       </div>
     </div>
-    <div id="tab-map" class="tab-panel" style="display:none;">
+    <div id="tab-map" class="tab-panel" data-tab="map" style="display:none;">
+      <template id="tmpl-map">
       <div id="map-stage">
         <div class="map-overlay-panel">
           <div class="map-locator-filter-group">
@@ -960,8 +970,10 @@
         <div id="map-band-legend" class="map-band-legend" aria-label="Band color legend"></div>
         <div id="aprs-map"></div>
       </div>
+      </template>
     </div>
     <div id="tab-statistics" class="tab-panel" style="display:none;">
+      <template id="tmpl-statistics">
       <div class="stats-controls">
         <div class="stats-control-group">
           <label class="stats-control-label" for="stats-rig-filter">Receiver</label>
@@ -1061,6 +1073,7 @@
         </div>
         <div id="map-weak-signal-summary-list" class="map-qso-summary-list"></div>
       </section>
+      </template>
     </div>
     <div id="tab-recorder" class="tab-panel" style="display:none;">
       <h2 class="section-heading">Recorder</h2>
@@ -1395,6 +1408,7 @@
       </div>
     </div>
     <div id="tab-about" class="tab-panel" style="display:none;">
+      <template id="tmpl-about">
       <div id="auth-badge" style="display:none; margin-bottom: 1rem; padding: 0.5rem; background: var(--bg-secondary); border-radius: 0.25rem; color: var(--text-muted); font-size: 0.85rem;">Authenticated as: <strong id="auth-role-badge">--</strong></div>
       <div class="sub-tab-bar">
         <button class="sub-tab active" data-subtab="about-server">Server</button>
@@ -1495,12 +1509,13 @@
           </div>
         </div>
       </div>
+      </template>
     </div>
     <div class="footer">
       <div class="copyright">
         Built by <a href="https://www.qrzcq.com/call/SP2SJG" target="_blank" rel="noopener">SP2SJG</a> from <a href="https://haxx.space" target="_blank" rel="noopener">haxx.space</a> · <span class="gh-link-wrap"><a class="gh-link" href="https://github.com/sgrams/trx-rs" target="_blank" rel="noopener" aria-label="Open trx-rs on GitHub"><svg class="gh-link-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 0.2a8 8 0 0 0-2.53 15.59c0.4 0.07 0.55-0.17 0.55-0.39l-0.01-1.37c-2.23 0.49-2.7-0.95-2.7-0.95-0.36-0.91-0.89-1.15-0.89-1.15-0.73-0.49 0.06-0.48 0.06-0.48 0.8 0.06 1.22 0.82 1.22 0.82 0.72 1.22 1.88 0.87 2.34 0.67 0.07-0.51 0.28-0.86 0.5-1.06-1.78-0.2-3.64-0.89-3.64-3.95 0-0.87 0.31-1.58 0.81-2.14-0.08-0.2-0.35-1.02 0.08-2.12 0 0 0.67-0.21 2.2 0.82a7.56 7.56 0 0 1 4.01 0c1.53-1.03 2.2-0.82 2.2-0.82 0.43 1.1 0.16 1.92 0.08 2.12 0.51 0.56 0.81 1.27 0.81 2.14 0 3.07-1.87 3.75-3.66 3.95 0.29 0.25 0.54 0.73 0.54 1.48l-0.01 2.2c0 0.22 0.14 0.47 0.55 0.39A8 8 0 0 0 8 0.2Z"></path></svg><span>trx-rs on GitHub</span></a></span> — <span id="copyright-year"></span>
       </div>
-      <div class="hint" id="power-hint">Connecting…</div>
+      <div class="hint" id="power-hint" aria-live="polite">Connecting…</div>
     </div>
     <div id="conn-lost-overlay" class="decode-history-overlay content-overlay is-hidden" aria-live="assertive" aria-atomic="true">
       <div class="decode-history-overlay-card">
@@ -1540,25 +1555,57 @@
       <div id="decode-history-overlay-sub" class="decode-history-overlay-sub">Preparing recent decodes for the UI</div>
     </div>
   </div>
-  <script src="https://cdn.jsdelivr.net/npm/opus-decoder@0.7.11/dist/opus-decoder.min.js" charset="UTF-8"></script>
-  <script src="/webgl-renderer.js"></script>
-  <script src="/app.js"></script>
-  <script src="/ais.js"></script>
-  <script src="/vdes.js"></script>
-  <script src="/aprs.js"></script>
-  <script src="/hf-aprs.js"></script>
-  <script src="/ft8.js"></script>
-  <script src="/ft4.js"></script>
-  <script src="/ft2.js"></script>
-  <script src="/wspr.js"></script>
-  <script src="/cw.js"></script>
-  <script src="/sat.js"></script>
-  <script src="/bookmarks.js"></script>
-  <script src="/scheduler.js"></script>
-  <script src="/sat-scheduler.js"></script>
-  <script src="/background-decode.js"></script>
-  <script src="/vchan.js"></script>
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script src="/leaflet-ais-tracksymbol.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/opus-decoder@0.7.11/dist/opus-decoder.min.js" charset="UTF-8"></script>
+  <script defer src="/webgl-renderer.js"></script>
+  <script defer src="/app.js"></script>
+  <script>
+// Lazy plugin loader: loads plugin scripts when their tab/feature is first activated
+(function() {
+  var pluginScripts = {
+    'digital-modes': ['/ft8.js', '/ft4.js', '/ft2.js', '/wspr.js', '/cw.js', '/background-decode.js'],
+    'map': ['/leaflet-ais-tracksymbol.js', '/ais.js', '/vdes.js', '/aprs.js', '/hf-aprs.js', '/sat.js', '/sat-scheduler.js'],
+    'bookmarks': ['/bookmarks.js'],
+    'recorder': ['/scheduler.js'],
+    'settings': ['/vchan.js']
+  };
+  var loaded = new Set();
+  function loadPlugins(tab) {
+    var scripts = pluginScripts[tab];
+    if (!scripts) return;
+    scripts.forEach(function(src) {
+      if (loaded.has(src)) return;
+      loaded.add(src);
+      var s = document.createElement('script');
+      s.src = src;
+      s.defer = true;
+      document.body.appendChild(s);
+    });
+  }
+  // Load core plugins immediately (needed on main tab)
+  ['digital-modes', 'bookmarks'].forEach(loadPlugins);
+  // Load others on tab switch
+  document.addEventListener('click', function(e) {
+    var tab = e.target.closest('[data-tab]');
+    if (tab) loadPlugins(tab.dataset.tab);
+  });
+  window.loadPluginsForTab = loadPlugins;
+})();
+  </script>
+  <script>
+(function() {
+  document.addEventListener('click', function(e) {
+    var tab = e.target.closest('[data-tab]');
+    if (!tab) return;
+    var panel = document.getElementById('tab-' + tab.dataset.tab);
+    if (!panel) return;
+    var tmpl = panel.querySelector('template');
+    if (tmpl) {
+      panel.appendChild(tmpl.content.cloneNode(true));
+      tmpl.remove();
+    }
+  });
+})();
+  </script>
+  <script defer src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 </body>
 </html>

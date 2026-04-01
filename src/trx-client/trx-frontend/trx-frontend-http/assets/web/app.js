@@ -389,6 +389,34 @@ const themeToggleBtn = document.getElementById("theme-toggle");
 const headerRigSwitchSelect = document.getElementById("header-rig-switch-select");
 const headerStylePickSelect = document.getElementById("header-style-pick-select");
 const rdsPsOverlay = document.getElementById("rds-ps-overlay");
+const tabMainEl = document.getElementById("tab-main");
+// Cached About-tab elements (avoid getElementById on every SSE render)
+const aboutServerVerEl = document.getElementById("about-server-ver");
+const aboutServerBuildDateEl = document.getElementById("about-server-build-date");
+const aboutServerAddrEl = document.getElementById("about-server-addr");
+const aboutServerCallEl = document.getElementById("about-server-call");
+const aboutServerLocationEl = document.getElementById("about-server-location");
+const aboutRigInfoEl = document.getElementById("about-rig-info");
+const aboutRigAccessEl = document.getElementById("about-rig-access");
+const aboutModesEl = document.getElementById("about-modes");
+const aboutVfosEl = document.getElementById("about-vfos");
+const aboutActiveRigEl = document.getElementById("about-active-rig");
+const aboutAudioCodecEl = document.getElementById("about-audio-codec");
+const aboutAudioSamplerateEl = document.getElementById("about-audio-samplerate");
+const aboutAudioChannelsEl = document.getElementById("about-audio-channels");
+const aboutAudioBitrateEl = document.getElementById("about-audio-bitrate");
+const aboutAudioFrameEl = document.getElementById("about-audio-frame");
+const aboutAudioRxEl = document.getElementById("about-audio-rx");
+const aboutAudioStreamsEl = document.getElementById("about-audio-streams");
+const aboutPskreporterEl = document.getElementById("about-pskreporter");
+const aboutAprsIsEl = document.getElementById("about-aprs-is");
+const aboutRigctlClientsEl = document.getElementById("about-rigctl-clients");
+const aboutRigctlEndpointEl = document.getElementById("about-rigctl-endpoint");
+const aboutClientsEl = document.getElementById("about-clients");
+// Cached CW elements (avoid getElementById on every SSE render)
+const cwAutoEl = document.getElementById("cw-auto");
+const cwWpmEl = document.getElementById("cw-wpm");
+const cwToneEl = document.getElementById("cw-tone");
 let overviewPeakHoldMs = Number(loadSetting("overviewPeakHoldMs", 2000));
 let decodeHistoryRetentionMin = 24 * 60;
 
@@ -640,6 +668,7 @@ let lastControl;
 let lastTxEn = null;
 let lastHasTx = true;
 let lastRendered = null;
+let prevRenderData = {};
 let hintTimer = null;
 let sigMeasuring = false;
 let sigLastSUnits = null;
@@ -777,6 +806,7 @@ function setTheme(theme) {
     themeToggleBtn.textContent = next === "dark" ? "☀️ Light" : "🌙 Dark";
     themeToggleBtn.title = next === "dark" ? "Switch to light mode" : "Switch to dark mode";
   }
+  if (typeof trxClearCssColorCache === 'function') trxClearCssColorCache();
   invalidateBookmarkColors();
 }
 
@@ -994,6 +1024,7 @@ function setStyle(style) {
   }
   saveSetting("style", next);
   if (headerStylePickSelect) headerStylePickSelect.value = next;
+  if (typeof trxClearCssColorCache === 'function') trxClearCssColorCache();
   invalidateBookmarkColors();
   scheduleOverviewDraw();
 }
@@ -1068,7 +1099,7 @@ window.getDecodeRigMeta = function() {
 function populateRigPicker(selectEl, rigIds, activeRigId, disabled) {
   if (!selectEl) return;
   const selectedBefore = selectEl.value;
-  selectEl.innerHTML = "";
+  selectEl.replaceChildren();
   rigIds.forEach((id) => {
     const opt = document.createElement("option");
     opt.value = id;
@@ -1809,7 +1840,7 @@ function renderRdsOverlays() {
   }
   const entries = collectRdsOverlayEntries();
   rdsOverlayEntries = [];
-  rdsPsOverlay.innerHTML = "";
+  rdsPsOverlay.replaceChildren();
   if (entries.length === 0) {
     rdsPsOverlay.style.display = "none";
     return;
@@ -2819,8 +2850,6 @@ function spectrumHeightBoundsPx(tabMainEl, contentEl, overviewCanvasEl, spectrum
 
 function updateSpectrumAutoHeight() {
   const root = document.documentElement;
-  const tabMainEl = document.getElementById("tab-main");
-  const contentEl = document.getElementById("content");
   const overviewCanvasEl = document.getElementById("overview-canvas");
   const spectrumPanelEl = document.getElementById("spectrum-panel");
   const spectrumCanvasEl = document.getElementById("spectrum-canvas");
@@ -2881,8 +2910,6 @@ function updateSpectrumAutoHeight() {
 }
 
 function beginSpectrumResize(clientY) {
-  const tabMainEl = document.getElementById("tab-main");
-  const contentEl = document.getElementById("content");
   const overviewCanvasEl = document.getElementById("overview-canvas");
   const spectrumCanvasEl = document.getElementById("spectrum-canvas");
   const spectrumPanelEl = document.getElementById("spectrum-panel");
@@ -3108,7 +3135,7 @@ function render(update) {
     const modes = update.info.capabilities.supported_modes.map(normalizeMode).filter(Boolean);
     if (JSON.stringify(modes) !== JSON.stringify(supportedModes)) {
       supportedModes = modes;
-      modeEl.innerHTML = "";
+      modeEl.replaceChildren();
       supportedModes.forEach((m) => {
         const opt = document.createElement("option");
         opt.value = m;
@@ -3226,19 +3253,23 @@ function render(update) {
     updateSdrGainInputState();
   }
   if (update.status && update.status.freq && typeof update.status.freq.hz === "number") {
-    const sseHz = update.status.freq.hz;
-    // While an optimistic set_freq is in flight, suppress SSE updates that
-    // would snap the marker back to the stale server frequency.
-    if (_freqOptimisticHz != null && Math.abs(sseHz - _freqOptimisticHz) > 1) {
-      // stale — skip
-    } else {
-      if (_freqOptimisticHz != null && Math.abs(sseHz - _freqOptimisticHz) <= 1) {
-        _freqOptimisticHz = null; // server confirmed — clear guard early
+    if (update.status.freq.hz !== prevRenderData.freqHz) {
+      prevRenderData.freqHz = update.status.freq.hz;
+      const sseHz = update.status.freq.hz;
+      // While an optimistic set_freq is in flight, suppress SSE updates that
+      // would snap the marker back to the stale server frequency.
+      if (_freqOptimisticHz != null && Math.abs(sseHz - _freqOptimisticHz) > 1) {
+        // stale — skip
+      } else {
+        if (_freqOptimisticHz != null && Math.abs(sseHz - _freqOptimisticHz) <= 1) {
+          _freqOptimisticHz = null; // server confirmed — clear guard early
+        }
+        applyLocalTunedFrequency(sseHz);
       }
-      applyLocalTunedFrequency(sseHz);
     }
   }
-  if (update.status && update.status.mode) {
+  if (update.status && update.status.mode && update.status.mode !== prevRenderData.mode) {
+    prevRenderData.mode = update.status.mode;
     const mode = normalizeMode(update.status.mode);
     const modeUpper = mode ? mode.toUpperCase() : "";
     const onVirtual = typeof vchanIsOnVirtual === "function" && vchanIsOnVirtual();
@@ -3290,7 +3321,8 @@ function render(update) {
       el.textContent = "Connected, listening for packets";
     }
   }
-  if (update.status && typeof update.status.tx_en === "boolean") {
+  if (update.status && typeof update.status.tx_en === "boolean" && update.status.tx_en !== prevRenderData.txEn) {
+    prevRenderData.txEn = update.status.tx_en;
     lastTxEn = update.status.tx_en;
     pttBtn.textContent = update.status.tx_en ? "PTT On" : "PTT Off";
     if (update.status.tx_en) {
@@ -3313,9 +3345,7 @@ function render(update) {
     window._syncRecorderState(update.recorder_enabled);
   }
   if (window.updateSatLiveState) window.updateSatLiveState(update);
-  const cwAutoEl = document.getElementById("cw-auto");
-  const cwWpmEl = document.getElementById("cw-wpm");
-  const cwToneEl = document.getElementById("cw-tone");
+  // cwAutoEl, cwWpmEl, cwToneEl are cached at module level
   if (cwWpmEl && typeof update.cw_wpm === "number") {
     cwWpmEl.value = update.cw_wpm;
   }
@@ -3340,7 +3370,7 @@ function render(update) {
   if (update.status && update.status.vfo && Array.isArray(update.status.vfo.entries)) {
     const entries = update.status.vfo.entries;
     const activeIdx = Number.isInteger(update.status.vfo.active) ? update.status.vfo.active : null;
-    vfoPicker.innerHTML = "";
+    vfoPicker.replaceChildren();
     entries.forEach((entry, idx) => {
       const hz = entry && entry.freq && typeof entry.freq.hz === "number" ? entry.freq.hz : null;
       if (hz === null) return;
@@ -3377,14 +3407,18 @@ function render(update) {
     freqEl.style.color = activeFreqColor;
   }
   if (update.status && update.status.rx && typeof update.status.rx.sig === "number") {
-    const sUnits = dbmToSUnits(update.status.rx.sig);
-    sigLastSUnits = sUnits;
-    sigLastDbm = update.status.rx.sig;
-    const pct = sUnits <= 9 ? Math.max(0, Math.min(100, (sUnits / 9) * 100)) : 100;
-    signalBar.style.width = `${pct}%`;
-    signalValue.textContent = formatSignal(sUnits);
-    refreshSigStrengthDisplay();
-  } else {
+    if (update.status.rx.sig !== prevRenderData.sigDbm) {
+      prevRenderData.sigDbm = update.status.rx.sig;
+      const sUnits = dbmToSUnits(update.status.rx.sig);
+      sigLastSUnits = sUnits;
+      sigLastDbm = update.status.rx.sig;
+      const pct = sUnits <= 9 ? Math.max(0, Math.min(100, (sUnits / 9) * 100)) : 100;
+      signalBar.style.width = `${pct}%`;
+      signalValue.textContent = formatSignal(sUnits);
+      refreshSigStrengthDisplay();
+    }
+  } else if (prevRenderData.sigDbm !== null) {
+    prevRenderData.sigDbm = null;
     sigLastSUnits = null;
     sigLastDbm = null;
     signalBar.style.width = "0%";
@@ -3413,99 +3447,102 @@ function render(update) {
   }
 
   if (typeof update.clients === "number") lastClientCount = update.clients;
-  // Populate About tab — Server card
-  if (update.server_version) {
-    document.getElementById("about-server-ver").textContent = `trx-server v${update.server_version}`;
-  }
-  if (update.server_build_date) {
-    document.getElementById("about-server-build-date").textContent = update.server_build_date;
-  }
-  document.getElementById("about-server-addr").textContent = location.host;
-  if (update.server_callsign) {
-    document.getElementById("about-server-call").textContent = update.server_callsign;
-  }
-  if (Number.isFinite(serverLat) && Number.isFinite(serverLon)) {
-    const grid = latLonToMaidenhead(serverLat, serverLon);
-    document.getElementById("about-server-location").textContent = `${grid} (${serverLat.toFixed(4)}, ${serverLon.toFixed(4)})`;
-  }
+  // Populate About tab — only update DOM when the about tab is visible
+  if (_activeTab === "about") {
+    // About — Server card (uses cached DOM refs)
+    if (update.server_version && aboutServerVerEl) {
+      aboutServerVerEl.textContent = `trx-server v${update.server_version}`;
+    }
+    if (update.server_build_date && aboutServerBuildDateEl) {
+      aboutServerBuildDateEl.textContent = update.server_build_date;
+    }
+    if (aboutServerAddrEl) aboutServerAddrEl.textContent = location.host;
+    if (update.server_callsign && aboutServerCallEl) {
+      aboutServerCallEl.textContent = update.server_callsign;
+    }
+    if (Number.isFinite(serverLat) && Number.isFinite(serverLon) && aboutServerLocationEl) {
+      const grid = latLonToMaidenhead(serverLat, serverLon);
+      aboutServerLocationEl.textContent = `${grid} (${serverLat.toFixed(4)}, ${serverLon.toFixed(4)})`;
+    }
 
-  // About — Radio card
-  if (update.info) {
-    const parts = [update.info.manufacturer, update.info.model, update.info.revision].filter(Boolean).join(" ");
-    if (parts) document.getElementById("about-rig-info").textContent = parts;
-    const access = update.info.access;
-    if (access) {
-      if (access.Serial) {
-        const serialPath = access.Serial.path || access.Serial.port || "?";
-        document.getElementById("about-rig-access").textContent = `Serial (${serialPath}, ${access.Serial.baud || "?"} baud)`;
-      } else if (access.Tcp) {
-        document.getElementById("about-rig-access").textContent = `TCP (${access.Tcp.host || "?"}:${access.Tcp.port || "?"})`;
-      } else {
-        const key = Object.keys(access)[0];
-        if (key) document.getElementById("about-rig-access").textContent = key;
+    // About — Radio card
+    if (update.info) {
+      const parts = [update.info.manufacturer, update.info.model, update.info.revision].filter(Boolean).join(" ");
+      if (parts && aboutRigInfoEl) aboutRigInfoEl.textContent = parts;
+      const access = update.info.access;
+      if (access) {
+        if (access.Serial) {
+          const serialPath = access.Serial.path || access.Serial.port || "?";
+          if (aboutRigAccessEl) aboutRigAccessEl.textContent = `Serial (${serialPath}, ${access.Serial.baud || "?"} baud)`;
+        } else if (access.Tcp) {
+          if (aboutRigAccessEl) aboutRigAccessEl.textContent = `TCP (${access.Tcp.host || "?"}:${access.Tcp.port || "?"})`;
+        } else {
+          const key = Object.keys(access)[0];
+          if (key && aboutRigAccessEl) aboutRigAccessEl.textContent = key;
+        }
+      }
+      if (update.info.capabilities) {
+        const cap = update.info.capabilities;
+        if (Array.isArray(cap.supported_modes) && cap.supported_modes.length && aboutModesEl) {
+          aboutModesEl.textContent = cap.supported_modes.map(normalizeMode).filter(Boolean).join(", ");
+        }
+        if (typeof cap.num_vfos === "number" && aboutVfosEl) {
+          aboutVfosEl.textContent = cap.num_vfos;
+        }
       }
     }
-    if (update.info.capabilities) {
-      const cap = update.info.capabilities;
-      if (Array.isArray(cap.supported_modes) && cap.supported_modes.length) {
-        document.getElementById("about-modes").textContent = cap.supported_modes.map(normalizeMode).filter(Boolean).join(", ");
+    if (lastActiveRigId && aboutActiveRigEl) {
+      aboutActiveRigEl.textContent = lastActiveRigId;
+    }
+
+    // About — Audio card
+    if (streamInfo) {
+      if (aboutAudioCodecEl) aboutAudioCodecEl.textContent = "Opus";
+      if (aboutAudioSamplerateEl) aboutAudioSamplerateEl.textContent = `${(streamInfo.sample_rate || 48000).toLocaleString()} Hz`;
+      if (aboutAudioChannelsEl) aboutAudioChannelsEl.textContent = (streamInfo.channels || 1) === 1 ? "Mono" : "Stereo";
+      if (streamInfo.bitrate_bps && aboutAudioBitrateEl) {
+        const kbps = (streamInfo.bitrate_bps / 1000).toFixed(0);
+        aboutAudioBitrateEl.textContent = `${kbps} kbps`;
       }
-      if (typeof cap.num_vfos === "number") {
-        document.getElementById("about-vfos").textContent = cap.num_vfos;
+      if (streamInfo.frame_duration_ms && aboutAudioFrameEl) {
+        aboutAudioFrameEl.textContent = `${streamInfo.frame_duration_ms} ms`;
       }
     }
-  }
-  if (lastActiveRigId) {
-    document.getElementById("about-active-rig").textContent = lastActiveRigId;
-  }
+    if (aboutAudioRxEl) aboutAudioRxEl.textContent = rxActive ? "Active" : "Off";
+    if (typeof update.audio_clients === "number" && aboutAudioStreamsEl) {
+      aboutAudioStreamsEl.textContent = update.audio_clients;
+    }
+
+    // About — Decoders card (only update when values change)
+    syncAboutDecoder(0, !!update.ft8_decode_enabled);
+    syncAboutDecoder(1, !!update.ft4_decode_enabled);
+    syncAboutDecoder(2, !!update.ft2_decode_enabled);
+    syncAboutDecoder(3, !!update.wspr_decode_enabled);
+    syncAboutDecoder(4, !!update.cw_decode_enabled);
+    syncAboutDecoder(5, !!(update.aprs_decode_enabled || update.hf_aprs_decode_enabled));
+    syncAboutDecoder(6, !!update.lrpt_decode_enabled);
+
+    // About — Integrations card
+    if (update.pskreporter_status && aboutPskreporterEl) {
+      aboutPskreporterEl.textContent = update.pskreporter_status;
+    }
+    if (update.aprs_is_status && aboutAprsIsEl) {
+      aboutAprsIsEl.textContent = update.aprs_is_status;
+    }
+    if (typeof update.rigctl_clients === "number" && aboutRigctlClientsEl) {
+      aboutRigctlClientsEl.textContent = update.rigctl_clients;
+    }
+    if (typeof update.rigctl_addr === "string" && update.rigctl_addr.length > 0 && aboutRigctlEndpointEl) {
+      aboutRigctlEndpointEl.textContent = update.rigctl_addr;
+    }
+
+    // About — Clients card
+    if (typeof update.clients === "number" && aboutClientsEl) {
+      aboutClientsEl.textContent = update.clients;
+    }
+  } // end _activeTab === "about"
   if (Array.isArray(update.remotes)) {
     applyRigList(update.active_remote, update.remotes);
-  }
-
-  // About — Audio card
-  if (streamInfo) {
-    document.getElementById("about-audio-codec").textContent = "Opus";
-    document.getElementById("about-audio-samplerate").textContent = `${(streamInfo.sample_rate || 48000).toLocaleString()} Hz`;
-    document.getElementById("about-audio-channels").textContent = (streamInfo.channels || 1) === 1 ? "Mono" : "Stereo";
-    if (streamInfo.bitrate_bps) {
-      const kbps = (streamInfo.bitrate_bps / 1000).toFixed(0);
-      document.getElementById("about-audio-bitrate").textContent = `${kbps} kbps`;
-    }
-    if (streamInfo.frame_duration_ms) {
-      document.getElementById("about-audio-frame").textContent = `${streamInfo.frame_duration_ms} ms`;
-    }
-  }
-  document.getElementById("about-audio-rx").textContent = rxActive ? "Active" : "Off";
-  if (typeof update.audio_clients === "number") {
-    document.getElementById("about-audio-streams").textContent = update.audio_clients;
-  }
-
-  // About — Decoders card (only update when values change)
-  syncAboutDecoder(0, !!update.ft8_decode_enabled);
-  syncAboutDecoder(1, !!update.ft4_decode_enabled);
-  syncAboutDecoder(2, !!update.ft2_decode_enabled);
-  syncAboutDecoder(3, !!update.wspr_decode_enabled);
-  syncAboutDecoder(4, !!update.cw_decode_enabled);
-  syncAboutDecoder(5, !!(update.aprs_decode_enabled || update.hf_aprs_decode_enabled));
-  syncAboutDecoder(6, !!update.lrpt_decode_enabled);
-
-  // About — Integrations card
-  if (update.pskreporter_status) {
-    document.getElementById("about-pskreporter").textContent = update.pskreporter_status;
-  }
-  if (update.aprs_is_status) {
-    document.getElementById("about-aprs-is").textContent = update.aprs_is_status;
-  }
-  if (typeof update.rigctl_clients === "number") {
-    document.getElementById("about-rigctl-clients").textContent = update.rigctl_clients;
-  }
-  if (typeof update.rigctl_addr === "string" && update.rigctl_addr.length > 0) {
-    document.getElementById("about-rigctl-endpoint").textContent = update.rigctl_addr;
-  }
-
-  // About — Clients card
-  if (typeof update.clients === "number") {
-    document.getElementById("about-clients").textContent = update.clients;
   }
   powerHint.textContent = readyText();
   lastLocked = update.status && update.status.lock === true;
@@ -3572,8 +3609,7 @@ function connect() {
   lastEventAt = Date.now();
   es.onopen = () => {
     setConnLostOverlay(false);
-    const tm = document.getElementById("tab-main");
-    if (tm) tm.classList.remove("server-disconnected");
+    if (tabMainEl) tabMainEl.classList.remove("server-disconnected");
     if (!aboutUptimeStart) aboutUptimeStart = Date.now();
     pollFreshSnapshot();
     refreshRigList();
@@ -3585,12 +3621,11 @@ function connect() {
       lastRendered = evt.data;
       render(data);
       lastEventAt = Date.now();
-      const tabMain = document.getElementById("tab-main");
       if (data.server_connected === false) {
         powerHint.textContent = "trx-server connection lost";
-        if (tabMain) tabMain.classList.add("server-disconnected");
+        if (tabMainEl) tabMainEl.classList.add("server-disconnected");
       } else {
-        if (tabMain) tabMain.classList.remove("server-disconnected");
+        if (tabMainEl) tabMainEl.classList.remove("server-disconnected");
         if (data.initialized) powerHint.textContent = readyText();
       }
     } catch (e) {
@@ -4302,6 +4337,7 @@ if (spectrumBwSweetBtn) {
 }
 
 // --- Tab navigation ---
+let _activeTab = "main"; // tracked for render-path tab awareness
 const TAB_ORDER = ["main", "bookmarks", "digital-modes", "map", "statistics", "recorder", "settings", "about"];
 const TAB_PATHS = {
   main: "/",
@@ -4340,6 +4376,7 @@ function navigateToTab(name, options = {}) {
   if (authEnabled && !authRole && name !== "main") return;
   const btn = document.querySelector(`.tab-bar .tab[data-tab="${name}"]`);
   if (!btn) return;
+  _activeTab = name;
   document.querySelectorAll(".tab-bar .tab").forEach((t) => t.classList.remove("active"));
   btn.classList.add("active");
   document.querySelectorAll(".tab-panel").forEach((p) => p.style.display = "none");
@@ -5406,7 +5443,7 @@ function sendLocatorOverlayToBack(marker) {
 
 function renderMapLocatorChipRow(container, items, selectedSet, kind) {
   if (!container) return;
-  container.innerHTML = "";
+  container.replaceChildren();
   if (!Array.isArray(items) || items.length === 0) {
     container.innerHTML = `<span class="map-locator-empty">No ${kind === "band" ? "bands" : "sources"} available</span>`;
     return;
@@ -5447,7 +5484,7 @@ function renderMapLocatorChipRow(container, items, selectedSet, kind) {
 
 function renderMapLocatorPhaseRow(container, phase) {
   if (!container) return;
-  container.innerHTML = "";
+  container.replaceChildren();
   const phases = [
     { key: "type", label: "Source" },
     { key: "band", label: "Band" },
@@ -5472,7 +5509,7 @@ function renderMapLocatorLegend(phase, sourceItems, bandItems) {
     : [];
   if (items.length === 0) {
     legendEl.classList.add("is-empty");
-    legendEl.innerHTML = "";
+    legendEl.replaceChildren();
     return;
   }
   legendEl.classList.remove("is-empty");
@@ -6338,6 +6375,7 @@ function aprsSymbolIcon(symbolTable, symbolCode) {
 
 window.navigateToAprsMap = function(lat, lon) {
   // Activate the map tab
+  _activeTab = "map";
   document.querySelectorAll(".tab-bar .tab").forEach((t) => t.classList.remove("active"));
   const mapTabBtn = document.querySelector(".tab-bar .tab[data-tab='map']");
   if (mapTabBtn) mapTabBtn.classList.add("active");
@@ -6358,6 +6396,7 @@ window.navigateToMapLocator = function(grid, preferredType = null) {
   const normalizedGrid = String(grid || "").trim().toUpperCase();
   if (!/^[A-R]{2}\d{2}(?:[A-X]{2})?$/.test(normalizedGrid)) return false;
 
+  _activeTab = "map";
   document.querySelectorAll(".tab-bar .tab").forEach((t) => t.classList.remove("active"));
   const mapTabBtn = document.querySelector(".tab-bar .tab[data-tab='map']");
   if (mapTabBtn) mapTabBtn.classList.add("active");
@@ -7653,7 +7692,7 @@ function _renderBarChart(containerId, data, emptyMsg) {
   const el = document.getElementById(containerId);
   if (!el) return;
   if (!data || data.length === 0 || data.every((d) => d.count === 0)) {
-    el.innerHTML = "";
+    el.replaceChildren();
     const empty = document.createElement("div");
     empty.className = "stats-bar-empty";
     empty.textContent = emptyMsg || "No data available.";
@@ -10046,7 +10085,7 @@ function clearSpectrumCanvas() {
   spectrumGl.ensureSize(cssW, cssH, window.devicePixelRatio || 1);
   spectrumGl.clear(cssColorToRgba(spectrumBgColor()));
   if (spectrumDbAxis) {
-    spectrumDbAxis.innerHTML = "";
+    spectrumDbAxis.replaceChildren();
     spectrumDbAxisKey = "";
   }
 }
@@ -10144,7 +10183,7 @@ function renderRdsAlternativeFrequencies(list) {
   }
   if (afEl.dataset.afKey === afKey) return;
   afEl.dataset.afKey = afKey;
-  afEl.innerHTML = "";
+  afEl.replaceChildren();
   for (const hz of afs) {
     const btn = document.createElement("button");
     btn.type = "button";
@@ -10707,7 +10746,7 @@ function updateSideBookmarkStack(container, bookmarks, colorMap) {
   const nextKey = Array.isArray(bookmarks) ? `${rev}:${bookmarks.map((bm) => bm.id).join(",")}` : "";
   if (!Array.isArray(bookmarks) || bookmarks.length === 0) {
     if (container.dataset.bmKey) {
-      container.innerHTML = "";
+      container.replaceChildren();
       container.dataset.bmKey = "";
     }
     container.classList.remove("bm-side-visible");
@@ -10716,7 +10755,7 @@ function updateSideBookmarkStack(container, bookmarks, colorMap) {
 
   if (container.dataset.bmKey !== nextKey) {
     container.dataset.bmKey = nextKey;
-    container.innerHTML = "";
+    container.replaceChildren();
     for (const bm of bookmarks) {
       container.appendChild(createBookmarkChip(bm, colorMap, { sideStack: true }));
     }
@@ -10751,7 +10790,7 @@ function updateBookmarkAxis(range) {
   axisEl.classList.toggle("bm-axis-visible", hasVisible);
 
   if (!hasVisible) {
-    if (axisEl.dataset.bmKey) { axisEl.innerHTML = ""; axisEl.dataset.bmKey = ""; }
+    if (axisEl.dataset.bmKey) { axisEl.replaceChildren(); axisEl.dataset.bmKey = ""; }
     return;
   }
 
@@ -10761,7 +10800,7 @@ function updateBookmarkAxis(range) {
   const newKey = `${rev}:${visBookmarks.map((b) => b.id).join(",")}`;
   if (axisEl.dataset.bmKey !== newKey) {
     axisEl.dataset.bmKey = newKey;
-    axisEl.innerHTML = "";
+    axisEl.replaceChildren();
     for (const bm of visBookmarks) {
       axisEl.appendChild(createBookmarkChip(bm, colorMap));
     }
@@ -10806,7 +10845,7 @@ function updateSpectrumFreqAxis(range) {
   const firstHz = Math.ceil(range.visLoHz / stepHz) * stepHz;
   const leftShiftBtn = document.getElementById("spectrum-center-left-btn");
   const rightShiftBtn = document.getElementById("spectrum-center-right-btn");
-  spectrumFreqAxis.innerHTML = "";
+  spectrumFreqAxis.replaceChildren();
   if (leftShiftBtn) spectrumFreqAxis.appendChild(leftShiftBtn);
   if (rightShiftBtn) spectrumFreqAxis.appendChild(rightShiftBtn);
   const axisWidth = spectrumFreqAxis.clientWidth || 0;
@@ -10853,7 +10892,7 @@ function updateSpectrumDbAxis(dbMin, dbMax, gridStep, heightPx, dpr) {
   ].join(":");
   if (key === spectrumDbAxisKey) return;
   spectrumDbAxisKey = key;
-  spectrumDbAxis.innerHTML = "";
+  spectrumDbAxis.replaceChildren();
 
   const spanDb = Math.max(1, dbMax - dbMin);
   const cssHeight = heightPx / Math.max(1, dpr || 1);
@@ -11844,7 +11883,7 @@ function bandplanVisibleSegments(region, loHz, hiHz) {
 function _hideBandplanStrip() {
   if (!bandplanStripEl) return;
   bandplanStripEl.classList.remove("bp-visible");
-  bandplanStripEl.innerHTML = "";
+  bandplanStripEl.replaceChildren();
   bandplanCacheKey = "";
 }
 
@@ -11870,7 +11909,7 @@ function updateBandplanStrip(range) {
 
   if (bandplanCacheKey !== newKey) {
     bandplanCacheKey = newKey;
-    bandplanStripEl.innerHTML = "";
+    bandplanStripEl.replaceChildren();
 
     const seenBands = new Set();
     for (const seg of segments) {
