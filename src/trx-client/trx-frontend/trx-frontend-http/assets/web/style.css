@@ -662,6 +662,11 @@ button:disabled { opacity: 0.6; cursor: not-allowed; }
   cursor: pointer;
   user-select: none;
 }
+.sig-unit {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 0.85em;
+  font-weight: 400;
+}
 small { color: var(--text-muted); }
 .header {
   margin-bottom: 0;

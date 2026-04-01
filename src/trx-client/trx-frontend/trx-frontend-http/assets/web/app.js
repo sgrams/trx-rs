@@ -683,25 +683,27 @@ let sigLastDbm = null;
 const SIG_STRENGTH_UNITS = ["dBFS", "dBf", "dBm", "S"];
 let sigStrengthUnitIdx = loadSetting("sigStrengthUnit", 0);
 
+function sigUnit(u) { return `<span class="sig-unit">${u}</span>`; }
+
 function formatSigStrength(dbm) {
   if (!Number.isFinite(dbm)) return "--";
   const unit = SIG_STRENGTH_UNITS[sigStrengthUnitIdx] || "dBFS";
   if (unit === "S") return formatSignal(dbmToSUnits(dbm));
-  if (unit === "dBm") return `${dbm.toFixed(1)} dBm`;
+  if (unit === "dBm") return `${dbm.toFixed(1)} ${sigUnit("dBm")}`;
   if (unit === "dBf") {
     // dBf = dBm + 107 (referenced to 1 femtowatt across 50 Ω)
     const dbf = dbm + 107;
-    return `${dbf.toFixed(1)} dBf`;
+    return `${dbf.toFixed(1)} ${sigUnit("dBf")}`;
   }
   // dBFS: map receiver range to a full-scale reference
   // Typical receiver: -140 dBm (noise floor) to 0 dBm (full scale)
   const dbfs = Math.max(-140, Math.min(0, dbm));
-  return `${dbfs.toFixed(1)} dBFS`;
+  return `${dbfs.toFixed(1)} ${sigUnit("dBFS")}`;
 }
 
 function refreshSigStrengthDisplay() {
   if (!sigStrengthEl) return;
-  sigStrengthEl.textContent = formatSigStrength(sigLastDbm);
+  sigStrengthEl.innerHTML = formatSigStrength(sigLastDbm);
 }
 
 if (sigStrengthEl) {
@@ -2735,11 +2737,11 @@ function dbmToSUnits(dbm) {
 }
 
 function formatSignal(sUnits) {
-  if (!Number.isFinite(sUnits) || sUnits <= 0) return "S0";
-  if (sUnits <= 9) return `S${Math.round(sUnits)}`;
+  if (!Number.isFinite(sUnits) || sUnits <= 0) return `${sigUnit("S")}0`;
+  if (sUnits <= 9) return `${sigUnit("S")}${Math.round(sUnits)}`;
   // S9+xdB: round to nearest 10 dB step, cap at +60.
   const overDb = Math.min(60, Math.round((sUnits - 9) * 10 / 10) * 10);
-  return overDb === 0 ? "S9" : `S9+${overDb}dB`;
+  return overDb === 0 ? `${sigUnit("S")}9` : `${sigUnit("S")}9+${overDb}${sigUnit("dB")}`;
 }
 
 function setDisabled(disabled) {
@@ -3402,7 +3404,7 @@ function render(update) {
       sigLastDbm = update.status.rx.sig;
       const pct = sUnits <= 9 ? Math.max(0, Math.min(100, (sUnits / 9) * 100)) : 100;
       signalBar.style.width = `${pct}%`;
-      signalValue.textContent = formatSignal(sUnits);
+      signalValue.innerHTML = formatSignal(sUnits);
       refreshSigStrengthDisplay();
     }
   } else if (prevRenderData.sigDbm !== null) {
@@ -4822,7 +4824,7 @@ sigMeasureBtn.addEventListener("click", () => {
     if (sigMeasureAccumMs > 0) {
       const avg = sigMeasureWeighted / sigMeasureAccumMs;
       const peak = sigMeasurePeak;
-      sigResult.textContent = `Avg ${formatSignal(avg)} / Peak ${formatSignal(peak)} (${(sigMeasureAccumMs / 1000).toFixed(1)}s)`;
+      sigResult.innerHTML = `Avg ${formatSignal(avg)} / Peak ${formatSignal(peak)} (${(sigMeasureAccumMs / 1000).toFixed(1)}s)`;
     }
   }
 });
