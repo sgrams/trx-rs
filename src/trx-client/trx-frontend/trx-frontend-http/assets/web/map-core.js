@@ -3424,6 +3424,16 @@
   }
 
 
+  // Auto-init map if the map tab is already visible (e.g. direct /map navigation)
+  function autoInitIfVisible() {
+    const panel = document.getElementById("tab-map");
+    if (panel && panel.style.display !== "none") {
+      initAprsMap();
+      sizeAprsMapToViewport();
+      if (aprsMap) setTimeout(() => aprsMap.invalidateSize(), 50);
+    }
+  }
+
   // Register module API for core to call
   window.trx.map = {
     initAprsMap,
@@ -3472,4 +3482,7 @@
     flushDeferredDecodeMapSync,
     bandForHz,
   };
+
+  // If the map tab is already visible (direct /map URL), init immediately.
+  autoInitIfVisible();
 })();

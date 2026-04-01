@@ -4373,6 +4373,7 @@ function navigateToTab(name, options = {}) {
     updateTabHistory(name, replaceHistory);
   }
   scheduleSpectrumLayout();
+  if (typeof window.loadPluginsForTab === "function") window.loadPluginsForTab(name);
   if (name === "map") {
     window.trx.map?.initAprsMap();
     window.trx.map?.sizeAprsMapToViewport();
