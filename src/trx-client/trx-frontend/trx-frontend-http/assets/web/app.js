@@ -4609,6 +4609,16 @@ Object.assign(window.trx, {
   cssColorToRgba, rgbaWithAlpha, isBinsArray, estimateNoiseFloorDb,
   spectrumVisibleRange, drawSpectrum,
   bandForHz: function(hz) { return window.trx.map?.bandForHz?.(hz); },
+  markDecodeMapSyncPending,
+  decodeHistoryMapRenderingDeferred,
+  updateDocumentTitle,
+  activeChannelRds,
+});
+Object.defineProperties(window.trx, {
+  decodeHistoryReplayActive: { get() { return decodeHistoryReplayActive; } },
+  decodeMapSyncPending:      { get() { return decodeMapSyncPending; } },
+  _activeTab:                { get() { return _activeTab; } },
+  locationSubtitle:          { get() { return locationSubtitle; } },
 });
 
 // Start the app
