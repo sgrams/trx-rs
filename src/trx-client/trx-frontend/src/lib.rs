@@ -17,7 +17,8 @@ use uuid::Uuid;
 
 use trx_core::audio::AudioStreamInfo;
 use trx_core::decode::{
-    AisMessage, AprsPacket, CwEvent, DecodedMessage, Ft8Message, VdesMessage, WsprMessage,
+    AisMessage, AprsPacket, CwEvent, DecodedMessage, Ft8Message, VdesMessage, WefaxMessage,
+    WsprMessage,
 };
 use trx_core::rig::state::{RigSnapshot, SpectrumData};
 use trx_core::{DynResult, RigRequest, RigState};
@@ -230,6 +231,7 @@ pub struct DecodeHistoryContext {
     pub ft4: DecodeHistory<Ft8Message>,
     pub ft2: DecodeHistory<Ft8Message>,
     pub wspr: DecodeHistory<WsprMessage>,
+    pub wefax: DecodeHistory<WefaxMessage>,
 }
 
 impl Default for DecodeHistoryContext {
@@ -244,6 +246,7 @@ impl Default for DecodeHistoryContext {
             ft4: Arc::new(Mutex::new(VecDeque::new())),
             ft2: Arc::new(Mutex::new(VecDeque::new())),
             wspr: Arc::new(Mutex::new(VecDeque::new())),
+            wefax: Arc::new(Mutex::new(VecDeque::new())),
         }
     }
 }

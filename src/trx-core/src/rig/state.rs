@@ -31,6 +31,8 @@ pub struct DecoderConfig {
     #[serde(default)]
     pub lrpt_decode_enabled: bool,
     #[serde(default)]
+    pub wefax_decode_enabled: bool,
+    #[serde(default)]
     pub recorder_enabled: bool,
 }
 
@@ -57,6 +59,8 @@ pub struct DecoderResetSeqs {
     pub wspr_decode_reset_seq: u64,
     #[serde(default, skip_serializing)]
     pub lrpt_decode_reset_seq: u64,
+    #[serde(default, skip_serializing)]
+    pub wefax_decode_reset_seq: u64,
 }
 
 /// Simple transceiver state representation held by the rig task.

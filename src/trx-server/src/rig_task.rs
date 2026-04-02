@@ -601,6 +601,18 @@ async fn process_command(
             let _ = ctx.state_tx.send(ctx.state.clone());
             return snapshot_from(ctx.state);
         }
+        RigCommand::SetWefaxDecodeEnabled(en) => {
+            ctx.state.decoders.wefax_decode_enabled = en;
+            info!("WEFAX decode {}", if en { "enabled" } else { "disabled" });
+            let _ = ctx.state_tx.send(ctx.state.clone());
+            return snapshot_from(ctx.state);
+        }
+        RigCommand::ResetWefaxDecoder => {
+            ctx.histories.clear_wefax_history();
+            ctx.state.reset_seqs.wefax_decode_reset_seq += 1;
+            let _ = ctx.state_tx.send(ctx.state.clone());
+            return snapshot_from(ctx.state);
+        }
         RigCommand::SetBandwidth(hz) => {
             if let Some(sdr) = ctx.rig.as_sdr() {
                 if let Err(e) = sdr.set_bandwidth(hz).await {

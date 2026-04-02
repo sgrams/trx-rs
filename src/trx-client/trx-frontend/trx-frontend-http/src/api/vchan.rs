@@ -173,7 +173,7 @@ pub async fn set_vchan_mode(
 
 fn bookmark_decoder_state(
     bookmark: &crate::server::bookmarks::Bookmark,
-) -> (bool, bool, bool, bool, bool, bool, bool) {
+) -> (bool, bool, bool, bool, bool, bool, bool, bool) {
     let mut want_aprs = bookmark.mode.trim().eq_ignore_ascii_case("PKT");
     let mut want_hf_aprs = false;
     let mut want_ft8 = false;
@@ -181,6 +181,7 @@ fn bookmark_decoder_state(
     let mut want_ft2 = false;
     let mut want_wspr = false;
     let mut want_lrpt = false;
+    let mut want_wefax = false;
 
     for decoder in bookmark
         .decoders
@@ -195,6 +196,7 @@ fn bookmark_decoder_state(
             "ft2" => want_ft2 = true,
             "wspr" => want_wspr = true,
             "lrpt" => want_lrpt = true,
+            "wefax" => want_wefax = true,
             _ => {}
         }
     }
@@ -207,6 +209,7 @@ fn bookmark_decoder_state(
         want_ft2,
         want_wspr,
         want_lrpt,
+        want_wefax,
     )
 }
 
@@ -247,7 +250,7 @@ async fn apply_selected_channel(
     let Some(bookmark) = bookmark_store_map.get_for_rig(remote, bookmark_id) else {
         return Ok(());
     };
-    let (want_aprs, want_hf_aprs, want_ft8, want_ft4, want_ft2, want_wspr, want_lrpt) =
+    let (want_aprs, want_hf_aprs, want_ft8, want_ft4, want_ft2, want_wspr, want_lrpt, want_wefax) =
         bookmark_decoder_state(&bookmark);
     let desired = [
         RigCommand::SetAprsDecodeEnabled(want_aprs),
@@ -257,6 +260,7 @@ async fn apply_selected_channel(
         RigCommand::SetFt2DecodeEnabled(want_ft2),
         RigCommand::SetWsprDecodeEnabled(want_wspr),
         RigCommand::SetLrptDecodeEnabled(want_lrpt),
+        RigCommand::SetWefaxDecodeEnabled(want_wefax),
     ];
     for cmd in desired {
         send_command_to_rig(rig_tx, remote, cmd).await?;

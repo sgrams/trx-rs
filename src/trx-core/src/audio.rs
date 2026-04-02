@@ -70,6 +70,10 @@ pub const AUDIO_MSG_FT2_DECODE: u8 = 0x15;
 pub const AUDIO_MSG_LRPT_IMAGE: u8 = 0x17;
 /// Server → client: LRPT decode progress update (JSON `DecodedMessage::LrptProgress`).
 pub const AUDIO_MSG_LRPT_PROGRESS: u8 = 0x18;
+/// Server → client: WEFAX completed image (JSON `DecodedMessage::Wefax`).
+pub const AUDIO_MSG_WEFAX_DECODE: u8 = 0x19;
+/// Server → client: WEFAX decode progress (JSON `DecodedMessage::WefaxProgress`).
+pub const AUDIO_MSG_WEFAX_PROGRESS: u8 = 0x1A;
 
 /// Maximum payload size for normal messages (1 MB).
 const MAX_PAYLOAD_SIZE: u32 = 1_048_576;

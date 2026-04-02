@@ -595,6 +595,7 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
         .service(decoder::toggle_ft2_decode)
         .service(decoder::toggle_wspr_decode)
         .service(decoder::toggle_lrpt_decode)
+        .service(decoder::toggle_wefax_decode)
         .service(decoder::clear_ais_decode)
         .service(decoder::clear_vdes_decode)
         .service(decoder::clear_aprs_decode)
@@ -605,6 +606,7 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
         .service(decoder::clear_ft2_decode)
         .service(decoder::clear_wspr_decode)
         .service(decoder::clear_lrpt_decode)
+        .service(decoder::clear_wefax_decode)
         // Bookmark CRUD
         .service(bookmarks::list_bookmarks)
         .service(bookmarks::create_bookmark)
@@ -661,6 +663,7 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
         .service(assets::wspr_js)
         .service(assets::cw_js)
         .service(assets::sat_js)
+        .service(assets::wefax_js)
         .service(assets::bookmarks_js)
         .service(assets::scheduler_js)
         .service(assets::sat_scheduler_js)

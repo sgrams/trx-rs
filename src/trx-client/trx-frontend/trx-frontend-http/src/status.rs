@@ -28,6 +28,7 @@ pub const FT2_JS: &str = include_str!("../assets/web/plugins/ft2.js");
 pub const WSPR_JS: &str = include_str!("../assets/web/plugins/wspr.js");
 pub const CW_JS: &str = include_str!("../assets/web/plugins/cw.js");
 pub const SAT_JS: &str = include_str!("../assets/web/plugins/sat.js");
+pub const WEFAX_JS: &str = include_str!("../assets/web/plugins/wefax.js");
 pub const BOOKMARKS_JS: &str = include_str!("../assets/web/plugins/bookmarks.js");
 pub const SCHEDULER_JS: &str = include_str!("../assets/web/plugins/scheduler.js");
 pub const SAT_SCHEDULER_JS: &str = include_str!("../assets/web/plugins/sat-scheduler.js");

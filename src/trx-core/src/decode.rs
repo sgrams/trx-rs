@@ -32,6 +32,10 @@ pub enum DecodedMessage {
     LrptImage(LrptImage),
     #[serde(rename = "lrpt_progress")]
     LrptProgress(LrptProgress),
+    #[serde(rename = "wefax")]
+    Wefax(WefaxMessage),
+    #[serde(rename = "wefax_progress")]
+    WefaxProgress(WefaxProgress),
 }
 
 impl DecodedMessage {
@@ -46,6 +50,8 @@ impl DecodedMessage {
             Self::Wspr(m) => m.rig_id = Some(id),
             Self::LrptImage(m) => m.rig_id = Some(id),
             Self::LrptProgress(m) => m.rig_id = Some(id),
+            Self::Wefax(m) => m.rig_id = Some(id),
+            Self::WefaxProgress(m) => m.rig_id = Some(id),
         }
     }
 
@@ -60,6 +66,8 @@ impl DecodedMessage {
             Self::Wspr(m) => m.rig_id.as_deref(),
             Self::LrptImage(m) => m.rig_id.as_deref(),
             Self::LrptProgress(m) => m.rig_id.as_deref(),
+            Self::Wefax(m) => m.rig_id.as_deref(),
+            Self::WefaxProgress(m) => m.rig_id.as_deref(),
         }
     }
 }
@@ -263,4 +271,44 @@ pub struct LrptImage {
     /// Ground track points `[[lat, lon], ...]` from SGP4 propagation.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ground_track: Option<Vec<[f64; 2]>>,
+}
+
+/// A complete WEFAX image.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WefaxMessage {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rig_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ts_ms: Option<i64>,
+    /// Number of image lines decoded.
+    pub line_count: u32,
+    /// Detected or configured LPM.
+    pub lpm: u16,
+    /// Detected or configured IOC.
+    pub ioc: u16,
+    /// Pixels per line (IOC × π, rounded).
+    pub pixels_per_line: u16,
+    /// Filesystem path to saved PNG (set on completion).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub path: Option<String>,
+    /// True when image is complete (stop tone received).
+    pub complete: bool,
+}
+
+/// Progress update emitted per-line during active WEFAX reception.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WefaxProgress {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rig_id: Option<String>,
+    /// Number of image lines decoded so far.
+    pub line_count: u32,
+    /// Detected or configured LPM.
+    pub lpm: u16,
+    /// Detected or configured IOC.
+    pub ioc: u16,
+    /// Pixels per line.
+    pub pixels_per_line: u16,
+    /// Base64-encoded greyscale line data (one row of pixels).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub line_data: Option<Vec<u8>>,
 }

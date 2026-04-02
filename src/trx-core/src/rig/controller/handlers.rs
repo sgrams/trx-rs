@@ -460,6 +460,8 @@ pub fn command_from_rig_command(cmd: RigCommand) -> Box<dyn RigCommandHandler> {
         | RigCommand::ResetWsprDecoder
         | RigCommand::SetLrptDecodeEnabled(_)
         | RigCommand::ResetLrptDecoder
+        | RigCommand::SetWefaxDecodeEnabled(_)
+        | RigCommand::ResetWefaxDecoder
         | RigCommand::SetBandwidth(_)
         | RigCommand::SetSdrGain(_)
         | RigCommand::SetSdrLnaGain(_)

@@ -1,0 +1,12 @@
+# SPDX-FileCopyrightText: 2026 Stan Grams <sjg@haxx.space>
+#
+# SPDX-License-Identifier: BSD-2-Clause
+
+[package]
+name = "trx-wefax"
+version.workspace = true
+edition = "2021"
+
+[dependencies]
+trx-core = { path = "../../trx-core" }
+png = "0.17"

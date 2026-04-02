@@ -5926,7 +5926,9 @@ function dispatchDecodeMessage(msg, skipStats) {
   if (msg.type === "wspr" && window.onServerWspr) window.onServerWspr(msg);
   if (msg.type === "lrpt_image" && window.onServerLrptImage) window.onServerLrptImage(msg);
   if (msg.type === "lrpt_progress" && window.onServerLrptProgress) window.onServerLrptProgress(msg);
-  if (!skipStats && msg.type && msg.type !== "lrpt_image" && msg.type !== "lrpt_progress") {
+  if (msg.type === "wefax" && window.onServerWefax) window.onServerWefax(msg);
+  if (msg.type === "wefax_progress" && window.onServerWefaxProgress) window.onServerWefaxProgress(msg);
+  if (!skipStats && msg.type && msg.type !== "lrpt_image" && msg.type !== "lrpt_progress" && msg.type !== "wefax" && msg.type !== "wefax_progress") {
     window.trx.map?.statsRecordDecode(msg.type, msg.rig_id || msg.remote || null);
     window.trx.map?.scheduleStatsRender();
   }
@@ -5936,7 +5938,7 @@ function dispatchDecodeBatch(batch) {
   if (!Array.isArray(batch) || batch.length === 0) return;
   // Record statistics for every message in the batch regardless of dispatch path.
   for (const msg of batch) {
-    if (msg.type && msg.type !== "lrpt_image" && msg.type !== "lrpt_progress") {
+    if (msg.type && msg.type !== "lrpt_image" && msg.type !== "lrpt_progress" && msg.type !== "wefax" && msg.type !== "wefax_progress") {
       window.trx.map?.statsRecordDecode(msg.type, msg.rig_id || msg.remote || null);
     }
   }
@@ -6023,7 +6025,7 @@ function loadDecodeHistoryOnMainThread(onReady, onError) {
 function restoreDecodeHistoryGroup(kind, messages) {
   if (!Array.isArray(messages) || messages.length === 0) return;
   // Record statistics for restored history messages.
-  if (kind !== "lrpt_image" && kind !== "lrpt_progress") {
+  if (kind !== "lrpt_image" && kind !== "lrpt_progress" && kind !== "wefax" && kind !== "wefax_progress") {
     for (const msg of messages) {
       window.trx.map?.statsRecordDecode(kind, msg.rig_id || msg.remote || null, msg.ts_ms || undefined);
     }
@@ -6063,6 +6065,10 @@ function restoreDecodeHistoryGroup(kind, messages) {
   }
   if (kind === "wspr" && window.restoreWsprHistory) {
     window.restoreWsprHistory(messages);
+    return;
+  }
+  if (kind === "wefax" && window.restoreWefaxHistory) {
+    window.restoreWefaxHistory(messages);
     return;
   }
 }
