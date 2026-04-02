@@ -273,9 +273,471 @@ HF WEFAX frequencies).
 
 ### 7.5 Frontend exposure
 
-- SSE event stream: emit `wefax` and `wefax_progress` events.
-- REST endpoint: `GET /api/rig/{id}/decode/wefax` — list recent images.
-- WebSocket: stream in-progress image data for live preview (future).
+The web frontend follows the existing decoder plugin pattern used by WSPR,
+FT8, AIS, etc. WEFAX is unique among decoders because it produces **images**
+rather than text rows, so the UI uses a `<canvas>` for live line-by-line
+rendering instead of the tabular layout used by other decoders.
+
+#### 7.5.1 Rust backend wiring (`trx-frontend-http`)
+
+**`src/status.rs`** &mdash; embed the plugin script:
+
+```rust
+pub const WEFAX_JS: &str = include_str!("../assets/web/plugins/wefax.js");
+```
+
+**`src/api/assets.rs`** &mdash; define the gzip-cached route:
+
+```rust
+define_gz_cache!(gz_wefax_js, status::WEFAX_JS, "wefax.js");
+
+#[get("/wefax.js")]
+pub(crate) async fn wefax_js(req: HttpRequest) -> impl Responder {
+    let c = gz_wefax_js();
+    static_asset_response(&req, "application/javascript; charset=utf-8", c)
+}
+```
+
+**`src/api/decoder.rs`** &mdash; add endpoints:
+
+```rust
+#[post("/toggle_wefax_decode")]
+pub async fn toggle_wefax_decode(
+    query: web::Query<RemoteQuery>,
+    state: web::Data<watch::Receiver<RigState>>,
+    rig_tx: web::Data<mpsc::Sender<RigRequest>>,
+) -> Result<HttpResponse, Error> {
+    let enabled = state.get_ref().borrow().decoders.wefax_decode_enabled;
+    send_command(
+        &rig_tx,
+        RigCommand::SetWefaxDecodeEnabled(!enabled),
+        query.into_inner().remote,
+    )
+    .await
+}
+
+#[post("/clear_wefax_decode")]
+pub async fn clear_wefax_decode(
+    query: web::Query<RemoteQuery>,
+    context: web::Data<Arc<FrontendRuntimeContext>>,
+    rig_tx: web::Data<mpsc::Sender<RigRequest>>,
+) -> Result<HttpResponse, Error> {
+    crate::server::audio::clear_wefax_history(context.get_ref());
+    send_command(
+        &rig_tx,
+        RigCommand::ResetWefaxDecoder,
+        query.into_inner().remote,
+    )
+    .await
+}
+```
+
+**`src/api/mod.rs`** &mdash; register in `configure()`:
+
+```rust
+.service(decoder::toggle_wefax_decode)
+.service(decoder::clear_wefax_decode)
+.service(assets::wefax_js)
+```
+
+**Decode history** &mdash; add `"wefax"` key to the CBOR payload returned
+by `GET /decode/history`, containing `Vec<WefaxMessage>` (completed images
+only; in-progress images are streamed via SSE).
+
+**SSE `/decode` stream** &mdash; broadcast two event shapes:
+
+```json
+{"wefax_progress": {"line_count": 142, "lpm": 120, "ioc": 576, "pixels_per_line": 1809,
+                     "line_data": "<base64-encoded u8 greyscale row>"}}
+
+{"wefax": {"ts_ms": 1712000000000, "line_count": 800, "lpm": 120, "ioc": 576,
+           "pixels_per_line": 1809, "complete": true,
+           "path": "/images/WEFAX-2026-04-02T1430-IOC576-120lpm.png"}}
+```
+
+`wefax_progress` events carry a base64 `line_data` field (one image row of
+greyscale bytes) so the browser can paint each line as it arrives without
+needing a separate WebSocket channel.
+
+**Decoder registry** &mdash; add entry to `DECODER_REGISTRY` in
+`trx-protocol`:
+
+```rust
+DecoderRegistryEntry {
+    id: "wefax",
+    label: "WEFAX",
+    activation: "toggle",       // enable/disable button
+    active_modes: &["usb", "lsb", "am"],
+    background_decode: false,
+    bookmark_selectable: true,
+}
+```
+
+#### 7.5.2 HTML additions (`index.html`)
+
+**Sub-tab button** (inside `.sub-tab-bar`, after the existing decoder
+buttons):
+
+```html
+<button class="sub-tab" data-subtab="wefax" id="subtab-wefax">WEFAX</button>
+```
+
+**Sub-tab panel** (alongside other `sub-tab-panel` divs):
+
+```html
+<div id="subtab-wefax" class="sub-tab-panel" style="display:none;">
+  <div class="ft8-controls">
+    <button id="wefax-decode-toggle-btn" type="button">Enable WEFAX</button>
+    <button id="wefax-clear-btn" type="button"
+            style="margin-left:0.5rem; font-size:0.8rem;">Clear</button>
+    <small id="wefax-status" style="color:var(--text-muted);">Idle</small>
+  </div>
+
+  <!-- Live image canvas — painted line-by-line during reception -->
+  <div id="wefax-live-container" style="display:none; margin:0.5rem 0;">
+    <div style="display:flex; align-items:center; gap:0.5rem; margin-bottom:0.3rem;">
+      <strong>Receiving</strong>
+      <small id="wefax-live-info" style="color:var(--text-muted);"></small>
+    </div>
+    <canvas id="wefax-live-canvas" width="1809" height="800"
+            style="width:100%; image-rendering:pixelated; background:#000;"></canvas>
+  </div>
+
+  <!-- Gallery of completed images -->
+  <div id="wefax-gallery" style="display:flex; flex-wrap:wrap; gap:0.5rem;"></div>
+</div>
+```
+
+**Overview section** (inside the digital-modes overview panel):
+
+```html
+<div class="plugin-item" data-decoder="wefax">
+  <strong>WEFAX Decoder</strong>
+  <div style="color:var(--text-muted); font-size:0.85rem; margin-top:0.2rem;">
+    Weather Facsimile &mdash; HF/satellite image reception (60/90/120/240 LPM)
+  </div>
+</div>
+```
+
+**About section** (in the About tab decoder list):
+
+```html
+<tr id="about-dec-wefax"><td>WEFAX</td><td>Weather Facsimile decoder</td></tr>
+```
+
+#### 7.5.3 Plugin script registration
+
+**`index.html` plugin map** &mdash; add `'/wefax.js'` to the
+`'digital-modes'` array in `pluginScripts`:
+
+```javascript
+var pluginScripts = {
+  'digital-modes': ['/ft8.js', ..., '/wefax.js'],
+  // ...
+};
+```
+
+#### 7.5.4 SSE dispatch in `app.js`
+
+Add WEFAX to the decode event dispatcher (inside `decodeSource.onmessage`):
+
+```javascript
+if (msg.wefax_progress && window.onServerWefaxProgress) {
+  window.onServerWefaxProgress(msg.wefax_progress);
+}
+if (msg.wefax && window.onServerWefax) {
+  window.onServerWefax(msg.wefax);
+}
+```
+
+Add `"wefax"` to the decode history restore loop:
+
+```javascript
+// In loadDecodeHistoryOnMainThread / worker dispatch:
+const HISTORY_GROUP_KEYS = ["ais", "vdes", "aprs", "hf_aprs",
+                            "cw", "ft8", "ft4", "ft2", "wspr", "wefax"];
+```
+
+Add WEFAX to `restoreDecodeHistoryGroup()`:
+
+```javascript
+case "wefax":
+  if (window.restoreWefaxHistory) window.restoreWefaxHistory(messages);
+  break;
+```
+
+#### 7.5.5 Plugin file (`assets/web/plugins/wefax.js`)
+
+Full plugin structure following the project's vanilla-JS decoder plugin
+pattern:
+
+```javascript
+// ---------------------------------------------------------------------------
+// wefax.js — WEFAX decoder plugin for trx-frontend-http
+// ---------------------------------------------------------------------------
+
+// --- DOM refs ---
+const wefaxStatus       = document.getElementById('wefax-status');
+const wefaxLiveContainer= document.getElementById('wefax-live-container');
+const wefaxLiveInfo     = document.getElementById('wefax-live-info');
+const wefaxLiveCanvas   = document.getElementById('wefax-live-canvas');
+const wefaxGallery      = document.getElementById('wefax-gallery');
+const wefaxToggleBtn    = document.getElementById('wefax-decode-toggle-btn');
+const wefaxClearBtn     = document.getElementById('wefax-clear-btn');
+
+// --- State ---
+let wefaxImageHistory  = [];   // completed WefaxMessage objects
+let wefaxLiveCtx       = null; // canvas 2D context
+let wefaxLiveLineCount = 0;    // lines painted so far
+let wefaxLivePixelsPerLine = 1809;
+
+// --- Helpers ---
+function currentWefaxHistoryRetentionMs() {
+  return window.getDecodeHistoryRetentionMs?.() || 24 * 60 * 60 * 1000;
+}
+
+function pruneWefaxHistory() {
+  const cutoff = Date.now() - currentWefaxHistoryRetentionMs();
+  wefaxImageHistory = wefaxImageHistory.filter(m => (m._tsMs || 0) > cutoff);
+}
+
+function escapeHtml(s) {
+  return String(s)
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;');
+}
+
+// --- Live canvas rendering ---
+
+/** Reset canvas for a new image reception. */
+function resetLiveCanvas(pixelsPerLine) {
+  wefaxLivePixelsPerLine = pixelsPerLine;
+  wefaxLiveLineCount = 0;
+  wefaxLiveCanvas.width = pixelsPerLine;
+  wefaxLiveCanvas.height = 800; // grows if needed
+  wefaxLiveCtx = wefaxLiveCanvas.getContext('2d');
+  wefaxLiveCtx.fillStyle = '#000';
+  wefaxLiveCtx.fillRect(0, 0, wefaxLiveCanvas.width, wefaxLiveCanvas.height);
+  wefaxLiveContainer.style.display = '';
+}
+
+/** Append one greyscale line (Uint8Array) to the live canvas. */
+function paintLine(lineBytes) {
+  if (!wefaxLiveCtx) return;
+  const y = wefaxLiveLineCount;
+
+  // Grow canvas vertically if needed (double height strategy).
+  if (y >= wefaxLiveCanvas.height) {
+    const old = wefaxLiveCtx.getImageData(
+      0, 0, wefaxLiveCanvas.width, wefaxLiveCanvas.height);
+    wefaxLiveCanvas.height *= 2;
+    wefaxLiveCtx.putImageData(old, 0, 0);
+  }
+
+  const w = wefaxLivePixelsPerLine;
+  const imgData = wefaxLiveCtx.createImageData(w, 1);
+  const d = imgData.data;
+  for (let x = 0; x < w; x++) {
+    const v = x < lineBytes.length ? lineBytes[x] : 0;
+    const i = x * 4;
+    d[i] = v; d[i + 1] = v; d[i + 2] = v; d[i + 3] = 255;
+  }
+  wefaxLiveCtx.putImageData(imgData, 0, y);
+  wefaxLiveLineCount++;
+}
+
+// --- Gallery rendering ---
+
+function renderGalleryThumbnail(msg) {
+  const card = document.createElement('div');
+  card.className = 'wefax-card';
+  card.style.cssText =
+    'border:1px solid var(--border-color); border-radius:4px; ' +
+    'padding:0.4rem; max-width:280px; cursor:pointer;';
+
+  const ts = msg._tsMs
+    ? new Date(msg._tsMs).toLocaleString()
+    : '—';
+  const info = `${msg.ioc} IOC · ${msg.lpm} LPM · ${msg.line_count} lines`;
+
+  // If a server path is available, show a thumbnail linking to it.
+  if (msg.path) {
+    card.innerHTML =
+      `<img src="/images/${escapeHtml(msg.path.split('/').pop())}"
+            alt="WEFAX" loading="lazy"
+            style="width:100%; image-rendering:pixelated;" />` +
+      `<div style="font-size:0.8rem; margin-top:0.2rem;">${escapeHtml(ts)}</div>` +
+      `<div style="font-size:0.75rem; color:var(--text-muted);">${info}</div>`;
+  } else {
+    card.innerHTML =
+      `<div style="font-size:0.8rem;">${escapeHtml(ts)}</div>` +
+      `<div style="font-size:0.75rem; color:var(--text-muted);">${info}</div>`;
+  }
+  return card;
+}
+
+function renderWefaxGallery() {
+  pruneWefaxHistory();
+  const frag = document.createDocumentFragment();
+  for (const msg of wefaxImageHistory) {
+    frag.appendChild(renderGalleryThumbnail(msg));
+  }
+  wefaxGallery.innerHTML = '';
+  wefaxGallery.appendChild(frag);
+}
+
+function scheduleWefaxGalleryRender() {
+  if (window.trxScheduleUiFrameJob) {
+    window.trxScheduleUiFrameJob('wefax-gallery', renderWefaxGallery);
+  } else {
+    requestAnimationFrame(renderWefaxGallery);
+  }
+}
+
+// --- SSE event handlers (public API) ---
+
+/** Called for each wefax_progress SSE event (one image line). */
+window.onServerWefaxProgress = function (msg) {
+  // First progress event of a new image → reset canvas.
+  if (msg.line_count <= 1 || !wefaxLiveCtx) {
+    resetLiveCanvas(msg.pixels_per_line || 1809);
+  }
+
+  // Decode base64 line_data → Uint8Array → paint.
+  if (msg.line_data) {
+    const binary = atob(msg.line_data);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    paintLine(bytes);
+  }
+
+  // Update status text.
+  if (wefaxLiveInfo) {
+    wefaxLiveInfo.textContent =
+      `Line ${msg.line_count} · ${msg.ioc} IOC · ${msg.lpm} LPM`;
+  }
+  if (wefaxStatus) {
+    wefaxStatus.textContent = `Receiving — line ${msg.line_count}`;
+    wefaxStatus.style.color = 'var(--text-accent)';
+  }
+};
+
+/** Called when a complete WEFAX image is received. */
+window.onServerWefax = function (msg) {
+  msg._tsMs = msg.ts_ms || Date.now();
+  wefaxImageHistory.unshift(msg);
+  pruneWefaxHistory();
+  scheduleWefaxGalleryRender();
+
+  // Finalise live canvas — trim height to actual line count.
+  if (wefaxLiveCtx && wefaxLiveLineCount > 0) {
+    const trimmed = wefaxLiveCtx.getImageData(
+      0, 0, wefaxLiveCanvas.width, wefaxLiveLineCount);
+    wefaxLiveCanvas.height = wefaxLiveLineCount;
+    wefaxLiveCtx.putImageData(trimmed, 0, 0);
+  }
+
+  if (wefaxStatus) {
+    wefaxStatus.textContent = `Complete — ${msg.line_count} lines`;
+    wefaxStatus.style.color = '';
+  }
+};
+
+/** Batch restore from decode history (page load). */
+window.restoreWefaxHistory = function (messages) {
+  if (!messages || !messages.length) return;
+  for (const m of messages) {
+    m._tsMs = m.ts_ms || Date.now();
+  }
+  wefaxImageHistory = messages.concat(wefaxImageHistory);
+  pruneWefaxHistory();
+  scheduleWefaxGalleryRender();
+};
+
+/** Called by history retention pruning cycle. */
+window.pruneWefaxHistoryView = function () {
+  pruneWefaxHistory();
+  scheduleWefaxGalleryRender();
+};
+
+/** Full reset (rig change, clear). */
+window.resetWefaxHistoryView = function () {
+  wefaxImageHistory = [];
+  wefaxGallery.innerHTML = '';
+  wefaxLiveContainer.style.display = 'none';
+  wefaxLiveCtx = null;
+  wefaxLiveLineCount = 0;
+  if (wefaxStatus) {
+    wefaxStatus.textContent = 'Idle';
+    wefaxStatus.style.color = '';
+  }
+};
+
+// --- Button handlers ---
+if (wefaxClearBtn) {
+  wefaxClearBtn.addEventListener('click', function () {
+    fetch('/clear_wefax_decode', { method: 'POST' });
+    window.resetWefaxHistoryView();
+  });
+}
+```
+
+#### 7.5.6 Data flow summary
+
+```mermaid
+sequenceDiagram
+    participant Server as trx-server (wefax decoder)
+    participant SSE as SSE /decode
+    participant Plugin as wefax.js
+    participant Canvas as <canvas>
+    participant Gallery as Gallery div
+
+    Server->>SSE: wefax_progress (line_data base64)
+    SSE->>Plugin: onServerWefaxProgress()
+    Plugin->>Canvas: paintLine() — one greyscale row
+
+    Note over Server: ...repeats per line...
+
+    Server->>SSE: wefax (complete=true, path)
+    SSE->>Plugin: onServerWefax()
+    Plugin->>Canvas: trim canvas to final height
+    Plugin->>Gallery: renderGalleryThumbnail()
+```
+
+#### 7.5.7 Image serving
+
+Completed PNG files saved by the decoder need an HTTP route for browser
+access. Add a static-file route in `assets.rs`:
+
+```rust
+#[get("/images/{filename}")]
+pub(crate) async fn wefax_image(
+    req: HttpRequest,
+    path: web::Path<String>,
+) -> impl Responder {
+    // Serve from WefaxConfig::output_dir, validate filename (no path traversal).
+    // Content-Type: image/png, Cache-Control: public, max-age=86400.
+}
+```
+
+Register in `api/mod.rs`:
+
+```rust
+.service(assets::wefax_image)
+```
+
+#### 7.5.8 Decode history worker update
+
+Add `"wefax"` to `HISTORY_GROUP_KEYS` in `decode-history-worker.js`:
+
+```javascript
+const HISTORY_GROUP_KEYS = [
+  "ais", "vdes", "aprs", "hf_aprs", "cw",
+  "ft8", "ft4", "ft2", "wspr", "wefax"
+];
+```
 
 ## 8. Implementation Phases
 
@@ -306,19 +768,39 @@ Deliverable: fully automatic reception of a single image without manual config.
 9. **`trx-core` message types** &mdash; `WefaxMessage`, `WefaxProgress` in
    `DecodedMessage`.
 10. **`trx-server` task** &mdash; `run_wefax_decoder()`, history, logging.
-11. **Frontend events** &mdash; SSE/REST for decoded images.
+11. **Protocol registry** &mdash; `DECODER_REGISTRY` entry for `"wefax"`.
 
-Deliverable: end-to-end live WEFAX decoding in trx-rs.
+Deliverable: backend wefax decoding with SSE event broadcast.
+
+### Phase 3b: Frontend Wiring
+
+12. **Rust asset pipeline** &mdash; `status.rs` embed, `assets.rs` gzip
+    cache + route, `decoder.rs` toggle/clear endpoints, `api/mod.rs`
+    registration (§7.5.1).
+13. **HTML scaffold** &mdash; sub-tab button, sub-tab panel with canvas +
+    gallery, overview entry, about row (§7.5.2).
+14. **Plugin loading** &mdash; add `/wefax.js` to `pluginScripts`
+    `'digital-modes'` array (§7.5.3).
+15. **SSE dispatch** &mdash; `wefax` / `wefax_progress` handlers in
+    `app.js` decode event dispatcher (§7.5.4).
+16. **`wefax.js` plugin** &mdash; live canvas rendering, gallery
+    thumbnails, history restore, toggle/clear wiring (§7.5.5).
+17. **Image serving** &mdash; `/images/{filename}` static route for
+    completed PNGs (§7.5.7).
+18. **History worker** &mdash; add `"wefax"` to `HISTORY_GROUP_KEYS`
+    (§7.5.8).
+
+Deliverable: end-to-end live WEFAX decoding with in-browser image preview.
 
 ### Phase 4: Polish
 
-12. **Multi-speed runtime switching** &mdash; handle back-to-back
+19. **Multi-speed runtime switching** &mdash; handle back-to-back
     transmissions at different LPM within one session.
-13. **Slant correction** &mdash; fine-tune sample clock drift compensation
+20. **Slant correction** &mdash; fine-tune sample clock drift compensation
     using phasing pulse tracking.
-14. **Colour compositing** &mdash; optional IR + visible overlay for
+21. **Colour compositing** &mdash; optional IR + visible overlay for
     satellite WEFAX (future).
-15. **Test suite** &mdash; synthetic signal generation, round-trip tests,
+22. **Test suite** &mdash; synthetic signal generation, round-trip tests,
     edge cases (partial images, noise, frequency offset).
 
 ## 9. Dependencies
