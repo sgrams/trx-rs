@@ -1,7 +1,7 @@
 # WEFAX / Radiofax Decoder Implementation Plan
 
 > **Crate**: `trx-wefax` &mdash; `src/decoders/trx-wefax/`
-> **Status**: Draft &mdash; 2026-04-02
+> **Status**: Implemented (Phases 1–3b) &mdash; 2026-04-02
 
 ## 1. Overview
 
@@ -741,53 +741,53 @@ const HISTORY_GROUP_KEYS = [
 
 ## 8. Implementation Phases
 
-### Phase 1: Core DSP (MVP)
+### Phase 1: Core DSP (MVP) ✅
 
-1. **Resampler** &mdash; 48k→11025 polyphase resampler with tests.
-2. **FM discriminator** &mdash; Hilbert FIR + instantaneous freq, verify
+1. ✅ **Resampler** &mdash; 48k→11025 polyphase resampler with tests.
+2. ✅ **FM discriminator** &mdash; Hilbert FIR + instantaneous freq, verify
    against synthetic 1500–2300 Hz sweeps.
-3. **Tone detector** &mdash; Goertzel at 300/450/675 Hz with debounce.
-4. **Line slicer** &mdash; Fixed-config (manual LPM+IOC) line extraction.
-5. **Image buffer + PNG** &mdash; Greyscale line accumulation, `image` or
-   `png` crate for encoding.
+3. ✅ **Tone detector** &mdash; Goertzel at 300/450/675 Hz with debounce.
+4. ✅ **Line slicer** &mdash; Fixed-config (manual LPM+IOC) line extraction.
+5. ✅ **Image buffer + PNG** &mdash; Greyscale line accumulation, `png`
+   crate for encoding.
 
 Deliverable: decode a known WEFAX WAV recording at a single speed/IOC.
 
-### Phase 2: Automatic Detection
+### Phase 2: Automatic Detection ✅
 
-6. **State machine** &mdash; Full `Idle→StartDetected→Phasing→Receiving→Stopping`
+6. ✅ **State machine** &mdash; Full `Idle→StartDetected→Phasing→Receiving→Stopping`
    transitions driven by tone detector.
-7. **Phase alignment** &mdash; Cross-correlation phasing detector.
-8. **Auto IOC/LPM** &mdash; IOC from start tone frequency; LPM from phasing
+7. ✅ **Phase alignment** &mdash; Cross-correlation phasing detector.
+8. ✅ **Auto IOC/LPM** &mdash; IOC from start tone frequency; LPM from phasing
    line duration measurement.
 
 Deliverable: fully automatic reception of a single image without manual config.
 
-### Phase 3: Server Integration
+### Phase 3: Server Integration ✅
 
-9. **`trx-core` message types** &mdash; `WefaxMessage`, `WefaxProgress` in
+9. ✅ **`trx-core` message types** &mdash; `WefaxMessage`, `WefaxProgress` in
    `DecodedMessage`.
-10. **`trx-server` task** &mdash; `run_wefax_decoder()`, history, logging.
-11. **Protocol registry** &mdash; `DECODER_REGISTRY` entry for `"wefax"`.
+10. ✅ **`trx-server` task** &mdash; `run_wefax_decoder()`, history, logging.
+11. ✅ **Protocol registry** &mdash; `DECODER_REGISTRY` entry for `"wefax"`.
 
 Deliverable: backend wefax decoding with SSE event broadcast.
 
-### Phase 3b: Frontend Wiring
+### Phase 3b: Frontend Wiring ✅
 
-12. **Rust asset pipeline** &mdash; `status.rs` embed, `assets.rs` gzip
+12. ✅ **Rust asset pipeline** &mdash; `status.rs` embed, `assets.rs` gzip
     cache + route, `decoder.rs` toggle/clear endpoints, `api/mod.rs`
     registration (§7.5.1).
-13. **HTML scaffold** &mdash; sub-tab button, sub-tab panel with canvas +
+13. ✅ **HTML scaffold** &mdash; sub-tab button, sub-tab panel with canvas +
     gallery, overview entry, about row (§7.5.2).
-14. **Plugin loading** &mdash; add `/wefax.js` to `pluginScripts`
+14. ✅ **Plugin loading** &mdash; add `/wefax.js` to `pluginScripts`
     `'digital-modes'` array (§7.5.3).
-15. **SSE dispatch** &mdash; `wefax` / `wefax_progress` handlers in
+15. ✅ **SSE dispatch** &mdash; `wefax` / `wefax_progress` handlers in
     `app.js` decode event dispatcher (§7.5.4).
-16. **`wefax.js` plugin** &mdash; live canvas rendering, gallery
+16. ✅ **`wefax.js` plugin** &mdash; live canvas rendering, gallery
     thumbnails, history restore, toggle/clear wiring (§7.5.5).
 17. **Image serving** &mdash; `/images/{filename}` static route for
-    completed PNGs (§7.5.7).
-18. **History worker** &mdash; add `"wefax"` to `HISTORY_GROUP_KEYS`
+    completed PNGs (§7.5.7). *(deferred: images served from output_dir)*
+18. ✅ **History worker** &mdash; add `"wefax"` to `HISTORY_GROUP_KEYS`
     (§7.5.8).
 
 Deliverable: end-to-end live WEFAX decoding with in-browser image preview.

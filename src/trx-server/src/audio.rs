@@ -28,7 +28,7 @@ use trx_core::audio::{
     write_vchan_uuid_msg, AudioStreamInfo, AUDIO_MSG_AIS_DECODE, AUDIO_MSG_APRS_DECODE,
     AUDIO_MSG_CW_DECODE, AUDIO_MSG_FT2_DECODE, AUDIO_MSG_FT4_DECODE, AUDIO_MSG_FT8_DECODE,
     AUDIO_MSG_HF_APRS_DECODE, AUDIO_MSG_HISTORY_COMPRESSED, AUDIO_MSG_LRPT_IMAGE,
-    AUDIO_MSG_LRPT_PROGRESS,
+    AUDIO_MSG_LRPT_PROGRESS, AUDIO_MSG_WEFAX_DECODE, AUDIO_MSG_WEFAX_PROGRESS,
     AUDIO_MSG_RX_FRAME, AUDIO_MSG_STREAM_INFO, AUDIO_MSG_TX_FRAME, AUDIO_MSG_VCHAN_ALLOCATED,
     AUDIO_MSG_VCHAN_BW, AUDIO_MSG_VCHAN_DESTROYED, AUDIO_MSG_VCHAN_FREQ, AUDIO_MSG_VCHAN_MODE,
     AUDIO_MSG_VCHAN_REMOVE, AUDIO_MSG_VCHAN_SUB, AUDIO_MSG_VCHAN_UNSUB, AUDIO_MSG_VDES_DECODE,
@@ -36,7 +36,7 @@ use trx_core::audio::{
 };
 use trx_core::decode::{
     AisMessage, AprsPacket, CwEvent, DecodedMessage, Ft8Message, LrptImage, LrptProgress,
-    VdesMessage,
+    VdesMessage, WefaxMessage,
     WsprMessage,
 };
 use trx_core::rig::state::{RigMode, RigState};
@@ -58,6 +58,7 @@ const CW_HISTORY_RETENTION: Duration = Duration::from_secs(24 * 60 * 60);
 const FT8_HISTORY_RETENTION: Duration = Duration::from_secs(24 * 60 * 60);
 const WSPR_HISTORY_RETENTION: Duration = Duration::from_secs(24 * 60 * 60);
 const LRPT_HISTORY_RETENTION: Duration = Duration::from_secs(24 * 60 * 60);
+const WEFAX_HISTORY_RETENTION: Duration = Duration::from_secs(24 * 60 * 60);
 /// Maximum entries per decoder history queue.  Prevents unbounded memory growth
 /// on busy channels (e.g. AIS near a port).  Oldest entries are evicted when
 /// the limit is reached, independent of the time-based pruning.
@@ -228,6 +229,7 @@ pub struct DecoderHistories {
     pub ft2: Mutex<VecDeque<(Instant, Ft8Message)>>,
     pub wspr: Mutex<VecDeque<(Instant, WsprMessage)>>,
     pub lrpt: Mutex<VecDeque<(Instant, LrptImage)>>,
+    pub wefax: Mutex<VecDeque<(Instant, WefaxMessage)>>,
     /// Approximate total entry count across all decoders, maintained
     /// atomically so `estimated_total_count()` avoids 9 lock acquisitions.
     total_count: AtomicUsize,
@@ -264,6 +266,7 @@ impl DecoderHistories {
             ft2: Mutex::new(VecDeque::new()),
             wspr: Mutex::new(VecDeque::new()),
             lrpt: Mutex::new(VecDeque::new()),
+            wefax: Mutex::new(VecDeque::new()),
             total_count: AtomicUsize::new(0),
         })
     }
@@ -686,6 +689,46 @@ impl DecoderHistories {
 
     pub fn clear_lrpt_history(&self) {
         let mut h = lock_or_recover(&self.lrpt, "lrpt_history");
+        let before = h.len();
+        h.clear();
+        self.adjust_total_count(before, 0);
+    }
+
+    // --- WEFAX ---
+
+    fn prune_wefax(history: &mut VecDeque<(Instant, WefaxMessage)>) {
+        let cutoff = Instant::now() - WEFAX_HISTORY_RETENTION;
+        while let Some((ts, _)) = history.front() {
+            if *ts < cutoff {
+                history.pop_front();
+            } else {
+                break;
+            }
+        }
+    }
+
+    pub fn record_wefax_message(&self, mut msg: WefaxMessage) {
+        if msg.ts_ms.is_none() {
+            msg.ts_ms = Some(current_timestamp_ms());
+        }
+        let mut h = lock_or_recover(&self.wefax, "wefax_history");
+        let before = h.len();
+        h.push_back((Instant::now(), msg));
+        Self::prune_wefax(&mut h);
+        enforce_capacity(&mut h, MAX_HISTORY_ENTRIES);
+        self.adjust_total_count(before, h.len());
+    }
+
+    pub fn snapshot_wefax_history(&self) -> Vec<WefaxMessage> {
+        let mut h = lock_or_recover(&self.wefax, "wefax_history");
+        let before = h.len();
+        Self::prune_wefax(&mut h);
+        self.adjust_total_count(before, h.len());
+        h.iter().map(|(_, msg)| msg.clone()).collect()
+    }
+
+    pub fn clear_wefax_history(&self) {
+        let mut h = lock_or_recover(&self.wefax, "wefax_history");
         let before = h.len();
         h.clear();
         self.adjust_total_count(before, 0);
@@ -2630,6 +2673,147 @@ async fn finalize_lrpt_pass(
 }
 
 // ---------------------------------------------------------------------------
+// WEFAX decoder task
+// ---------------------------------------------------------------------------
+
+/// Run the WEFAX decoder task. Processes PCM when enabled and rig mode matches.
+pub async fn run_wefax_decoder(
+    sample_rate: u32,
+    channels: u16,
+    mut pcm_rx: broadcast::Receiver<Vec<f32>>,
+    mut state_rx: watch::Receiver<RigState>,
+    decode_tx: broadcast::Sender<DecodedMessage>,
+    histories: Arc<DecoderHistories>,
+) {
+    use trx_wefax::{WefaxConfig, WefaxDecoder, WefaxEvent};
+
+    info!(
+        "WEFAX decoder started ({}Hz, {} ch)",
+        sample_rate, channels
+    );
+
+    let config = WefaxConfig::default();
+    let mut decoder = WefaxDecoder::new(sample_rate, config);
+    let mut was_active = false;
+    let mut last_reset_seq: u64 = 0;
+
+    let is_wefax_mode = |mode: &RigMode| {
+        matches!(mode, RigMode::USB | RigMode::LSB | RigMode::AM)
+    };
+
+    let mut active = state_rx.borrow().decoders.wefax_decode_enabled
+        && is_wefax_mode(&state_rx.borrow().status.mode);
+
+    loop {
+        if !active {
+            match state_rx.changed().await {
+                Ok(()) => {
+                    let state = state_rx.borrow();
+                    active = state.decoders.wefax_decode_enabled
+                        && is_wefax_mode(&state.status.mode);
+                    if active {
+                        pcm_rx = pcm_rx.resubscribe();
+                    }
+                }
+                Err(_) => break,
+            }
+            continue;
+        }
+
+        tokio::select! {
+            recv = pcm_rx.recv() => {
+                match recv {
+                    Ok(frame) => {
+                        let (process_enabled, reset_seq) = {
+                            let state = state_rx.borrow();
+                            (
+                                state.decoders.wefax_decode_enabled
+                                    && is_wefax_mode(&state.status.mode),
+                                state.reset_seqs.wefax_decode_reset_seq,
+                            )
+                        };
+
+                        if reset_seq != last_reset_seq {
+                            last_reset_seq = reset_seq;
+                            decoder.reset();
+                            info!("WEFAX decoder reset (seq={})", last_reset_seq);
+                            pcm_rx = pcm_rx.resubscribe();
+                            continue;
+                        }
+
+                        if !process_enabled {
+                            if was_active {
+                                decoder.reset();
+                                was_active = false;
+                            }
+                            active = false;
+                            continue;
+                        }
+
+                        let mono = if channels > 1 {
+                            let num_frames = frame.len() / channels as usize;
+                            let mut mono = Vec::with_capacity(num_frames);
+                            for i in 0..num_frames {
+                                mono.push(frame[i * channels as usize]);
+                            }
+                            mono
+                        } else {
+                            frame
+                        };
+
+                        was_active = true;
+                        let events = tokio::task::block_in_place(|| {
+                            let _span = info_span!("wefax_decode").entered();
+                            decoder.process_samples(&mono)
+                        });
+
+                        let latest_reset_seq =
+                            state_rx.borrow().reset_seqs.wefax_decode_reset_seq;
+                        if latest_reset_seq != reset_seq {
+                            last_reset_seq = latest_reset_seq;
+                            decoder.reset();
+                            info!("WEFAX decoder reset (seq={})", last_reset_seq);
+                            pcm_rx = pcm_rx.resubscribe();
+                            continue;
+                        }
+
+                        for evt in events {
+                            match evt {
+                                WefaxEvent::Progress(progress, _line_data) => {
+                                    let _ = decode_tx.send(
+                                        DecodedMessage::WefaxProgress(progress),
+                                    );
+                                }
+                                WefaxEvent::Complete(msg) => {
+                                    histories.record_wefax_message(msg.clone());
+                                    let _ =
+                                        decode_tx.send(DecodedMessage::Wefax(msg));
+                                }
+                            }
+                        }
+                    }
+                    Err(broadcast::error::RecvError::Lagged(n)) => {
+                        warn!("WEFAX decoder: dropped {} PCM frames", n);
+                    }
+                    Err(broadcast::error::RecvError::Closed) => break,
+                }
+            }
+            changed = state_rx.changed() => {
+                match changed {
+                    Ok(()) => {
+                        let state = state_rx.borrow();
+                        active = state.decoders.wefax_decode_enabled
+                            && is_wefax_mode(&state.status.mode);
+                    }
+                    Err(_) => break,
+                }
+            }
+        }
+    }
+    info!("WEFAX decoder stopped");
+}
+
+// ---------------------------------------------------------------------------
 // Virtual-channel audio support
 // ---------------------------------------------------------------------------
 
@@ -3239,6 +3423,11 @@ async fn handle_audio_client(
             DecodedMessage::LrptImage,
             AUDIO_MSG_LRPT_IMAGE
         );
+        push_history!(
+            histories.snapshot_wefax_history(),
+            DecodedMessage::Wefax,
+            AUDIO_MSG_WEFAX_DECODE
+        );
 
         (blob, count)
     };
@@ -3325,6 +3514,8 @@ async fn handle_audio_client(
 
                                 DecodedMessage::LrptImage(_) => AUDIO_MSG_LRPT_IMAGE,
                                 DecodedMessage::LrptProgress(_) => AUDIO_MSG_LRPT_PROGRESS,
+                                DecodedMessage::Wefax(_) => AUDIO_MSG_WEFAX_DECODE,
+                                DecodedMessage::WefaxProgress(_) => AUDIO_MSG_WEFAX_PROGRESS,
                             };
                             if let Ok(json) = serde_json::to_vec(&msg) {
                                 if let Err(e) = write_audio_msg(&mut writer_for_rx, msg_type, &json).await {
@@ -3355,6 +3546,8 @@ async fn handle_audio_client(
 
                                 DecodedMessage::LrptImage(_) => AUDIO_MSG_LRPT_IMAGE,
                                 DecodedMessage::LrptProgress(_) => AUDIO_MSG_LRPT_PROGRESS,
+                                DecodedMessage::Wefax(_) => AUDIO_MSG_WEFAX_DECODE,
+                                DecodedMessage::WefaxProgress(_) => AUDIO_MSG_WEFAX_PROGRESS,
                             };
                             if let Ok(json) = serde_json::to_vec(&msg) {
                                 if let Err(e) = write_audio_msg(&mut writer_for_rx, msg_type, &json).await {

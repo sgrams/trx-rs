@@ -1106,6 +1106,7 @@ async fn apply_scheduler_decoders(
     let mut want_ft2 = false;
     let mut want_wspr = false;
     let mut want_lrpt = false;
+    let mut want_wefax = false;
 
     let mut update_from = |bm: &crate::server::bookmarks::Bookmark| {
         for decoder in bm
@@ -1121,6 +1122,7 @@ async fn apply_scheduler_decoders(
                 "ft2" => want_ft2 = true,
                 "wspr" => want_wspr = true,
                 "lrpt" => want_lrpt = true,
+                "wefax" => want_wefax = true,
                 _ => {}
             }
         }
@@ -1139,6 +1141,7 @@ async fn apply_scheduler_decoders(
         ("FT2", RigCommand::SetFt2DecodeEnabled(want_ft2)),
         ("WSPR", RigCommand::SetWsprDecodeEnabled(want_wspr)),
         ("LRPT", RigCommand::SetLrptDecodeEnabled(want_lrpt)),
+        ("WEFAX", RigCommand::SetWefaxDecodeEnabled(want_wefax)),
     ];
 
     for (label, cmd) in desired {

@@ -538,6 +538,7 @@
         <button class="sub-tab" data-subtab="wspr">WSPR</button>
         <button class="sub-tab" data-subtab="rds">RDS</button>
         <button class="sub-tab" data-subtab="sat">SAT</button>
+        <button class="sub-tab" data-subtab="wefax" id="subtab-wefax">WEFAX</button>
       </div>
       <div id="subtab-overview" class="sub-tab-panel">
         <div class="plugin-item" data-decoder="ais">
@@ -598,6 +599,12 @@
           <strong>Weather Satellite Decoder</strong>
           <div style="color:var(--text-muted); font-size:0.85rem; margin-top:0.2rem;">
             Decodes Meteor-M LRPT (137 MHz QPSK) weather satellite imagery.
+          </div>
+        </div>
+        <div class="plugin-item" data-decoder="wefax">
+          <strong>WEFAX Decoder</strong>
+          <div style="color:var(--text-muted); font-size:0.85rem; margin-top:0.2rem;">
+            Weather Facsimile &mdash; HF/satellite image reception (60/90/120/240 LPM)
           </div>
         </div>
       </div>
@@ -918,6 +925,22 @@
           </div>
           <small id="sat-pred-status" style="color:var(--text-muted);font-size:0.75rem;">Loading predictions&hellip;</small>
         </div>
+      </div>
+      <div id="subtab-wefax" class="sub-tab-panel" style="display:none;">
+        <div class="ft8-controls">
+          <button id="wefax-decode-toggle-btn" type="button">Enable WEFAX</button>
+          <button id="wefax-clear-btn" type="button" style="margin-left:0.5rem; font-size:0.8rem;">Clear</button>
+          <small id="wefax-status" style="color:var(--text-muted);">Idle</small>
+        </div>
+        <div id="wefax-live-container" style="display:none; margin:0.5rem 0;">
+          <div style="display:flex; align-items:center; gap:0.5rem; margin-bottom:0.3rem;">
+            <strong>Receiving</strong>
+            <small id="wefax-live-info" style="color:var(--text-muted);"></small>
+          </div>
+          <canvas id="wefax-live-canvas" width="1809" height="800"
+                  style="width:100%; image-rendering:pixelated; background:#000;"></canvas>
+        </div>
+        <div id="wefax-gallery" style="display:flex; flex-wrap:wrap; gap:0.5rem;"></div>
       </div>
     </div>
     <div id="tab-map" class="tab-panel" data-tab="map" style="display:none;">
@@ -1476,6 +1499,7 @@
               <tr><td>CW</td><td id="about-dec-cw" class="about-status-off">Off</td></tr>
               <tr><td>APRS</td><td id="about-dec-aprs" class="about-status-off">Off</td></tr>
               <tr><td>Meteor LRPT</td><td id="about-dec-lrpt" class="about-status-off">Off</td></tr>
+              <tr id="about-dec-wefax"><td>WEFAX</td><td>Weather Facsimile decoder</td></tr>
             </table>
           </div>
           <!-- Integrations -->
@@ -1562,7 +1586,7 @@
 // Lazy plugin loader: loads plugin scripts when their tab/feature is first activated
 (function() {
   var pluginScripts = {
-    'digital-modes': ['/ft8.js', '/ft4.js', '/ft2.js', '/wspr.js', '/cw.js', '/background-decode.js', '/sat.js'],
+    'digital-modes': ['/ft8.js', '/ft4.js', '/ft2.js', '/wspr.js', '/cw.js', '/background-decode.js', '/sat.js', '/wefax.js'],
     'map': ['/map-core.js', '/leaflet-ais-tracksymbol.js', '/ais.js', '/vdes.js', '/aprs.js', '/hf-aprs.js', '/sat.js', '/sat-scheduler.js'],
     'statistics': ['/map-core.js'],
     'bookmarks': ['/bookmarks.js'],

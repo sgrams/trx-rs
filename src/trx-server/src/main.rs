@@ -817,6 +817,21 @@ fn spawn_rig_audio_stack(
                 _ = wait_for_shutdown(lrpt_shutdown_rx) => {}
             }
         }));
+
+        // Spawn WEFAX decoder task
+        let wefax_pcm_rx = pcm_tx.subscribe();
+        let wefax_state_rx = state_rx.clone();
+        let wefax_decode_tx = decode_tx.clone();
+        let wefax_sr = rig_cfg.audio.sample_rate;
+        let wefax_ch = rig_cfg.audio.channels;
+        let wefax_shutdown_rx = shutdown_rx.clone();
+        let wefax_histories = histories.clone();
+        handles.push(tokio::spawn(async move {
+            tokio::select! {
+                _ = audio::run_wefax_decoder(wefax_sr, wefax_ch as u16, wefax_pcm_rx, wefax_state_rx, wefax_decode_tx, wefax_histories) => {}
+                _ = wait_for_shutdown(wefax_shutdown_rx) => {}
+            }
+        }));
     }
 
     if rig_cfg.audio.tx_enabled {

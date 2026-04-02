@@ -3247,6 +3247,7 @@ dependencies = [
  "trx-protocol",
  "trx-reporting",
  "trx-vdes",
+ "trx-wefax",
  "trx-wspr",
  "trx-wxsat",
  "uuid",
@@ -3257,6 +3258,14 @@ name = "trx-vdes"
 version = "0.1.0"
 dependencies = [
  "num-complex",
+ "trx-core",
+]
+
+[[package]]
+name = "trx-wefax"
+version = "0.1.0"
+dependencies = [
+ "png",
  "trx-core",
 ]
 

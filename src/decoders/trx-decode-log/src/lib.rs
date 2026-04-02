@@ -18,7 +18,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tracing::warn;
 
-use trx_core::decode::{AprsPacket, CwEvent, Ft8Message, WsprMessage};
+use trx_core::decode::{AprsPacket, CwEvent, Ft8Message, WefaxMessage, WsprMessage};
 
 // ---------------------------------------------------------------------------
 // Configuration
@@ -51,6 +51,8 @@ pub struct DecodeLogsConfig {
     pub ft8_file: String,
     /// WSPR decoder log filename
     pub wspr_file: String,
+    /// WEFAX decoder log filename
+    pub wefax_file: String,
 }
 
 impl Default for DecodeLogsConfig {
@@ -62,6 +64,7 @@ impl Default for DecodeLogsConfig {
             cw_file: "TRXRS-CW-%YYYY%-%MM%-%DD%.log".to_string(),
             ft8_file: "TRXRS-FT8-%YYYY%-%MM%-%DD%.log".to_string(),
             wspr_file: "TRXRS-WSPR-%YYYY%-%MM%-%DD%.log".to_string(),
+            wefax_file: "TRXRS-WEFAX-%YYYY%-%MM%-%DD%.log".to_string(),
         }
     }
 }
@@ -176,6 +179,7 @@ pub struct DecoderLoggers {
     cw: DecoderFileLogger,
     ft8: DecoderFileLogger,
     wspr: DecoderFileLogger,
+    wefax: DecoderFileLogger,
 }
 
 impl DecoderLoggers {
@@ -194,6 +198,7 @@ impl DecoderLoggers {
             cw: DecoderFileLogger::open(&base_dir, &cfg.cw_file, "cw")?,
             ft8: DecoderFileLogger::open(&base_dir, &cfg.ft8_file, "ft8")?,
             wspr: DecoderFileLogger::open(&base_dir, &cfg.wspr_file, "wspr")?,
+            wefax: DecoderFileLogger::open(&base_dir, &cfg.wefax_file, "wefax")?,
         };
 
         Ok(Some(Arc::new(loggers)))
@@ -213,5 +218,9 @@ impl DecoderLoggers {
 
     pub fn log_wspr(&self, msg: &WsprMessage) {
         self.wspr.write_payload(msg);
+    }
+
+    pub fn log_wefax(&self, msg: &WefaxMessage) {
+        self.wefax.write_payload(msg);
     }
 }

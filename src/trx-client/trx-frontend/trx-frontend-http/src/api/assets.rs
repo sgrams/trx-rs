@@ -55,6 +55,7 @@ define_gz_cache!(gz_ft2_js, status::FT2_JS, "ft2.js");
 define_gz_cache!(gz_wspr_js, status::WSPR_JS, "wspr.js");
 define_gz_cache!(gz_cw_js, status::CW_JS, "cw.js");
 define_gz_cache!(gz_sat_js, status::SAT_JS, "sat.js");
+define_gz_cache!(gz_wefax_js, status::WEFAX_JS, "wefax.js");
 define_gz_cache!(gz_bookmarks_js, status::BOOKMARKS_JS, "bookmarks.js");
 define_gz_cache!(gz_scheduler_js, status::SCHEDULER_JS, "scheduler.js");
 define_gz_cache!(
@@ -318,6 +319,16 @@ pub(crate) async fn cw_js(req: HttpRequest) -> impl Responder {
 #[get("/sat.js")]
 pub(crate) async fn sat_js(req: HttpRequest) -> impl Responder {
     let c = gz_sat_js();
+    static_asset_response(
+        &req,
+        "application/javascript; charset=utf-8",
+        c,
+    )
+}
+
+#[get("/wefax.js")]
+pub(crate) async fn wefax_js(req: HttpRequest) -> impl Responder {
+    let c = gz_wefax_js();
     static_asset_response(
         &req,
         "application/javascript; charset=utf-8",

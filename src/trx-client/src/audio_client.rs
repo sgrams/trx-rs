@@ -29,7 +29,8 @@ use trx_core::audio::{
     AUDIO_MSG_HF_APRS_DECODE, AUDIO_MSG_HISTORY_COMPRESSED, AUDIO_MSG_RX_FRAME,
     AUDIO_MSG_RX_FRAME_CH, AUDIO_MSG_STREAM_INFO, AUDIO_MSG_TX_FRAME, AUDIO_MSG_VCHAN_ALLOCATED,
     AUDIO_MSG_VCHAN_BW, AUDIO_MSG_VCHAN_DESTROYED, AUDIO_MSG_VCHAN_FREQ, AUDIO_MSG_VCHAN_MODE,
-    AUDIO_MSG_LRPT_IMAGE, AUDIO_MSG_LRPT_PROGRESS, AUDIO_MSG_VCHAN_REMOVE, AUDIO_MSG_VCHAN_SUB,
+    AUDIO_MSG_LRPT_IMAGE, AUDIO_MSG_LRPT_PROGRESS, AUDIO_MSG_WEFAX_DECODE,
+    AUDIO_MSG_WEFAX_PROGRESS, AUDIO_MSG_VCHAN_REMOVE, AUDIO_MSG_VCHAN_SUB,
     AUDIO_MSG_VCHAN_UNSUB, AUDIO_MSG_VDES_DECODE, AUDIO_MSG_WSPR_DECODE,
 };
 use trx_core::decode::DecodedMessage;
@@ -569,7 +570,9 @@ async fn handle_single_rig_connection(
                     | AUDIO_MSG_FT2_DECODE
                     | AUDIO_MSG_WSPR_DECODE
                     | AUDIO_MSG_LRPT_IMAGE
-                    | AUDIO_MSG_LRPT_PROGRESS,
+                    | AUDIO_MSG_LRPT_PROGRESS
+                    | AUDIO_MSG_WEFAX_DECODE
+                    | AUDIO_MSG_WEFAX_PROGRESS,
                     payload,
                 )) => {
                     if let Ok(mut msg) = serde_json::from_slice::<DecodedMessage>(&payload) {

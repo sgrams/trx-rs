@@ -18,7 +18,9 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use pickledb::{PickleDb, PickleDbDumpPolicy, SerializationMethod};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
-use trx_core::decode::{AisMessage, AprsPacket, CwEvent, Ft8Message, VdesMessage, WsprMessage};
+use trx_core::decode::{
+    AisMessage, AprsPacket, CwEvent, Ft8Message, VdesMessage, WefaxMessage, WsprMessage,
+};
 
 use crate::audio::DecoderHistories;
 
@@ -131,6 +133,11 @@ pub fn load_all(db: &PickleDb, rig_id: &str, histories: &Arc<DecoderHistories>) 
             h.push_back(e);
         }
     }
+    if let Ok(mut h) = histories.wefax.lock() {
+        for e in load_key::<WefaxMessage>(db, &k("wefax")) {
+            h.push_back(e);
+        }
+    }
 }
 
 /// Flush `histories` to the database under `rig_id`-prefixed keys and sync.
@@ -169,6 +176,11 @@ pub fn flush_all(db: &mut PickleDb, rig_id: &str, histories: &Arc<DecoderHistori
         let snapshot = h.clone();
         drop(h);
         save_key(db, &k("wspr"), &snapshot);
+    }
+    if let Ok(h) = histories.wefax.lock() {
+        let snapshot = h.clone();
+        drop(h);
+        save_key(db, &k("wefax"), &snapshot);
     }
     let _ = db.dump();
 }

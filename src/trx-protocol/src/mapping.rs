@@ -121,7 +121,8 @@ define_command_mapping! {
         ResetFt4Decoder      <=> ResetFt4Decoder,
         ResetFt2Decoder      <=> ResetFt2Decoder,
         ResetWsprDecoder     <=> ResetWsprDecoder,
-        ResetLrptDecoder     <=> ResetLrptDecoder;
+        ResetLrptDecoder     <=> ResetLrptDecoder,
+        ResetWefaxDecoder    <=> ResetWefaxDecoder;
 
     // ── Single-field struct <=> tuple ────────────────────────────────
     field:
@@ -138,6 +139,7 @@ define_command_mapping! {
         SetFt2DecodeEnabled   { enabled }        <=> SetFt2DecodeEnabled,
         SetWsprDecodeEnabled  { enabled }        <=> SetWsprDecodeEnabled,
         SetLrptDecodeEnabled  { enabled }        <=> SetLrptDecodeEnabled,
+        SetWefaxDecodeEnabled { enabled }        <=> SetWefaxDecodeEnabled,
         SetBandwidth          { bandwidth_hz }   <=> SetBandwidth,
         SetSdrGain            { gain_db }        <=> SetSdrGain,
         SetSdrLnaGain         { gain_db }        <=> SetSdrLnaGain,

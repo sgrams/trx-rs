@@ -23,7 +23,8 @@ use tracing::warn;
 use uuid::Uuid;
 
 use trx_core::decode::{
-    AisMessage, AprsPacket, CwEvent, DecodedMessage, Ft8Message, VdesMessage, WsprMessage,
+    AisMessage, AprsPacket, CwEvent, DecodedMessage, Ft8Message, VdesMessage, WefaxMessage,
+    WsprMessage,
 };
 use trx_frontend::FrontendRuntimeContext;
 
@@ -296,6 +297,20 @@ fn record_wspr(context: &FrontendRuntimeContext, msg: WsprMessage) {
     prune_wspr_history(context, &mut history);
 }
 
+fn record_wefax(context: &FrontendRuntimeContext, msg: WefaxMessage) {
+    let rig_id = msg.rig_id.clone().or_else(|| active_rig_id(context));
+    let mut history = context
+        .decode_history
+        .wefax
+        .lock()
+        .expect("wefax history mutex poisoned");
+    history.push_back((Instant::now(), rig_id, msg));
+    // Wefax images are large; keep a small history.
+    while history.len() > 100 {
+        history.pop_front();
+    }
+}
+
 /// Returns `true` if the entry's rig_id matches the optional filter.
 /// `None` filter means "all rigs".
 fn matches_rig_filter(entry_rig: Option<&str>, filter: Option<&str>) -> bool {
@@ -471,6 +486,31 @@ pub fn snapshot_wspr_history(
         .collect()
 }
 
+pub fn snapshot_wefax_history(
+    context: &FrontendRuntimeContext,
+    rig_filter: Option<&str>,
+) -> Vec<WefaxMessage> {
+    let history = context
+        .decode_history
+        .wefax
+        .lock()
+        .expect("wefax history mutex poisoned");
+    history
+        .iter()
+        .filter(|(_, rid, _)| matches_rig_filter(rid.as_deref(), rig_filter))
+        .map(|(_, _, msg)| msg.clone())
+        .collect()
+}
+
+pub fn clear_wefax_history(context: &FrontendRuntimeContext) {
+    let mut history = context
+        .decode_history
+        .wefax
+        .lock()
+        .expect("wefax history mutex poisoned");
+    history.clear();
+}
+
 pub fn clear_aprs_history(context: &FrontendRuntimeContext) {
     let mut history = context
         .decode_history
@@ -584,6 +624,8 @@ pub fn start_decode_history_collector(context: Arc<FrontendRuntimeContext>) {
                     DecodedMessage::Ft4(msg) => record_ft4(&context, msg),
                     DecodedMessage::Ft2(msg) => record_ft2(&context, msg),
                     DecodedMessage::Wspr(msg) => record_wspr(&context, msg),
+                    DecodedMessage::Wefax(msg) => record_wefax(&context, msg),
+                    DecodedMessage::WefaxProgress(_) => {}
                     DecodedMessage::LrptImage(_) => {}
                     DecodedMessage::LrptProgress(_) => {}
                 },

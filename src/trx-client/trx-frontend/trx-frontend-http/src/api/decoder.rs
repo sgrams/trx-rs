@@ -44,6 +44,7 @@ struct DecodeHistoryPayload {
     ft4: Vec<trx_core::decode::Ft8Message>,
     ft2: Vec<trx_core::decode::Ft8Message>,
     wspr: Vec<trx_core::decode::WsprMessage>,
+    wefax: Vec<trx_core::decode::WefaxMessage>,
 }
 
 impl DecodeHistoryPayload {
@@ -57,6 +58,7 @@ impl DecodeHistoryPayload {
             + self.ft4.len()
             + self.ft2.len()
             + self.wspr.len()
+            + self.wefax.len()
     }
 }
 
@@ -75,6 +77,7 @@ fn collect_decode_history(
         ft4: crate::server::audio::snapshot_ft4_history(context, rig_filter),
         ft2: crate::server::audio::snapshot_ft2_history(context, rig_filter),
         wspr: crate::server::audio::snapshot_wspr_history(context, rig_filter),
+        wefax: crate::server::audio::snapshot_wefax_history(context, rig_filter),
     }
 }
 
@@ -400,9 +403,37 @@ pub async fn toggle_lrpt_decode(
     .await
 }
 
+#[post("/toggle_wefax_decode")]
+pub async fn toggle_wefax_decode(
+    query: web::Query<RemoteQuery>,
+    state: web::Data<watch::Receiver<RigState>>,
+    rig_tx: web::Data<mpsc::Sender<RigRequest>>,
+) -> Result<HttpResponse, Error> {
+    let enabled = state.get_ref().borrow().decoders.wefax_decode_enabled;
+    send_command(
+        &rig_tx,
+        RigCommand::SetWefaxDecodeEnabled(!enabled),
+        query.into_inner().remote,
+    )
+    .await
+}
+
 // ============================================================================
 // Decoder clear endpoints
 // ============================================================================
+
+#[post("/clear_wefax_decode")]
+pub async fn clear_wefax_decode(
+    query: web::Query<RemoteQuery>,
+    rig_tx: web::Data<mpsc::Sender<RigRequest>>,
+) -> Result<HttpResponse, Error> {
+    send_command(
+        &rig_tx,
+        RigCommand::ResetWefaxDecoder,
+        query.into_inner().remote,
+    )
+    .await
+}
 
 #[post("/clear_lrpt_decode")]
 pub async fn clear_lrpt_decode(

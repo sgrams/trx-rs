@@ -39,6 +39,7 @@ trx-aprs = { path = "../decoders/trx-aprs" }
 trx-cw = { path = "../decoders/trx-cw" }
 trx-decode-log = { path = "../decoders/trx-decode-log" }
 trx-ftx = { path = "../decoders/trx-ftx" }
+trx-wefax = { path = "../decoders/trx-wefax" }
 trx-wspr = { path = "../decoders/trx-wspr" }
 trx-wxsat = { path = "../decoders/trx-wxsat" }
 trx-protocol = { path = "../trx-protocol" }
