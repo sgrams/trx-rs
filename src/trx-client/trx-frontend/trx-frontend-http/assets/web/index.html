@@ -929,18 +929,51 @@
       <div id="subtab-wefax" class="sub-tab-panel" style="display:none;">
         <div class="ft8-controls">
           <button id="wefax-decode-toggle-btn" type="button">Enable WEFAX</button>
-          <button id="wefax-clear-btn" type="button" style="margin-left:0.5rem; font-size:0.8rem;">Clear</button>
           <small id="wefax-status" style="color:var(--text-muted);">Idle</small>
         </div>
-        <div id="wefax-live-container" style="display:none; margin:0.5rem 0;">
-          <div style="display:flex; align-items:center; gap:0.5rem; margin-bottom:0.3rem;">
-            <strong>Receiving</strong>
-            <small id="wefax-live-info" style="color:var(--text-muted);"></small>
-          </div>
-          <canvas id="wefax-live-canvas" width="1809" height="800"
-                  style="width:100%; image-rendering:pixelated; background:#000;"></canvas>
+        <!-- View selector -->
+        <div class="sat-view-bar">
+          <button id="wefax-view-live" class="sat-view-btn sat-view-active" type="button">Live</button>
+          <button id="wefax-view-history" class="sat-view-btn" type="button">History</button>
         </div>
-        <div id="wefax-gallery" style="display:flex; flex-wrap:wrap; gap:0.5rem;"></div>
+        <!-- Live view -->
+        <div id="wefax-live-view">
+          <div style="margin:0 0 0.5rem;">
+            <div style="color:var(--text-muted); font-size:0.82rem; line-height:1.5;">
+              <strong>Weather Facsimile</strong> &mdash; HF/satellite image reception (60/90/120/240 LPM).
+              Tune to a WEFAX station in USB mode and enable the decoder to begin receiving.
+            </div>
+          </div>
+          <div id="wefax-live-container" style="display:none; margin:0.5rem 0;">
+            <div style="display:flex; align-items:center; gap:0.5rem; margin-bottom:0.3rem;">
+              <strong>Receiving</strong>
+              <small id="wefax-live-info" style="color:var(--text-muted);"></small>
+            </div>
+            <canvas id="wefax-live-canvas" width="1809" height="800"
+                    style="width:100%; image-rendering:pixelated; background:#000;"></canvas>
+          </div>
+          <div id="wefax-live-latest" style="margin-top:0.5rem;"></div>
+        </div>
+        <!-- History view -->
+        <div id="wefax-history-view" style="display:none;">
+          <div class="sat-history-controls">
+            <input id="wefax-filter" class="ft8-filter" type="text" placeholder="Filter (e.g. IOC, LPM)" />
+            <select id="wefax-sort" class="sat-sort-select">
+              <option value="newest">Newest first</option>
+              <option value="oldest">Oldest first</option>
+            </select>
+            <button id="wefax-clear-btn" type="button" style="font-size:0.8rem;">Clear All</button>
+          </div>
+          <div class="sat-history-header">
+            <span class="sat-col-time">Time</span>
+            <span class="sat-col-type">IOC</span>
+            <span class="sat-col-sat">LPM</span>
+            <span class="sat-col-lines">Lines</span>
+            <span class="sat-col-link">Image</span>
+          </div>
+          <div id="wefax-history-list"></div>
+          <small id="wefax-history-count" style="color:var(--text-muted);font-size:0.75rem;">No images yet</small>
+        </div>
       </div>
     </div>
     <div id="tab-map" class="tab-panel" data-tab="map" style="display:none;">
