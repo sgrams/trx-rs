@@ -266,6 +266,10 @@ function bmOpenForm(bm) {
   bmEditId = bm ? bm.id : null;
   bmEditScope = bm ? (bm.scope || bmScope) : null;
 
+  // Rebuild decoder checkboxes from registry (handles race where registry
+  // loaded after initial build).
+  bmBuildDecoderCheckboxes();
+
   document.getElementById("bm-id").value = bm ? bm.id : "";
   document.getElementById("bm-name").value = bm ? bm.name : "";
   document.getElementById("bm-freq").value = bm ? bm.freq_hz : "";
