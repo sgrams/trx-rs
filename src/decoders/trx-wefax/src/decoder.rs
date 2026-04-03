@@ -55,6 +55,9 @@ pub struct WefaxDecoder {
     demodulator: FmDiscriminator,
     tone_detector: ToneDetector,
     phasing: Option<PhasingDetector>,
+    /// Fallback phasing detector that runs in Idle state to catch ongoing
+    /// transmissions when the APT start tone was missed.
+    idle_phasing: Option<PhasingDetector>,
     slicer: Option<LineSlicer>,
     image: Option<ImageAssembler>,
     /// Total sample counter for timestamps.
@@ -65,6 +68,7 @@ pub struct WefaxDecoder {
 
 impl WefaxDecoder {
     pub fn new(input_sample_rate: u32, config: WefaxConfig) -> Self {
+        let default_lpm = config.lpm.unwrap_or(120);
         Self {
             resampler: Resampler::new(input_sample_rate),
             demodulator: FmDiscriminator::new(
@@ -73,6 +77,7 @@ impl WefaxDecoder {
                 config.deviation_hz,
             ),
             tone_detector: ToneDetector::new(INTERNAL_RATE),
+            idle_phasing: Some(PhasingDetector::new(default_lpm, INTERNAL_RATE)),
             config,
             state: State::Idle,
             phasing: None,
@@ -102,19 +107,43 @@ impl WefaxDecoder {
         // Step 4: Process based on current state.
         match self.state.clone() {
             State::Idle => {
-                // Look for start tone.
+                // Look for APT start tone first.
+                let mut got_start = false;
                 for result in &tone_results {
                     if let Some(tone) = result.tone {
                         match tone {
                             AptTone::Start576 => {
+                                self.idle_phasing = None;
                                 self.transition_to_start_detected(576);
+                                got_start = true;
                                 break;
                             }
                             AptTone::Start288 => {
+                                self.idle_phasing = None;
                                 self.transition_to_start_detected(288);
+                                got_start = true;
                                 break;
                             }
                             AptTone::Stop => {} // Ignore stop in idle.
+                        }
+                    }
+                }
+
+                // Fallback: try phasing detection on luminance to catch
+                // ongoing transmissions where the start tone was missed.
+                if !got_start {
+                    if let Some(ref mut idle_ph) = self.idle_phasing {
+                        if let Some(offset) = idle_ph.process(&luminance) {
+                            let ioc = self.config.ioc.unwrap_or(576);
+                            let lpm = self.config.lpm.unwrap_or(120);
+                            self.reception_start_ms = Some(
+                                std::time::SystemTime::now()
+                                    .duration_since(std::time::UNIX_EPOCH)
+                                    .unwrap_or_default()
+                                    .as_millis() as i64,
+                            );
+                            self.idle_phasing = None;
+                            self.transition_to_receiving(ioc, lpm, offset);
                         }
                     }
                 }
@@ -205,11 +234,13 @@ impl WefaxDecoder {
 
     /// Reset the decoder, discarding any in-progress image.
     pub fn reset(&mut self) {
+        let default_lpm = self.config.lpm.unwrap_or(120);
         self.state = State::Idle;
         self.resampler.reset();
         self.demodulator.reset();
         self.tone_detector.reset();
         self.phasing = None;
+        self.idle_phasing = Some(PhasingDetector::new(default_lpm, INTERNAL_RATE));
         self.slicer = None;
         self.image = None;
         self.sample_count = 0;
@@ -252,11 +283,13 @@ impl WefaxDecoder {
     }
 
     fn transition_to_idle(&mut self) {
+        let default_lpm = self.config.lpm.unwrap_or(120);
         self.state = State::Idle;
         self.phasing = None;
         self.slicer = None;
         // image is kept until finalize_image is called or next reception starts.
         self.tone_detector.reset();
+        self.idle_phasing = Some(PhasingDetector::new(default_lpm, INTERNAL_RATE));
     }
 
     fn finalize_image(&mut self, ioc: u16, lpm: u16) -> Vec<WefaxEvent> {
