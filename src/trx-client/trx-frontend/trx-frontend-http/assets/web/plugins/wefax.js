@@ -185,9 +185,25 @@ window.resetWefaxHistoryView = function () {
 };
 
 // --- Button handlers ---
+if (wefaxToggleBtn) {
+  wefaxToggleBtn.addEventListener('click', async function () {
+    try {
+      if (window.takeSchedulerControlForDecoderDisable) {
+        await window.takeSchedulerControlForDecoderDisable(wefaxToggleBtn);
+      }
+      await postPath('/toggle_wefax_decode');
+    } catch (e) {
+      console.error('WEFAX toggle failed', e);
+    }
+  });
+}
 if (wefaxClearBtn) {
-  wefaxClearBtn.addEventListener('click', function () {
-    fetch('/clear_wefax_decode', { method: 'POST' });
-    window.resetWefaxHistoryView();
+  wefaxClearBtn.addEventListener('click', async function () {
+    try {
+      await postPath('/clear_wefax_decode');
+      window.resetWefaxHistoryView();
+    } catch (e) {
+      console.error('WEFAX clear failed', e);
+    }
   });
 }
