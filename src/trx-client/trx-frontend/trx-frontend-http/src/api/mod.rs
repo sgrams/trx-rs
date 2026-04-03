@@ -664,6 +664,7 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
         .service(assets::cw_js)
         .service(assets::sat_js)
         .service(assets::wefax_js)
+        .service(assets::wefax_image)
         .service(assets::bookmarks_js)
         .service(assets::scheduler_js)
         .service(assets::sat_scheduler_js)

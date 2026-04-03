@@ -3265,6 +3265,7 @@ dependencies = [
 name = "trx-wefax"
 version = "0.1.0"
 dependencies = [
+ "base64",
  "png",
  "trx-core",
 ]

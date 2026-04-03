@@ -5,6 +5,7 @@
 //! Static asset serving endpoints (HTML pages, JS, CSS, favicon, logo).
 
 use actix_web::http::header;
+use actix_web::web;
 use actix_web::{get, HttpRequest, HttpResponse, Responder};
 use std::sync::OnceLock;
 
@@ -334,6 +335,30 @@ pub(crate) async fn wefax_js(req: HttpRequest) -> impl Responder {
         "application/javascript; charset=utf-8",
         c,
     )
+}
+
+#[get("/images/{filename}")]
+pub(crate) async fn wefax_image(path: web::Path<String>) -> impl Responder {
+    let filename = path.into_inner();
+    // Reject path traversal attempts.
+    if filename.contains('/') || filename.contains('\\') || filename.contains("..") {
+        return HttpResponse::BadRequest().body("invalid filename");
+    }
+    if !filename.ends_with(".png") {
+        return HttpResponse::BadRequest().body("only .png files are accessible");
+    }
+    let dir = dirs::cache_dir()
+        .unwrap_or_else(|| std::path::PathBuf::from(".cache"))
+        .join("trx-rs")
+        .join("wefax");
+    let file_path = dir.join(&filename);
+    match std::fs::read(&file_path) {
+        Ok(data) => HttpResponse::Ok()
+            .insert_header((header::CONTENT_TYPE, "image/png"))
+            .insert_header((header::CACHE_CONTROL, "public, max-age=86400"))
+            .body(data),
+        Err(_) => HttpResponse::NotFound().body("image not found"),
+    }
 }
 
 #[get("/bookmarks.js")]
