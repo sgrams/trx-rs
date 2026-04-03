@@ -20,6 +20,21 @@ use trx_frontend::FrontendRuntimeContext;
 
 use super::{gzip_bytes, send_command, RemoteQuery};
 
+/// Resolve the rig state for a specific remote, falling back to the global
+/// default when no `remote` is given or the rig is unknown.
+fn resolve_rig_state(
+    remote: Option<&str>,
+    context: &FrontendRuntimeContext,
+    fallback: &watch::Receiver<RigState>,
+) -> RigState {
+    remote
+        .filter(|s| !s.is_empty())
+        .and_then(|rid| context.rig_state_rx(rid))
+        .unwrap_or_else(|| fallback.clone())
+        .borrow()
+        .clone()
+}
+
 // ============================================================================
 // Decoder registry
 // ============================================================================
@@ -242,13 +257,15 @@ pub async fn decode_events(
 pub async fn toggle_aprs_decode(
     query: web::Query<RemoteQuery>,
     state: web::Data<watch::Receiver<RigState>>,
+    context: web::Data<Arc<FrontendRuntimeContext>>,
     rig_tx: web::Data<mpsc::Sender<RigRequest>>,
 ) -> Result<HttpResponse, Error> {
-    let enabled = state.get_ref().borrow().decoders.aprs_decode_enabled;
+    let q = query.into_inner();
+    let rig_state = resolve_rig_state(q.remote.as_deref(), &context, state.get_ref());
     send_command(
         &rig_tx,
-        RigCommand::SetAprsDecodeEnabled(!enabled),
-        query.into_inner().remote,
+        RigCommand::SetAprsDecodeEnabled(!rig_state.decoders.aprs_decode_enabled),
+        q.remote,
     )
     .await
 }
@@ -257,13 +274,15 @@ pub async fn toggle_aprs_decode(
 pub async fn toggle_hf_aprs_decode(
     query: web::Query<RemoteQuery>,
     state: web::Data<watch::Receiver<RigState>>,
+    context: web::Data<Arc<FrontendRuntimeContext>>,
     rig_tx: web::Data<mpsc::Sender<RigRequest>>,
 ) -> Result<HttpResponse, Error> {
-    let enabled = state.get_ref().borrow().decoders.hf_aprs_decode_enabled;
+    let q = query.into_inner();
+    let rig_state = resolve_rig_state(q.remote.as_deref(), &context, state.get_ref());
     send_command(
         &rig_tx,
-        RigCommand::SetHfAprsDecodeEnabled(!enabled),
-        query.into_inner().remote,
+        RigCommand::SetHfAprsDecodeEnabled(!rig_state.decoders.hf_aprs_decode_enabled),
+        q.remote,
     )
     .await
 }
@@ -272,13 +291,15 @@ pub async fn toggle_hf_aprs_decode(
 pub async fn toggle_cw_decode(
     query: web::Query<RemoteQuery>,
     state: web::Data<watch::Receiver<RigState>>,
+    context: web::Data<Arc<FrontendRuntimeContext>>,
     rig_tx: web::Data<mpsc::Sender<RigRequest>>,
 ) -> Result<HttpResponse, Error> {
-    let enabled = state.get_ref().borrow().decoders.cw_decode_enabled;
+    let q = query.into_inner();
+    let rig_state = resolve_rig_state(q.remote.as_deref(), &context, state.get_ref());
     send_command(
         &rig_tx,
-        RigCommand::SetCwDecodeEnabled(!enabled),
-        query.into_inner().remote,
+        RigCommand::SetCwDecodeEnabled(!rig_state.decoders.cw_decode_enabled),
+        q.remote,
     )
     .await
 }
@@ -332,13 +353,15 @@ pub async fn set_cw_tone(
 pub async fn toggle_ft8_decode(
     query: web::Query<RemoteQuery>,
     state: web::Data<watch::Receiver<RigState>>,
+    context: web::Data<Arc<FrontendRuntimeContext>>,
     rig_tx: web::Data<mpsc::Sender<RigRequest>>,
 ) -> Result<HttpResponse, Error> {
-    let enabled = state.get_ref().borrow().decoders.ft8_decode_enabled;
+    let q = query.into_inner();
+    let rig_state = resolve_rig_state(q.remote.as_deref(), &context, state.get_ref());
     send_command(
         &rig_tx,
-        RigCommand::SetFt8DecodeEnabled(!enabled),
-        query.into_inner().remote,
+        RigCommand::SetFt8DecodeEnabled(!rig_state.decoders.ft8_decode_enabled),
+        q.remote,
     )
     .await
 }
@@ -347,13 +370,15 @@ pub async fn toggle_ft8_decode(
 pub async fn toggle_ft4_decode(
     query: web::Query<RemoteQuery>,
     state: web::Data<watch::Receiver<RigState>>,
+    context: web::Data<Arc<FrontendRuntimeContext>>,
     rig_tx: web::Data<mpsc::Sender<RigRequest>>,
 ) -> Result<HttpResponse, Error> {
-    let enabled = state.get_ref().borrow().decoders.ft4_decode_enabled;
+    let q = query.into_inner();
+    let rig_state = resolve_rig_state(q.remote.as_deref(), &context, state.get_ref());
     send_command(
         &rig_tx,
-        RigCommand::SetFt4DecodeEnabled(!enabled),
-        query.into_inner().remote,
+        RigCommand::SetFt4DecodeEnabled(!rig_state.decoders.ft4_decode_enabled),
+        q.remote,
     )
     .await
 }
@@ -362,13 +387,15 @@ pub async fn toggle_ft4_decode(
 pub async fn toggle_ft2_decode(
     query: web::Query<RemoteQuery>,
     state: web::Data<watch::Receiver<RigState>>,
+    context: web::Data<Arc<FrontendRuntimeContext>>,
     rig_tx: web::Data<mpsc::Sender<RigRequest>>,
 ) -> Result<HttpResponse, Error> {
-    let enabled = state.get_ref().borrow().decoders.ft2_decode_enabled;
+    let q = query.into_inner();
+    let rig_state = resolve_rig_state(q.remote.as_deref(), &context, state.get_ref());
     send_command(
         &rig_tx,
-        RigCommand::SetFt2DecodeEnabled(!enabled),
-        query.into_inner().remote,
+        RigCommand::SetFt2DecodeEnabled(!rig_state.decoders.ft2_decode_enabled),
+        q.remote,
     )
     .await
 }
@@ -377,13 +404,15 @@ pub async fn toggle_ft2_decode(
 pub async fn toggle_wspr_decode(
     query: web::Query<RemoteQuery>,
     state: web::Data<watch::Receiver<RigState>>,
+    context: web::Data<Arc<FrontendRuntimeContext>>,
     rig_tx: web::Data<mpsc::Sender<RigRequest>>,
 ) -> Result<HttpResponse, Error> {
-    let enabled = state.get_ref().borrow().decoders.wspr_decode_enabled;
+    let q = query.into_inner();
+    let rig_state = resolve_rig_state(q.remote.as_deref(), &context, state.get_ref());
     send_command(
         &rig_tx,
-        RigCommand::SetWsprDecodeEnabled(!enabled),
-        query.into_inner().remote,
+        RigCommand::SetWsprDecodeEnabled(!rig_state.decoders.wspr_decode_enabled),
+        q.remote,
     )
     .await
 }
@@ -392,13 +421,15 @@ pub async fn toggle_wspr_decode(
 pub async fn toggle_lrpt_decode(
     query: web::Query<RemoteQuery>,
     state: web::Data<watch::Receiver<RigState>>,
+    context: web::Data<Arc<FrontendRuntimeContext>>,
     rig_tx: web::Data<mpsc::Sender<RigRequest>>,
 ) -> Result<HttpResponse, Error> {
-    let enabled = state.get_ref().borrow().decoders.lrpt_decode_enabled;
+    let q = query.into_inner();
+    let rig_state = resolve_rig_state(q.remote.as_deref(), &context, state.get_ref());
     send_command(
         &rig_tx,
-        RigCommand::SetLrptDecodeEnabled(!enabled),
-        query.into_inner().remote,
+        RigCommand::SetLrptDecodeEnabled(!rig_state.decoders.lrpt_decode_enabled),
+        q.remote,
     )
     .await
 }
@@ -407,13 +438,15 @@ pub async fn toggle_lrpt_decode(
 pub async fn toggle_wefax_decode(
     query: web::Query<RemoteQuery>,
     state: web::Data<watch::Receiver<RigState>>,
+    context: web::Data<Arc<FrontendRuntimeContext>>,
     rig_tx: web::Data<mpsc::Sender<RigRequest>>,
 ) -> Result<HttpResponse, Error> {
-    let enabled = state.get_ref().borrow().decoders.wefax_decode_enabled;
+    let q = query.into_inner();
+    let rig_state = resolve_rig_state(q.remote.as_deref(), &context, state.get_ref());
     send_command(
         &rig_tx,
-        RigCommand::SetWefaxDecodeEnabled(!enabled),
-        query.into_inner().remote,
+        RigCommand::SetWefaxDecodeEnabled(!rig_state.decoders.wefax_decode_enabled),
+        q.remote,
     )
     .await
 }
