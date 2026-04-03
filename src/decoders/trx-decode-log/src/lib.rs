@@ -25,14 +25,14 @@ use trx_core::decode::{AprsPacket, CwEvent, Ft8Message, WefaxMessage, WsprMessag
 // ---------------------------------------------------------------------------
 
 fn default_decode_logs_dir() -> String {
-    if let Some(data_dir) = dirs::data_dir() {
-        return data_dir
+    if let Some(cache_dir) = dirs::cache_dir() {
+        return cache_dir
             .join("trx-rs")
             .join("decoders")
             .to_string_lossy()
             .to_string();
     }
-    "logs/decoders".to_string()
+    ".cache/trx-rs/decoders".to_string()
 }
 
 /// Server-side decoder file logging configuration.

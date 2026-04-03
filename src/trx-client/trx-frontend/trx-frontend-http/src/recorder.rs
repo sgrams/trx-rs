@@ -28,7 +28,7 @@ use tracing::{error, info, warn};
 pub struct RecorderConfig {
     /// Whether the recorder feature is available.
     pub enabled: bool,
-    /// Directory for recorded files. Default: `$XDG_DATA_HOME/trx-rs/recordings/`.
+    /// Directory for recorded files. Default: `$XDG_CACHE_HOME/trx-rs/recordings/`.
     pub output_dir: Option<String>,
     /// Maximum duration of a single recording in seconds. None = unlimited.
     pub max_duration_secs: Option<u64>,
@@ -49,8 +49,8 @@ impl RecorderConfig {
         if let Some(ref dir) = self.output_dir {
             PathBuf::from(dir)
         } else {
-            dirs::data_dir()
-                .unwrap_or_else(|| PathBuf::from("."))
+            dirs::cache_dir()
+                .unwrap_or_else(|| PathBuf::from(".cache"))
                 .join("trx-rs")
                 .join("recordings")
         }
