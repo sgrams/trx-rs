@@ -2692,7 +2692,14 @@ pub async fn run_wefax_decoder(
         sample_rate, channels
     );
 
-    let config = WefaxConfig::default();
+    let wefax_output_dir = dirs::cache_dir()
+        .unwrap_or_else(|| std::path::PathBuf::from(".cache"))
+        .join("trx-rs")
+        .join("wefax");
+    let config = WefaxConfig {
+        output_dir: Some(wefax_output_dir.to_string_lossy().into_owned()),
+        ..WefaxConfig::default()
+    };
     let mut decoder = WefaxDecoder::new(sample_rate, config);
     let mut was_active = false;
     let mut last_reset_seq: u64 = 0;

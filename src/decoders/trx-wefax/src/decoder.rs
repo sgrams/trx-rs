@@ -9,6 +9,7 @@
 
 use std::path::PathBuf;
 
+use base64::Engine;
 use trx_core::decode::{WefaxMessage, WefaxProgress};
 
 use crate::config::WefaxConfig;
@@ -174,6 +175,8 @@ impl WefaxDecoder {
                                     .last_line()
                                     .map(|l| l.to_vec())
                                     .unwrap_or_default();
+                                let b64 = base64::engine::general_purpose::STANDARD
+                                    .encode(&line_data);
                                 events.push(WefaxEvent::Progress(
                                     WefaxProgress {
                                         rig_id: None,
@@ -181,7 +184,7 @@ impl WefaxDecoder {
                                         lpm,
                                         ioc,
                                         pixels_per_line: WefaxConfig::pixels_per_line(ioc),
-                                        line_data: Some(line_data.clone()),
+                                        line_data: Some(b64),
                                     },
                                     line_data,
                                 ));

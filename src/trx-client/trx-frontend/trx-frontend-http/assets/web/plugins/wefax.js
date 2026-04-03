@@ -82,9 +82,15 @@ function renderGalleryThumbnail(msg) {
   var ts = msg._tsMs ? new Date(msg._tsMs).toLocaleString() : '\u2014';
   var info = msg.ioc + ' IOC \u00b7 ' + msg.lpm + ' LPM \u00b7 ' + msg.line_count + ' lines';
 
-  if (msg.path) {
+  var imgSrc = msg._dataUrl
+    ? msg._dataUrl
+    : msg.path
+      ? '/images/' + escapeHtml(msg.path.split('/').pop())
+      : null;
+
+  if (imgSrc) {
     card.innerHTML =
-      '<img src="/images/' + escapeHtml(msg.path.split('/').pop()) + '"' +
+      '<img src="' + imgSrc + '"' +
       ' alt="WEFAX" loading="lazy"' +
       ' style="width:100%; image-rendering:pixelated;" />' +
       '<div style="font-size:0.8rem; margin-top:0.2rem;">' + escapeHtml(ts) + '</div>' +
@@ -141,15 +147,18 @@ window.onServerWefaxProgress = function (msg) {
 
 window.onServerWefax = function (msg) {
   msg._tsMs = msg.ts_ms || Date.now();
-  wefaxImageHistory.unshift(msg);
-  pruneWefaxHistory();
-  scheduleWefaxGalleryRender();
 
+  // Capture the live canvas as a data URI for gallery thumbnails.
   if (wefaxLiveCtx && wefaxLiveLineCount > 0) {
     var trimmed = wefaxLiveCtx.getImageData(0, 0, wefaxLiveCanvas.width, wefaxLiveLineCount);
     wefaxLiveCanvas.height = wefaxLiveLineCount;
     wefaxLiveCtx.putImageData(trimmed, 0, 0);
+    try { msg._dataUrl = wefaxLiveCanvas.toDataURL('image/png'); } catch (e) {}
   }
+
+  wefaxImageHistory.unshift(msg);
+  pruneWefaxHistory();
+  scheduleWefaxGalleryRender();
 
   if (wefaxStatus) {
     wefaxStatus.textContent = 'Complete \u2014 ' + msg.line_count + ' lines';

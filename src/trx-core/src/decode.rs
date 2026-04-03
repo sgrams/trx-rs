@@ -310,5 +310,5 @@ pub struct WefaxProgress {
     pub pixels_per_line: u16,
     /// Base64-encoded greyscale line data (one row of pixels).
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub line_data: Option<Vec<u8>>,
+    pub line_data: Option<String>,
 }
