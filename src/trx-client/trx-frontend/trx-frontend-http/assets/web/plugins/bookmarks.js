@@ -298,6 +298,15 @@ function bmPrefillFromStatus() {
   if (typeof currentBandwidthHz === "number" && currentBandwidthHz > 0) {
     document.getElementById("bm-bw").value = Math.round(currentBandwidthHz);
   }
+  // Prefill decoder checkboxes from current toggle button state.
+  const activeDecoders = (window.decoderRegistry || [])
+    .filter(d => d.bookmark_selectable && d.activation === "toggle")
+    .filter(d => {
+      const btn = document.getElementById(d.id + "-decode-toggle-btn");
+      return btn && btn.dataset.enabled === "true";
+    })
+    .map(d => d.id);
+  bmWriteDecoders(activeDecoders);
 }
 
 async function bmSave(e) {
@@ -445,7 +454,11 @@ async function bmApply(bm) {
     );
     const shouldToggle = hasDecoders && toggleDecoders.length > 0;
     const decoderPromise = shouldToggle ? (async () => {
-      const statusResp = await fetch("/status");
+      let statusUrl = "/status";
+      if (typeof lastActiveRigId !== "undefined" && lastActiveRigId) {
+        statusUrl += "?remote=" + encodeURIComponent(lastActiveRigId);
+      }
+      const statusResp = await fetch(statusUrl);
       if (statusResp.ok) {
         const st = await statusResp.json();
         const toggles = [];
