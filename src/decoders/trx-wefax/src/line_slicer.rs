@@ -58,13 +58,17 @@ impl LineSlicer {
             self.aligned = true;
         }
 
-        // Extract complete lines.
-        while self.buffer.len() >= self.samples_per_line {
-            let line_samples = &self.buffer[..self.samples_per_line];
+        // Extract complete lines (single drain at the end to avoid O(n²)).
+        let mut offset = 0;
+        while offset + self.samples_per_line <= self.buffer.len() {
+            let line_samples = &self.buffer[offset..offset + self.samples_per_line];
             let pixels = self.resample_line(line_samples);
             lines.push(pixels);
-            self.buffer.drain(..self.samples_per_line);
+            offset += self.samples_per_line;
             self.consumed += self.samples_per_line;
+        }
+        if offset > 0 {
+            self.buffer.drain(..offset);
         }
 
         lines

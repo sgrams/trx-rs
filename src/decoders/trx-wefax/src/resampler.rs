@@ -4,9 +4,13 @@
 
 //! Polyphase rational resampler: 48000 Hz → 11025 Hz.
 //!
-//! Ratio: 11025/48000 = 441/1920 (after GCD reduction).
+//! Ratio: 11025/48000 = 147/640 (after GCD reduction).
 //! Uses a polyphase FIR filter bank to avoid computing the full upsampled
 //! signal, consistent with `docs/Optimization-Guidelines.md`.
+//!
+//! Block-based: builds a linear `[history | input]` work buffer so the inner
+//! FIR convolution loop uses straight indexing (no modular arithmetic) and
+//! benefits from auto-vectorisation.
 
 /// Internal processing sample rate.
 pub const INTERNAL_RATE: u32 = 11025;
@@ -24,7 +28,7 @@ pub struct Resampler {
     taps_per_phase: usize,
     /// Polyphase filter bank: `up` sub-filters, each with `taps_per_phase` taps.
     bank: Vec<Vec<f32>>,
-    /// Input history buffer for FIR convolution.
+    /// Input history buffer (`taps_per_phase` samples from the previous block).
     history: Vec<f32>,
     /// Current phase accumulator (tracks position in the up-sampled domain).
     phase: usize,
@@ -82,29 +86,38 @@ impl Resampler {
     }
 
     /// Process a block of input samples, returning resampled output.
+    ///
+    /// Uses a linear `[history | input]` work buffer so the inner FIR
+    /// convolution runs on contiguous memory with plain indexing.
     #[allow(clippy::needless_range_loop)]
     pub fn process(&mut self, input: &[f32]) -> Vec<f32> {
+        let tpp = self.taps_per_phase;
         let mut output = Vec::with_capacity(input.len() * self.up / self.down + 2);
 
-        for &sample in input {
-            // Shift sample into history (newest at end).
-            self.history.copy_within(1.., 0);
-            self.history[self.taps_per_phase - 1] = sample;
+        // Contiguous work buffer: [previous history | new input].
+        let mut work = Vec::with_capacity(tpp + input.len());
+        work.extend_from_slice(&self.history);
+        work.extend_from_slice(input);
 
+        for p in 0..input.len() {
             // Generate output samples for all phases that map to this input.
             while self.phase < self.up {
                 let coeffs = &self.bank[self.phase];
                 let mut acc = 0.0f32;
-                for k in 0..self.taps_per_phase {
-                    // History is stored newest-last, coefficients are indexed
-                    // from newest to oldest (matching the polyphase decomposition).
-                    acc += coeffs[k] * self.history[self.taps_per_phase - 1 - k];
+                // Newest sample is at work[p + tpp], oldest at work[p + 1].
+                // coeffs[k] corresponds to the (k+1)-th newest sample.
+                for k in 0..tpp {
+                    acc += coeffs[k] * work[p + tpp - k];
                 }
                 output.push(acc);
                 self.phase += self.down;
             }
             self.phase -= self.up;
         }
+
+        // Save last `tpp` samples as history for next block.
+        let work_len = work.len();
+        self.history.copy_from_slice(&work[work_len - tpp..]);
 
         output
     }

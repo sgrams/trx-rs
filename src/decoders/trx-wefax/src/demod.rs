@@ -7,6 +7,9 @@
 //! Computes instantaneous frequency from the analytic signal produced by a
 //! Hilbert transform FIR, then maps the frequency to a 0.0–1.0 luminance
 //! value (1500 Hz = black, 2300 Hz = white).
+//!
+//! Uses block-based linear processing for auto-vectorisation of the FIR
+//! convolution, consistent with `docs/Optimization-Guidelines.md`.
 
 use std::f32::consts::PI;
 
@@ -18,85 +21,88 @@ const HILBERT_DELAY: usize = HILBERT_TAPS / 2;
 
 /// FM discriminator producing luminance values from audio samples.
 pub struct FmDiscriminator {
-    sample_rate: f32,
     /// Hilbert FIR coefficients (odd-length, anti-symmetric).
-    hilbert_coeffs: Vec<f32>,
-    /// Input sample delay line for FIR convolution.
-    delay_line: Vec<f32>,
-    /// Write position in delay line (circular buffer).
-    write_pos: usize,
+    hilbert_coeffs: [f32; HILBERT_TAPS],
+    /// Tail buffer: last `HILBERT_TAPS - 1` input samples from the previous
+    /// block (used to prime the next convolution without modular indexing).
+    tail: Vec<f32>,
     /// Previous analytic signal sample for frequency differentiation.
     prev_i: f32,
     prev_q: f32,
-    /// Centre frequency for luminance mapping.
-    center_hz: f32,
-    /// Deviation for luminance mapping.
-    deviation_hz: f32,
+    /// Pre-computed constants.
+    inv_2pi_ts: f32,
+    black_hz: f32,
+    inv_range_hz: f32,
 }
 
 impl FmDiscriminator {
     pub fn new(sample_rate: u32, center_hz: f32, deviation_hz: f32) -> Self {
-        let coeffs = design_hilbert_fir(HILBERT_TAPS);
+        let coeffs = design_hilbert_fir();
+        let sr = sample_rate as f32;
         Self {
-            sample_rate: sample_rate as f32,
             hilbert_coeffs: coeffs,
-            delay_line: vec![0.0; HILBERT_TAPS],
-            write_pos: 0,
+            tail: vec![0.0; HILBERT_TAPS - 1],
             prev_i: 0.0,
             prev_q: 0.0,
-            center_hz,
-            deviation_hz,
+            inv_2pi_ts: sr / (2.0 * PI),
+            black_hz: center_hz - deviation_hz,
+            inv_range_hz: 1.0 / (2.0 * deviation_hz),
         }
     }
 
     /// Process a block of real-valued audio samples, returning luminance
     /// values in the range 0.0 (black / 1500 Hz) to 1.0 (white / 2300 Hz).
+    ///
+    /// The Hilbert FIR is evaluated on a contiguous linear buffer
+    /// (`[tail | samples]`) so the inner loop uses straight indexing—no
+    /// modular arithmetic—and the compiler can auto-vectorise.
     pub fn process(&mut self, samples: &[f32]) -> Vec<f32> {
-        let mut output = Vec::with_capacity(samples.len());
         let n = HILBERT_TAPS;
         let half = HILBERT_DELAY;
-        let inv_2pi_ts = self.sample_rate / (2.0 * PI);
-        let black_hz = self.center_hz - self.deviation_hz; // 1500
-        let range_hz = 2.0 * self.deviation_hz; // 800
+        let tail_len = n - 1;
 
-        for &sample in samples {
-            // Write into circular delay line.
-            self.delay_line[self.write_pos] = sample;
-            self.write_pos = (self.write_pos + 1) % n;
+        // Build contiguous work buffer: [tail from previous block | new samples].
+        let work_len = tail_len + samples.len();
+        let mut work = Vec::with_capacity(work_len);
+        work.extend_from_slice(&self.tail);
+        work.extend_from_slice(samples);
 
-            // Compute Hilbert-transformed (quadrature) output via FIR.
+        let mut output = Vec::with_capacity(samples.len());
+        let coeffs = &self.hilbert_coeffs;
+
+        for i in 0..samples.len() {
+            // Linear FIR convolution — window is work[i..i+n].
+            let window = &work[i..i + n];
             let mut q = 0.0f32;
             for k in 0..n {
-                let idx = (self.write_pos + k) % n;
-                q += self.hilbert_coeffs[k] * self.delay_line[idx];
+                q += coeffs[k] * window[n - 1 - k];
             }
 
-            // The in-phase component is the delayed input (centre tap of the
-            // Hilbert FIR corresponds to the group delay).
-            let i = self.delay_line[(self.write_pos + half) % n];
+            // In-phase component is the delayed input (group delay = half).
+            let i_val = work[i + half];
 
             // Instantaneous frequency via phase differentiation:
-            // f = arg(z[n] · conj(z[n-1])) / (2π·Ts)
-            // z[n] · conj(z[n-1]) = (i + jq)(prev_i - j·prev_q)
-            let di = i * self.prev_i + q * self.prev_q;
-            let dq = q * self.prev_i - i * self.prev_q;
-            let phase_diff = dq.atan2(di);
-            let freq = phase_diff.abs() * inv_2pi_ts;
+            // f = |arg(z[n] · conj(z[n-1]))| / (2π·Ts)
+            let di = i_val * self.prev_i + q * self.prev_q;
+            let dq = q * self.prev_i - i_val * self.prev_q;
+            let freq = dq.atan2(di).abs() * self.inv_2pi_ts;
 
             // Map frequency to luminance.
-            let lum = ((freq - black_hz) / range_hz).clamp(0.0, 1.0);
+            let lum = ((freq - self.black_hz) * self.inv_range_hz).clamp(0.0, 1.0);
             output.push(lum);
 
-            self.prev_i = i;
+            self.prev_i = i_val;
             self.prev_q = q;
         }
+
+        // Save tail for next call.
+        self.tail.copy_from_slice(&work[work_len - tail_len..]);
 
         output
     }
 
     pub fn reset(&mut self) {
-        self.delay_line.fill(0.0);
-        self.write_pos = 0;
+        self.tail.fill(0.0);
         self.prev_i = 0.0;
         self.prev_q = 0.0;
     }
@@ -106,26 +112,26 @@ impl FmDiscriminator {
 ///
 /// The impulse response is: h[n] = 2/(πn) for odd n (relative to centre),
 /// 0 for even n, windowed with a Blackman window.
-#[allow(clippy::needless_range_loop)]
-fn design_hilbert_fir(num_taps: usize) -> Vec<f32> {
-    assert!(num_taps % 2 == 1, "Hilbert FIR must have odd length");
-    let mut coeffs = vec![0.0f32; num_taps];
-    let mid = (num_taps - 1) as f64 / 2.0;
+fn design_hilbert_fir() -> [f32; HILBERT_TAPS] {
+    let num_taps = HILBERT_TAPS;
+    let mut coeffs = [0.0f32; HILBERT_TAPS];
+    let m = (num_taps - 1) as f64;
+    let mid = m / 2.0;
 
-    for i in 0..num_taps {
+    let mut i = 0;
+    while i < num_taps {
         let n = i as f64 - mid;
         let ni = n.round() as i64;
-        if ni == 0 {
-            coeffs[i] = 0.0;
-        } else if ni % 2 != 0 {
+        if ni != 0 && ni % 2 != 0 {
             // Hilbert kernel: 2/(π·n) for odd offsets.
             let h = 2.0 / (std::f64::consts::PI * n);
             // Blackman window.
             let w = 0.42
-                - 0.5 * (2.0 * std::f64::consts::PI * i as f64 / (num_taps - 1) as f64).cos()
-                + 0.08 * (4.0 * std::f64::consts::PI * i as f64 / (num_taps - 1) as f64).cos();
+                - 0.5 * (2.0 * std::f64::consts::PI * i as f64 / m).cos()
+                + 0.08 * (4.0 * std::f64::consts::PI * i as f64 / m).cos();
             coeffs[i] = (h * w) as f32;
         }
+        i += 1;
     }
 
     coeffs
