@@ -249,6 +249,15 @@ function addWefaxImage(msg) {
 
 // ── SSE event handlers (public API) ─────────────────────────────────
 window.onServerWefaxProgress = function (msg) {
+  // State-only update (no image data): show decoder state in status.
+  if (msg.state && !msg.line_data) {
+    if (wefaxDom.status) {
+      wefaxDom.status.textContent = msg.state;
+      wefaxDom.status.style.color = 'var(--text-accent)';
+    }
+    return;
+  }
+
   if (msg.line_count <= 1 || !wefaxLiveCtx) {
     resetLiveCanvas(msg.pixels_per_line || 1809);
   }

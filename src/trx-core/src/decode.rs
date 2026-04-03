@@ -311,4 +311,7 @@ pub struct WefaxProgress {
     /// Base64-encoded greyscale line data (one row of pixels).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub line_data: Option<String>,
+    /// Decoder state label (e.g. "APT Start 576", "Phasing", "Receiving").
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub state: Option<String>,
 }

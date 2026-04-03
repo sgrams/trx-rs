@@ -114,13 +114,13 @@ impl WefaxDecoder {
                         match tone {
                             AptTone::Start576 => {
                                 self.idle_phasing = None;
-                                self.transition_to_start_detected(576);
+                                events.push(self.transition_to_start_detected(576));
                                 got_start = true;
                                 break;
                             }
                             AptTone::Start288 => {
                                 self.idle_phasing = None;
-                                self.transition_to_start_detected(288);
+                                events.push(self.transition_to_start_detected(288));
                                 got_start = true;
                                 break;
                             }
@@ -143,7 +143,7 @@ impl WefaxDecoder {
                                     .as_millis() as i64,
                             );
                             self.idle_phasing = None;
-                            self.transition_to_receiving(ioc, lpm, offset);
+                            events.push(self.transition_to_receiving(ioc, lpm, offset));
                         }
                     }
                 }
@@ -157,7 +157,7 @@ impl WefaxDecoder {
                     .any(|r| matches!(r.tone, Some(AptTone::Start576 | AptTone::Start288)));
 
                 if !still_start {
-                    self.transition_to_phasing(ioc);
+                    events.push(self.transition_to_phasing(ioc));
                 }
             }
 
@@ -173,7 +173,7 @@ impl WefaxDecoder {
 
                 if let Some(ref mut phasing) = self.phasing {
                     if let Some(offset) = phasing.process(&luminance) {
-                        self.transition_to_receiving(ioc, lpm, offset);
+                        events.push(self.transition_to_receiving(ioc, lpm, offset));
                     }
                 }
             }
@@ -214,6 +214,7 @@ impl WefaxDecoder {
                                         ioc,
                                         pixels_per_line: WefaxConfig::pixels_per_line(ioc),
                                         line_data: Some(b64),
+                                        state: None,
                                     },
                                     line_data,
                                 ));
@@ -255,7 +256,22 @@ impl WefaxDecoder {
         )
     }
 
-    fn transition_to_start_detected(&mut self, ioc: u16) {
+    fn state_event(&self, label: &str, ioc: u16, lpm: u16) -> WefaxEvent {
+        WefaxEvent::Progress(
+            WefaxProgress {
+                rig_id: None,
+                line_count: 0,
+                lpm,
+                ioc,
+                pixels_per_line: WefaxConfig::pixels_per_line(ioc),
+                line_data: None,
+                state: Some(label.to_string()),
+            },
+            Vec::new(),
+        )
+    }
+
+    fn transition_to_start_detected(&mut self, ioc: u16) -> WefaxEvent {
         let ioc = self.config.ioc.unwrap_or(ioc);
         self.state = State::StartDetected { ioc };
         self.reception_start_ms = Some(
@@ -264,22 +280,26 @@ impl WefaxDecoder {
                 .unwrap_or_default()
                 .as_millis() as i64,
         );
+        let lpm = self.config.lpm.unwrap_or(120);
+        self.state_event(&format!("APT Start {}", ioc), ioc, lpm)
     }
 
-    fn transition_to_phasing(&mut self, ioc: u16) {
+    fn transition_to_phasing(&mut self, ioc: u16) -> WefaxEvent {
         let lpm = self.config.lpm.unwrap_or(120); // Default 120 LPM.
         self.tone_detector.reset();
         self.phasing = Some(PhasingDetector::new(lpm, INTERNAL_RATE));
         self.demodulator.reset();
         self.state = State::Phasing { ioc, lpm };
+        self.state_event("Phasing", ioc, lpm)
     }
 
-    fn transition_to_receiving(&mut self, ioc: u16, lpm: u16, phase_offset: usize) {
+    fn transition_to_receiving(&mut self, ioc: u16, lpm: u16, phase_offset: usize) -> WefaxEvent {
         let ppl = WefaxConfig::pixels_per_line(ioc) as usize;
         self.slicer = Some(LineSlicer::new(lpm, ioc, INTERNAL_RATE, phase_offset));
         self.image = Some(ImageAssembler::new(ppl));
         self.tone_detector.reset();
         self.state = State::Receiving { ioc, lpm };
+        self.state_event("Receiving", ioc, lpm)
     }
 
     fn transition_to_idle(&mut self) {
