@@ -134,7 +134,7 @@ pub const DECODER_REGISTRY: &[DecoderDescriptor] = &[
         id: "wefax",
         label: "WEFAX",
         activation: DecoderActivation::Toggle,
-        active_modes: &["USB", "LSB", "AM"],
+        active_modes: &["USB", "LSB", "AM", "DIG"],
         background_decode: false,
         bookmark_selectable: true,
     },

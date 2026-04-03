@@ -2705,7 +2705,7 @@ pub async fn run_wefax_decoder(
     let mut last_reset_seq: u64 = 0;
 
     let is_wefax_mode = |mode: &RigMode| {
-        matches!(mode, RigMode::USB | RigMode::LSB | RigMode::AM)
+        matches!(mode, RigMode::USB | RigMode::LSB | RigMode::AM | RigMode::DIG)
     };
 
     let mut active = state_rx.borrow().decoders.wefax_decode_enabled
