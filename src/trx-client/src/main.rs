@@ -524,6 +524,8 @@ async fn async_init() -> DynResult<AppState> {
                 }
                 DecodedMessage::LrptImage(_) => {}
                 DecodedMessage::LrptProgress(_) => {}
+                DecodedMessage::Wefax(_) => {}
+                DecodedMessage::WefaxProgress(_) => {}
             }
         });
 
