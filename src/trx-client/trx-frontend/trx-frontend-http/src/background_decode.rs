@@ -254,14 +254,12 @@ impl BackgroundDecodeManager {
             .and_then(|guard| guard.clone())
     }
 
-    fn send_audio_cmd(&self, cmd: VChanAudioCmd) {
+    fn send_audio_cmd_to_rig(&self, rig_id: &str, cmd: VChanAudioCmd) {
         // Route through per-rig sender when available.
-        if let Some(rig_id) = self.active_rig_id() {
-            if let Ok(map) = self.context.vchan.rig_audio_cmd.read() {
-                if let Some(tx) = map.get(&rig_id) {
-                    let _ = tx.try_send(cmd);
-                    return;
-                }
+        if let Ok(map) = self.context.vchan.rig_audio_cmd.read() {
+            if let Some(tx) = map.get(rig_id) {
+                let _ = tx.try_send(cmd);
+                return;
             }
         }
         // Fall back to global sender.
@@ -273,7 +271,7 @@ impl BackgroundDecodeManager {
     }
 
     fn remove_channel(&self, channel: &VirtualBackgroundDecodeChannel) {
-        self.send_audio_cmd(VChanAudioCmd::Remove(channel.uuid));
+        self.send_audio_cmd_to_rig(&channel.rig_id, VChanAudioCmd::Remove(channel.uuid));
     }
 
     fn clear_runtime_channels(&self, runtime: &mut BackgroundRuntimeState) {
@@ -444,13 +442,16 @@ impl BackgroundDecodeManager {
             if runtime.active_channels.contains_key(&bookmark_id) {
                 continue;
             }
-            self.send_audio_cmd(VChanAudioCmd::SubscribeBackground {
-                uuid: desired.uuid,
-                freq_hz: desired.freq_hz,
-                mode: desired.mode.clone(),
-                bandwidth_hz: desired.bandwidth_hz,
-                decoder_kinds: desired.decoder_kinds.clone(),
-            });
+            self.send_audio_cmd_to_rig(
+                &desired.rig_id,
+                VChanAudioCmd::SubscribeBackground {
+                    uuid: desired.uuid,
+                    freq_hz: desired.freq_hz,
+                    mode: desired.mode.clone(),
+                    bandwidth_hz: desired.bandwidth_hz,
+                    decoder_kinds: desired.decoder_kinds.clone(),
+                },
+            );
             runtime.active_channels.insert(bookmark_id, desired);
         }
 
