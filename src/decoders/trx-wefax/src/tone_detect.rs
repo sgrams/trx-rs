@@ -2,23 +2,25 @@
 //
 // SPDX-License-Identifier: BSD-2-Clause
 
-//! Goertzel-based APT tone detector for WEFAX start/stop signals.
+//! APT tone detector for WEFAX start/stop signals.
 //!
-//! Detects three tones:
-//! - 300 Hz: Start tone for IOC 576
-//! - 675 Hz: Start tone for IOC 288
-//! - 450 Hz: Stop tone (end of transmission)
+//! Detects three APT signals by counting black↔white transitions in the
+//! **demodulated luminance** stream (0.0–1.0):
+//! - 300 transitions/s: Start signal for IOC 576
+//! - 675 transitions/s: Start signal for IOC 288
+//! - 450 transitions/s: Stop signal (end of transmission)
 //!
-//! Uses the same Goertzel pattern as `trx-cw`.
+//! This matches the fldigi approach: the APT "tones" are not audio-frequency
+//! tones but transition rates in the demodulated FM output.
 
 /// Detected APT tone type.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AptTone {
-    /// Start tone for IOC 576 (300 Hz).
+    /// Start tone for IOC 576 (300 transitions/s).
     Start576,
-    /// Start tone for IOC 288 (675 Hz).
+    /// Start tone for IOC 288 (675 transitions/s).
     Start288,
-    /// Stop tone (450 Hz).
+    /// Stop tone (450 transitions/s).
     Stop,
 }
 
@@ -42,65 +44,74 @@ pub struct ToneDetectResult {
     pub sustained_s: f32,
 }
 
-/// Goertzel tone detector for APT start/stop signals.
+/// Luminance threshold above which a sample is considered "high" (white).
+const HIGH_THRESHOLD: f32 = 0.84;
+/// Luminance threshold below which a sample is considered "low" (black).
+const LOW_THRESHOLD: f32 = 0.16;
+
+/// Frequency tolerance for matching APT frequencies (Hz).
+const FREQ_TOLERANCE: u32 = 10;
+
+/// APT transition-counting detector operating on demodulated luminance.
+///
+/// Counts low→high transitions in half-second windows and compares the
+/// resulting frequency against the three APT target frequencies.
 pub struct ToneDetector {
-    sample_rate: f32,
-    /// Goertzel analysis window size in samples (~200 ms).
+    sample_rate: u32,
+    /// Analysis window size in samples (~0.5 s).
     window_size: usize,
-    /// Accumulated samples for the current window.
-    buffer: Vec<f32>,
-    /// Goertzel coefficients for each target frequency.
-    coeffs: [GoertzelCoeff; 3],
+    /// Number of samples accumulated in the current window.
+    sample_count: usize,
+    /// Whether the signal is currently in the "high" state.
+    is_high: bool,
+    /// Number of low→high transitions in the current window.
+    transitions: u32,
     /// Currently sustained tone and duration counter.
     current_tone: Option<AptTone>,
     sustained_windows: u32,
-    /// Minimum sustained detection time in windows before confirming.
+    /// Minimum number of consecutive matching windows before confirming.
     min_sustain_windows: u32,
-    /// SNR threshold for tone detection (energy ratio vs broadband).
-    snr_threshold: f32,
-}
-
-struct GoertzelCoeff {
-    tone: AptTone,
-    coeff: f32, // 2 * cos(2π * freq / sample_rate * N) — but we use the standard form
-    #[allow(dead_code)]
-    freq: f32,
 }
 
 impl ToneDetector {
     pub fn new(sample_rate: u32) -> Self {
-        let window_size = (sample_rate as f32 * 0.2) as usize; // ~200 ms
+        let window_size = (sample_rate / 2) as usize; // ~0.5 s window
         let min_sustain_s = 1.5;
         let window_duration_s = window_size as f32 / sample_rate as f32;
         let min_sustain_windows = (min_sustain_s / window_duration_s).ceil() as u32;
 
-        let coeffs = [
-            GoertzelCoeff::new(AptTone::Start576, 300.0, sample_rate, window_size),
-            GoertzelCoeff::new(AptTone::Start288, 675.0, sample_rate, window_size),
-            GoertzelCoeff::new(AptTone::Stop, 450.0, sample_rate, window_size),
-        ];
-
         Self {
-            sample_rate: sample_rate as f32,
+            sample_rate,
             window_size,
-            buffer: Vec::with_capacity(window_size),
-            coeffs,
+            sample_count: 0,
+            is_high: false,
+            transitions: 0,
             current_tone: None,
             sustained_windows: 0,
             min_sustain_windows,
-            snr_threshold: 10.0, // tone must be 10× broadband energy
         }
     }
 
-    /// Feed audio samples (luminance values from FM discriminator are NOT
-    /// suitable; feed the raw resampled audio before demodulation).
-    pub fn process(&mut self, samples: &[f32]) -> Vec<ToneDetectResult> {
+    /// Feed **demodulated luminance** samples (0.0 = black, 1.0 = white).
+    ///
+    /// Returns detection results at the end of each analysis window.
+    pub fn process(&mut self, luminance: &[f32]) -> Vec<ToneDetectResult> {
         let mut results = Vec::new();
-        for &s in samples {
-            self.buffer.push(s);
-            if self.buffer.len() >= self.window_size {
+        for &s in luminance {
+            // Track low→high transitions with hysteresis.
+            if s > HIGH_THRESHOLD && !self.is_high {
+                self.is_high = true;
+                self.transitions += 1;
+            } else if s < LOW_THRESHOLD && self.is_high {
+                self.is_high = false;
+            }
+
+            self.sample_count += 1;
+
+            if self.sample_count >= self.window_size {
                 results.push(self.analyze_window());
-                self.buffer.clear();
+                self.sample_count = 0;
+                self.transitions = 0;
             }
         }
         results
@@ -116,29 +127,19 @@ impl ToneDetector {
     }
 
     pub fn reset(&mut self) {
-        self.buffer.clear();
+        self.sample_count = 0;
+        self.transitions = 0;
+        self.is_high = false;
         self.current_tone = None;
         self.sustained_windows = 0;
     }
 
     fn analyze_window(&mut self) -> ToneDetectResult {
-        let samples = &self.buffer;
+        // Compute transition frequency: transitions per second.
+        let freq =
+            self.transitions * self.sample_rate / self.sample_count.max(1) as u32;
 
-        // Compute broadband energy (RMS²).
-        let broadband: f32 = samples.iter().map(|&s| s * s).sum::<f32>() / samples.len() as f32;
-
-        // Find the strongest tone above the SNR threshold.
-        let mut best: Option<(AptTone, f32)> = None;
-        for gc in &self.coeffs {
-            let energy = goertzel_energy(samples, gc.coeff);
-            let normalized = energy / samples.len() as f32;
-            if broadband > 1e-12 && normalized / broadband > self.snr_threshold
-                && best.is_none_or(|(_, e)| normalized > e) {
-                    best = Some((gc.tone, normalized));
-                }
-        }
-
-        let detected = best.map(|(tone, _)| tone);
+        let detected = classify_freq(freq);
 
         // Update sustained detection tracking.
         if detected == self.current_tone && detected.is_some() {
@@ -151,32 +152,22 @@ impl ToneDetector {
         ToneDetectResult {
             tone: self.confirmed_tone(),
             sustained_s: self.sustained_windows as f32 * self.window_size as f32
-                / self.sample_rate,
+                / self.sample_rate as f32,
         }
     }
 }
 
-impl GoertzelCoeff {
-    fn new(tone: AptTone, freq: f32, sample_rate: u32, window_size: usize) -> Self {
-        let k = (freq * window_size as f32 / sample_rate as f32).round();
-        let coeff = 2.0 * (2.0 * std::f32::consts::PI * k / window_size as f32).cos();
-        Self { tone, coeff, freq }
+/// Classify a measured transition frequency into an APT tone.
+fn classify_freq(freq: u32) -> Option<AptTone> {
+    if freq.abs_diff(300) <= FREQ_TOLERANCE {
+        Some(AptTone::Start576)
+    } else if freq.abs_diff(675) <= FREQ_TOLERANCE {
+        Some(AptTone::Start288)
+    } else if freq.abs_diff(450) <= FREQ_TOLERANCE {
+        Some(AptTone::Stop)
+    } else {
+        None
     }
-}
-
-/// Standard Goertzel algorithm returning magnitude² at the target bin.
-fn goertzel_energy(samples: &[f32], coeff: f32) -> f32 {
-    let mut s1 = 0.0f32;
-    let mut s2 = 0.0f32;
-
-    for &x in samples {
-        let s0 = x + coeff * s1 - s2;
-        s2 = s1;
-        s1 = s0;
-    }
-
-    // Magnitude² = s1² + s2² - coeff·s1·s2
-    s1 * s1 + s2 * s2 - coeff * s1 * s2
 }
 
 #[cfg(test)]
@@ -184,10 +175,16 @@ mod tests {
     use super::*;
     use std::f32::consts::PI;
 
-    fn generate_tone(freq: f32, sample_rate: u32, duration_s: f32) -> Vec<f32> {
+    /// Generate a luminance signal that alternates between black and white
+    /// at the given transition frequency (transitions per second).
+    fn generate_apt_signal(trans_freq: f32, sample_rate: u32, duration_s: f32) -> Vec<f32> {
         let n = (sample_rate as f32 * duration_s) as usize;
         (0..n)
-            .map(|i| (2.0 * PI * freq * i as f32 / sample_rate as f32).sin())
+            .map(|i| {
+                // Square wave at trans_freq Hz: above 0 → white, below 0 → black.
+                let phase = (2.0 * PI * trans_freq * i as f32 / sample_rate as f32).sin();
+                if phase >= 0.0 { 1.0 } else { 0.0 }
+            })
             .collect()
     }
 
@@ -195,41 +192,63 @@ mod tests {
     fn detect_start_576_tone() {
         let sr = 11025;
         let mut det = ToneDetector::new(sr);
-        let tone = generate_tone(300.0, sr, 3.0); // 3 seconds of 300 Hz
-        let results = det.process(&tone);
+        let signal = generate_apt_signal(300.0, sr, 3.0);
+        let results = det.process(&signal);
         let confirmed = results.iter().any(|r| r.tone == Some(AptTone::Start576));
-        assert!(confirmed, "should detect 300 Hz start tone for IOC 576");
+        assert!(confirmed, "should detect 300 Hz APT start for IOC 576");
     }
 
     #[test]
     fn detect_start_288_tone() {
         let sr = 11025;
         let mut det = ToneDetector::new(sr);
-        let tone = generate_tone(675.0, sr, 3.0);
-        let results = det.process(&tone);
+        let signal = generate_apt_signal(675.0, sr, 3.0);
+        let results = det.process(&signal);
         let confirmed = results.iter().any(|r| r.tone == Some(AptTone::Start288));
-        assert!(confirmed, "should detect 675 Hz start tone for IOC 288");
+        assert!(confirmed, "should detect 675 Hz APT start for IOC 288");
     }
 
     #[test]
     fn detect_stop_tone() {
         let sr = 11025;
         let mut det = ToneDetector::new(sr);
-        let tone = generate_tone(450.0, sr, 3.0);
-        let results = det.process(&tone);
+        let signal = generate_apt_signal(450.0, sr, 3.0);
+        let results = det.process(&signal);
         let confirmed = results.iter().any(|r| r.tone == Some(AptTone::Stop));
-        assert!(confirmed, "should detect 450 Hz stop tone");
+        assert!(confirmed, "should detect 450 Hz APT stop tone");
     }
 
     #[test]
     fn no_false_detect_on_silence() {
         let sr = 11025;
         let mut det = ToneDetector::new(sr);
-        let silence = vec![0.0f32; sr as usize * 3];
+        let silence = vec![0.5f32; sr as usize * 3]; // mid-grey, no transitions
         let results = det.process(&silence);
         assert!(
             results.iter().all(|r| r.tone.is_none()),
-            "should not detect any tone in silence"
+            "should not detect any tone on constant signal"
+        );
+    }
+
+    #[test]
+    fn no_false_detect_on_image_data() {
+        let sr = 11025;
+        let mut det = ToneDetector::new(sr);
+        // Simulate random-ish image data (varying luminance, no consistent frequency).
+        let n = sr as usize * 3;
+        let signal: Vec<f32> = (0..n)
+            .map(|i| {
+                // Mix of frequencies that don't match any APT tone.
+                let t = i as f32 / sr as f32;
+                (0.5 + 0.3 * (2.0 * PI * 137.0 * t).sin()
+                    + 0.2 * (2.0 * PI * 523.0 * t).sin())
+                .clamp(0.0, 1.0)
+            })
+            .collect();
+        let results = det.process(&signal);
+        assert!(
+            results.iter().all(|r| r.tone.is_none()),
+            "should not detect APT tone in random image data"
         );
     }
 }

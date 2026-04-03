@@ -98,11 +98,11 @@ impl WefaxDecoder {
         // Step 1: Resample to internal rate.
         let resampled = self.resampler.process(samples);
 
-        // Step 2: Always run tone detector on raw resampled audio.
-        let tone_results = self.tone_detector.process(&resampled);
-
-        // Step 3: FM demodulate to get luminance values.
+        // Step 2: FM demodulate to get luminance values.
         let luminance = self.demodulator.process(&resampled);
+
+        // Step 3: Run APT detector on demodulated luminance (transition counting).
+        let tone_results = self.tone_detector.process(&luminance);
 
         // Step 4: Process based on current state.
         match self.state.clone() {
@@ -340,10 +340,29 @@ mod tests {
     use super::*;
     use std::f32::consts::PI;
 
-    fn generate_tone(freq: f32, sample_rate: u32, duration_s: f32) -> Vec<f32> {
+    /// Generate an FM-modulated WEFAX APT start signal.
+    ///
+    /// The APT start signal alternates between black (1500 Hz) and white
+    /// (2300 Hz) at the given transition rate, FM-modulated onto the 1900 Hz
+    /// subcarrier.
+    fn generate_apt_start(trans_freq: f32, sample_rate: u32, duration_s: f32) -> Vec<f32> {
         let n = (sample_rate as f32 * duration_s) as usize;
+        let center = 1900.0f32;
+        let deviation = 400.0f32;
+        let mut phase = 0.0f64;
         (0..n)
-            .map(|i| (2.0 * PI * freq * i as f32 / sample_rate as f32).sin())
+            .map(|i| {
+                // Square wave modulation at trans_freq.
+                let t = i as f32 / sample_rate as f32;
+                let mod_sign = if (2.0 * PI * trans_freq * t).sin() >= 0.0 {
+                    1.0
+                } else {
+                    -1.0
+                };
+                let inst_freq = center + deviation * mod_sign;
+                phase += 2.0 * std::f64::consts::PI * inst_freq as f64 / sample_rate as f64;
+                phase.sin() as f32
+            })
             .collect()
     }
 
@@ -357,10 +376,10 @@ mod tests {
     #[test]
     fn decoder_detects_start_tone() {
         let mut dec = WefaxDecoder::new(11025, WefaxConfig::default());
-        // Feed 3 seconds of 300 Hz start tone directly at internal rate.
-        // (bypass resampler by using internal rate as input rate)
-        let tone = generate_tone(300.0, 11025, 3.0);
-        dec.process_samples(&tone);
+        // Feed 3 seconds of APT start signal (300 transitions/s, IOC 576)
+        // at internal sample rate (bypass resampler).
+        let signal = generate_apt_start(300.0, 11025, 3.0);
+        dec.process_samples(&signal);
         assert!(
             matches!(dec.state, State::StartDetected { ioc: 576 } | State::Phasing { ioc: 576, .. }),
             "state should be StartDetected or Phasing, got {:?}",
