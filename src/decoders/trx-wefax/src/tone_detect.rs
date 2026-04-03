@@ -13,6 +13,8 @@
 //! This matches the fldigi approach: the APT "tones" are not audio-frequency
 //! tones but transition rates in the demodulated FM output.
 
+use tracing::trace;
+
 /// Detected APT tone type.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AptTone {
@@ -76,7 +78,7 @@ pub struct ToneDetector {
 impl ToneDetector {
     pub fn new(sample_rate: u32) -> Self {
         let window_size = (sample_rate / 2) as usize; // ~0.5 s window
-        let min_sustain_s = 1.5;
+        let min_sustain_s = 1.0; // fldigi uses 2 consecutive half-second windows
         let window_duration_s = window_size as f32 / sample_rate as f32;
         let min_sustain_windows = (min_sustain_s / window_duration_s).ceil() as u32;
 
@@ -140,6 +142,16 @@ impl ToneDetector {
             self.transitions * self.sample_rate / self.sample_count.max(1) as u32;
 
         let detected = classify_freq(freq);
+
+        if detected.is_some() || self.transitions > 50 {
+            trace!(
+                transitions = self.transitions,
+                freq_hz = freq,
+                detected = ?detected,
+                sustained = self.sustained_windows,
+                "APT tone analysis"
+            );
+        }
 
         // Update sustained detection tracking.
         if detected == self.current_tone && detected.is_some() {

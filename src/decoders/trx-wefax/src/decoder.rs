@@ -12,6 +12,8 @@ use std::path::PathBuf;
 use base64::Engine;
 use trx_core::decode::{WefaxMessage, WefaxProgress};
 
+use tracing::{debug, trace};
+
 use crate::config::WefaxConfig;
 use crate::demod::FmDiscriminator;
 use crate::image::ImageAssembler;
@@ -22,6 +24,14 @@ use crate::tone_detect::{AptTone, ToneDetector};
 
 /// Progress events are emitted every this many lines.
 const PROGRESS_INTERVAL: u32 = 5;
+
+/// Minimum luminance standard deviation to consider a window as containing
+/// active WEFAX signal (image data has varied luminance; silence/noise is flat).
+const SIGNAL_DETECT_MIN_STDDEV: f32 = 0.08;
+
+/// Number of consecutive active-signal windows needed to auto-start receiving.
+/// At 0.5 s per window this is ~3 seconds.
+const SIGNAL_DETECT_WINDOWS: u32 = 6;
 
 /// WEFAX decoder output event.
 #[derive(Debug)]
@@ -64,6 +74,15 @@ pub struct WefaxDecoder {
     sample_count: u64,
     /// Timestamp (ms since epoch) when reception started.
     reception_start_ms: Option<i64>,
+    /// Whether the initial "Idle" state event has been emitted.
+    sent_idle_event: bool,
+    /// Counts consecutive half-second windows where the luminance variance is
+    /// high enough to indicate an active WEFAX transmission.  Used to auto-start
+    /// receiving when tuning in mid-image (same idea as fldigi's "strong image
+    /// signal" detection in `fax_signal`).
+    signal_detect_count: u32,
+    /// Accumulator for computing luminance variance within the current window.
+    signal_detect_buf: Vec<f32>,
 }
 
 impl WefaxDecoder {
@@ -85,6 +104,9 @@ impl WefaxDecoder {
             image: None,
             sample_count: 0,
             reception_start_ms: None,
+            sent_idle_event: false,
+            signal_detect_count: 0,
+            signal_detect_buf: Vec::with_capacity(INTERNAL_RATE as usize / 2),
         }
     }
 
@@ -95,11 +117,36 @@ impl WefaxDecoder {
         self.sample_count += samples.len() as u64;
         let mut events = Vec::new();
 
+        // Emit an initial "Idle" state event so the frontend knows the decoder is processing audio.
+        if !self.sent_idle_event {
+            self.sent_idle_event = true;
+            let ioc = self.config.ioc.unwrap_or(576);
+            let lpm = self.config.lpm.unwrap_or(120);
+            events.push(self.state_event("Idle \u{2014} scanning", ioc, lpm));
+        }
+
         // Step 1: Resample to internal rate.
         let resampled = self.resampler.process(samples);
 
         // Step 2: FM demodulate to get luminance values.
         let luminance = self.demodulator.process(&resampled);
+
+        // Periodic luminance stats for diagnostics (every ~5 seconds at 11025 Hz).
+        if self.sample_count % (INTERNAL_RATE as u64 * 5) < samples.len() as u64
+            && !luminance.is_empty()
+        {
+            let min = luminance.iter().cloned().fold(f32::INFINITY, f32::min);
+            let max = luminance.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
+            let mean = luminance.iter().sum::<f32>() / luminance.len() as f32;
+            trace!(
+                min = format!("{:.3}", min),
+                max = format!("{:.3}", max),
+                mean = format!("{:.3}", mean),
+                n = luminance.len(),
+                state = ?self.state,
+                "WEFAX luminance stats"
+            );
+        }
 
         // Step 3: Run APT detector on demodulated luminance (transition counting).
         let tone_results = self.tone_detector.process(&luminance);
@@ -129,7 +176,7 @@ impl WefaxDecoder {
                     }
                 }
 
-                // Fallback: try phasing detection on luminance to catch
+                // Fallback 1: try phasing detection on luminance to catch
                 // ongoing transmissions where the start tone was missed.
                 if !got_start {
                     if let Some(ref mut idle_ph) = self.idle_phasing {
@@ -145,6 +192,51 @@ impl WefaxDecoder {
                             self.idle_phasing = None;
                             events.push(self.transition_to_receiving(ioc, lpm, offset));
                         }
+                    }
+                }
+
+                // Fallback 2: detect active WEFAX signal by luminance variance.
+                // Like fldigi's "strong image signal" detection — if we see
+                // sustained modulated signal, auto-start receiving with defaults.
+                if self.state == State::Idle {
+                    self.signal_detect_buf.extend_from_slice(&luminance);
+                    let window_size = INTERNAL_RATE as usize / 2;
+                    while self.signal_detect_buf.len() >= window_size {
+                        let window = &self.signal_detect_buf[..window_size];
+                        let mean = window.iter().sum::<f32>() / window.len() as f32;
+                        let variance = window.iter()
+                            .map(|&v| { let d = v - mean; d * d })
+                            .sum::<f32>() / window.len() as f32;
+                        let stddev = variance.sqrt();
+
+                        if stddev > SIGNAL_DETECT_MIN_STDDEV {
+                            self.signal_detect_count += 1;
+                            trace!(
+                                stddev = format!("{:.4}", stddev),
+                                count = self.signal_detect_count,
+                                "WEFAX signal detected"
+                            );
+                        } else {
+                            self.signal_detect_count = 0;
+                        }
+
+                        if self.signal_detect_count >= SIGNAL_DETECT_WINDOWS {
+                            let ioc = self.config.ioc.unwrap_or(576);
+                            let lpm = self.config.lpm.unwrap_or(120);
+                            debug!(ioc, lpm, "WEFAX: auto-start from signal detection");
+                            self.reception_start_ms = Some(
+                                std::time::SystemTime::now()
+                                    .duration_since(std::time::UNIX_EPOCH)
+                                    .unwrap_or_default()
+                                    .as_millis() as i64,
+                            );
+                            self.idle_phasing = None;
+                            self.signal_detect_buf.clear();
+                            events.push(self.transition_to_receiving(ioc, lpm, 0));
+                            break;
+                        }
+
+                        self.signal_detect_buf.drain(..window_size);
                     }
                 }
             }
@@ -246,6 +338,9 @@ impl WefaxDecoder {
         self.image = None;
         self.sample_count = 0;
         self.reception_start_ms = None;
+        self.sent_idle_event = false;
+        self.signal_detect_count = 0;
+        self.signal_detect_buf.clear();
     }
 
     /// Check if the decoder is currently receiving an image.
@@ -273,6 +368,7 @@ impl WefaxDecoder {
 
     fn transition_to_start_detected(&mut self, ioc: u16) -> WefaxEvent {
         let ioc = self.config.ioc.unwrap_or(ioc);
+        debug!(ioc, "WEFAX: APT start detected");
         self.state = State::StartDetected { ioc };
         self.reception_start_ms = Some(
             std::time::SystemTime::now()
@@ -286,6 +382,7 @@ impl WefaxDecoder {
 
     fn transition_to_phasing(&mut self, ioc: u16) -> WefaxEvent {
         let lpm = self.config.lpm.unwrap_or(120); // Default 120 LPM.
+        debug!(ioc, lpm, "WEFAX: entering phasing");
         self.tone_detector.reset();
         self.phasing = Some(PhasingDetector::new(lpm, INTERNAL_RATE));
         self.demodulator.reset();
@@ -294,6 +391,7 @@ impl WefaxDecoder {
     }
 
     fn transition_to_receiving(&mut self, ioc: u16, lpm: u16, phase_offset: usize) -> WefaxEvent {
+        debug!(ioc, lpm, phase_offset, "WEFAX: entering receiving");
         let ppl = WefaxConfig::pixels_per_line(ioc) as usize;
         self.slicer = Some(LineSlicer::new(lpm, ioc, INTERNAL_RATE, phase_offset));
         self.image = Some(ImageAssembler::new(ppl));
@@ -310,6 +408,8 @@ impl WefaxDecoder {
         // image is kept until finalize_image is called or next reception starts.
         self.tone_detector.reset();
         self.idle_phasing = Some(PhasingDetector::new(default_lpm, INTERNAL_RATE));
+        self.signal_detect_count = 0;
+        self.signal_detect_buf.clear();
     }
 
     fn finalize_image(&mut self, ioc: u16, lpm: u16) -> Vec<WefaxEvent> {

@@ -253,7 +253,8 @@ window.onServerWefaxProgress = function (msg) {
   if (msg.state && !msg.line_data) {
     if (wefaxDom.status) {
       wefaxDom.status.textContent = msg.state;
-      wefaxDom.status.style.color = 'var(--text-accent)';
+      // Highlight active states, dim idle/scanning.
+      wefaxDom.status.style.color = msg.state.indexOf('Idle') === 0 ? '' : 'var(--text-accent)';
     }
     return;
   }

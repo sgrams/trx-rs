@@ -11,3 +11,4 @@ edition = "2021"
 trx-core = { path = "../../trx-core" }
 base64 = "0.22"
 png = "0.17"
+tracing = "0.1"
