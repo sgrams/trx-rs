@@ -4476,14 +4476,14 @@ function _initMapWhenReady() {
   const loadingEl = document.getElementById("map-loading");
   if (window.trx.map && typeof L !== "undefined") {
     if (_mapInitTimer) { clearInterval(_mapInitTimer); _mapInitTimer = null; }
-    if (loadingEl) loadingEl.style.display = "none";
+    if (loadingEl) loadingEl.classList.add("is-hidden");
     window.trx.map.initAprsMap();
     window.trx.map.sizeAprsMapToViewport();
     if (window.trx.map.aprsMap) setTimeout(() => window.trx.map.aprsMap.invalidateSize(), 50);
     return;
   }
-  // Not ready yet — show loading and poll until both are available.
-  if (loadingEl) loadingEl.style.display = "";
+  // Not ready yet — show overlay and poll until both are available.
+  if (loadingEl) loadingEl.classList.remove("is-hidden");
   if (!_mapInitTimer) {
     _mapInitTimer = setInterval(() => {
       if (_activeTab !== "map") { clearInterval(_mapInitTimer); _mapInitTimer = null; return; }

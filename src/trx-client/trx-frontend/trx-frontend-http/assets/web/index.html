@@ -977,7 +977,12 @@
       </div>
     </div>
     <div id="tab-map" class="tab-panel" data-tab="map" style="display:none;">
-      <div id="map-loading" class="map-loading-msg">Loading map&hellip;</div>
+      <div id="map-loading" class="decode-history-overlay content-overlay" aria-live="polite" aria-atomic="true">
+        <div class="decode-history-overlay-card">
+          <div class="decode-history-overlay-title">Loading map&hellip;</div>
+          <div class="decode-history-overlay-sub">Waiting for map engine to initialise</div>
+        </div>
+      </div>
       <template id="tmpl-map">
       <div id="map-stage">
         <div class="map-overlay-panel">

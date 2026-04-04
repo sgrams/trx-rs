@@ -1703,15 +1703,7 @@ small { color: var(--text-muted); }
   min-height: 0;
   gap: 0.85rem;
 }
-.map-loading-msg {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  height: 60vh;
-  font-size: 1.1rem;
-  color: var(--text-secondary);
-  opacity: 0.8;
-}
+/* map-loading uses the shared .decode-history-overlay .content-overlay classes */
 #map-stage {
   position: relative;
   flex: 0 1 auto;
