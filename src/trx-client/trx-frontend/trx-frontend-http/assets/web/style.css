@@ -1215,8 +1215,8 @@ small { color: var(--text-muted); }
   align-items: center;
   margin-bottom: 0.6rem;
 }
-.recorder-filter-input { flex: 1; min-width: 12rem; }
-.recorder-sort-select { width: auto; min-width: 10rem; }
+.recorder-filter-input { flex: 3; min-width: 16rem; }
+.recorder-sort-select { flex: 1; width: auto; min-width: 7rem; max-width: 10rem; }
 .recorder-section { margin-bottom: 1.5rem; }
 .recorder-section-heading {
   font-size: 0.85rem;
