@@ -89,6 +89,12 @@ pub struct ScheduleEntry {
     /// Whether to auto-record audio when this entry is active.
     #[serde(default)]
     pub record: bool,
+    /// When `true`, this entry is never interleaved with other overlapping
+    /// entries.  While this entry's time window is active the scheduler stays
+    /// on its bookmark until the window ends.  Useful for WEFAX and satellite
+    /// passes where switching away mid-reception would lose data.
+    #[serde(default)]
+    pub exclusive: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -488,6 +494,12 @@ fn timespan_active_entry(
 
     if active.is_empty() {
         return None;
+    }
+
+    // If any active entry is exclusive, it wins outright (first exclusive
+    // entry in schedule order takes priority).
+    if let Some(excl) = active.iter().find(|e| e.exclusive) {
+        return Some(excl);
     }
 
     if let Some(idx) = timespan_cycle_slot(&active, now_min, default_interleave) {
@@ -1500,6 +1512,7 @@ mod tests {
             center_hz,
             bookmark_ids: Vec::new(),
             record: false,
+            exclusive: false,
         }
     }
 
@@ -1552,5 +1565,21 @@ mod tests {
 
         let active = timespan_active_entry(&entries, 10.0, None).expect("active entry");
         assert_eq!(active.id, "slot-b");
+    }
+
+    #[test]
+    fn exclusive_entry_wins_over_interleaved() {
+        let mut entries = vec![
+            entry("ft8", 0, 0, "bm-ft8", None, Some(10)),
+            entry("wefax", 0, 0, "bm-wefax", None, Some(10)),
+        ];
+        // Without exclusive, interleaving picks slot-b at minute 15.
+        let active = timespan_active_entry(&entries, 15.0, None).expect("active entry");
+        assert_eq!(active.id, "wefax");
+
+        // Mark wefax as exclusive — it should always win regardless of cycle.
+        entries[1].exclusive = true;
+        let active = timespan_active_entry(&entries, 5.0, None).expect("active entry");
+        assert_eq!(active.id, "wefax", "exclusive entry should win at any time");
     }
 }

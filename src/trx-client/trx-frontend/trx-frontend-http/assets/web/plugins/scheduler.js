@@ -206,6 +206,11 @@
     if (active.length === 1) {
       return { activeEntries: active, currentIndex: 0, remainingSec: 0, cycleMin: 0 };
     }
+    // Exclusive entry wins outright — no interleaving.
+    var exclIdx = active.findIndex(function (e) { return e.exclusive; });
+    if (exclIdx >= 0) {
+      return { activeEntries: [active[exclIdx]], currentIndex: 0, remainingSec: 0, cycleMin: 0 };
+    }
     const defaultInterleave = Number(config.interleave_min);
     const durations = active.map(function (entry) {
       const own = Number(entry && entry.interleave_min);
@@ -820,7 +825,8 @@
           '<button class="sch-write sch-inline-extra-add" type="button" style="padding:0 0.7rem;">+</button>' +
         '</div></td>' +
       '<td><input type="text" class="status-input sch-inline-input" value="' + escHtml(entry.label || '') + '" data-field="label" /></td>' +
-      '<td><input type="number" class="status-input sch-inline-input" value="' + (entry.interleave_min || '') + '" min="1" max="60" placeholder="\u2014" data-field="interleave" style="width:4rem;" /></td>' +
+      '<td><input type="number" class="status-input sch-inline-input" value="' + (entry.interleave_min || '') + '" min="1" max="60" placeholder="\u2014" data-field="interleave" style="width:4rem;" ' + (entry.exclusive ? 'disabled' : '') + ' />' +
+        '<label style="display:block;font-size:0.85em;margin-top:0.2rem;"><input type="checkbox" data-field="exclusive" ' + (entry.exclusive ? 'checked' : '') + ' /> Excl.</label></td>' +
       '<td><input type="checkbox" ' + (entry.record ? 'checked' : '') + ' data-field="record" /></td>' +
       '<td><button class="sch-write sch-inline-save" type="button">Save</button><button class="sch-write sch-inline-cancel" type="button">Cancel</button></td>';
 
@@ -862,6 +868,16 @@
       extraPick.value = '';
     });
 
+    // Wire exclusive checkbox to disable interleave input.
+    var exclEl = tr.querySelector('[data-field="exclusive"]');
+    var ilInput = tr.querySelector('[data-field="interleave"]');
+    if (exclEl && ilInput) {
+      exclEl.addEventListener('change', function () {
+        ilInput.disabled = exclEl.checked;
+        if (exclEl.checked) ilInput.value = '';
+      });
+    }
+
     tr.querySelector('.sch-inline-save').addEventListener('click', function () {
       var startEl = tr.querySelector('[data-field="start"]');
       var endEl = tr.querySelector('[data-field="end"]');
@@ -869,6 +885,7 @@
       var labelEl = tr.querySelector('[data-field="label"]');
       var ilEl = tr.querySelector('[data-field="interleave"]');
       var recEl = tr.querySelector('[data-field="record"]');
+      var exEl = tr.querySelector('[data-field="exclusive"]');
 
       if (bmEl && !bmEl.value) { alert('Please select a bookmark.'); return; }
 
@@ -876,8 +893,9 @@
       entry.end_min = hhmmToMin(endEl.value);
       entry.bookmark_id = bmEl.value;
       entry.label = labelEl.value.trim() || null;
+      entry.exclusive = exEl ? exEl.checked : false;
       var ilVal = parseInt(ilEl.value, 10);
-      entry.interleave_min = (!isNaN(ilVal) && ilVal > 0) ? ilVal : null;
+      entry.interleave_min = entry.exclusive ? null : ((!isNaN(ilVal) && ilVal > 0) ? ilVal : null);
       entry.bookmark_ids = inlineExtraIds.slice();
       entry.record = recEl.checked;
 
@@ -908,7 +926,7 @@
           entry.id && String(entry.id) === String(currentSchedulerStatus.last_entry_id)) {
         tr.classList.add("sch-active");
       }
-      const il = entry.interleave_min ? String(entry.interleave_min) + " min" : "—";
+      const il = entry.exclusive ? "Exclusive" : entry.interleave_min ? String(entry.interleave_min) + " min" : "—";
       const allDay = entry.start_min === entry.end_min;
       const centerCell = entry.center_hz ? formatFreq(entry.center_hz) : "—";
       const extraIds = Array.isArray(entry.bookmark_ids) ? entry.bookmark_ids : [];
