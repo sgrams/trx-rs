@@ -58,6 +58,13 @@ const VERIFY_HIGH_CORR_STREAK: u32 = 5;
 /// to Idle without saving anything.
 const VERIFY_TIMEOUT_LINES: u32 = 40;
 
+/// Maximum number of scan-line-equivalent sample windows to wait for phasing
+/// lock before falling through to Receiving (unverified). Typical WEFAX
+/// phasing lasts ~30 s; if the phasing detector hasn't converged by then
+/// we give up on alignment and let the correlation verifier decide whether
+/// the content that follows is a real image. At 120 LPM this is ~30 s.
+const PHASING_TIMEOUT_LINES: u32 = 60;
+
 /// WEFAX decoder output event.
 #[derive(Debug)]
 pub enum WefaxEvent {
@@ -118,6 +125,11 @@ pub struct WefaxDecoder {
     /// Rolling count of consecutive well-correlated lines, used to confirm
     /// an unverified reception.
     high_corr_streak: u32,
+    /// Number of luminance samples processed while in `State::Phasing`.
+    /// When this exceeds the equivalent of `PHASING_TIMEOUT_LINES` lines,
+    /// the decoder falls through to Receiving (unverified) so a noisy or
+    /// partial phasing signal doesn't wedge the state machine.
+    phasing_samples: u64,
     /// Current rig dial frequency in Hz (for image filenames).
     freq_hz: u64,
     /// Current rig mode name (for image filenames).
@@ -147,6 +159,7 @@ impl WefaxDecoder {
             low_corr_lines: 0,
             verified: false,
             high_corr_streak: 0,
+            phasing_samples: 0,
             freq_hz: 0,
             mode: String::new(),
         }
@@ -285,6 +298,20 @@ impl WefaxDecoder {
                 if let Some(ref mut phasing) = self.phasing {
                     if let Some(offset) = phasing.process(&luminance) {
                         events.push(self.transition_to_receiving(ioc, lpm, offset, true));
+                    } else {
+                        // Phasing timeout: if alignment doesn't converge in
+                        // ~PHASING_TIMEOUT_LINES lines, fall through to
+                        // Receiving (unverified) and let the correlation
+                        // verifier decide.
+                        self.phasing_samples += luminance.len() as u64;
+                        let spl = WefaxConfig::samples_per_line(lpm, INTERNAL_RATE) as u64;
+                        if self.phasing_samples >= spl * PHASING_TIMEOUT_LINES as u64 {
+                            debug!(
+                                ioc,
+                                lpm, "WEFAX: phasing timeout — falling through to receiving"
+                            );
+                            events.push(self.transition_to_receiving(ioc, lpm, 0, false));
+                        }
                     }
                 }
             }
@@ -440,6 +467,7 @@ impl WefaxDecoder {
         self.low_corr_lines = 0;
         self.verified = false;
         self.high_corr_streak = 0;
+        self.phasing_samples = 0;
         events
     }
 
@@ -489,6 +517,7 @@ impl WefaxDecoder {
         self.tone_detector.reset();
         self.phasing = Some(PhasingDetector::new(lpm, INTERNAL_RATE));
         self.demodulator.reset();
+        self.phasing_samples = 0;
         self.state = State::Phasing { ioc, lpm };
         self.state_event("Phasing", ioc, lpm)
     }
@@ -526,6 +555,7 @@ impl WefaxDecoder {
         self.low_corr_lines = 0;
         self.verified = false;
         self.high_corr_streak = 0;
+        self.phasing_samples = 0;
     }
 
     fn finalize_image(&mut self, ioc: u16, lpm: u16) -> Vec<WefaxEvent> {
