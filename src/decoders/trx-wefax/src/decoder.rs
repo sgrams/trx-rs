@@ -43,6 +43,12 @@ const LINE_CORR_NOISE_THRESHOLD: f32 = 0.2;
 /// fldigi's line-to-line correlation check for automatic stop.
 const LINE_CORR_NOISE_LINES: u32 = 30;
 
+/// Minimum image height (lines) to save. Anything shorter is assumed to be a
+/// false-positive auto-start (variance detector tripping on tones, noise
+/// bursts, or phasing leakage) and discarded silently. A real WEFAX chart is
+/// at least several hundred lines long.
+const MIN_IMAGE_LINES: u32 = 100;
+
 /// WEFAX decoder output event.
 #[derive(Debug)]
 pub enum WefaxEvent {
@@ -453,7 +459,18 @@ impl WefaxDecoder {
         let mut events = Vec::new();
 
         if let Some(ref image) = self.image {
-            if image.line_count() == 0 {
+            let lines = image.line_count();
+            if lines == 0 {
+                return events;
+            }
+            if lines < MIN_IMAGE_LINES {
+                debug!(
+                    lines,
+                    min = MIN_IMAGE_LINES,
+                    "WEFAX: discarding short image (likely false auto-start)"
+                );
+                self.image = None;
+                self.reception_start_ms = None;
                 return events;
             }
 
