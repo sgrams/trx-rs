@@ -325,8 +325,15 @@ impl WefaxDecoder {
         events
     }
 
-    /// Reset the decoder, discarding any in-progress image.
-    pub fn reset(&mut self) {
+    /// Reset the decoder.  Saves the in-progress image (if any) before
+    /// returning to Idle.  Returns any completion events produced.
+    pub fn reset(&mut self) -> Vec<WefaxEvent> {
+        let events = match self.state {
+            State::Receiving { ioc, lpm } | State::Phasing { ioc, lpm } => {
+                self.finalize_image(ioc, lpm)
+            }
+            _ => Vec::new(),
+        };
         let default_lpm = self.config.lpm.unwrap_or(120);
         self.state = State::Idle;
         self.resampler.reset();
@@ -341,6 +348,7 @@ impl WefaxDecoder {
         self.sent_idle_event = false;
         self.signal_detect_count = 0;
         self.signal_detect_buf.clear();
+        events
     }
 
     /// Check if the decoder is currently receiving an image.

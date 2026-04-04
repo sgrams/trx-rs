@@ -2742,7 +2742,13 @@ pub async fn run_wefax_decoder(
 
                         if reset_seq != last_reset_seq {
                             last_reset_seq = reset_seq;
-                            decoder.reset();
+                            // Reset saves any in-progress image.
+                            for evt in decoder.reset() {
+                                if let WefaxEvent::Complete(msg) = evt {
+                                    histories.record_wefax_message(msg.clone());
+                                    let _ = decode_tx.send(DecodedMessage::Wefax(msg));
+                                }
+                            }
                             info!("WEFAX decoder reset (seq={})", last_reset_seq);
                             pcm_rx = pcm_rx.resubscribe();
                             continue;
@@ -2750,7 +2756,12 @@ pub async fn run_wefax_decoder(
 
                         if !process_enabled {
                             if was_active {
-                                decoder.reset();
+                                for evt in decoder.reset() {
+                                    if let WefaxEvent::Complete(msg) = evt {
+                                        histories.record_wefax_message(msg.clone());
+                                        let _ = decode_tx.send(DecodedMessage::Wefax(msg));
+                                    }
+                                }
                                 was_active = false;
                             }
                             active = false;
@@ -2778,7 +2789,12 @@ pub async fn run_wefax_decoder(
                             state_rx.borrow().reset_seqs.wefax_decode_reset_seq;
                         if latest_reset_seq != reset_seq {
                             last_reset_seq = latest_reset_seq;
-                            decoder.reset();
+                            for evt in decoder.reset() {
+                                if let WefaxEvent::Complete(msg) = evt {
+                                    histories.record_wefax_message(msg.clone());
+                                    let _ = decode_tx.send(DecodedMessage::Wefax(msg));
+                                }
+                            }
                             info!("WEFAX decoder reset (seq={})", last_reset_seq);
                             pcm_rx = pcm_rx.resubscribe();
                             continue;
