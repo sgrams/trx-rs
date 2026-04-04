@@ -449,32 +449,45 @@ async function bmApply(bm) {
       }
     })();
     // Decoder toggles — fire-and-forget.
-    // Only toggle decoders that are toggle-gated and whose active modes
-    // include the bookmark's mode (driven by the decoder registry).
+    //  - Decoders incompatible with the new mode are always turned off
+    //    (even when the bookmark has no explicit decoder selection).
+    //  - For compatible decoders, if the bookmark specifies a set, the
+    //    toggles are driven to match that set; otherwise they're left
+    //    alone.
     const hasDecoders = Array.isArray(bm.decoders) && bm.decoders.length > 0;
     const modeUp = (bm.mode || "").toUpperCase();
-    const toggleDecoders = (window.decoderRegistry || []).filter(d =>
-      d.activation === "toggle" && d.active_modes.includes(modeUp)
+    const allToggleDecoders = (window.decoderRegistry || []).filter(d =>
+      d.activation === "toggle"
     );
-    const shouldToggle = hasDecoders && toggleDecoders.length > 0;
-    const decoderPromise = shouldToggle ? (async () => {
+    const decoderPromise = allToggleDecoders.length ? (async () => {
       let statusUrl = "/status";
       if (typeof lastActiveRigId !== "undefined" && lastActiveRigId) {
         statusUrl += "?remote=" + encodeURIComponent(lastActiveRigId);
       }
       const statusResp = await fetch(statusUrl);
-      if (statusResp.ok) {
-        const st = await statusResp.json();
-        const toggles = [];
-        for (const d of toggleDecoders) {
-          const statusKey = d.id.replace(/-/g, "_") + "_decode_enabled";
-          const wanted = bm.decoders.includes(d.id);
-          if (wanted !== !!st[statusKey]) {
-            toggles.push(postPath("/toggle_" + d.id.replace(/-/g, "_") + "_decode"));
-          }
+      if (!statusResp.ok) return;
+      const st = await statusResp.json();
+      const toggles = [];
+      for (const d of allToggleDecoders) {
+        const statusKey = d.id.replace(/-/g, "_") + "_decode_enabled";
+        const currentlyOn = !!st[statusKey];
+        const compatible = Array.isArray(d.active_modes)
+          && d.active_modes.includes(modeUp);
+        let wanted;
+        if (!compatible) {
+          // Always disable decoders that don't apply to the new mode.
+          wanted = false;
+        } else if (hasDecoders) {
+          wanted = bm.decoders.includes(d.id);
+        } else {
+          // Mode-compatible and no bookmark selection: leave as-is.
+          wanted = currentlyOn;
         }
-        if (toggles.length) await Promise.all(toggles);
+        if (wanted !== currentlyOn) {
+          toggles.push(postPath("/toggle_" + d.id.replace(/-/g, "_") + "_decode"));
+        }
       }
+      if (toggles.length) await Promise.all(toggles);
     })() : Promise.resolve();
     // Don't await — let the network calls settle in the background.
     // Errors are logged but don't block the UI.
