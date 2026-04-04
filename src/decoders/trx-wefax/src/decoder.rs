@@ -80,6 +80,10 @@ pub struct WefaxDecoder {
     signal_detect_count: u32,
     /// Accumulator for computing luminance variance within the current window.
     signal_detect_buf: Vec<f32>,
+    /// Current rig dial frequency in Hz (for image filenames).
+    freq_hz: u64,
+    /// Current rig mode name (for image filenames).
+    mode: String,
 }
 
 impl WefaxDecoder {
@@ -102,6 +106,8 @@ impl WefaxDecoder {
             sent_idle_event: false,
             signal_detect_count: 0,
             signal_detect_buf: Vec::with_capacity(INTERNAL_RATE as usize / 2),
+            freq_hz: 0,
+            mode: String::new(),
         }
     }
 
@@ -319,6 +325,12 @@ impl WefaxDecoder {
         events
     }
 
+    /// Update the current rig tuning (used for image filenames).
+    pub fn set_tuning(&mut self, freq_hz: u64, mode: &str) {
+        self.freq_hz = freq_hz;
+        self.mode = mode.to_string();
+    }
+
     /// Check if the decoder is currently receiving an image.
     pub fn is_receiving(&self) -> bool {
         matches!(
@@ -400,7 +412,7 @@ impl WefaxDecoder {
             // Save PNG if output directory is configured.
             if let Some(ref dir) = self.config.output_dir {
                 let output_path = PathBuf::from(dir);
-                match image.save_png(&output_path, ioc, lpm) {
+                match image.save_png(&output_path, self.freq_hz, &self.mode) {
                     Ok(p) => {
                         path_str = Some(p.to_string_lossy().into_owned());
                     }

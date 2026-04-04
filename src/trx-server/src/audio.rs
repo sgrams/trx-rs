@@ -2780,6 +2780,13 @@ pub async fn run_wefax_decoder(
                         };
 
                         was_active = true;
+                        {
+                            let state = state_rx.borrow();
+                            decoder.set_tuning(
+                                state.status.freq.hz,
+                                &format!("{:?}", state.status.mode),
+                            );
+                        }
                         let events = tokio::task::block_in_place(|| {
                             let _span = info_span!("wefax_decode").entered();
                             decoder.process_samples(&mono)

@@ -43,8 +43,8 @@ impl ImageAssembler {
     pub fn save_png(
         &self,
         output_dir: &Path,
-        ioc: u16,
-        lpm: u16,
+        freq_hz: u64,
+        mode: &str,
     ) -> Result<PathBuf, String> {
         if self.lines.is_empty() {
             return Err("no image lines to save".into());
@@ -53,7 +53,7 @@ impl ImageAssembler {
         std::fs::create_dir_all(output_dir)
             .map_err(|e| format!("create output dir: {}", e))?;
 
-        let filename = generate_filename(ioc, lpm);
+        let filename = generate_filename(freq_hz, mode);
         let path = output_dir.join(&filename);
 
         let file = std::fs::File::create(&path)
@@ -89,7 +89,7 @@ impl ImageAssembler {
     }
 }
 
-fn generate_filename(ioc: u16, lpm: u16) -> String {
+fn generate_filename(freq_hz: u64, mode: &str) -> String {
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default();
@@ -97,10 +97,11 @@ fn generate_filename(ioc: u16, lpm: u16) -> String {
 
     // Convert to UTC datetime components manually (avoid chrono dependency).
     let (year, month, day, hour, min, sec) = unix_to_utc(secs);
+    let freq_khz = freq_hz / 1000;
 
     format!(
-        "WEFAX-{:04}-{:02}-{:02}T{:02}{:02}{:02}-IOC{}-{}lpm.png",
-        year, month, day, hour, min, sec, ioc, lpm
+        "{:04}-{:02}-{:02}_{:02}-{:02}-{:02}-{}_kHz_{}.png",
+        year, month, day, hour, min, sec, freq_khz, mode
     )
 }
 
@@ -179,7 +180,7 @@ mod tests {
         }
 
         let dir = std::env::temp_dir().join("trx-wefax-test");
-        let result = asm.save_png(&dir, 576, 120);
+        let result = asm.save_png(&dir, 7880000, "USB");
         assert!(result.is_ok(), "save_png failed: {:?}", result.err());
         let path = result.unwrap();
         assert!(path.exists());
