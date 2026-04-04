@@ -563,6 +563,41 @@ const decodeHistoryTextDecoder = typeof TextDecoder === "function" ? new TextDec
 let decodeHistoryReplayActive = false;
 let decodeMapSyncPending = false;
 
+// --- Pending decode data buffers ---
+// Map-data plugins (ais.js, aprs.js, vdes.js, hf-aprs.js) are loaded eagerly
+// but dynamically-inserted scripts have no guaranteed execution order.  If
+// decode history or live SSE messages arrive before the plugin handlers are
+// registered, buffer them here and let each plugin drain on init.
+const _pendingDecodeHistory = {};
+const _pendingDecodeLive = {};
+
+window._trxDrainPendingDecode = function(kind) {
+  const historyKey = {
+    ais: "restoreAisHistory",
+    vdes: "restoreVdesHistory",
+    aprs: "restoreAprsHistory",
+    hf_aprs: "restoreHfAprsHistory",
+  }[kind];
+  if (historyKey && _pendingDecodeHistory[kind] && window[historyKey]) {
+    const msgs = _pendingDecodeHistory[kind];
+    delete _pendingDecodeHistory[kind];
+    window[historyKey](msgs);
+  }
+  const liveKey = {
+    ais: "onServerAis",
+    vdes: "onServerVdes",
+    aprs: "onServerAprs",
+    hf_aprs: "onServerHfAprs",
+  }[kind];
+  if (liveKey && _pendingDecodeLive[kind] && window[liveKey]) {
+    const msgs = _pendingDecodeLive[kind];
+    delete _pendingDecodeLive[kind];
+    for (const msg of msgs) {
+      try { window[liveKey](msg); } catch (_) {}
+    }
+  }
+};
+
 function markDecodeMapSyncPending() {
   decodeMapSyncPending = true;
 }
@@ -5920,10 +5955,10 @@ function updateDecodeStatus(text) {
   }
 }
 function dispatchDecodeMessage(msg, skipStats) {
-  if (msg.type === "ais" && window.onServerAis) window.onServerAis(msg);
-  if (msg.type === "vdes" && window.onServerVdes) window.onServerVdes(msg);
-  if (msg.type === "aprs" && window.onServerAprs) window.onServerAprs(msg);
-  if (msg.type === "hf_aprs" && window.onServerHfAprs) window.onServerHfAprs(msg);
+  if (msg.type === "ais") { if (window.onServerAis) window.onServerAis(msg); else (_pendingDecodeLive.ais = _pendingDecodeLive.ais || []).push(msg); }
+  if (msg.type === "vdes") { if (window.onServerVdes) window.onServerVdes(msg); else (_pendingDecodeLive.vdes = _pendingDecodeLive.vdes || []).push(msg); }
+  if (msg.type === "aprs") { if (window.onServerAprs) window.onServerAprs(msg); else (_pendingDecodeLive.aprs = _pendingDecodeLive.aprs || []).push(msg); }
+  if (msg.type === "hf_aprs") { if (window.onServerHfAprs) window.onServerHfAprs(msg); else (_pendingDecodeLive.hf_aprs = _pendingDecodeLive.hf_aprs || []).push(msg); }
   if (msg.type === "cw" && window.onServerCw) window.onServerCw(msg);
   if (msg.type === "ft8" && window.onServerFt8) window.onServerFt8(msg);
   if (msg.type === "ft4" && window.onServerFt4) window.onServerFt4(msg);
@@ -6036,20 +6071,24 @@ function restoreDecodeHistoryGroup(kind, messages) {
     }
     window.trx.map?.scheduleStatsRender();
   }
-  if (kind === "ais" && window.restoreAisHistory) {
-    window.restoreAisHistory(messages);
+  if (kind === "ais") {
+    if (window.restoreAisHistory) { window.restoreAisHistory(messages); }
+    else { _pendingDecodeHistory.ais = (_pendingDecodeHistory.ais || []).concat(messages); }
     return;
   }
-  if (kind === "vdes" && window.restoreVdesHistory) {
-    window.restoreVdesHistory(messages);
+  if (kind === "vdes") {
+    if (window.restoreVdesHistory) { window.restoreVdesHistory(messages); }
+    else { _pendingDecodeHistory.vdes = (_pendingDecodeHistory.vdes || []).concat(messages); }
     return;
   }
-  if (kind === "aprs" && window.restoreAprsHistory) {
-    window.restoreAprsHistory(messages);
+  if (kind === "aprs") {
+    if (window.restoreAprsHistory) { window.restoreAprsHistory(messages); }
+    else { _pendingDecodeHistory.aprs = (_pendingDecodeHistory.aprs || []).concat(messages); }
     return;
   }
-  if (kind === "hf_aprs" && window.restoreHfAprsHistory) {
-    window.restoreHfAprsHistory(messages);
+  if (kind === "hf_aprs") {
+    if (window.restoreHfAprsHistory) { window.restoreHfAprsHistory(messages); }
+    else { _pendingDecodeHistory.hf_aprs = (_pendingDecodeHistory.hf_aprs || []).concat(messages); }
     return;
   }
   if (kind === "cw" && window.restoreCwHistory) {
@@ -6083,6 +6122,9 @@ function connectDecode() {
   terminateDecodeHistoryWorker();
   decodeHistoryReplayActive = false;
   decodeMapSyncPending = false;
+  // Clear any pending buffers from a previous connection cycle.
+  for (const k in _pendingDecodeHistory) delete _pendingDecodeHistory[k];
+  for (const k in _pendingDecodeLive) delete _pendingDecodeLive[k];
   if (window.resetAisHistoryView) window.resetAisHistoryView();
   if (window.resetVdesHistoryView) window.resetVdesHistoryView();
   if (window.resetAprsHistoryView) window.resetAprsHistoryView();

@@ -400,3 +400,4 @@ window.onServerAis = function(msg) {
 };
 
 updateAisSummary();
+if (window._trxDrainPendingDecode) window._trxDrainPendingDecode("ais");

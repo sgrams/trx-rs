@@ -437,3 +437,4 @@ window.onServerHfAprs = function(pkt) {
 };
 
 renderHfAprsHistory();
+if (window._trxDrainPendingDecode) window._trxDrainPendingDecode("hf_aprs");

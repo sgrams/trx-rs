@@ -491,3 +491,4 @@ window.onServerAprs = function(pkt) {
 };
 
 renderAprsHistory();
+if (window._trxDrainPendingDecode) window._trxDrainPendingDecode("aprs");

@@ -345,3 +345,4 @@ window.pruneVdesHistoryView = function() {
 };
 
 updateVdesSummary();
+if (window._trxDrainPendingDecode) window._trxDrainPendingDecode("vdes");
