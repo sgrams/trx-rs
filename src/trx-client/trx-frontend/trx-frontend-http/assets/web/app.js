@@ -1994,12 +1994,6 @@ function resetDecoderStateOnRigSwitch() {
     const el = document.getElementById(id);
     if (el) el.textContent = "--";
   });
-
-  // FT8/FT4/WSPR history tables
-  if (typeof window.ft8ClearHistory === "function") window.ft8ClearHistory();
-  if (typeof window.ft4ClearHistory === "function") window.ft4ClearHistory();
-  if (typeof window.ft2ClearHistory === "function") window.ft2ClearHistory();
-  if (typeof window.wsprClearHistory === "function") window.wsprClearHistory();
 }
 
 function resetWfmStereoIndicator() {
@@ -3856,8 +3850,6 @@ async function switchRigFromSelect(selectEl) {
   if (typeof setSchedulerRig === "function") setSchedulerRig(lastActiveRigId);
   if (typeof setBackgroundDecodeRig === "function") setBackgroundDecodeRig(lastActiveRigId);
   if (typeof bmFetch === "function") bmFetch(document.getElementById("bm-category-filter")?.value || "");
-  // Reconnect decode stream so history + live messages filter to the new rig.
-  connectDecode();
   // Switch this session's rig and reconnect SSE to the new rig's
   // state channel.
   try {
