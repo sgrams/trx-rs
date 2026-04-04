@@ -3428,6 +3428,8 @@
   function autoInitIfVisible() {
     const panel = document.getElementById("tab-map");
     if (panel && panel.style.display !== "none") {
+      const loadingEl = document.getElementById("map-loading");
+      if (loadingEl) loadingEl.style.display = "none";
       initAprsMap();
       sizeAprsMapToViewport();
       if (aprsMap) setTimeout(() => aprsMap.invalidateSize(), 50);

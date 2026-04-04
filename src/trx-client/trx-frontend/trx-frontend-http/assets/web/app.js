@@ -3850,6 +3850,7 @@ async function switchRigFromSelect(selectEl) {
   if (typeof setSchedulerRig === "function") setSchedulerRig(lastActiveRigId);
   if (typeof setBackgroundDecodeRig === "function") setBackgroundDecodeRig(lastActiveRigId);
   if (typeof bmFetch === "function") bmFetch(document.getElementById("bm-category-filter")?.value || "");
+  window.trx.map?.syncAprsReceiverMarker();
   // Switch this session's rig and reconnect SSE to the new rig's
   // state channel.
   try {
@@ -4450,9 +4451,15 @@ function navigateToTab(name, options = {}) {
   scheduleSpectrumLayout();
   if (typeof window.loadPluginsForTab === "function") window.loadPluginsForTab(name);
   if (name === "map") {
-    window.trx.map?.initAprsMap();
-    window.trx.map?.sizeAprsMapToViewport();
-    if (window.trx.map?.aprsMap) setTimeout(() => window.trx.map.aprsMap.invalidateSize(), 50);
+    const loadingEl = document.getElementById("map-loading");
+    if (window.trx.map) {
+      if (loadingEl) loadingEl.style.display = "none";
+      window.trx.map.initAprsMap();
+      window.trx.map.sizeAprsMapToViewport();
+      if (window.trx.map.aprsMap) setTimeout(() => window.trx.map.aprsMap.invalidateSize(), 50);
+    } else if (loadingEl) {
+      loadingEl.style.display = "";
+    }
   }
   if (name === "statistics") {
     window.trx.map?.scheduleStatsRender();
@@ -5833,7 +5840,7 @@ function renderRecorderFiles() {
     return;
   }
 
-  let html = '<table class="recorder-table"><thead><tr><th>File</th><th>Size</th><th></th></tr></thead><tbody>';
+  let html = '<table class="recorder-table"><thead><tr><th>File</th><th>Size</th><th>Actions</th></tr></thead><tbody>';
   for (const f of page) {
     const safeName = escapeMapHtml(f.name);
     const encodedName = encodeURIComponent(f.name);

@@ -1263,7 +1263,6 @@ small { color: var(--text-muted); }
   box-sizing: border-box;
   margin: 0;
   padding: 0.2rem 0.5rem;
-  height: 1.65rem;
   font-size: 0.78rem;
   font-family: inherit;
   line-height: 1.4;
@@ -1274,7 +1273,6 @@ small { color: var(--text-muted); }
   background: var(--btn-bg);
   color: var(--text);
   cursor: pointer;
-  transition: background-color 100ms ease, border-color 100ms ease, color 100ms ease, box-shadow 100ms ease;
 }
 .recorder-table .rec-file-btn:hover { background: color-mix(in srgb, var(--btn-bg) 75%, var(--accent-green)); border-color: color-mix(in srgb, var(--btn-border) 60%, var(--accent-green)); box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent-green) 18%, transparent); }
 .recorder-table .rec-file-btn:active { background: color-mix(in srgb, var(--btn-bg) 55%, var(--accent-green)); border-color: var(--accent-green); box-shadow: none; transform: translateY(1px); }
@@ -1703,6 +1701,15 @@ small { color: var(--text-muted); }
   flex-direction: column;
   min-height: 0;
   gap: 0.85rem;
+}
+.map-loading-msg {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 60vh;
+  font-size: 1.1rem;
+  color: var(--text-secondary);
+  opacity: 0.8;
 }
 #map-stage {
   position: relative;
