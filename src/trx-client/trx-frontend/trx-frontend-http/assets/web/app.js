@@ -4469,6 +4469,29 @@ function updateTabHistory(name, replaceHistory = false) {
   window.history[method]({}, "", nextUrl);
 }
 
+// Initialise the Leaflet map, waiting for both Leaflet (L) and map-core.js
+// (window.trx.map) if they haven't loaded yet.
+let _mapInitTimer = null;
+function _initMapWhenReady() {
+  const loadingEl = document.getElementById("map-loading");
+  if (window.trx.map && typeof L !== "undefined") {
+    if (_mapInitTimer) { clearInterval(_mapInitTimer); _mapInitTimer = null; }
+    if (loadingEl) loadingEl.style.display = "none";
+    window.trx.map.initAprsMap();
+    window.trx.map.sizeAprsMapToViewport();
+    if (window.trx.map.aprsMap) setTimeout(() => window.trx.map.aprsMap.invalidateSize(), 50);
+    return;
+  }
+  // Not ready yet — show loading and poll until both are available.
+  if (loadingEl) loadingEl.style.display = "";
+  if (!_mapInitTimer) {
+    _mapInitTimer = setInterval(() => {
+      if (_activeTab !== "map") { clearInterval(_mapInitTimer); _mapInitTimer = null; return; }
+      _initMapWhenReady();
+    }, 100);
+  }
+}
+
 function navigateToTab(name, options = {}) {
   const { updateHistory = true, replaceHistory = false } = options;
   if (authEnabled && !authRole && name !== "main") {
@@ -4499,15 +4522,7 @@ function navigateToTab(name, options = {}) {
   scheduleSpectrumLayout();
   if (typeof window.loadPluginsForTab === "function") window.loadPluginsForTab(name);
   if (name === "map") {
-    const loadingEl = document.getElementById("map-loading");
-    if (window.trx.map) {
-      if (loadingEl) loadingEl.style.display = "none";
-      window.trx.map.initAprsMap();
-      window.trx.map.sizeAprsMapToViewport();
-      if (window.trx.map.aprsMap) setTimeout(() => window.trx.map.aprsMap.invalidateSize(), 50);
-    } else if (loadingEl) {
-      loadingEl.style.display = "";
-    }
+    _initMapWhenReady();
   }
   if (name === "statistics") {
     window.trx.map?.scheduleStatsRender();

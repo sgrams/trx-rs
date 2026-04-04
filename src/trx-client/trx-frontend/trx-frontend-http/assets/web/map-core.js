@@ -3427,15 +3427,12 @@
   }
 
 
-  // Auto-init map if the map tab is already visible (e.g. direct /map navigation)
+  // Auto-init map if the map tab is already visible (e.g. direct /map navigation).
+  // Delegates to _initMapWhenReady() in app.js which handles the Leaflet load race.
   function autoInitIfVisible() {
     const panel = document.getElementById("tab-map");
-    if (panel && panel.style.display !== "none") {
-      const loadingEl = document.getElementById("map-loading");
-      if (loadingEl) loadingEl.style.display = "none";
-      initAprsMap();
-      sizeAprsMapToViewport();
-      if (aprsMap) setTimeout(() => aprsMap.invalidateSize(), 50);
+    if (panel && panel.style.display !== "none" && typeof _initMapWhenReady === "function") {
+      _initMapWhenReady();
     }
   }
 
