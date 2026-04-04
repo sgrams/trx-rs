@@ -3474,8 +3474,9 @@ button:focus-visible, input:focus-visible, select:focus-visible {
 }
 .spectrum-bookmark-chip {
   position: absolute;
-  transform: translateX(-50%);
   top: 2px;
+  left: 0;
+  will-change: transform;
   cursor: pointer;
   font-weight: 600;
   font-size: 0.66rem;

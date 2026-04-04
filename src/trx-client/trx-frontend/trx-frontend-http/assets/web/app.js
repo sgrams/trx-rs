@@ -7507,7 +7507,6 @@ function createBookmarkChip(bm, colorMap, options = {}) {
   } else {
     // Keep main in-band bookmark chips pinned at the very top of the spectrum strip.
     span.style.top = "2px";
-    span.style.transform = "translateX(-50%)";
   }
   span.title = buildBookmarkTooltipText(bm) || (bm.name + " \u2014 " + freqStr + (bm.comment ? "\n" + bm.comment : ""));
   span.dataset.bmId = bm.id;
@@ -7607,14 +7606,17 @@ function updateBookmarkAxis(range) {
   const axisWidth = axisEl.clientWidth || 0;
   const edgePad = 8;
   const spans = axisEl.querySelectorAll(":scope > span");
+  // Batch all offsetWidth reads before any writes to avoid layout thrashing.
+  const widths = [];
+  for (let i = 0; i < spans.length; i++) widths.push(spans[i].offsetWidth || 0);
   visBookmarks.forEach((bm, i) => {
     const span = spans[i];
     if (!span) return;
     const frac = (bm.freq_hz - range.visLoHz) / range.visSpanHz;
     if (axisWidth > 0) {
-      const lw = span.offsetWidth || 0;
+      const lw = widths[i];
       const clamped = Math.max(edgePad + lw / 2, Math.min(axisWidth - edgePad - lw / 2, frac * axisWidth));
-      span.style.left = clamped + "px";
+      span.style.transform = `translateX(${clamped - lw / 2}px)`;
     } else {
       span.style.left = (frac * 100).toFixed(2) + "%";
     }
