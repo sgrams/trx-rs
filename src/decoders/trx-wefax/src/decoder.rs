@@ -33,6 +33,16 @@ const SIGNAL_DETECT_MIN_STDDEV: f32 = 0.08;
 /// At 0.5 s per window this is ~3 seconds.
 const SIGNAL_DETECT_WINDOWS: u32 = 6;
 
+/// Pearson correlation below which a new scan line is considered uncorrelated
+/// with its predecessor — i.e. the slicer is looking at noise, not imagery.
+/// Real WEFAX content typically shows r > 0.5 between adjacent lines.
+const LINE_CORR_NOISE_THRESHOLD: f32 = 0.2;
+
+/// Number of consecutive uncorrelated scan lines that trigger auto-finalize
+/// while receiving. At 120 LPM this is 15 s; at 60 LPM it's 30 s. Modelled on
+/// fldigi's line-to-line correlation check for automatic stop.
+const LINE_CORR_NOISE_LINES: u32 = 30;
+
 /// WEFAX decoder output event.
 #[derive(Debug)]
 pub enum WefaxEvent {
@@ -80,6 +90,11 @@ pub struct WefaxDecoder {
     signal_detect_count: u32,
     /// Accumulator for computing luminance variance within the current window.
     signal_detect_buf: Vec<f32>,
+    /// Counts consecutive scan lines whose correlation with the previous
+    /// line falls below `LINE_CORR_NOISE_THRESHOLD`. When it reaches
+    /// `LINE_CORR_NOISE_LINES` the decoder auto-finalizes the in-progress
+    /// image (carrier dropped / tx ended without an APT stop tone).
+    low_corr_lines: u32,
     /// Current rig dial frequency in Hz (for image filenames).
     freq_hz: u64,
     /// Current rig mode name (for image filenames).
@@ -106,6 +121,7 @@ impl WefaxDecoder {
             sent_idle_event: false,
             signal_detect_count: 0,
             signal_detect_buf: Vec::with_capacity(INTERNAL_RATE as usize / 2),
+            low_corr_lines: 0,
             freq_hz: 0,
             mode: String::new(),
         }
@@ -258,12 +274,44 @@ impl WefaxDecoder {
                 }
 
                 // Feed luminance to line slicer.
+                let mut carrier_lost = false;
                 if let Some(ref mut slicer) = self.slicer {
                     let new_lines = slicer.process(&luminance);
                     for line in new_lines {
                         if let Some(ref mut image) = self.image {
+                            // Line-to-line correlation watchdog: real imagery
+                            // has highly correlated adjacent lines; pure noise
+                            // does not. If correlation stays low for
+                            // `LINE_CORR_NOISE_LINES` consecutive lines, the
+                            // carrier is gone and we finalize (fldigi-style).
+                            if let Some(r) = image.correlation_with_last(&line) {
+                                if r < LINE_CORR_NOISE_THRESHOLD {
+                                    self.low_corr_lines += 1;
+                                    trace!(
+                                        r = format!("{:.3}", r),
+                                        count = self.low_corr_lines,
+                                        "WEFAX low line-correlation"
+                                    );
+                                } else {
+                                    self.low_corr_lines = 0;
+                                }
+                            }
+                            // Flat lines (correlation == None) don't advance
+                            // the counter but also don't reset it — an image
+                            // with a solid band surrounded by noise still
+                            // trips the watchdog once the noise resumes.
+
                             image.push_line(line);
                             let count = image.line_count();
+
+                            if self.low_corr_lines >= LINE_CORR_NOISE_LINES {
+                                debug!(
+                                    lines = count,
+                                    "WEFAX: line correlation lost — auto-finalizing image"
+                                );
+                                carrier_lost = true;
+                                break;
+                            }
 
                             // Emit progress event.
                             if self.config.emit_progress && count % PROGRESS_INTERVAL == 0 {
@@ -286,6 +334,12 @@ impl WefaxDecoder {
                             }
                         }
                     }
+                }
+
+                if carrier_lost {
+                    events.extend(self.finalize_image(ioc, lpm));
+                    self.transition_to_idle();
+                    return events;
                 }
             }
 
@@ -319,6 +373,7 @@ impl WefaxDecoder {
         self.sent_idle_event = false;
         self.signal_detect_count = 0;
         self.signal_detect_buf.clear();
+        self.low_corr_lines = 0;
         events
     }
 
@@ -378,6 +433,7 @@ impl WefaxDecoder {
         self.slicer = Some(LineSlicer::new(lpm, ioc, INTERNAL_RATE, phase_offset));
         self.image = Some(ImageAssembler::new(ppl));
         self.tone_detector.reset();
+        self.low_corr_lines = 0;
         self.state = State::Receiving { ioc, lpm };
         self.state_event("Receiving", ioc, lpm)
     }
@@ -390,6 +446,7 @@ impl WefaxDecoder {
         self.tone_detector.reset();
         self.signal_detect_count = 0;
         self.signal_detect_buf.clear();
+        self.low_corr_lines = 0;
     }
 
     fn finalize_image(&mut self, ioc: u16, lpm: u16) -> Vec<WefaxEvent> {

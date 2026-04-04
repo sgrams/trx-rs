@@ -37,6 +37,47 @@ impl ImageAssembler {
         self.lines.last().map(|l| l.as_slice())
     }
 
+    /// Pearson correlation between `line` and the most recently pushed line.
+    ///
+    /// Returns `None` if there is no previous line, the lengths don't match,
+    /// or either line has near-zero variance (constant pixels — correlation
+    /// is undefined, and flat regions shouldn't be scored as "noise").
+    ///
+    /// For real WEFAX image content adjacent lines are typically highly
+    /// correlated (r > 0.5). When the signal is lost and the slicer feeds
+    /// on noise, r collapses toward 0. This mirrors fldigi's line-to-line
+    /// correlation check for automatic stop.
+    pub fn correlation_with_last(&self, line: &[u8]) -> Option<f32> {
+        let prev = self.lines.last()?;
+        if prev.len() != line.len() || line.is_empty() {
+            return None;
+        }
+
+        let n = line.len() as f32;
+        let mean_a = prev.iter().map(|&v| v as f32).sum::<f32>() / n;
+        let mean_b = line.iter().map(|&v| v as f32).sum::<f32>() / n;
+
+        let mut cov = 0.0f32;
+        let mut var_a = 0.0f32;
+        let mut var_b = 0.0f32;
+        for (&a, &b) in prev.iter().zip(line.iter()) {
+            let da = a as f32 - mean_a;
+            let db = b as f32 - mean_b;
+            cov += da * db;
+            var_a += da * da;
+            var_b += db * db;
+        }
+
+        // Require some variance in both lines — flat regions are common in
+        // real imagery (solid black/white) and shouldn't be penalised.
+        const MIN_VAR: f32 = 32.0; // ~ stddev of 4 counts on 0..255 scale
+        if var_a < MIN_VAR || var_b < MIN_VAR {
+            return None;
+        }
+
+        Some(cov / (var_a.sqrt() * var_b.sqrt()))
+    }
+
     /// Encode the accumulated image to an 8-bit greyscale PNG file.
     ///
     /// Returns the full path to the saved file.
@@ -154,6 +195,37 @@ fn is_leap(y: u32) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn correlation_identifies_noise_vs_image() {
+        let mut asm = ImageAssembler::new(256);
+
+        // No previous line.
+        assert!(asm.correlation_with_last(&[0u8; 256]).is_none());
+
+        // Flat line, then a gradient: first call has no reference.
+        let gradient: Vec<u8> = (0..256).map(|i| i as u8).collect();
+        asm.push_line(gradient.clone());
+
+        // Nearly identical line — correlation ≈ 1.
+        let near: Vec<u8> = (0..256).map(|i| i as u8).collect();
+        let r = asm.correlation_with_last(&near).expect("r");
+        assert!(r > 0.99, "identical lines should correlate: r={}", r);
+
+        // Pseudo-random noise vs gradient — correlation should be low.
+        let noise: Vec<u8> = (0..256)
+            .map(|i| ((i * 1103515245 + 12345) as u32 >> 8 & 0xff) as u8)
+            .collect();
+        let r = asm.correlation_with_last(&noise).expect("r");
+        assert!(
+            r.abs() < 0.3,
+            "noise vs gradient should not correlate: r={}",
+            r
+        );
+
+        // Flat line returns None (no variance).
+        assert!(asm.correlation_with_last(&[128u8; 256]).is_none());
+    }
 
     #[test]
     fn image_assembler_line_count() {
