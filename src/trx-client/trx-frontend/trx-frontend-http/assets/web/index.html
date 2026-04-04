@@ -1655,21 +1655,7 @@
   window.loadPluginsForTab = loadPlugins;
 })();
   </script>
-  <script>
-(function() {
-  document.addEventListener('click', function(e) {
-    var tab = e.target.closest('[data-tab]');
-    if (!tab) return;
-    var panel = document.getElementById('tab-' + tab.dataset.tab);
-    if (!panel) return;
-    var tmpl = panel.querySelector('template');
-    if (tmpl) {
-      panel.appendChild(tmpl.content.cloneNode(true));
-      tmpl.remove();
-    }
-  });
-})();
-  </script>
+  <!-- Template cloning is handled by navigateToTab() in app.js -->
   <script defer src="/vendor/leaflet.js"></script>
 </body>
 </html>

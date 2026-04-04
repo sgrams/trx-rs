@@ -3178,11 +3178,33 @@
   }
 
   let _statsRenderPending = false;
+  let _statsControlsWired = false;
+  function _wireStatsControls() {
+    if (_statsControlsWired) return;
+    const rigEl = document.getElementById("stats-rig-filter");
+    const histEl = document.getElementById("stats-history-limit");
+    if (!rigEl && !histEl) return; // template not yet cloned
+    _statsControlsWired = true;
+    if (rigEl) {
+      rigEl.addEventListener("change", () => {
+        statsRigFilter = rigEl.value;
+        scheduleStatsRender();
+      });
+    }
+    if (histEl) {
+      histEl.value = String(statsHistoryLimitMinutes);
+      histEl.addEventListener("change", () => {
+        statsHistoryLimitMinutes = Number(histEl.value) || 1440;
+        scheduleStatsRender();
+      });
+    }
+  }
   function scheduleStatsRender() {
     if (_statsRenderPending) return;
     _statsRenderPending = true;
     requestAnimationFrame(() => {
       _statsRenderPending = false;
+      _wireStatsControls();
       renderStatsCounters();
       renderStatsDecodeTypes();
       renderStatsBandActivity();
@@ -3193,25 +3215,6 @@
       renderMapWeakSignalSummary();
     });
   }
-
-  // Wire up statistics panel controls
-  (function() {
-    const rigEl = document.getElementById("stats-rig-filter");
-    if (rigEl) {
-      rigEl.addEventListener("change", () => {
-        statsRigFilter = rigEl.value;
-        scheduleStatsRender();
-      });
-    }
-    const histEl = document.getElementById("stats-history-limit");
-    if (histEl) {
-      histEl.value = String(statsHistoryLimitMinutes);
-      histEl.addEventListener("change", () => {
-        statsHistoryLimitMinutes = Number(histEl.value) || 1440;
-        scheduleStatsRender();
-      });
-    }
-  })();
 
   function buildBookmarkLocatorPopupHtml(grid, bookmarks) {
     const list = Array.isArray(bookmarks) ? bookmarks : [];

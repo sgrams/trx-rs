@@ -4444,7 +4444,14 @@ function navigateToTab(name, options = {}) {
   document.querySelectorAll(".tab-bar .tab").forEach((t) => t.classList.remove("active"));
   btn.classList.add("active");
   document.querySelectorAll(".tab-panel").forEach((p) => p.style.display = "none");
-  document.getElementById(`tab-${name}`).style.display = "";
+  const panel = document.getElementById(`tab-${name}`);
+  panel.style.display = "";
+  // Clone deferred <template> content into the panel before any tab-specific init.
+  const tmpl = panel.querySelector("template");
+  if (tmpl) {
+    panel.appendChild(tmpl.content.cloneNode(true));
+    tmpl.remove();
+  }
   if (updateHistory) {
     updateTabHistory(name, replaceHistory);
   }
