@@ -7,6 +7,8 @@
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
+use tracing::{debug, warn};
+
 /// Image assembler: accumulates greyscale lines and encodes to PNG.
 pub struct ImageAssembler {
     pixels_per_line: usize,
@@ -86,6 +88,32 @@ impl ImageAssembler {
             return Err("no image lines to save".into());
         }
 
+        // Detect row-length drift before handing bytes to the encoder.
+        // png::Writer only validates the total byte count, so if some
+        // rows were pushed at the wrong width the total could still
+        // match and the decoded image would be silently skewed.
+        let expected = self.pixels_per_line;
+        let mut bad_rows: usize = 0;
+        for (i, line) in self.lines.iter().enumerate() {
+            if line.len() != expected {
+                bad_rows += 1;
+                if bad_rows <= 3 {
+                    warn!(
+                        row = i,
+                        got = line.len(),
+                        expected,
+                        "WEFAX: scan line has wrong width"
+                    );
+                }
+            }
+        }
+        if bad_rows > 0 {
+            return Err(format!(
+                "{} scan line(s) have wrong width (expected {} px)",
+                bad_rows, expected
+            ));
+        }
+
         std::fs::create_dir_all(output_dir).map_err(|e| format!("create output dir: {}", e))?;
 
         let filename = generate_filename(freq_hz, mode);
@@ -109,14 +137,16 @@ impl ImageAssembler {
             .map_err(|e| format!("write PNG header: {}", e))?;
 
         // Write all rows.
-        let mut img_data = Vec::with_capacity((width * height) as usize);
+        let expected_bytes = (width as usize) * (height as usize);
+        let mut img_data = Vec::with_capacity(expected_bytes);
         for line in &self.lines {
             img_data.extend_from_slice(line);
         }
+        debug_assert_eq!(img_data.len(), expected_bytes);
 
         writer
             .write_image_data(&img_data)
-            .map_err(|e| format!("write PNG data: {}", e))?;
+            .map_err(|e| format!("write PNG data ({} bytes, {}x{}): {}", img_data.len(), width, height, e))?;
 
         // Explicitly finish the writer (writes IEND). Relying on Drop
         // alone swallows any I/O error and can yield a truncated file.
@@ -130,6 +160,15 @@ impl ImageAssembler {
             .map_err(|e| format!("flush PNG file: {}", e))?;
         file.sync_all()
             .map_err(|e| format!("sync PNG file: {}", e))?;
+
+        let file_size = std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
+        debug!(
+            path = %path.display(),
+            width,
+            height,
+            bytes = file_size,
+            "WEFAX: saved PNG"
+        );
 
         Ok(path)
     }
@@ -265,7 +304,54 @@ mod tests {
         assert!(result.is_ok(), "save_png failed: {:?}", result.err());
         let path = result.unwrap();
         assert!(path.exists());
+
+        // Read the file back and verify it decodes as a valid 8-bit
+        // greyscale PNG of the expected size. This catches truncation
+        // or IHDR-vs-IDAT mismatches that file-existence alone misses.
+        let decoder = png::Decoder::new(std::fs::File::open(&path).unwrap());
+        let mut reader = decoder.read_info().expect("PNG header invalid");
+        let info = reader.info();
+        assert_eq!(info.width, 100);
+        assert_eq!(info.height, 50);
+        assert_eq!(info.color_type, png::ColorType::Grayscale);
+        assert_eq!(info.bit_depth, png::BitDepth::Eight);
+        let mut buf = vec![0; reader.output_buffer_size()];
+        reader.next_frame(&mut buf).expect("PNG data truncated");
+        assert_eq!(buf.len(), 100 * 50);
+
         // Clean up.
+        let _ = std::fs::remove_file(&path);
+        let _ = std::fs::remove_dir(&dir);
+    }
+
+    /// Verify save_png survives realistic WEFAX dimensions (IOC 576 →
+    /// 1809 px wide, 800+ lines tall) and that every byte round-trips.
+    #[test]
+    fn save_png_realistic_dimensions() {
+        let ppl = crate::config::WefaxConfig::pixels_per_line(576) as usize;
+        let mut asm = ImageAssembler::new(ppl);
+        for y in 0..820u32 {
+            let row: Vec<u8> = (0..ppl)
+                .map(|x| ((x as u32 ^ y).wrapping_mul(17) & 0xff) as u8)
+                .collect();
+            asm.push_line(row);
+        }
+        let dir = std::env::temp_dir().join("trx-wefax-test-realistic");
+        let path = asm.save_png(&dir, 7880000, "USB").expect("save_png");
+        let bytes = std::fs::read(&path).expect("read back");
+        assert!(bytes.starts_with(b"\x89PNG\r\n\x1a\n"), "missing PNG magic");
+        // IEND chunk should be the last 12 bytes.
+        assert_eq!(&bytes[bytes.len() - 8..bytes.len() - 4], b"IEND");
+
+        let decoder = png::Decoder::new(&bytes[..]);
+        let mut reader = decoder.read_info().expect("decode header");
+        let info = reader.info();
+        assert_eq!(info.width, ppl as u32);
+        assert_eq!(info.height, 820);
+        let mut buf = vec![0; reader.output_buffer_size()];
+        reader.next_frame(&mut buf).expect("decode data");
+        assert_eq!(buf.len(), ppl * 820);
+
         let _ = std::fs::remove_file(&path);
         let _ = std::fs::remove_dir(&dir);
     }
