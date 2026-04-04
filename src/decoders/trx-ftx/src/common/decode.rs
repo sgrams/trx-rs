@@ -146,7 +146,9 @@ pub fn ftx_find_candidates(
 
                     let score = if is_ft2 {
                         #[cfg(feature = "ft2")]
-                        { crate::ft2::ft2_sync_score(wf, &cand) }
+                        {
+                            crate::ft2::ft2_sync_score(wf, &cand)
+                        }
                         #[cfg(not(feature = "ft2"))]
                         unreachable!()
                     } else if wf.protocol.uses_ft4_layout() {

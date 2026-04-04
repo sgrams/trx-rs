@@ -319,10 +319,7 @@ fn static_asset_response(
             if val == etag || val == "*" {
                 return HttpResponse::NotModified()
                     .insert_header((header::ETAG, etag.to_owned()))
-                    .insert_header((
-                        header::CACHE_CONTROL,
-                        "public, max-age=31536000, immutable",
-                    ))
+                    .insert_header((header::CACHE_CONTROL, "public, max-age=31536000, immutable"))
                     .finish();
             }
         }
@@ -342,10 +339,7 @@ fn static_asset_response(
         .insert_header((header::CONTENT_TYPE, content_type))
         .insert_header((header::CONTENT_ENCODING, encoding))
         .insert_header((header::ETAG, etag.to_owned()))
-        .insert_header((
-            header::CACHE_CONTROL,
-            "public, max-age=31536000, immutable",
-        ))
+        .insert_header((header::CACHE_CONTROL, "public, max-age=31536000, immutable"))
         .body(Bytes::copy_from_slice(body))
 }
 

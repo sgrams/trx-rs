@@ -181,9 +181,14 @@ impl WefaxDecoder {
                     while self.signal_detect_buf.len() >= window_size {
                         let window = &self.signal_detect_buf[..window_size];
                         let mean = window.iter().sum::<f32>() / window.len() as f32;
-                        let variance = window.iter()
-                            .map(|&v| { let d = v - mean; d * d })
-                            .sum::<f32>() / window.len() as f32;
+                        let variance = window
+                            .iter()
+                            .map(|&v| {
+                                let d = v - mean;
+                                d * d
+                            })
+                            .sum::<f32>()
+                            / window.len() as f32;
                         let stddev = variance.sqrt();
 
                         if stddev > SIGNAL_DETECT_MIN_STDDEV {
@@ -231,10 +236,7 @@ impl WefaxDecoder {
 
             State::Phasing { ioc, lpm } => {
                 // Check for stop tone (abort).
-                if tone_results
-                    .iter()
-                    .any(|r| r.tone == Some(AptTone::Stop))
-                {
+                if tone_results.iter().any(|r| r.tone == Some(AptTone::Stop)) {
                     self.transition_to_idle();
                     return events;
                 }
@@ -248,10 +250,7 @@ impl WefaxDecoder {
 
             State::Receiving { ioc, lpm } => {
                 // Check for stop tone.
-                if tone_results
-                    .iter()
-                    .any(|r| r.tone == Some(AptTone::Stop))
-                {
+                if tone_results.iter().any(|r| r.tone == Some(AptTone::Stop)) {
                     self.state = State::Stopping { ioc, lpm };
                     events.extend(self.finalize_image(ioc, lpm));
                     self.transition_to_idle();
@@ -268,12 +267,10 @@ impl WefaxDecoder {
 
                             // Emit progress event.
                             if self.config.emit_progress && count % PROGRESS_INTERVAL == 0 {
-                                let line_data = image
-                                    .last_line()
-                                    .map(|l| l.to_vec())
-                                    .unwrap_or_default();
-                                let b64 = base64::engine::general_purpose::STANDARD
-                                    .encode(&line_data);
+                                let line_data =
+                                    image.last_line().map(|l| l.to_vec()).unwrap_or_default();
+                                let b64 =
+                                    base64::engine::general_purpose::STANDARD.encode(&line_data);
                                 events.push(WefaxEvent::Progress(
                                     WefaxProgress {
                                         rig_id: None,
@@ -333,10 +330,7 @@ impl WefaxDecoder {
 
     /// Check if the decoder is currently receiving an image.
     pub fn is_receiving(&self) -> bool {
-        matches!(
-            self.state,
-            State::Phasing { .. } | State::Receiving { .. }
-        )
+        matches!(self.state, State::Phasing { .. } | State::Receiving { .. })
     }
 
     fn state_event(&self, label: &str, ioc: u16, lpm: u16) -> WefaxEvent {
@@ -487,7 +481,10 @@ mod tests {
         let signal = generate_apt_start(300.0, 11025, 3.0);
         dec.process_samples(&signal);
         assert!(
-            matches!(dec.state, State::StartDetected { ioc: 576 } | State::Phasing { ioc: 576, .. }),
+            matches!(
+                dec.state,
+                State::StartDetected { ioc: 576 } | State::Phasing { ioc: 576, .. }
+            ),
             "state should be StartDetected or Phasing, got {:?}",
             dec.state
         );
@@ -496,10 +493,7 @@ mod tests {
     #[test]
     fn decoder_reset_returns_to_idle() {
         let mut dec = WefaxDecoder::new(48000, WefaxConfig::default());
-        dec.state = State::Receiving {
-            ioc: 576,
-            lpm: 120,
-        };
+        dec.state = State::Receiving { ioc: 576, lpm: 120 };
         dec.reset();
         assert_eq!(dec.state, State::Idle);
     }

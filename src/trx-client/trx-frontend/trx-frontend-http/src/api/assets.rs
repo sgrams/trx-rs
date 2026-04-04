@@ -170,171 +170,103 @@ pub(crate) async fn themes_css(req: HttpRequest) -> impl Responder {
 #[get("/app.js")]
 pub(crate) async fn app_js(req: HttpRequest) -> impl Responder {
     let c = gz_app_js();
-    static_asset_response(
-        &req,
-        "application/javascript; charset=utf-8",
-        c,
-    )
+    static_asset_response(&req, "application/javascript; charset=utf-8", c)
 }
 
 #[get("/map-core.js")]
 pub(crate) async fn map_core_js(req: HttpRequest) -> impl Responder {
     let c = gz_map_core_js();
-    static_asset_response(
-        &req,
-        "application/javascript; charset=utf-8",
-        c,
-    )
+    static_asset_response(&req, "application/javascript; charset=utf-8", c)
 }
 
 #[get("/screenshot.js")]
 pub(crate) async fn screenshot_js(req: HttpRequest) -> impl Responder {
     let c = gz_screenshot_js();
-    static_asset_response(
-        &req,
-        "application/javascript; charset=utf-8",
-        c,
-    )
+    static_asset_response(&req, "application/javascript; charset=utf-8", c)
 }
 
 #[get("/decode-history-worker.js")]
 pub(crate) async fn decode_history_worker_js(req: HttpRequest) -> impl Responder {
     let c = gz_decode_history_worker_js();
-    static_asset_response(
-        &req,
-        "application/javascript; charset=utf-8",
-        c,
-    )
+    static_asset_response(&req, "application/javascript; charset=utf-8", c)
 }
 
 #[get("/webgl-renderer.js")]
 pub(crate) async fn webgl_renderer_js(req: HttpRequest) -> impl Responder {
     let c = gz_webgl_renderer_js();
-    static_asset_response(
-        &req,
-        "application/javascript; charset=utf-8",
-        c,
-    )
+    static_asset_response(&req, "application/javascript; charset=utf-8", c)
 }
 
 #[get("/leaflet-ais-tracksymbol.js")]
 pub(crate) async fn leaflet_ais_tracksymbol_js(req: HttpRequest) -> impl Responder {
     let c = gz_leaflet_ais_tracksymbol_js();
-    static_asset_response(
-        &req,
-        "application/javascript; charset=utf-8",
-        c,
-    )
+    static_asset_response(&req, "application/javascript; charset=utf-8", c)
 }
 
 #[get("/aprs.js")]
 pub(crate) async fn aprs_js(req: HttpRequest) -> impl Responder {
     let c = gz_aprs_js();
-    static_asset_response(
-        &req,
-        "application/javascript; charset=utf-8",
-        c,
-    )
+    static_asset_response(&req, "application/javascript; charset=utf-8", c)
 }
 
 #[get("/hf-aprs.js")]
 pub(crate) async fn hf_aprs_js(req: HttpRequest) -> impl Responder {
     let c = gz_hf_aprs_js();
-    static_asset_response(
-        &req,
-        "application/javascript; charset=utf-8",
-        c,
-    )
+    static_asset_response(&req, "application/javascript; charset=utf-8", c)
 }
 
 #[get("/ais.js")]
 pub(crate) async fn ais_js(req: HttpRequest) -> impl Responder {
     let c = gz_ais_js();
-    static_asset_response(
-        &req,
-        "application/javascript; charset=utf-8",
-        c,
-    )
+    static_asset_response(&req, "application/javascript; charset=utf-8", c)
 }
 
 #[get("/vdes.js")]
 pub(crate) async fn vdes_js(req: HttpRequest) -> impl Responder {
     let c = gz_vdes_js();
-    static_asset_response(
-        &req,
-        "application/javascript; charset=utf-8",
-        c,
-    )
+    static_asset_response(&req, "application/javascript; charset=utf-8", c)
 }
 
 #[get("/ft8.js")]
 pub(crate) async fn ft8_js(req: HttpRequest) -> impl Responder {
     let c = gz_ft8_js();
-    static_asset_response(
-        &req,
-        "application/javascript; charset=utf-8",
-        c,
-    )
+    static_asset_response(&req, "application/javascript; charset=utf-8", c)
 }
 
 #[get("/ft4.js")]
 pub(crate) async fn ft4_js(req: HttpRequest) -> impl Responder {
     let c = gz_ft4_js();
-    static_asset_response(
-        &req,
-        "application/javascript; charset=utf-8",
-        c,
-    )
+    static_asset_response(&req, "application/javascript; charset=utf-8", c)
 }
 
 #[get("/ft2.js")]
 pub(crate) async fn ft2_js(req: HttpRequest) -> impl Responder {
     let c = gz_ft2_js();
-    static_asset_response(
-        &req,
-        "application/javascript; charset=utf-8",
-        c,
-    )
+    static_asset_response(&req, "application/javascript; charset=utf-8", c)
 }
 
 #[get("/wspr.js")]
 pub(crate) async fn wspr_js(req: HttpRequest) -> impl Responder {
     let c = gz_wspr_js();
-    static_asset_response(
-        &req,
-        "application/javascript; charset=utf-8",
-        c,
-    )
+    static_asset_response(&req, "application/javascript; charset=utf-8", c)
 }
 
 #[get("/cw.js")]
 pub(crate) async fn cw_js(req: HttpRequest) -> impl Responder {
     let c = gz_cw_js();
-    static_asset_response(
-        &req,
-        "application/javascript; charset=utf-8",
-        c,
-    )
+    static_asset_response(&req, "application/javascript; charset=utf-8", c)
 }
 
 #[get("/sat.js")]
 pub(crate) async fn sat_js(req: HttpRequest) -> impl Responder {
     let c = gz_sat_js();
-    static_asset_response(
-        &req,
-        "application/javascript; charset=utf-8",
-        c,
-    )
+    static_asset_response(&req, "application/javascript; charset=utf-8", c)
 }
 
 #[get("/wefax.js")]
 pub(crate) async fn wefax_js(req: HttpRequest) -> impl Responder {
     let c = gz_wefax_js();
-    static_asset_response(
-        &req,
-        "application/javascript; charset=utf-8",
-        c,
-    )
+    static_asset_response(&req, "application/javascript; charset=utf-8", c)
 }
 
 #[get("/images/{filename}")]
@@ -364,51 +296,31 @@ pub(crate) async fn wefax_image(path: web::Path<String>) -> impl Responder {
 #[get("/bookmarks.js")]
 pub(crate) async fn bookmarks_js(req: HttpRequest) -> impl Responder {
     let c = gz_bookmarks_js();
-    static_asset_response(
-        &req,
-        "application/javascript; charset=utf-8",
-        c,
-    )
+    static_asset_response(&req, "application/javascript; charset=utf-8", c)
 }
 
 #[get("/scheduler.js")]
 pub(crate) async fn scheduler_js(req: HttpRequest) -> impl Responder {
     let c = gz_scheduler_js();
-    static_asset_response(
-        &req,
-        "application/javascript; charset=utf-8",
-        c,
-    )
+    static_asset_response(&req, "application/javascript; charset=utf-8", c)
 }
 
 #[get("/sat-scheduler.js")]
 pub(crate) async fn sat_scheduler_js(req: HttpRequest) -> impl Responder {
     let c = gz_sat_scheduler_js();
-    static_asset_response(
-        &req,
-        "application/javascript; charset=utf-8",
-        c,
-    )
+    static_asset_response(&req, "application/javascript; charset=utf-8", c)
 }
 
 #[get("/background-decode.js")]
 pub(crate) async fn background_decode_js(req: HttpRequest) -> impl Responder {
     let c = gz_background_decode_js();
-    static_asset_response(
-        &req,
-        "application/javascript; charset=utf-8",
-        c,
-    )
+    static_asset_response(&req, "application/javascript; charset=utf-8", c)
 }
 
 #[get("/vchan.js")]
 pub(crate) async fn vchan_js(req: HttpRequest) -> impl Responder {
     let c = gz_vchan_js();
-    static_asset_response(
-        &req,
-        "application/javascript; charset=utf-8",
-        c,
-    )
+    static_asset_response(&req, "application/javascript; charset=utf-8", c)
 }
 
 #[get("/bandplan.json")]
@@ -436,11 +348,7 @@ pub(crate) async fn dseg14_classic_woff2() -> impl Responder {
 #[get("/vendor/leaflet.js")]
 pub(crate) async fn leaflet_js(req: HttpRequest) -> impl Responder {
     let c = gz_leaflet_js();
-    static_asset_response(
-        &req,
-        "application/javascript; charset=utf-8",
-        c,
-    )
+    static_asset_response(&req, "application/javascript; charset=utf-8", c)
 }
 
 #[get("/vendor/leaflet.css")]

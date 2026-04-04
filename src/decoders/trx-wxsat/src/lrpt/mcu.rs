@@ -265,10 +265,8 @@ fn idct_8x8(coeffs: &[i32; 64], output: &mut [u8; 64]) {
                         1.0
                     };
                     let coeff = coeffs[v * 8 + u] as f64;
-                    let cos_x =
-                        (std::f64::consts::PI * (2 * x + 1) as f64 * u as f64 / 16.0).cos();
-                    let cos_y =
-                        (std::f64::consts::PI * (2 * y + 1) as f64 * v as f64 / 16.0).cos();
+                    let cos_x = (std::f64::consts::PI * (2 * x + 1) as f64 * u as f64 / 16.0).cos();
+                    let cos_y = (std::f64::consts::PI * (2 * y + 1) as f64 * v as f64 / 16.0).cos();
                     sum += cu * cv * coeff * cos_x * cos_y;
                 }
             }
@@ -703,16 +701,10 @@ mod tests {
         assert_eq!(asm.identify_satellite(), None);
 
         asm.spacecraft_id = Some(SPACECRAFT_M2_3);
-        assert_eq!(
-            asm.identify_satellite(),
-            Some(MeteorSatellite::MeteorM2_3)
-        );
+        assert_eq!(asm.identify_satellite(), Some(MeteorSatellite::MeteorM2_3));
 
         asm.spacecraft_id = Some(SPACECRAFT_M2_4);
-        assert_eq!(
-            asm.identify_satellite(),
-            Some(MeteorSatellite::MeteorM2_4)
-        );
+        assert_eq!(asm.identify_satellite(), Some(MeteorSatellite::MeteorM2_4));
 
         asm.spacecraft_id = Some(99);
         assert_eq!(asm.identify_satellite(), Some(MeteorSatellite::Unknown));

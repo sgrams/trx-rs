@@ -28,16 +28,14 @@ use trx_core::audio::{
     write_vchan_uuid_msg, AudioStreamInfo, AUDIO_MSG_AIS_DECODE, AUDIO_MSG_APRS_DECODE,
     AUDIO_MSG_CW_DECODE, AUDIO_MSG_FT2_DECODE, AUDIO_MSG_FT4_DECODE, AUDIO_MSG_FT8_DECODE,
     AUDIO_MSG_HF_APRS_DECODE, AUDIO_MSG_HISTORY_COMPRESSED, AUDIO_MSG_LRPT_IMAGE,
-    AUDIO_MSG_LRPT_PROGRESS, AUDIO_MSG_WEFAX_DECODE, AUDIO_MSG_WEFAX_PROGRESS,
-    AUDIO_MSG_RX_FRAME, AUDIO_MSG_STREAM_INFO, AUDIO_MSG_TX_FRAME, AUDIO_MSG_VCHAN_ALLOCATED,
-    AUDIO_MSG_VCHAN_BW, AUDIO_MSG_VCHAN_DESTROYED, AUDIO_MSG_VCHAN_FREQ, AUDIO_MSG_VCHAN_MODE,
-    AUDIO_MSG_VCHAN_REMOVE, AUDIO_MSG_VCHAN_SUB, AUDIO_MSG_VCHAN_UNSUB, AUDIO_MSG_VDES_DECODE,
-    AUDIO_MSG_WSPR_DECODE,
+    AUDIO_MSG_LRPT_PROGRESS, AUDIO_MSG_RX_FRAME, AUDIO_MSG_STREAM_INFO, AUDIO_MSG_TX_FRAME,
+    AUDIO_MSG_VCHAN_ALLOCATED, AUDIO_MSG_VCHAN_BW, AUDIO_MSG_VCHAN_DESTROYED, AUDIO_MSG_VCHAN_FREQ,
+    AUDIO_MSG_VCHAN_MODE, AUDIO_MSG_VCHAN_REMOVE, AUDIO_MSG_VCHAN_SUB, AUDIO_MSG_VCHAN_UNSUB,
+    AUDIO_MSG_VDES_DECODE, AUDIO_MSG_WEFAX_DECODE, AUDIO_MSG_WEFAX_PROGRESS, AUDIO_MSG_WSPR_DECODE,
 };
 use trx_core::decode::{
     AisMessage, AprsPacket, CwEvent, DecodedMessage, Ft8Message, LrptImage, LrptProgress,
-    VdesMessage, WefaxMessage,
-    WsprMessage,
+    VdesMessage, WefaxMessage, WsprMessage,
 };
 use trx_core::rig::state::{RigMode, RigState};
 use trx_core::vchan::SharedVChanManager;
@@ -2687,10 +2685,7 @@ pub async fn run_wefax_decoder(
 ) {
     use trx_wefax::{WefaxConfig, WefaxDecoder, WefaxEvent};
 
-    info!(
-        "WEFAX decoder started ({}Hz, {} ch)",
-        sample_rate, channels
-    );
+    info!("WEFAX decoder started ({}Hz, {} ch)", sample_rate, channels);
 
     let wefax_output_dir = dirs::cache_dir()
         .unwrap_or_else(|| std::path::PathBuf::from(".cache"))
@@ -2705,7 +2700,10 @@ pub async fn run_wefax_decoder(
     let mut last_reset_seq: u64 = 0;
 
     let is_wefax_mode = |mode: &RigMode| {
-        matches!(mode, RigMode::USB | RigMode::LSB | RigMode::AM | RigMode::DIG)
+        matches!(
+            mode,
+            RigMode::USB | RigMode::LSB | RigMode::AM | RigMode::DIG
+        )
     };
 
     let mut active = state_rx.borrow().decoders.wefax_decode_enabled
@@ -2716,8 +2714,8 @@ pub async fn run_wefax_decoder(
             match state_rx.changed().await {
                 Ok(()) => {
                     let state = state_rx.borrow();
-                    active = state.decoders.wefax_decode_enabled
-                        && is_wefax_mode(&state.status.mode);
+                    active =
+                        state.decoders.wefax_decode_enabled && is_wefax_mode(&state.status.mode);
                     if active {
                         pcm_rx = pcm_rx.resubscribe();
                     }

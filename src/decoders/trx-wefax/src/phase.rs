@@ -181,9 +181,7 @@ mod tests {
 
         panic!(
             "phasing should have locked after 20 lines (spl={}, pw={}, positions={:?})",
-            spl,
-            pw,
-            det.pulse_positions
+            spl, pw, det.pulse_positions
         );
     }
 }

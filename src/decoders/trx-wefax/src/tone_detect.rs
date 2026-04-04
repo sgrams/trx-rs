@@ -138,8 +138,7 @@ impl ToneDetector {
 
     fn analyze_window(&mut self) -> ToneDetectResult {
         // Compute transition frequency: transitions per second.
-        let freq =
-            self.transitions * self.sample_rate / self.sample_count.max(1) as u32;
+        let freq = self.transitions * self.sample_rate / self.sample_count.max(1) as u32;
 
         let detected = classify_freq(freq);
 
@@ -195,7 +194,11 @@ mod tests {
             .map(|i| {
                 // Square wave at trans_freq Hz: above 0 → white, below 0 → black.
                 let phase = (2.0 * PI * trans_freq * i as f32 / sample_rate as f32).sin();
-                if phase >= 0.0 { 1.0 } else { 0.0 }
+                if phase >= 0.0 {
+                    1.0
+                } else {
+                    0.0
+                }
             })
             .collect()
     }
@@ -252,9 +255,8 @@ mod tests {
             .map(|i| {
                 // Mix of frequencies that don't match any APT tone.
                 let t = i as f32 / sr as f32;
-                (0.5 + 0.3 * (2.0 * PI * 137.0 * t).sin()
-                    + 0.2 * (2.0 * PI * 523.0 * t).sin())
-                .clamp(0.0, 1.0)
+                (0.5 + 0.3 * (2.0 * PI * 137.0 * t).sin() + 0.2 * (2.0 * PI * 523.0 * t).sin())
+                    .clamp(0.0, 1.0)
             })
             .collect();
         let results = det.process(&signal);

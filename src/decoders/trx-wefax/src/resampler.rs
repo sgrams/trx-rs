@@ -189,11 +189,7 @@ mod tests {
         // Check last quarter of output is close to 1.0.
         let tail = &output[output.len() * 3 / 4..];
         let avg: f32 = tail.iter().sum::<f32>() / tail.len() as f32;
-        assert!(
-            (avg - 1.0).abs() < 0.02,
-            "DC gain mismatch: avg = {}",
-            avg
-        );
+        assert!((avg - 1.0).abs() < 0.02, "DC gain mismatch: avg = {}", avg);
     }
 
     impl Resampler {

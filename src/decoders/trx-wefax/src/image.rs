@@ -40,18 +40,12 @@ impl ImageAssembler {
     /// Encode the accumulated image to an 8-bit greyscale PNG file.
     ///
     /// Returns the full path to the saved file.
-    pub fn save_png(
-        &self,
-        output_dir: &Path,
-        freq_hz: u64,
-        mode: &str,
-    ) -> Result<PathBuf, String> {
+    pub fn save_png(&self, output_dir: &Path, freq_hz: u64, mode: &str) -> Result<PathBuf, String> {
         if self.lines.is_empty() {
             return Err("no image lines to save".into());
         }
 
-        std::fs::create_dir_all(output_dir)
-            .map_err(|e| format!("create output dir: {}", e))?;
+        std::fs::create_dir_all(output_dir).map_err(|e| format!("create output dir: {}", e))?;
 
         let filename = generate_filename(freq_hz, mode);
         let path = output_dir.join(&filename);

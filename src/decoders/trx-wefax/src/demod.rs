@@ -126,8 +126,7 @@ fn design_hilbert_fir() -> [f32; HILBERT_TAPS] {
             // Hilbert kernel: 2/(π·n) for odd offsets.
             let h = 2.0 / (std::f64::consts::PI * n);
             // Blackman window.
-            let w = 0.42
-                - 0.5 * (2.0 * std::f64::consts::PI * i as f64 / m).cos()
+            let w = 0.42 - 0.5 * (2.0 * std::f64::consts::PI * i as f64 / m).cos()
                 + 0.08 * (4.0 * std::f64::consts::PI * i as f64 / m).cos();
             coeffs[i] = (h * w) as f32;
         }
@@ -173,11 +172,7 @@ mod tests {
         let lum = disc.process(&tone);
         let tail = &lum[lum.len() / 2..];
         let avg: f32 = tail.iter().sum::<f32>() / tail.len() as f32;
-        assert!(
-            avg < 0.05,
-            "expected ~0.0 for black tone, got {}",
-            avg
-        );
+        assert!(avg < 0.05, "expected ~0.0 for black tone, got {}", avg);
     }
 
     #[test]
