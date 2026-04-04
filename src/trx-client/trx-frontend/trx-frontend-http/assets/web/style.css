@@ -1244,9 +1244,16 @@ small { color: var(--text-muted); }
   text-transform: uppercase;
   letter-spacing: 0.03em;
 }
+.recorder-table td:first-child,
+.recorder-table th:first-child { width: 100%; }
+.recorder-table td:nth-child(2),
+.recorder-table th:nth-child(2) { white-space: nowrap; }
+.recorder-table td:last-child,
+.recorder-table th:last-child { text-align: right; white-space: nowrap; }
 .recorder-table .rec-file-actions {
   display: flex;
   align-items: center;
+  justify-content: flex-end;
   gap: 0.4rem;
 }
 .recorder-table .rec-file-btn {

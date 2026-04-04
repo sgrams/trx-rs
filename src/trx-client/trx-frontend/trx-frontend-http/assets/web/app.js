@@ -4433,7 +4433,10 @@ function updateTabHistory(name, replaceHistory = false) {
 
 function navigateToTab(name, options = {}) {
   const { updateHistory = true, replaceHistory = false } = options;
-  if (authEnabled && !authRole && name !== "main") return;
+  if (authEnabled && !authRole && name !== "main") {
+    showAuthGate(false);
+    return;
+  }
   const btn = document.querySelector(`.tab-bar .tab[data-tab="${name}"]`);
   if (!btn) return;
   _activeTab = name;
