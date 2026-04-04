@@ -534,7 +534,13 @@ impl WefaxDecoder {
             lpm, phase_offset, verified, "WEFAX: entering receiving"
         );
         let ppl = WefaxConfig::pixels_per_line(ioc) as usize;
-        self.slicer = Some(LineSlicer::new(lpm, ioc, INTERNAL_RATE, phase_offset));
+        self.slicer = Some(LineSlicer::with_slant(
+            lpm,
+            ioc,
+            INTERNAL_RATE,
+            phase_offset,
+            self.config.slant_correction,
+        ));
         self.image = Some(ImageAssembler::new(ppl));
         self.tone_detector.reset();
         self.low_corr_lines = 0;
