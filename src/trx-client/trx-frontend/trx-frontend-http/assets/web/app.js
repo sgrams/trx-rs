@@ -4766,6 +4766,10 @@ Object.defineProperties(window.trx, {
   locationSubtitle:          { get() { return locationSubtitle; } },
 });
 
+// Load plugin scripts now that window.trx is populated.  Dynamic scripts are
+// async so they must not be created before the namespace they depend on exists.
+if (typeof window.loadEagerPlugins === "function") window.loadEagerPlugins();
+
 // Start the app
 initializeApp();
 window.addEventListener("resize", resizeHeaderSignalCanvas);

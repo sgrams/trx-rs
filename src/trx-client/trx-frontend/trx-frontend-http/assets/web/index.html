@@ -1646,12 +1646,13 @@
       document.body.appendChild(s);
     });
   }
-  // Load core plugins immediately (needed on main tab).
-  // 'map-data' loads map-core.js + data handlers (ais/aprs/vdes/hf-aprs) eagerly
-  // so decode history replay can populate map data structures before the map
-  // tab is opened.  The 'loaded' Set prevents double-loading when the map tab
-  // is later activated.
-  ['digital-modes', 'map-data', 'bookmarks', 'settings'].forEach(loadPlugins);
+  // Eager plugin loading is triggered by app.js (after window.trx is set up)
+  // via window.loadEagerPlugins().  Dynamic scripts are effectively async, so
+  // loading them before app.js would cause map-core.js to crash when
+  // window.trx is not yet defined.
+  window.loadEagerPlugins = function() {
+    ['digital-modes', 'map-data', 'bookmarks', 'settings'].forEach(loadPlugins);
+  };
   // Load others on tab switch
   document.addEventListener('click', function(e) {
     var tab = e.target.closest('[data-tab]');
