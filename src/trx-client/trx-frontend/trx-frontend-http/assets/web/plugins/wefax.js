@@ -342,6 +342,18 @@ if (wefaxDom.sortSelect) {
   });
 }
 
+// ── Toggle button sync ──────────────────────────────────────────────
+// Sync the Enable/Disable button from the SSE state update.  This is
+// belt-and-suspenders alongside app.js _decoderToggles — guarantees the
+// WEFAX button always reflects the server state.
+window.syncWefaxToggle = function (enabled) {
+  if (!wefaxDom.toggleBtn) return;
+  wefaxDom.toggleBtn.dataset.enabled = enabled ? 'true' : 'false';
+  wefaxDom.toggleBtn.textContent = enabled ? 'Disable WEFAX' : 'Enable WEFAX';
+  wefaxDom.toggleBtn.style.borderColor = enabled ? '#00d17f' : '';
+  wefaxDom.toggleBtn.style.color = enabled ? '#00d17f' : '';
+};
+
 // ── Button handlers ─────────────────────────────────────────────────
 if (wefaxDom.toggleBtn) {
   wefaxDom.toggleBtn.addEventListener('click', async function () {

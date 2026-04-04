@@ -469,10 +469,11 @@ let decodeHistoryRetentionMin = 24 * 60;
 // field name (e.g. "ft8_decode_enabled").  Lazily populated on first SSE.
 const _decoderToggles = {};
 function _ensureDecoderToggles() {
-  if (Object.keys(_decoderToggles).length > 0) return;
+  if (decoderRegistry.length === 0) return;
   for (const d of decoderRegistry) {
     if (d.activation !== "toggle") continue;
     const key = d.id.replace(/-/g, "_") + "_decode_enabled";
+    if (_decoderToggles[key]) continue;
     const el = document.getElementById(d.id + "-decode-toggle-btn");
     if (el) _decoderToggles[key] = { el, last: null, label: d.label };
   }
@@ -3367,6 +3368,10 @@ function render(update) {
   _ensureDecoderToggles();
   for (const [key, entry] of Object.entries(_decoderToggles)) {
     syncDecoderToggle(entry, !!update[key], entry.label);
+  }
+  // WEFAX toggle sync (plugin-owned, belt-and-suspenders alongside _decoderToggles).
+  if (typeof update.wefax_decode_enabled === "boolean" && window.syncWefaxToggle) {
+    window.syncWefaxToggle(update.wefax_decode_enabled);
   }
   // Recorder state sync.
   if (typeof update.recorder_enabled === "boolean" && window._syncRecorderState) {
