@@ -435,29 +435,57 @@ const headerRigSwitchSelect = document.getElementById("header-rig-switch-select"
 const headerStylePickSelect = document.getElementById("header-style-pick-select");
 const rdsPsOverlay = document.getElementById("rds-ps-overlay");
 const tabMainEl = document.getElementById("tab-main");
-// Cached About-tab elements (avoid getElementById on every SSE render)
-const aboutServerVerEl = document.getElementById("about-server-ver");
-const aboutServerBuildDateEl = document.getElementById("about-server-build-date");
-const aboutServerAddrEl = document.getElementById("about-server-addr");
-const aboutServerCallEl = document.getElementById("about-server-call");
-const aboutServerLocationEl = document.getElementById("about-server-location");
-const aboutRigInfoEl = document.getElementById("about-rig-info");
-const aboutRigAccessEl = document.getElementById("about-rig-access");
-const aboutModesEl = document.getElementById("about-modes");
-const aboutVfosEl = document.getElementById("about-vfos");
-const aboutActiveRigEl = document.getElementById("about-active-rig");
-const aboutAudioCodecEl = document.getElementById("about-audio-codec");
-const aboutAudioSamplerateEl = document.getElementById("about-audio-samplerate");
-const aboutAudioChannelsEl = document.getElementById("about-audio-channels");
-const aboutAudioBitrateEl = document.getElementById("about-audio-bitrate");
-const aboutAudioFrameEl = document.getElementById("about-audio-frame");
-const aboutAudioRxEl = document.getElementById("about-audio-rx");
-const aboutAudioStreamsEl = document.getElementById("about-audio-streams");
-const aboutPskreporterEl = document.getElementById("about-pskreporter");
-const aboutAprsIsEl = document.getElementById("about-aprs-is");
-const aboutRigctlClientsEl = document.getElementById("about-rigctl-clients");
-const aboutRigctlEndpointEl = document.getElementById("about-rigctl-endpoint");
-const aboutClientsEl = document.getElementById("about-clients");
+// About-tab elements — resolved lazily after the about template is cloned.
+let aboutServerVerEl = null;
+let aboutServerBuildDateEl = null;
+let aboutServerAddrEl = null;
+let aboutServerCallEl = null;
+let aboutServerLocationEl = null;
+let aboutRigInfoEl = null;
+let aboutRigAccessEl = null;
+let aboutModesEl = null;
+let aboutVfosEl = null;
+let aboutActiveRigEl = null;
+let aboutAudioCodecEl = null;
+let aboutAudioSamplerateEl = null;
+let aboutAudioChannelsEl = null;
+let aboutAudioBitrateEl = null;
+let aboutAudioFrameEl = null;
+let aboutAudioRxEl = null;
+let aboutAudioStreamsEl = null;
+let aboutPskreporterEl = null;
+let aboutAprsIsEl = null;
+let aboutRigctlClientsEl = null;
+let aboutRigctlEndpointEl = null;
+let aboutClientsEl = null;
+let _aboutElsResolved = false;
+function _resolveAboutEls() {
+  if (_aboutElsResolved) return;
+  aboutServerVerEl = document.getElementById("about-server-ver");
+  if (!aboutServerVerEl) return; // template not cloned yet
+  _aboutElsResolved = true;
+  aboutServerBuildDateEl = document.getElementById("about-server-build-date");
+  aboutServerAddrEl = document.getElementById("about-server-addr");
+  aboutServerCallEl = document.getElementById("about-server-call");
+  aboutServerLocationEl = document.getElementById("about-server-location");
+  aboutRigInfoEl = document.getElementById("about-rig-info");
+  aboutRigAccessEl = document.getElementById("about-rig-access");
+  aboutModesEl = document.getElementById("about-modes");
+  aboutVfosEl = document.getElementById("about-vfos");
+  aboutActiveRigEl = document.getElementById("about-active-rig");
+  aboutAudioCodecEl = document.getElementById("about-audio-codec");
+  aboutAudioSamplerateEl = document.getElementById("about-audio-samplerate");
+  aboutAudioChannelsEl = document.getElementById("about-audio-channels");
+  aboutAudioBitrateEl = document.getElementById("about-audio-bitrate");
+  aboutAudioFrameEl = document.getElementById("about-audio-frame");
+  aboutAudioRxEl = document.getElementById("about-audio-rx");
+  aboutAudioStreamsEl = document.getElementById("about-audio-streams");
+  aboutPskreporterEl = document.getElementById("about-pskreporter");
+  aboutAprsIsEl = document.getElementById("about-aprs-is");
+  aboutRigctlClientsEl = document.getElementById("about-rigctl-clients");
+  aboutRigctlEndpointEl = document.getElementById("about-rigctl-endpoint");
+  aboutClientsEl = document.getElementById("about-clients");
+}
 // Cached CW elements (avoid getElementById on every SSE render)
 const cwAutoEl = document.getElementById("cw-auto");
 const cwWpmEl = document.getElementById("cw-wpm");
@@ -488,11 +516,18 @@ function syncDecoderToggle(entry, enabled, label) {
   entry.el.style.color = enabled ? "#00d17f" : "";
 }
 
-// Cached About-tab decoder status elements — avoids 8× getElementById per render().
-const _aboutDecEls = [
+// About-tab decoder status elements — resolved lazily after template clone.
+const _aboutDecIds = [
   "about-dec-ft8", "about-dec-ft4", "about-dec-ft2", "about-dec-wspr",
   "about-dec-cw", "about-dec-aprs", "about-dec-lrpt",
-].map((id) => ({ el: document.getElementById(id), last: null }));
+];
+let _aboutDecEls = _aboutDecIds.map(() => ({ el: null, last: null }));
+function _resolveAboutDecEls() {
+  if (_aboutDecEls[0].el) return;
+  for (let i = 0; i < _aboutDecIds.length; i++) {
+    _aboutDecEls[i].el = document.getElementById(_aboutDecIds[i]);
+  }
+}
 
 function syncAboutDecoder(idx, enabled) {
   const entry = _aboutDecEls[idx];
@@ -3511,7 +3546,9 @@ function render(update) {
   if (typeof update.clients === "number") lastClientCount = update.clients;
   // Populate About tab — only update DOM when the about tab is visible
   if (_activeTab === "about") {
-    // About — Server card (uses cached DOM refs)
+    _resolveAboutEls();
+    _resolveAboutDecEls();
+    // About — Server card
     if (update.server_version && aboutServerVerEl) {
       aboutServerVerEl.textContent = `trx-server v${update.server_version}`;
     }
@@ -4451,6 +4488,10 @@ function navigateToTab(name, options = {}) {
   if (tmpl) {
     panel.appendChild(tmpl.content.cloneNode(true));
     tmpl.remove();
+    // Wire sub-tab bars inside the freshly cloned content.
+    panel.querySelectorAll(".sub-tab-bar").forEach(_wireSubTabBar);
+    // Re-run decoder visibility for about-tab elements now in the DOM.
+    if (decoderRegistry.length) hideUnsupportedDecoderTabs();
   }
   if (updateHistory) {
     updateTabHistory(name, replaceHistory);
@@ -4825,7 +4866,9 @@ function latLonToMaidenhead(lat, lon) {
 
 
 // --- Sub-tab navigation ---
-document.querySelectorAll(".sub-tab-bar").forEach((bar) => {
+function _wireSubTabBar(bar) {
+  if (bar._subtabWired) return;
+  bar._subtabWired = true;
   bar.addEventListener("click", (e) => {
     const btn = e.target.closest(".sub-tab[data-subtab]");
     if (!btn) return;
@@ -4845,7 +4888,8 @@ document.querySelectorAll(".sub-tab-bar").forEach((bar) => {
       window.clearSatPredictionDom();
     }
   });
-});
+}
+document.querySelectorAll(".sub-tab-bar").forEach(_wireSubTabBar);
 
 window.addEventListener("resize", () => {
   const mapTab = document.getElementById("tab-map");
