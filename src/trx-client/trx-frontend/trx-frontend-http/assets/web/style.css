@@ -1279,6 +1279,18 @@ small { color: var(--text-muted); }
 .recorder-table .rec-file-btn:active { background: color-mix(in srgb, var(--btn-bg) 55%, var(--accent-green)); border-color: var(--accent-green); box-shadow: none; transform: translateY(1px); }
 .recorder-table .rec-file-btn.rec-delete-btn { color: var(--accent-red); border-color: var(--accent-red); }
 .recorder-table .rec-file-btn.rec-delete-btn:hover { background: color-mix(in srgb, var(--btn-bg) 75%, var(--accent-red)); border-color: var(--accent-red); box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent-red) 18%, transparent); }
+.recorder-table tr.rec-player-row > td {
+  padding: 0.4rem 0.6rem 0.6rem;
+  background: color-mix(in srgb, var(--btn-bg) 55%, transparent);
+  border-top: 0;
+}
+.recorder-table .rec-player-audio {
+  display: block;
+  width: 100%;
+  height: 2.1rem;
+  border-radius: 0.25rem;
+  outline: none;
+}
 .recorder-page-bar {
   display: flex;
   align-items: center;

@@ -5914,16 +5914,58 @@ function renderRecorderFiles() {
   for (const f of page) {
     const safeName = escapeMapHtml(f.name);
     const encodedName = encodeURIComponent(f.name);
-    html += "<tr>"
+    html += '<tr data-name="' + safeName + '">'
       + "<td>" + safeName + "</td>"
       + "<td>" + recorderFormatSize(f.size) + "</td>"
       + '<td><div class="rec-file-actions">'
+      + '<button class="rec-file-btn rec-play-btn" data-name="' + safeName + '" data-url="/api/recorder/download/' + encodedName + '" type="button" aria-expanded="false">Play</button>'
       + '<a class="rec-file-btn" href="/api/recorder/download/' + encodedName + '" download="' + safeName + '">Download</a>'
       + '<button class="rec-file-btn rec-delete-btn" data-name="' + safeName + '" type="button">Remove</button>'
       + "</div></td></tr>";
   }
   html += "</tbody></table>";
   el.innerHTML = html;
+
+  el.querySelectorAll(".rec-play-btn").forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      const row = btn.closest("tr");
+      if (!row) return;
+      const next = row.nextElementSibling;
+      if (next && next.classList.contains("rec-player-row")) {
+        const audio = next.querySelector("audio");
+        if (audio) { try { audio.pause(); } catch (_) {} }
+        next.remove();
+        btn.setAttribute("aria-expanded", "false");
+        btn.textContent = "Play";
+        return;
+      }
+      // Close any other open player.
+      el.querySelectorAll(".rec-player-row").forEach(function (r) {
+        const a = r.querySelector("audio");
+        if (a) { try { a.pause(); } catch (_) {} }
+        r.remove();
+      });
+      el.querySelectorAll(".rec-play-btn").forEach(function (b) {
+        b.setAttribute("aria-expanded", "false");
+        b.textContent = "Play";
+      });
+      const playerRow = document.createElement("tr");
+      playerRow.className = "rec-player-row";
+      const cell = document.createElement("td");
+      cell.colSpan = 3;
+      const audio = document.createElement("audio");
+      audio.controls = true;
+      audio.preload = "metadata";
+      audio.src = btn.dataset.url;
+      audio.className = "rec-player-audio";
+      cell.appendChild(audio);
+      playerRow.appendChild(cell);
+      row.parentNode.insertBefore(playerRow, row.nextSibling);
+      btn.setAttribute("aria-expanded", "true");
+      btn.textContent = "Hide";
+      try { audio.play(); } catch (_) {}
+    });
+  });
 
   el.querySelectorAll(".rec-delete-btn").forEach(function (btn) {
     btn.addEventListener("click", async function () {
