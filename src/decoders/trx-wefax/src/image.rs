@@ -4,7 +4,7 @@
 
 //! Image buffer and PNG encoding for WEFAX decoded images.
 
-use std::io::BufWriter;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 
 /// Image assembler: accumulates greyscale lines and encodes to PNG.
@@ -91,14 +91,16 @@ impl ImageAssembler {
         let filename = generate_filename(freq_hz, mode);
         let path = output_dir.join(&filename);
 
+        // We already buffer the image rows into `img_data` below and
+        // write them in a single call, so a BufWriter adds no value.
+        // Using the bare `File` also lets us fsync explicitly below.
         let file = std::fs::File::create(&path)
             .map_err(|e| format!("create PNG file '{}': {}", path.display(), e))?;
-        let w = BufWriter::new(file);
 
         let width = self.pixels_per_line as u32;
         let height = self.lines.len() as u32;
 
-        let mut encoder = png::Encoder::new(w, width, height);
+        let mut encoder = png::Encoder::new(&file, width, height);
         encoder.set_color(png::ColorType::Grayscale);
         encoder.set_depth(png::BitDepth::Eight);
 
@@ -115,6 +117,19 @@ impl ImageAssembler {
         writer
             .write_image_data(&img_data)
             .map_err(|e| format!("write PNG data: {}", e))?;
+
+        // Explicitly finish the writer (writes IEND). Relying on Drop
+        // alone swallows any I/O error and can yield a truncated file.
+        writer
+            .finish()
+            .map_err(|e| format!("finalize PNG: {}", e))?;
+        // Flush the underlying file so the data is durably on disk by
+        // the time we emit the WefaxEvent::Complete.
+        (&file)
+            .flush()
+            .map_err(|e| format!("flush PNG file: {}", e))?;
+        file.sync_all()
+            .map_err(|e| format!("sync PNG file: {}", e))?;
 
         Ok(path)
     }
