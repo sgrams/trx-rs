@@ -1037,6 +1037,7 @@ mod tests {
             App::new()
                 .app_data(web::Data::new(state_rx))
                 .app_data(web::Data::new(rig_tx))
+                .app_data(web::Data::new(make_context()))
                 .service(decoder::toggle_ft8_decode),
         )
         .await;
