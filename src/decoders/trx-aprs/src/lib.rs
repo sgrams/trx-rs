@@ -594,3 +594,330 @@ impl AprsDecoder {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ======================================================================
+    // CRC-16-CCITT
+    // ======================================================================
+
+    #[test]
+    fn crc16_empty() {
+        // CRC of empty input = 0xFFFF ^ 0xFFFF = 0x0000
+        assert_eq!(crc16ccitt(&[]), 0x0000);
+    }
+
+    #[test]
+    fn crc16_known_vector() {
+        // "123456789" has well-known CCITT (x25) CRC = 0x906E
+        assert_eq!(crc16ccitt(b"123456789"), 0x906E);
+    }
+
+    #[test]
+    fn crc16_frame_with_appended_fcs_is_zero() {
+        // When the FCS is appended to the payload, the CRC of the whole
+        // sequence should yield the residue constant 0x0F47.
+        let payload = b"123456789";
+        let fcs = crc16ccitt(payload);
+        let mut with_fcs = payload.to_vec();
+        with_fcs.push(fcs as u8);
+        with_fcs.push((fcs >> 8) as u8);
+        assert_eq!(crc16ccitt(&with_fcs), 0x0F47);
+    }
+
+    // ======================================================================
+    // AX.25 address decoding
+    // ======================================================================
+
+    #[test]
+    fn decode_ax25_address_basic() {
+        // AX.25 addresses are left-shifted by 1 bit. "N0CALL" → bytes shifted.
+        let mut addr = [0u8; 7];
+        for (i, &ch) in b"N0CALL".iter().enumerate() {
+            addr[i] = ch << 1;
+        }
+        addr[6] = (0 << 1) | 1; // SSID=0, last=true
+
+        let decoded = decode_ax25_address(&addr, 0);
+        assert_eq!(decoded.call, "N0CALL");
+        assert_eq!(decoded.ssid, 0);
+        assert!(decoded.last);
+    }
+
+    #[test]
+    fn decode_ax25_address_with_ssid() {
+        let mut addr = [0u8; 7];
+        for (i, &ch) in b"SP2SJG".iter().enumerate() {
+            addr[i] = ch << 1;
+        }
+        addr[6] = (5 << 1) | 0; // SSID=5, last=false
+
+        let decoded = decode_ax25_address(&addr, 0);
+        assert_eq!(decoded.call, "SP2SJG");
+        assert_eq!(decoded.ssid, 5);
+        assert!(!decoded.last);
+    }
+
+    #[test]
+    fn decode_ax25_address_short_call() {
+        // Short callsign "W1AW" padded with spaces (0x20)
+        let mut addr = [0u8; 7];
+        for (i, &ch) in b"W1AW  ".iter().enumerate() {
+            addr[i] = ch << 1;
+        }
+        addr[6] = (0 << 1) | 1;
+
+        let decoded = decode_ax25_address(&addr, 0);
+        assert_eq!(decoded.call, "W1AW");
+    }
+
+    // ======================================================================
+    // AX.25 frame parsing
+    // ======================================================================
+
+    /// Build a minimal valid AX.25 UI frame from src/dest callsigns and info.
+    fn build_ax25_frame(dest: &str, src: &str, info: &[u8]) -> Vec<u8> {
+        let mut frame = Vec::new();
+        // Destination address (7 bytes)
+        let dest_bytes = format!("{:<6}", dest);
+        for &ch in dest_bytes.as_bytes().iter().take(6) {
+            frame.push(ch << 1);
+        }
+        frame.push(0 << 1); // SSID=0, last=false
+        // Source address (7 bytes)
+        let src_bytes = format!("{:<6}", src);
+        for &ch in src_bytes.as_bytes().iter().take(6) {
+            frame.push(ch << 1);
+        }
+        frame.push((0 << 1) | 1); // SSID=0, last=true
+        // Control + PID
+        frame.push(0x03); // UI frame
+        frame.push(0xF0); // No layer-3 protocol
+        // Info field
+        frame.extend_from_slice(info);
+        frame
+    }
+
+    #[test]
+    fn parse_ax25_minimal_frame() {
+        let frame = build_ax25_frame("APRS", "SP2SJG", b"!5213.78N/02100.73E-Test");
+        let parsed = parse_ax25(&frame).unwrap();
+        assert_eq!(parsed.src.call, "SP2SJG");
+        assert_eq!(parsed.dest.call, "APRS");
+        assert!(parsed.digis.is_empty());
+        assert_eq!(parsed.info, b"!5213.78N/02100.73E-Test");
+    }
+
+    #[test]
+    fn parse_ax25_too_short_returns_none() {
+        assert!(parse_ax25(&[0u8; 10]).is_none());
+    }
+
+    // ======================================================================
+    // APRS position parsing
+    // ======================================================================
+
+    #[test]
+    fn parse_aprs_lat_north() {
+        let lat = parse_aprs_lat(b"5213.78N").unwrap();
+        assert!((lat - 52.229667).abs() < 0.001);
+    }
+
+    #[test]
+    fn parse_aprs_lat_south() {
+        let lat = parse_aprs_lat(b"3352.13S").unwrap();
+        assert!(lat < 0.0);
+        assert!((lat + 33.868833).abs() < 0.001);
+    }
+
+    #[test]
+    fn parse_aprs_lon_east() {
+        let lon = parse_aprs_lon(b"02100.73E").unwrap();
+        assert!((lon - 21.012167).abs() < 0.001);
+    }
+
+    #[test]
+    fn parse_aprs_lon_west() {
+        let lon = parse_aprs_lon(b"08737.79W").unwrap();
+        assert!(lon < 0.0);
+    }
+
+    #[test]
+    fn parse_aprs_position_uncompressed() {
+        let info = b"!5213.78N/02100.73E-Test";
+        let (lat, lon, sym_table, sym_code) = parse_aprs_position(info).unwrap();
+        assert!((lat - 52.229667).abs() < 0.001);
+        assert!((lon - 21.012167).abs() < 0.001);
+        assert_eq!(sym_table, '/');
+        assert_eq!(sym_code, '-');
+    }
+
+    #[test]
+    fn parse_aprs_position_with_timestamp() {
+        // '@' type requires 7-byte timestamp before position
+        let info = b"@092345z5213.78N/02100.73E-Test";
+        let (lat, lon, _, _) = parse_aprs_position(info).unwrap();
+        assert!((lat - 52.229667).abs() < 0.001);
+        assert!((lon - 21.012167).abs() < 0.001);
+    }
+
+    #[test]
+    fn parse_aprs_compressed_position() {
+        // Compressed format: symbol_table + 4 lat chars + 4 lon chars + symbol_code + ...
+        // Encode lat=52.23, lon=21.01
+        let lat_val = ((90.0_f64 - 52.23) * 380926.0).round() as u32;
+        let lon_val = ((21.01_f64 + 180.0) * 190463.0).round() as u32;
+        let mut pos = vec![b'/']; // symbol table
+        for i in (0..4).rev() {
+            pos.push(((lat_val / 91u32.pow(i)) % 91 + 33) as u8);
+        }
+        for i in (0..4).rev() {
+            pos.push(((lon_val / 91u32.pow(i)) % 91 + 33) as u8);
+        }
+        pos.push(b'-'); // symbol code
+
+        let result = parse_aprs_compressed(&pos);
+        assert!(result.is_some());
+        let (lat, lon, sym_table, sym_code) = result.unwrap();
+        assert!((lat - 52.23).abs() < 0.01);
+        assert!((lon - 21.01).abs() < 0.01);
+        assert_eq!(sym_table, '/');
+        assert_eq!(sym_code, '-');
+    }
+
+    #[test]
+    fn parse_aprs_position_empty_returns_none() {
+        assert!(parse_aprs_position(b"").is_none());
+    }
+
+    // ======================================================================
+    // APRS packet type detection
+    // ======================================================================
+
+    #[test]
+    fn aprs_packet_type_detection() {
+        let frame = build_ax25_frame("APRS", "N0CALL", b"!5213.78N/02100.73E-");
+        let ax25 = parse_ax25(&frame).unwrap();
+        let pkt = parse_aprs(&ax25);
+        assert_eq!(pkt.packet_type, "Position");
+        assert_eq!(pkt.src_call, "N0CALL");
+    }
+
+    #[test]
+    fn aprs_message_type() {
+        let frame = build_ax25_frame("APRS", "N0CALL", b":BLN1     :Test bulletin");
+        let ax25 = parse_ax25(&frame).unwrap();
+        let pkt = parse_aprs(&ax25);
+        assert_eq!(pkt.packet_type, "Message");
+    }
+
+    #[test]
+    fn aprs_status_type() {
+        let frame = build_ax25_frame("APRS", "N0CALL", b">On the air");
+        let ax25 = parse_ax25(&frame).unwrap();
+        let pkt = parse_aprs(&ax25);
+        assert_eq!(pkt.packet_type, "Status");
+    }
+
+    #[test]
+    fn aprs_mic_e_type() {
+        let frame = build_ax25_frame("APRS", "N0CALL", b"`test mic-e");
+        let ax25 = parse_ax25(&frame).unwrap();
+        let pkt = parse_aprs(&ax25);
+        assert_eq!(pkt.packet_type, "Mic-E");
+    }
+
+    // ======================================================================
+    // format_call
+    // ======================================================================
+
+    #[test]
+    fn format_call_no_ssid() {
+        let addr = Ax25Address {
+            call: "N0CALL".to_string(),
+            ssid: 0,
+            last: true,
+        };
+        assert_eq!(format_call(&addr), "N0CALL");
+    }
+
+    #[test]
+    fn format_call_with_ssid() {
+        let addr = Ax25Address {
+            call: "SP2SJG".to_string(),
+            ssid: 15,
+            last: true,
+        };
+        assert_eq!(format_call(&addr), "SP2SJG-15");
+    }
+
+    // ======================================================================
+    // HDLC bits_to_bytes
+    // ======================================================================
+
+    #[test]
+    fn bits_to_bytes_too_short_returns_none() {
+        let demod = Demodulator::new(48000, 1200.0, 1200.0, 2200.0, 1.0);
+        // Less than 17 bytes worth of bits
+        let mut d = demod;
+        d.frame_bits = vec![0; 8 * 10]; // only 10 bytes
+        assert!(d.bits_to_bytes().is_none());
+    }
+
+    #[test]
+    fn bits_to_bytes_valid_frame() {
+        let payload = b"Hello, AX.25 World!";
+        let fcs = crc16ccitt(payload);
+        // Convert payload + FCS to LSB-first bit stream
+        let mut bits = Vec::new();
+        for &byte in payload.iter() {
+            for j in 0..8 {
+                bits.push((byte >> j) & 1);
+            }
+        }
+        bits.push((fcs as u8) & 1);
+        for j in 1..8 {
+            bits.push(((fcs as u8) >> j) & 1);
+        }
+        let fcs_hi = (fcs >> 8) as u8;
+        for j in 0..8 {
+            bits.push((fcs_hi >> j) & 1);
+        }
+
+        let mut demod = Demodulator::new(48000, 1200.0, 1200.0, 2200.0, 1.0);
+        demod.frame_bits = bits;
+        let frame = demod.bits_to_bytes().unwrap();
+        assert!(frame.crc_ok);
+        assert_eq!(frame.payload, payload);
+    }
+
+    // ======================================================================
+    // Demodulator smoke test
+    // ======================================================================
+
+    #[test]
+    fn demodulator_silence_produces_no_frames() {
+        let mut decoder = AprsDecoder::new(48000);
+        let silence = vec![0.0f32; 48000]; // 1 second of silence
+        let packets = decoder.process_samples(&silence);
+        assert!(packets.is_empty());
+    }
+
+    #[test]
+    fn decoder_reset_clears_state() {
+        let mut decoder = AprsDecoder::new(48000);
+        let noise: Vec<f32> = (0..4800).map(|i| (i as f32 * 0.1).sin() * 0.5).collect();
+        decoder.process_samples(&noise);
+        decoder.reset();
+        // After reset, internal state should be clean
+        for demod in &decoder.demodulators {
+            assert_eq!(demod.mark_phase, 0.0);
+            assert_eq!(demod.space_phase, 0.0);
+            assert!(!demod.in_frame);
+            assert!(demod.frame_bits.is_empty());
+            assert!(demod.frames.is_empty());
+        }
+    }
+}
