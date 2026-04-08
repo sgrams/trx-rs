@@ -224,3 +224,132 @@ impl DecoderLoggers {
         self.wefax.write_payload(msg);
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn resolve_file_name_substitutes_date_tokens() {
+        let template = "LOG-%YYYY%-%MM%-%DD%.log";
+        let resolved = DecoderFileLogger::resolve_file_name(template);
+        // Must not contain any template tokens
+        assert!(!resolved.contains("%YYYY%"));
+        assert!(!resolved.contains("%MM%"));
+        assert!(!resolved.contains("%DD%"));
+        // Must end with .log
+        assert!(resolved.ends_with(".log"));
+        // Must start with LOG-
+        assert!(resolved.starts_with("LOG-"));
+        // Year should be 4 digits
+        let parts: Vec<&str> = resolved
+            .trim_start_matches("LOG-")
+            .trim_end_matches(".log")
+            .split('-')
+            .collect();
+        assert_eq!(parts.len(), 3);
+        assert_eq!(parts[0].len(), 4); // YYYY
+        assert_eq!(parts[1].len(), 2); // MM
+        assert_eq!(parts[2].len(), 2); // DD
+    }
+
+    #[test]
+    fn from_config_disabled_returns_none() {
+        let cfg = DecodeLogsConfig {
+            enabled: false,
+            ..Default::default()
+        };
+        let result = DecoderLoggers::from_config(&cfg).unwrap();
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn from_config_enabled_creates_loggers() {
+        let dir = tempfile::tempdir().unwrap();
+        let cfg = DecodeLogsConfig {
+            enabled: true,
+            dir: dir.path().to_string_lossy().to_string(),
+            ..Default::default()
+        };
+        let result = DecoderLoggers::from_config(&cfg).unwrap();
+        assert!(result.is_some());
+    }
+
+    #[test]
+    fn log_ft8_writes_json_line() {
+        let dir = tempfile::tempdir().unwrap();
+        let cfg = DecodeLogsConfig {
+            enabled: true,
+            dir: dir.path().to_string_lossy().to_string(),
+            ft8_file: "ft8-test.log".to_string(),
+            ..Default::default()
+        };
+        let loggers = DecoderLoggers::from_config(&cfg).unwrap().unwrap();
+
+        let msg = Ft8Message {
+            rig_id: None,
+            ts_ms: 1000,
+            snr_db: -12.0,
+            dt_s: 0.1,
+            freq_hz: 1234.0,
+            message: "CQ SP2SJG JO93".to_string(),
+        };
+        loggers.log_ft8(&msg);
+
+        // Read back the log file
+        let log_path = dir.path().join("ft8-test.log");
+        let content = std::fs::read_to_string(&log_path).unwrap();
+        let lines: Vec<&str> = content.lines().collect();
+        assert_eq!(lines.len(), 1);
+
+        let parsed: serde_json::Value = serde_json::from_str(lines[0]).unwrap();
+        assert_eq!(parsed["decoder"], "ft8");
+        assert!(parsed["ts_ms"].is_number());
+        assert_eq!(parsed["payload"]["message"], "CQ SP2SJG JO93");
+        assert_eq!(parsed["payload"]["snr_db"], -12.0);
+    }
+
+    #[test]
+    fn log_aprs_writes_json_line() {
+        let dir = tempfile::tempdir().unwrap();
+        let cfg = DecodeLogsConfig {
+            enabled: true,
+            dir: dir.path().to_string_lossy().to_string(),
+            aprs_file: "aprs-test.log".to_string(),
+            ..Default::default()
+        };
+        let loggers = DecoderLoggers::from_config(&cfg).unwrap().unwrap();
+
+        let pkt = AprsPacket {
+            rig_id: None,
+            ts_ms: Some(2000),
+            src_call: "N0CALL".to_string(),
+            dest_call: "APRS".to_string(),
+            path: "WIDE1-1".to_string(),
+            info: ">Test".to_string(),
+            info_bytes: b">Test".to_vec(),
+            packet_type: "Status".to_string(),
+            crc_ok: true,
+            lat: None,
+            lon: None,
+            symbol_table: None,
+            symbol_code: None,
+        };
+        loggers.log_aprs(&pkt);
+
+        let log_path = dir.path().join("aprs-test.log");
+        let content = std::fs::read_to_string(&log_path).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(content.trim()).unwrap();
+        assert_eq!(parsed["decoder"], "aprs");
+        assert_eq!(parsed["payload"]["src_call"], "N0CALL");
+    }
+
+    #[test]
+    fn default_config_has_template_tokens() {
+        let cfg = DecodeLogsConfig::default();
+        assert!(cfg.ft8_file.contains("%YYYY%"));
+        assert!(cfg.aprs_file.contains("%MM%"));
+        assert!(cfg.cw_file.contains("%DD%"));
+        assert!(!cfg.enabled);
+    }
+}
