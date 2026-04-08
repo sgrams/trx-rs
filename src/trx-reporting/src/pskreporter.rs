@@ -579,4 +579,150 @@ mod tests {
         let len = u16::from_be_bytes([SENDER_TEMPLATE[2], SENDER_TEMPLATE[3]]);
         assert_eq!(len as usize, SENDER_TEMPLATE.len());
     }
+
+    #[test]
+    fn maidenhead_known_grids() {
+        // Warsaw, Poland → JO91 subsquare
+        let grid = maidenhead_from_lat_lon(52.2297, 21.0122);
+        assert!(grid.starts_with("KO02"));
+        // New York → FN20
+        let grid = maidenhead_from_lat_lon(40.7128, -74.0060);
+        assert!(grid.starts_with("FN20"));
+        // Sydney → QF56
+        let grid = maidenhead_from_lat_lon(-33.8688, 151.2093);
+        assert!(grid.starts_with("QF56"));
+    }
+
+    #[test]
+    fn decoded_to_spot_ft8() {
+        use trx_core::decode::{DecodedMessage, Ft8Message};
+        let msg = Ft8Message {
+            rig_id: None,
+            ts_ms: 1_700_000_000_000,
+            snr_db: -12.0,
+            dt_s: 0.1,
+            freq_hz: 1234.0,
+            message: "CQ SP2SJG JO93".to_string(),
+        };
+        let spot = decoded_to_spot(DecodedMessage::Ft8(msg), 14_074_000).unwrap();
+        assert_eq!(spot.sender_callsign, "SP2SJG");
+        assert_eq!(spot.sender_locator, Some("JO93".to_string()));
+        assert_eq!(spot.mode, "FT8");
+        assert_eq!(spot.abs_freq_hz, 14_075_234);
+        assert_eq!(spot.snr_db, -12.0);
+    }
+
+    #[test]
+    fn decoded_to_spot_wspr() {
+        use trx_core::decode::{DecodedMessage, WsprMessage};
+        let msg = WsprMessage {
+            rig_id: None,
+            ts_ms: 1_700_000_000_000,
+            snr_db: -24.0,
+            dt_s: 0.0,
+            freq_hz: 500.0,
+            message: "SP2SJG JO93 37".to_string(),
+        };
+        let spot = decoded_to_spot(DecodedMessage::Wspr(msg), 7_040_000).unwrap();
+        assert_eq!(spot.sender_callsign, "SP2SJG");
+        assert_eq!(spot.mode, "WSPR");
+        assert_eq!(spot.abs_freq_hz, 7_040_500);
+    }
+
+    #[test]
+    fn decoded_to_spot_cw_returns_none() {
+        use trx_core::decode::{CwEvent, DecodedMessage};
+        let evt = CwEvent {
+            rig_id: None,
+            text: "CQ".to_string(),
+            wpm: 20,
+            tone_hz: 700,
+            signal_on: false,
+        };
+        assert!(decoded_to_spot(DecodedMessage::Cw(evt), 7_000_000).is_none());
+    }
+
+    #[test]
+    fn is_callsign_accepts_valid() {
+        assert!(is_callsign("SP2SJG"));
+        assert!(is_callsign("W1AW"));
+        assert!(is_callsign("VK2ABC"));
+        assert!(is_callsign("JA1ABC"));
+        assert!(is_callsign("4X1RF"));
+    }
+
+    #[test]
+    fn is_callsign_rejects_invalid() {
+        assert!(!is_callsign("CQ"));
+        assert!(!is_callsign("QRZ"));
+        assert!(!is_callsign("DE"));
+        assert!(!is_callsign("AB")); // too short
+        assert!(!is_callsign("ABCDEFGHIJKLMN")); // too long
+        assert!(!is_callsign("HELLO")); // no digits
+        assert!(!is_callsign("12345")); // no letters
+    }
+
+    #[test]
+    fn is_locator_valid() {
+        assert!(is_locator("JO93"));
+        assert!(is_locator("FN30"));
+        assert!(is_locator("JO93AB"));
+    }
+
+    #[test]
+    fn is_locator_invalid() {
+        assert!(!is_locator("ZZ99")); // Z > R
+        assert!(!is_locator("JO9")); // too short
+        assert!(!is_locator("JO93ABX")); // too long
+    }
+
+    #[test]
+    fn pad_to_4_pads_correctly() {
+        let mut v = vec![1, 2, 3];
+        pad_to_4(&mut v);
+        assert_eq!(v.len(), 4);
+        assert_eq!(v[3], 0);
+
+        let mut v = vec![1, 2, 3, 4];
+        pad_to_4(&mut v);
+        assert_eq!(v.len(), 4); // already aligned
+
+        let mut v = vec![1];
+        pad_to_4(&mut v);
+        assert_eq!(v.len(), 4);
+    }
+
+    #[test]
+    fn push_prefixed_string_encodes_length() {
+        let mut buf = Vec::new();
+        push_prefixed_string(&mut buf, "SP2SJG").unwrap();
+        assert_eq!(buf[0], 6); // length prefix
+        assert_eq!(&buf[1..], b"SP2SJG");
+    }
+
+    #[test]
+    fn push_prefixed_string_rejects_too_long() {
+        let mut buf = Vec::new();
+        let long = "A".repeat(255);
+        assert!(push_prefixed_string(&mut buf, &long).is_err());
+    }
+
+    #[test]
+    fn ft8_callsign_directed_message() {
+        // "K1ABC SP2SJG R-07" → sender is SP2SJG (second token in directed msg)
+        assert_eq!(
+            parse_sender_callsign_ft8("K1ABC SP2SJG R-07"),
+            Some("SP2SJG".to_string())
+        );
+    }
+
+    #[test]
+    fn ft8_callsign_cq_with_region() {
+        // Some FT8 messages have "CQ DX SP2SJG JO93"
+        // The second token "DX" is not a callsign, so it should find SP2SJG
+        assert_eq!(
+            parse_sender_callsign_ft8("CQ DX SP2SJG JO93"),
+            Some("SP2SJG".to_string())
+        );
+    }
 }
