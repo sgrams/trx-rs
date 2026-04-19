@@ -798,11 +798,18 @@ impl ChannelDsp {
                 // Asymmetric attack/decay: use the faster coefficient when
                 // the new measurement is above the current estimate (attack),
                 // and the slower coefficient when below (decay).
-                let alpha = if mean_power > self.carrier_iq_power {
+                //
+                // The per-sample alphas from smeter_alphas() assume sample-by-
+                // sample IIR updates, but we apply the IIR once per decimated
+                // block.  Correct via  α_block = 1 − (1 − α)^N  so the
+                // effective time constants stay at ~2 ms / ~300 ms regardless
+                // of block size.
+                let per_sample = if mean_power > self.carrier_iq_power {
                     self.carrier_attack_alpha
                 } else {
                     self.carrier_decay_alpha
                 };
+                let alpha = 1.0 - (1.0 - per_sample).powf(n);
                 self.carrier_iq_power += alpha * (mean_power - self.carrier_iq_power);
 
                 self.last_signal_db =
