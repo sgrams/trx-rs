@@ -1848,10 +1848,13 @@
     initAprsMap();
     sizeAprsMapToViewport();
     if (aprsMap) {
-      setTimeout(() => {
-        aprsMap.invalidateSize();
-        aprsMap.setView([lat, lon], 13);
-      }, 50);
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          sizeAprsMapToViewport();
+          aprsMap.invalidateSize();
+          aprsMap.setView([lat, lon], 13);
+        });
+      });
     }
   };
 
@@ -1896,6 +1899,7 @@
     const center = locatorMarkerCenter(marker);
     const focusMarker = () => {
       if (!aprsMap || !marker) return;
+      sizeAprsMapToViewport();
       aprsMap.invalidateSize();
       if (center) {
         const targetZoom = Math.max(aprsMap.getZoom() || 0, 7);
@@ -1910,7 +1914,9 @@
       if (typeof marker.openPopup === "function") marker.openPopup();
     };
     focusMarker();
-    setTimeout(focusMarker, 60);
+    requestAnimationFrame(() => {
+      requestAnimationFrame(focusMarker);
+    });
     return true;
   };
 

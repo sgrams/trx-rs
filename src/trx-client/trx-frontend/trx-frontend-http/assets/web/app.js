@@ -4485,7 +4485,16 @@ function _initMapWhenReady() {
     if (loadingEl) loadingEl.classList.add("is-hidden");
     window.trx.map.initAprsMap();
     window.trx.map.sizeAprsMapToViewport();
-    if (window.trx.map.aprsMap) setTimeout(() => window.trx.map.aprsMap.invalidateSize(), 50);
+    // The map panel was just made visible (display:none → ""); the browser
+    // may not have laid it out yet, so getBoundingClientRect() can return
+    // stale/zero dimensions.  Double-rAF ensures a full layout pass has
+    // completed before we re-measure and tell Leaflet about its real size.
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        window.trx.map.sizeAprsMapToViewport();
+        if (window.trx.map.aprsMap) window.trx.map.aprsMap.invalidateSize();
+      });
+    });
     return;
   }
   // Not ready yet — show overlay and poll until both are available.
