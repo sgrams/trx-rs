@@ -267,6 +267,10 @@ async fn handle_client(
         sat_pass_cache,
         timeouts,
     } = ctx;
+    // Disable Nagle so small frames (command responses, meter samples) ship
+    // immediately instead of sitting in the kernel's send buffer for up to
+    // ~40 ms waiting for more payload.
+    let _ = socket.set_nodelay(true);
     let (reader, mut writer) = socket.into_split();
     let mut reader = BufReader::new(reader);
 
@@ -473,6 +477,55 @@ async fn handle_client(
             }
         };
 
+        // SubscribeMeter: turns this connection into a one-way meter stream.
+        // No regular responses are produced; the connection lives until the
+        // client disconnects or shutdown fires.
+        if matches!(envelope.cmd, ClientCommand::SubscribeMeter) {
+            let mut meter_rx = handle.meter_tx.subscribe();
+            let io_timeout = timeouts.io_timeout;
+            info!(
+                "Client {} subscribed to meter stream for rig '{}'",
+                addr, target_rig_id
+            );
+            loop {
+                tokio::select! {
+                    sample = meter_rx.recv() => {
+                        match sample {
+                            Ok(update) => {
+                                let Ok(mut line) = serde_json::to_string(&update) else { continue };
+                                line.push('\n');
+                                let write = time::timeout(
+                                    io_timeout,
+                                    writer.write_all(line.as_bytes()),
+                                ).await;
+                                match write {
+                                    Ok(Ok(())) => {}
+                                    Ok(Err(e)) => {
+                                        info!("Client {} meter write failed: {}", addr, e);
+                                        break;
+                                    }
+                                    Err(_) => {
+                                        info!("Client {} meter write timed out", addr);
+                                        break;
+                                    }
+                                }
+                            }
+                            Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+                            Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
+                        }
+                    }
+                    changed = shutdown_rx.changed() => {
+                        match changed {
+                            Ok(()) if *shutdown_rx.borrow() => break,
+                            Ok(()) => {}
+                            Err(_) => break,
+                        }
+                    }
+                }
+            }
+            break;
+        }
+
         let rig_cmd = mapping::client_command_to_rig(envelope.cmd);
         // Fast path: serve GetSnapshot directly from the watch channel
         // so clients get a response even while the rig task is initializing.
@@ -669,12 +722,14 @@ mod tests {
         let (rig_tx, _rig_rx) = mpsc::channel::<RigRequest>(8);
         let (state_tx, state_rx) = watch::channel(state);
         let _state_tx = state_tx;
+        let (meter_tx, _) = tokio::sync::broadcast::channel(8);
         let handle = RigHandle {
             rig_id: "default".to_string(),
             display_name: "Default Rig".to_string(),
             rig_tx,
             state_rx,
             audio_port: 4531,
+            meter_tx,
         };
         let mut map = HashMap::new();
         map.insert("default".to_string(), handle);
@@ -858,33 +913,36 @@ mod tests {
     /// Build a multi-rig HashMap with two rigs having independent state and
     /// command channels. Returns the map, default rig id, and the mpsc
     /// receivers for each rig so tests can inspect routed commands.
-    fn make_two_rigs(
-        state_a: RigState,
-        state_b: RigState,
-    ) -> (
+    type TwoRigs = (
         Arc<HashMap<String, RigHandle>>,
         String,
         mpsc::Receiver<RigRequest>,
         mpsc::Receiver<RigRequest>,
-    ) {
+    );
+
+    fn make_two_rigs(state_a: RigState, state_b: RigState) -> TwoRigs {
         let (tx_a, rx_a) = mpsc::channel::<RigRequest>(8);
         let (_state_tx_a, state_rx_a) = watch::channel(state_a);
+        let (meter_tx_a, _) = tokio::sync::broadcast::channel(8);
         let handle_a = RigHandle {
             rig_id: "rig_hf".to_string(),
             display_name: "HF Rig".to_string(),
             rig_tx: tx_a,
             state_rx: state_rx_a,
             audio_port: 4531,
+            meter_tx: meter_tx_a,
         };
 
         let (tx_b, rx_b) = mpsc::channel::<RigRequest>(8);
         let (_state_tx_b, state_rx_b) = watch::channel(state_b);
+        let (meter_tx_b, _) = tokio::sync::broadcast::channel(8);
         let handle_b = RigHandle {
             rig_id: "rig_vhf".to_string(),
             display_name: "VHF Rig".to_string(),
             rig_tx: tx_b,
             state_rx: state_rx_b,
             audio_port: 4532,
+            meter_tx: meter_tx_b,
         };
 
         let mut map = HashMap::new();

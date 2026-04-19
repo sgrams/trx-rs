@@ -7,11 +7,12 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use tokio::sync::{mpsc, watch};
+use tokio::sync::{broadcast, mpsc, watch};
 use tokio::time::{self, Instant};
 use tracing::{debug, error, info, warn};
 
 use trx_backend::{RegistrationContext, RigAccess};
+use trx_protocol::MeterUpdate;
 use trx_core::radio::freq::Freq;
 use trx_core::rig::command::RigCommand;
 use trx_core::rig::controller::{
@@ -113,6 +114,7 @@ pub async fn run_rig_task(
     config: RigTaskConfig,
     mut rx: mpsc::Receiver<RigRequest>,
     state_tx: watch::Sender<RigState>,
+    meter_tx: broadcast::Sender<MeterUpdate>,
     mut shutdown_rx: watch::Receiver<bool>,
 ) -> DynResult<()> {
     let histories = config.histories.clone();
@@ -255,15 +257,25 @@ pub async fn run_rig_task(
     let _ = state_tx.send(state.clone());
 
     // Run a fast meter tick between full polls to keep the S-meter
-    // responsive. SDR backends expose a cached DSP reading and can
-    // refresh every 100 ms; CAT rigs poll the serial link, which is
-    // slower but still fine at ~150 ms.
+    // responsive.  SDR backends expose a cached DSP reading and can
+    // refresh every 33 ms (~30 Hz) for instant-feeling metering; CAT
+    // rigs poll the serial link, which is slower but still usable at
+    // ~150 ms.
+    //
+    // Every tick publishes to `meter_tx` (unconditional, for the fast
+    // `/meter` stream) and — gated by a small delta — to `state_tx` so
+    // other frontends that read `RigState.status.rx.sig` keep working
+    // without drowning the regular `/events` SSE in near-duplicate
+    // full-state frames at 30 Hz.
     let is_sdr = rig.as_sdr_ref().is_some();
     let meter_tick_duration = if is_sdr {
-        Duration::from_millis(100)
+        Duration::from_millis(33)
     } else {
         Duration::from_millis(150)
     };
+    let meter_task_start = Instant::now();
+    let meter_state_delta_db: f64 = 0.25;
+    let rig_id = config.rig_id.clone();
     let mut meter_tick: std::pin::Pin<Box<tokio::time::Sleep>> =
         Box::pin(tokio::time::sleep(meter_tick_duration));
 
@@ -308,8 +320,26 @@ pub async fn run_rig_task(
                         None
                     };
                     if let Some(db) = new_sig {
+                        // Always publish to the fast broadcast: subscribers
+                        // see every tick, including unchanged values, so the
+                        // UI animation stays smooth.  `send` only errors when
+                        // no subscribers exist; that's fine.
+                        let ts_ms = meter_task_start.elapsed().as_millis() as u64;
+                        let _ = meter_tx.send(MeterUpdate {
+                            rig_id: rig_id.clone(),
+                            sig_dbm: db,
+                            ts_ms,
+                        });
+
+                        // Only push into `state_tx` when the sample moved by
+                        // a meaningful amount — otherwise `/events` clients
+                        // would re-serialize the entire RigState at 30 Hz.
                         let prev = state.status.rx.as_ref().and_then(|r| r.sig);
-                        if prev != Some(db) {
+                        let significant = match prev {
+                            Some(p) => (p - db).abs() >= meter_state_delta_db,
+                            None => true,
+                        };
+                        if significant {
                             state.status.rx.get_or_insert(RigRxStatus { sig: None }).sig = Some(db);
                             let _ = state_tx.send(state.clone());
                         }

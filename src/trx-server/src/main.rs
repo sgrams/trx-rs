@@ -1075,6 +1075,8 @@ async fn main() -> DynResult<()> {
             Some("Disabled".to_string())
         };
         let (state_tx, state_rx) = watch::channel(initial_state);
+        let (meter_tx, _) =
+            broadcast::channel::<trx_protocol::MeterUpdate>(rig_handle::METER_BROADCAST_CAPACITY);
 
         let mut task_config = build_rig_task_config(
             rig_cfg,
@@ -1101,10 +1103,16 @@ async fn main() -> DynResult<()> {
         // silently losing the rig.
         let rig_shutdown_rx = shutdown_rx.clone();
         let rig_id_supervisor = rig_cfg.id.clone();
+        let meter_tx_task = meter_tx.clone();
         task_handles.push(tokio::spawn(async move {
-            let result =
-                rig_task::run_rig_task(task_config, rig_rx, state_tx.clone(), rig_shutdown_rx)
-                    .await;
+            let result = rig_task::run_rig_task(
+                task_config,
+                rig_rx,
+                state_tx.clone(),
+                meter_tx_task,
+                rig_shutdown_rx,
+            )
+            .await;
             match result {
                 Ok(()) => {
                     info!("[{}] Rig task exited cleanly", rig_id_supervisor);
@@ -1153,6 +1161,7 @@ async fn main() -> DynResult<()> {
                 rig_tx,
                 state_rx,
                 audio_port: rig_cfg.audio.port,
+                meter_tx,
             },
         );
     }
