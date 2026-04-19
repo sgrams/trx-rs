@@ -308,18 +308,22 @@ pub struct ChannelDsp {
 impl ChannelDsp {
     /// Compute asymmetric IIR coefficients for S-meter envelope tracking.
     ///
-    /// Attack: ~200 ms time constant (~6 frames at 30 Hz refresh).
-    /// Decay:  ~600 ms time constant (~18 frames — smooth fallback).
+    /// Attack: ~400 ms — rises over ~12 frames at 30 Hz.
+    /// Decay:  ~1.0 s  — falls over ~30 frames, readable.
     ///
-    /// Note: these alphas are applied once per decimated *block*, not per
+    /// Modelled after GQRX meter ballistics.  Deliberately slower than
+    /// the IARU analog-meter spec because a digital bar at 30 fps is
+    /// visually noisier than a physical needle with mechanical inertia.
+    ///
+    /// Note: alphas are applied once per decimated *block*, not per
     /// sample, with block-rate correction (`1 − (1−α)^N`).
     fn smeter_alphas(channel_sample_rate: u32) -> (f32, f32) {
         if channel_sample_rate == 0 {
             return (0.3, 0.01);
         }
         let sr = channel_sample_rate as f32;
-        let attack = (1.0 - (-1.0 / (sr * 0.200)).exp()).min(1.0); // τ = 200 ms
-        let decay = (1.0 - (-1.0 / (sr * 0.600)).exp()).min(1.0); // τ = 600 ms
+        let attack = (1.0 - (-1.0 / (sr * 0.400)).exp()).min(1.0); // τ = 400 ms
+        let decay = (1.0 - (-1.0 / (sr * 1.000)).exp()).min(1.0); // τ = 1.0 s
         (attack, decay)
     }
 

@@ -1356,7 +1356,7 @@ small { color: var(--text-muted); }
 .band-tag { display: inline-block; padding: 2px 6px; border-radius: 6px; background: var(--btn-bg); color: var(--text); font-size: 0.82rem; border: 1px solid var(--border-light); margin-left: 6px; }
 .signal { display: flex; gap: 0.6rem; align-items: center; }
 .signal-bar { flex: 1 1 auto; height: 12px; border-radius: 999px; background: var(--btn-bg); border: 1px solid var(--border-light); overflow: hidden; }
-.signal-bar-fill { height: 100%; width: 0%; background: linear-gradient(90deg, var(--accent-green), var(--accent-yellow), var(--accent-red)); transition: width 150ms ease; }
+.signal-bar-fill { height: 100%; width: 0%; background: linear-gradient(90deg, var(--accent-green), var(--accent-yellow), var(--accent-red)); transition: width 300ms ease-out; }
 .signal-value { font-size: 0.95rem; color: var(--text-heading); min-width: 48px; text-align: right; }
 .meter { display: flex; gap: 0.6rem; align-items: center; }
 .meter-bar { flex: 1 1 auto; height: 12px; border-radius: 999px; background: var(--btn-bg); border: 1px solid var(--border-light); overflow: hidden; }

@@ -7006,9 +7006,18 @@ function stopSpectrumStreaming() {
 
 // ── /meter (fast signal-strength) streaming ─────────────────────────────────
 // Dedicated SSE channel pushed at ~30 Hz by trx-server; bypasses /events so
-// meter frames are never gated by full-RigState diffing. Synchronous DOM
-// write per frame — no rAF coalescing, per user requirement that it "feel
-// instant" on the frontend.
+// meter frames are never gated by full-RigState diffing.
+//
+// Client-side asymmetric EMA smoothing (GQRX-style ballistics):
+//   attack τ ≈ 400 ms  — rises in ~12 frames at 30 Hz
+//   decay  τ ≈ 1.0 s   — falls in ~30 frames, readable
+// DOM updates are coalesced via requestAnimationFrame so the bar
+// animates at display refresh rate, not SSE rate.
+const METER_ATTACK_ALPHA = 0.08; // per-frame at ~30 Hz ≈ 400 ms τ
+const METER_DECAY_ALPHA  = 0.03; // per-frame at ~30 Hz ≈ 1.0 s τ
+let meterSmoothedDbm = null;
+let meterRafPending = false;
+
 function scheduleMeterReconnect() {
   if (meterReconnectTimer !== null) return;
   meterReconnectTimer = setTimeout(() => {
@@ -7019,6 +7028,24 @@ function scheduleMeterReconnect() {
 
 function applyMeterSample(dbm) {
   if (typeof dbm !== "number" || !Number.isFinite(dbm)) return;
+  // Asymmetric EMA: fast attack, slow decay.
+  if (meterSmoothedDbm === null) {
+    meterSmoothedDbm = dbm;
+  } else {
+    const alpha = dbm > meterSmoothedDbm ? METER_ATTACK_ALPHA : METER_DECAY_ALPHA;
+    meterSmoothedDbm += alpha * (dbm - meterSmoothedDbm);
+  }
+  // Coalesce DOM writes to display refresh rate.
+  if (!meterRafPending) {
+    meterRafPending = true;
+    requestAnimationFrame(flushMeterDom);
+  }
+}
+
+function flushMeterDom() {
+  meterRafPending = false;
+  const dbm = meterSmoothedDbm;
+  if (dbm === null) return;
   prevRenderData.sigDbm = dbm;
   const sUnits = dbmToSUnits(dbm);
   sigLastSUnits = sUnits;
@@ -7059,6 +7086,7 @@ function stopMeterStreaming() {
     clearTimeout(meterReconnectTimer);
     meterReconnectTimer = null;
   }
+  meterSmoothedDbm = null; // reset so next rig starts fresh
 }
 
 // ── Rendering ────────────────────────────────────────────────────────────────
