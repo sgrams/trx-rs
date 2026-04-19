@@ -61,6 +61,24 @@ pub enum ClientCommand {
     SetSamCarrierSync { enabled: bool },
     SetRecorderEnabled { enabled: bool },
     GetSpectrum,
+    /// Subscribe to a per-rig meter stream on this connection.  After the
+    /// server receives this command, the connection becomes a one-way flow of
+    /// newline-delimited `MeterUpdate` JSON frames and no further commands or
+    /// regular responses are sent.  Intended for a dedicated TCP connection.
+    SubscribeMeter,
+}
+
+/// Fast meter sample pushed by the server on a dedicated meter stream.
+///
+/// Emitted at ~30 Hz for SDR backends and ~6–7 Hz for CAT backends.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct MeterUpdate {
+    /// Rig identifier this sample belongs to.
+    pub rig_id: String,
+    /// Receive signal strength in dBm (rig/DSP-reported).
+    pub sig_dbm: f64,
+    /// Monotonic millisecond timestamp from the server's steady clock.
+    pub ts_ms: u64,
 }
 
 /// Envelope for client commands with optional authentication token and rig routing.

@@ -102,7 +102,7 @@ macro_rules! define_command_mapping {
 
 define_command_mapping! {
     // ── Client-only variants (no RigCommand counterpart) ─────────────
-    client_only: GetRigs, GetSatPasses;
+    client_only: GetRigs, GetSatPasses, SubscribeMeter;
 
     // ── Unit variants (no payload) ───────────────────────────────────
     unit:
