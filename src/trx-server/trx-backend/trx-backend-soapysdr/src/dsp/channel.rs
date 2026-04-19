@@ -308,16 +308,19 @@ pub struct ChannelDsp {
 impl ChannelDsp {
     /// Compute asymmetric IIR coefficients for S-meter envelope tracking.
     ///
-    /// Attack: ~2 ms time constant (fast response to signal increase).
+    /// Attack: ~50 ms time constant (responsive but visually stable).
     /// Decay:  ~300 ms time constant (slow fall for stable reading).
-    /// This matches the IARU Region 1 Technical Recommendation R.1 for
-    /// S-meter behaviour in professional receivers.
+    ///
+    /// Note: these alphas are applied once per decimated *block*, not per
+    /// sample, with block-rate correction (`1 − (1−α)^N`).  The 50 ms
+    /// attack gives ~3-frame settling at 30 Hz meter refresh — fast
+    /// enough to follow signal changes, smooth enough to avoid jitter.
     fn smeter_alphas(channel_sample_rate: u32) -> (f32, f32) {
         if channel_sample_rate == 0 {
             return (0.3, 0.01);
         }
         let sr = channel_sample_rate as f32;
-        let attack = (1.0 - (-1.0 / (sr * 0.002)).exp()).min(1.0); // τ = 2 ms
+        let attack = (1.0 - (-1.0 / (sr * 0.050)).exp()).min(1.0); // τ = 50 ms
         let decay = (1.0 - (-1.0 / (sr * 0.300)).exp()).min(1.0); // τ = 300 ms
         (attack, decay)
     }
