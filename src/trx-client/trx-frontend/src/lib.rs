@@ -22,6 +22,7 @@ use trx_core::decode::{
 };
 use trx_core::rig::state::{RigSnapshot, SpectrumData};
 use trx_core::{DynResult, RigRequest, RigState};
+use trx_protocol::MeterUpdate;
 
 /// Shared, timestamped decode history for a single decoder type.
 ///
@@ -320,6 +321,10 @@ pub struct RigRoutingContext {
     pub server_connected: Arc<AtomicBool>,
     /// Per-rig server connection state.
     pub rig_server_connected: Arc<RwLock<HashMap<String, bool>>>,
+    /// Per-rig meter watch channels, keyed by rig_id.  Populated lazily by
+    /// the meter-connection supervisor in `trx-client`; `None` on the sender
+    /// side means "no sample yet".
+    pub rig_meters: Arc<RwLock<HashMap<String, watch::Sender<Option<MeterUpdate>>>>>,
 }
 
 impl Default for RigRoutingContext {
@@ -331,6 +336,7 @@ impl Default for RigRoutingContext {
             rig_states: Arc::new(RwLock::new(HashMap::new())),
             server_connected: Arc::new(AtomicBool::new(false)),
             rig_server_connected: Arc::new(RwLock::new(HashMap::new())),
+            rig_meters: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 }
@@ -445,6 +451,25 @@ impl FrontendRuntimeContext {
             .read()
             .ok()
             .and_then(|map| map.get(rig_id).map(|tx| tx.subscribe()))
+    }
+
+    /// Get a watch receiver for a specific rig's meter stream.
+    /// Lazily inserts a new channel if the rig_id is not yet present so
+    /// SSE clients can subscribe before the meter-connection supervisor
+    /// has produced a first sample.
+    pub fn rig_meter_rx(&self, rig_id: &str) -> watch::Receiver<Option<MeterUpdate>> {
+        if let Ok(map) = self.routing.rig_meters.read() {
+            if let Some(tx) = map.get(rig_id) {
+                return tx.subscribe();
+            }
+        }
+        if let Ok(mut map) = self.routing.rig_meters.write() {
+            map.entry(rig_id.to_string())
+                .or_insert_with(|| watch::channel(None).0)
+                .subscribe()
+        } else {
+            watch::channel(None).1
+        }
     }
 
     /// Get a watch receiver for a specific rig's spectrum.

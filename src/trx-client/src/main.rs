@@ -386,6 +386,7 @@ async fn async_init() -> DynResult<AppState> {
             rig_id_to_short_name,
             short_name_to_rig_id: Arc::new(RwLock::new(HashMap::new())),
             sat_passes: frontend_runtime.routing.sat_passes.clone(),
+            rig_meters: frontend_runtime.routing.rig_meters.clone(),
         };
         let state_tx = state_tx.clone();
         let remote_shutdown_rx = shutdown_rx.clone();

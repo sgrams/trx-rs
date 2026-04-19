@@ -12,4 +12,5 @@ bytes = "1"
 uuid = { workspace = true }
 serde_json = { workspace = true }
 trx-core = { path = "../../trx-core" }
+trx-protocol = { path = "../../trx-protocol" }
 tokio = { workspace = true, features = ["sync"] }
