@@ -574,6 +574,7 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
         // SSE streams
         .service(sse::events)
         .service(sse::spectrum)
+        .service(sse::meter)
         // Decoder endpoints
         .service(decoder::decoder_registry)
         .service(decoder::decode_history)

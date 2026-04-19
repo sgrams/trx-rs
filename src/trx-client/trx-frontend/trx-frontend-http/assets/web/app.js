@@ -3700,6 +3700,8 @@ function connect() {
   if (esHeartbeat) {
     clearInterval(esHeartbeat);
   }
+  stopMeterStreaming();
+  startMeterStreaming();
   pollFreshSnapshot();
   const eventsUrl = lastActiveRigId
     ? `/events?remote=${encodeURIComponent(lastActiveRigId)}`
@@ -3778,6 +3780,7 @@ function disconnect() {
     decodeSource = null;
   }
   stopSpectrumStreaming();
+  stopMeterStreaming();
   // Clear timers
   if (esHeartbeat) {
     clearInterval(esHeartbeat);
@@ -3900,6 +3903,9 @@ async function switchRigFromSelect(selectEl) {
   // Reconnect spectrum SSE to the new rig's spectrum channel.
   stopSpectrumStreaming();
   startSpectrumStreaming();
+  // Reconnect meter SSE to the new rig's meter channel.
+  stopMeterStreaming();
+  startMeterStreaming();
   // Reconnect audio to the new rig if audio is active.
   if (rxActive) {
     stopRxAudio();
@@ -6476,6 +6482,8 @@ const spectrumCenterLeftBtn = document.getElementById("spectrum-center-left-btn"
 const spectrumCenterRightBtn = document.getElementById("spectrum-center-right-btn");
 let spectrumSource = null;
 let spectrumReconnectTimer = null;
+let meterSource = null;
+let meterReconnectTimer = null;
 let spectrumDrawPending = false;
 let spectrumAxisKey = "";
 let spectrumDbAxisKey = "";
@@ -6994,6 +7002,63 @@ function stopSpectrumStreaming() {
   scheduleOverviewDraw();
   updateRdsPsOverlay(null);
   clearSpectrumCanvas();
+}
+
+// ── /meter (fast signal-strength) streaming ─────────────────────────────────
+// Dedicated SSE channel pushed at ~30 Hz by trx-server; bypasses /events so
+// meter frames are never gated by full-RigState diffing. Synchronous DOM
+// write per frame — no rAF coalescing, per user requirement that it "feel
+// instant" on the frontend.
+function scheduleMeterReconnect() {
+  if (meterReconnectTimer !== null) return;
+  meterReconnectTimer = setTimeout(() => {
+    meterReconnectTimer = null;
+    startMeterStreaming();
+  }, 1000);
+}
+
+function applyMeterSample(dbm) {
+  if (typeof dbm !== "number" || !Number.isFinite(dbm)) return;
+  prevRenderData.sigDbm = dbm;
+  const sUnits = dbmToSUnits(dbm);
+  sigLastSUnits = sUnits;
+  sigLastDbm = dbm;
+  const pct = sUnits <= 9 ? Math.max(0, Math.min(100, (sUnits / 9) * 100)) : 100;
+  if (signalBar) signalBar.style.width = `${pct}%`;
+  if (signalValue) signalValue.innerHTML = formatSignal(sUnits);
+  refreshSigStrengthDisplay();
+}
+
+function startMeterStreaming() {
+  if (meterSource !== null) return;
+  const url = lastActiveRigId
+    ? `/meter?remote=${encodeURIComponent(lastActiveRigId)}`
+    : "/meter";
+  meterSource = new EventSource(url);
+  meterSource.onmessage = (evt) => {
+    try {
+      const { sig } = JSON.parse(evt.data);
+      applyMeterSample(sig);
+    } catch (_) {}
+  };
+  meterSource.onerror = () => {
+    if (meterSource) {
+      meterSource.close();
+      meterSource = null;
+    }
+    scheduleMeterReconnect();
+  };
+}
+
+function stopMeterStreaming() {
+  if (meterSource !== null) {
+    meterSource.close();
+    meterSource = null;
+  }
+  if (meterReconnectTimer !== null) {
+    clearTimeout(meterReconnectTimer);
+    meterReconnectTimer = null;
+  }
 }
 
 // ── Rendering ────────────────────────────────────────────────────────────────

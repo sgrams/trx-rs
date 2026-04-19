@@ -526,6 +526,7 @@ impl RouteAccess {
             || path == "/decode"
             || path == "/decode/history"
             || path == "/spectrum"
+            || path == "/meter"
             || path == "/audio"
             || path == "/bookmarks"
             || path.starts_with("/status?")
@@ -534,6 +535,7 @@ impl RouteAccess {
             || path.starts_with("/decode?")
             || path.starts_with("/decode/history?")
             || path.starts_with("/spectrum?")
+            || path.starts_with("/meter?")
             || path.starts_with("/audio?")
             || path.starts_with("/bookmarks?")
             || path.starts_with("/bookmarks/")
@@ -703,6 +705,7 @@ mod tests {
         assert_eq!(RouteAccess::from_path("/events"), RouteAccess::Read);
         assert_eq!(RouteAccess::from_path("/decode"), RouteAccess::Read);
         assert_eq!(RouteAccess::from_path("/spectrum"), RouteAccess::Read);
+        assert_eq!(RouteAccess::from_path("/meter"), RouteAccess::Read);
         assert_eq!(RouteAccess::from_path("/audio"), RouteAccess::Read);
     }
 

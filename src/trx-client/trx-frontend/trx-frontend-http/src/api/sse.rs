@@ -19,6 +19,7 @@ use uuid::Uuid;
 
 use trx_core::RigState;
 use trx_frontend::FrontendRuntimeContext;
+use trx_protocol::MeterUpdate;
 
 use crate::server::vchan::ClientChannelManager;
 
@@ -328,6 +329,62 @@ pub async fn events(
         scheduler_control_drop.unregister_session(session_id);
         session_rig_mgr_drop.unregister(session_id);
     });
+
+    Ok(HttpResponse::Ok()
+        .insert_header((header::CONTENT_TYPE, "text/event-stream"))
+        .insert_header((header::CONTENT_ENCODING, "identity"))
+        .insert_header((header::CACHE_CONTROL, "no-cache"))
+        .insert_header((header::CONNECTION, "keep-alive"))
+        .streaming(stream))
+}
+
+// ============================================================================
+// /meter SSE endpoint (fast signal-strength stream, ~30 Hz)
+// ============================================================================
+
+fn encode_meter_frame(update: &MeterUpdate) -> String {
+    // Compact JSON: one-line SSE frame, flushed immediately.
+    // Shape: {"sig":-72.3,"ts":12345}
+    format!(
+        "data: {{\"sig\":{:.2},\"ts\":{}}}\n\n",
+        update.sig_dbm, update.ts_ms
+    )
+}
+
+/// SSE stream for per-rig signal-strength updates.
+///
+/// Pushed from the server's per-rig meter broadcast; intentionally bypasses
+/// the `/events` RigState path so high-rate meter samples are never gated by
+/// full-state diffing. Each watch update produces exactly one SSE frame.
+#[get("/meter")]
+pub async fn meter(
+    query: web::Query<RemoteQuery>,
+    context: web::Data<Arc<FrontendRuntimeContext>>,
+) -> Result<HttpResponse, Error> {
+    let rig_id = query.remote.clone().filter(|s| !s.is_empty()).or_else(|| {
+        context
+            .routing
+            .active_rig_id
+            .lock()
+            .ok()
+            .and_then(|g| g.clone())
+    });
+
+    let rx = match rig_id.as_deref() {
+        Some(rid) => context.rig_meter_rx(rid),
+        None => return Ok(HttpResponse::NotFound().finish()),
+    };
+
+    let updates = WatchStream::new(rx).filter_map(|maybe| {
+        let chunk = maybe.as_ref().map(encode_meter_frame);
+        std::future::ready(chunk.map(|s| Ok::<Bytes, Error>(Bytes::from(s))))
+    });
+
+    // Infrequent keepalive comment; real meter frames carry the heartbeat.
+    let pings = IntervalStream::new(time::interval(Duration::from_secs(15)))
+        .map(|_| Ok::<Bytes, Error>(Bytes::from(": ping\n\n")));
+
+    let stream = select(pings, updates);
 
     Ok(HttpResponse::Ok()
         .insert_header((header::CONTENT_TYPE, "text/event-stream"))
