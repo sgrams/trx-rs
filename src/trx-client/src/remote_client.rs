@@ -95,8 +95,7 @@ pub async fn run_remote_client(
     // soon as short names are discovered.  Runs independently so the meter
     // bar in the UI updates at the full server-side 30 Hz without being
     // gated on state polls or user commands.
-    let meter_supervisor =
-        tokio::spawn(run_meter_supervisor(config.clone(), shutdown_rx.clone()));
+    let meter_supervisor = tokio::spawn(run_meter_supervisor(config.clone(), shutdown_rx.clone()));
 
     let mut reconnect_delay = Duration::from_secs(1);
 
@@ -228,10 +227,7 @@ async fn run_spectrum_connection(
 /// one dedicated TCP connection per rig that streams `MeterUpdate` JSON lines
 /// (see `trx_protocol::MeterUpdate`).  Each per-rig task owns its own watch
 /// sender in `config.rig_meters` and reconnects on failure.
-async fn run_meter_supervisor(
-    config: RemoteClientConfig,
-    mut shutdown_rx: watch::Receiver<bool>,
-) {
+async fn run_meter_supervisor(config: RemoteClientConfig, mut shutdown_rx: watch::Receiver<bool>) {
     let mut tasks: HashMap<String, tokio::task::JoinHandle<()>> = HashMap::new();
     let mut poll = time::interval(Duration::from_millis(500));
 
@@ -345,7 +341,11 @@ async fn stream_meter(
     let (reader, mut writer) = stream.into_split();
     let mut reader = BufReader::new(reader);
 
-    let envelope = build_envelope(config, ClientCommand::SubscribeMeter, Some(short_name.to_string()));
+    let envelope = build_envelope(
+        config,
+        ClientCommand::SubscribeMeter,
+        Some(short_name.to_string()),
+    );
     let mut payload = serde_json::to_string(&envelope)
         .map_err(|e| RigError::communication(format!("JSON serialize failed: {e}")))?;
     payload.push('\n');

@@ -144,9 +144,15 @@ impl ImageAssembler {
         }
         debug_assert_eq!(img_data.len(), expected_bytes);
 
-        writer
-            .write_image_data(&img_data)
-            .map_err(|e| format!("write PNG data ({} bytes, {}x{}): {}", img_data.len(), width, height, e))?;
+        writer.write_image_data(&img_data).map_err(|e| {
+            format!(
+                "write PNG data ({} bytes, {}x{}): {}",
+                img_data.len(),
+                width,
+                height,
+                e
+            )
+        })?;
 
         // Explicitly finish the writer (writes IEND). Relying on Drop
         // alone swallows any I/O error and can yield a truncated file.

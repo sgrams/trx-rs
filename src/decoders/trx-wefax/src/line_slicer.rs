@@ -129,8 +129,7 @@ impl LineSlicer {
         // of the NEXT line in the range [spl - max_shift, spl + max_shift].
         while self.buffer.len() >= 2 * spl + max_shift {
             let prev = &self.buffer[0..spl];
-            let (best_d, _best_r) =
-                search_best_shift(prev, &self.buffer, spl, max_shift);
+            let (best_d, _best_r) = search_best_shift(prev, &self.buffer, spl, max_shift);
 
             let start = (spl as i32 + best_d) as usize;
             let next_line = self.buffer[start..start + spl].to_vec();

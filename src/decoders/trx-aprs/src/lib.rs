@@ -686,16 +686,16 @@ mod tests {
             frame.push(ch << 1);
         }
         frame.push(0 << 1); // SSID=0, last=false
-        // Source address (7 bytes)
+                            // Source address (7 bytes)
         let src_bytes = format!("{:<6}", src);
         for &ch in src_bytes.as_bytes().iter().take(6) {
             frame.push(ch << 1);
         }
         frame.push((0 << 1) | 1); // SSID=0, last=true
-        // Control + PID
+                                  // Control + PID
         frame.push(0x03); // UI frame
         frame.push(0xF0); // No layer-3 protocol
-        // Info field
+                          // Info field
         frame.extend_from_slice(info);
         frame
     }

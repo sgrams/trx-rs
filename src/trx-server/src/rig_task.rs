@@ -12,7 +12,6 @@ use tokio::time::{self, Instant};
 use tracing::{debug, error, info, warn};
 
 use trx_backend::{RegistrationContext, RigAccess};
-use trx_protocol::MeterUpdate;
 use trx_core::radio::freq::Freq;
 use trx_core::rig::command::RigCommand;
 use trx_core::rig::controller::{
@@ -24,6 +23,7 @@ use trx_core::rig::request::RigRequest;
 use trx_core::rig::state::{RigMode, RigSnapshot, RigState};
 use trx_core::rig::{RigCat, RigRxStatus, RigTxStatus};
 use trx_core::{DynResult, RigError, RigResult};
+use trx_protocol::MeterUpdate;
 
 use crate::audio::DecoderHistories;
 use crate::error::is_invalid_bcd_error;

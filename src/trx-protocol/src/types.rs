@@ -16,29 +16,63 @@ pub enum ClientCommand {
     GetState,
     GetRigs,
     GetSatPasses,
-    SetFreq { freq_hz: u64 },
-    SetCenterFreq { freq_hz: u64 },
-    SetMode { mode: String },
-    SetPtt { ptt: bool },
+    SetFreq {
+        freq_hz: u64,
+    },
+    SetCenterFreq {
+        freq_hz: u64,
+    },
+    SetMode {
+        mode: String,
+    },
+    SetPtt {
+        ptt: bool,
+    },
     PowerOn,
     PowerOff,
     ToggleVfo,
     Lock,
     Unlock,
     GetTxLimit,
-    SetTxLimit { limit: u8 },
-    SetAprsDecodeEnabled { enabled: bool },
-    SetHfAprsDecodeEnabled { enabled: bool },
-    SetCwDecodeEnabled { enabled: bool },
-    SetCwAuto { enabled: bool },
-    SetCwWpm { wpm: u32 },
-    SetCwToneHz { tone_hz: u32 },
-    SetFt8DecodeEnabled { enabled: bool },
-    SetFt4DecodeEnabled { enabled: bool },
-    SetFt2DecodeEnabled { enabled: bool },
-    SetWsprDecodeEnabled { enabled: bool },
-    SetLrptDecodeEnabled { enabled: bool },
-    SetWefaxDecodeEnabled { enabled: bool },
+    SetTxLimit {
+        limit: u8,
+    },
+    SetAprsDecodeEnabled {
+        enabled: bool,
+    },
+    SetHfAprsDecodeEnabled {
+        enabled: bool,
+    },
+    SetCwDecodeEnabled {
+        enabled: bool,
+    },
+    SetCwAuto {
+        enabled: bool,
+    },
+    SetCwWpm {
+        wpm: u32,
+    },
+    SetCwToneHz {
+        tone_hz: u32,
+    },
+    SetFt8DecodeEnabled {
+        enabled: bool,
+    },
+    SetFt4DecodeEnabled {
+        enabled: bool,
+    },
+    SetFt2DecodeEnabled {
+        enabled: bool,
+    },
+    SetWsprDecodeEnabled {
+        enabled: bool,
+    },
+    SetLrptDecodeEnabled {
+        enabled: bool,
+    },
+    SetWefaxDecodeEnabled {
+        enabled: bool,
+    },
     ResetAprsDecoder,
     ResetHfAprsDecoder,
     ResetCwDecoder,
@@ -48,18 +82,44 @@ pub enum ClientCommand {
     ResetWsprDecoder,
     ResetLrptDecoder,
     ResetWefaxDecoder,
-    SetBandwidth { bandwidth_hz: u32 },
-    SetSdrGain { gain_db: f64 },
-    SetSdrLnaGain { gain_db: f64 },
-    SetSdrAgc { enabled: bool },
-    SetSdrSquelch { enabled: bool, threshold_db: f64 },
-    SetSdrNoiseBlanker { enabled: bool, threshold: f64 },
-    SetWfmDeemphasis { deemphasis_us: u32 },
-    SetWfmStereo { enabled: bool },
-    SetWfmDenoise { level: WfmDenoiseLevel },
-    SetSamStereoWidth { width: f32 },
-    SetSamCarrierSync { enabled: bool },
-    SetRecorderEnabled { enabled: bool },
+    SetBandwidth {
+        bandwidth_hz: u32,
+    },
+    SetSdrGain {
+        gain_db: f64,
+    },
+    SetSdrLnaGain {
+        gain_db: f64,
+    },
+    SetSdrAgc {
+        enabled: bool,
+    },
+    SetSdrSquelch {
+        enabled: bool,
+        threshold_db: f64,
+    },
+    SetSdrNoiseBlanker {
+        enabled: bool,
+        threshold: f64,
+    },
+    SetWfmDeemphasis {
+        deemphasis_us: u32,
+    },
+    SetWfmStereo {
+        enabled: bool,
+    },
+    SetWfmDenoise {
+        level: WfmDenoiseLevel,
+    },
+    SetSamStereoWidth {
+        width: f32,
+    },
+    SetSamCarrierSync {
+        enabled: bool,
+    },
+    SetRecorderEnabled {
+        enabled: bool,
+    },
     GetSpectrum,
     /// Subscribe to a per-rig meter stream on this connection.  After the
     /// server receives this command, the connection becomes a one-way flow of
