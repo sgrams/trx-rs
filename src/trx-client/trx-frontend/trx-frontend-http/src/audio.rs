@@ -16,6 +16,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use actix_web::{get, web, Error, HttpRequest, HttpResponse};
 use actix_ws::Message;
+use base64::Engine as _;
 use bytes::Bytes;
 use serde::Deserialize;
 use tokio::sync::broadcast;
@@ -297,7 +298,30 @@ fn record_wspr(context: &FrontendRuntimeContext, msg: WsprMessage) {
     prune_wspr_history(context, &mut history);
 }
 
-fn record_wefax(context: &FrontendRuntimeContext, msg: WefaxMessage) {
+fn record_wefax(context: &FrontendRuntimeContext, mut msg: WefaxMessage) {
+    // If the server sent PNG data, save it to the local cache so the
+    // `/images/` endpoint can serve it.
+    if let Some(ref data) = msg.png_data {
+        if let Some(ref path) = msg.path {
+            if let Some(filename) = std::path::Path::new(path).file_name() {
+                let dir = dirs::cache_dir()
+                    .unwrap_or_else(|| std::path::PathBuf::from(".cache"))
+                    .join("trx-rs")
+                    .join("wefax");
+                if std::fs::create_dir_all(&dir).is_ok() {
+                    if let Ok(bytes) = base64::engine::general_purpose::STANDARD.decode(data) {
+                        let local_path = dir.join(filename);
+                        if let Err(e) = std::fs::write(&local_path, &bytes) {
+                            tracing::warn!("WEFAX: failed to save local image: {}", e);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    // Strip bulk data before storing in memory.
+    msg.png_data = None;
+
     let rig_id = msg.rig_id.clone().or_else(|| active_rig_id(context));
     let mut history = context
         .decode_history

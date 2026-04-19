@@ -291,6 +291,10 @@ pub struct WefaxMessage {
     /// Filesystem path to saved PNG (set on completion).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub path: Option<String>,
+    /// Base64-encoded PNG data for transfer to remote clients.
+    /// Populated by the server when sending, stripped before storing in history.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub png_data: Option<String>,
     /// True when image is complete (stop tone received).
     pub complete: bool,
 }

@@ -12,6 +12,7 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
+use base64::Engine as _;
 use bytes::Bytes;
 use flate2::write::GzEncoder;
 use flate2::Compression;
@@ -709,6 +710,8 @@ impl DecoderHistories {
         if msg.ts_ms.is_none() {
             msg.ts_ms = Some(current_timestamp_ms());
         }
+        // Strip bulk PNG data before storing in memory/persistence.
+        msg.png_data = None;
         let mut h = lock_or_recover(&self.wefax, "wefax_history");
         let before = h.len();
         h.push_back((Instant::now(), msg));
@@ -722,7 +725,21 @@ impl DecoderHistories {
         let before = h.len();
         Self::prune_wefax(&mut h);
         self.adjust_total_count(before, h.len());
-        h.iter().map(|(_, msg)| msg.clone()).collect()
+        h.iter()
+            .map(|(_, msg)| {
+                let mut m = msg.clone();
+                // Re-read PNG from disk so remote clients can save a local copy.
+                if m.png_data.is_none() {
+                    if let Some(ref path) = m.path {
+                        if let Ok(bytes) = std::fs::read(path) {
+                            m.png_data =
+                                Some(base64::engine::general_purpose::STANDARD.encode(&bytes));
+                        }
+                    }
+                }
+                m
+            })
+            .collect()
     }
 
     pub fn clear_wefax_history(&self) {

@@ -574,12 +574,23 @@ impl WefaxDecoder {
 
             let ppl = WefaxConfig::pixels_per_line(ioc);
             let mut path_str = None;
+            let mut png_data = None;
 
             // Save PNG if output directory is configured.
             if let Some(ref dir) = self.config.output_dir {
                 let output_path = PathBuf::from(dir);
                 match image.save_png(&output_path, self.freq_hz, &self.mode) {
                     Ok(p) => {
+                        // Read back the PNG bytes for remote client transfer.
+                        match std::fs::read(&p) {
+                            Ok(bytes) => {
+                                png_data =
+                                    Some(base64::engine::general_purpose::STANDARD.encode(&bytes));
+                            }
+                            Err(e) => {
+                                eprintln!("WEFAX: failed to read PNG for transfer: {}", e);
+                            }
+                        }
                         path_str = Some(p.to_string_lossy().into_owned());
                     }
                     Err(e) => {
@@ -597,6 +608,7 @@ impl WefaxDecoder {
                 ioc,
                 pixels_per_line: ppl,
                 path: path_str,
+                png_data,
                 complete: true,
             }));
         }

@@ -14,6 +14,7 @@ ft2 = ["trx-ftx/ft2", "trx-protocol/ft2"]
 soapysdr = ["trx-backend/soapysdr"]
 
 [dependencies]
+base64 = "0.22"
 flate2 = { workspace = true }
 tokio = { workspace = true, features = ["full"] }
 tokio-serial = { workspace = true }

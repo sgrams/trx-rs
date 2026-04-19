@@ -3178,6 +3178,7 @@ version = "0.1.0"
 dependencies = [
  "actix-web",
  "actix-ws",
+ "base64",
  "brotli 7.0.0",
  "bytes",
  "dirs",
@@ -3261,6 +3262,7 @@ dependencies = [
 name = "trx-server"
 version = "0.1.0"
 dependencies = [
+ "base64",
  "bytes",
  "chrono",
  "clap",
