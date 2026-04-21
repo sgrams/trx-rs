@@ -4483,14 +4483,17 @@ function _initMapWhenReady() {
   if (window.trx.map && typeof L !== "undefined") {
     if (_mapInitTimer) { clearInterval(_mapInitTimer); _mapInitTimer = null; }
     if (loadingEl) loadingEl.classList.add("is-hidden");
-    window.trx.map.initAprsMap();
-    window.trx.map.sizeAprsMapToViewport();
-    // The map panel was just made visible (display:none → ""); the browser
-    // may not have laid it out yet, so getBoundingClientRect() can return
-    // stale/zero dimensions.  Double-rAF ensures a full layout pass has
-    // completed before we re-measure and tell Leaflet about its real size.
+    // The map panel was just made visible (display:none → ""). If we call
+    // L.map(...) on the same tick, Leaflet measures a still-zero container
+    // and caches broken pixel bounds — a later invalidateSize() can fix
+    // geometry but not tile bounds that were already queued, which is why
+    // the map previously needed a second tab click to render correctly.
+    // Double-rAF ensures a full layout pass has completed before Leaflet's
+    // first measurement happens.
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
+        if (_activeTab !== "map") return; // user switched away before layout
+        window.trx.map.initAprsMap();
         window.trx.map.sizeAprsMapToViewport();
         if (window.trx.map.aprsMap) window.trx.map.aprsMap.invalidateSize();
       });
