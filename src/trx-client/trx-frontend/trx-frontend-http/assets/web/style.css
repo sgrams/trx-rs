@@ -161,6 +161,10 @@ input.status-input, select.status-input { width: 100%; padding: 0.45rem 0.5rem; 
   opacity: 1;
   -webkit-text-fill-color: currentColor;
 }
+html:not([data-style]):not([data-theme="light"]) #freq {
+  color: #4ecdff;
+  text-shadow: 0 0 8px rgba(78,205,255,0.50), 0 0 20px rgba(78,205,255,0.18);
+}
 #center-freq { color: var(--wavelength-fg); }
 .controls-row {
   display: grid;
