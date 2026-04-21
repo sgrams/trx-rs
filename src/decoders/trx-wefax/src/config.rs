@@ -19,9 +19,6 @@ pub struct WefaxConfig {
     pub output_dir: Option<String>,
     /// Whether to emit line-by-line progress events.
     pub emit_progress: bool,
-    /// Whether to continuously track and correct sample-clock drift
-    /// (line-to-line cross-correlation) to remove image slant.
-    pub slant_correction: bool,
 }
 
 impl Default for WefaxConfig {
@@ -33,7 +30,6 @@ impl Default for WefaxConfig {
             deviation_hz: 400.0,
             output_dir: None,
             emit_progress: true,
-            slant_correction: true,
         }
     }
 }

@@ -43,26 +43,11 @@ const LINE_CORR_NOISE_THRESHOLD: f32 = 0.2;
 /// fldigi's line-to-line correlation check for automatic stop.
 const LINE_CORR_NOISE_LINES: u32 = 30;
 
-/// Pearson correlation above which adjacent lines are considered good
-/// evidence of real image content. Used to verify unverified auto-starts.
-const LINE_CORR_IMAGE_THRESHOLD: f32 = 0.5;
-
-/// Number of consecutive well-correlated lines that verify an unverified
-/// reception (i.e. an auto-start from variance detection). Low enough to
-/// engage quickly on real imagery.
-const VERIFY_HIGH_CORR_STREAK: u32 = 5;
-
-/// Maximum number of scan lines the verifier waits for before giving up on
-/// an unverified reception. Roughly 20 s at 120 LPM. If no high-correlation
-/// streak appears by then, the buffered content is dropped and we return
-/// to Idle without saving anything.
-const VERIFY_TIMEOUT_LINES: u32 = 40;
-
 /// Maximum number of scan-line-equivalent sample windows to wait for phasing
-/// lock before falling through to Receiving (unverified). Typical WEFAX
-/// phasing lasts ~30 s; if the phasing detector hasn't converged by then
-/// we give up on alignment and let the correlation verifier decide whether
-/// the content that follows is a real image. At 120 LPM this is ~30 s.
+/// lock before falling through to Receiving. Typical WEFAX phasing lasts
+/// ~30 s; if the phasing detector hasn't converged by then we give up on
+/// alignment and let the carrier-loss watchdog decide whether the content
+/// that follows is real imagery. At 120 LPM this is ~30 s.
 const PHASING_TIMEOUT_LINES: u32 = 60;
 
 /// WEFAX decoder output event.
@@ -117,18 +102,10 @@ pub struct WefaxDecoder {
     /// `LINE_CORR_NOISE_LINES` the decoder auto-finalizes the in-progress
     /// image (carrier dropped / tx ended without an APT stop tone).
     low_corr_lines: u32,
-    /// `true` once the current reception has been confirmed to contain real
-    /// image content. Set immediately for phasing-driven entries (the APT
-    /// start tone + phasing pulses already proved the signal); set later
-    /// by the correlation verifier for variance-driven auto-starts.
-    verified: bool,
-    /// Rolling count of consecutive well-correlated lines, used to confirm
-    /// an unverified reception.
-    high_corr_streak: u32,
     /// Number of luminance samples processed while in `State::Phasing`.
     /// When this exceeds the equivalent of `PHASING_TIMEOUT_LINES` lines,
-    /// the decoder falls through to Receiving (unverified) so a noisy or
-    /// partial phasing signal doesn't wedge the state machine.
+    /// the decoder falls through to Receiving so a noisy or partial
+    /// phasing signal doesn't wedge the state machine.
     phasing_samples: u64,
     /// Current rig dial frequency in Hz (for image filenames).
     freq_hz: u64,
@@ -157,8 +134,6 @@ impl WefaxDecoder {
             signal_detect_count: 0,
             signal_detect_buf: Vec::with_capacity(INTERNAL_RATE as usize / 2),
             low_corr_lines: 0,
-            verified: false,
-            high_corr_streak: 0,
             phasing_samples: 0,
             freq_hz: 0,
             mode: String::new(),
@@ -267,7 +242,7 @@ impl WefaxDecoder {
                                     .as_millis() as i64,
                             );
                             self.signal_detect_buf.clear();
-                            events.push(self.transition_to_receiving(ioc, lpm, 0, false));
+                            events.push(self.transition_to_receiving(ioc, lpm, 0));
                             break;
                         }
 
@@ -297,12 +272,12 @@ impl WefaxDecoder {
 
                 if let Some(ref mut phasing) = self.phasing {
                     if let Some(offset) = phasing.process(&luminance) {
-                        events.push(self.transition_to_receiving(ioc, lpm, offset, true));
+                        events.push(self.transition_to_receiving(ioc, lpm, offset));
                     } else {
                         // Phasing timeout: if alignment doesn't converge in
                         // ~PHASING_TIMEOUT_LINES lines, fall through to
-                        // Receiving (unverified) and let the correlation
-                        // verifier decide.
+                        // Receiving and let the carrier-loss watchdog decide
+                        // whether the content that follows is real imagery.
                         self.phasing_samples += luminance.len() as u64;
                         let spl = WefaxConfig::samples_per_line(lpm, INTERNAL_RATE) as u64;
                         if self.phasing_samples >= spl * PHASING_TIMEOUT_LINES as u64 {
@@ -310,7 +285,7 @@ impl WefaxDecoder {
                                 ioc,
                                 lpm, "WEFAX: phasing timeout — falling through to receiving"
                             );
-                            events.push(self.transition_to_receiving(ioc, lpm, 0, false));
+                            events.push(self.transition_to_receiving(ioc, lpm, 0));
                         }
                     }
                 }
@@ -327,66 +302,36 @@ impl WefaxDecoder {
 
                 // Feed luminance to line slicer.
                 let mut carrier_lost = false;
-                let mut verify_failed = false;
                 if let Some(ref mut slicer) = self.slicer {
                     let new_lines = slicer.process(&luminance);
                     for line in new_lines {
                         if let Some(ref mut image) = self.image {
-                            // Line-to-line Pearson correlation classifies the
-                            // new line as image-like, noise-like, or flat.
-                            // fldigi-style: real imagery has highly correlated
-                            // adjacent lines; pure noise does not.
+                            // Carrier-loss watchdog: real imagery has highly
+                            // correlated adjacent lines; pure noise does not.
+                            // After LINE_CORR_NOISE_LINES consecutive low-
+                            // correlation lines we finalize (fldigi-style
+                            // automatic stop).
                             if let Some(r) = image.correlation_with_last(&line) {
-                                if r >= LINE_CORR_IMAGE_THRESHOLD {
-                                    self.high_corr_streak += 1;
-                                    self.low_corr_lines = 0;
-                                    if !self.verified
-                                        && self.high_corr_streak >= VERIFY_HIGH_CORR_STREAK
-                                    {
-                                        self.verified = true;
-                                        debug!(
-                                            lines = image.line_count(),
-                                            "WEFAX: reception verified from line correlation"
-                                        );
-                                    }
-                                } else if r < LINE_CORR_NOISE_THRESHOLD {
+                                if r < LINE_CORR_NOISE_THRESHOLD {
                                     self.low_corr_lines += 1;
-                                    self.high_corr_streak = 0;
                                     trace!(
                                         r = format!("{:.3}", r),
                                         count = self.low_corr_lines,
                                         "WEFAX low line-correlation"
                                     );
                                 } else {
-                                    // Middle zone — reset high streak, hold
-                                    // low-corr counter.
-                                    self.high_corr_streak = 0;
+                                    self.low_corr_lines = 0;
                                 }
                             }
                             // Flat lines (correlation == None) don't advance
-                            // either counter — solid bands in real imagery
-                            // shouldn't be scored as noise OR as evidence.
+                            // the counter but also don't reset it — an image
+                            // with a solid band surrounded by noise still
+                            // trips the watchdog once the noise resumes.
 
                             image.push_line(line);
                             let count = image.line_count();
 
-                            // Unverified timeout: if we got here from a
-                            // variance auto-start and line correlation never
-                            // took hold, the "signal" wasn't real WEFAX.
-                            // Abandon without saving.
-                            if !self.verified && count >= VERIFY_TIMEOUT_LINES {
-                                debug!(
-                                    lines = count,
-                                    "WEFAX: failed to verify image content — abandoning"
-                                );
-                                verify_failed = true;
-                                break;
-                            }
-
-                            // Carrier-loss watchdog — only active once the
-                            // reception has been verified (otherwise it
-                            // double-counts with the verify timeout).
-                            if self.verified && self.low_corr_lines >= LINE_CORR_NOISE_LINES {
+                            if self.low_corr_lines >= LINE_CORR_NOISE_LINES {
                                 debug!(
                                     lines = count,
                                     "WEFAX: line correlation lost — auto-finalizing image"
@@ -416,15 +361,6 @@ impl WefaxDecoder {
                             }
                         }
                     }
-                }
-
-                if verify_failed {
-                    // Drop buffered content without saving — this was a
-                    // false auto-start (tone, noise burst, etc.).
-                    self.image = None;
-                    self.reception_start_ms = None;
-                    self.transition_to_idle();
-                    return events;
                 }
 
                 if carrier_lost {
@@ -465,8 +401,6 @@ impl WefaxDecoder {
         self.signal_detect_count = 0;
         self.signal_detect_buf.clear();
         self.low_corr_lines = 0;
-        self.verified = false;
-        self.high_corr_streak = 0;
         self.phasing_samples = 0;
         events
     }
@@ -522,30 +456,13 @@ impl WefaxDecoder {
         self.state_event("Phasing", ioc, lpm)
     }
 
-    fn transition_to_receiving(
-        &mut self,
-        ioc: u16,
-        lpm: u16,
-        phase_offset: usize,
-        verified: bool,
-    ) -> WefaxEvent {
-        debug!(
-            ioc,
-            lpm, phase_offset, verified, "WEFAX: entering receiving"
-        );
+    fn transition_to_receiving(&mut self, ioc: u16, lpm: u16, phase_offset: usize) -> WefaxEvent {
+        debug!(ioc, lpm, phase_offset, "WEFAX: entering receiving");
         let ppl = WefaxConfig::pixels_per_line(ioc) as usize;
-        self.slicer = Some(LineSlicer::with_slant(
-            lpm,
-            ioc,
-            INTERNAL_RATE,
-            phase_offset,
-            self.config.slant_correction,
-        ));
+        self.slicer = Some(LineSlicer::new(lpm, ioc, INTERNAL_RATE, phase_offset));
         self.image = Some(ImageAssembler::new(ppl));
         self.tone_detector.reset();
         self.low_corr_lines = 0;
-        self.verified = verified;
-        self.high_corr_streak = 0;
         self.state = State::Receiving { ioc, lpm };
         self.state_event("Receiving", ioc, lpm)
     }
@@ -559,8 +476,6 @@ impl WefaxDecoder {
         self.signal_detect_count = 0;
         self.signal_detect_buf.clear();
         self.low_corr_lines = 0;
-        self.verified = false;
-        self.high_corr_streak = 0;
         self.phasing_samples = 0;
     }
 
